@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (chain() || error() || sending()) {
+  <section
+    class="flex min-w-0 flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4"
+    aria-label="Rebuild progress"
+    data-testid="mktg-rebuild-progress">
+    <h2 class="text-lg font-semibold text-gray-900">Rebuild downstream assets</h2>
+    <p class="text-sm text-gray-600">Each result is a new Draft to approve. Your approved current assets stay in the kit until you approve a replacement.</p>
+    @if (error()) {
+      <p role="alert" class="text-sm text-red-700" data-testid="mktg-rebuild-error">{{ error() }}</p>
+    }
+    @if (chain(); as chain) {
+      <p role="status" aria-live="polite" class="text-sm" data-testid="mktg-rebuild-status">
+        @switch (chain.status) {
+          @case ('complete') {
+            All rebuilt Drafts are ready for review. Open each Draft and approve it when ready.
+          }
+          @case ('questions') {
+            The chain is paused for your answers below. It will continue on the same session.
+          }
+          @case ('failed') {
+            Rebuild stopped. Earlier Drafts are saved; later steps have not run.
+          }
+          @default {
+            Rebuilding from approved framework v{{ chain.framework.revisionNumber }}…
+          }
+        }
+      </p>
+      <ol class="flex min-w-0 flex-col gap-3">
+        @for (row of rows(); track row.agentId) {
+          <li class="flex min-w-0 flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="'mktg-rebuild-step-' + row.agentId">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="font-semibold">{{ row.index + 1 }}. {{ row.label }}</h3>
+              <span class="text-sm text-gray-600" [attr.data-testid]="'mktg-rebuild-state-' + row.agentId">{{ row.statusLabel }}</span>
+            </div>
+            @if (row.status === 'running') {
+              <lfx-mktg-run-activity [activity]="row.activity" [title]="'Rebuilding ' + row.label" [startedAt]="startedAt()" />
+            }
+            @if (row.status === 'questions' && row.questions; as questions) {
+              <lfx-mktg-run-questions [questions]="questions" [projectName]="projectName()" [busy]="sending()" (answered)="answer(row.index, $event)" />
+            }
+            @if (row.message) {
+              <p role="alert" class="text-sm text-red-700">{{ row.message }}</p>
+            }
+            @if (row.status === 'draft' && row.revisionId) {
+              <lfx-button
+                label="Open Draft"
+                [ariaLabel]="active() ? 'Open Draft in a new tab' : 'Open Draft'"
+                [outlined]="true"
+                size="small"
+                (onClick)="openDraft(row)"
+                [attr.data-testid]="'mktg-rebuild-open-' + row.agentId" />
+            }
+          </li>
+        }
+      </ol>
+    } @else if (sending()) {
+      <p role="status" class="text-sm" data-testid="mktg-rebuild-starting">Starting the rebuild…</p>
+    }
+  </section>
+}

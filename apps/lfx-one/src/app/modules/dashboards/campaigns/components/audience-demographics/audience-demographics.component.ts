@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
 import { CampaignService } from '@services/campaign.service';
 
+import { MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } from '@lfx-one/shared/constants';
 import type { AudienceBucket, AudienceDemographics } from '@lfx-one/shared/interfaces';
 
 @Component({
@@ -29,6 +30,7 @@ export class AudienceDemographicsComponent {
   protected readonly loading = signal(false);
   protected readonly data = signal<AudienceDemographics | null>(null);
   protected readonly error = signal<string | null>(null);
+  protected readonly restricted = signal(false);
 
   // === Computed Signals ===
   // At least one BUCKET, not merely a non-null response. The cutover returns a valid
@@ -60,6 +62,7 @@ export class AudienceDemographicsComponent {
     this.audienceSub?.unsubscribe();
     this.loading.set(true);
     this.error.set(null);
+    this.restricted.set(false);
     this.data.set(null);
     this.audienceSub = this.campaignService
       .getAudience(this.projectSlug(), days ?? this.days())
@@ -71,6 +74,12 @@ export class AudienceDemographicsComponent {
           this.loading.set(false);
         },
         error: (err: unknown) => {
+          if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
+            this.data.set(null);
+            this.restricted.set(true);
+            this.loading.set(false);
+            return;
+          }
           const httpErr = err as { error?: { message?: string }; message?: string };
           // `extractErrorMessage`, for the reason the sibling campaign loaders now carry:
           // BaseApiError.toResponse serialises operator text as `{ error: string }`, so

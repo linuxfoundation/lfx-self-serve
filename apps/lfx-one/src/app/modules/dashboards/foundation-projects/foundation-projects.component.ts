@@ -39,10 +39,20 @@ import type {
   ProjectTableRow,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-foundation-projects',
-  imports: [DecimalPipe, ReactiveFormsModule, FilterPillsComponent, InputTextComponent, StatCardGridComponent, TableComponent, TooltipModule],
+  imports: [
+    DecimalPipe,
+    ReactiveFormsModule,
+    FilterPillsComponent,
+    InputTextComponent,
+    StatCardGridComponent,
+    TableComponent,
+    TooltipModule,
+    PageHeaderComponent,
+  ],
   templateUrl: './foundation-projects.component.html',
   styleUrl: './foundation-projects.component.scss',
 })

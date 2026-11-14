@@ -417,10 +417,18 @@ private validateReadOnlyQuery(sqlText: string): void {
     }
   }
 
-  // Ensure query starts with SELECT or WITH (for CTEs)
-  if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
+  // Ensure query starts with SELECT or WITH (for CTEs). Leading comments are skipped so a query can be documented
+  // above its SELECT; the write-operation scan above already covers the whole text, comments included.
+  const statementStart = this.stripLeadingComments(normalizedSql);
+  if (!/^SELECT\b/i.test(statementStart) && !/^WITH\b/i.test(statementStart)) {
     throw new Error('Only SELECT queries are allowed');
   }
+}
+
+// Drops the whitespace, `--` line comments and block comments that precede a statement. `execute()` uses the same
+// helper to name its trace span, so a commented query is not traced as `--`.
+private stripLeadingComments(sql: string): string {
+  return sql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '');
 }
 ```
 
@@ -665,12 +673,22 @@ export class AnalyticsController {
 ### Best Practices for Callers
 
 1. **Lazy Initialization**: Create `SnowflakeService` instances on-demand to avoid startup overhead
-2. **Parameterized Queries**: Always use `?` placeholders with bind parameters - never concatenate user input. `LIMIT`/`OFFSET` are the one exception — Snowflake cannot bind them — so interpolate only values bounded by `parseOffsetPagination` (HTTP layer) or `clampInteger` (service layer), capped at `MAX_SNOWFLAKE_PAGINATION_PAGE` (see Common Issues §5)
+2. **Parameterized Queries**: Always use `?` placeholders with bind parameters - never concatenate user input. `LIMIT`/`OFFSET` are the one exception — Snowflake cannot bind them — so interpolate only values bounded by `parseOffsetPagination` (HTTP layer) or `clampInteger` (service layer), capped at `MAX_SNOWFLAKE_PAGINATION_PAGE` (see Common Issues §5). Cap caller-supplied lists that expand into `IN (?, …)` at the HTTP layer too (400 above a small fixed count, e.g. `CONTRIBUTIONS_MAX_FILTER_VALUES`), since bind count grows with list length (see Common Issues §6)
 3. **Date Handling**: Pass `Date` objects directly as bind parameters - they're automatically converted to ISO strings
 4. **Type Safety**: Define TypeScript interfaces for query result rows
 5. **Error Handling**: Catch and handle Snowflake-specific errors appropriately. Errors from `SnowflakeService` already carry the generic `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as `clientMessage`; replace it with a more specific one if needed, never with the SDK text or `message`
 6. **Query Optimization**: Use specific column selection, appropriate WHERE clauses, and leverage Snowflake features
 7. **Logic Ownership**: Define metrics and reusable transformations in [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt); application queries retrieve the modeled columns
+
+### OCG Meetup Display and Routing Identity
+
+`MeetupsService` consumes `COMMUNITY` for display and Community filters, and `COMMUNITY_SLUG` for the community URL segment in both Upcoming and Past queries. Despite its column name, `COMMUNITY_SLUG` is the raw OCG source `community.name`, not a normalized display label: the [pinned OCG event handler](https://github.com/cncf/open-community-groups/blob/e12e92a5b0b84be824449f7cef2a5b7490e70f73/ocg-server/src/handlers/event.rs#L63-L77) resolves it through an [exact source-name lookup](https://github.com/cncf/open-community-groups/blob/e12e92a5b0b84be824449f7cef2a5b7490e70f73/database/migrations/functions/community/get_community_id_by_name.sql#L4-L7). The mapper preserves canonical case and encodes each community, group and event segment once, returning the existing `MyMeetup.url` contract.
+
+The warehouse contract is supplied by [dbt prerequisite #3330](https://github.com/linuxfoundation/lfx-self-serve/issues/3330), implemented in `lf-dbt`. Deploy and refresh it before deploying the consumer: both `OCG_UPCOMING_MEETUPS` and `OCG_PAST_MEETUPS` in the configured `MEETUPS_SNOWFLAKE_SCHEMA` (default `ANALYTICS.PLATINUM_LFX_ONE`) must expose populated `COMMUNITY_SLUG` values matching canonical source names. Verify column metadata, canonical completeness and non-personal source-address comparisons before rollout. Missing, null or whitespace-only canonical values use the existing malformed-row behavior: warn and drop the row without a display-name fallback, while retaining the warehouse total count. Upstream completeness checks are required to keep this an exceptional data-quality path.
+
+### Project Lens Participating Organizations
+
+`ProjectParticipatingOrgsService` reads `PROJECT_PARTICIPATING_ORGS` and `PROJECT_PARTICIPATING_ORGS_SUMMARY` in `resolveLfxOnePlatinumSchema()` (lf-dbt `project_lens` models) for `GET /api/projects/:slug/participating-orgs{,/summary,/export,/org-lens-links}`. `requireExecutiveOrLFStaff` runs first on every route: slug format (400); LF Staff pass; everyone without the executive-director persona gets 403 (`DASHBOARD_ACCESS_REQUIRED`); for an executive director the slug is resolved to a project uid (a lookup outage → 503 `ACCESS_CHECK_UNAVAILABLE`, an unknown project → 404) and the ED passes only for a project that is, or sits under, a foundation they direct (the parent chain is read with metadata-only reads and fails closed: an unreadable ancestor ends the climb as out of scope, so 403); a root writer without ED scopes passes only with a strict `writer_guard` check on the requested project's uid (already resolved above, so no second slug lookup; a failed check → 503), never on an umbrella ancestor. A failed read of the requested project is likewise a 503 unless upstream gave a definite answer below 500. `requireProjectParticipatingOrgsAccess` then gates every route in order: slug format (400), slug → project uid over NATS (an unknown slug or a `{"error":"not_found"}` reply → 404; a NATS timeout or any other lookup error → 503, except that `getProjectIdBySlug` reports NATS no-responders as not-found, so that one outage answers 404), strict FGA `project#viewer` (false → 403, authorizer failure → 503). The reads stay keyed by `project_slug`: the warehouse carries Salesforce project ids rather than v2 uids, so the slug is the key both sides share. On a foundation's own project the list holds every current member of the foundation in every range, contributing or not (zero commits when inactive), so the Members tab and `members_count` are the full roster; `orgs_count` (the Contributing Orgs tile) counts companies with activity only, the Members tile names `contributing_members_count` beneath the roster count (so contributing members plus non-members equal Contributing Orgs), and the All tab counts members plus non-members. The list and export take `contribution=contributing|not_contributing` (omitted for All), filtering on the modeled `commits` / `contributors` counts; only a foundation's own project lists members without activity, so the page offers it only there, and not on Non-Members. The list returns the page, filtered total and foundation slug in one totals-`LEFT JOIN`-page query; sort keys map to allowlisted expressions (tier ranks members only; `commits_change` / `contributors_change` are columns modeled in lf-dbt, NULL for All Time or a zero baseline, never computed in the BFF; names sort and display trimmed), every key `NULLS LAST` both ways, and ties break on `commits DESC, participant_key ASC`. Summary and list pages carry no per-caller data, so they are shared-cached in Valkey per project under `project-participating-orgs-sf:v2` for an hour (`withProjectParticipatingOrgsCache`, keyed on every query dimension after clamping); the gate still runs on every request. Org Lens links are per caller and resolved separately: `/org-lens-links?accountIds=` takes the shown page's member account ids (canonical, at most one max page) and answers the subset `filterConfirmedReadableAccountIds` confirms (`Cache-Control: private, no-store`); an authorizer failure answers no links, so member names show the no-access hint instead of the list failing. The page asks for it only in the browser, after the rows render, so this page's own reads never hold server rendering on the caller's grant roster. The CSV export reads one row past `PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS` to set `X-Export-Truncated: true`, and answers 204 when nothing matches.
 
 ### Example with Dynamic Retrieval Filters
 
@@ -897,9 +915,13 @@ Solution:
 ```
 
 This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker; like a full pool
-queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
-exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
-`expectInvalidIdentifier`). `SnowflakeService` then records a success, so that caller must alert on the error itself.
+queue, it only frees the HALF_OPEN probe slot. Unrecognized value-conversion errors have the same exemption (see §7).
+Every other compilation error still counts — including "does not exist or not authorized", which can mean a revoked
+GRANT — unless the caller passed `expectMissingObject` (or `expectInvalidIdentifier`). `SnowflakeService` then treats it
+like the request faults above: the failure count and circuit state are left untouched and only the HALF_OPEN probe slot
+is freed. It does NOT record a success, which would reset the pod-wide count other queries have accumulated — reachable
+whenever an exempt object and a core table are missing together, since Snowflake blames only one of them. That caller
+must alert on the error itself.
 A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
 which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
 
@@ -907,6 +929,40 @@ Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeServ
 `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
 SDK text stays in `message` (which callers such as `isMissingObjectError` match on) and in the logs, never in the
 response body.
+
+#### 6. Too Many Bind Variables
+
+```text
+Error: Snowflake statement has N bind variables (max 10000)   [400 SNOWFLAKE_TOO_MANY_BINDS]
+Cause: A caller-supplied list expanded into more than SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES `?` placeholders
+Solution:
+  1. Cap the list at the HTTP layer with a 400 (see Best Practices for Callers §2)
+```
+
+`SnowflakeService.execute` rejects such a statement before `checkCircuit`, so it never reaches Snowflake, never takes
+the HALF_OPEN probe slot, and never counts toward the circuit breaker — an oversized request cannot open the pod-wide
+breaker for every other Snowflake-backed route.
+
+#### 7. Unrecognized Date/Timestamp/Numeric Value
+
+```text
+Error: Snowflake query execution failed: Date 'x' is not recognized
+Cause: A malformed bind cannot be converted to the column's Date/Time/Timestamp/Numeric/Boolean type
+Solution:
+  1. Validate optional date filters at the HTTP layer with getValidatedIsoDateQueryParam (helpers/validation.helper.ts)
+     before invoking the events service; malformed dates receive a field-specific 400
+```
+
+Both `GET /api/events` and `GET /api/events/travel-fund-events` validate `startDateFrom` / `startDateTo` before querying.
+Accepted strings are `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss(.sss)?Z`, with no fraction or exactly three fractional digits;
+UTC calendar checks also reject impossible dates/times. Valid strings are passed to the existing binds unchanged.
+
+For conversion errors that still reach Snowflake, `isValueConversionError` matches the typed "is not recognized"
+message family or confirmed numeric conversion code `100038`. It does not exempt other compilation or authorization
+errors. The query still rejects with the existing 500 `SNOWFLAKE_QUERY_ERROR` and generic client message, logged once
+by `apiErrorHandler`; the span is marked erroneous with `snowflake.value_conversion`. Failure count and circuit state
+stay untouched, and the HALF_OPEN probe slot is released so another query can probe recovery. Dirty table values can
+produce the same conversion error and are also exempted: a data fault is not evidence of a Snowflake outage.
 
 ## 🎯 Best Practices
 
@@ -1063,7 +1119,7 @@ async execute<T>(sql: string, binds?: (Bind | Date)[]): Promise<T> {
 - [Backend Architecture Overview](./README.md)
 - [NATS Integration](./nats-integration.md)
 - [Authentication & Authorization](./authentication.md)
-- [Environment Configuration](../../CLAUDE.md#environment-configuration)
+- [Environment Configuration](#environment-variables)
 
 ## 📚 External Resources
 

@@ -3,28 +3,28 @@
 
 import {
   CLASSIFICATION_TO_EMAIL_TYPES,
+  DOCUMENT_DELETE_TYPES,
+  DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   EMAIL_CAMPAIGN_LIMIT,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
+  FORMATION_RECORD_CONFLICT_CODE,
+  FORMATION_RECORD_ERROR_MESSAGES,
+  FORMATION_TEAM_REQUIRED_CODE,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
-  HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
-  HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
-  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_RANGES,
-  HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
-  HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
   NATS_CONFIG,
+  NOT_PROJECT_WRITER_CODE,
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
   PENDING_ACTION_SURVEYS_ROW_LIMIT,
   PROJECT_SETTINGS_NOT_FOUND_CODE,
+  PROJECT_USER_ALREADY_ON_PROJECT_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
-  buildHealthMetricsOverviewPeriods,
   getYearForRange,
   isHealthMetricsRange,
 } from '@lfx-one/shared/constants';
@@ -97,16 +97,8 @@ import {
   FoundationValueConcentrationRow,
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
-  HealthMetricsAreaState,
   HealthMetricsDailyResponse,
-  HealthMetricsOverviewArea,
-  HealthMetricsOverviewFoundationSummary,
-  HealthMetricsOverviewKpisByRange,
-  HealthMetricsOverviewRevenueByRange,
   HealthMetricsRange,
-  HealthOverviewAllPeriodsRow,
-  HealthOverviewEngagementCounts,
-  HealthOverviewKpisRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
   KeywordPerformanceRow,
@@ -131,12 +123,14 @@ import {
   ProjectCodeCommitsDailyRow,
   ProjectDocument,
   ProjectDocumentQueryResult,
+  ProjectDocumentType,
   ProjectDocumentUpstreamResponse,
   ProjectHealthEventsMonthlyRow,
   ProjectHealthMetricsDailyRow,
   ProjectIssuesResolutionAggregatedRow,
   ProjectIssuesResolutionResponse,
   ProjectIssuesResolutionRow,
+  ProjectPermissionRole,
   ProjectPullRequestsWeeklyResponse,
   ProjectPullRequestsWeeklyRow,
   ProjectRow,
@@ -160,22 +154,36 @@ import {
   UpdateProjectStaffRequest,
   UploadProjectDocumentRequest,
   AuditUserProfile,
+  CommitteeDocumentQueryResult,
+  CommitteeLinkQueryResult,
+  GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
+  MeetingAttachment,
+  PastMeetingAttachment,
+  PastMeetingRecordingQueryResult,
+  PastMeetingSummaryQueryResult,
+  PastMeetingTranscriptQueryResult,
   UserInfo,
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
-import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
+import type {
+  AccessCheckRequest,
+  ApiRequestOptions,
+  MoMDirection,
+  PaidProjectPerformance,
+  ResolvedPeriodRange,
+  WriterSummary,
+} from '@lfx-one/shared/interfaces';
 import {
   computeIsFoundation,
-  formatCurrency,
-  formatNumber,
   getDefaultMarketingImpactMonth,
+  isPubliclyDiscoverableProject,
   maskEmailForLogs,
   maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
-  resolveHealthMetricsOverviewKpiClassification,
   resolvePeriodRange,
   summarizeWriterGrants,
 } from '@lfx-one/shared/utils';
@@ -183,7 +191,17 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  InvalidRequestError,
+  isBaseApiError,
+  MicroserviceError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+} from '../errors';
+import { assertMergedRecordValid, mergeFormationRecord, validateFormationRecordBody } from '../helpers/formation-record.helper';
+import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -268,6 +286,19 @@ function buildFoundationFilter(foundationSlug: string): { filter: string; filter
   };
 }
 
+/** The `error` code of a slug→uid JSON error reply (`{"error":"not_found",…}`); `unparseable` for any other JSON body. */
+function parseSlugLookupError(reply: string): string {
+  try {
+    const parsed: unknown = JSON.parse(reply);
+    if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string') {
+      return parsed.error;
+    }
+  } catch {
+    // Not JSON after all; reported as unparseable below.
+  }
+  return 'unparseable';
+}
+
 /**
  * Service for handling project business logic
  */
@@ -338,7 +369,7 @@ export class ProjectService {
     const filtered = await this.fetchAllProjectsFiltered(req, query, failOnPartial);
 
     // Add writer access field to all projects
-    return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
+    return await this.accessCheckService.addProjectWriterToResources(req, filtered);
   }
 
   /**
@@ -362,13 +393,15 @@ export class ProjectService {
 
   /**
    * Fetches a single project by ID
+   * @param strictWriter Propagate writer-check failures instead of returning a false denial (opt-in).
    */
   public async getProjectById(
     req: Request,
     uid: string,
     access: boolean = true,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    strictWriter: boolean = false
   ): Promise<Project> {
     const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
@@ -381,13 +414,21 @@ export class ProjectService {
     }
 
     if (access) {
-      const writerProject = await this.accessCheckService.addAccessToResource(req, project, 'project');
-      // Skip the meeting_coordinator/auditor checks when already a writer. Per model.fga,
-      // `auditor: … or writer or …` — writer already implies auditor, so that round trip can't
-      // change the outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
+      const writerProject = strictWriter
+        ? {
+            ...project,
+            writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'writer_guard' }),
+          }
+        : await this.accessCheckService.addProjectWriterToResource(req, project);
+      // Skip the meeting_coordinator/auditor checks when already a writer. The `writer` field is
+      // resolved from `writer_guard`, and every `writer_guard` holder also holds `auditor_guard`
+      // (bare `writer` composes into `auditor`, `global_writer` into `auditor_guard`). Independently,
+      // both consumers of `auditor` (FormationCardComponent and ProjectContextService's settings-access
+      // check) read `writer === true || auditor === true`,
+      // so the round trip can't change its outcome. `meeting_coordinator: [user]` is a direct-only grant — writer does NOT
       // imply it at the FGA level — but every consumer of this field (e.g. writer.guard.ts) already
       // treats `writer === true` as sufficient on its own before ever reading meetingCoordinator,
-      // and upstream `meetings_creator: writer or meeting_coordinator` makes the same true one level
+      // and upstream `meetings_creator: writer_guard or meeting_coordinator` makes the same true one level
       // up. So the round trip could return a different raw value for a writer, but never a
       // different access outcome — skipping it is safe for that reason alone.
       // Return the field as undefined (omitted) rather than false — false would be a
@@ -422,7 +463,7 @@ export class ProjectService {
       // admin-link guard) — same rationale, and the same Strict variant, as meeting_coordinator above.
       if (includeAuditor) {
         const isAuditor = await this.accessCheckService
-          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor' })
+          .checkSingleAccessStrict(req, { resource: 'project', id: project.uid, access: 'auditor_guard' })
           .catch((error) => {
             logger.warning(req, 'get_project_by_id', 'auditor check failed, skipping field', {
               project_uid: project.uid,
@@ -437,6 +478,34 @@ export class ProjectService {
     }
 
     return project;
+  }
+
+  /**
+   * Fetches a project for an anonymous `/public/api` surface and returns it only when it is publicly
+   * discoverable (`isPubliclyDiscoverableProject`), so callers answer a hidden project exactly as they
+   * would an unknown one rather than leaking its name or existence (lfx-self-serve-ops#437).
+   *
+   * Returns `null` only for a definitive answer: the project is hidden, or upstream rejected the
+   * identifier (400/403/404 — unknown, malformed, or not visible to the caller). Any other failure
+   * (timeout, 5xx, network) is rethrown so each caller applies its safe outage policy: UID feeds return
+   * an error instead of a cacheable empty response; slug/group gates mask it as a non-cacheable refusal.
+   */
+  public async getPubliclyDiscoverableProject(req: Request, uid: string): Promise<Project | null> {
+    let project: Project;
+    try {
+      project = await this.getProjectById(req, uid, false);
+    } catch (error) {
+      if (isBaseApiError(error) && (error.statusCode === 400 || error.statusCode === 403 || error.statusCode === 404)) {
+        // DEBUG, not WARN: the identifier comes straight from an anonymous request, so misses are caller-controlled.
+        logger.debug(req, 'get_publicly_discoverable_project', 'Project not found upstream; treating as not discoverable', {
+          project_uid: uid,
+          status_code: error.statusCode,
+        });
+        return null;
+      }
+      throw error;
+    }
+    return isPubliclyDiscoverableProject(project) ? project : null;
   }
 
   /**
@@ -619,7 +688,7 @@ export class ProjectService {
    *
    * Returns a map keyed by `uid` for O(1) lookup by the caller.
    */
-  public async getProjectsByIds(req: Request, uids: string[] | Set<string>): Promise<Map<string, Project>> {
+  public async getProjectsByIds(req: Request, uids: string[] | Set<string>, options?: ApiRequestOptions): Promise<Map<string, Project>> {
     const idArray = Array.from(new Set(uids)).filter(Boolean);
     if (idArray.length === 0) return new Map();
 
@@ -629,7 +698,7 @@ export class ProjectService {
       batches.push(idArray.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
     }
 
-    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch, options)));
 
     // ROOT is an administrative pseudo-project — never surface it even if a caller accidentally passes its UID.
     const byUid = new Map<string, Project>();
@@ -643,27 +712,26 @@ export class ProjectService {
   }
 
   /**
-   * Fetches a single project by slug using NATS for slug resolution
-   * First resolves slug to ID via NATS, then fetches project data
+   * Resolves a slug via HTTP, preserving missing/denied versus transient failures,
+   * then fetches project data with the existing access and optional role checks.
+   * The NATS resolver returns the same empty reply for misses and internal failures.
    */
   public async getProjectBySlug(
     req: Request,
     projectSlug: string,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    strictWriter: boolean = false
   ): Promise<Project> {
-    const natsResult = await this.getProjectIdBySlug(req, projectSlug);
-
-    if (!natsResult.exists || !natsResult.uid) {
-      throw new ResourceNotFoundError('Project', projectSlug, {
-        operation: 'get_project_by_slug_via_nats',
-        service: 'project_service',
-        path: '/nats/project-slug-lookup',
-      });
-    }
+    const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/slug-to-uid/${encodeURIComponent(projectSlug)}`,
+      'GET'
+    );
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.uid, true, includeMeetingCoordinator, includeAuditor);
+    return this.getProjectById(req, uid, true, includeMeetingCoordinator, includeAuditor, strictWriter);
   }
 
   public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
@@ -681,15 +749,16 @@ export class ProjectService {
     uid: string,
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
-    role?: 'view' | 'manage',
-    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
+    role?: ProjectPermissionRole,
+    manualUserInfo?: { name: string; email: string; username?: string; avatar?: string },
+    duplicateIdentifiers?: string[]
   ): Promise<ProjectSettings> {
     // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
     // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
     // and answers "is this address known?" with a distinguishable 404, so without this gate a
     // read-only caller could probe directory membership through this route off the 404-vs-403
     // split. Strict so an access-service outage fails closed instead of degrading to "not a writer".
-    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
 
     if (!canWrite) {
       throw new AuthorizationError('You do not have permission to manage project permissions', {
@@ -715,6 +784,7 @@ export class ProjectService {
     // Initialize arrays if they don't exist
     if (!updatedSettings.writers) updatedSettings.writers = [];
     if (!updatedSettings.auditors) updatedSettings.auditors = [];
+    if (!updatedSettings.meeting_coordinators) updatedSettings.meeting_coordinators = [];
 
     // Step 3: Determine the backend identifier for array operations.
     // For emails on update/remove: check settings first. If the user is stored without
@@ -722,7 +792,11 @@ export class ProjectService {
     // email directly — calling NATS for such users would fail with NOT_FOUND.
     const originalEmail = usernameOrEmail.includes('@') ? usernameOrEmail.trim().toLowerCase() : '';
     const matchesByEmail = (u: { username?: string; email?: string }): boolean => !u.username && !!originalEmail && u.email?.toLowerCase() === originalEmail;
-    const existingByEmail = originalEmail ? updatedSettings.writers.find(matchesByEmail) || updatedSettings.auditors.find(matchesByEmail) : undefined;
+    const existingByEmail = originalEmail
+      ? updatedSettings.writers.find(matchesByEmail) ||
+        updatedSettings.auditors.find(matchesByEmail) ||
+        updatedSettings.meeting_coordinators.find(matchesByEmail)
+      : undefined;
 
     let backendIdentifier = usernameOrEmail.trim();
     if (originalEmail) {
@@ -746,19 +820,37 @@ export class ProjectService {
 
     // Capture the user's existing UserInfo before removal — used by the 'update' path to
     // avoid a NATS roundtrip when only the role is changing.
-    const existingUserInfo = updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser);
+    const existingUserInfo =
+      updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser) || updatedSettings.meeting_coordinators.find(matchesUser);
 
     // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
     if (operation === 'add' && existingUserInfo) {
-      throw new ConflictError('This person is already on the project', 'ALREADY_ON_PROJECT', {
+      throw new ConflictError('This person is already on the project', PROJECT_USER_ALREADY_ON_PROJECT_CODE, {
         operation: 'add_user_project_permissions',
         service: 'project_service',
       });
     }
 
-    // Remove user from both arrays first (for all operations)
-    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u));
-    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u));
+    // A client-side collapsed dual-role row (#3218) can carry one or more "duplicate"
+    // identifiers for the other backend entries representing the same person — a role
+    // change or removal on the merged row must clear those too, or they survive and the
+    // user reappears with a stale role after a refresh (#3245/#3244). These are matched
+    // directly against the settings already fetched above, with NO resolveEmailToUsername
+    // call: unlike `backendIdentifier`, a duplicate identifier is never looked up against
+    // the NATS directory, which is what let a stale/already-cleared email fallback resolve
+    // to and delete an unrelated, just-written real-username entry (Cursor Bugbot #3244
+    // review, GH-3276). Matching mirrors `matchesUser`: an identifier containing '@' matches
+    // a no-username entry's email case-insensitively (the backend lowercases email too);
+    // anything else is treated as a username and matched case-sensitively, since LFID
+    // username case-uniqueness isn't guaranteed.
+    const duplicateIdentifierList = (duplicateIdentifiers ?? []).map((id) => id.trim()).filter(Boolean);
+    const matchesAnyDuplicate = (u: { username?: string; email?: string }): boolean =>
+      duplicateIdentifierList.some((id) => (id.includes('@') ? !u.username && u.email?.toLowerCase() === id.toLowerCase() : u.username === id));
+
+    // Remove user from all arrays first (for all operations)
+    updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
+    updatedSettings.meeting_coordinators = updatedSettings.meeting_coordinators.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
@@ -805,13 +897,16 @@ export class ProjectService {
         userInfo = { ...fetchedUserInfo };
       }
 
+      // A user holds exactly one role, so they were removed from every list above and re-added to one.
       if (role === 'manage') {
         updatedSettings.writers = [...updatedSettings.writers, userInfo];
+      } else if (role === 'meeting_coordinator') {
+        updatedSettings.meeting_coordinators = [...updatedSettings.meeting_coordinators, userInfo];
       } else {
         updatedSettings.auditors = [...updatedSettings.auditors, userInfo];
       }
     }
-    // For 'remove' operation, user is already removed from both arrays above
+    // For 'remove' operation, user is already removed from all arrays above
 
     // Upstream rejects empty strings on validated fields; send null instead so the key is preserved.
     const sanitizedSettings = nullifyEmptyStrings(updatedSettings);
@@ -860,7 +955,7 @@ export class ProjectService {
     // addresses through this route and read directory membership off the 404-vs-403 split.
     // Strict so an access-service outage fails closed instead of degrading to a definitive
     // "not a writer".
-    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' });
 
     if (!canWrite) {
       throw new AuthorizationError('You do not have permission to update project staff', {
@@ -946,6 +1041,49 @@ export class ProjectService {
     });
 
     return result;
+  }
+
+  /**
+   * Updates a project's stage and legal-entity fields from the formation card (#5134). Upstream's
+   * `PUT /projects/{uid}` is a full replace, so the raw stored project is read with its ETag, only the
+   * caller's keys are applied, and the whole object is written back under `If-Match`.
+   *
+   * Guard order: body validation, then `writer_guard` on the project AND `team:formation`
+   * membership (both fail-closed), all before any upstream read.
+   */
+  public async updateFormationRecord(req: Request, uid: string, body: unknown): Promise<Record<string, unknown>> {
+    const operation = 'update_formation_record';
+    const edits = validateFormationRecordBody(body);
+
+    const [canWrite, isFormationTeamMember] = await Promise.all([
+      this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer_guard' }),
+      checkFormationTeamMembership(this.accessCheckService, req),
+    ]);
+
+    if (!canWrite) {
+      throw new AuthorizationError(FORMATION_RECORD_ERROR_MESSAGES.notWriter, { operation, service: 'project_service', code: NOT_PROJECT_WRITER_CODE });
+    }
+    if (!isFormationTeamMember) {
+      throw new AuthorizationError(FORMATION_RECORD_ERROR_MESSAGES.notFormationTeam, {
+        operation,
+        service: 'project_service',
+        code: FORMATION_TEAM_REQUIRED_CODE,
+      });
+    }
+
+    const startTime = logger.startOperation(req, operation, { project_id: uid, changed_keys: Object.keys(edits) });
+
+    try {
+      const { data: stored, etag } = await this.etagService.fetchWithETag<Record<string, unknown>>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, operation);
+      const merged = mergeFormationRecord(stored, edits);
+      assertMergedRecordValid(merged);
+      const result = await this.etagService.updateWithETag<Record<string, unknown>>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, etag, merged, operation);
+
+      logger.success(req, operation, startTime, { project_id: uid, changed_keys: Object.keys(edits) });
+      return result;
+    } catch (error) {
+      throw this.mapFormationRecordError(error, req, uid, operation);
+    }
   }
 
   /**
@@ -1691,72 +1829,6 @@ export class ProjectService {
   }
 
   /**
-   * Get the health-metrics-overview "Foundation" rail summary (Health Metrics v2 doc,
-   * `HEALTH_OVERVIEW_PROFILE`). Single row, no period suffix.
-   * @param foundationSlug - Foundation slug to filter by
-   * @returns Foundation summary fields, formatted for direct display
-   */
-  public async getFoundationProfileSummary(foundationSlug: string): Promise<HealthMetricsOverviewFoundationSummary> {
-    interface HealthOverviewProfileRow {
-      PROJECT_COUNT: number | null;
-      MEMBERSHIP_TIER_COUNT: number | null;
-      BOARD_SEAT_COUNT: number | null;
-      RENEWALS_NEXT_90D_COUNT: number | null;
-    }
-
-    const query = `
-      SELECT
-        project_count,
-        membership_tier_count,
-        board_seat_count,
-        renewals_next_90d_count
-      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_PROFILE
-      WHERE foundation_slug = ?
-      LIMIT 1
-    `;
-
-    let result: SnowflakeQueryResult<HealthOverviewProfileRow>;
-    try {
-      result = await this.snowflakeService.execute<HealthOverviewProfileRow>(query, [foundationSlug], { expectMissingObject: true });
-    } catch (error) {
-      // isMissingObjectError also matches a missing GRANT, not just a missing table — worded
-      // neutrally below since `err` is what actually disambiguates the two cases.
-      if (!SnowflakeService.isMissingObjectError(error)) throw error;
-      logger.warning(
-        undefined,
-        'get_foundation_profile_summary',
-        'Health overview profile query hit a missing-object/not-authorized error; returning default response',
-        {
-          foundation_slug: foundationSlug,
-          err: error,
-        }
-      );
-      return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
-    }
-
-    logger.debug(undefined, 'get_foundation_profile_summary', 'Fetched foundation profile summary', {
-      foundation_slug: foundationSlug,
-      row_count: result.rows.length,
-    });
-
-    const row = result.rows[0];
-    if (!row) {
-      return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
-    }
-
-    // A null column is unmeasured, not zero — render it as "—" rather than "0 tiers".
-    const format = (value: number | null, render: (count: number) => string): string => (value === null ? '—' : render(value));
-
-    return {
-      dataAvailable: true,
-      projects: format(row.PROJECT_COUNT, (count) => String(count)),
-      tiers: format(row.MEMBERSHIP_TIER_COUNT, (count) => `${count} ${count === 1 ? 'tier' : 'tiers'}`),
-      board: format(row.BOARD_SEAT_COUNT, (count) => `${count} ${count === 1 ? 'seat' : 'seats'}`),
-      nextRenewals: format(row.RENEWALS_NEXT_90D_COUNT, (count) => `${count} in the next 90 days`),
-    };
-  }
-
-  /**
    * Get monthly average active contributors for a foundation (last 12 months)
    * Aggregates FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY by month
    * @param foundationSlug - Foundation slug to filter by
@@ -2323,8 +2395,10 @@ export class ProjectService {
     // failed root means no reliable root group to anchor the frontend's grouping fallback, so
     // Promise.all propagates a root-query rejection instead of returning an incomplete 200
     // (GH-1607 review).
+    // Marked incomplete by any branch the traversal or detail fan-out drops, so callers can tell a partial list.
+    const budget = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES, incomplete: false };
     const [subFoundations, rootDetail] = await Promise.all([
-      this.discoverSubFoundations(req, rootProject.uid, rootProject.slug, rootProject.name),
+      this.discoverSubFoundations(req, rootProject.uid, rootProject.slug, rootProject.name, 0, budget),
       this.getFoundationProjectsDetail(rootProject.slug),
     ]);
 
@@ -2356,6 +2430,7 @@ export class ProjectService {
           const tagged = detail.projects.map((project) => ({ ...project, groupFoundationSlug: groupSlug, groupFoundationName: groupName }));
           bucket.set(groupSlug, [...(bucket.get(groupSlug) ?? []), ...tagged]);
         } catch (error) {
+          budget.incomplete = true;
           logger.warning(req, 'get_foundation_projects_detail_grouped', 'Failed to fetch detail for a discovered foundation, omitting its own rows', {
             foundation_slug: slug,
             err: error,
@@ -2402,9 +2477,10 @@ export class ProjectService {
       foundation_slug: foundationSlug,
       group_count: groups.length,
       total_count: totalCount,
+      complete: !budget.incomplete,
     });
 
-    return { groups, totalCount };
+    return { groups, totalCount, complete: !budget.incomplete };
   }
 
   /**
@@ -3995,16 +4071,69 @@ export class ProjectService {
     }
   }
 
-  public async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
+  /**
+   * Resolves a project uid to its slug over NATS (`lfx.projects-api.get_slug`), or `null` when no project
+   * has that uid. The lookup is project metadata the service answers without a user permission check, so
+   * a caller authorized on a project by a marketing grant can name it by uid without also holding
+   * `viewer` on it (#4507). Unlike {@link getProjectIdBySlug}, a failure never reads as a miss: the
+   * caller is about to authorize on the answer, so a lost answer is a 503 and an unusable one a 502.
+   */
+  public async getProjectSlugByUid(req: Request, uid: string): Promise<string | null> {
+    const errorOptions = { operation: 'get_project_slug_by_uid', service: 'project_service', path: '/nats/project-get-slug' };
+    const codec = this.natsService.getCodec();
+
+    let reply: string;
+    try {
+      const response = await this.natsService.request(NatsSubjects.PROJECT_GET_SLUG, codec.encode(uid), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      reply = codec.decode(response.data).trim();
+    } catch (error) {
+      // 503 + transport marker, not a miss: a lost answer (timeout, no responder, closed connection)
+      // says nothing about whether the project exists.
+      throw new MicroserviceError('The project lookup could not be completed. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+        ...errorOptions,
+        originalError: error instanceof Error ? error : undefined,
+        transportFailure: true,
+      });
+    }
+
+    // A miss is answered with the service's JSON error envelope, {"error":"not_found",...}.
+    const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+    if (replyError === 'not_found') {
+      logger.debug(req, 'get_project_slug_by_uid', 'Project uid not found via NATS', { uid });
+      return null;
+    }
+    if (replyError !== null || !reply) {
+      // 502, not a miss: the service answered, but with nothing usable as a slug.
+      throw new MicroserviceError('The project service returned an invalid response. Please try again.', 502, 'BAD_GATEWAY', {
+        ...errorOptions,
+        originalError: new Error(`Project uid lookup failed: ${replyError ?? 'empty reply'}`),
+      });
+    }
+    return reply;
+  }
+
+  /**
+   * Resolves a project slug to its uid over NATS. By default a timeout or 503 is reported as a missing
+   * project (`exists: false`); pass `unavailableAsMissing: false` to have it throw instead, for a
+   * caller that must tell "couldn't check" apart from "no such project".
+   */
+  public async getProjectIdBySlug(
+    req: Request,
+    slug: string,
+    { unavailableAsMissing = true }: { unavailableAsMissing?: boolean } = {}
+  ): Promise<ProjectSlugToIdResponse> {
     const codec = this.natsService.getCodec();
 
     try {
       const response = await this.natsService.request(NatsSubjects.PROJECT_SLUG_TO_UID, codec.encode(slug), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
-      const uid = codec.decode(response.data);
+      const reply = codec.decode(response.data).trim();
 
-      // Check if we got a valid project ID
-      if (!uid || uid.trim() === '') {
+      // The responder answers a miss (unknown slug, or a project hidden from it) with a JSON error body
+      // such as {"error":"not_found","message":"project not found"} rather than an empty reply.
+      // Anything else in that shape is a real failure, never a uid.
+      const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+      if (!reply || replyError === 'not_found') {
         logger.debug(req, 'get_project_id_by_slug', 'Project slug not found via NATS', { slug });
         return {
           uid: '',
@@ -4012,9 +4141,12 @@ export class ProjectService {
           exists: false,
         };
       }
+      if (replyError !== null) {
+        throw new Error(`Project slug lookup failed: ${replyError}`);
+      }
 
       return {
-        uid: uid.trim(),
+        uid: reply,
         slug,
         exists: true,
       };
@@ -4024,8 +4156,8 @@ export class ProjectService {
         slug,
       });
 
-      // If it's a timeout or no responder error, treat as not found
-      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+      // If it's a timeout or no responder error, treat as not found (unless the caller opted out)
+      if (unavailableAsMissing && error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           uid: '',
           slug,
@@ -6183,137 +6315,6 @@ export class ProjectService {
   }
 
   /**
-   * Get Health Metrics Overview "Foundation Revenue" rail data from Snowflake (LFXV2-3365), for every
-   * selectable period in one read — the table keys on `foundation_slug` alone and carries the period
-   * as a column suffix, so per-period queries would re-read the same rows to project other columns.
-   * One row per `revenue_domain` (memberships/events/training/...); `foundation_total_revenue_usd{suffix}`
-   * repeats across all rows for the same foundation, so it's read once from the first row. Returns one
-   * entry per range in {@link buildHealthMetricsOverviewPeriods}; a foundation with no rows, or a period
-   * with a null total, yields `{ dataAvailable: false, total: 0, streams: [] }` for that range.
-   */
-  public async getHealthOverviewRevenue(foundationSlug: string): Promise<HealthMetricsOverviewRevenueByRange> {
-    logger.debug(undefined, 'get_health_overview_revenue', 'Fetching health overview revenue', { foundation_slug: foundationSlug });
-
-    const ranges = ProjectService.getHealthOverviewRanges();
-    const query = `
-      SELECT
-        revenue_domain AS REVENUE_DOMAIN,
-        ${ranges
-          .flatMap((range) =>
-            HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS.map(
-              (column) => `${column.toLowerCase()}${this.getRangeSuffix(range)} AS ${ProjectService.revenueAlias(column, range)}`
-            )
-          )
-          .join(',\n        ')}
-      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE
-      WHERE foundation_slug = ?
-      ORDER BY revenue_domain
-    `;
-
-    const result = await this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug]);
-    const rows = result.rows ?? [];
-
-    if (rows.length === 0) {
-      logger.warning(undefined, 'get_health_overview_revenue', 'No revenue rows for foundation', { foundation_slug: foundationSlug });
-      return Object.fromEntries(ranges.map((range) => [range, { dataAvailable: false, total: 0, streams: [] }]));
-    }
-
-    const byRange: HealthMetricsOverviewRevenueByRange = {};
-    for (const range of ranges) {
-      // The view is one row per revenue_domain, not per period, so a foundation with a row here
-      // always has rows.length > 0 even when this period has no data yet. A null total for the
-      // period (rather than row absence) is the real "no data for this period" signal.
-      const total = ProjectService.toNullableNumber(rows[0]?.[ProjectService.revenueAlias('FOUNDATION_TOTAL_REVENUE_USD', range)]);
-
-      if (total === null) {
-        byRange[range] = { dataAvailable: false, total: 0, streams: [] };
-        continue;
-      }
-
-      byRange[range] = {
-        dataAvailable: true,
-        total,
-        streams: rows.map((row) => ({
-          key: String(row['REVENUE_DOMAIN'] ?? '').toLowerCase(),
-          value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]),
-        })),
-      };
-    }
-
-    return byRange;
-  }
-
-  /**
-   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365), for every selectable
-   * period in one read — the table keys on `foundation_slug` alone and carries the period as a column
-   * suffix, so per-period queries would re-read the same row to project other columns. Returns one entry
-   * per range in {@link buildHealthMetricsOverviewPeriods}; a missing foundation row yields only the
-   * Engagement state for every range. Events, Training, Members, Non-Members, and Code all have stat
-   * columns in this table — Engagement isn't part of its contract, so its state comes from
-   * {@link getHealthOverviewEngagementCounts} instead. Members/Non-Members columns aren't period-suffixed (unlike
-   * Events/Training/Code). Code has no paired `_STATUS` column, so its classification is always `'none'` —
-   * the tile renders an LFX Insights link instead of a status word for this area anyway.
-   */
-  public async getHealthOverviewKpis(foundationSlug: string): Promise<HealthMetricsOverviewKpisByRange> {
-    logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug });
-
-    const ranges = ProjectService.getHealthOverviewRanges();
-    // Period-suffixed columns are selected once per range; the members/non-members columns carry no
-    // suffix, so they're selected once and repeat across every range's projected row.
-    const query = `
-      SELECT
-        ${ranges
-          .flatMap((range) =>
-            HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS.map(
-              (column) => `${column.toLowerCase()}${this.getRangeSuffix(range)} AS ${ProjectService.kpiAlias(column, range)}`
-            )
-          )
-          .join(',\n        ')},
-        members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
-        members_status AS MEMBERS_STATUS,
-        non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
-        non_members_status AS NON_MEMBERS_STATUS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS
-      WHERE foundation_slug = ?
-      LIMIT 1
-    `;
-    // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
-    // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
-
-    // The KPI leg is isolated like the engagement leg, so either read failing leaves the other's tiles.
-    const [wideRow, engagementCounts] = await Promise.all([
-      this.snowflakeService
-        .execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug])
-        .then((result) => result.rows?.[0])
-        .catch((error: unknown) => {
-          logger.warning(undefined, 'get_health_overview_kpis', 'Health overview KPIs unavailable', { foundation_slug: foundationSlug, err: error });
-          return null;
-        }),
-      this.getHealthOverviewEngagementCounts(foundationSlug, ranges),
-    ]);
-    // An unreadable engagement read leaves the area out, so the tile falls back to its neutral placeholder.
-    const engagementStates = (range: HealthMetricsRange): HealthMetricsAreaState[] => {
-      const counts = engagementCounts?.[range];
-      return counts ? [ProjectService.buildHealthOverviewEngagementAreaState(counts)] : [];
-    };
-
-    // `null` is a failed read (already logged); `undefined` is a foundation with no KPI row.
-    if (!wideRow) {
-      if (wideRow === undefined) {
-        logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug });
-      }
-      return Object.fromEntries(ranges.map((range) => [range, engagementStates(range)]));
-    }
-
-    return Object.fromEntries(
-      ranges.map((range) => [
-        range,
-        [...engagementStates(range), ...ProjectService.buildHealthOverviewKpiAreaStates(ProjectService.projectKpiRow(wideRow, range))],
-      ])
-    );
-  }
-
-  /**
    * Get event growth metrics from Snowflake
    * Queries ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS (row-level, authoritative source)
    * instead of the pre-aggregated NORTH_STAR_EVENT_GROWTH / EVENT_GROWTH_TOP_EVENTS views.
@@ -7327,8 +7328,11 @@ export class ProjectService {
    * @param foundationUid - The foundation UID to resolve descendant project UIDs for
    * @returns Array of UIDs including the foundation itself and every project discovered while
    *   walking its full descendant tree, up to the depth/node caps above
+   * @param options.onIncomplete - Called when a container's child lookup fails and its children are
+   *   left out. The cap-bounded result above is stable, but this one is transient, so a caller that
+   *   caches the UIDs uses it to avoid storing a scope that a retry would complete.
    */
-  public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
+  public async getFoundationProjectUids(req: Request, foundationUid: string, options: { onIncomplete?: () => void } = {}): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
 
     const uids = new Set<string>([foundationUid]);
@@ -7377,6 +7381,7 @@ export class ProjectService {
         } catch (error) {
           // If one container's child lookup fails, keep the rest — a partial result across
           // a wide descendant tree is better than dropping all of them.
+          options.onIncomplete?.();
           logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve children for a container, omitting its direct children', {
             foundation_uid: foundationUid,
             container_uid: containerUid,
@@ -7417,7 +7422,7 @@ export class ProjectService {
   }
 
   /**
-   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid).
+   * Enrich items that have a project_uid with project metadata (name, slug, is_foundation, parent_uid, logo_url).
    * Resolves every referenced project in one batched query-service lookup (`getProjectsByIds`,
    * 100 uids per `filters_or` query, fail-soft per batch) instead of fanning out to per-project
    * `getProjectById` calls — and ungated, so callers without a direct project viewer relation
@@ -7425,8 +7430,9 @@ export class ProjectService {
    */
   public async enrichWithProjectData<T extends { project_uid: string }>(
     req: Request,
-    items: T[]
-  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string })[]> {
+    items: T[],
+    options?: ApiRequestOptions
+  ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string; project_logo_url: string })[]> {
     const projectUids = [...new Set(items.map((item) => item.project_uid).filter(Boolean))];
 
     logger.debug(req, 'enrich_with_project_data', 'Enriching items with project metadata', {
@@ -7434,7 +7440,7 @@ export class ProjectService {
       unique_projects: projectUids.length,
     });
 
-    const projectMap = await this.getProjectsByIds(req, projectUids);
+    const projectMap = await this.getProjectsByIds(req, projectUids, options);
 
     logger.debug(req, 'enrich_with_project_data', 'Project enrichment complete', {
       resolved: projectMap.size,
@@ -7453,6 +7459,7 @@ export class ProjectService {
         // Mirrors the meeting-detail enrichment's fail-soft contract.
         is_foundation: project ? computeIsFoundation(project) : ((item as any).is_foundation ?? undefined),
         parent_project_uid: project?.parent_uid || (item as any).parent_project_uid || '',
+        project_logo_url: project?.logo_url || (item as any).project_logo_url || '',
       };
     });
   }
@@ -7522,22 +7529,84 @@ export class ProjectService {
   // ── Project Documents ──────────────────────────────────────────────────────
 
   public async getProjectDocuments(req: Request, projectId: string): Promise<ProjectDocument[]> {
-    logger.debug(req, 'get_project_documents', 'Fetching project folders, links, and files via indexer', {
+    logger.debug(req, 'get_project_documents', 'Fetching project documents via indexer', {
       project_uid: projectId,
     });
 
-    // All three resource types come from the indexer:
-    // - project_document (files): no upstream LIST endpoint exists.
-    // - project_folder / project_link: upstream GET /projects/{uid}/folders and /links return
-    //   403 (LIST endpoints not authorized for callers in prod). Indexer reads work because
-    //   project_folder / project_link writes publish to NATS index subjects on every create.
-    const [folders, links, files] = await Promise.all([
-      fetchAllQueryResources<ProjectFolderQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectFolderQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_folder',
+    // Stage 1: Resolve committee UIDs and names for this project.
+    // committee_link and committee_document are indexed by committee_uid only — no project_uid tag —
+    // so we must fetch committee UIDs first, then query those types via filters_or.
+    const committees = await fetchAllQueryResources<{ uid: string; name?: string }>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; name?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee',
           tags: `project_uid:${projectId}`,
           ...(pageToken && { page_token: pageToken }),
-        })
+        }),
+      { failOnPartial: true }
+    ).catch((err) => {
+      logger.warning(req, 'get_project_documents', 'Failed to fetch committee UIDs, committee docs will be skipped', {
+        project_uid: projectId,
+        err,
+      });
+      return [] as { uid: string; name?: string }[];
+    });
+
+    const committeeUids = committees.map((c) => c.uid);
+    const committeeNameByUid = new Map(committees.map((c) => [c.uid, c.name ?? '']));
+    // Chunk into batches of QUERY_SERVICE_FILTERS_OR_BATCH_SIZE to stay within query-service URL limits.
+    const committeeFiltersBatched: string[][] = [];
+    for (let i = 0; i < committeeUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      committeeFiltersBatched.push(committeeUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE).map((uid) => `committee_uid:${uid}`));
+    }
+
+    // Fetches a committee-indexed resource type across all filter batches and merges the results.
+    const fetchCommitteeBatched = async <T>(type: string, label: string): Promise<T[]> => {
+      if (committeeFiltersBatched.length === 0) return [];
+      const batchResults = await Promise.all(
+        committeeFiltersBatched.map((batch) =>
+          fetchAllQueryResources<T>(req, (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<T>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type,
+              filters_or: batch,
+              ...(pageToken && { page_token: pageToken }),
+            })
+          ).catch((err) => {
+            logger.warning(req, 'get_project_documents', `Failed to fetch ${label} via query service, returning empty list for batch`, {
+              project_uid: projectId,
+              err,
+            });
+            return [] as T[];
+          })
+        )
+      );
+      return batchResults.flat();
+    };
+
+    // Stage 2: Fetch all resource types in parallel.
+    const [
+      folders,
+      links,
+      files,
+      groupsioArtifacts,
+      committeeLinks,
+      committeeDocs,
+      meetingAttachments,
+      pastAttachments,
+      pastRecordings,
+      pastTranscripts,
+      pastSummaries,
+    ] = await Promise.all([
+      fetchAllQueryResources<ProjectFolderQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectFolderQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_folder',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch project folders via query service, returning empty list', {
           project_uid: projectId,
@@ -7545,12 +7614,15 @@ export class ProjectService {
         });
         return [] as ProjectFolderQueryResult[];
       }),
-      fetchAllQueryResources<ProjectLinkQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_link',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<ProjectLinkQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_link',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch project links via query service, returning empty list', {
           project_uid: projectId,
@@ -7558,18 +7630,119 @@ export class ProjectService {
         });
         return [] as ProjectLinkQueryResult[];
       }),
-      fetchAllQueryResources<ProjectDocumentQueryResult>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'project_document',
-          tags: `project_uid:${projectId}`,
-          ...(pageToken && { page_token: pageToken }),
-        })
+      fetchAllQueryResources<ProjectDocumentQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_document',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
       ).catch((err) => {
         logger.warning(req, 'get_project_documents', 'Failed to fetch project files via query service, returning empty list', {
           project_uid: projectId,
           err,
         });
         return [] as ProjectDocumentQueryResult[];
+      }),
+      fetchAllQueryResources<GroupsIOArtifactQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOArtifactQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_artifact',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch mailing list artifacts via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as GroupsIOArtifactQueryResult[];
+      }),
+      fetchCommitteeBatched<CommitteeLinkQueryResult>('committee_link', 'committee links'),
+      fetchCommitteeBatched<CommitteeDocumentQueryResult>('committee_document', 'committee documents'),
+      fetchAllQueryResources<MeetingAttachment>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_meeting_attachment',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch meeting attachments via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as MeetingAttachment[];
+      }),
+      fetchAllQueryResources<PastMeetingAttachment>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_attachment',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting attachments via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as PastMeetingAttachment[];
+      }),
+      fetchAllQueryResources<PastMeetingRecordingQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecordingQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_recording',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting recordings via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as PastMeetingRecordingQueryResult[];
+      }),
+      fetchAllQueryResources<PastMeetingTranscriptQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingTranscriptQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_transcript',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting transcripts via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as PastMeetingTranscriptQueryResult[];
+      }),
+      fetchAllQueryResources<PastMeetingSummaryQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummaryQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'v1_past_meeting_summary',
+            tags: `project_uid:${projectId}`,
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to fetch past meeting summaries via query service, returning empty list', {
+          project_uid: projectId,
+          err,
+        });
+        return [] as PastMeetingSummaryQueryResult[];
       }),
     ]);
 
@@ -7581,6 +7754,7 @@ export class ProjectService {
       updated_at: f.updated_at,
       uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
       project_uid: f.project_uid,
+      document_source: 'project' as const,
     }));
 
     const linkDocs: ProjectDocument[] = (links || []).map((l) => ({
@@ -7594,6 +7768,7 @@ export class ProjectService {
       uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
       parent_uid: l.folder_uid,
       project_uid: l.project_uid,
+      document_source: 'project' as const,
     }));
 
     const fileDocs: ProjectDocument[] = (files || []).map((f) => ({
@@ -7608,9 +7783,170 @@ export class ProjectService {
       uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
       parent_uid: f.folder_uid,
       project_uid: f.project_uid,
+      document_source: 'project' as const,
     }));
 
-    return [...folderDocs, ...linkDocs, ...fileDocs];
+    // Resolve mailing list titles for groupsio artifacts. Query by project_uid, then
+    // match on the numeric group_id field (groupsio_mailing_list_uid tags hold the
+    // mailing list's UUID uid, not the numeric group_id).
+    const mailingListByGroupId = new Map<number, { title: string; uid: string }>();
+    if (groupsioArtifacts && groupsioArtifacts.length > 0) {
+      const mlResults = await fetchAllQueryResources<GroupsIOMailingList>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'groupsio_mailing_list',
+            tags: [`project_uid:${projectId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true }
+      ).catch((err) => {
+        logger.warning(req, 'get_project_documents', 'Failed to resolve mailing list names, names will be omitted', {
+          project_uid: projectId,
+          error: err instanceof Error ? err.message : 'Unknown error',
+        });
+        return [] as GroupsIOMailingList[];
+      });
+      for (const ml of mlResults) {
+        if (ml.group_id != null && ml.title) {
+          mailingListByGroupId.set(ml.group_id, { title: ml.title, uid: ml.uid });
+        }
+      }
+    }
+
+    const groupsioDocs: ProjectDocument[] = (groupsioArtifacts || []).map((a) => {
+      const mailingList = a.group_id ? mailingListByGroupId.get(a.group_id) : undefined;
+      const mailingListTitle = mailingList?.title;
+      return {
+        uid: `groupsio_artifact:${a.artifact_id}`,
+        type: 'link' as const,
+        name: a.filename || a.link_url || mailingListTitle || a.artifact_id,
+        url: a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url),
+        mime_type: a.media_type,
+        created_at: a.last_posted_at || a.created_at,
+        project_uid: a.project_uid,
+        document_source: 'mailing_list' as const,
+        document_source_name: mailingListTitle ?? '',
+        mailing_list_uid: mailingList?.uid,
+        document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
+      };
+    });
+
+    const committeeLinkDocs: ProjectDocument[] = (committeeLinks || [])
+      .filter((l) => !!l.url)
+      .map((l) => ({
+        uid: `committee_link:${l.uid}`,
+        type: 'link' as const,
+        name: l.name,
+        url: l.url,
+        created_at: l.created_at,
+        document_source: 'committee' as const,
+        document_source_name: l.committee_uid ? (committeeNameByUid.get(l.committee_uid) ?? '') : '',
+        committee_uid: l.committee_uid,
+      }));
+
+    const committeeFileDocs: ProjectDocument[] = (committeeDocs || []).map((f) => ({
+      uid: `committee_document:${f.uid}`,
+      type: 'file' as const,
+      name: f.name,
+      description: f.description,
+      file_size: f.file_size,
+      mime_type: f.content_type,
+      created_at: f.created_at,
+      updated_at: f.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
+      document_source: 'committee' as const,
+      document_source_name: f.committee_uid ? (committeeNameByUid.get(f.committee_uid) ?? '') : '',
+      committee_uid: f.committee_uid,
+    }));
+
+    const meetingAttachmentDocs: ProjectDocument[] = (meetingAttachments || []).map((a) => ({
+      uid: `meeting_attachment:${a.uid}`,
+      type: 'link' as const,
+      name: a.name,
+      url: a.link ?? a.file_url,
+      mime_type: a.file_content_type,
+      created_at: a.created_at,
+      updated_at: a.updated_at,
+      document_source: 'meeting' as const,
+      document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
+    }));
+
+    const pastAttachmentDocs: ProjectDocument[] = (pastAttachments || []).map((a) => ({
+      uid: `past_meeting_attachment:${a.uid}`,
+      type: 'link' as const,
+      name: a.name,
+      url: a.link ?? a.file_url,
+      mime_type: a.file_content_type,
+      created_at: a.created_at,
+      updated_at: a.updated_at,
+      document_source: 'meeting' as const,
+      document_kind: a.type === 'link' ? ('link' as const) : ('file' as const),
+    }));
+
+    const pastRecordingDocs: ProjectDocument[] = (pastRecordings || []).map((r) => ({
+      uid: `past_meeting_recording:${r.id}`,
+      type: 'link' as const,
+      name: r.title || 'Recording',
+      url: r.sessions?.[0]?.share_url ?? r.recording_files?.[0]?.play_url,
+      created_at: r.start_time || r.created_at,
+      document_source: 'recording' as const,
+      document_source_name: r.title || '',
+      past_meeting_id: r.meeting_and_occurrence_id,
+    }));
+
+    const pastTranscriptDocs: ProjectDocument[] = (pastTranscripts || []).map((t) => ({
+      uid: `past_meeting_transcript:${t.id}`,
+      type: 'link' as const,
+      name: t.title || 'Transcript',
+      url: t.sessions?.[0]?.share_url ?? t.recording_files?.[0]?.download_url,
+      created_at: t.start_time || t.created_at,
+      document_source: 'transcript' as const,
+      document_source_name: t.title || '',
+      past_meeting_id: t.meeting_and_occurrence_id,
+    }));
+
+    const pastSummaryDocs: ProjectDocument[] = (pastSummaries || []).map((s) => ({
+      uid: `past_meeting_summary:${s.id}`,
+      type: 'link' as const,
+      name: s.summary_title || s.zoom_meeting_topic || 'Meeting Summary',
+      created_at: s.summary_start_time || s.created_at,
+      document_source: 'summary' as const,
+      document_source_name: s.zoom_meeting_topic || '',
+      past_meeting_id: s.meeting_and_occurrence_id,
+      summary_uid: s.id,
+      // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
+      summary_content: s.edited_content || s.content,
+    }));
+
+    logger.debug(req, 'get_project_documents', 'Fetched all project document types', {
+      project_uid: projectId,
+      folders: folderDocs.length,
+      links: linkDocs.length,
+      files: fileDocs.length,
+      groupsio_artifacts: groupsioDocs.length,
+      committee_links: committeeLinkDocs.length,
+      committee_files: committeeFileDocs.length,
+      meeting_attachments: meetingAttachmentDocs.length,
+      past_attachments: pastAttachmentDocs.length,
+      past_recordings: pastRecordingDocs.length,
+      past_transcripts: pastTranscriptDocs.length,
+      past_summaries: pastSummaryDocs.length,
+    });
+
+    return [
+      ...folderDocs,
+      ...linkDocs,
+      ...fileDocs,
+      ...groupsioDocs,
+      ...committeeLinkDocs,
+      ...committeeFileDocs,
+      ...meetingAttachmentDocs,
+      ...pastAttachmentDocs,
+      ...pastRecordingDocs,
+      ...pastTranscriptDocs,
+      ...pastSummaryDocs,
+    ];
   }
 
   /**
@@ -7863,20 +8199,25 @@ export class ProjectService {
   }
 
   /**
-   * Deletes a project folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a project folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteProjectDocument(req: Request, projectId: string, documentId: string, documentType: string): Promise<void> {
-    // Defense-in-depth: controller validates this too, but a typo like `type=file` should
-    // never silently fall through to the link path on a destructive route.
-    if (documentType !== 'folder' && documentType !== 'link') {
-      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Only 'folder' and 'link' are supported.`, {
+  public async deleteProjectDocument(req: Request, projectId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: controller validates this too, but an unknown type must never
+    // silently fall through to another resource's path on a destructive route.
+    if (!DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_DELETE_TYPES.join(', ')}.`, {
         operation: 'delete_project_document',
         service: 'project_service',
       });
     }
 
-    const resourcePath = documentType === 'folder' ? `/projects/${projectId}/folders/${documentId}` : `/projects/${projectId}/links/${documentId}`;
+    if (documentType === 'folder') {
+      await this.assertProjectFolderEmpty(req, projectId, documentId);
+    }
+
+    const resourcePath = `/projects/${projectId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<ProjectDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_project_document');
@@ -8069,71 +8410,24 @@ export class ProjectService {
     }
   }
 
-  /**
-   * Engagement tile counts for every period in one read of `ENGAGEMENT_GROUP_ATTENDANCE`, using the
-   * Engagement tab's own rules: non-dormant groups with enough meetings and a non-null rate, and those below the low-attendance threshold.
-   * A stopgap until `HEALTH_OVERVIEW_KPIS` carries engagement columns. Any failure logs and returns
-   * `null`, so a problem here never takes down the other five tiles.
-   */
-  private async getHealthOverviewEngagementCounts(
-    foundationSlug: string,
-    ranges: HealthMetricsRange[]
-  ): Promise<Partial<Record<HealthMetricsRange, HealthOverviewEngagementCounts>> | null> {
-    // Each range's columns sit beside their binds, so the `?`s and bind values can't drift apart.
-    const built = ranges.map((range) => {
-      const suffix = this.getRangeSuffix(range);
-      const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ? AND attendance_pct${suffix} IS NOT NULL`;
-      return {
-        sql: [
-          `COUNT(meetings_count${suffix}) AS MEASURED_GROUPS__${range}`,
-          `COUNT_IF(${rated}) AS ACTIVE_GROUPS__${range}`,
-          `COUNT_IF(${rated} AND attendance_pct${suffix} < ?) AS LOW_ATTENDANCE_GROUPS__${range}`,
-        ],
-        binds: [
-          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-          HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
-        ],
-      };
-    });
-    const columns = built.flatMap((range) => range.sql);
-    const binds: (string | number)[] = [...built.flatMap((range) => range.binds), foundationSlug];
-    const query = `
-      SELECT
-        ${columns.join(',\n        ')}
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE
-      WHERE foundation_slug = ?
-    `;
+  /** Maps upstream failures on the formation-record read/write to the #5134 error table. */
+  private mapFormationRecordError(error: unknown, req: Request, uid: string, operation: string): unknown {
+    const statusCode = (error as { statusCode?: number } | null)?.statusCode;
+    const options = { operation, service: 'project_service', path: req.path };
 
-    try {
-      const result = await this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, binds, { expectMissingObject: true });
-      const row = result.rows?.[0];
-      if (!row) {
-        return null;
-      }
-      return Object.fromEntries(
-        ranges.map((range) => {
-          // The aggregate always returns a row, so a scope with no measured groups reads as unmeasured, not zero.
-          const measured = ProjectService.toNullableNumber(row[`MEASURED_GROUPS__${range}`]);
-          if (!measured) {
-            return [range, { activeGroups: null, lowAttendanceGroups: null }];
-          }
-          return [
-            range,
-            {
-              activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]),
-              lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]),
-            },
-          ];
-        })
-      );
-    } catch (error) {
-      logger.warning(undefined, 'get_health_overview_engagement_counts', 'Engagement tile counts unavailable', {
-        foundation_slug: foundationSlug,
-        err: error,
-      });
-      return null;
+    if (statusCode === 404) {
+      return new ResourceNotFoundError('Project', uid, options);
     }
+    if (statusCode === 409 || statusCode === 412) {
+      return new ConflictError('Project changed since it was read', FORMATION_RECORD_CONFLICT_CODE, {
+        ...options,
+        clientMessage: FORMATION_RECORD_ERROR_MESSAGES.conflict,
+      });
+    }
+    if (statusCode === 400 && !(error instanceof ServiceValidationError)) {
+      return new InvalidRequestError(FORMATION_RECORD_ERROR_MESSAGES.invalidValue, 'INVALID_FORMATION_RECORD', options);
+    }
+    return error;
   }
 
   /**
@@ -8239,10 +8533,11 @@ export class ProjectService {
     nearestVisibleSlug: string,
     nearestVisibleName: string,
     depth: number = 0,
-    budget: { remaining: number } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES },
+    budget: { remaining: number; incomplete: boolean } = { remaining: FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES, incomplete: false },
     gate: { active: number; queue: (() => void)[] } = { active: 0, queue: [] }
   ): Promise<{ uid: string; slug: string; name: string; visible: boolean; groupSlug: string; groupName: string }[]> {
     if (depth >= FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH) {
+      budget.incomplete = true;
       logger.warning(req, 'discover_sub_foundations', 'Hit max traversal depth, stopping this branch', {
         parent_uid: parentUid,
         depth,
@@ -8267,6 +8562,7 @@ export class ProjectService {
         // .catch() below turns into a clean "stop this branch" rather than a silent undercount.
         { failOnPartial: true }
       ).catch((error) => {
+        budget.incomplete = true;
         logger.warning(req, 'discover_sub_foundations', 'Failed to resolve children, stopping traversal at this branch', {
           parent_uid: parentUid,
           depth,
@@ -8288,6 +8584,7 @@ export class ProjectService {
     const results = await Promise.all(
       traversalCandidates.map(async (child) => {
         if (budget.remaining <= 0) {
+          budget.incomplete = true;
           logger.warning(req, 'discover_sub_foundations', 'Hit max discovered sub-foundation count, stopping traversal', {
             parent_uid: parentUid,
             depth,
@@ -8313,21 +8610,30 @@ export class ProjectService {
    * Fetches one bounded UID batch and preserves the existing fail-soft behavior.
    * Only fully successful paginated responses are checked for omitted UIDs.
    */
-  private async fetchProjectBatchByIds(req: Request, batch: string[]): Promise<Project[]> {
+  private async fetchProjectBatchByIds(req: Request, batch: string[], options?: ApiRequestOptions): Promise<Project[]> {
     try {
       const projects = await fetchAllQueryResources<Project>(
         req,
         (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'project',
-            filters_or: batch.map((uid) => `uid:${uid}`),
-            // One call per batch. Without a page_size, the query service's default of 50
-            // (docs/architecture/backend/pagination.md) splits a 100-uid batch into two sequential
-            // calls; and page_size must exceed the batch, because query-service emits a page_token
-            // whenever hits == page_size, which would cost a second, empty call on a full batch.
-            page_size: String(batch.length + 1),
-            ...(pageToken && { page_token: pageToken }),
-          }),
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            {
+              type: 'project',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              // One call per batch. Without a page_size, the query service's default of 50
+              // (docs/architecture/backend/pagination.md) splits a 100-uid batch into two sequential
+              // calls; and page_size must exceed the batch, because query-service emits a page_token
+              // whenever hits == page_size, which would cost a second, empty call on a full batch.
+              page_size: String(batch.length + 1),
+              ...(pageToken && { page_token: pageToken }),
+            },
+            undefined,
+            undefined,
+            options
+          ),
         { failOnPartial: true }
       );
       this.warnOnMissingProjectUids(req, batch, projects);
@@ -8728,151 +9034,14 @@ export class ProjectService {
     distribution[normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? 'unscored'] += row.PROJECT_COUNT;
   }
 
-  /**
-   * Map one period's `HEALTH_OVERVIEW_KPIS` slice onto the tile strip's area states. Null stats render
-   * an em dash rather than a misleading `$0`/`0%`.
-   */
-  private static buildHealthOverviewKpiAreaStates(row: HealthOverviewKpisRow): HealthMetricsAreaState[] {
-    // HEALTH_OVERVIEW_KPIS carries no evaluated_at column, and the query's a point-in-time read, not
-    // a per-period evaluation — empty, like the neutral placeholder tiles, rather than "as of today".
-    const evaluatedAt = '';
-    const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
-    const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
-    const contributorsCount = row.CONTRIBUTORS_COUNT;
-    const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
-    // NON_MEMBERS_PIPELINE_VALUE_USD is always NULL pending upstream ticket DL-1383 — render blank
-    // rather than a misleading "$0" until that data lands.
-    const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
-
-    // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
-    // missing its builder here is dropped. `eng` has no builder: its state comes from another table.
-    const areaStateBuilders: Partial<Record<HealthMetricsOverviewArea, () => HealthMetricsAreaState>> = {
-      evt: () => ({
-        area: 'evt',
-        statValue: eventsGoalPct == null ? '—' : `${Math.round(eventsGoalPct)}%`,
-        statLabel: eventsGoalPct == null ? 'no registration goal set' : 'of registration goal',
-        statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
-        classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
-        evaluatedAt,
-        // Hide only when there's truly nothing to say (no goal, no status). Any goal or any status
-        // present shows the chip — a set goal with no status yet renders "Awaiting data", matching
-        // how trn/mem/non already treat a null status column.
-        showStatus: eventsGoalPct != null || row.EVENTS_STATUS != null,
-      }),
-      trn: () => ({
-        area: 'trn',
-        statValue: certificationsEarned == null ? '—' : formatNumber(certificationsEarned),
-        statLabel: 'certifications earned',
-        statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
-        classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
-        evaluatedAt,
-      }),
-      mem: () => ({
-        area: 'mem',
-        statValue: membersRenewingValue == null ? '—' : formatCurrency(membersRenewingValue),
-        statLabel: 'renewing in next 90 days',
-        statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
-        classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
-        evaluatedAt,
-      }),
-      non: () => ({
-        area: 'non',
-        statValue: nonMembersPipelineValue == null ? '—' : formatCurrency(nonMembersPipelineValue),
-        statLabel: 'pipeline value',
-        statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
-        classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
-        evaluatedAt,
-      }),
-      code: () => ({
-        area: 'code',
-        statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
-        statLabel: 'active contributors',
-        // No _STATUS column backs this area (see method doc), so unlike the sibling areas above,
-        // statSource names the stat's own column rather than a status column.
-        statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
-        classification: 'none',
-        evaluatedAt,
-      }),
-    };
-
-    return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
-      .map((area) => areaStateBuilders[area]?.())
-      .filter((state): state is HealthMetricsAreaState => state !== undefined);
-  }
-
-  /**
-   * The Engagement tile's state. No status chip: the tab's rules define no classification for this
-   * count, so the tile carries a link into the group attendance view instead.
-   */
-  private static buildHealthOverviewEngagementAreaState(counts: HealthOverviewEngagementCounts): HealthMetricsAreaState {
-    const { activeGroups, lowAttendanceGroups } = counts;
-    let statValue: string = HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE;
-    let statLabel = 'no data this period';
-    if (activeGroups === 0) {
-      statLabel = 'no active groups this period';
-    } else if (activeGroups !== null && lowAttendanceGroups !== null) {
-      statValue = `${formatNumber(lowAttendanceGroups)} of ${formatNumber(activeGroups)}`;
-      statLabel = `groups below ${Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100)}% attendance`;
-    }
-    return {
-      area: 'eng',
-      statValue,
-      statLabel,
-      statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
-      classification: 'none',
-      evaluatedAt: '',
-      showStatus: false,
-    };
+  /** Exact, grouped count ("1,234"); the compact form would turn a member count into "1.2K". */
+  private static formatExactCount(count: number): string {
+    return count.toLocaleString('en-US');
   }
 
   private getRangeSuffix(range: string, convention: string = 'standard'): string {
     const map = ProjectService.rangeSuffixMap[convention];
     return map?.[range] ?? map?.['YTD'] ?? '_ytd';
-  }
-
-  /**
-   * The ranges the two `HEALTH_OVERVIEW_*` tables actually have columns for. Derived from the period
-   * selector's own option set, never from `HEALTH_METRICS_RANGES` — that union carries a fifth member
-   * (`COMPLETED_YEAR_4`) whose `_4th_last_completed_year` columns exist on other tables but not these
-   * two, so generating from it would emit a nonexistent column and fail the query for every foundation.
-   */
-  private static getHealthOverviewRanges(): HealthMetricsRange[] {
-    return buildHealthMetricsOverviewPeriods().map((period) => period.range);
-  }
-
-  /**
-   * The one alias form the revenue SELECT and its two readers key off, typed against
-   * {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS} so a rename fails to compile. Those rows are
-   * index-signature typed, so a typo would otherwise read undefined and render every foundation
-   * as "no data".
-   */
-  private static revenueAlias(column: (typeof HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS)[number], range: HealthMetricsRange): string {
-    return `${column}__${range}`;
-  }
-
-  /** The one alias form both the generated SELECT and {@link projectKpiRow} key off, so they can't drift. */
-  private static kpiAlias(column: (typeof HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS)[number], range: HealthMetricsRange): string {
-    return `${column}__${range}`;
-  }
-
-  /** Project one period's slice out of an all-periods `HEALTH_OVERVIEW_KPIS` row. */
-  private static projectKpiRow(row: HealthOverviewAllPeriodsRow, range: HealthMetricsRange): HealthOverviewKpisRow {
-    // Typed against the selected column list: a name the query never asked for fails to compile
-    // instead of reading undefined and rendering the area as "no data" for every period.
-    const period = (column: (typeof HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS)[number]): number | string | null | undefined =>
-      row[ProjectService.kpiAlias(column, range)];
-
-    return {
-      EVENTS_PCT_OF_REGISTRATION_GOAL: ProjectService.toNullableNumber(period('EVENTS_PCT_OF_REGISTRATION_GOAL')),
-      EVENTS_STATUS: ProjectService.toNullableString(period('EVENTS_STATUS')),
-      CERTIFICATIONS_EARNED_COUNT: ProjectService.toNullableNumber(period('CERTIFICATIONS_EARNED_COUNT')),
-      TRAINING_STATUS: ProjectService.toNullableString(period('TRAINING_STATUS')),
-      CONTRIBUTORS_COUNT: ProjectService.toNullableNumber(period('CONTRIBUTORS_COUNT')),
-      MEMBERS_RENEWING_90D_VALUE_USD: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_VALUE_USD']),
-      MEMBERS_STATUS: ProjectService.toNullableString(row['MEMBERS_STATUS']),
-      NON_MEMBERS_PIPELINE_VALUE_USD: ProjectService.toNullableNumber(row['NON_MEMBERS_PIPELINE_VALUE_USD']),
-      NON_MEMBERS_STATUS: ProjectService.toNullableString(row['NON_MEMBERS_STATUS']),
-    };
   }
 
   // The all-periods row is index-signature typed (its keys are computed per range), so each projected
@@ -8938,7 +9107,7 @@ export class ProjectService {
       return projects;
     }
 
-    const writerChecked = await this.accessCheckService.addAccessToResources(req, projects, 'project');
+    const writerChecked = await this.accessCheckService.addProjectWriterToResources(req, projects);
     if (!includeMeetingCoordinator) {
       return writerChecked.filter((p) => p.writer === true);
     }
@@ -9221,6 +9390,50 @@ export class ProjectService {
         error: message,
       });
       return unavailable;
+    }
+  }
+
+  /**
+   * Rejects (409) when a project folder still holds a link or an uploaded file. The upstream folder delete
+   * enforces this too, but its 409 is shared with revision mismatches, so the BFF checks first to give a clear
+   * message. Unlike the list view, a lookup failure is not swallowed into "empty": a destructive call must fail closed.
+   *
+   * Links and files are looked up by the folder's own `folder_uid` tag (with the project's, so another project can never
+   * match), not by listing every link and file of the project, so a large unrelated collection cannot hit the pagination
+   * cap and make an empty folder undeletable. The query service checks access after it paginates, so a page can come back
+   * with no visible rows while more remain: the pages are followed, stopping at the first match, rather than trusting one.
+   */
+  private async assertProjectFolderEmpty(req: Request, projectId: string, folderId: string): Promise<void> {
+    const [links, files] = await Promise.all([
+      fetchAllQueryResources<ProjectLinkQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectLinkQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_link',
+            tags_all: [`project_uid:${projectId}`, `folder_uid:${folderId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true, maxResults: 0 }
+      ),
+      fetchAllQueryResources<ProjectDocumentQueryResult>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectDocumentQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'project_document',
+            tags_all: [`project_uid:${projectId}`, `folder_uid:${folderId}`],
+            ...(pageToken && { page_token: pageToken }),
+          }),
+        { failOnPartial: true, maxResults: 0 }
+      ),
+    ]);
+
+    if (links.some((link) => link.folder_uid === folderId) || files.some((file) => file.folder_uid === folderId)) {
+      throw new ConflictError(DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, 'FOLDER_NOT_EMPTY', {
+        operation: 'delete_project_document',
+        service: 'project_service',
+        details: { project_uid: projectId, folder_uid: folderId },
+        clientMessage: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+      });
     }
   }
 }

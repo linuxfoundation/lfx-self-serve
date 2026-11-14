@@ -9,6 +9,26 @@ const ORG_EVENTS_URL = '/org/events';
 const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
+/**
+ * The fields an event row needs to render, minus the three the staff-goal test varies. Deliberately
+ * separate from the base stub, which omits `eventRegistrationsGoal` because that is the EXTERNAL
+ * admin shape (#4432); spread this and add the goal to get the LF staff shape.
+ */
+const STAFF_EVENT = {
+  eventName: 'Open Source Summit',
+  foundation: 'Linux Foundation',
+  eventStartDate: '2026-06-30',
+  eventEndDate: '2026-07-02',
+  eventLocation: null,
+  eventCity: 'Seattle',
+  eventCountry: 'United States',
+  eventUrl: 'https://events.linuxfoundation.org/open-source-summit',
+  eventRegistrationUrl: null,
+  orgSpeakerAcceptedCount: 1,
+  orgSpeakerSubmittedCount: 2,
+  isOrgSponsor: false,
+} as const;
+
 test.setTimeout(120_000);
 
 function skipWhenAuthMissing(page: Page): void {
@@ -91,11 +111,24 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
     })
   );
 
-  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events/summary`, (route) =>
+  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events/summary*`, (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ totalEvents: 12, pastEvents: 3, upcomingEvents: 9 }),
+    })
+  );
+
+  await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events/foundations*`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [
+          { id: 'foundation-lf', name: 'Linux Foundation' },
+          { id: 'foundation-cncf', name: 'CNCF' },
+        ],
+      }),
     })
   );
 
@@ -116,7 +149,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventUrl: 'https://events.linuxfoundation.org/open-source-summit',
         eventRegistrationUrl: 'https://events.linuxfoundation.org/open-source-summit/register',
         orgAttendeeCount: 3,
-        eventRegistrationsGoal: 1500,
         orgSpeakerAcceptedCount: 1,
         orgSpeakerSubmittedCount: 2,
         isOrgSponsor: true,
@@ -136,7 +168,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         eventUrl: 'https://events.linuxfoundation.org/kubecon-cloudnativecon-north-america',
         eventRegistrationUrl: null,
         orgAttendeeCount: 2,
-        eventRegistrationsGoal: 2200,
         orgSpeakerAcceptedCount: 0,
         orgSpeakerSubmittedCount: 1,
         isOrgSponsor: false,
@@ -162,8 +193,13 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
       body: JSON.stringify({
         eventId: 'event-1',
         eventName: 'Open Source Summit',
-        total: 1,
-        data: [{ contactId: 'person@example.org', name: 'Jane Doe', jobTitle: 'Engineer' }],
+        total: 3,
+        // Opaque positional ids, as the server sends them — the address never reaches the client. Everyone credited is listed.
+        data: [
+          { contactId: '0', name: 'Jane Doe', jobTitle: null },
+          { contactId: '1', name: 'Roster Employee', jobTitle: 'Analyst' },
+          { contactId: '2', name: 'Registered attendee', jobTitle: null },
+        ],
       }),
     })
   );
@@ -231,6 +267,12 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('org-events-data-table')).toBeVisible();
     // Shared columns still render, but the Action column is dropped on the past tab.
     await expect(page.getByTestId('org-event-attendees-event-1')).toBeVisible();
+    // The org's own registrant count only. The goal is no longer in the payload at all (#4432).
+    await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
+    // And the HEADER drops "/ Goal" too. `showGoal` reads the payload, so shortening it to
+    // `!== null` would leave external admins reading "My Org / Goal" with the cell assertion above
+    // still passing — `undefined !== null` is true. The exact match is what catches that.
+    await expect(page.getByTestId('org-events-panel-past').getByText('My Org', { exact: true })).toBeVisible();
     await expect(page.getByTestId('org-event-action-event-1')).toHaveCount(0);
   });
 
@@ -259,13 +301,64 @@ test.describe('Org Events Dashboard', () => {
     await expect(panel.getByText('No past events', { exact: true })).toBeVisible();
   });
 
+  test('renders the goal for an LF staff response, on both tabs and at zero attendees', async ({ page }) => {
+    await gotoOrgEventsPage(page);
+    await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // The base stub omits `eventRegistrationsGoal`, which is what an EXTERNAL admin receives — the
+    // server leaves the key off entirely (#4432). This override is the LF staff shape: the key is
+    // present, so the template must render it. Without a staff-shaped fixture a regression that
+    // hid the goal from staff would pass every other check on this page.
+    await page.route(`**/api/orgs/${MOCK_ACCOUNT_ID}/lens/events?**`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [
+            { ...STAFF_EVENT, eventId: 'event-1', orgAttendeeCount: 3, eventRegistrationsGoal: 1500 },
+            // Zero attendees takes the other template branch, which renders a span rather than a button.
+            { ...STAFF_EVENT, eventId: 'event-2', orgAttendeeCount: 0, eventRegistrationsGoal: 2200 },
+          ],
+          total: 2,
+          pageSize: 10,
+          offset: 0,
+        }),
+      })
+    );
+
+    // PAST FIRST, deliberately. The override has to be registered after the base stub to take
+    // precedence, by which point the upcoming tab has already loaded through that base stub — and
+    // `switchTab` returns early when the requested tab is already active, so clicking `upcoming`
+    // here would not refetch and the assertions would run against the external-admin data.
+    // Visiting past first makes the return to upcoming a real tab change, so both fetch through
+    // the override.
+    for (const tab of ['past', 'upcoming'] as const) {
+      await page.getByTestId(`org-events-stat-${tab}`).click();
+      const panel = page.getByTestId(`org-events-panel-${tab}`);
+      await expect(panel).toBeVisible();
+
+      await expect(panel.getByText('My Org / Goal')).toBeVisible();
+      await expect(panel.getByTestId('org-event-attendees-event-1')).toHaveText('3 / 1,500');
+      await expect(panel.getByTestId('org-event-attendees-event-2')).toHaveText('0 / 2,200');
+    }
+  });
+
   test('opens attendee and speaker drawers with non-PII row test ids', async ({ page }) => {
     await gotoOrgEventsPage(page);
     await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
+    // Upcoming tab: the cell is the org's count alone; no goal is served or rendered (#4432).
+    await expect(page.getByTestId('org-event-attendees-event-1')).toHaveText('3');
+    // Header too — the exact match fails on "My Org / Goal", which the cell assertion cannot see.
+    await expect(page.getByTestId('org-events-panel-upcoming').getByText('My Org', { exact: true })).toBeVisible();
+
     await page.getByTestId('org-event-attendees-event-1').getByRole('button').click();
     await expect(page.getByTestId('event-attendees-drawer-title')).toBeVisible();
     await expect(page.getByTestId('event-attendee-0')).toBeVisible();
+    // Everyone the option counts is listed by name and title (lfx-self-serve#5158); there is no "counted, not listed" note.
+    await expect(page.getByTestId('event-attendee-2')).toBeVisible();
+    await expect(page.getByTestId('event-attendees-drawer-subtitle')).toContainText('3 counted');
+    await expect(page.locator('body')).not.toContainText('not listed');
 
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('event-attendees-drawer-title')).not.toBeVisible();
@@ -274,4 +367,72 @@ test.describe('Org Events Dashboard', () => {
     await expect(page.getByTestId('event-speakers-drawer-title')).toBeVisible();
     await expect(page.getByTestId('event-speaker-0')).toBeVisible();
   });
+
+  test('filter bar defaults: Range only on the Past tab, Count disabled on Upcoming, no Counted by', async ({ page }) => {
+    await gotoOrgEventsPage(page);
+    await expect(page.getByTestId('org-events-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    await expect(page.locator('[data-test="org-events-time-range-filter"]')).toHaveCount(0);
+    await expect(page.locator('[data-test="org-events-foundation-filter"]')).toBeVisible();
+    await expect(page.locator('[data-test="org-events-scope-filter"]')).toBeVisible();
+    await expect(page.getByTestId('org-events-participation-filter')).toHaveAttribute('title', /Upcoming events have no attendance yet/);
+
+    // Events count Employee match only (lfx-self-serve-ops#1441): no Counted by control and nothing behind More filters.
+    await expect(page.locator('[data-test="org-events-attribution-filter"]')).toHaveCount(0);
+    await expect(page.getByTestId('org-events-more-filters-toggle')).toHaveCount(0);
+
+    await page.getByTestId('org-events-stat-past').click();
+    await expect(page.locator('[data-test="org-events-time-range-filter"]')).toBeVisible();
+    await expect(page.getByTestId('org-events-participation-filter')).not.toHaveAttribute('title', /.+/);
+  });
+
+  test('restores non-default filters from the URL and sends them, defaults dropped from the URL', async ({ page }) => {
+    await seedSelectedOrgCookie(page);
+    await stubOrgEventsRoutes(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    const pastRequest = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return (
+        url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/events`) &&
+        url.searchParams.get('isPast') === 'true' &&
+        url.searchParams.get('range') === '90d' &&
+        url.searchParams.get('participation') === 'attended' &&
+        !url.searchParams.has('attribution') &&
+        url.searchParams.get('eventScope') === 'all' &&
+        url.searchParams.get('foundation') === 'foundation-cncf'
+      );
+    });
+    await page.goto(`${ORG_EVENTS_URL}?tab=past&range=90d&participation=attended&eventScope=all&foundation=foundation-cncf`, {
+      waitUntil: 'domcontentloaded',
+    });
+    skipWhenAuthMissing(page);
+    await pastRequest;
+
+    await page.getByTestId('org-events-clear-filters').click();
+    await expect(page).not.toHaveURL(/range=|participation=|eventScope=|foundation=/);
+    await expect(page).toHaveURL(/tab=past/);
+  });
+
+  // Events count Employee match only: an old link with any ?attribution= (Self-reported only, All, or the values
+  // lfx-self-serve#5315 retired) reads the default and never forwards the param.
+  for (const legacy of ['self_reported', 'all', 'company_email', 'account']) {
+    test(`ignores the legacy ?attribution=${legacy}`, async ({ page }) => {
+      await seedSelectedOrgCookie(page);
+      await stubOrgEventsRoutes(page);
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      const pastRequest = page.waitForRequest((request) => {
+        const url = new URL(request.url());
+        return url.pathname.endsWith(`/api/orgs/${MOCK_ACCOUNT_ID}/lens/events`) && url.searchParams.get('isPast') === 'true';
+      });
+      await page.goto(`${ORG_EVENTS_URL}?tab=past&attribution=${legacy}`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+      const request = await pastRequest;
+
+      expect(new URL(request.url()).searchParams.has('attribution')).toBe(false);
+    });
+  }
 });

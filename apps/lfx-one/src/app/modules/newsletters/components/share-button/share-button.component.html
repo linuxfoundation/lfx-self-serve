@@ -1,0 +1,15 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<button
+  type="button"
+  (click)="share.emit()"
+  [attr.aria-label]="ariaLabel()"
+  class="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+  [attr.data-testid]="testId()">
+  <i class="fa-light fa-share-nodes text-lg" aria-hidden="true"></i>
+  <span>Share</span>
+  @if (visibleCount(); as count) {
+    <span class="text-gray-500 tabular-nums" aria-hidden="true" [attr.data-testid]="testId() + '-count'">· {{ count | number }}</span>
+  }
+</button>

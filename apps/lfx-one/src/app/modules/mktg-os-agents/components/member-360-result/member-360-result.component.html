@@ -1,0 +1,500 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="member-360-result">
+  @if (runSummary(); as text) {
+    <section aria-label="Run summary" data-testid="member-360-run-summary">
+      <lfx-markdown-renderer [content]="text" [restricted]="true" [headingLevelOffset]="1" />
+    </section>
+  }
+  <header class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_auto]" data-testid="member-360-result-header">
+    <h2 class="text-2xl font-bold">{{ envelope().project_name }} · Member 360</h2>
+    <p class="text-sm text-gray-500 xl:col-span-2 xl:row-start-2">
+      Run {{ envelope().run_date + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }} · window
+      {{ envelope().period.window_start + 'T00:00:00Z' | date: 'MMM y' : 'UTC' }} to {{ envelope().period.window_end + 'T00:00:00Z' | date: 'MMM y' : 'UTC' }},
+      {{ envelope().period.focus_quarter }} emphasised ·
+      {{ envelope().inputs.prior_run_provided ? 'compared with the previous run' : 'no previous run comparison' }}
+    </p>
+  </header>
+  @if (notice()) {
+    <lfx-message severity="info" [text]="notice()" data-testid="member-360-notice" />
+  }
+  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="member-360-summary">
+    @for (card of cards(); track card.key) {
+      <div class="flex flex-col gap-1 rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'member-360-summary-' + card.key">
+        <span class="text-sm text-gray-500">{{ card.label }}</span>
+        <b class="text-2xl" [class.text-red-700]="card.key === 'renewals'" [attr.data-testid]="'member-360-summary-' + card.key + '-value'">{{ card.value }}</b>
+        <span class="text-sm text-gray-500" [attr.data-testid]="'member-360-summary-' + card.key + '-note'">{{ card.note }}</span>
+      </div>
+    }
+  </div>
+  <div class="grid gap-3 lg:grid-cols-2">
+    <div class="flex flex-wrap gap-4 rounded-xl border border-gray-200 bg-white p-4">
+      <span class="text-gray-500">Action load</span>
+      @for (load of summary().action_load; track load.owner) {
+        <span
+          ><b>{{ load.owner }}</b> {{ load.actions }}</span
+        >
+      }
+    </div>
+    <div class="flex flex-wrap gap-3 rounded-xl border border-gray-200 bg-white p-4">
+      <span class="text-gray-500">Sources</span><span class="text-gray-700" data-testid="member-360-sources-used">{{ sourcesUsed() }}</span
+      ><span class="text-gray-500"
+        >unavailable: {{ sourcesUnavailable() }}
+        @if (method().reweighted) {
+          (reweighted)
+        }
+      </span>
+    </div>
+  </div>
+  <section class="rounded-xl border border-gray-200 bg-white" data-testid="member-360-ranking">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 p-4">
+      <h3 class="text-lg font-bold">Member Ranking</h3>
+      <div [formGroup]="filters" class="flex flex-wrap items-center gap-2 text-sm">
+        <div class="flex items-center gap-1">
+          <label for="member-360-search-input">Member</label
+          ><lfx-input-text [form]="filters" control="search" styleClass="w-28" inputId="member-360-search-input" data-testid="member-360-search" />
+        </div>
+        <div class="flex items-center gap-1">
+          <label for="member-360-tier-input">Tier</label
+          ><lfx-select
+            [form]="filters"
+            control="tier"
+            optionValue="label"
+            styleClass="w-32"
+            [options]="tierOptions"
+            inputId="member-360-tier-input"
+            ariaLabel="Tier"
+            data-testid="member-360-tier" />
+        </div>
+        <div class="flex items-center gap-1">
+          <label for="member-360-owner-input">Owner</label
+          ><lfx-select
+            [form]="filters"
+            control="owner"
+            optionValue="label"
+            styleClass="w-40"
+            [options]="ownerOptions"
+            inputId="member-360-owner-input"
+            ariaLabel="Owner"
+            data-testid="member-360-owner" />
+        </div>
+        <span class="text-gray-500">Sorted by score. Click a column to sort.</span>
+      </div>
+    </div>
+    <div
+      class="ranking-scroll overflow-x-auto"
+      tabindex="0"
+      role="region"
+      aria-label="Member Ranking, scroll horizontally for all columns"
+      data-testid="member-360-ranking-scroll">
+      <!-- Compact board proportions fit the desktop content area; smaller areas scroll only the table. -->
+      <table class="w-full min-w-[940px] table-fixed text-left text-sm [&_td]:break-words [&_td]:whitespace-normal [&_td]:px-2 [&_th]:px-2">
+        <colgroup>
+          <col class="w-[3%]" />
+          <col class="w-[14%]" />
+          <col class="w-[9%]" />
+          <col class="w-[5%]" />
+          <col class="w-[12%]" />
+          <col class="w-[6%]" />
+          <col class="w-[8%]" />
+          <col class="w-[23%]" />
+          <col class="w-[11%]" />
+          <col class="w-[9%]" />
+        </colgroup>
+        <thead class="bg-gray-50 text-gray-500">
+          <tr>
+            @for (column of columns; track column.label) {
+              <th class="p-3" [attr.aria-sort]="sortKey() === column.key ? direction() : null">
+                @if (column.key; as key) {
+                  <button type="button" (click)="sort(key)" [attr.data-testid]="'member-360-sort-' + key">{{ column.label }}</button>
+                } @else {
+                  {{ column.label }}
+                }
+              </th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.key) {
+            <tr class="border-t border-gray-100" [class.bg-blue-50]="expanded() === row.key" data-testid="member-360-ranking-row">
+              <td class="p-3">{{ row.member.rank }}</td>
+              <td class="p-3">
+                <button
+                  type="button"
+                  (click)="toggle(row.key)"
+                  [attr.data-testid]="'member-360-expand-' + row.member.rank"
+                  [attr.aria-expanded]="expanded() === row.key"
+                  [attr.aria-controls]="'member-360-detail-' + row.key"
+                  class="min-h-10 text-left font-semibold text-blue-700">
+                  {{ row.member.member_organization }}
+                </button>
+                <p class="text-xs text-gray-500">{{ row.member.membership_tier }}</p>
+              </td>
+              <td class="p-3">
+                <span class="whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold" [ngClass]="row.tierClass">{{ row.member.engagement_tier }}</span>
+              </td>
+              <td class="p-3 font-bold">{{ row.member.engagement_score }}</td>
+              <td class="p-3">
+                <div class="flex gap-0.5">
+                  @for (cell of row.heat; track cell.label) {
+                    <span
+                      class="inline-block h-4 w-4 shrink-0 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                      tabindex="0"
+                      [ngClass]="cell.color"
+                      [attr.data-testid]="'member-360-heat-' + row.member.rank + '-' + cell.label"
+                      [pTooltip]="cell.label + ': ' + (cell.value ?? 'no data')"
+                      tooltipPosition="bottom"
+                      tooltipEvent="both"
+                      [escape]="true"
+                      appendTo="body"
+                      [attr.aria-label]="cell.label + ': ' + (cell.value ?? 'no data')"
+                      role="img"></span>
+                  }
+                </div>
+              </td>
+              <td
+                class="p-3"
+                [ngClass]="row.trendClass"
+                [attr.aria-label]="row.trendAriaLabel"
+                [attr.data-trend]="row.trendState"
+                data-testid="member-360-trend">
+                {{ row.trendText }}
+              </td>
+              <td class="p-3" [ngClass]="row.renewalClass">
+                @if (row.member.days_to_renewal !== null) {
+                  {{ row.member.days_to_renewal }} days
+                } @else {
+                  Unknown
+                }
+              </td>
+              <td class="p-3">{{ row.member.recommended_next_action }}</td>
+              <td class="p-3">{{ row.member.action_owner }}</td>
+              <td class="p-3" [class.text-red-700]="row.member.priority === 'High'">{{ row.member.priority }}</td>
+            </tr>
+            @if (expanded() === row.key) {
+              <tr class="bg-blue-50" [id]="'member-360-detail-' + row.key" data-testid="member-360-row-detail">
+                <td colspan="10" class="p-5">
+                  <div class="grid grid-cols-3 gap-4">
+                    <div>
+                      <b>Gaps</b>
+                      <ul>
+                        @for (gap of row.member.top_gaps; track gap) {
+                          <li>{{ gap }}</li>
+                        } @empty {
+                          <li data-testid="member-360-no-gaps">No gaps reported.</li>
+                        }
+                      </ul>
+                    </div>
+                    <div>
+                      <b>Rationale</b>
+                      <p>{{ row.rationale }}</p>
+                    </div>
+                    <div>
+                      <b>Evidence</b>
+                      <ul>
+                        @for (evidence of row.evidence; track $index) {
+                          <li>{{ evidence.date }} · {{ evidence.description }} · {{ evidence.source }}</li>
+                        } @empty {
+                          <li data-testid="member-360-no-member-evidence">No activity evidence recorded for this member.</li>
+                        }
+                      </ul>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            }
+          } @empty {
+            <tr>
+              <td colspan="10" class="p-6 text-gray-500" data-testid="member-360-no-matches">No members match these filters.</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <p class="border-t border-gray-200 p-4 text-sm text-gray-500">
+      Heat strip: the category order (events, speaking, ambassadors, committees, content, marketing), green to red. Gray means no data, not zero.
+      {{ renewalLegend }}
+    </p>
+  </section>
+  <div class="grid items-start gap-5 lg:grid-cols-2">
+    <section class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5" data-testid="member-360-actions">
+      <h3 class="text-lg font-bold">Actions by Team</h3>
+      @for (team of teams(); track team.owner) {
+        <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-4" [attr.data-testid]="'member-360-team-' + team.key">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="font-semibold">
+              {{ team.owner
+              }}<span class="whitespace-nowrap font-normal text-gray-500">
+                · {{ team.actions.length }} {{ team.actions.length === 1 ? 'action' : 'actions' }}</span
+              >
+            </h4>
+            <lfx-button
+              class="shrink-0 whitespace-nowrap"
+              label="Copy list"
+              [outlined]="true"
+              size="small"
+              (onClick)="copyTeam(team.owner)"
+              [ariaLabel]="'Copy ' + team.owner + ' list'"
+              [attr.data-testid]="'member-360-copy-' + team.key" />
+          </div>
+          @if (team.actions.length) {
+            <div class="flex flex-wrap items-center gap-1.5 text-xs" [attr.data-testid]="'member-360-team-summary-' + team.key">
+              @for (count of team.priorityCounts; track count.priority) {
+                <span class="rounded-full px-2 py-0.5 font-semibold tabular-nums" [ngClass]="count.priorityClass">{{ count.count }} {{ count.priority }}</span>
+              }
+              @if (team.nextDueText) {
+                <span class="ml-auto text-gray-500">Next due {{ team.nextDueText }}</span>
+              }
+            </div>
+          }
+          <ol class="flex flex-col text-sm">
+            @for (row of team.fold.visible; track $index) {
+              <li class="flex flex-col gap-0.5 border-t border-gray-200 py-2.5" data-testid="member-360-action-row">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="font-semibold">{{ row.action.member_organization }}</span>
+                  <span class="flex items-center gap-2 text-xs">
+                    <span class="rounded-full px-2 py-0.5 font-semibold" [ngClass]="row.priorityClass">{{ row.action.priority }}</span>
+                    @if (row.dueText) {
+                      <span class="whitespace-nowrap tabular-nums text-gray-700">Due {{ row.dueText }}</span>
+                    }
+                  </span>
+                </div>
+                <p class="break-words">{{ row.text }}</p>
+                <p class="text-xs text-gray-500">
+                  {{ row.action.engagement_tier }}
+                  @if (row.action.days_to_renewal !== null) {
+                    @if (row.action.days_to_renewal < 0) {
+                      · {{ -row.action.days_to_renewal }} {{ row.action.days_to_renewal === -1 ? 'day' : 'days' }} overdue
+                    } @else if (row.action.days_to_renewal === 0) {
+                      · renews today
+                    } @else {
+                      · renews in {{ row.action.days_to_renewal }} {{ row.action.days_to_renewal === 1 ? 'day' : 'days' }}
+                    }
+                  }
+                </p>
+              </li>
+            } @empty {
+              <li [attr.data-testid]="'member-360-no-actions-' + team.key">No actions for this team.</li>
+            }
+          </ol>
+          @if (team.fold.foldable) {
+            <button
+              type="button"
+              class="self-start text-sm font-medium text-blue-700 hover:text-blue-800 hover:underline"
+              [attr.aria-expanded]="team.fold.open"
+              (click)="toggleFold(team.fold.key)"
+              [attr.data-testid]="'member-360-show-all-' + team.key">
+              {{ team.fold.toggleLabel }}
+            </button>
+          }
+        </div>
+      }
+    </section>
+    <aside class="flex min-w-0 flex-col gap-3">
+      <details class="rounded-xl border border-gray-200 bg-white p-4" data-testid="member-360-evidence">
+        <summary class="cursor-pointer font-semibold" data-testid="member-360-evidence-toggle">Evidence</summary>
+        <div class="mt-3 flex flex-col gap-3 text-sm">
+          <p class="text-gray-600">
+            One row per fact the score used. {{ envelope().tabs.evidence.length }} {{ envelope().tabs.evidence.length === 1 ? 'row' : 'rows' }} this run. Also
+            the Evidence tab of the workbook.
+          </p>
+          @if (evidenceGroups().length) {
+            <div class="flex flex-wrap gap-1.5 text-xs">
+              @for (group of evidenceGroups(); track group.key) {
+                <span class="rounded-full bg-blue-50 px-2 py-0.5 font-semibold text-blue-800">{{ group.label }} · {{ group.rows.length }}</span>
+              }
+            </div>
+          }
+          @for (group of evidenceGroups(); track group.key) {
+            <div class="flex flex-col gap-1.5 border-t border-gray-200 pt-3" [attr.data-testid]="'member-360-evidence-group-' + group.key">
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <b>{{ group.label }}</b>
+                <span class="text-gray-500 tabular-nums">{{ group.rows.length }} {{ group.rows.length === 1 ? 'fact' : 'facts' }}</span>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-left text-[13px]">
+                  <thead>
+                    <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                      <th class="py-1 pr-3 font-semibold">Member</th>
+                      <th class="py-1 pr-3 font-semibold">What</th>
+                      <th class="py-1 pr-3 font-semibold">Date</th>
+                      <th class="py-1 font-semibold">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (evidence of group.fold.visible; track $index) {
+                      <tr class="border-b border-gray-100 align-top">
+                        <td class="py-1.5 pr-3 font-semibold">{{ evidence.member_organization }}</td>
+                        <td class="break-words py-1.5 pr-3">{{ evidence.description }}</td>
+                        <td class="whitespace-nowrap py-1.5 pr-3 tabular-nums">{{ evidence.date + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }}</td>
+                        <td class="py-1.5 text-gray-500">{{ evidence.sourceText }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @if (group.fold.foldable) {
+                <button
+                  type="button"
+                  class="self-start font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                  [attr.aria-expanded]="group.fold.open"
+                  (click)="toggleFold(group.fold.key)"
+                  [attr.data-testid]="'member-360-evidence-show-all-' + group.key">
+                  {{ group.fold.toggleLabel }}
+                </button>
+              }
+            </div>
+          } @empty {
+            <p data-testid="member-360-no-evidence">No activity evidence recorded.</p>
+          }
+        </div>
+      </details>
+      <details class="rounded-xl border border-gray-200 bg-white p-4" data-testid="member-360-method">
+        <summary class="cursor-pointer font-semibold" data-testid="member-360-method-toggle">Method</summary>
+        <div class="mt-3 flex flex-col gap-3 text-sm">
+          <p class="text-gray-600">
+            How the scores were computed: recency decay by quarter, tier-peer medians (tiers under four members merged), reweighting for sources with no data,
+            and routing rules for owner and priority. Also the Method tab of the workbook.
+          </p>
+          <p class="tabular-nums text-gray-700" data-testid="member-360-method-window">
+            Window {{ method().analysis_window.start + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }} –
+            {{ method().analysis_window.end + 'T00:00:00Z' | date: 'd MMM y' : 'UTC' }} · focus {{ method().focus_quarter }} · recency {{ decayText() }}
+          </p>
+          <div class="flex flex-col gap-2 border-t border-gray-200 pt-3">
+            <b>What the score is made of</b>
+            @for (weight of weights(); track weight.key) {
+              @if (weight.noDataReason === null) {
+                <div class="grid grid-cols-[minmax(8rem,1.2fr)_2fr_auto_auto] items-center gap-2.5" [attr.data-testid]="'member-360-weight-' + weight.key">
+                  <span class="font-medium">{{ weight.label }}</span>
+                  <span class="h-2 overflow-hidden rounded-full bg-gray-200" aria-hidden="true"
+                    ><span class="block h-full rounded-full bg-blue-600" [style.width.%]="weight.used"></span
+                  ></span>
+                  <span class="font-semibold tabular-nums">{{ weight.shownPercent }}%</span>
+                  <span class="text-xs text-gray-500">default {{ weight.default }}%</span>
+                </div>
+              } @else {
+                <div class="grid grid-cols-[minmax(8rem,1.2fr)_3fr] gap-2.5 text-gray-500" [attr.data-testid]="'member-360-weight-' + weight.key">
+                  <span class="font-medium">{{ weight.label }}</span>
+                  <span class="text-xs">No data: {{ weight.noDataReason }}</span>
+                </div>
+              }
+            }
+          </div>
+          <div class="flex flex-col gap-2 border-t border-gray-200 pt-3">
+            <b>Where the data came from</b>
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-left text-[13px]">
+                <tbody>
+                  @for (source of methodSources(); track source.source) {
+                    <tr class="border-b border-gray-100 align-top" [attr.data-testid]="'member-360-source-' + source.source">
+                      <td class="py-1.5 pr-3 font-semibold">{{ source.label }}:</td>
+                      <td class="whitespace-nowrap py-1.5 pr-3">
+                        <span
+                          class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                          [ngClass]="source.status === 'used' ? 'bg-emerald-50 text-emerald-800' : 'bg-gray-100 text-gray-700'"
+                          >{{ source.statusText }}</span
+                        >
+                      </td>
+                      <td class="break-words py-1.5 text-gray-600">{{ source.note }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2 border-t border-gray-200 pt-3" data-testid="member-360-baselines">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <b>Tier peer medians</b>
+              <span class="text-gray-500">signals per member, by tier</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full border-collapse text-left text-[13px]">
+                <thead>
+                  <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                    <th class="py-1 pr-3 font-semibold">Tier</th>
+                    <th class="py-1 pr-3 text-right font-semibold">Members</th>
+                    @for (column of medianColumns(); track column.key) {
+                      <th class="py-1 pr-3 text-right font-semibold">{{ column.label }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (baseline of baselines(); track baseline.baseline_group) {
+                    <tr class="border-b border-gray-100">
+                      <td class="py-1.5 pr-3 font-semibold">
+                        {{ baseline.label }}
+                        @if (baseline.merged) {
+                          <span class="font-normal text-gray-500">(merged)</span>
+                        }
+                      </td>
+                      <td class="py-1.5 pr-3 text-right tabular-nums">{{ baseline.member_count }}</td>
+                      @for (value of baseline.medianValues; track $index) {
+                        <td class="py-1.5 pr-3 text-right tabular-nums">{{ value ?? '—' }}</td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          @if (method().notes.length || method().overrides.length) {
+            <div class="flex flex-col gap-2 border-t border-gray-200 pt-3" data-testid="member-360-method-notes">
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <b>Method notes</b>
+                <span class="text-gray-500 tabular-nums"
+                  >{{ method().notes.length + method().overrides.length }}
+                  {{ method().notes.length + method().overrides.length === 1 ? 'note' : 'notes' }}</span
+                >
+              </div>
+              <ul class="flex list-disc flex-col gap-1 pl-5">
+                @for (override of method().overrides; track $index) {
+                  <li class="break-words">{{ override }}</li>
+                }
+                @for (note of notes().visible; track $index) {
+                  <li class="break-words">{{ note }}</li>
+                }
+              </ul>
+              @if (notes().foldable) {
+                <button
+                  type="button"
+                  class="self-start font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                  [attr.aria-expanded]="notes().open"
+                  (click)="toggleFold(notes().key)"
+                  data-testid="member-360-notes-show-all">
+                  {{ notes().toggleLabel }}
+                </button>
+              }
+            </div>
+          }
+          <p class="text-xs text-gray-500">Routing rules: {{ method().routing_rule_version }}</p>
+        </div>
+      </details>
+      <section class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4" data-testid="member-360-result-history">
+        <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Run history</h3>
+        @for (run of historyRows(); track run.documentId) {
+          <div class="flex justify-between gap-2 text-sm tabular-nums" [attr.data-testid]="'member-360-history-row-' + run.documentId">
+            <span>
+              @if (run.quarter) {
+                <span class="text-gray-500">{{ run.quarter }} ·</span>
+              }
+              {{ run.createdAt | date: 'd MMM, HH:mm' }}
+            </span>
+            @if (run.documentId === documentId()) {
+              <span class="text-gray-500">this run</span>
+            } @else {
+              <a
+                [routerLink]="['../', run.documentId]"
+                [queryParams]="projectParams()"
+                class="font-medium text-blue-700 hover:text-blue-800 hover:underline"
+                [attr.data-testid]="'member-360-history-open-' + run.documentId"
+                >Open</a
+              >
+            }
+          </div>
+        }
+        <p class="text-sm text-gray-500">Each run is a one-off document with its workbook. Runs are never updated; a new run is a new document.</p>
+      </section>
+    </aside>
+  </div>
+</div>

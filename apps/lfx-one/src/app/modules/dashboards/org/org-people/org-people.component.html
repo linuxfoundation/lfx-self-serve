@@ -2,12 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-people-page">
-  <header class="flex flex-col gap-2" data-testid="org-people-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-people-title">{{ heading() }}</h1>
-    <p class="text-sm text-gray-500" data-testid="org-people-subtitle">
-      All employee involvement with the Linux Foundation &mdash; board, committees, maintainership, code, training, and events.
-    </p>
-  </header>
+  <lfx-page-header
+    [title]="heading()"
+    description="All employee involvement with the Linux Foundation — board, committees, maintainership, code, training, and events."
+    titleTestId="org-people-title"
+    descriptionTestId="org-people-subtitle"
+    data-testid="org-people-header" />
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state

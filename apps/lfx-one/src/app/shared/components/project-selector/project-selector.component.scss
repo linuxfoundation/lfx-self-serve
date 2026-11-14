@@ -14,7 +14,7 @@
 }
 
 // PrimeNG Popover cosmetics — hide arrow, radius, padding. Applies to both the sidebar panel
-// and the curated (dialog) variant. Same pattern as user-menu-popover in lens-switcher.component.scss.
+// and the curated (dialog) variant. Same pattern as the navbar's account popover in src/styles/_navbar.scss.
 // stylelint-disable-next-line selector-pseudo-element-no-unknown
 ::ng-deep .project-selector-panel.p-popover,
 // stylelint-disable-next-line selector-pseudo-element-no-unknown
@@ -61,5 +61,20 @@
     // `top` is set at runtime in onPopoverShow() to match the selector trigger's viewport
     // position (see alignPanelTop). Keeping it out of CSS avoids drift as the layout above the
     // selector changes (lens tabs, impersonation banner, etc.).
+  }
+}
+
+// Navbar (sidebar v2) variant — the floating navbar is 8px inset + 280px wide, so the panel sits
+// 8px to its right. Both classes stacked so this wins on specificity, not on source order.
+// stylelint-disable-next-line selector-pseudo-element-no-unknown
+::ng-deep .project-selector-panel.project-selector-panel-navbar.p-popover {
+  // The Font Awesome kit picks a style by font-weight but doesn't pin it on fa-light; keep row role icons light.
+  .fa-light {
+    font-weight: 300;
+  }
+
+  @media (min-width: 1024px) {
+    // stylelint-disable-next-line declaration-no-important
+    left: 296px !important;
   }
 }

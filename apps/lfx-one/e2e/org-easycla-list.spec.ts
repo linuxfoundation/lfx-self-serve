@@ -74,13 +74,21 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-card-title').first()).toHaveText('Nimbus Foundation CLA');
   });
 
+  test('lists EasyCLA in the Organization lens sidebar', async ({ page }) => {
+    await gotoEasyclaList(page, stubList(nineClaGroups()));
+
+    await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('sidebar').getByRole('link', { name: 'EasyCLA', exact: true })).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+
   test('states each agreement\u2019s status in the words the design uses', async ({ page }) => {
     await gotoEasyclaList(page, stubList(nineClaGroups()));
 
     const card = (name: string) => page.getByTestId('org-easycla-card').filter({ hasText: name });
 
     await expect(card('Nimbus Foundation CLA').getByTestId('org-easycla-card-status')).toHaveText('Signed', { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(card('Meridian CLA').getByTestId('org-easycla-card-status')).toHaveText('Sanctioned');
+    await expect(card('Meridian CLA').getByTestId('org-easycla-card-status')).toHaveCount(0);
+    await expect(card('Meridian CLA')).not.toContainText('Sanctioned');
 
     // The one that matters most: an unsigned agreement described as signed is a false statement
     // about what this organization has agreed to.
@@ -109,7 +117,8 @@ test.describe('Org Lens EasyCLA list — content', () => {
     // and "we could not read the rules" are different claims.
     await expect(card('Harbor CLA').getByTestId('org-easycla-card-approval-count')).toHaveText('—');
 
-    await expect(card('Driftwood CLA').getByTestId('org-easycla-card-needs-manager')).toBeVisible();
+    await expect(card('Driftwood CLA').getByTestId('org-easycla-card-manager-count')).toHaveText('0');
+    await expect(card('Driftwood CLA')).not.toContainText('Needs a CLA Manager');
   });
 
   test('narrows the list to a searched agreement, and says so when nothing matches', async ({ page }) => {

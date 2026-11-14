@@ -30,7 +30,6 @@ function byTestId(fixture: ComponentFixture<unknown>, suffix: string): HTMLEleme
 const CONTROL_BY_KIND: Record<OrgLensEmptyStateActionKind, string> = {
   retry: 'retry',
   'reset-filters': 'reset-filters',
-  'contact-support': 'contact-support',
   'org-list': 'org-list',
 };
 
@@ -96,15 +95,49 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(picked).toEqual(['b']);
   });
 
+  // #5447: the only links a Company Lens empty state may carry are the caller's own profile, the documentation,
+  // and LFX Insights. A support action — or any control that opens the support messenger — fails here.
+  it('offers no support action in any registry state', () => {
+    const allowedKinds = new Set<string | undefined>([undefined, 'retry', 'reset-filters', 'org-list']);
+    for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY)) {
+      expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
+      for (const action of [copy.primary, copy.secondary]) {
+        if (!action) {
+          continue;
+        }
+        expect(allowedKinds.has(action.action), `${state}: action kind "${action.action}" is not allowed (#5447)`).toBe(true);
+        expect(action.label, `${state}: "${action.label}" must not point at support (#5447)`).not.toMatch(/support/i);
+        if (action.route) {
+          // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview.
+          const allowed = state === 'not-found-staff' ? ['/org/overview'] : ['/profile/attributions', '/profile/settings'];
+          expect(allowed, `${state}: route ${action.route.join('/')} is not an allowed destination (#5447)`).toContain(action.route.join('/'));
+        }
+        if (action.href) {
+          expect(action.href, `${state}: href must be docs or Insights (#5447)`).toMatch(
+            /^(\/docs\/organization\/[a-z-]+|https:\/\/insights\.linuxfoundation\.org(\/.*)?)$/
+          );
+        }
+      }
+    }
+  });
+
+  it('never mounts the support messenger directive', () => {
+    for (const state of Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]) {
+      const fixture = render(state, { orgList: ORG_LIST, filterActive: true });
+      expect((fixture.nativeElement as HTMLElement).querySelector('[lfxopenintercom], [lfxOpenIntercom]'), `${state} renders no support control`).toBeNull();
+      fixture.destroy();
+    }
+  });
+
   // A shared component must never render a state with no control: an `org-list` primary with nothing
   // to list promotes the secondary into the primary slot (and does not render it twice).
   it('promotes the secondary when the wrong-organization list is empty', () => {
     const fixture = render('wrong-organization', { orgList: [] });
 
     expect(byTestId(fixture, 'org-list')).toBeNull();
-    const controls = (fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${TEST_ID}-contact-support"]`);
+    const controls = (fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${TEST_ID}-primary"]`);
     expect(controls).toHaveLength(1);
-    expect(controls[0].textContent).toContain('Ask for access to the organization in this link');
+    expect(controls[0].textContent).toContain('How to get access to a company');
     expect(controls[0].tagName).toBe('LFX-BUTTON');
     // The reason must not introduce a list that is not there.
     expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to an organization that is not on your list.');
@@ -173,15 +206,20 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('staff-check-failed'), 'description')?.textContent).toContain('Reference: —');
   });
 
-  // FR-002: the reason opens with what Organization Lens is on the two states a first-time visitor
+  // FR-002: the reason opens with what Organization Lens is on the states a first-time visitor
   // can reach — and nowhere else.
   // The states a caller can reach before ever seeing Org Lens open with what it is (FR-002); #2961 adds
-  // the contractor who has no grant.
+  // the contractor who has no grant, #4225 the employee of a member org who was never granted access.
+  // That one says it in the product's own words ("the Organization section of LFX Self-Serve"), so it
+  // is asserted on its own sentence rather than the two older phrasings.
   it('opens the reason with the product sentence only on the first-visit states', () => {
-    const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant'];
+    const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant', 'affiliated-no-grant'];
     expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
     expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
     expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    expect(byTestId(render('affiliated-no-grant'), 'description')?.textContent).toContain(
+      'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects'
+    );
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
     expect(others).toHaveLength(8);
     for (const name of others) {

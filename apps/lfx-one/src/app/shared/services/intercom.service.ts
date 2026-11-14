@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable } from '@angular/core';
-import { IntercomBootOptions, IntercomFunction } from '@lfx-one/shared/interfaces';
+import { inject, Injectable, signal } from '@angular/core';
+import { INTERCOM_CUSTOM_LAUNCHER_SELECTOR, PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
+import { IntercomBootOptions, IntercomFunction, IntercomSettings } from '@lfx-one/shared/interfaces';
+import { redactInviteToken } from '@lfx-one/shared/utils';
 
 import { DataDogRumService } from './datadog-rum.service';
 
@@ -15,11 +17,24 @@ export class IntercomService {
   // Set synchronously when boot() is called; the stub queue absorbs commands until the script loads.
   public isBootRequested = false;
 
+  // True when this boot is on a phone-width viewport and Intercom's default launcher is replaced by
+  // the shell's compact support launcher (SupportLauncherComponent). Decided once per boot — Intercom
+  // only documents launcher attributes at boot, so there is no runtime update() toggle to throttle.
+  // A viewport that crosses the phone breakpoint after boot (rotation) keeps the boot-time choice.
+  public readonly customLauncherActive = signal(false);
+
   private readonly dataDogRumService = inject(DataDogRumService);
 
   private isLoaded = false;
 
   private scriptElement: HTMLScriptElement | null = null;
+
+  // Whether a surface has asked for the default launcher bubble to be hidden (see setLauncherHidden).
+  private launcherHidden = false;
+
+  // The launcher choice boot() made — an explicit `hide_default_launcher` or the phone replacement —
+  // which setLauncherHidden(false) restores rather than forcing the bubble back.
+  private bootHidesLauncher = false;
 
   // Identity for an on-demand boot when the startup boot was skipped — the invite landing skips it
   // to keep first paint off Intercom, but its "Contact support" CTA must still reach support as the
@@ -46,8 +61,24 @@ export class IntercomService {
       return;
     }
 
-    this.loadIntercomScript(options.app_id, options.api_base);
-    window.Intercom!('boot', options);
+    // Intercom records the page URL. On an invite page that carries the signed token, so swap in the
+    // redacted URL first; the page already holds the token, and replaceState does not re-route.
+    const redactedUrl = redactInviteToken(window.location.href);
+    if (redactedUrl !== window.location.href) {
+      window.history.replaceState(window.history.state, '', redactedUrl);
+    }
+
+    // Phones get the compact shell launcher instead of Intercom's default bubble, which covers row
+    // actions and sticky bars (#4865). Desktop boots exactly as before.
+    const launcherSettings = this.launcherSettings();
+    this.customLauncherActive.set(Object.keys(launcherSettings).length > 0);
+    this.bootHidesLauncher = options.hide_default_launcher === true || this.customLauncherActive();
+    // A boot that lands while a surface has the bubble hidden must not bring it back (#5416).
+    const bootLauncherSettings: IntercomSettings =
+      this.launcherHidden && !this.customLauncherActive() ? { ...launcherSettings, hide_default_launcher: true } : launcherSettings;
+
+    this.loadIntercomScript(options.app_id, options.api_base, bootLauncherSettings);
+    window.Intercom!('boot', { ...options, ...bootLauncherSettings });
     this.isBootRequested = true;
     console.info('Intercom: boot command dispatched to widget');
   }
@@ -69,6 +100,31 @@ export class IntercomService {
     this.reattachAndUpdate(window.Intercom);
   }
 
+  // Hides or restores the default launcher bubble for a surface whose bottom-right controls it would
+  // cover, like the meeting composer drawer's footer (#5416). Uses Intercom's own
+  // `hide_default_launcher` setting rather than CSS on the widget's internal markup. Restoring goes
+  // back to the boot-time choice, so a boot that hid the bubble explicitly keeps it hidden.
+  // Phones are left alone entirely: a phone boot already swaps the bubble for the compact shell
+  // launcher (#4865), so no Intercom command is sent there.
+  // The value is mirrored on `intercomSettings` because update() replays those settings, and before
+  // boot it is only recorded for boot() to apply.
+  public setLauncherHidden(hidden: boolean): void {
+    if (typeof window === 'undefined' || this.launcherHidden === hidden) {
+      return;
+    }
+    this.launcherHidden = hidden;
+    if (this.customLauncherActive()) {
+      return;
+    }
+    const hideDefaultLauncher = hidden || this.bootHidesLauncher;
+    if (window.intercomSettings) {
+      window.intercomSettings.hide_default_launcher = hideDefaultLauncher;
+    }
+    if (window.Intercom && this.isBootRequested) {
+      window.Intercom('update', { hide_default_launcher: hideDefaultLauncher });
+    }
+  }
+
   // Records who a later on-demand boot should identify as, without loading the widget.
   public setIdentity(options: IntercomBootOptions): void {
     this.identity = options;
@@ -81,21 +137,30 @@ export class IntercomService {
   // onLoadError fires if the widget script fails to load (e.g. ad-blockers) — including a click
   // landing while a startup boot is still in flight. It is never registered by page-load boots
   // and is cleared once the script loads, so ad-blocked users are only toasted after a click.
-  public openMessenger(appId: string, onLoadError?: () => void): void {
+  // A non-empty prefill opens a new conversation with that text in the composer (Intercom
+  // `showNewMessage`), left for the user to edit or send; without one the messenger opens as usual.
+  public openMessenger(appId: string, onLoadError?: () => void, prefill?: string): void {
     if (!this.isBootRequested) {
       this.boot(this.identity ?? { app_id: appId });
     }
     if (!this.isLoaded) {
       this.onLoadError = onLoadError;
     }
+    if (prefill) {
+      this.showNewMessage(prefill);
+      return;
+    }
     this.show();
   }
 
-  // Call before re-booting with a different user (impersonation identity reset).
+  // Call on logout, before the page navigates away (LogoutLinkDirective), and before re-booting
+  // with a different user (impersonation identity reset).
   public shutdown(): void {
     // Dropped unconditionally: the stale identity must not survive into the next boot even when
     // there is no widget to shut down.
     this.identity = null;
+    this.customLauncherActive.set(false);
+    this.bootHidesLauncher = false;
     if (typeof window === 'undefined') {
       return;
     }
@@ -105,7 +170,28 @@ export class IntercomService {
     }
   }
 
-  private loadIntercomScript(appId: string, apiBase?: string): void {
+  // Guarded like show(): pre-load, the stub queues the call and replays it once the script boots.
+  private showNewMessage(content: string): void {
+    if (typeof window === 'undefined' || !window.Intercom || !this.isBootRequested) {
+      return;
+    }
+    window.Intercom('showNewMessage', content);
+  }
+
+  // Launcher attributes for a phone-width boot; empty on desktop and during SSR. Both attributes are
+  // documented Intercom messenger settings read at boot: the default bubble is hidden and the
+  // shell's own button (matched by selector) opens the messenger instead.
+  private launcherSettings(): IntercomSettings {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return {};
+    }
+    if (!window.matchMedia(PHONE_MEDIA_QUERY).matches) {
+      return {};
+    }
+    return { hide_default_launcher: true, custom_launcher_selector: INTERCOM_CUSTOM_LAUNCHER_SELECTOR };
+  }
+
+  private loadIntercomScript(appId: string, apiBase?: string, launcherSettings: IntercomSettings = {}): void {
     if (this.isLoaded || typeof window === 'undefined') {
       return;
     }
@@ -118,6 +204,7 @@ export class IntercomService {
     window.intercomSettings = {
       api_base: apiBase || 'https://api-iam.intercom.io',
       app_id: appId,
+      ...launcherSettings,
     };
 
     this.initializeIntercomFunction();
@@ -136,6 +223,8 @@ export class IntercomService {
 
     script.onerror = (error) => {
       this.isBootRequested = false;
+      // No widget will bind the custom launcher, so drop it rather than leave a dead button.
+      this.customLauncherActive.set(false);
       script.remove();
       this.scriptElement = null;
       // Drop the stub and settings so a retry boots from a genuinely fresh queue — otherwise the

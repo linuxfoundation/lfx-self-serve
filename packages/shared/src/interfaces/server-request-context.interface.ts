@@ -11,6 +11,19 @@ import type { StaticProvider } from '@angular/core';
 import { AuthContext } from './auth.interface';
 import { RuntimeConfig } from './runtime-config.interface';
 
+/** A LaunchDarkly user context built from the same claims the browser's `FeatureFlagService` uses. */
+export interface ServerFlagUserContext {
+  key: string;
+  name?: string;
+  email?: string;
+}
+
+/** Flags the server evaluated for this render, so SSR and hydration pick the same page. */
+export interface ServerRequestFlags {
+  /** `MEETINGS_REDESIGN_FLAG` for the viewer; set only on `/meetings/:id` for a signed-in viewer. */
+  meetingsRedesign?: boolean;
+}
+
 /**
  * Per-request context threaded from the Express SSR handler into the Angular app
  * via Angular's `REQUEST_CONTEXT` injection token (see `server.ts`). The same object
@@ -29,6 +42,12 @@ export interface ServerRequestContext {
    * so `server.ts` rewrites the response status to 404 without changing the URL.
    */
   notFound?: boolean;
+
+  /** SSR emits 503 so a transient failure is never cached or indexed as missing. */
+  unavailable?: boolean;
+
+  /** Server-evaluated feature flags; see `ServerRequestFlags`. */
+  flags?: ServerRequestFlags;
 
   /**
    * Static providers threaded into the Angular render (base href, `REQUEST`). Present only

@@ -5,19 +5,66 @@
 @if (step() === 'input') {
   <div class="flex flex-col gap-6" data-testid="planning-input-step">
     <form [formGroup]="briefForm" class="flex flex-col gap-6">
+      <!--
+        The SOURCE DOCUMENT card, survey surface only, above the link because it is what the email
+        is actually written from. The event surfaces scrape their facts; this one is handed them.
+      -->
+      @if (isSurvey()) {
+        <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-source-text-section">
+          <h3 class="mb-2 text-sm font-semibold text-gray-900">What are you promoting?</h3>
+          <p class="mb-4 text-xs text-gray-500">
+            Paste the source material — survey blurb, report summary, key findings, deadline, incentive. The email is written from this alone: nothing is
+            scraped, and facts, deadlines or statistics that are not in what you paste will not be invented.
+          </p>
+          <div class="flex flex-col gap-1">
+            <label for="planning-source-text" class="text-xs font-medium text-gray-700">Source text</label>
+            <lfx-textarea
+              [form]="briefForm"
+              control="sourceText"
+              inputId="planning-source-text"
+              [rows]="8"
+              placeholder="Paste the survey or report description, key findings, deadline, incentive, audience..."
+              dataTest="planning-source-text-input" />
+            <div class="flex items-start justify-between gap-3 text-xs">
+              <p class="text-gray-500">Its first line names the campaign.</p>
+              <!-- Counted as campaign-service counts it (whitespace runs as one), so this and the
+                   server's refusal agree. Not a hard maxlength: that would cut a paste silently. -->
+              <span
+                class="shrink-0 tabular-nums"
+                [class.text-gray-500]="!sourceTextTooLong()"
+                [class.text-red-700]="sourceTextTooLong()"
+                aria-live="polite"
+                data-testid="planning-source-text-count"
+                >{{ sourceTextLength() }} / {{ sourceTextMaxChars }}</span
+              >
+            </div>
+            @if (sourceTextRawTooLong()) {
+              <p class="text-xs text-red-700" role="alert" data-testid="planning-source-text-too-long">
+                The pasted text is too large, mostly blank space. Remove the extra spacing or shorten it, then generate again.
+              </p>
+            } @else if (sourceTextTooLong()) {
+              <p class="text-xs text-red-700" role="alert" data-testid="planning-source-text-too-long">
+                Shorten the text to {{ sourceTextMaxChars }} characters or fewer. Longer text is refused rather than cut, so no finding, date or incentive goes
+                missing from the email.
+              </p>
+            }
+          </div>
+        </div>
+      }
+
       <!-- Event URL Card -->
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-url-section">
-        <h3 class="mb-4 text-sm font-semibold text-gray-900">{{ programTypeConfig().urlLabel }}</h3>
+        <h3 class="mb-4 text-sm font-semibold text-gray-900">{{ urlCardLabel() }}</h3>
         <div class="flex flex-col gap-4">
           <div class="flex flex-col gap-1">
             <input
               type="url"
               formControlName="url"
-              [placeholder]="programTypeConfig().urlPlaceholder"
+              [placeholder]="urlCardPlaceholder()"
               (input)="onUrlInput()"
               class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               data-testid="planning-url-input" />
-            <p class="text-xs text-gray-500">{{ programTypeConfig().urlHelp }}</p>
+            <p class="text-xs text-gray-500">{{ urlCardHelp() }}</p>
           </div>
 
           <!--
@@ -41,9 +88,27 @@
               <div class="flex flex-col gap-2">
                 <p class="text-xs text-blue-900">
                   A brief was already saved for <span class="font-medium">{{ saved.eventDetails.name || saved.eventDetails.slug }}</span
-                  >. Restore it instead of generating a new one.
+                  >.
+                  @if (isEmailLike()) {
+                    Restore it instead of generating a new one.
+                  } @else {
+                    Open it to edit, or restore it as it is, instead of generating a new one.
+                  }
                 </p>
-                <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-restore-brief" />
+                <!-- Open to edit is paid-only (#4983): the email planner has its own restore, which
+                     does not approve, and no per-send editor this path could open. -->
+                <div class="flex flex-wrap items-center gap-2">
+                  @if (!isEmailLike()) {
+                    <lfx-button
+                      label="Open to edit"
+                      size="small"
+                      icon="fa-light fa-pen-to-square"
+                      (click)="openSavedBriefToEdit()"
+                      ariaLabel="Open the saved brief to edit it"
+                      data-testid="planning-open-saved-brief" />
+                  }
+                  <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-restore-brief" />
+                </div>
               </div>
             </div>
           }
@@ -249,14 +314,14 @@
       <!--
         Budget & Assets Card — paid only, and not merely by association. Both halves state a
         paid-ad fact that is wrong for email: the helper text under the budget describes DAILY AD
-        PACING ("Budget/day = Total / (End Date − Today)"), and HubSpot staging has no daily
+        PACING (the Google daily budget divided from the total), and HubSpot staging has no daily
         spend; the asset sizes are ad creative dimensions.
 
         The budget also reaches the copy generator, which appends "Total Campaign Budget: $N" to
         the prompt (campaign-proxy.service.ts:1535) — so leaving it visible does not just show a
         dead field, it feeds a paid-ad number into an email brief.
       -->
-      @if (!isEmail()) {
+      @if (!isEmailLike()) {
         <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-budget-section">
           <h3 class="mb-4 text-sm font-semibold text-gray-900">Budget & Assets</h3>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -273,7 +338,10 @@
                   class="w-full rounded-r-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   data-testid="planning-budget-input" />
               </div>
-              <p class="text-xs text-gray-500">Budget/day = Total / (End Date − Today)</p>
+              <!-- The Implement tab's seed: googleSeededFlight(total, today, defaultCampaignEndDate(...)). -->
+              <p class="text-xs text-gray-500" data-testid="planning-budget-pacing-hint">
+                Google daily budget = Total ÷ days from today through the end date (the event's first day, else 30 days out), and never under 1 a day
+              </p>
             </div>
             <div class="flex flex-col gap-1">
               <label class="text-xs font-medium text-gray-700">Image Assets (Google Drive) <span class="font-normal text-gray-400">(optional)</span></label>
@@ -292,17 +360,18 @@
 
     <!-- Ad Channels Card — paid only. Email has no ad channel to pick; its destination is the
          HubSpot template chosen on the Implement tab (LFXV2-3198). -->
-    @if (!isEmail()) {
+    @if (!isEmailLike()) {
       <div class="rounded-lg border border-gray-200 bg-white p-5" data-testid="planning-platforms-section">
         <h3 class="mb-4 text-sm font-semibold text-gray-900">Ad Channels</h3>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          @for (platform of platforms; track platform.id) {
+          @for (platform of platforms(); track platform.id) {
+            <!-- A disabled tile stays clickable while selected, so a held X can be cleared; see `isPlatformClickable`. -->
             <button
               type="button"
-              (click)="platform.disabled ? null : togglePlatform(platform.id)"
-              [disabled]="platform.disabled"
+              (click)="isPlatformClickable(platform) ? togglePlatform(platform.id) : null"
+              [disabled]="!isPlatformClickable(platform)"
               [class]="
-                platform.disabled
+                !isPlatformClickable(platform)
                   ? 'flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm font-medium text-gray-400 cursor-not-allowed'
                   : isPlatformSelected(platform.id)
                     ? 'flex items-center gap-2 rounded-lg border-2 border-blue-500 bg-blue-50 px-3 py-2.5 text-sm font-medium text-blue-700'
@@ -421,6 +490,13 @@
   </div>
 }
 
+<!--
+  The review step's saved-brief live region, mounted for the whole tab and empty until the review
+  step (#5551). A live region created already holding its text is often not read out, and the offer is
+  usually found before Generate, so it must exist first and then have its contents change.
+-->
+<div role="status" aria-live="polite" class="sr-only" data-testid="planning-review-saved-brief-live">{{ reviewSavedBriefAnnouncement() }}</div>
+
 <!-- Review Step -->
 @if (step() === 'review') {
   <div class="flex flex-col gap-4" data-testid="planning-review-step">
@@ -434,6 +510,9 @@
           @if (lastAppliedFeedback()) {
             <i class="fa-light fa-wand-magic-sparkles text-lg text-violet-600" aria-hidden="true"></i>
             <span class="text-sm font-semibold text-violet-800">Brief refined (iteration {{ refineCount() }})</span>
+          } @else if (editingExistingBrief()) {
+            <i class="fa-light fa-pen-to-square text-lg text-green-600" aria-hidden="true"></i>
+            <span class="text-sm font-semibold text-green-800">Editing this event's brief</span>
           } @else {
             <i class="fa-light fa-circle-check text-lg text-green-600" aria-hidden="true"></i>
             <span class="text-sm font-semibold text-green-800">Brief generated successfully</span>
@@ -441,7 +520,7 @@
         </div>
         <!-- The header's Edit entry point. Same reason as the action row below: an email brief
              has no `structuredCopy`, so this opens an empty editor. -->
-        @if (!isEditing() && !isEmail()) {
+        @if (!isEditing() && !isEmailLike()) {
           <button
             type="button"
             (click)="enterEditMode()"
@@ -452,7 +531,7 @@
           </button>
         }
       </div>
-      @if (!isEmail() && eventDetails(); as details) {
+      @if (!isEmailLike() && eventDetails(); as details) {
         <div class="mt-2 flex flex-wrap items-center gap-3 pl-7 text-xs text-gray-600" data-testid="planning-event-strip">
           <span class="font-medium text-gray-900">{{ details.name }}</span>
           <!-- Guarded for the same reason the event card above is: `normalizeEventDetails` turns a
@@ -472,6 +551,35 @@
             </span>
           }
         </div>
+        <!-- Where the paid traffic lands (#5490). Every ad platform refuses a create whose saved brief
+             has none, so an empty one is said here, with the editor that fixes it, rather than first at
+             Create on the Implement tab. -->
+        <div class="mt-1 pl-7 text-xs" data-testid="planning-registration-url">
+          @if (details.registrationUrl) {
+            <span class="text-gray-600"
+              >Registration URL:
+              <span class="break-all font-mono text-gray-800" data-testid="planning-registration-url-value">{{ details.registrationUrl }}</span></span
+            >
+          } @else {
+            <span class="text-amber-800" data-testid="planning-registration-url-missing">
+              This brief has no registration URL, and campaigns can't be created without one. Select Edit Brief and enter it under Registration URL.
+            </span>
+          }
+        </div>
+      }
+      <!-- The event is fixed while an existing brief is edited (#4983), so this says so and shows the
+           event read-only rather than leaving the user to find out at the URL field. Its Registration
+           URL is not part of that: the editor below changes it (#5490). -->
+      @if (editingExistingBrief() && eventDetails(); as details) {
+        <div class="mt-2 flex flex-col gap-1 pl-7 text-xs text-gray-600" data-testid="planning-edit-existing-note">
+          <span
+            >Event: <span class="break-all font-mono text-gray-800" data-testid="planning-edit-existing-url">{{ details.slug }}</span></span
+          >
+          <span>
+            The event can't be changed while editing this brief; its Registration URL can, under Edit Brief. To plan a different event, select New Brief. When
+            you proceed, your changes replace this event's saved brief, which is then approved again.
+          </span>
+        </div>
       }
       @if (lastAppliedFeedback()) {
         <div class="mt-2 flex items-start gap-2 pl-7">
@@ -482,13 +590,69 @@
     </div>
 
     <!--
+      The saved-brief offer on the review step (#5492). Either the input step's offer, which survives
+      generation, or a brief `lookUpGeneratedSlug` found under the generator's slug, which is the one the
+      save is keyed on. The input step's banner is gone with that step, so its actions are offered here
+      too. Only when the offer is stored under the generated slug and is not this session's own
+      (`savedBriefBlocksSave`) does it say the generated brief can't be saved over it; no other offer stops
+      the save. Its live region sits above this step's @if: see there.
+    -->
+    @if (!editingExistingBrief() && savedBrief(); as saved) {
+      <div class="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-3 py-2" data-testid="planning-review-saved-brief">
+        <i class="fa-light fa-rotate-left mt-0.5 text-blue-600" aria-hidden="true"></i>
+        <div class="flex flex-col gap-2">
+          <p class="text-xs text-blue-900">
+            A brief was already saved for <span class="font-medium">{{ saved.eventDetails.name || saved.eventDetails.slug }}</span
+            >.
+            @if (!savedBriefBlocksSave()) {
+              @if (isEmailLike()) {
+                Restore it if you want it instead of this one.
+              } @else {
+                Open it to edit, or restore it as it is, if you want it instead of this one.
+              }
+            } @else if (isEmailLike()) {
+              This one can't be saved over it as it is, so restore the saved brief instead.
+            } @else {
+              This one can't be saved over it as it is. Open the saved brief to edit it, or restore it as it is. If you proceed with this one, you'll be asked
+              whether to replace the saved brief.
+            }
+          </p>
+          @if (savedBriefWarning(); as warning) {
+            <p class="text-xs text-amber-700" data-testid="planning-review-saved-brief-warning">
+              <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>{{ warning }}
+            </p>
+          }
+          <div class="flex flex-wrap items-center gap-2">
+            @if (!isEmailLike()) {
+              <lfx-button
+                label="Open to edit"
+                size="small"
+                icon="fa-light fa-pen-to-square"
+                (click)="openSavedBriefToEdit()"
+                ariaLabel="Open the saved brief to edit it"
+                data-testid="planning-review-open-saved-brief" />
+            }
+            <lfx-button label="Restore saved brief" size="small" [outlined]="true" (click)="restoreSavedBrief()" data-testid="planning-review-restore-brief" />
+          </div>
+        </div>
+      </div>
+    } @else if (!editingExistingBrief() && savedBriefWarningBlocksSave() && savedBriefWarning(); as warning) {
+      <!-- An unreadable brief stored under the save key, so nothing to offer and Proceed will be refused.
+           Only that one, whichever lookup found it: an unreadable brief under another slug (a later
+           edition) does not stop the save, and its warning would say it does. -->
+      <p class="text-xs text-amber-700" data-testid="planning-review-saved-brief-warning">
+        <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>{{ warning }}
+      </p>
+    }
+
+    <!--
       The email brief itself (LFXV2-2770). An email brief returns event details and a UTM token
       and no `structuredCopy`, so the paid editor above is hidden for it — but the SCRAPE is what
       gets things wrong, and these are the fields the content generator is instructed to use
       verbatim. Without this the only remedy for a wrong date is to fix the event page and
       re-scrape.
     -->
-    @if (isEmail() && eventDetails(); as details) {
+    @if (isEmailLike() && eventDetails(); as details) {
       <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="planning-email-brief">
         <div class="flex items-center justify-between">
           <h3 class="text-sm font-semibold text-gray-900">Event details</h3>
@@ -506,6 +670,16 @@
 
         @if (isEditingEmailBrief()) {
           <div class="flex flex-col gap-3" data-testid="planning-email-brief-edit">
+            <!-- A survey's facts ARE its source text, so it is editable here like the event fields. -->
+            @if (isSurvey()) {
+              <div class="flex flex-col gap-1">
+                <label for="eb-source" class="font-mono text-xs uppercase tracking-wide text-gray-400">Source text</label>
+                <lfx-textarea [form]="emailEditForm" control="sourceText" inputId="eb-source" [rows]="8" dataTest="planning-email-edit-source" />
+                @if (emailEditError(); as editError) {
+                  <p class="text-xs text-red-700" role="alert" data-testid="planning-email-edit-error">{{ editError }}</p>
+                }
+              </div>
+            }
             <div class="flex flex-col gap-1">
               <label for="eb-name" class="font-mono text-xs uppercase tracking-wide text-gray-400">Event name</label>
               <lfx-input-text [form]="emailEditForm" control="name" id="eb-name" type="text" dataTest="planning-email-edit-name" />
@@ -555,6 +729,12 @@
           </div>
         } @else {
           <dl class="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 text-sm" data-testid="planning-email-brief-view">
+            @if (isSurvey()) {
+              <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Source</dt>
+              <dd class="max-h-48 overflow-y-auto whitespace-pre-line text-gray-900" data-testid="planning-email-brief-source">
+                {{ details.sourceText || '—' }}
+              </dd>
+            }
             <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Event</dt>
             <dd class="text-gray-900" data-testid="planning-email-brief-name">{{ details.name || '—' }}</dd>
             <dt class="font-mono text-xs uppercase tracking-wide text-gray-400">Dates</dt>
@@ -581,6 +761,25 @@
 
     <!-- Google Search Ad Copy -->
     @if (isEditing()) {
+      <!-- EDIT MODE: Registration URL (#5490). Saved with the brief on Save & Proceed; campaign-service
+           reads every create's destination from the saved brief. Shown when the brief has event details,
+           which is where the URL is stored. -->
+      @if (eventDetails()) {
+        <div class="flex flex-col gap-1 rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-registration-url-edit">
+          <label for="planning-registration-url-input" class="text-sm font-semibold text-gray-900">Registration URL</label>
+          <p class="text-xs text-gray-500">Where the ads send people. Enter a full https:// address.</p>
+          <lfx-input-text
+            [form]="paidEditForm"
+            control="registrationUrl"
+            inputId="planning-registration-url-input"
+            type="url"
+            placeholder="https://events.linuxfoundation.org/..."
+            dataTest="planning-registration-url-input" />
+          @if (paidEditError(); as editError) {
+            <p #paidEditErrorMessage class="text-xs text-red-700" role="alert" data-testid="planning-registration-url-error">{{ editError }}</p>
+          }
+        </div>
+      }
       <!-- EDIT MODE: Search Copy -->
       @if (editSearchHeadlines().length > 0 || editSearchDescriptions().length > 0) {
         <div class="rounded-lg border border-blue-200 bg-white p-5" data-testid="planning-search-copy-edit">
@@ -682,7 +881,7 @@
           <div class="flex flex-col gap-4">
             <div>
               <div class="mb-2 flex items-center justify-between">
-                <h4 class="text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+                <h4 class="text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
                 <button type="button" (click)="addEditItem(editDisplayHeadlines)" class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
                   <i class="fa-light fa-plus" aria-hidden="true"></i> Add
                 </button>
@@ -696,14 +895,14 @@
                         [value]="h"
                         (input)="editDisplayHeadlines.set(updateEditItem(editDisplayHeadlines(), $index, $any($event.target).value))"
                         [class]="
-                          h.length > 40
+                          h.length > 30
                             ? 'w-full rounded-md border border-red-300 bg-red-50 px-3 py-1.5 pr-16 text-xs text-red-800 focus:outline-none focus:ring-1 focus:ring-red-500'
                             : 'w-full rounded-md border border-gray-300 px-3 py-1.5 pr-16 text-xs text-gray-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500'
                         " />
                       <span
                         class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 font-mono text-xs"
-                        [class]="h.length > 40 ? 'text-red-500' : 'text-gray-400'">
-                        {{ h.length }}/40
+                        [class]="h.length > 30 ? 'text-red-500' : 'text-gray-400'">
+                        {{ h.length }}/30
                       </span>
                     </div>
                     <button
@@ -854,12 +1053,15 @@
 
       <!-- Edit Mode Actions -->
       <div class="flex items-center gap-3">
+        <!-- Named per flow, because the two now go to different places: Email hands off to the
+             Audience step and Paid still goes straight to Implement. A shared "Proceed to
+             Implement" was the kind of label an operator only discovers is wrong by pressing it. -->
         <lfx-button
-          label="Save & Proceed to Implement"
+          [label]="isEmailLike() ? 'Save & Choose Audience' : 'Save & Proceed to Implement'"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          ariaLabel="Save edits and proceed to implement"
+          [ariaLabel]="isEmailLike() ? 'Save edits and choose the send audience' : 'Save edits and proceed to implement'"
           data-testid="planning-save-proceed-btn" />
         <lfx-button
           label="Save Edits"
@@ -928,14 +1130,14 @@
 
           <div class="flex flex-col gap-4">
             <div>
-              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 40 chars each)</h4>
+              <h4 class="mb-2 text-xs font-medium text-gray-500">Headlines (max 30 chars each)</h4>
               <div class="flex flex-wrap gap-1.5">
                 @for (h of asStringArray(display['headlines']); track $index) {
                   <span
                     class="rounded-md border px-2.5 py-1 text-xs"
-                    [class]="h.length > 40 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
+                    [class]="h.length > 30 ? 'border-red-300 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-800'">
                     {{ h }}
-                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/40</span>
+                    <span class="ml-1 font-mono text-gray-400">{{ h.length }}/30</span>
                   </span>
                 }
               </div>
@@ -1155,12 +1357,13 @@
 
       <!-- Read-Only Actions -->
       <div class="flex items-center gap-3">
+        <!-- See the edit-mode button above: the destination differs by flow, so the label does. -->
         <lfx-button
-          label="Proceed to Implement"
+          [label]="isEmailLike() ? 'Choose Audience' : 'Proceed to Implement'"
           icon="fa-light fa-arrow-right"
           severity="primary"
           (onClick)="onProceedToImplementation()"
-          ariaLabel="Proceed to implement with this brief"
+          [ariaLabel]="isEmailLike() ? 'Choose the send audience for this brief' : 'Proceed to implement with this brief'"
           data-testid="planning-proceed-btn" />
         <!--
           The three copy actions, hidden together for email because all three operate on ad copy
@@ -1184,15 +1387,22 @@
           that case and any future copy-less platform, rather than naming Microsoft here and
           needing the same fix again for the next one.
         -->
-        @if (!isEmail()) {
-          <lfx-button
-            label="Refine Brief"
-            icon="fa-light fa-wand-magic-sparkles"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="enterRefineMode()"
-            ariaLabel="Provide feedback to regenerate the brief"
-            data-testid="planning-refine-brief-btn" />
+        @if (!isEmailLike()) {
+          <!-- Not offered for an X-only brief: nothing in it is generated (see `refineApplies`). -->
+          @if (refineApplies()) {
+            <lfx-button
+              label="Refine Brief"
+              icon="fa-light fa-wand-magic-sparkles"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="enterRefineMode()"
+              ariaLabel="Provide feedback to regenerate the brief"
+              data-testid="planning-refine-brief-btn" />
+          } @else {
+            <span class="self-center text-xs text-gray-500" data-testid="planning-refine-x-only">
+              X-only briefs have no generated copy to refine. Write the tweet on the Implement tab.
+            </span>
+          }
           <lfx-button
             label="Edit Brief"
             icon="fa-light fa-pen-to-square"

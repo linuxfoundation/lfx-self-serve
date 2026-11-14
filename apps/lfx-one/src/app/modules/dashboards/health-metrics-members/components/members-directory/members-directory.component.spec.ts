@@ -49,8 +49,8 @@ describe('MembersDirectoryComponent', () => {
   let getMembersDirectoryTiers: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` every read after it.
   async function render(
@@ -77,9 +77,11 @@ describe('MembersDirectoryComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(MembersDirectoryComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -105,8 +107,8 @@ describe('MembersDirectoryComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     getMembersDirectoryTiers = vi.fn().mockReturnValue(of({ tiers: ['Platinum Membership', 'Gold Membership'] }));
-    counts = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the selected foundation and period, renders the page and summary, and settles', async () => {
@@ -116,7 +118,7 @@ describe('MembersDirectoryComponent', () => {
     expect(text(`members-directory-row-${ACCOUNT_ID}-name`)).toBe('Acme Motors');
     expect(text('members-directory-count')).toBe('725 members · 27 at risk · highest dues first');
     expect(lifecycle).toEqual(['reading', 'settled']);
-    expect(counts).toEqual([null, 725]);
+    expect(verdicts).toEqual([false]);
   });
 
   it('renders a member row the way the design draws it', async () => {
@@ -124,9 +126,14 @@ describe('MembersDirectoryComponent', () => {
     const cell = (key: string) => text(`members-directory-row-${ACCOUNT_ID}-${key}`);
 
     expect(cell('nps')).toBe('Detractor');
+    expect(query(`members-directory-row-${ACCOUNT_ID}-nps`)?.classList).toContain('uppercase');
+    expect(query(`members-directory-row-${ACCOUNT_ID}-nps`)?.classList).toContain('font-bold');
     expect(cell('at-risk')).toBe('At risk');
     expect(cell('tier')).toBe('Gold Membership');
     expect(cell('dues')).toBe('$89.5K');
+    // Pill and dues sit inline on one line, as the design draws them.
+    expect(query(`members-directory-row-${ACCOUNT_ID}-dues`)?.parentElement?.classList).toContain('lg:whitespace-nowrap');
+    expect(query(`members-directory-row-${ACCOUNT_ID}-dues`)?.classList).toContain('text-gray-400');
     expect(cell('engagement')).toBe('Low');
     expect(cell('score')).toBe('2.3');
     expect(cell('renews')).toBe('Jan 11, 2027');
@@ -241,21 +248,6 @@ describe('MembersDirectoryComponent', () => {
     expect(getMembersDirectory).toHaveBeenCalledWith(expect.objectContaining({ tier: '', nps: '', search: '' }));
   });
 
-  it('keeps the sub-nav count through page turns and filters, blanking it only for a new period', async () => {
-    await render(response({ totalRecords: 80, scopeTotal: 80 }));
-    counts.length = 0;
-
-    fixture.componentInstance['onTablePage']({ first: 10, rows: 10 });
-    fixture.componentInstance['filterForm'].controls.nps.setValue('Promoter');
-    await settle();
-    expect(counts.every((count) => count === 80)).toBe(true);
-
-    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
-    await settle();
-    expect(counts.at(-2)).toBeNull();
-    expect(counts.at(-1)).toBe(80);
-  });
-
   it('offers a count-free search placeholder until the first read lands', async () => {
     selectedFoundation.set(null);
     await render();
@@ -321,14 +313,14 @@ describe('MembersDirectoryComponent', () => {
     expect(getMembersDirectory).toHaveBeenNthCalledWith(2, expect.objectContaining({ offset: 30 }));
     expect(getMembersDirectory).toHaveBeenCalledTimes(2);
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
-    expect(counts).toEqual([null, 34]);
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { memTier: null, memNps: null, memSearch: null, memPage: 4 } }));
   });
 
-  it('shows the empty state when the foundation has no members', async () => {
+  it('settles empty, with no body, when the foundation has no members', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0 }));
 
-    expect(query('members-directory-empty')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('members-directory-controls')).toBeNull();
     expect(query('members-directory-table')).toBeNull();
   });
 
@@ -337,6 +329,8 @@ describe('MembersDirectoryComponent', () => {
 
     expect(text('members-directory-no-match')).toBe('No member matches “zeta”.');
     expect(query('members-directory-controls')).not.toBeNull();
+    // A filter miss is not an empty period, so the shell must not take the section over.
+    expect(verdicts).toEqual([false]);
   });
 
   it('says the filters match nothing when no search is set', async () => {
@@ -346,9 +340,8 @@ describe('MembersDirectoryComponent', () => {
   });
 
   // A failed read must not render copy that asserts the foundation had no members.
-  it('separates a failed read from an empty one, settling it without a count', async () => {
+  it('separates a failed read from an empty one, settling it', async () => {
     await render();
-    counts.length = 0;
     lifecycle.length = 0;
     getMembersDirectory.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
@@ -356,9 +349,8 @@ describe('MembersDirectoryComponent', () => {
     await settle();
 
     expect(query('members-directory-error')).not.toBeNull();
-    expect(query('members-directory-empty')).toBeNull();
-    expect(counts).toEqual([null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -367,9 +359,7 @@ describe('MembersDirectoryComponent', () => {
 
     expect(getMembersDirectory).not.toHaveBeenCalled();
     expect(getMembersDirectoryTiers).not.toHaveBeenCalled();
-    expect(counts.every((count) => count === null)).toBe(true);
     expect(lifecycle).not.toContain('settled');
     expect(text('members-directory-count')).toBe('—');
-    expect(query('members-directory-empty')).toBeNull();
   });
 });

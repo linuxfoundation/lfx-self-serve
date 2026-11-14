@@ -197,6 +197,26 @@ describe('ApiClientService — transport failures are always classified', () => 
     expect(err.toResponse()['transport'], 'an upstream answer was marked as BFF transport').toBeUndefined();
   });
 
+  it.each(['999', 'Tue, 10 Nov 2026 12:05:00 GMT'])('retains the cooldown %s even if the 429 body read fails', async (retryAfter) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: new Headers({ 'Retry-After': retryAfter }),
+        text: () => Promise.reject(new TypeError('terminated')),
+      }))
+    );
+    const err = await new ApiClientService().request('POST', 'https://example.invalid/members/bulk').catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(MicroserviceError);
+    expect(err).toMatchObject({ statusCode: 429, retryAfter });
+  });
+
+  it.each(['private@example.com', '300\r\nSet-Cookie: synthetic', 'not a deadline'])('does not retain an invalid cooldown: %s', (retryAfter) => {
+    expect(new MicroserviceError('Slow down', 429, 'RATE_LIMITED', { retryAfter }).retryAfter).toBeUndefined();
+  });
+
   it('preserves an upstream 4xx when its error body cannot be read', async () => {
     vi.stubGlobal(
       'fetch',
@@ -267,5 +287,146 @@ describe('ApiClientService.streamRequest — same classification, separate code 
 
     expect(err.statusCode, 'a real 403 was recast on the stream path').toBe(403);
     expect(err.toResponse()['transport']).toBeUndefined();
+  });
+});
+
+/**
+ * A large file can outlast the 30 s default, so a caller may pass a longer `timeoutMs`; every other caller keeps the
+ * client's configured timeout.
+ */
+describe('ApiClientService.streamRequest — timeout', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ['the configured timeout when no option is given', undefined, 30_000],
+    ['options.timeoutMs when given', { timeoutMs: 120_000 }, 120_000],
+  ])('aborts after %s', async (_label, options, expectedMs) => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('file-bytes', { status: 200 })))
+    );
+
+    await new ApiClientService({ retryAttempts: 1 }).streamRequest('GET', 'https://example.invalid/x', undefined, undefined, undefined, options);
+
+    expect(timeout).toHaveBeenCalledWith(expectedMs);
+  });
+
+  it('names the timeout it was given in a timeout error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' })))
+    );
+
+    const err = (await new ApiClientService({ retryAttempts: 1 })
+      .streamRequest('GET', 'https://example.invalid/x', undefined, undefined, undefined, { timeoutMs: 120_000 })
+      .catch((e: unknown) => e)) as MicroserviceError;
+
+    expect(err.statusCode).toBe(408);
+    expect(err.message).toBe('Request timeout after 120000ms');
+  });
+});
+
+/**
+ * Which methods carry a request body.
+ * @description DELETE used to drop its body like GET, which silently lost the note an organizer
+ * attaches to a cancelled occurrence. Every other DELETE caller passes no data, so sending one only
+ * when it's given leaves them unchanged.
+ */
+describe('ApiClientService.request — request bodies', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const stubFetch = (): ReturnType<typeof vi.fn> => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({ ok: true, status: 204, statusText: 'No Content', headers: new Headers(), text: () => Promise.resolve('') })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+  const bodyOf = (fetchMock: ReturnType<typeof vi.fn>): unknown => (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body;
+
+  it('sends a JSON body on DELETE when data is given', async () => {
+    const fetchMock = stubFetch();
+
+    await new ApiClientService({ retryAttempts: 1 }).request('DELETE', 'https://example.invalid/x', undefined, undefined, { note: 'Holiday week' });
+
+    expect(bodyOf(fetchMock)).toBe(JSON.stringify({ note: 'Holiday week' }));
+  });
+
+  it('sends no body on DELETE without data', async () => {
+    const fetchMock = stubFetch();
+
+    await new ApiClientService({ retryAttempts: 1 }).request('DELETE', 'https://example.invalid/x');
+
+    expect(bodyOf(fetchMock)).toBeUndefined();
+  });
+
+  it('still never sends a body on GET', async () => {
+    const fetchMock = stubFetch();
+
+    await new ApiClientService({ retryAttempts: 1 }).request('GET', 'https://example.invalid/x', undefined, undefined, { ignored: true });
+
+    expect(bodyOf(fetchMock)).toBeUndefined();
+  });
+});
+
+describe('ApiClientService.request — shared operation deadline', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('rejects an expired operation before dispatching another request', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      new ApiClientService().request('GET', 'https://example.invalid/x', undefined, undefined, undefined, undefined, { deadlineAt: 1000 })
+    ).rejects.toMatchObject({ statusCode: 408, code: 'TIMEOUT' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts a later request at the original operation deadline rather than giving it a fresh budget', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException('Deadline elapsed', 'TimeoutError')), ms);
+      return controller.signal;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(new Response('{}', { status: 200 })), 30);
+            init.signal!.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                reject(init.signal!.reason);
+              },
+              { once: true }
+            );
+          })
+      )
+    );
+    const client = new ApiClientService({ timeout: 1000 });
+    const options = { deadlineAt: 1050 };
+    const first = client.request('GET', 'https://example.invalid/first', undefined, undefined, undefined, undefined, options);
+    await vi.advanceTimersByTimeAsync(30);
+    await first;
+
+    const second = client.request('GET', 'https://example.invalid/second', undefined, undefined, undefined, undefined, options);
+    const result = expect(second).rejects.toMatchObject({ statusCode: 408, code: 'TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(20);
+    await result;
   });
 });

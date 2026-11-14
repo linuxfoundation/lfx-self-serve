@@ -1,0 +1,273 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import {
+  MKTG_DOCUMENT_TYPES,
+  MKTG_FAMILY_EXPORT_API_PATH,
+  MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_PORTRAIT_PAGE,
+  SELECTED_PROJECT_COOKIE_KEY,
+} from '@lfx-one/shared/constants';
+import type { FaqContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import { expect, Locator, Page } from '@playwright/test';
+import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
+import { mockProjects } from '../fixtures/mock-data/projects.mock';
+import { suppressCookieBanner } from './account-settings-email.helper';
+import { DOCUMENT_PROJECT, setupDocuments } from './mktg-os-documents.helper';
+import { columnAssetRevisionResponse, draftFrameworkAsset, nativeAssetRevisionResponse } from './mktg-os-asset-views.helper';
+
+/** Only the authenticated shell uses harness state. Domain traffic is entirely synthetic. */
+export async function openFamilyExports(
+  page: Page,
+  options: {
+    familyId?: string;
+    existing?: boolean;
+    stale?: boolean;
+    empty?: boolean;
+    writer?: boolean;
+    lookupStatus?: number;
+    result?: 'pending' | 'failed';
+    holdList?: boolean;
+    holdPrint?: boolean;
+    approvedFamily?: boolean;
+    allAssets?: boolean;
+    /** With `allAssets`: the FAQ the family PDF prints, instead of the canonical envelope's. */
+    faqContent?: FaqContent;
+    /** The synthetic project's name instead of the canonical one (a long name, for the running head's measure). */
+    projectName?: string;
+  } = {}
+) {
+  await suppressCookieBanner(page);
+  // Pins feature override, cookies, project writer permissions and shell APIs using the canonical helper.
+  await setupDocuments(page, { writer: options.writer ?? true });
+  if (options.projectName) {
+    // The name where the shell fetches the project (the slug mock reads this record) and where the selection is stored.
+    mockProjects[DOCUMENT_PROJECT.slug] = { ...mockProjects[DOCUMENT_PROJECT.slug], name: options.projectName };
+    await page.context().addCookies([
+      {
+        name: SELECTED_PROJECT_COOKIE_KEY,
+        value: encodeURIComponent(JSON.stringify({ ...DOCUMENT_PROJECT, name: options.projectName })),
+        domain: 'localhost',
+        path: '/',
+      },
+    ]);
+  }
+  const member = familyExportMember();
+  const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === member.agentKey);
+  if (!type) throw new Error('Synthetic framework type missing');
+  const approval = { approvedAt: '2026-10-20T00:00:00Z', approvedBy: null };
+  const base = nativeAssetRevisionResponse('faq');
+  const asset = draftFrameworkAsset();
+  const revision = { ...base.revision, id: member.revisionId, number: member.revisionNumber, contentSha256: member.contentSha256, approval };
+  const response: MktgRevisionResponse = {
+    ...base,
+    project: DOCUMENT_PROJECT.uid,
+    type,
+    revision,
+    revisions: [revision],
+    approval,
+    approvedCurrent: { revisionId: revision.id, number: revision.number },
+    markdown: JSON.stringify(asset.content),
+    // The run's record as the live store holds it: the day it read its sources dates the framework's Sources & gaps intro
+    // and the family's "figures as of" cell (a record without one leaves both undated; nothing is invented from the revision).
+    sidecar: { report: asset.report, checks: asset.checks, mode: asset.mode, inputs_record: { date_read: '2026-10-18' } },
+  };
+  const listing: MktgDocumentsResponse = {
+    project: DOCUMENT_PROJECT.uid,
+    groups: MKTG_DOCUMENT_TYPES.map((entry) => ({
+      type: entry,
+      documents:
+        !options.empty && (entry.agentKey === type.agentKey || (options.approvedFamily && Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)))
+          ? [
+              {
+                agentKey: entry.agentKey,
+                documentId: 'living',
+                revisionCount: 1,
+                latestRevisionId: revision.id,
+                currentRevisionNumber: 1,
+                approvedCurrent: response.approvedCurrent,
+                createdAt: revision.createdAt,
+                updatedAt: revision.createdAt,
+              },
+            ]
+          : [],
+    })),
+  };
+  await page.route('**/api/mktg-agents/documents?*', (route) => {
+    if (options.holdList) return;
+    return route.fulfill({ status: options.writer === false ? 403 : 200, json: options.writer === false ? { code: 'FORBIDDEN' } : listing });
+  });
+  let releasePrint: () => void = () => undefined;
+  const printGate = new Promise<void>((resolve) => {
+    releasePrint = resolve;
+  });
+  await page.route('**/api/mktg-agents/documents/foundation-message/living/revisions/**', async (route) => {
+    if (options.holdPrint) await printGate;
+    return route.fulfill({ json: response });
+  });
+  const members = options.allAssets
+    ? MKTG_DOCUMENT_TYPES.filter((entry) => Object.hasOwn(MKTG_FAMILY_EXPORT_KINDS, entry.agentKey)).map((entry) =>
+        familyExportMember({ agentKey: entry.agentKey as keyof typeof MKTG_FAMILY_EXPORT_KINDS })
+      )
+    : [member];
+  if (options.allAssets) {
+    // The framework's route is the one above (the fixture's `approval`, the one `family-export-last` and the book's openers
+    // print); a second handler here would shadow it, since Playwright tries the last registered route first.
+    for (const current of members.filter((entry) => entry.agentKey !== member.agentKey)) {
+      const asset = columnAssetRevisionResponse(current.agentKey);
+      const markdown = current.agentKey === 'faq' && options.faqContent ? JSON.stringify(options.faqContent) : asset.markdown;
+      const revision = { ...asset.revision, id: current.revisionId, contentSha256: current.contentSha256 };
+      await page.route(`**/api/mktg-agents/documents/${current.agentKey}/living/revisions/**`, async (route) => {
+        if (options.holdPrint) await printGate;
+        return route.fulfill({
+          json: {
+            ...asset,
+            markdown,
+            project: DOCUMENT_PROJECT.uid,
+            revision,
+            revisions: [revision],
+            approvedCurrent: { revisionId: revision.id, number: revision.number },
+          },
+        });
+      });
+    }
+  }
+  let record = options.existing ? familyExportRecord({ project: DOCUMENT_PROJECT.uid }) : null;
+  let ready = options.result !== 'pending';
+  let started = familyExportStarted(DOCUMENT_PROJECT.uid);
+  let lookupReads = 0;
+  await page.route(`**${MKTG_FAMILY_EXPORT_API_PATH}/**`, (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/last')) {
+      lookupReads++;
+      return route.fulfill({
+        status: options.lookupStatus ?? 200,
+        json: {
+          last: record,
+          currentMembers: options.empty ? [] : members,
+          skippedMembers: options.allAssets ? [] : ['brand-kit', 'boilerplates', 'faq'],
+          stale: options.stale ?? false,
+        },
+      });
+    }
+    if (path.endsWith('/start')) {
+      const mode = route.request().postDataJSON().mode;
+      started = { ...started, snapshot: { ...started.snapshot, mode, deckId: mode === 'update' ? (record?.deckId ?? null) : null } };
+      return route.fulfill({ json: started });
+    }
+    if (path.endsWith('/result')) {
+      if (options.result === 'failed')
+        return route.fulfill({ json: { status: 'failed', failure: 'google', message: 'Synthetic export failure. Try again.', deckLink: null } });
+      if (!ready) return route.fulfill({ json: { status: 'pending' } });
+      const deckId = started.snapshot.mode === 'update' ? (record?.deckId ?? 'synthetic_deck_123') : 'synthetic_new_deck_123';
+      record = familyExportRecord({
+        project: DOCUMENT_PROJECT.uid,
+        deckId,
+        link: `https://docs.google.com/presentation/d/${deckId}/edit`,
+        mode: started.snapshot.mode,
+      });
+      return route.fulfill({ json: { status: 'ready', record } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.evaluate(
+    (url) => {
+      history.pushState({}, '', url);
+      dispatchEvent(new PopStateEvent('popstate'));
+    },
+    `/project/mktg-os-agents/families/${options.familyId ?? 'positioning-brand'}?project=${DOCUMENT_PROJECT.slug}`
+  );
+  await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+  return {
+    complete: () => {
+      ready = true;
+    },
+    lookupReads: () => lookupReads,
+    releasePrint,
+  };
+}
+
+/** One frame of the family book as the e2e reads it: the grammar's plan id and the book's page number. */
+/** The tallest one-line running head (`.pp-head`: 10 px type at 1.2, 8 px padding, 1 px rule = 21 px; two lines read 33). */
+const FAMILY_HEAD_ONE_LINE_MAX = 24;
+
+export interface FamilyBookFrame {
+  id: string;
+  page: number;
+}
+
+/**
+ * The family book's frames, by the portrait grammar's contract (`[data-testid="lfx-mktg-portrait-page"]` with
+ * `data-page-id` and `data-page`): every one 816×1056 with nothing laid out past its edge, the book opening on the
+ * cover and contents, each document's opener before its pages, the Sources page and the back cover last, the numbers
+ * rising by one across the frames (the framework's and the kit's own portrait frames sit between their openers and the
+ * next). Returns what the content assertions need: the openers, a frame by id, the inner prints' frame counts, the total.
+ */
+export async function expectFamilyBookFrames(book: Locator) {
+  const pages = book.locator('[data-testid="lfx-mktg-portrait-page"]');
+  const frames: FamilyBookFrame[] = (
+    await pages.evaluateAll((elements) => elements.map((element) => [element.getAttribute('data-page-id') ?? '', Number(element.getAttribute('data-page'))]))
+  ).map(([id, page]) => ({ id: String(id), page: Number(page) }));
+  expect(frames.length).toBeGreaterThan(8);
+  expect(frames.slice(0, 3).map((frame) => frame.id)).toEqual(['cover', 'contents', 'opener-foundation-message']);
+  expect(frames.slice(-6).map((frame) => frame.id)).toEqual(['opener-boilerplates', 'boilerplates', 'opener-faq', 'faq-1', 'sources', 'back-cover']);
+  const openers = frames.filter((frame) => frame.id.startsWith('opener-'));
+  expect(openers.map((frame) => frame.id)).toEqual(['opener-foundation-message', 'opener-brand-kit', 'opener-boilerplates', 'opener-faq']);
+  const kitOpener = frames.findIndex((frame) => frame.id === 'opener-brand-kit');
+  expect(kitOpener).toBeGreaterThan(3);
+  // One plan numbers every frame, rising by one from the cover to the back cover: the framework's frames (the pages
+  // of its family plan) after its opener (3), the kit's (the pages of its plan on the grammar at this head; the rest
+  // still print as its flowing chapters, counted by the plan all the same) after the kit's opener, then the family's own.
+  frames.slice(0, kitOpener + 1).forEach((frame, index) => expect({ id: frame.id, page: frame.page }).toEqual({ id: frame.id, page: index + 1 }));
+  const frameworkFrames = frames.slice(3, kitOpener);
+  const kitFrames = frames.slice(kitOpener + 1, -6);
+  kitFrames.forEach((frame, index) => expect(frame.page).toBe(frames[kitOpener].page + index + 1));
+  const tail = frames.slice(-6);
+  expect(tail[0].page).toBeGreaterThan(frames[kitOpener].page + kitFrames.length);
+  tail.slice(1).forEach((frame, index) => expect(frame.page).toBe(tail[0].page + index + 1));
+  const total = frames[frames.length - 1].page;
+  // Every frame is one US Letter page, and nothing in it is laid out past its edge.
+  const geometry = await pages.evaluateAll((elements) =>
+    elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      const overflowing = Array.from(element.querySelectorAll<HTMLElement>('*')).filter((child) => {
+        const rect = child.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return false;
+        return rect.left < box.left - 0.5 || rect.top < box.top - 0.5 || rect.right > box.right + 0.5 || rect.bottom > box.bottom + 0.5;
+      });
+      // The running head's box, when the page has one (the cover and the openers print none).
+      const head = element.querySelector('[data-testid="mktg-portrait-page-head"]')?.getBoundingClientRect() ?? null;
+      return {
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        overflowing: overflowing.map((child) => child.className),
+        head: head ? Math.round(head.height) : null,
+      };
+    })
+  );
+  geometry.forEach((frame, index) => {
+    expect({ id: frames[index].id, width: frame.width, height: frame.height }).toEqual({
+      id: frames[index].id,
+      width: MKTG_PORTRAIT_PAGE.width,
+      height: MKTG_PORTRAIT_PAGE.height,
+    });
+    expect({ id: frames[index].id, overflowing: frame.overflowing }).toEqual({ id: frames[index].id, overflowing: [] });
+    // The running head is one line on every page of the book (the family's one rule over the grammar's head: a label
+    // of 10 px type at 1.2 over 8 px of padding and a 1 px rule is 21 px; a second line would make it 33).
+    if (frame.head !== null) expect(frame.head, `${frames[index].id}: running head on one line`).toBeLessThanOrEqual(FAMILY_HEAD_ONE_LINE_MAX);
+  });
+  // The family's own pages are the book's direct children or sit in the grammar's own wrappers (an opener, the back cover);
+  // the framework's and the kit's frames sit in their prints (their plan ids, `sources` among them, may repeat the family's).
+  const frame = (id: string): string => `[data-testid="lfx-mktg-portrait-page"][data-page-id="${id}"]`;
+  const own = (id: string): string =>
+    [`:scope > ${frame(id)}`, `:scope > lfx-mktg-portrait-opener > ${frame(id)}`, `:scope > lfx-mktg-portrait-back-cover > ${frame(id)}`].join(', ');
+  return {
+    frames,
+    openers,
+    total,
+    frameworkPages: frameworkFrames.length,
+    kitPages: kitFrames.length,
+    byId: (id: string): Locator => book.locator(own(id)),
+    byIdPage: (id: string): number => (id.startsWith('opener-') ? frames.find((frame) => frame.id === id) : tail.find((frame) => frame.id === id))?.page ?? 0,
+  };
+}

@@ -12,7 +12,10 @@
       @for (item of permissionMatrix; track item.scope + item.level) {
         <div class="border border-gray-200 rounded-lg p-3">
           <div class="flex items-center justify-between mb-2">
-            <lfx-tag [value]="item.scope + ' ' + item.level" [severity]="item.badge.severity"></lfx-tag>
+            <lfx-tag
+              [value]="item.scope + ' ' + item.level"
+              [severity]="item.badge.severity"
+              [styleClass]="item.badge.severity === 'accent' ? item.badge.bgColor + ' ' + item.badge.color : ''"></lfx-tag>
           </div>
           <p class="text-xs text-gray-600 mb-2">{{ item.description }}</p>
           <ul class="text-sm text-gray-500 flex flex-col gap-1">

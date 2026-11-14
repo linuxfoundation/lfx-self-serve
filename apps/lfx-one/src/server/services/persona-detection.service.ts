@@ -8,7 +8,6 @@ import {
   PERSONA_PRIORITY,
   PERSONAS_CACHE_TTL_MS,
   ROOT_PROJECT_SLUG,
-  VALID_PERSONAS,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
@@ -21,6 +20,7 @@ import {
   PersonaDetections,
   PersonaProject,
   PersonaType,
+  RootMarketingOpsGrants,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -47,11 +47,16 @@ export class PersonaDetectionService {
   private readonly rootWriterRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly lfStaffRequestCache = new WeakMap<Request, Promise<boolean>>();
   private readonly rootMarketingAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
-  private readonly rootCampaignManagerRequestCache = new WeakMap<Request, Promise<boolean>>();
+  private readonly rootMarketingOpsRequestCache = new WeakMap<Request, Promise<RootMarketingOpsGrants>>();
   private readonly rootAuditorRequestCache = new WeakMap<Request, Promise<boolean>>();
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
   private readonly projectSlugRequestCache = new WeakMap<Request, Map<string, Promise<{ uid: string; exists: boolean }>>>();
+  // Per request, the marketing relations whose grant check (ROOT or project-scoped) could not be
+  // verified upstream. Every such check still fails closed to `false`; getPersonas reports
+  // `marketingGrantCheckFailed` only for a relation that came back `false` — a `true` from another
+  // check of the same relation (ROOT miss, project grant) is verified.
+  private readonly failedMarketingGrantChecks = new WeakMap<Request, Set<'marketing_auditor' | 'campaign_manager'>>();
 
   public constructor() {
     this.natsService = new NatsService();
@@ -134,23 +139,19 @@ export class PersonaDetectionService {
     const marketingOpsFgaEnabled = isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga);
     const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
     const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
-    // isMarketingAuditorRootGrant/isCampaignManagerRootGrant reuse checkRootMarketingAuditor/
-    // checkRootCampaignManager's own per-request WeakMap cache (see below) — checkMarketingAuditorAccess/
-    // checkCampaignManagerAccess already call these internally, so resolving them again here doesn't
-    // add a round trip. Surfacing them separately lets the frontend tell a ROOT-cascading grant apart
-    // from a project-scoped one instead of inferring scope from the `projectSlug` it happened to pass
-    // (Copilot finding, PR #1835).
-    const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
-      await Promise.all([
-        this.getPersonaDetections(req, username, email, cacheKey),
-        this.checkRootWriter(req),
-        this.checkLFStaff(req),
-        this.checkRootAuditor(req),
-        needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
-        needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
-        needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
-        needsCampaignManager ? this.checkRootCampaignManager(req) : Promise.resolve(false),
-      ]);
+    // isMarketingAuditorRootGrant reuses checkRootMarketingAuditor's per-request WeakMap cache (see
+    // below), so it adds no round trip. isCampaignManagerRootGrant is always false: the frontend treats
+    // a true value as a grant on every project, and no campaign-manager grant cascades from ROOT once
+    // the ROOT `marketing_ops` team tuple is removed, which this change assumes.
+    const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant] = await Promise.all([
+      this.getPersonaDetections(req, username, email, cacheKey),
+      this.checkRootWriter(req),
+      this.checkLFStaff(req),
+      this.checkRootAuditor(req),
+      needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
+      needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
+      needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
+    ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
     let personas = detections.personas;
@@ -158,12 +159,9 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, 'executive-director');
     }
 
-    // Only honor the impersonation override when the target user actually has the forced persona.
-    // Root-writer promotion above is the only path that may inject a persona the user doesn't natively hold.
-    const forcedPersona = req.appSession?.['impersonationPersonaContext'];
-    if (typeof forcedPersona === 'string' && VALID_PERSONAS.has(forcedPersona) && personas.includes(forcedPersona as PersonaType)) {
-      personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
-    }
+    // A `true` grant is verified by the check that granted it; only a `false` alongside a failed check is unverified.
+    const marketingAuditorUnverified = !isMarketingAuditor && this.marketingGrantCheckFailed(req, 'marketing_auditor');
+    const campaignManagerUnverified = !isCampaignManager && this.marketingGrantCheckFailed(req, 'campaign_manager');
 
     return {
       ...detections,
@@ -174,10 +172,19 @@ export class PersonaDetectionService {
       isMarketingAuditor,
       isCampaignManager,
       isMarketingAuditorRootGrant,
-      isCampaignManagerRootGrant,
+      isCampaignManagerRootGrant: false,
+      marketingGrantCheckFailed: marketingAuditorUnverified || campaignManagerUnverified,
+      marketingAuditorUnverified,
+      campaignManagerUnverified,
     };
   }
 
+  /**
+   * Checks whether the current user holds `writer_guard` on the tenant ROOT project. Surfaced as
+   * `isRootWriter`. Request-cached, resolves the ROOT uid via NATS, and fails closed to `false`.
+   * The ROOT `global_writer` half does not cascade, so a ROOT grant does not answer for a named
+   * project — see {@link checkProjectWriter}.
+   */
   public async checkRootWriter(req: Request): Promise<boolean> {
     const cached = this.rootWriterRequestCache.get(req);
     if (cached) return cached;
@@ -186,7 +193,7 @@ export class PersonaDetectionService {
     const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
         if (!rootUid) return false;
-        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access: 'writer' });
+        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access: 'writer_guard' });
       })
       .catch((error) => {
         logger.warning(req, 'check_root_writer', 'Root-writer check failed, assuming no bypass', { err: error });
@@ -197,13 +204,44 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Whether the caller is a member of `team:lf-staff`. Its consumers sit outside Org Lens and gate
+   * `writer_guard` on `projectSlug` — the scoped form of {@link checkRootWriter}, for a request that
+   * names a project. `global_writer` does not cascade and is withheld per project (Draft,
+   * Confidential), so a ROOT grant must not answer for a named project. Fails closed to `false`.
+   */
+  public async checkProjectWriter(req: Request, projectSlug: string): Promise<boolean> {
+    return this.checkProjectAccess(req, projectSlug, 'writer_guard', 'check_project_writer');
+  }
+
+  /**
+   * `global_marketing_ops` on `projectSlug` itself — the relation campaign-service checks
+   * (`project:{uid}#global_marketing_ops` on the path project) before it sends account-level Google
+   * Ads inputs such as audiences to the shared LF customer. Narrower than `campaign_manager`, which
+   * also admits the project's `executive_director`. An unknown slug is `false`.
+   *
+   * STRICT, unlike the other checks here: a failed slug lookup or access check THROWS rather than
+   * answering `false`, so a caller can tell "not granted" (403) from "could not be verified" (503).
+   * Not request-cached; each caller asks once per request.
+   */
+  public async checkProjectGlobalMarketingOpsStrict(req: Request, projectSlug: string): Promise<boolean> {
+    if (!projectSlug) return false;
+    const { uid, exists } = await this.resolveProjectSlug(req, projectSlug);
+    if (!exists) return false;
+    return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'global_marketing_ops' });
+  }
+
+  /**
+   * Whether the caller is a member of `team:lf-staff`. Most consumers sit outside Org Lens and gate
    * privileged surfaces: `require-dashboard-access.middleware.ts`,
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
    * `require-marketing-access.middleware.ts`. Distinct from the Org Lens affordance in
    * `OrgRoleGrantsService` (`ORG_WIDE_READ_TEAM_IDS`), which is a separate list with separate
-   * consumers — widening either does not widen the other. Neither is a read gate; that is the
-   * authorizer-backed `assertOrgLensRead`.
+   * consumers — widening either does not widen the other. Neither of those is a read gate; that is
+   * the authorizer-backed `assertOrgLensRead`.
+   *
+   * ONE consumer uses this as a FIELD-LEVEL DISCLOSURE gate: `OrgLensEventsService` withholds the
+   * event-wide registration goal (#4432) from everyone this returns `false` for, on every org's
+   * Events page. It is the only caller where `true` discloses data rather than admitting access, so
+   * widening `lf-staff#member` here — re-adding `lf-contractor`, say — widens that disclosure too.
    * Request-cached; fails closed to `false`.
    */
   public async checkLFStaff(req: Request): Promise<boolean> {
@@ -231,29 +269,25 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Checks whether the current user holds `marketing_ops` on the tenant ROOT project — NOT
-   * `campaign_manager` itself. Unlike `marketing_auditor`, `campaign_manager` does not cascade
-   * from parent (per the model: `campaign_manager: executive_director or marketing_ops`, with no
-   * `campaign_manager from parent` disjunct). Only the `marketing_ops` half cascades, so a ROOT
-   * `executive_director` grant must NOT be treated as campaign_manager on every descendant
-   * project — only a ROOT `marketing_ops` grant may be. An ED-only-on-ROOT caller falls through
-   * to {@link checkCampaignManagerAccess}'s per-project check instead.
+   * Checks whether the current user holds `global_marketing_ops` on the tenant ROOT project — NOT
+   * `campaign_manager` itself. `campaign_manager` has no `from parent` disjunct
+   * (`campaign_manager: executive_director or global_marketing_ops`), so a ROOT `executive_director`
+   * grant must NOT be treated as campaign_manager everywhere. This is the signal for requests that
+   * name no project; a request that names one is answered by that project's own `campaign_manager`
+   * relation (see {@link checkCampaignManagerAccess}).
    */
   public async checkRootCampaignManager(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootCampaignManagerRequestCache, 'marketing_ops', 'check_root_campaign_manager');
+    return (await this.checkRootMarketingOps(req)).globalMarketingOps;
   }
 
   /**
-   * Checks whether the current user holds `auditor` on the tenant ROOT project — the Formations
-   * queue's (`foundation/formations`, GH-1958) authorization boundary. Unlike
-   * `checkRootMarketingAuditor`/`checkRootCampaignManager`, `auditor` has no project-scoped variant
-   * to fold in, so callers never need a `checkAuditorAccess(req, projectSlug)` counterpart — this is
-   * the whole check. Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via
-   * NATS, and fails closed to `false` so transient errors never widen access. `auditor` is already a
-   * real `AccessCheckAccessType`, so this needs no fabricated-stand-in TODO.
+   * Checks whether the current user holds `auditor_guard` on the tenant ROOT project — the Formations
+   * queue's (`foundation/formations`, GH-1958) authorization boundary, enforced by `requireAuditor`.
+   * Mirrors {@link checkRootWriter}: request-cached, resolves the ROOT uid via NATS, and fails closed
+   * to `false` so transient errors never widen access.
    */
   public async checkRootAuditor(req: Request): Promise<boolean> {
-    return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor', 'check_root_auditor');
+    return this.checkRootAccess(req, this.rootAuditorRequestCache, 'auditor_guard', 'check_root_auditor');
   }
 
   /** ROOT grant OR a grant scoped to `projectSlug` (when given). Mirrors `requireMarketingAccess`. */
@@ -263,19 +297,49 @@ export class PersonaDetectionService {
   }
 
   /**
-   * A cascading ROOT `marketing_ops` grant OR a `campaign_manager` grant scoped to `projectSlug`
-   * (when given) — the latter also catches a project-scoped `executive_director`, which does not
-   * cascade and so cannot be resolved via the ROOT short-circuit. Mirrors `requireMarketingAccess`.
+   * `campaign_manager` on `projectSlug` when given — that relation already folds in the per-project
+   * `global_marketing_ops` and a project-scoped `executive_director`, so a ROOT-only
+   * `global_marketing_ops` grant must not short-circuit it: it does not cascade and would otherwise
+   * answer for every project.
+   * Without a slug, the ROOT grant from {@link checkRootCampaignManager}. This is a client hint;
+   * `requireMarketingAccess` enforces against the named project's own relation.
    */
   private async checkCampaignManagerAccess(req: Request, projectSlug?: string): Promise<boolean> {
-    if (await this.checkRootCampaignManager(req)) return true;
+    if (!projectSlug) return this.checkRootCampaignManager(req);
     return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
+  }
+
+  /**
+   * ROOT `global_marketing_ops` access check, cached per request. Fails closed to no grants.
+   */
+  private checkRootMarketingOps(req: Request): Promise<RootMarketingOpsGrants> {
+    const cached = this.rootMarketingOpsRequestCache.get(req);
+    if (cached) return cached;
+
+    const none: RootMarketingOpsGrants = { globalMarketingOps: false };
+    const promise = resolveRootProjectUid(req, this.natsService)
+      .then(async (rootUid) => {
+        // A null ROOT uid means the lookup failed (ROOT always exists), so the grant is unverified, not denied.
+        if (!rootUid) {
+          this.recordFailedMarketingGrantCheck(req, 'campaign_manager');
+          return none;
+        }
+        const results = await this.accessCheckService.checkAccessStrict(req, [{ resource: 'project', id: rootUid, access: 'global_marketing_ops' }]);
+        return { globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false };
+      })
+      .catch((error) => {
+        logger.warning(req, 'check_root_campaign_manager', 'Root global_marketing_ops check failed, assuming no access', { err: error });
+        this.recordFailedMarketingGrantCheck(req, 'campaign_manager');
+        return none;
+      });
+    this.rootMarketingOpsRequestCache.set(req, promise);
+    return promise;
   }
 
   private async checkProjectAccess(
     req: Request,
     projectSlug: string | undefined,
-    access: 'marketing_auditor' | 'campaign_manager',
+    access: 'marketing_auditor' | 'campaign_manager' | 'writer_guard',
     operation: string
   ): Promise<boolean> {
     if (!projectSlug) return false;
@@ -283,11 +347,23 @@ export class PersonaDetectionService {
     try {
       const { uid, exists } = await this.resolveProjectSlug(req, projectSlug);
       if (!exists) return false;
-      return await this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: uid, access });
+      // Strict: an upstream failure must throw into the catch below, not come back as a denial.
+      return await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access });
     } catch (error) {
       logger.warning(req, operation, `Project ${access} check failed, assuming no access`, { err: error, projectSlug });
+      if (access !== 'writer_guard') this.recordFailedMarketingGrantCheck(req, access);
       return false;
     }
+  }
+
+  private recordFailedMarketingGrantCheck(req: Request, relation: 'marketing_auditor' | 'campaign_manager'): void {
+    const failed = this.failedMarketingGrantChecks.get(req) ?? new Set();
+    failed.add(relation);
+    this.failedMarketingGrantChecks.set(req, failed);
+  }
+
+  private marketingGrantCheckFailed(req: Request, relation: 'marketing_auditor' | 'campaign_manager'): boolean {
+    return this.failedMarketingGrantChecks.get(req)?.has(relation) ?? false;
   }
 
   private resolveProjectSlug(req: Request, projectSlug: string): Promise<{ uid: string; exists: boolean }> {
@@ -300,7 +376,8 @@ export class PersonaDetectionService {
     const cached = cache.get(projectSlug);
     if (cached) return cached;
 
-    const promise = this.projectService.getProjectIdBySlug(req, projectSlug);
+    // A slug lookup that times out is a failure here, not an unknown project, so callers can report it.
+    const promise = this.projectService.getProjectIdBySlug(req, projectSlug, { unavailableAsMissing: false });
     cache.set(projectSlug, promise);
     return promise;
   }
@@ -308,7 +385,7 @@ export class PersonaDetectionService {
   private async checkRootAccess(
     req: Request,
     cache: WeakMap<Request, Promise<boolean>>,
-    access: 'marketing_auditor' | 'campaign_manager' | 'marketing_ops' | 'auditor',
+    access: 'marketing_auditor' | 'auditor_guard',
     operation: string
   ): Promise<boolean> {
     const cached = cache.get(req);
@@ -316,11 +393,16 @@ export class PersonaDetectionService {
 
     const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
-        if (!rootUid) return false;
-        return this.accessCheckService.checkSingleAccess(req, { resource: 'project', id: rootUid, access });
+        // A null ROOT uid means the lookup failed (ROOT always exists): unverified, not denied.
+        if (!rootUid) {
+          if (access === 'marketing_auditor') this.recordFailedMarketingGrantCheck(req, access);
+          return false;
+        }
+        return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: rootUid, access });
       })
       .catch((error) => {
         logger.warning(req, operation, `Root ${access} check failed, assuming no access`, { err: error });
+        if (access === 'marketing_auditor') this.recordFailedMarketingGrantCheck(req, access);
         return false;
       });
     cache.set(req, promise);

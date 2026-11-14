@@ -5,6 +5,9 @@ import { EVENT_SOURCE_BACKFILL } from '../constants/events.constants';
 import { toLocalDateOnlyString } from './date-time.utils';
 import { sanitizeFilename } from './file.utils';
 
+/** The exact character set Snowflake's `TRIM(EVENT_SOURCE, ' \t\n\r')` strips. */
+const SQL_TRIM_CHARS = ' \t\n\r';
+
 /**
  * True when an event registration row came from the CSV backfill import.
  *
@@ -24,9 +27,23 @@ import { sanitizeFilename } from './file.utils';
  *
  * This parity requirement only binds callers mirroring isPastEventSql() against Snowflake. A
  * JS-only caller (no SQL counterpart) may pre-trim with String.prototype.trim() before calling.
+ *
+ * Trimmed with index scans rather than an anchored `[ \t\n\r]+$` regex, which backtracks in
+ * quadratic time on a long whitespace run that is not at the end of the string.
  */
 export function isBackfillEventSource(source: string | null | undefined): boolean {
-  return source?.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, '').toLowerCase() === EVENT_SOURCE_BACKFILL;
+  if (source == null) {
+    return false;
+  }
+  let start = 0;
+  let end = source.length;
+  while (start < end && SQL_TRIM_CHARS.includes(source[start])) {
+    start++;
+  }
+  while (end > start && SQL_TRIM_CHARS.includes(source[end - 1])) {
+    end--;
+  }
+  return source.slice(start, end).toLowerCase() === EVENT_SOURCE_BACKFILL;
 }
 
 /** Overall certificate filename length budget, matching the `sanitizeFilename()` call below. */
@@ -100,6 +117,27 @@ export function buildCertificateFileName(eventName: string | null | undefined, s
   if (nameSlug) parts.push(nameSlug);
   if (dateStamp) parts.push(dateStamp);
   if (!nameSlug && !dateStamp) parts.push(eventId);
+
+  return sanitizeFilename(`${parts.join('-')}${CERTIFICATE_EXTENSION}`, MAX_FILENAME_LENGTH);
+}
+
+const VISA_LETTER_PREFIX = 'visa-letter';
+
+/**
+ * Build the download filename for a visa support letter, e.g.
+ * "visa-letter-kubecon-india-2026-jane-doe.pdf". Falls back to `eventId` when no event name or
+ * attendee name is available, so the file always has a discriminator.
+ */
+export function buildVisaLetterFileName(eventName: string | null | undefined, attendeeName: string | null | undefined, eventId: string): string {
+  // Attendee gets up to a third of the budget so a long event name can't crowd it out entirely.
+  const budget = MAX_FILENAME_LENGTH - VISA_LETTER_PREFIX.length - CERTIFICATE_EXTENSION.length - 2;
+  const attendeeSlug = attendeeName ? truncateByCodePoint(slugifyEventName(attendeeName).normalize('NFD'), Math.floor(budget / 3)) : '';
+  const eventSlug = eventName ? truncateByCodePoint(slugifyEventName(eventName).normalize('NFD'), budget - attendeeSlug.length) : '';
+
+  const parts = [VISA_LETTER_PREFIX];
+  if (eventSlug) parts.push(eventSlug);
+  if (attendeeSlug) parts.push(attendeeSlug);
+  if (!eventSlug && !attendeeSlug) parts.push(eventId);
 
   return sanitizeFilename(`${parts.join('-')}${CERTIFICATE_EXTENSION}`, MAX_FILENAME_LENGTH);
 }

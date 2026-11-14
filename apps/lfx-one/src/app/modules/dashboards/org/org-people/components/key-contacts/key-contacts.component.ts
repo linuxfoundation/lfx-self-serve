@@ -12,11 +12,11 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
-import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, roleToContactType } from '@lfx-one/shared/constants';
-import { agreedUsername, avatarInitials } from '@lfx-one/shared/utils';
+import { EMPTY_ORG_KEY_CONTACTS_RESPONSE, ORG_ALL_FOUNDATIONS_LABEL, roleToContactType } from '@lfx-one/shared/constants';
+import { agreedUsername, avatarInitials, orgKeyContactRolePillClass } from '@lfx-one/shared/utils';
 import type {
   AddKeyContactRequest,
   EditKeyContactDialogData,
@@ -46,7 +46,6 @@ import { TooltipModule } from 'primeng/tooltip';
 import { EditKeyContactModalComponent } from '../../../org-membership-detail/components/edit-key-contact-modal.component';
 import { KeyContactsService } from '../../services/key-contacts.service';
 import { ReassignKeyContactRolesModalComponent } from './components/reassign-key-contact-roles-modal.component';
-import { rolePillClass } from './helpers/key-contacts.helper';
 
 /** Org Lens — People → Key Contacts tab; LFXV2-2067 adds the per-role and bulk-reassign edit affordances. */
 @Component({
@@ -69,7 +68,7 @@ export class KeyContactsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly dataService = inject(KeyContactsService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
-  private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
@@ -121,8 +120,8 @@ export class KeyContactsComponent {
 
   protected readonly hasUnfilledRoles: Signal<boolean> = computed(() => this.stats().unfilledRequiredRoleCount > 0);
 
-  // Writer-FGA gate (UX); BFF still re-enforces on write.
-  protected readonly canEdit: Signal<boolean> = computed(() => this.initCanEdit());
+  // Edit gate (UX, #3136): roster editor or authorizer `writer`; BFF/gateway still re-enforce on write.
+  protected readonly canEdit: Signal<boolean> = this.orgEditAccess.canEditSelected;
 
   protected readonly ariaSortMap: Signal<Record<OrgKeyContactSortColumn, 'ascending' | 'descending' | 'none'>> = computed(() => this.initAriaSortMap());
   protected readonly sortIconMap: Signal<Record<OrgKeyContactSortColumn, string>> = computed(() => this.initSortIconMap());
@@ -169,13 +168,22 @@ export class KeyContactsComponent {
   // Key Contacts has no personKey — group.email is the grouping key so it's always present.
   protected onPersonClick(group: OrgKeyContactPersonGroupVm, event: Event): void {
     event.stopPropagation();
+    // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
+    const username = agreedUsername(group.assignments.map((a) => a.username));
+    const assignments = this.drawerAssignments(group, username);
     this.drawer.open({
       name: group.displayName,
       title: group.title,
       initials: group.initials,
       avatarUrl: group.avatarUrl,
-      // Email-keyed groups may span people: the username is a lookup key only when every assignment carries the same one.
-      username: agreedUsername(group.assignments.map((a) => a.username)),
+      username,
+      // A key contact usually has no person key: the drawer reads the company addresses on these roles' records.
+      keyContactIds: assignments.map((a) => a.contactUid),
+      // This tab already holds the person's roles, so the drawer renders them straight away instead of
+      // re-deriving them from an identity lookup — and opens on the one tab guaranteed to have content,
+      // since a key contact often has no roster person behind them for the activity tabs.
+      keyContactAssignments: assignments,
+      defaultTab: 'key-contacts',
     });
   }
 
@@ -242,6 +250,7 @@ export class KeyContactsComponent {
           email: group.email,
           initials: this.deriveInitials(first.firstName, first.lastName),
           username: agreedUsername(group.assignments.map((a) => a.username)),
+          keyContactIds: group.assignments.map((a) => a.contactUid),
         },
         roles,
         orgUid,
@@ -262,7 +271,7 @@ export class KeyContactsComponent {
         contactUid: a.contactUid,
         contactType,
         role: a.role,
-        pillClass: rolePillClass(a.role),
+        pillClass: orgKeyContactRolePillClass(a.role),
         foundationSlug: a.foundationSlug,
         foundationName: a.foundationName ?? a.foundationSlug,
       });
@@ -419,13 +428,6 @@ export class KeyContactsComponent {
     });
   }
 
-  private initCanEdit(): boolean {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return false; // No edit until the org uid resolves; placeholder bootstrap state.
-    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
-    return this.roleGrants.editorSet().has(uid);
-  }
-
   private initFoundationOptions(): OrgKeyContactDropdownOption[] {
     const slugs = new Map<string, string>();
     for (const a of this.response().assignments) {
@@ -434,7 +436,7 @@ export class KeyContactsComponent {
       }
     }
     const options = [...slugs.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([value, label]) => ({ label, value }));
-    return [{ label: 'All Foundations', value: '' }, ...options];
+    return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...options];
   }
 
   private initRoleOptions(): OrgKeyContactDropdownOption[] {
@@ -462,7 +464,7 @@ export class KeyContactsComponent {
       });
       const sortedAssignments: OrgKeyContactAssignmentVm[] = sortedRaw.map((a, idx) => ({
         ...a,
-        pillClass: rolePillClass(a.role),
+        pillClass: orgKeyContactRolePillClass(a.role),
         showFoundationLabel: idx === 0 || sortedRaw[idx - 1].foundationSlug !== a.foundationSlug,
         foundationLabel: a.foundationName ?? a.foundationSlug,
       }));
@@ -475,7 +477,7 @@ export class KeyContactsComponent {
         foundationCount: foundationSlugs.size,
         assignments,
         avatarUrl: first.avatarUrl ?? null,
-        rolePills: roles.map((role) => ({ role, pillClass: rolePillClass(role) })),
+        rolePills: roles.map((role) => ({ role, pillClass: orgKeyContactRolePillClass(role) })),
         sortedAssignments,
       };
     });
@@ -540,6 +542,24 @@ export class KeyContactsComponent {
       roles: active === 'roles' ? direction : 'none',
       foundations: active === 'foundations' ? direction : 'none',
     };
+  }
+
+  /**
+   * The roles to hand the drawer. Rows are grouped by address, so one person holding roles under two
+   * addresses is two rows; when the clicked row agrees on a username, gather every assignment that
+   * username holds so the drawer shows the person's roles rather than the clicked address's. Without an
+   * agreed username there is no identity to gather on, and the row's own assignments are all we can
+   * honestly attribute.
+   */
+  private drawerAssignments(group: OrgKeyContactPersonGroupVm, username: string | null): OrgKeyContactAssignment[] {
+    if (!username) {
+      return group.assignments;
+    }
+    // `agreedUsername` returns the source's spelling, so normalize both sides — comparing a stored
+    // `MixedUser` against it would match nothing and silently fall back to the clicked row.
+    const key = username.trim().toLowerCase();
+    const held = this.response().assignments.filter((a) => a.username?.trim().toLowerCase() === key);
+    return held.length ? held : group.assignments;
   }
 
   private initResponse(): Signal<OrgKeyContactsResponse> {

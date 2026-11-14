@@ -3,10 +3,49 @@
 
 import type { CommitteeMemberVisibility } from '../enums/committee.enum';
 import type { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { BadgeSeverity } from './components.interface';
+import type { MailingListSyncMode } from '../enums/mailing-list.enum';
+import type { BadgeSeverity, TagSeverity } from './components.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
+
+/** Outcome of checking committee-scoped write access in candidate order. */
+export interface CommitteeWriterProbeResult {
+  /** At least one probed committee admitted the user. */
+  writer: boolean;
+  /** No committee admitted the user and at least one probe failed transiently. */
+  transientFailure: boolean;
+}
+
+/** Router target for a group's edit wizard — tier-aware commands plus the `?project=` query param when the group carries a project slug. */
+export interface GroupEditLink {
+  commands: string[];
+  queryParams: Record<string, string>;
+}
+
+/** Option for the parent-group select; `value: null` is the "No Parent" choice. */
+export interface ParentCommitteeOption {
+  label: string;
+  value: string | null;
+}
+
+/** Pre-computed link target for the "Mailing list associated" Channels entry on My Groups rows/cards. */
+export interface CommitteeMailingListLink {
+  /** Router commands: the single list's detail page, or the group's page when several lists are associated. */
+  commands: string[];
+  /** `?project=` for the link — present only when the committee carries a `project_slug`. */
+  queryParams: { project: string } | null;
+  /** Where the link goes: the single list's page, or the group page when several lists are associated. */
+  target: 'list' | 'group';
+  /** Tooltip text: the list name for one list or "N mailing lists" for several; `null` when the name is unknown. */
+  label: string | null;
+}
+
+/**
+ * Minimal mailing-list reference carried on a committee so list views can link to it without a second fetch.
+ * Deliberately has no `is_foundation`: the mailing-list index never emits it, so the link takes the tier from the committee.
+ */
+export type CommitteeMailingListRef = Pick<GroupsIOMailingList, 'uid' | 'group_name'> & Partial<Pick<GroupsIOMailingList, 'title'>>;
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -341,6 +380,20 @@ export interface GroupEligibility {
 }
 
 /**
+ * Navigation state a Me lens list passes when linking to a group details page, so the page can
+ * return to that list (see `COMMITTEE_BACK_PATHS`) and restore the Me lens.
+ */
+export interface GroupLinkState {
+  backLabel: string;
+  backPath: string;
+  fromMeLens: boolean;
+  /** Slug of the foundation or project the list was scoped to, restored as `?project=` on Back. A rolled-up sub-project's group switches the selected project, so without it Back would land on the sub-project's list. */
+  backProject?: string;
+  /** Lens the list was on, restored with `backProject`: the sub-project's group page may have moved the viewer to the project lens, which would otherwise put a foundation in the project slot. */
+  backLens?: 'foundation' | 'project';
+}
+
+/**
  * Lightweight committee reference for cross-module use
  * @description Minimal committee data with voting status eligibility
  */
@@ -351,6 +404,20 @@ export interface CommitteeReference {
   name?: string;
   /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
   allowed_voting_statuses?: CommitteeMemberVotingStatus[];
+  /**
+   * Automatic membership sync direction between this committee and the mailing list it's attached
+   * to (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.SyncMode`). The backend
+   * stores this per-committee-entry, not on the mailing list resource itself, so a mailing list
+   * linked to multiple committees can carry a different direction for each.
+   */
+  sync_mode?: MailingListSyncMode;
+  /**
+   * Committee member roles that gate which members are synced to the mailing list for this
+   * committee's C→ML direction, in addition to `allowed_voting_statuses`
+   * (linuxfoundation/lfx-v2-mailing-list-service#110 `model.Committee.CommitteeRoleFilters`).
+   * Plain string match against the member's role; there is no fixed role taxonomy.
+   */
+  committee_role_filters?: string[];
 }
 
 /**
@@ -444,6 +511,12 @@ export interface Committee {
   // ── Communication Channels ──
   /** Whether the committee has any associated mailing lists (enriched by BFF via query-service association counts) */
   has_mailing_list?: boolean;
+  /**
+   * Mailing lists associated with the group, used to link the My Groups Channels column. Only set on
+   * `getMyCommittees` rows (the caller's own memberships) — never on list endpoints that non-members can
+   * view, because the refs carry no visibility flag and a private list's name must not leak there.
+   */
+  mailing_lists?: CommitteeMailingListRef[];
   /** Mailing list email address associated with the group (plain string from upstream). Set to null to clear. */
   mailing_list?: string | null;
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
@@ -560,6 +633,14 @@ export interface MyCommittee extends Committee {
 /** My Groups list↔card view toggle. Deliberately separate from the meetings-only `ViewMode` ('list'|'calendar') — different valid states. */
 export type GroupsViewMode = 'list' | 'card';
 
+/** Effective local filters on the personal My Groups inventory. */
+export type MyGroupsFilterKey = 'search' | 'category' | 'foundation' | 'project' | 'voting';
+
+export interface MyGroupsActiveFilter {
+  key: MyGroupsFilterKey;
+  label: string;
+}
+
 /**
  * One foundation/project bucket in the All Groups foundation-grouped view.
  * Built entirely client-side from the already-filtered committees list — no new upstream shape.
@@ -600,13 +681,20 @@ export interface MyGroupsCardVm {
   viewCommands: string[];
   /** `?project=` for the view link — present only when the committee carries a `project_slug`. */
   viewQueryParams: { project: string } | null;
+  /** Link for the associated-mailing-list Channels entry; `null` when the lists weren't enriched onto the card. */
+  mailingListLink: CommitteeMailingListLink | null;
+  /** Pre-computed accessible name for that link (group name, plus the list name when known); `null` without a link. */
+  mailingListAriaLabel: string | null;
   /**
-   * Full accessible name for the card `<a>`. `[attr.aria-label]` replaces the link's computed
-   * accessible name outright, so every visible field (class label, project/foundation name, role,
-   * member count, last-updated, privacy) must be folded in here — none of it is otherwise reachable
-   * by assistive tech. See `MyGroupsCardGridComponent.initCards()`.
+   * Merged type label for the single "Type" chip (replaces the former separate "Type" and "Class"
+   * columns). SIGs show `"SIG | {raw category}"` to expose the sub-type; every other class shows
+   * only the behavioral-class label (e.g. "Working Groups", "Boards").
    */
-  ariaLabel: string;
+  typeDisplay: string;
+  /** Pre-computed tag severity for the join-mode chip (normalized: absent join_mode → invite_only). */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip (normalized: absent join_mode → invite_only). */
+  joinModeTooltip: string;
 }
 
 /**
@@ -620,8 +708,32 @@ export interface MyGroupsCardVm {
 export interface CommitteeTableRowVm extends Committee {
   viewCommands: string[];
   editCommands: string[];
+  /** Link for the associated-mailing-list Channels entry; `null` when the lists weren't enriched onto the row. */
+  mailingListLink: CommitteeMailingListLink | null;
   /** `?project=` for the view/edit links — present only when the committee carries a `project_slug`. */
   linkQueryParams: { project: string } | null;
+  /** Pre-computed tag severity for the join-mode chip. Avoids per-render method calls. */
+  joinModeSeverity: TagSeverity;
+  /** Pre-computed tooltip text for the join-mode chip; `undefined` when `join_mode` is absent. */
+  joinModeTooltip: string | undefined;
+  /**
+   * Merged type label for the single "Type" chip. SIGs show `"SIG | {raw category}"`;
+   * every other class shows the behavioral-class label (e.g. "Working Groups", "Boards").
+   */
+  typeDisplay: string;
+  /**
+   * Pre-computed Tailwind color pair for the My Role pill chip. `null` when the row has no role
+   * or the role is `'None'` so the template can `@if (committee.roleChip)` without a method call.
+   */
+  roleChip: { bgColor: string; color: string } | null;
+  /**
+   * True when the viewing user is a member of this committee. Derived from `myCommitteeUids` in
+   * the table component so the template can render the membership badge without a method call.
+   * Used in the Project/Foundation lens where `my_role` is not available on the row.
+   */
+  isMember: boolean;
+  /** True while a leave request for this committee is in flight or awaiting index propagation, so the row's Leave button can be disabled without a method call. */
+  isLeaving: boolean;
 }
 
 /**
@@ -667,7 +779,9 @@ export interface CommitteeCreateData {
  * Data for updating existing committee
  * @description Partial update payload allowing any field from create data to be modified
  */
-export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
+export interface CommitteeUpdateData extends Partial<Omit<CommitteeCreateData, 'parent_uid'>> {
+  /** Re-parent the committee, or `null` to detach it from its parent */
+  parent_uid?: string | null;
   /** Update or clear mailing list email */
   mailing_list?: string | null;
   /** Update or clear chat channel */
@@ -1134,6 +1248,52 @@ export interface MailingListPickerDialogData {
 
 export interface MailingListPickerDialogResult {
   selectedUids: Set<string>;
+  /**
+   * Chosen sync direction per mailing list uid (#4026), keyed for every list in the dialog's
+   * candidate set. Empty when the Mailing List Sync Settings feature flag is off (#4024) — the
+   * caller should fall back to preserving each list's existing `sync_mode` in that case rather
+   * than treating an empty map as "reset everything to manual".
+   */
+  syncModes: Map<string, MailingListSyncMode>;
+  /**
+   * Chosen committee voting-status filter per mailing list uid (#4026 criterion 3), keyed for every
+   * list in the dialog's candidate set. Only meaningful for a list whose syncModes entry is
+   * `auto_c_to_ml`; empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeFilters: Map<string, CommitteeMemberVotingStatus[]>;
+  /**
+   * Chosen committee role filter per mailing list uid (#4026 criterion 3), keyed for every list in
+   * the dialog's candidate set. Only meaningful for a list whose syncModes entry is `auto_c_to_ml`;
+   * empty when the sync feature flag is off, same fallback contract as `syncModes`.
+   */
+  committeeRoleFilters: Map<string, string[]>;
+}
+
+export interface MailingListSyncPreviewDialogData {
+  mailingListUid: string;
+  mailingListName: string;
+  committeeUid: string;
+  /**
+   * The mailing list's current `sync_mode`, used to decide whether the dialog needs to show a
+   * direction selector — `manual`/unset has no direction of its own, an `auto_*` list always uses
+   * its own configured direction and must not be prompted.
+   */
+  syncMode?: MailingListSyncMode;
+}
+
+export interface MailingListSyncPreviewDialogResult {
+  applied: boolean;
+  committeeChanged: boolean;
+}
+
+/**
+ * An associated mailing list plus its per-row Settings-tab derived state, precomputed so the
+ * template doesn't branch on `ml.writer`/`ml.sync_mode` or nest ternaries for button state/tooltips.
+ */
+export interface CommitteeAssociatedMailingListRow extends GroupsIOMailingList {
+  removable: boolean;
+  syncTooltip: string;
+  removeTooltip: string;
 }
 
 export interface DescriptionDialogData {
@@ -1153,8 +1313,13 @@ export interface IcalSubscribeDialogData {
 
 export interface EditChairsDialogData {
   members: { label: string; value: string }[];
-  currentChairUid: string | null;
-  currentViceChairUid: string | null;
+  currentChairUids: string[];
+  currentViceChairUids: string[];
+}
+
+export interface EditChairsDialogResult {
+  chairUids: string[];
+  viceChairUids: string[];
 }
 
 export type CommitteeTab = 'overview' | 'about' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';

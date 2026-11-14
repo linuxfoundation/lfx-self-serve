@@ -336,8 +336,8 @@ describe('OrgEasyclaSendByEmailComponent', () => {
 
   /**
    * takeUntilDestroyed on this POST would unsubscribe when the overlay goes away, cancel the
-   * in-flight request, and skip onMailed — EasyCLA can still mail, and Close then offers Identify
-   * someone else again. take(1) keeps the subscription until the response, even after destroy.
+   * in-flight request, and skip onMailed — EasyCLA can still mail. take(1) keeps the subscription
+   * until the response, even after destroy.
    */
   it('still tells the opener the mail was sent after the overlay is destroyed', async () => {
     const onMailed = vi.fn();

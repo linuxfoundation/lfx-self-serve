@@ -1,7 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- On the body: the page column is a size container, which would otherwise trap this fixed panel inside it. -->
 <p-drawer
+  appendTo="body"
   [(visible)]="visible"
   position="right"
   [modal]="true"
@@ -9,7 +11,8 @@
   (onShow)="onDrawerShow()"
   styleClass="xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full">
   <ng-template #header>
-    <div class="flex flex-col gap-0.5" data-testid="engagement-group-drawer-header">
+    <!-- The drawer renders on <body>, outside the page column, so its header and body carry their own truncation tips. -->
+    <div class="flex flex-col gap-0.5" lfxHealthMetricsTruncationTip data-testid="engagement-group-drawer-header">
       <!-- The `aria-labelledby` target and where focus lands on open; `tabindex="-1"` keeps it out
            of the Tab order. -->
       <h2 #titleRef id="engagement-group-drawer-title" tabindex="-1" class="text-base font-semibold text-gray-900 focus:outline-none">
@@ -22,8 +25,8 @@
   </ng-template>
 
   @if (row(); as group) {
-    <div class="flex flex-col gap-4" data-testid="engagement-group-drawer-body">
-      <dl class="flex flex-col gap-2 text-sm">
+    <div class="flex flex-col gap-4" lfxHealthMetricsTruncationTip data-testid="engagement-group-drawer-body">
+      <dl class="flex flex-col gap-2 text-[13px]">
         <div class="flex items-center justify-between gap-4">
           <dt class="text-gray-500">Project</dt>
           <dd class="text-gray-900">{{ group.projectName ?? '—' }}</dd>
@@ -35,7 +38,7 @@
       </dl>
 
       <div class="flex flex-col gap-3 border-t border-gray-100 pt-4">
-        <h3 class="text-sm font-semibold text-gray-900">Attendance by period</h3>
+        <h3 class="text-[13px] font-semibold text-gray-900">Attendance by period</h3>
         @for (period of periods(); track period.range) {
           <div class="flex flex-col gap-1" [attr.data-testid]="'engagement-group-drawer-period-' + period.range">
             <div class="flex items-center justify-between gap-4 text-[13px]">

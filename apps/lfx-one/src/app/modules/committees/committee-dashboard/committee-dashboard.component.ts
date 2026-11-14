@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
@@ -9,14 +9,23 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL, GROUPS_VIEW_MODE_STORAGE_KEY, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  BEHAVIORAL_CLASS_CONFIG,
+  COMMITTEE_LABEL,
+  GROUPS_VIEW_MODE_STORAGE_KEY,
+  JOIN_MODE_LABELS,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeFoundationGroup,
   GroupBehavioralClass,
   GroupsEngagementStats,
   GroupsViewMode,
+  JoinMode,
   MyCommittee,
+  MyGroupsActiveFilter,
+  MyGroupsFilterKey,
   ProjectContext,
   StatCardGridColumns,
   StatCardItem,
@@ -50,21 +59,26 @@ import {
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeFilterBarComponent } from '../components/committee-filter-bar/committee-filter-bar.component';
 import { CommitteeInvitationsComponent } from '../components/committee-invitations/committee-invitations.component';
+import { CommitteePendingApplicationsComponent } from '../components/committee-pending-applications/committee-pending-applications.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 import { MyGroupsCardGridComponent } from '../components/my-groups-card-grid/my-groups-card-grid.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
   imports: [
     ButtonComponent,
+    NgTemplateOutlet,
     CardComponent,
     CommitteeFilterBarComponent,
     CommitteeInvitationsComponent,
+    CommitteePendingApplicationsComponent,
     CommitteeTableComponent,
     MyGroupsCardGridComponent,
     SkeletonModule,
     EmptyStateComponent,
     StatCardGridComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
@@ -109,8 +123,11 @@ export class CommitteeDashboardComponent {
   public filteredMyCommittees: Signal<MyCommittee[]>;
   public myCommitteeUids: Signal<Set<string>>;
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
+  public joinModeOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
   public votingStatusFilter: Signal<string | null>;
+  public joinModeFilter: Signal<string | null>;
+  public activeMyGroupFilters: Signal<MyGroupsActiveFilter[]>;
 
   // Foundation and project filter options (separate dropdowns)
   public foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
@@ -178,11 +195,14 @@ export class CommitteeDashboardComponent {
     this.searchForm = this.initializeSearchForm();
     this.searchTerm = this.initializeSearchTerm();
     this.votingStatusFilter = this.initializeVotingStatusFilter();
+    this.joinModeFilter = this.initializeJoinModeFilter();
 
     // Initialize filters
     this.votingStatusOptions = this.initializeVotingStatusOptions();
+    this.joinModeOptions = this.initializeJoinModeOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.filteredMyCommittees = this.initializeFilteredMyCommittees();
+    this.activeMyGroupFilters = this.initializeActiveMyGroupFilters();
     this.foundationGroups = this.initializeFoundationGroups();
     this.groupExpansionMap = this.initializeGroupExpansionMap();
 
@@ -195,7 +215,7 @@ export class CommitteeDashboardComponent {
     // Me lens statistics (derived from myCommittees)
     this.myTotalGroups = computed(() => this.myCommittees().length);
     this.myPublicGroups = computed(() => this.myCommittees().filter((c) => c.public).length);
-    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting).length);
+    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting === true).length);
 
     // Engagement rollup — fetched once the flag first turns on; failures degrade to null and never
     // block the group-count cards or the groups list below (independent HTTP call).
@@ -290,6 +310,37 @@ export class CommitteeDashboardComponent {
       });
   }
 
+  /**
+   * Refreshes My Groups after leaving a group. The membership query index can lag the upstream
+   * leave write, so poll until the group drops out of the list before the final reload. If it never
+   * does within the polling window, reload anyway so the list reflects the latest index state.
+   */
+  public reloadMyCommitteesAfterLeave(committeeUid: string): void {
+    this.reloadMyCommittees();
+
+    let pollSucceeded = false;
+
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getMyCommittees()),
+        filter((committees) => !committees.some((committee) => committee.uid === committeeUid)),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.reloadMyCommittees();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.reloadMyCommittees();
+          }
+        },
+      });
+  }
+
   public openCreateDialog(): void {
     const uid = this.project()?.uid;
     if (!uid) {
@@ -317,7 +368,7 @@ export class CommitteeDashboardComponent {
     // any row that still resolves no tier.
     this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
       queryParams: committee.project_slug ? { project: committee.project_slug } : undefined,
-      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups' },
+      state: { backLabel: 'Groups', fromMeLens: this.isMeLens() },
     });
   }
 
@@ -325,18 +376,32 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(cls);
   }
 
-  /**
-   * Full filter reset for the My Groups card view. Unlike `<lfx-committee-table>`, which owns
-   * `searchForm` and clears it internally in its own `resetFilters()` before emitting
-   * `resetRequested`, the card grid has no filter bar of its own — its "Reset filters" CTA only
-   * emits `resetRequested`, so this clears every filter that could have produced the empty state:
-   * the search term, voting status, foundation/project filters, and the behavioral-class chip.
-   */
+  /** Clears the parent-owned filters for either My Groups renderer without changing view mode. */
   public resetAllFilters(): void {
-    this.searchForm.patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    this.searchForm.patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
     this.behavioralClassFilter.set(null);
+  }
+
+  public removeMyGroupFilter(key: MyGroupsFilterKey): void {
+    switch (key) {
+      case 'search':
+        this.searchForm.get('search')!.setValue('');
+        break;
+      case 'category':
+        this.selectBehavioralClass(null);
+        break;
+      case 'foundation':
+        this.onFoundationFilterChange(null);
+        break;
+      case 'project':
+        this.onProjectFilterChange(null);
+        break;
+      case 'voting':
+        this.searchForm.get('votingStatus')!.setValue(null);
+        break;
+    }
   }
 
   public setViewMode(mode: GroupsViewMode): void {
@@ -350,12 +415,14 @@ export class CommitteeDashboardComponent {
   }
 
   public onFoundationFilterChange(value: string | null): void {
+    this.searchForm.get('foundationFilter')!.setValue(value, { emitEvent: false });
     this.foundationFilter.set(value);
     this.projectFilter.set(null);
     this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
   }
 
   public onProjectFilterChange(value: string | null): void {
+    this.searchForm.get('projectFilter')!.setValue(value, { emitEvent: false });
     this.projectFilter.set(value);
   }
 
@@ -365,6 +432,7 @@ export class CommitteeDashboardComponent {
     this.behavioralClassFilter.set(null);
     this.searchForm?.get('foundationFilter')?.setValue(null, { emitEvent: false });
     this.searchForm?.get('projectFilter')?.setValue(null, { emitEvent: false });
+    this.searchForm?.get('joinModeFilter')?.setValue(null);
   }
 
   private initializeMyCommittees(): Signal<MyCommittee[]> {
@@ -466,8 +534,35 @@ export class CommitteeDashboardComponent {
     return new FormGroup({
       search: new FormControl<string>(''),
       votingStatus: new FormControl<string | null>(null),
+      joinModeFilter: new FormControl<string | null>(null),
       foundationFilter: new FormControl<string | null>(null),
       projectFilter: new FormControl<string | null>(null),
+    });
+  }
+
+  private initializeActiveMyGroupFilters(): Signal<MyGroupsActiveFilter[]> {
+    return computed(() => {
+      const filters: MyGroupsActiveFilter[] = [];
+      const search = this.searchTerm();
+      const category = this.behavioralClassFilter();
+      const foundation = this.foundationFilter();
+      const project = this.projectFilter();
+      const voting = this.votingStatusFilter();
+      if (search) filters.push({ key: 'search', label: `Search: ${search}` });
+      if (category) filters.push({ key: 'category', label: `Category: ${BEHAVIORAL_CLASS_CONFIG[category].label}` });
+      if (foundation) {
+        filters.push({
+          key: 'foundation',
+          label: `Foundation: ${this.foundationOptions().find((option) => option.value === foundation)?.label ?? foundation}`,
+        });
+      }
+      if (project) {
+        filters.push({ key: 'project', label: `Project: ${this.projectOptions().find((option) => option.value === project)?.label ?? project}` });
+      }
+      if (voting === 'enabled' || voting === 'disabled') {
+        filters.push({ key: 'voting', label: voting === 'enabled' ? 'Voting: Enabled' : 'Voting: Disabled' });
+      }
+      return filters;
     });
   }
 
@@ -477,6 +572,10 @@ export class CommitteeDashboardComponent {
 
   private initializeVotingStatusFilter(): Signal<string | null> {
     return toSignal(this.searchForm.get('votingStatus')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
+
+  private initializeJoinModeFilter(): Signal<string | null> {
+    return toSignal(this.searchForm.get('joinModeFilter')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
   }
 
   private initializeCommittees(): Signal<Committee[]> {
@@ -519,6 +618,27 @@ export class CommitteeDashboardComponent {
         { label: `Voting Enabled (${votingEnabledCount})`, value: 'enabled' },
         { label: `Voting Disabled (${votingDisabledCount})`, value: 'disabled' },
       ];
+    });
+  }
+
+  private initializeJoinModeOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const data = this.committees();
+      const counts = new Map<JoinMode, number>();
+      for (const c of data) {
+        if (c.join_mode) {
+          counts.set(c.join_mode, (counts.get(c.join_mode) ?? 0) + 1);
+        }
+      }
+      // Preserve a consistent display order
+      const order: JoinMode[] = ['open', 'application', 'invite_only', 'closed'];
+      const opts: { label: string; value: string | null }[] = [{ label: 'All Join Modes', value: null }];
+      for (const mode of order) {
+        if (counts.has(mode)) {
+          opts.push({ label: `${JOIN_MODE_LABELS[mode]} (${counts.get(mode)})`, value: mode });
+        }
+      }
+      return opts;
     });
   }
 
@@ -610,6 +730,11 @@ export class CommitteeDashboardComponent {
         filtered = filtered.filter((committee) => committee.enable_voting === true);
       } else if (votingStatus === 'disabled') {
         filtered = filtered.filter((committee) => committee.enable_voting === false);
+      }
+
+      const joinMode = this.joinModeFilter();
+      if (joinMode) {
+        filtered = filtered.filter((committee) => committee.join_mode === joinMode);
       }
 
       return filtered;

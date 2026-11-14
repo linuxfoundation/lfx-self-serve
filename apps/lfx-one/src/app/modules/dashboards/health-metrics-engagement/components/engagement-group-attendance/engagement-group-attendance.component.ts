@@ -28,7 +28,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 import type {
   FilterPillOption,
   HealthMetricsEngagementGroupAttendance,
-  HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementGroupNoteCounts,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementGroupRowView,
@@ -61,20 +61,14 @@ export class EngagementGroupAttendanceComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   /**
-   * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
-   * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected — and
-   * renders no badge rather than a believable zero.
+   * Feeds the container's sub-nav note — the counts cover the whole filtered set, not the page.
+   * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected.
    */
-  public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  public readonly countsChange = output<HealthMetricsEngagementGroupNoteCounts | null>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-
-  protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({
-    id: filter.key,
-    label: filter.label,
-  }));
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
@@ -97,6 +91,8 @@ export class EngagementGroupAttendanceComponent {
   protected readonly query: Signal<HealthMetricsEngagementGroupQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementGroupAttendance> = this.initResponse();
 
+  /** Labels only, as the design draws them; the per-type counts stay off the pills. */
+  protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({ id: filter.key, label: filter.label }));
   protected readonly rows = computed(() => this.response().rows);
   // Resolved here rather than per cell: the template only reads signals, and the period lookup and
   // trend build run once per row per response instead of on every change-detection pass.
@@ -110,14 +106,18 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  /** `null` means the unfiltered scope has no rows — a filtered cut with zero matches keeps its own
-   * counts, so this is not the same signal as `totalRecords() === 0`. */
+  /** `null` means the foundation has no groups at all; a chip with zero matches keeps its
+   * own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
+  /** No group was recorded for the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.counts() === null);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
+  // Follows the selected chip, as in the design; the sub-nav note stays scope-wide.
   protected readonly countLabel = computed(() => {
     if (this.counts() === null) return '—';
 
-    return `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`;
+    const total = this.totalRecords();
+    return `${total.toLocaleString('en-US')} ${total === 1 ? 'group' : 'groups'}`;
   });
 
   public constructor() {
@@ -152,7 +152,6 @@ export class EngagementGroupAttendanceComponent {
   private initQuery(): HealthMetricsEngagementGroupQuery {
     return {
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
-      projectSlug: null,
       groupType: this.groupType(),
       range: this.chrome.selectedRange(),
       page: this.page(),
@@ -206,7 +205,7 @@ export class EngagementGroupAttendanceComponent {
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.counts === null);
             })
           )
         )

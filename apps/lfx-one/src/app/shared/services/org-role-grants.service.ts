@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ORG_ROLE_GRANTS_REFRESH_PARAM } from '@lfx-one/shared/constants';
-import { CascadingRoleGrant, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import { CascadingRoleGrant, OrgLensEditCheckResponse, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
 import { classifySectionError } from '../utils/org-lens-empty-state.utils';
@@ -21,7 +21,8 @@ export class OrgRoleGrantsService {
 
   // `writerSet` / `auditorSet` stay DIRECT-ONLY by design: they answer "is this grant the caller's
   // own?", which is what the selector's persona badge and its "(Original)"/"(Inherited)" copy need.
-  // Since LFXV2-3029 they are NOT the edit gate — `editorSet` below is. Widening these would erase
+  // They are NOT the edit gate — Org Lens edit affordances read `OrgEditAccessService.canEditSelected` (#3136),
+  // whose roster half is `editorSet` below. Widening these would erase
   // the direct-vs-inherited distinction the badge depends on.
   private readonly writerSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly auditorSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
@@ -48,17 +49,24 @@ export class OrgRoleGrantsService {
   // Spec 053 (FR-011) — the team-membership check threw; `isStaff` is a fail-closed false, not a verdict.
   private readonly staffCheckInternal: WritableSignal<OrgLensStaffCheck> = signal<OrgLensStaffCheck>('ok');
   private readonly correlationIdInternal: WritableSignal<string | null> = signal<string | null>(null);
+  // M3 — orgs reached only as a CLA Manager. The server fills it only when every grant set above is empty and the caller is not staff.
+  private readonly claManagerOrgSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
+  private readonly claManagerLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // #4225 — the caller's own employer is an LF member, so an empty Org Lens means "never granted
+  // access", not "no organization". False whenever the server could not establish it, which keeps the
+  // copy the user sees today rather than asserting a reason that may be wrong.
+  private readonly affiliatedToMemberInternal: WritableSignal<boolean> = signal<boolean>(false);
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
   public readonly inheritedWriterSet: Signal<Set<string>> = this.inheritedWriterSetInternal.asReadonly();
   public readonly inheritedAuditorSet: Signal<Set<string>> = this.inheritedAuditorSetInternal.asReadonly();
   /**
-   * LFXV2-3029 — "editor from any source": `writerSet` (direct) union `inheritedWriterSet`
-   * (roll-up-derived). Every organization-edit capability gate should read this, not the
-   * direct-only `writerSet` — every edit surface a direct editor can reach is meant to also open
-   * for a roll-up editor. `writerSet` itself is kept direct-only for callers that still need that
-   * narrower, direct-only answer specifically.
+   * LFXV2-3029 — the caller's roster editors: `writerSet` (direct) union `inheritedWriterSet`
+   * (roll-up-derived). This is only the roster half of the edit decision: Org Lens edit gates read
+   * `OrgEditAccessService.canEditSelected` (#3136), which answers from this set first and otherwise asks
+   * the server, so company-wide writers the roster never lists (`global_org_admin`) are included. Do not
+   * gate an edit affordance on this set directly. `writerSet` stays direct-only for the persona badge.
    */
   public readonly editorSet: Signal<Set<string>> = computed(() => new Set([...this.writerSetInternal(), ...this.inheritedWriterSetInternal()]));
   /** Child uid → parent display name; used to render the dropdown tooltip without a second lookup. */
@@ -78,6 +86,16 @@ export class OrgRoleGrantsService {
   public readonly staffCheck: Signal<OrgLensStaffCheck> = this.staffCheckInternal.asReadonly();
   /** Spec 053 — support reference for the staff-check-failed state; null otherwise. */
   public readonly correlationId: Signal<string | null> = this.correlationIdInternal.asReadonly();
+  /** M3 — read it through `OrgClaOnlyAccessService`. */
+  public readonly claManagerOrgSet: Signal<Set<string>> = this.claManagerOrgSetInternal.asReadonly();
+  /** M3 — the server could not read the caller's `cla-manager` scopes, so an empty `claManagerOrgSet` is unknown. */
+  public readonly claManagerLookupFailed: Signal<boolean> = this.claManagerLookupFailedInternal.asReadonly();
+  /**
+   * #4225 — the caller works for an organization that IS an LF member, and holds no grant on it.
+   * True only on a completed server-side determination; an older server, a failed lookup, or a
+   * non-member employer all read false, so the classifier falls back to the state it shows today.
+   */
+  public readonly affiliatedToMember: Signal<boolean> = this.affiliatedToMemberInternal.asReadonly();
 
   public constructor() {
     afterNextRender(() => {
@@ -109,6 +127,11 @@ export class OrgRoleGrantsService {
         this.lookupOutcomeInternal.set(response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok'));
         this.staffCheckInternal.set(response.staffCheck ?? 'ok');
         this.correlationIdInternal.set(response.staffCheck === 'failed' && response.correlationId ? response.correlationId : null);
+        this.claManagerOrgSetInternal.set(new Set(response.claManagerOrgs ?? []));
+        this.claManagerLookupFailedInternal.set(response.claManagerLookup === 'failed');
+        // Absent on an older server, or `lookup: 'failed'` ⇒ false: a rolling deploy and a broken
+        // lookup both fall back to the no-organization copy rather than to a confident new reason.
+        this.affiliatedToMemberInternal.set(response.affiliation?.lookup === 'ok' && response.affiliation.hasEmployer && response.affiliation.employerIsMember);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -130,6 +153,10 @@ export class OrgRoleGrantsService {
         this.lookupOutcomeInternal.set('failed');
         this.staffCheckInternal.set('ok');
         this.correlationIdInternal.set(null);
+        this.claManagerOrgSetInternal.set(new Set());
+        // `lookupOutcome: 'failed'` already reports this outage.
+        this.claManagerLookupFailedInternal.set(false);
+        this.affiliatedToMemberInternal.set(false);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);
@@ -154,6 +181,24 @@ export class OrgRoleGrantsService {
         // Not a refusal: keep the page (its sections report the outage), but leave a trace.
         console.warn('[org-lens] read-check did not answer; treating the organization as readable', error);
         return of(true);
+      })
+    );
+  }
+
+  /**
+   * #3136 — asks the server whether the caller may edit `orgUid` (roster editor, else authorizer `writer`),
+   * so a company-wide writer the roster never lists still gets the edit affordances. Fail-closed: any error
+   * answers `false` — the answer only shows or hides controls, and every write is authorized again server-side.
+   */
+  public editCheck(orgUid: string): Observable<boolean> {
+    return this.http.get<OrgLensEditCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/edit-check`).pipe(
+      map((response) => response?.canEdit === true),
+      catchError((error: unknown) => {
+        // The read gate's own 403 is an answer (no access at all), not a failed check — only an outage is worth a trace.
+        if (classifySectionError(error) !== 'denied') {
+          console.warn('[org-lens] edit-check did not answer; hiding edit affordances', error);
+        }
+        return of(false);
       })
     );
   }

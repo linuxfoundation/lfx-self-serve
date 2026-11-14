@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="share-dialog">
+  <!-- Header: eyebrow + "Share" + round close -->
+  <div class="flex items-start justify-between gap-4" data-testid="share-dialog-header">
+    <div class="flex flex-col gap-1 min-w-0">
+      @if (eyebrow) {
+        <p class="text-sm text-gray-500 break-words" data-testid="share-dialog-eyebrow">{{ eyebrow }}</p>
+      }
+      <h2 [id]="headingId" class="text-2xl font-semibold text-gray-900">Share</h2>
+    </div>
+    <button
+      type="button"
+      (click)="onClose()"
+      class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full border border-gray-200 text-gray-700 hover:bg-gray-100 transition-colors"
+      aria-label="Close"
+      data-testid="share-dialog-close">
+      <i class="fa-light fa-xmark text-lg"></i>
+    </button>
+  </div>
+
+  <!-- Destinations -->
+  <ul class="flex items-center justify-center gap-6 list-none m-0 p-0" data-testid="share-dialog-platforms">
+    @for (link of links; track link.key) {
+      <li>
+        <a
+          [href]="link.href"
+          (click)="onShareLink(link)"
+          (auxclick)="onShareLinkAuxClick($event, link)"
+          [attr.target]="link.key === 'email' ? null : '_blank'"
+          [attr.rel]="link.key === 'email' ? null : 'noopener noreferrer'"
+          [attr.aria-label]="link.label"
+          [title]="link.label"
+          [style.background-color]="link.background"
+          [style.color]="link.foreground"
+          [class.border]="!link.background"
+          class="w-12 h-12 flex items-center justify-center rounded-full border-gray-200 text-gray-900 no-underline hover:opacity-85 transition-opacity"
+          [attr.data-testid]="'share-dialog-' + link.key">
+          <i [class]="link.icon + ' text-xl'"></i>
+        </a>
+      </li>
+    }
+  </ul>
+
+  <!-- OR divider -->
+  <div class="flex items-center gap-4 text-sm text-gray-500" aria-hidden="true">
+    <span class="flex-1 h-px bg-gray-200"></span>
+    <span>OR</span>
+    <span class="flex-1 h-px bg-gray-200"></span>
+  </div>
+
+  <lfx-button
+    label="Copy link"
+    icon="fa-light fa-copy"
+    severity="secondary"
+    [outlined]="true"
+    [rounded]="true"
+    [fluid]="true"
+    (onClick)="onCopyLink()"
+    data-testid="share-dialog-copy-link" />
+</div>

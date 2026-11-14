@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_FILTERS_OR_BATCH_SIZE } from '@lfx-one/shared/constants';
 import {
   CommitteeLinkQueryResult,
   GroupsIOArtifactQueryResult,
+  GroupsIOMailingList,
   MeetingAttachment,
   MyCommittee,
   MyDocumentItem,
@@ -12,6 +14,7 @@ import {
   PastMeetingRecordingQueryResult,
   PastMeetingSummaryQueryResult,
   PastMeetingTranscriptQueryResult,
+  QueryServiceCountResponse,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -78,12 +81,9 @@ export class DocumentService {
     // When scoped to a specific committee, filter memberships to that committee only.
     const scopedCommittees = committeeUid ? myCommittees.filter((c) => c.uid === committeeUid) : myCommittees;
 
-    // If a committeeUid was requested but the user isn't a member, return early.
-    // No further fetches are needed — access control is enforced by membership.
-    if (committeeUid && scopedCommittees.length === 0) {
-      logger.info(req, 'get_my_documents', 'Committee UID provided but user is not a member — returning empty', { committee_uid: committeeUid });
-      return [];
-    }
+    // A committee-scoped request is not gated on membership: committee links come from the
+    // user's memberships (empty for non-members), while meeting and mailing list artifacts are
+    // queried by committee ref and the query service enforces per-resource access.
 
     // Stage 2 — Fetch all raw items in parallel (no meeting enrichment yet).
     // When committeeUid is set, each fetcher queries directly by committee parent ref
@@ -93,7 +93,7 @@ export class DocumentService {
     // lookup needed — eliminates the previous two-step Stage 1.5 approach.
     const [committeeLinkItems, groupsioItems, rawMeetingAttachments, rawPastAttachments, rawPastRecordings, rawTranscripts, rawSummaries] = await Promise.all([
       this.getCommitteeDocuments(req, scopedCommittees),
-      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid, scopedCommittees),
+      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid),
       this.fetchRawMeetingAttachments(req, projectUid, committeeUid),
       this.fetchRawPastMeetingAttachments(req, occurrenceIds, projectUid, committeeUid),
       this.fetchRawPastMeetingRecordings(req, occurrenceIds, projectUid, committeeUid),
@@ -156,6 +156,53 @@ export class DocumentService {
     return enrichedDocuments;
   }
 
+  /**
+   * Counts every document a group's Documents tab can list — links, uploaded files, mailing list
+   * artifacts and meeting attachments, recordings, transcripts and summaries — without fetching rows.
+   * Folders are not counted: they are indexed as their own `committee_link_folder` type, separate from
+   * `committee_link`. The total is all-or-nothing: if any source fails or reports `has_more`, this
+   * throws so the caller can hide the badge instead of presenting a partial total as exact.
+   */
+  public async getCommitteeDocumentCount(req: Request, committeeUid: string): Promise<number> {
+    logger.debug(req, 'get_committee_document_count', 'Counting committee documents', { committee_uid: committeeUid });
+
+    const byTag = ['committee_link', 'committee_document', 'groupsio_artifact'].map((type) => ({ type, tags: `committee_uid:${committeeUid}` }));
+    const byParent = [
+      'v1_meeting_attachment',
+      'v1_past_meeting_attachment',
+      'v1_past_meeting_recording',
+      'v1_past_meeting_transcript',
+      'v1_past_meeting_summary',
+    ].map((type) => ({ type, parent: `committee:${committeeUid}` }));
+
+    const counts = await Promise.all(
+      [...byTag, ...byParent].map(async (params) => {
+        try {
+          const { count, has_more } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources/count',
+            'GET',
+            params
+          );
+          if (has_more) {
+            throw new Error('Count is incomplete (has_more)');
+          }
+          return count;
+        } catch (err) {
+          logger.warning(req, 'get_committee_document_count', 'Failed to count a document source, the total is unavailable', {
+            committee_uid: committeeUid,
+            type: params.type,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
+          throw err;
+        }
+      })
+    );
+
+    return counts.reduce((total, count) => total + count, 0);
+  }
+
   // ─── Committee / Group Documents ────────────────────────────────────────────
 
   private async getCommitteeDocuments(req: Request, myCommittees: MyCommittee[]): Promise<MyDocumentItem[]> {
@@ -205,7 +252,7 @@ export class DocumentService {
 
   // ─── GroupsIO / Mailing List Artifacts ──────────────────────────────────────
 
-  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string, committees?: MyCommittee[]): Promise<MyDocumentItem[]> {
+  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string): Promise<MyDocumentItem[]> {
     let tags: string;
     if (committeeUid) {
       tags = `committee_uid:${committeeUid}`;
@@ -233,25 +280,76 @@ export class DocumentService {
 
     logger.info(req, 'get_my_documents', 'Fetched groupsio artifacts', { tags, artifact_count: artifacts.length });
 
-    const committeeMap = new Map(committees?.map((c) => [c.uid, c]) ?? []);
+    const mailingListByGroupId = await this.fetchMailingLists(req, artifacts);
 
     return artifacts.map((a): MyDocumentItem => {
       const url = a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url);
-      const committee = a.committee_uid ? committeeMap.get(a.committee_uid) : undefined;
+      const mailingList = a.group_id ? mailingListByGroupId.get(a.group_id) : undefined;
+      const mailingListName = mailingList?.title;
       return {
         id: `groupsio_artifact:${a.artifact_id}`,
-        name: a.filename || a.link_url || a.artifact_id,
+        name: a.filename || a.link_url || mailingListName || a.artifact_id,
         source: 'mailing_list' as MyDocumentSource,
         foundationName: '',
         foundationUid: a.project_uid || undefined,
-        groupOrMeetingName: committee?.name || '',
+        groupOrMeetingName: mailingListName || '',
         groupOrMeetingUid: a.committee_uid || '',
         date: a.last_posted_at || a.created_at || '',
         url,
         mailingListId: a.group_id ? String(a.group_id) : undefined,
+        mailingListUid: mailingList?.uid,
         fileType: a.media_type,
       };
     });
+  }
+
+  /**
+   * Resolves mailing list display names for a set of groupsio artifacts by batching
+   * groupsio_mailing_list lookups using project_uid tags, then matching on the
+   * numeric group_id field. Returns a map of group_id (number) → mailing list title.
+   */
+  private async fetchMailingLists(req: Request, artifacts: GroupsIOArtifactQueryResult[]): Promise<Map<number, { title: string; uid: string }>> {
+    const projectUids = [...new Set(artifacts.map((a) => a.project_uid).filter(Boolean) as string[])];
+    if (projectUids.length === 0) return new Map();
+
+    logger.debug(req, 'get_my_documents', 'Resolving mailing list names', { project_uid_count: projectUids.length });
+
+    const batches: string[][] = [];
+    for (let i = 0; i < projectUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(projectUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.allSettled(
+      batches.map((batch) =>
+        fetchAllQueryResources<GroupsIOMailingList>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'groupsio_mailing_list',
+              tags: batch.map((uid) => `project_uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+
+    const listByGroupId = new Map<number, { title: string; uid: string }>();
+    for (const [i, result] of batchResults.entries()) {
+      if (result.status === 'fulfilled') {
+        for (const ml of result.value) {
+          if (ml.group_id != null && ml.title) {
+            listByGroupId.set(ml.group_id, { title: ml.title, uid: ml.uid });
+          }
+        }
+      } else {
+        logger.warning(req, 'get_my_documents', 'Failed to resolve mailing list names for batch, names will be omitted', {
+          batch_index: i,
+          error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+        });
+      }
+    }
+    return listByGroupId;
   }
 
   // ─── Foundation Name Resolution ─────────────────────────────────────────────
@@ -603,7 +701,8 @@ export class DocumentService {
   private mapPastMeetingSummaries(summaries: PastMeetingSummaryQueryResult[], meetingDetails: MeetingDetails): MyDocumentItem[] {
     return summaries.map((s): MyDocumentItem => {
       const meeting = meetingDetails.get(s.meeting_id);
-      const summaryContent = s.edited_content ?? s.content;
+      // edited_content is an empty string (not absent) for a summary nobody edited, so `??` would never fall back to content.
+      const summaryContent = s.edited_content || s.content;
       return {
         id: `past_meeting_summary:${s.id}`,
         name: s.summary_title || s.zoom_meeting_topic || 'Meeting Summary',

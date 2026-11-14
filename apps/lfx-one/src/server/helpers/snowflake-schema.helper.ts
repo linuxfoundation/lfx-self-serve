@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA } from '@lfx-one/shared/constants';
+import { DEFAULT_LFX_ONE_PLATINUM_SCHEMA, SOCIAL_LISTENING_ANALYTICS_RELATIONS } from '@lfx-one/shared/constants';
 
 /**
  * Guards `LFX_ONE_PLATINUM_SCHEMA` before it's interpolated into a SQL identifier: only
@@ -41,6 +41,13 @@ export function resolveLfxOnePlatinumSchema(): string {
  */
 export function committeeEngagementTable(): string {
   return `${resolveLfxOnePlatinumSchema()}.COMMITTEE_MEETING_ATTENDANCE`;
+}
+
+/** Governed Social Listening analytics relations for `linuxfoundation/lfx-self-serve#1873`, qualified with the guarded dev-overridable LFX One schema. */
+export function socialListeningAnalyticsTable(
+  relation: (typeof SOCIAL_LISTENING_ANALYTICS_RELATIONS)[keyof typeof SOCIAL_LISTENING_ANALYTICS_RELATIONS]
+): string {
+  return `${resolveLfxOnePlatinumSchema()}.${relation}`;
 }
 
 /** The Social Listening feed lives in PCC's `ANALYTICS.PLATINUM` schema, not `PLATINUM_LFX_ONE`, so it gets its own guarded three-segment override (`LFX_ONE_SOCIAL_LISTENING_FEED_TABLE`). */

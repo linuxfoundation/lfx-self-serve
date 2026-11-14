@@ -4,14 +4,17 @@
 import {
   Announcement,
   Beneficiary,
+  CrowdfundingAttributionType,
   CrowdfundingTransaction,
   FinancialSummary,
   FundingGoal,
+  InitiativeAttribution,
   InitiativeBase,
   InitiativeDetail,
   SponsorEntry,
   CrowdfundingInitiativeStatus,
   MyDonation,
+  OrgDonation,
   PaymentMethod,
   RecurringDonation,
   RecurringDonationStatus,
@@ -19,14 +22,21 @@ import {
   SponsorshipDonationMode,
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
-import { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_DONATION_MODES } from '@lfx-one/shared/constants';
+import {
+  CROWDFUNDING_ATTRIBUTION_TYPES,
+  CROWDFUNDING_INITIATIVE_STATUSES,
+  SPONSORSHIP_TIER_NAMES,
+  SPONSORSHIP_DONATION_MODES,
+} from '@lfx-one/shared/constants';
 
 import {
   BackendAnnouncement,
+  BackendAttribution,
   BackendBeneficiary,
   BackendGoal,
   BackendInitiative,
   BackendMyTransaction,
+  BackendOrgDonation,
   BackendSponsor,
   BackendSponsorshipTier,
   BackendSubscription,
@@ -45,6 +55,12 @@ function toValidDonationMode(value: unknown): SponsorshipDonationMode | undefine
 function mapSponsorshipTier(t: BackendSponsorshipTier): SponsorshipTier | undefined {
   if (!SPONSORSHIP_TIER_NAMES.includes(t.name as SponsorshipTier['name'])) return undefined;
   return { name: t.name as SponsorshipTier['name'], enabled: t.enabled, goalCents: t.minimum, benefits: t.benefits };
+}
+
+// An unknown or missing type maps to undefined, which the UI reads as personal.
+function mapAttribution(a: BackendAttribution | undefined): InitiativeAttribution | undefined {
+  if (!a || !CROWDFUNDING_ATTRIBUTION_TYPES.includes(a.type as CrowdfundingAttributionType)) return undefined;
+  return { type: a.type as CrowdfundingAttributionType, entityUid: a.entity_uid, name: a.name, logoUrl: a.logo_url };
 }
 
 function toValidFundType(value: unknown): FundType {
@@ -77,6 +93,8 @@ export function mapToInitiativeBase(b: BackendInitiative): InitiativeBase {
         }
       : undefined,
     initiativeStats: b.financials ? { supporters: b.financials.supporters } : undefined,
+    attribution: mapAttribution(b.attribution),
+    creator: b.creator || undefined,
   };
 }
 
@@ -90,6 +108,7 @@ export function mapToInitiativeDetail(b: BackendInitiative): InitiativeDetail {
     beneficiaries: (b.beneficiaries ?? []).map(mapBeneficiary),
     sponsorshipTiers: b.sponsorship_tiers?.map(mapSponsorshipTier).filter((t): t is SponsorshipTier => t !== undefined),
     donationMode: toValidDonationMode(b.donation_mode),
+    isOwner: b.is_owner === true,
     // Not yet available from the backend
     githubUrl: undefined,
     impactStats: undefined,
@@ -139,8 +158,10 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
     donorName: b.donor_name,
     donorType: b.donor_type,
     donorLogoUrl: b.donor_logo_url,
-    donorUsername: b.donor_username,
+    // CF already blanks this on anonymous rows; dropping it here too keeps the donor's LFID out of the response if it ever doesn't.
+    donorUsername: b.anonymous === true ? undefined : b.donor_username,
     initiativeId: b.initiative_id,
+    anonymous: b.anonymous === true,
   };
 }
 
@@ -166,6 +187,27 @@ export function mapMyTransactionToMyDonation(t: BackendMyTransaction): MyDonatio
     date: new Date(t.date).getTime(),
     initiativeName: t.initiative_name || undefined,
     recurring: t.recurring,
+    anonymous: t.anonymous === true,
+    donationId: t.donation_id || undefined,
+    subscriptionId: t.subscription_id || undefined,
+  };
+}
+
+/** Maps a CF Org lens donation row (from GET /crowdfunding/organizations/{uid}/donations) to the OrgDonation wire shape. */
+export function mapOrgDonation(d: BackendOrgDonation): OrgDonation {
+  // CF already masks anonymous rows; masking here too keeps the donor's identity out of org viewers' browsers if it ever doesn't.
+  const anonymous = d.anonymous === true;
+  return {
+    id: d.id,
+    recurring: d.type === 'recurring',
+    initiativeId: d.initiative_id || undefined,
+    initiativeName: d.initiative_name || undefined,
+    initiativeSlug: d.initiative_slug || undefined,
+    donorName: anonymous ? 'Anonymous' : d.donor_name,
+    donorEmail: anonymous ? '' : (d.donor_email ?? ''),
+    anonymous,
+    amountCents: d.amount_cents,
+    date: new Date(d.created_on).getTime(),
   };
 }
 
@@ -205,5 +247,6 @@ export function mapSubscriptionToRecurringDonation(s: BackendSubscription): Recu
     description: s.initiative_description,
     tags: s.initiative_tags,
     initiativeUrl: s.initiative_url,
+    anonymous: s.anonymous === true,
   };
 }

@@ -45,7 +45,13 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/engagement-group-attendance',
       // Its empty state claims the foundation has no matching groups, so a zero-filled response
       // reads as measured absence.
-      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+    },
+    {
+      name: 'getEngagementAttendanceTrend',
+      url: '/api/analytics/engagement-attendance-trend',
+      // No months renders "no meeting attendance in the last twelve months", which a swallowed failure would fake.
+      call: () => service.getEngagementAttendanceTrend({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEngagementOrgParticipation',
@@ -59,6 +65,18 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       // Its empty table renders "no non-member organizations", so a swallowed failure would read as
       // a measured absence of non-member attendance.
       call: () => service.getEngagementNonMemberParticipation({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEngagementNewsletterPerformance',
+      url: '/api/analytics/engagement-newsletter-performance',
+      // Its empty state reads "nothing sent", so a swallowed failure would read as a foundation that sent no newsletter.
+      call: () => service.getEngagementNewsletterPerformance({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEngagementNewsletterRecipients',
+      url: '/api/analytics/engagement-newsletter-recipients',
+      // Its empty state reads "no newsletter sent", so a swallowed failure would read as a foundation that sent none.
+      call: () => service.getEngagementNewsletterRecipients({ foundationSlug: 'aaif' }),
     },
     {
       name: 'getEngagementRepresentatives',
@@ -77,6 +95,16 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEventsRegistrationForecastCurve',
       url: '/api/analytics/events-registration-forecast-curve',
       call: () => service.getEventsRegistrationForecastCurve({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
+      name: 'getEventsRegistrationHistory',
+      url: '/api/analytics/events-registration-history',
+      call: () => service.getEventsRegistrationHistory({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
+      name: 'getEventsSnapshot',
+      url: '/api/analytics/events-snapshot',
+      call: () => service.getEventsSnapshot({ foundationSlug: 'aaif', eventId: 'evt-1' }),
     },
     {
       name: 'getEventsPast',
@@ -127,22 +155,16 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEventsGeography({ foundationSlug: 'aaif' }),
     },
     {
+      name: 'getMembersGrowth',
+      url: '/api/analytics/members-growth',
+      // A swallowed failure would read as a foundation with no new members.
+      call: () => service.getMembersGrowth({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'getMembersTiers',
       url: '/api/analytics/members-tiers',
       // A swallowed failure would read as a foundation with no members in any tier.
       call: () => service.getMembersTiers({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersBridge',
-      url: '/api/analytics/members-bridge',
-      // A swallowed failure would read as a year in which no member joined, moved or left.
-      call: () => service.getMembersBridge({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersMovements',
-      url: '/api/analytics/members-movements',
-      // A swallowed failure would read as a bar with no organizations behind it.
-      call: () => service.getMembersMovements({ foundationSlug: 'aaif', year: 2026, movementType: 'new', offset: 0, pageSize: 25 }),
     },
     {
       name: 'getMembersDirectory',
@@ -161,6 +183,120 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/members-at-risk',
       // A swallowed failure would read as a foundation with no members at risk.
       call: () => service.getMembersAtRisk({ foundationSlug: 'aaif', bucket: 'all', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getMembersRenewals',
+      url: '/api/analytics/members-renewals',
+      // A swallowed failure would read as a foundation with no renewals due.
+      call: () => service.getMembersRenewals({ foundationSlug: 'aaif', window: '90_days', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getMembersBoardAttendance',
+      url: '/api/analytics/members-board-attendance',
+      // A swallowed failure would read as a board that met with no one attending.
+      call: () => service.getMembersBoardAttendance({ foundationSlug: 'aaif', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getMembersNps',
+      url: '/api/analytics/members-nps',
+      // A swallowed failure would read as a foundation that was never surveyed.
+      call: () => service.getMembersNps({ foundationSlug: 'aaif', range: 'YTD', audience: null }),
+    },
+    {
+      name: 'getMembersChurn',
+      url: '/api/analytics/members-churn',
+      // A swallowed failure would read as a foundation that lost no members.
+      call: () => service.getMembersChurn('aaif'),
+    },
+    {
+      name: 'getMembersChurnDepartures',
+      url: '/api/analytics/members-churn-departures',
+      // A swallowed failure would read as a year in which no membership lapsed.
+      call: () => service.getMembersChurnDepartures({ foundationSlug: 'aaif', year: 2026, offset: 0, pageSize: 25 }),
+    },
+    {
+      name: 'getNonMembersOrgs',
+      url: '/api/analytics/non-members-orgs',
+      // A swallowed failure would read as a foundation no non-member organization engages with.
+      call: () => service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getNonMembersPeople',
+      url: '/api/analytics/non-members-people',
+      // A swallowed failure would read as a foundation no non-member individual attended.
+      call: () => service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10 }),
+    },
+    {
+      name: 'getNonMembersConversion',
+      url: '/api/analytics/non-members-conversion',
+      // A swallowed failure would read as a foundation with no pipeline.
+      call: () => service.getNonMembersConversion({ foundationSlug: 'aaif', range: 'YTD' }),
+    },
+    {
+      name: 'getTrainingEnrollment',
+      url: '/api/analytics/training-enrollment',
+      // A swallowed failure would read as a foundation with no enrollments.
+      call: () => service.getTrainingEnrollment({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getTrainingCourses',
+      url: '/api/analytics/training-courses',
+      // A swallowed failure would read as a foundation with no courses.
+      call: () => service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }),
+    },
+    {
+      name: 'getOverviewParticipatingOrgs',
+      url: '/api/analytics/overview-participating-orgs',
+      // A swallowed failure would read as no participating organizations.
+      call: () => service.getOverviewParticipatingOrgs({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewNps',
+      url: '/api/analytics/overview-nps',
+      // A swallowed failure would read as a foundation never surveyed.
+      call: () => service.getOverviewNps({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewChurn',
+      url: '/api/analytics/overview-churn',
+      // A swallowed failure would read as a foundation with no churn.
+      call: () => service.getOverviewChurn({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewOutstandingBalance',
+      url: '/api/analytics/overview-outstanding-balance',
+      // A swallowed failure would read as a foundation with nothing overdue.
+      call: () => service.getOverviewOutstandingBalance({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewEvents',
+      url: '/api/analytics/overview-events',
+      // A swallowed failure would read as a foundation with no events.
+      call: () => service.getOverviewEvents({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewBoard',
+      url: '/api/analytics/overview-board',
+      // A swallowed failure would read as a board that never met.
+      call: () => service.getOverviewBoard({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewCode',
+      url: '/api/analytics/overview-code',
+      // A swallowed failure would read as a foundation with no contributors.
+      call: () => service.getOverviewCode({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewNewsletters',
+      url: '/api/analytics/overview-newsletters',
+      // A swallowed failure would read as a foundation that never sent a newsletter.
+      call: () => service.getOverviewNewsletters({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'loadFoundationProjectsDetailGrouped',
+      url: '/api/analytics/foundation-projects-detail-grouped',
+      // A swallowed failure would read as a foundation with no projects to select.
+      call: () => service.loadFoundationProjectsDetailGrouped('aaif'),
     },
   ];
 
@@ -182,6 +318,19 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     });
   }
 
+  it('loadFoundationProjectsDetailGrouped drops a failed read from the cache so the next call refetches', () => {
+    service.loadFoundationProjectsDetailGrouped('aaif').subscribe({ error: () => undefined });
+    http
+      .expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif')
+      .flush('upstream failed', { status: 500, statusText: 'Server Error' });
+
+    let emitted: unknown;
+    service.loadFoundationProjectsDetailGrouped('aaif').subscribe((value) => (emitted = value));
+    http.expectOne('/api/analytics/foundation-projects-detail-grouped?foundationSlug=aaif').flush({ groups: [], totalCount: 0, complete: true });
+
+    expect(emitted).toEqual({ groups: [], totalCount: 0, complete: true });
+  });
+
   // Angular's default codec leaves `+` bare, which Express's query parser reads as a space.
   it('getEventsOrganizations sends a typed plus sign encoded, not as a space', () => {
     service.getEventsOrganizations({ foundationSlug: 'aaif', range: 'YTD', segment: 'all', search: 'A+E', offset: 0, pageSize: 25 }).subscribe();
@@ -189,6 +338,17 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     const req = http.expectOne((request) => request.url === '/api/analytics/events-organizations');
     expect(req.request.urlWithParams).toContain('search=A%2BE');
     req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('getTrainingCourses sends a typed plus sign encoded and leaves an empty search out', () => {
+    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: 'C++', offset: 0, pageSize: 25 }).subscribe();
+    service.getTrainingCourses({ foundationSlug: 'aaif', range: 'YTD', type: 'all', search: '', offset: 0, pageSize: 25 }).subscribe();
+
+    const [withSearch, withoutSearch] = http.match((request) => request.url === '/api/analytics/training-courses');
+    expect(withSearch.request.urlWithParams).toContain('search=C%2B%2B');
+    expect(withoutSearch.request.params.has('search')).toBe(false);
+    withSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+    withoutSearch.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   it('getMembersDirectory sends a typed plus sign encoded and leaves empty filters out', () => {
@@ -199,6 +359,28 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     expect(req.request.urlWithParams).toContain('tier=Gold%2B');
     expect(req.request.params.has('nps')).toBe(false);
     req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, atRiskCount: 0 });
+  });
+
+  it('getNonMembersOrgs sends a typed plus sign encoded and leaves the default filter out', () => {
+    service.getNonMembersOrgs({ foundationSlug: 'aaif', range: 'YTD', filter: 'all', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/non-members-orgs');
+    expect(req.request.urlWithParams).toContain('search=A%2BE');
+    expect(req.request.params.has('filter')).toBe(false);
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0, newCount: 0 });
+  });
+
+  it('getNonMembersPeople sends a typed plus sign encoded and leaves an empty search out', () => {
+    service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: 'A+E', offset: 0, pageSize: 10 }).subscribe();
+
+    const req = http.expectOne((request) => request.url === '/api/analytics/non-members-people');
+    expect(req.request.urlWithParams).toContain('search=A%2BE');
+    req.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
+
+    service.getNonMembersPeople({ foundationSlug: 'aaif', range: 'YTD', search: '', offset: 0, pageSize: 10 }).subscribe();
+    const unsearched = http.expectOne((request) => request.url === '/api/analytics/non-members-people');
+    expect(unsearched.request.params.has('search')).toBe(false);
+    unsearched.flush({ rows: [], totalRecords: 0, scopeTotal: 0 });
   });
 
   afterEach(() => {

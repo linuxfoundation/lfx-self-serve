@@ -8,9 +8,11 @@ vi.mock('../services/logger.service', () => ({
 }));
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config, and the
 // real barrel pulls in Angular-dependent code that fails to JIT-compile outside the browser build.
-vi.mock('@lfx-one/shared/utils', () => ({ addMinutesToDate: vi.fn((iso: string) => iso) }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  addMinutesToDate: vi.fn((iso: string) => ({ toISOString: () => iso })),
+}));
 
-import { buildVCalendar } from './ics.helper';
+import { buildVCalendar, buildVEvent, escapeICSText, ICS_UID_DOMAIN } from './ics.helper';
 
 describe('buildVCalendar', () => {
   it('omits X-WR-CALNAME when no calname is provided', () => {
@@ -39,5 +41,47 @@ describe('buildVCalendar', () => {
     expect(calnameStart).toBeGreaterThanOrEqual(0);
     // Folded continuation lines are prefixed with a single space.
     expect(rawLines[calnameStart + 1].startsWith(' ')).toBe(true);
+  });
+});
+
+describe('escapeICSText', () => {
+  it('escapes backslash, semicolon, comma and newlines (RFC 5545 section 3.3.11)', () => {
+    expect(escapeICSText('A, B; C\\D\r\nE')).toBe(String.raw`A\, B\; C\\D\nE`);
+  });
+
+  it('drops control characters other than TAB, CR and LF so a value cannot carry them into the feed', () => {
+    expect(escapeICSText('A\u0000B\u0007C\u007fD\tE')).toBe('ABCD\tE');
+  });
+
+  it('treats a missing value as empty', () => {
+    expect(escapeICSText(undefined as unknown as string)).toBe('');
+  });
+});
+
+describe('buildVEvent', () => {
+  it('uses the title for DESCRIPTION and carries no URL property', () => {
+    const vevent = buildVEvent('uid-1', 'Weekly Sync', '2026-01-15T14:00:00Z', 30);
+
+    expect(vevent).toContain('DESCRIPTION:Weekly Sync');
+    expect(vevent).not.toContain('URL:');
+  });
+
+  it('builds a complete VEVENT with a globally unique UID and SEQUENCE:0', () => {
+    const vevent = buildVEvent('uid-1', 'Weekly Sync', '2026-01-15T14:00:00Z', 30);
+
+    const lines = vevent.split('\r\n');
+    expect(lines[0]).toBe('BEGIN:VEVENT');
+    expect(lines[lines.length - 1]).toBe('END:VEVENT');
+    expect(lines).toContain(`UID:uid-1@${ICS_UID_DOMAIN}`);
+    expect(lines).toContain('SEQUENCE:0');
+    expect(lines).toContain('SUMMARY:Weekly Sync');
+    expect(lines).toContain('DTSTART:20260115T140000Z');
+  });
+
+  it('escapes the title in SUMMARY and DESCRIPTION', () => {
+    const vevent = buildVEvent('uid-1', 'Q&A; notes, agenda', '2026-01-15T14:00:00Z', 30);
+
+    expect(vevent).toContain('SUMMARY:Q&A\\; notes\\, agenda');
+    expect(vevent).toContain('DESCRIPTION:Q&A\\; notes\\, agenda');
   });
 });

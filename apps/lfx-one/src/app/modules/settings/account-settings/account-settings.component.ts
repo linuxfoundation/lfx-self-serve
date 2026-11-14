@@ -12,8 +12,22 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TokenRevealDialogComponent } from '@components/token-reveal-dialog/token-reveal-dialog.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ACCOUNT_SETTINGS_SECTIONS, INSIGHTS_PUBLIC_API_FLAG, MEETING_INVITE_PRIMARY_SENTINEL, PROFILE_EMAILS_PATH } from '@lfx-one/shared/constants';
-import { emailsEqual } from '@lfx-one/shared/utils';
+import {
+  ACCOUNT_SETTINGS_SECTIONS,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_LINKED_SUPPORT_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_THRESHOLD,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  INSIGHTS_PUBLIC_API_FLAG,
+  PROFILE_EMAILS_PATH,
+} from '@lfx-one/shared/constants';
+import { buildLinkedEmailSupportMessage, emailsEqual, isIdentityAlreadyLinkedError } from '@lfx-one/shared/utils';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { ActivatedRoute } from '@angular/router';
 
@@ -31,6 +45,7 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
 import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -49,6 +64,7 @@ import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observabl
     TooltipModule,
     DynamicDialogModule,
     InsightsTokensComponent,
+    PageHeaderComponent,
   ],
   providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',
@@ -83,6 +99,13 @@ export class AccountSettingsComponent {
   // ── Resend cooldown ──
   private resendCooldownUtil = useResendCooldown(this.destroyRef);
   public resendCooldown = this.resendCooldownUtil.cooldown;
+  // Resends sent for the pending address; once it reaches the threshold, Resend gives way to Contact support.
+  public resendCount = signal(0);
+  public readonly showResendSupport = computed(() => this.resendCount() >= EMAIL_RESEND_SUPPORT_THRESHOLD);
+  public readonly codeNotReceivedHint = EMAIL_CODE_NOT_RECEIVED_HINT;
+  public readonly codeNotReceivedTitle = EMAIL_CODE_NOT_RECEIVED_TITLE;
+  public readonly resendSupportTitle = EMAIL_RESEND_SUPPORT_TITLE;
+  public readonly resendSupportMessage = EMAIL_RESEND_SUPPORT_MESSAGE;
 
   // ── TOC active section ──
   private static readonly sectionIds = [
@@ -108,6 +131,12 @@ export class AccountSettingsComponent {
   public pendingEmail = signal('');
   public sendingCode = signal(false);
   public verifyingOtp = signal(false);
+  // A correct code for an address already linked to another LFX account: the code step shows a
+  // support callout with a pre-filled chat instead of an error toast (#5511).
+  public linkedConflict = signal(false);
+  public readonly linkedSupportTitle = EMAIL_LINKED_SUPPORT_TITLE;
+  public readonly linkedSupportDetail = EMAIL_ALREADY_LINKED_MESSAGE;
+  public readonly linkedSupportMessage = computed(() => buildLinkedEmailSupportMessage(this.pendingEmail()));
 
   // Add email form (step 1: enter email)
   public addEmailForm = new FormGroup({
@@ -131,6 +160,7 @@ export class AccountSettingsComponent {
   // Preferred meeting-invitation email (meeting-service). Null address = no override (uses primary).
   public meetingInviteData: Signal<MeetingInviteEmail | null> = computed(() => this.emailState().invite);
   public meetingInviteEmail = computed((): string | null => this.meetingInviteData()?.email ?? null);
+  public meetingInviteLoadFailed = computed((): boolean => this.emailState().inviteLoadFailed);
 
   // Inline banner for a meeting-invite validation failure (the address isn't an active, verified
   // record upstream). Held in a signal rather than a toast so it can host a "contact support" link.
@@ -157,24 +187,32 @@ export class AccountSettingsComponent {
 
   public emailsWithMetadata = computed(() => {
     const inviteEmail = this.meetingInviteEmail();
+    const inviteLoadFailed = this.meetingInviteLoadFailed();
     const primaryEmail = this.emailData()?.primary_email;
     return this.allEmails().map((email) => {
       const isPrimary = emailsEqual(email.email, primaryEmail);
-      // Explicit selection — drives the badge, which only appears once the user has chosen.
-      const isMeetingInvite = emailsEqual(email.email, inviteEmail);
-      // The primary row's action is "reset to default", which is meaningful whenever an override
-      // exists — including one pinned to the primary address, since clearing it lets invitations
-      // follow a later primary change. Other rows offer "use this address" until they are the override.
-      const canReset = inviteEmail !== null;
+      // The stored override — drives the delete guard.
+      const isInviteOverride = emailsEqual(email.email, inviteEmail);
+      // Where invitations actually go: the override, else the primary. Unknown when the lookup failed.
+      const isMeetingInvite = !inviteLoadFailed && (inviteEmail === null ? isPrimary : isInviteOverride);
       return {
         ...email,
         isPrimary,
+        isInviteOverride,
         isMeetingInvite,
         canDelete: this.allEmails().length > 1 && !isPrimary && !!email.user_id,
         canSetPrimary: !isPrimary && email.verified,
-        canSetMeetingInvite: email.verified && (isPrimary ? canReset : !isMeetingInvite),
+        canSetMeetingInvite: email.verified && !isMeetingInvite,
       };
     });
+  });
+
+  // A stored override that matches none of the listed addresses (e.g. the SFDC record differs from
+  // Auth0), so no row can carry the badge — surfaced as a banner instead of silently disappearing.
+  public orphanedInviteEmail = computed((): string | null => {
+    const inviteEmail = this.meetingInviteEmail();
+    if (inviteEmail === null || this.allEmails().length === 0) return null;
+    return this.allEmails().some((e) => emailsEqual(e.email, inviteEmail)) ? null : inviteEmail;
   });
 
   // Per-row action menu (kebab). Keyed by email address so each row resolves its own items.
@@ -298,11 +336,16 @@ export class AccountSettingsComponent {
   // ══════════════════════════════════════════
 
   public sendVerificationCode(): void {
-    if (this.addEmailForm.invalid) {
+    if (this.addEmailForm.invalid || this.sendingCode()) {
       return;
     }
 
     const email = this.addEmailForm.value.email!;
+    const isResend = this.otpStep();
+    if (isResend && (this.resendCooldown() > 0 || this.showResendSupport())) {
+      return;
+    }
+
     this.sendingCode.set(true);
 
     this.userService
@@ -312,14 +355,21 @@ export class AccountSettingsComponent {
         next: (response) => {
           if (response.success) {
             this.pendingEmail.set(email);
+            this.linkedConflict.set(false);
             this.otpStep.set(true);
+            this.resendCount.set(isResend ? this.resendCount() + 1 : 0);
             this.resendCooldownUtil.start();
           } else {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: response.message || 'Failed to send verification code' });
+            const detail = isResend ? EMAIL_RESEND_FAILED_MESSAGE : response.message || 'Failed to send verification code';
+            this.messageService.add({ severity: 'error', summary: 'Error', detail });
           }
         },
         error: (error) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Failed to send verification code' });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isResend ? EMAIL_RESEND_FAILED_MESSAGE : error.error?.message || error.error?.error || 'Failed to send verification code',
+          });
         },
       });
   }
@@ -340,7 +390,9 @@ export class AccountSettingsComponent {
           if (response.success) {
             this.cancelOtpStep();
             this.emailRefresh.next();
-            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Email address added successfully' });
+            // An address already connected to this account was not added — don't claim it was.
+            const detail = response.status === EMAIL_ALREADY_CONNECTED_STATUS ? EMAIL_ALREADY_CONNECTED_MESSAGE : 'Email address added successfully';
+            this.messageService.add({ severity: 'success', summary: 'Success', detail });
           } else {
             this.messageService.add({
               severity: 'error',
@@ -354,16 +406,31 @@ export class AccountSettingsComponent {
             this.redirectToProfileAuth(error.error.authorize_url);
             return;
           }
+          // Only a proven conflict gets the support callout; wrong or expired codes keep the toast.
+          if (error.status === 409 && isIdentityAlreadyLinkedError(error.error?.error, error.error?.message)) {
+            this.linkedConflict.set(true);
+            return;
+          }
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Verification failed. Please try again.' });
         },
       });
   }
 
+  public changeEmail(): void {
+    if (this.sendingCode() || this.verifyingOtp()) {
+      return;
+    }
+
+    this.cancelOtpStep();
+  }
+
   public cancelOtpStep(): void {
     this.otpStep.set(false);
     this.pendingEmail.set('');
+    this.linkedConflict.set(false);
     this.addEmailForm.reset();
     this.otpForm.reset();
+    this.resendCount.set(0);
     this.resendCooldownUtil.clear();
   }
 
@@ -382,20 +449,20 @@ export class AccountSettingsComponent {
           this.redirectToProfileAuth(err.error.authorize_url);
           return;
         }
-        this.messageService.add({ severity: 'error', summary: 'Error', detail: err.error?.message || 'Failed to update primary email' });
+        // A blocked change (invite email couldn't be pinned) is a 503 advisory; extractErrorMessage reads it.
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(err, 'Failed to update primary email') });
       },
     });
   }
 
   public setMeetingInvite(email: UserEmail): void {
-    // Picking the primary row means "go back to the default". Sending its literal address would
-    // instead pin an explicit override that stops following a later primary-email change — the
-    // meeting service only clears the override for the sentinel.
+    // Always saves the literal address, the primary's included, so invitations stay on it when the
+    // primary later changes (#3983).
     const inviteEmail = this.meetingInviteEmail();
-    const isReset = emailsEqual(email.email, this.emailData()?.primary_email);
-    // A reset still does work while any override exists, even one pointing at the primary address,
-    // so only a non-reset re-pick of the current override is a no-op.
-    const isNoop = isReset ? inviteEmail === null : emailsEqual(email.email, inviteEmail);
+    const isPrimary = emailsEqual(email.email, this.emailData()?.primary_email);
+    // No-op when the row already receives invitations — the primary also does when nothing is pinned.
+    // After a failed lookup that is unknown, so the write goes through and restores a known state.
+    const isNoop = !this.meetingInviteLoadFailed() && (emailsEqual(email.email, inviteEmail) || (isPrimary && inviteEmail === null));
 
     if (!email.verified || isNoop || this.savingMeetingInvite() || emailsEqual(email.email, this.deletingEmailAddress())) {
       return;
@@ -404,19 +471,13 @@ export class AccountSettingsComponent {
     this.meetingInviteError.set(null);
     this.savingMeetingInvite.set(true);
 
-    const selection = isReset ? MEETING_INVITE_PRIMARY_SENTINEL : email.email;
-
     this.userService
-      .setMeetingInviteEmail(selection)
+      .setMeetingInviteEmail(email.email)
       .pipe(finalize(() => this.savingMeetingInvite.set(false)))
       .subscribe({
         next: () => {
           this.emailRefresh.next();
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: isReset ? 'Meeting invitations will now follow your primary email' : 'Meeting invitation email updated successfully',
-          });
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Meeting invitation email updated successfully' });
         },
         error: (err: HttpErrorResponse) => {
           // A 400 means the address exists but isn't an active, verified record upstream — retrying
@@ -699,18 +760,15 @@ export class AccountSettingsComponent {
           items.push({ label: 'Make Primary', icon: 'fa-light fa-star', command: () => this.setPrimary(email) });
         }
         if (email.canSetMeetingInvite) {
-          // On the primary row the action clears the override rather than pinning an address — name it
-          // as a reset, since it also shows on a primary row already badged as the current override.
-          const label = email.isPrimary ? 'Reset to Default (Primary Email)' : 'Use for Meeting Invitations';
           items.push({
-            label,
+            label: 'Use for Meeting Invitations',
             icon: 'fa-light fa-envelope',
             disabled: savingInvite,
             command: () => this.setMeetingInvite(email),
           });
         }
         if (email.canDelete) {
-          const blockedReason = this.getDeleteBlockedReason(email.isMeetingInvite, savingInvite, this.emailState().inviteLoadFailed, deletingInProgress);
+          const blockedReason = this.getDeleteBlockedReason(email.isInviteOverride, savingInvite, this.emailState().inviteLoadFailed, deletingInProgress);
           if (blockedReason) {
             items.push({ label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', disabled: true, title: blockedReason });
           } else {
@@ -724,14 +782,14 @@ export class AccountSettingsComponent {
   }
 
   /**
-   * Why deleting is blocked, or null when it's allowed. `isMeetingInvite` still reflects the
+   * Why deleting is blocked, or null when it's allowed. `isInviteOverride` still reflects the
    * previous selection until the refresh lands, so an in-flight write has to block every row —
    * otherwise the address just picked stays deletable for the whole SET and orphans the preference.
    * `inviteLoadFailed` means which address is protected is unknown, so every row blocks.
    * `deletingInProgress` means another row's delete is already in flight — every row blocks so a
    * second click can't overwrite the tracked address before the first delete lands.
    */
-  private getDeleteBlockedReason(isMeetingInvite: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
+  private getDeleteBlockedReason(isInviteOverride: boolean, savingInvite: boolean, inviteLoadFailed: boolean, deletingInProgress: boolean): string | null {
     if (inviteLoadFailed) {
       return 'Could not confirm your meeting-invitation email. Reload the page before deleting an address.';
     }
@@ -741,7 +799,7 @@ export class AccountSettingsComponent {
     if (deletingInProgress) {
       return 'Deleting an email address. Wait for it to finish before deleting another.';
     }
-    if (isMeetingInvite) {
+    if (isInviteOverride) {
       return 'This email is set for meeting invitations. Choose a different meeting-invitation email before deleting it.';
     }
     return null;

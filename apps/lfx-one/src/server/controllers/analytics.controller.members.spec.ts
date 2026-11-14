@@ -4,30 +4,43 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getTiers, getBridge, getMovements, getDirectory, getDirectoryTiers, getAtRisk } = vi.hoisted(() => ({
-  getTiers: vi.fn(),
-  getAtRisk: vi.fn(),
-  getBridge: vi.fn(),
-  getMovements: vi.fn(),
-  getDirectory: vi.fn(),
-  getDirectoryTiers: vi.fn(),
-}));
+const { getGrowth, getTiers, getDirectory, getDirectoryTiers, getAtRisk, getRenewals, getBoardAttendance, getNps, getChurn, getChurnDepartures } = vi.hoisted(
+  () => ({
+    getGrowth: vi.fn(),
+    getTiers: vi.fn(),
+    getAtRisk: vi.fn(),
+    getRenewals: vi.fn(),
+    getBoardAttendance: vi.fn(),
+    getNps: vi.fn(),
+    getChurn: vi.fn(),
+    getChurnDepartures: vi.fn(),
+    getDirectory: vi.fn(),
+    getDirectoryTiers: vi.fn(),
+  })
+);
 
 vi.mock('../services/health-metrics-members.service', () => ({
   HealthMetricsMembersService: class {
+    public getGrowth = getGrowth;
     public getTiers = getTiers;
-    public getBridge = getBridge;
-    public getMovements = getMovements;
     public getDirectory = getDirectory;
     public getDirectoryTiers = getDirectoryTiers;
     public getAtRisk = getAtRisk;
+    public getRenewals = getRenewals;
+    public getBoardAttendance = getBoardAttendance;
+    public getNps = getNps;
+    public getChurn = getChurn;
+    public getChurnDepartures = getChurnDepartures;
   },
   // The views carry the four L2 periods; a fourth completed year has no columns.
   isSupportedMembersRange: (range: string) => ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3'].includes(range),
 }));
-// The controller constructs six unrelated domain services; none of them are exercised here.
+// The controller constructs nine unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-engagement.service', () => ({ HealthMetricsEngagementService: class {}, isSupportedEngagementRange: () => true }));
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {}, isSupportedEventsRange: () => true }));
+vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
+vi.mock('../services/health-metrics-training.service', () => ({ HealthMetricsTrainingService: class {} }));
+vi.mock('../services/health-metrics-overview.service', () => ({ HealthMetricsOverviewService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
@@ -42,22 +55,41 @@ import {
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH,
+  HEALTH_METRICS_MEMBERS_NPS_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED,
+  HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED,
   HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
 
-type Handler = 'getMembersTiers' | 'getMembersBridge' | 'getMembersMovements' | 'getMembersDirectory' | 'getMembersDirectoryTiers' | 'getMembersAtRisk';
+type Handler =
+  | 'getMembersGrowth'
+  | 'getMembersTiers'
+  | 'getMembersDirectory'
+  | 'getMembersDirectoryTiers'
+  | 'getMembersAtRisk'
+  | 'getMembersRenewals'
+  | 'getMembersBoardAttendance'
+  | 'getMembersNps'
+  | 'getMembersChurn'
+  | 'getMembersChurnDepartures';
 
 function call(queryParams: Record<string, string>, handler: Handler = 'getMembersTiers'): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
@@ -72,6 +104,40 @@ function rejectedField(next: NextFunction): string | undefined {
   const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError | undefined;
   return error?.validationErrors?.[0]?.field;
 }
+
+describe('AnalyticsController.getMembersGrowth', () => {
+  beforeEach(() => {
+    getGrowth.mockReset();
+    getGrowth.mockResolvedValue(HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED);
+  });
+
+  it('passes the foundation to the service and returns its response', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getMembersGrowth');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getGrowth).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_GROWTH_UNMEASURED);
+  });
+
+  it.each([{}, { foundationSlug: 'Acme Corp' }])('rejects a missing or malformed foundation (%o)', async (query) => {
+    const { next, promise } = call(query as Record<string, string>, 'getMembersGrowth');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getGrowth).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getGrowth.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersGrowth');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
 
 describe('AnalyticsController.getMembersTiers', () => {
   beforeEach(() => {
@@ -102,97 +168,6 @@ describe('AnalyticsController.getMembersTiers', () => {
     getTiers.mockRejectedValue(failure);
 
     const { next, promise } = call({ foundationSlug: 'acme' });
-    await promise;
-
-    expect(next).toHaveBeenCalledWith(failure);
-  });
-});
-
-describe('AnalyticsController.getMembersBridge', () => {
-  beforeEach(() => {
-    getBridge.mockReset();
-    getBridge.mockResolvedValue(HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED);
-  });
-
-  it('passes the foundation to the service and returns its response', async () => {
-    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getMembersBridge');
-    await promise;
-
-    expect(next).not.toHaveBeenCalled();
-    expect(getBridge).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_BRIDGE_UNMEASURED);
-  });
-
-  it('rejects a malformed foundation', async () => {
-    const { next, promise } = call({ foundationSlug: 'Acme Corp' }, 'getMembersBridge');
-    await promise;
-
-    expect(rejectedField(next)).toBe('foundationSlug');
-    expect(getBridge).not.toHaveBeenCalled();
-  });
-
-  it('hands a service failure to next()', async () => {
-    const failure = new Error('warehouse down');
-    getBridge.mockRejectedValue(failure);
-
-    const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersBridge');
-    await promise;
-
-    expect(next).toHaveBeenCalledWith(failure);
-  });
-});
-
-describe('AnalyticsController.getMembersMovements', () => {
-  const valid = { foundationSlug: 'acme', year: '2025', movementType: 'upgrade' };
-
-  beforeEach(() => {
-    getMovements.mockReset();
-    getMovements.mockResolvedValue(HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED);
-  });
-
-  it('passes the parsed query, defaulting the page, and returns the response', async () => {
-    const { res, next, promise } = call(valid, 'getMembersMovements');
-    await promise;
-
-    expect(next).not.toHaveBeenCalled();
-    expect(getMovements).toHaveBeenCalledWith(expect.anything(), {
-      foundationSlug: 'acme',
-      year: 2025,
-      movementType: 'upgrade',
-      offset: 0,
-      pageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
-    });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_MOVEMENTS_UNMEASURED);
-  });
-
-  it('accepts a page within the cap and falls back past it', async () => {
-    await call({ ...valid, offset: '50', pageSize: '50' }, 'getMembersMovements').promise;
-    expect(getMovements).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ offset: 50, pageSize: 50 }));
-
-    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE + 1) }, 'getMembersMovements').promise;
-    expect(getMovements).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE }));
-  });
-
-  it.each([
-    [{ ...valid, foundationSlug: 'Acme Corp' }, 'foundationSlug'],
-    [{ ...valid, year: '' }, 'year'],
-    [{ ...valid, year: '25' }, 'year'],
-    [{ ...valid, year: '2025.5' }, 'year'],
-    [{ ...valid, movementType: 'churned' }, 'movementType'],
-    [{ ...valid, movementType: '' }, 'movementType'],
-  ])('rejects %o on %s', async (query, field) => {
-    const { next, promise } = call(query, 'getMembersMovements');
-    await promise;
-
-    expect(rejectedField(next)).toBe(field);
-    expect(getMovements).not.toHaveBeenCalled();
-  });
-
-  it('hands a service failure to next()', async () => {
-    const failure = new Error('warehouse down');
-    getMovements.mockRejectedValue(failure);
-
-    const { next, promise } = call(valid, 'getMembersMovements');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);
@@ -360,6 +335,283 @@ describe('AnalyticsController.getMembersAtRisk', () => {
     getAtRisk.mockRejectedValue(failure);
 
     const { next, promise } = call(valid, 'getMembersAtRisk');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersRenewals', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getRenewals.mockReset();
+    getRenewals.mockResolvedValue(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
+  });
+
+  it('defaults to the 90-day window and the first page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersRenewals');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      window: '90_days',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
+  });
+
+  it('passes the window and the page', async () => {
+    await call({ ...valid, window: 'this_year', offset: '10', pageSize: '10' }, 'getMembersRenewals').promise;
+
+    expect(getRenewals).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', window: 'this_year', offset: 10, pageSize: 10 });
+  });
+
+  it.each(['30_days', 'THIS_YEAR'])('rejects window %o', async (window) => {
+    const { next, promise } = call({ ...valid, window }, 'getMembersRenewals');
+    await promise;
+
+    expect(rejectedField(next)).toBe('window');
+    expect(getRenewals).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE + 1) }, 'getMembersRenewals').promise;
+
+    expect(getRenewals).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_RENEWALS_PAGE_SIZE }));
+  });
+
+  it.each([[{ foundationSlug: '' }], [{ foundationSlug: 'Acme Corp' }]])('rejects %o on foundationSlug', async (query) => {
+    const { next, promise } = call(query, 'getMembersRenewals');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getRenewals).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getRenewals.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersRenewals');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersBoardAttendance', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getBoardAttendance.mockReset();
+    getBoardAttendance.mockResolvedValue(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
+  });
+
+  it('defaults to this year, the board cohort and the first page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getBoardAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      cohort: 'board',
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED);
+  });
+
+  it('passes the range, cohort and page', async () => {
+    await call({ ...valid, range: 'COMPLETED_YEAR', cohort: 'voting_members', offset: '10', pageSize: '10' }, 'getMembersBoardAttendance').promise;
+
+    expect(getBoardAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      cohort: 'voting_members',
+      offset: 10,
+      pageSize: 10,
+    });
+  });
+
+  it('falls back to the default page size past the cap', async () => {
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE + 1) }, 'getMembersBoardAttendance').promise;
+
+    expect(getBoardAttendance).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ ...valid, cohort: 'committee' }, 'cohort'],
+    [{ ...valid, cohort: 'toString' }, 'cohort'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getBoardAttendance).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getBoardAttendance.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersBoardAttendance');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersNps', () => {
+  const valid = { foundationSlug: 'acme' };
+
+  beforeEach(() => {
+    getNps.mockReset();
+    getNps.mockResolvedValue(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
+  });
+
+  it('defaults to this year and no audience, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersNps');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNps).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD', audience: null });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
+  });
+
+  it('passes the range and a trimmed audience, capping its length', async () => {
+    await call({ ...valid, range: 'COMPLETED_YEAR_2', audience: '  Maintainers ' }, 'getMembersNps').promise;
+    expect(getNps).toHaveBeenLastCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'COMPLETED_YEAR_2', audience: 'Maintainers' });
+
+    await call({ ...valid, audience: 'x'.repeat(HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH + 20) }, 'getMembersNps').promise;
+    expect(getNps).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ audience: 'x'.repeat(HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH) })
+    );
+  });
+
+  it('reads a blank audience as none', async () => {
+    await call({ ...valid, audience: '   ' }, 'getMembersNps').promise;
+
+    expect(getNps).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ audience: null }));
+  });
+
+  it.each([
+    [{ foundationSlug: '' }, 'foundationSlug'],
+    [{ foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, range: 'LAST_WEEK' }, 'range'],
+    [{ ...valid, range: 'COMPLETED_YEAR_4' }, 'range'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersNps');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getNps).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getNps.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersNps');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersChurn', () => {
+  beforeEach(() => {
+    getChurn.mockReset();
+    getChurn.mockResolvedValue(HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED);
+  });
+
+  it('passes the foundation and returns the response', async () => {
+    const { res, next, promise } = call({ foundationSlug: 'acme' }, 'getMembersChurn');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getChurn).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED);
+  });
+
+  it.each([[{ foundationSlug: '' }], [{ foundationSlug: 'Acme Corp' }]])('rejects %o on foundationSlug', async (query) => {
+    const { next, promise } = call(query, 'getMembersChurn');
+    await promise;
+
+    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(getChurn).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getChurn.mockRejectedValue(failure);
+
+    const { next, promise } = call({ foundationSlug: 'acme' }, 'getMembersChurn');
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getMembersChurnDepartures', () => {
+  const valid = { foundationSlug: 'acme', year: '2025' };
+
+  beforeEach(() => {
+    getChurnDepartures.mockReset();
+    getChurnDepartures.mockResolvedValue(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED);
+  });
+
+  it('passes the parsed query, defaulting the page, and returns the response', async () => {
+    const { res, next, promise } = call(valid, 'getMembersChurnDepartures');
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getChurnDepartures).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      year: 2025,
+      offset: 0,
+      pageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
+    });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED);
+  });
+
+  it('accepts a page within the cap and falls back past it', async () => {
+    await call({ ...valid, offset: '50', pageSize: '50' }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ offset: 50, pageSize: 50 }));
+
+    await call({ ...valid, pageSize: String(HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE + 1) }, 'getMembersChurnDepartures').promise;
+    expect(getChurnDepartures).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pageSize: HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE })
+    );
+  });
+
+  it.each([
+    [{ ...valid, foundationSlug: 'Acme Corp' }, 'foundationSlug'],
+    [{ ...valid, year: '' }, 'year'],
+    [{ ...valid, year: '25' }, 'year'],
+    [{ ...valid, year: '2025.5' }, 'year'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call(query, 'getMembersChurnDepartures');
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getChurnDepartures).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getChurnDepartures.mockRejectedValue(failure);
+
+    const { next, promise } = call(valid, 'getMembersChurnDepartures');
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

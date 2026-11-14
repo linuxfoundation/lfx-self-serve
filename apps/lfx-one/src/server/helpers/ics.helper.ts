@@ -5,6 +5,9 @@ import { Meeting, PaginatedResponse } from '@lfx-one/shared/interfaces';
 import { addMinutesToDate } from '@lfx-one/shared/utils';
 import { logger } from '../services/logger.service';
 
+/** Host suffix for the globally-unique ICS UID per RFC 5545 §3.8.4.7 — this is LFX's own domain, not a per-meeting value. */
+export const ICS_UID_DOMAIN = 'lfx.linuxfoundation.org';
+
 /**
  * Formats an ISO date string to ICS DTSTART/DTEND format (e.g., 20230115T140000Z).
  */
@@ -14,13 +17,18 @@ export function formatICSDate(isoDate: string): string {
 
 /**
  * Escapes ICS text values per RFC 5545 (backslash, semicolons, commas, newlines).
+ * Other control characters (everything below SPACE except TAB, CR and LF, and DEL) are invalid in a TEXT value and are dropped.
  */
 export function escapeICSText(value: string): string {
-  return (value ?? '')
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r\n|\r|\n/g, '\\n');
+  return (
+    (value ?? '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\r\n|\r|\n/g, '\\n')
+  );
 }
 
 /**
@@ -69,7 +77,7 @@ export function buildVEvent(uid: string, title: string, startIso: string, durati
 
   return [
     'BEGIN:VEVENT',
-    `UID:${uid}@lfx.linuxfoundation.org`,
+    `UID:${uid}@${ICS_UID_DOMAIN}`,
     `DTSTAMP:${dtstamp}`,
     `DTSTART:${dtstart}`,
     `DTEND:${dtend}`,

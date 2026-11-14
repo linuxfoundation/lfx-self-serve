@@ -23,6 +23,7 @@ test.setTimeout(120_000);
 
 const guestList = (page: Page) => page.getByTestId('composer-guests-list');
 const guestStats = (page: Page) => page.getByTestId('composer-guests-stats');
+const guestCount = (page: Page) => page.getByTestId('composer-guests-count');
 const emptyState = (page: Page) => page.getByTestId('composer-guests-empty');
 const removeButtons = (page: Page) => page.locator('[data-testid^="composer-guest-remove-"]');
 /** `lfx-button` puts `data-testid` on the host, so the clickable element is one level in. */
@@ -57,26 +58,51 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     await expect(page.getByTestId('composer-guest-manual-link')).toBeEnabled();
   });
 
-  test('adds a directory hit directly, and removing it restores the empty state', async ({ page }) => {
+  test('adds a directory hit on pick, and removing it restores the empty state', async ({ page }) => {
     await openGuestsSection(page);
     const option = await searchDirectory(page, 'ada');
     await option.click();
 
-    // A directory result carries first name, last name and email, which is everything the add
-    // payload requires — so it lands in the list outright rather than via the manual dialog.
+    // A directory result carries first name, last name and email — lands directly, no manual dialog.
     const row = guestList(page).locator('li').first();
     await expect(row).toContainText('Ada Byron');
     // One assertion for the whole secondary line: `email · org`, joined in that order.
     await expect(row).toContainText(`${DIRECTORY_GUEST.email} · Acme Motors`);
-    await expect(guestStats(page)).toContainText('1 direct guest');
+    await expect(guestCount(page)).toHaveText('Invited (1)');
     await expect(emptyState(page)).toHaveCount(0);
+
+    // The invited-list filter: a miss shows its own empty state, a word start brings the row back.
+    const filter = page.locator('#composer-guests-filter');
+    await filter.fill('zz');
+    await expect(page.getByTestId('composer-guests-filter-empty')).toBeVisible();
+    await expect(guestList(page)).toHaveCount(0);
+    await filter.fill('by');
+    await expect(guestList(page).locator('li')).toHaveCount(1);
+    await filter.fill('');
 
     // The row is brand new, so it has no uid — hence the testid prefix rather than a known id.
     await expect(removeButtons(page)).toHaveCount(1);
+    // No confirm step: the composer's Next / Save changes is the commit point. On a create there is no Undo either.
     await removeButtons(page).first().click();
+    await expect(page.getByTestId('composer-guest-undo')).toHaveCount(0);
 
     await expect(guestList(page)).toHaveCount(0);
     await expect(emptyState(page)).toBeVisible();
+  });
+
+  test('offers manual entry inside the search dropdown only when the directory finds nobody', async ({ page }) => {
+    await openGuestsSection(page);
+    // Registered after the helper's stub, so it wins: this search comes back empty.
+    await page.route('**/api/search/users*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) }));
+
+    await page.locator('#composer-guest-search').pressSequentially('zz', { delay: 50 });
+
+    const manualEntry = page.getByTestId('composer-guest-search-manual-entry');
+    await expect(manualEntry).toBeVisible();
+    await expect(manualEntry).toHaveText(/Add guest manually/);
+    await manualEntry.click();
+
+    await expect(page.getByTestId('composer-guest-manual-dialog')).toBeVisible();
   });
 
   test('adds a guest who is not in the directory through the manual dialog', async ({ page }) => {
@@ -103,7 +129,7 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     const row = guestList(page).locator('li').first();
     await expect(row).toContainText('Grace Hopper');
     await expect(row).toContainText(MANUAL_GUEST.email);
-    await expect(guestStats(page)).toContainText('1 direct guest');
+    await expect(guestCount(page)).toHaveText('Invited (1)');
   });
 
   test('sends the guests queued before the meeting existed, once the create returns an id', async ({ page }) => {
@@ -113,6 +139,7 @@ test.describe('Meeting composer — inviting guests before the meeting exists', 
     await openGuestsSection(page);
     const option = await searchDirectory(page, 'ada');
     await option.click();
+
     await expect(guestList(page)).toContainText('Ada Byron');
 
     // Guests is not the last section, and only the last one offers "Create meeting".

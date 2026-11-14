@@ -1,0 +1,22 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Short spring on enter, as in the library.
+@media (prefers-reduced-motion: no-preference) {
+  :host {
+    animation: modal-in var(--ui-duration-slow) var(--ui-ease);
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+}
+
+// #000 is the mask's alpha stop, not a colour. Each fade stays 0 until that edge is clipped.
+.modal-fade {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top, 0px), #000 calc(100% - var(--fade-bottom, 0px)), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-top, 0px), #000 calc(100% - var(--fade-bottom, 0px)), transparent);
+}

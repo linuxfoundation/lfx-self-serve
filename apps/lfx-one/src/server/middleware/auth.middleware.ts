@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenExtractionResult } from '@lfx-one/shared/interfaces';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/credential-redaction.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
-import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
 import { clearImpersonationSession, decodeJwtPayload, hasActiveImpersonationSession } from '../utils/auth-helper';
 import { populateApiGatewayToken } from '../utils/refresh-token-exchange.util';
-
-const crowdfundingAuthService = new CrowdfundingAuthService();
 
 // OIDC middleware already provides req.oidc with authentication context
 
@@ -37,6 +35,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // SSR boundary aligned with the Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
   { pattern: /^\/meetings\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Login-free vote link page (`/votes/:id#vote_token=...`, #4363) — single-segment anchored like `/meetings/:id` so
+  // `/votes/:id/edit`, `/votes/:id/present` and the reserved `create` (incl. `create;matrix` suffixes) stay `required`.
+  // The token lives in the URL fragment, which the server never sees; anonymous SSR renders a neutral shell and the
+  // browser decides token mode vs the authenticated permalink.
+  { pattern: /^\/votes\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+
   // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
   // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
   // auth for membership enrichment. `/groups/create` IS a real writer-gated route (`COMMITTEE_ROUTES`
@@ -45,6 +49,17 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // authenticated subtree and falls through to the public `groups/:id`, so `create` never reaches the
   // protected shell. (Meetings has no such canMatch, which is why its matcher must exclude `create`.)
   { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+
+  // Newsletter permalink (`/newsletters/:projectSlug/:id`, #4940) — optional so a signed-out link-preview
+  // crawler gets the server-rendered share preview (subject-only Open Graph tags) instead of the login
+  // page; a signed-out browser gets the guest reader modal (#5235). Anchored to exactly two
+  // segments, and the `my` lookahead (with `[/;]` for matrix suffixes, as `/votes/create` above) keeps
+  // the authenticated `/newsletters/my/:foundationSlug` on `required`; every 1- and 3-segment
+  // newsletters route (list, create, edit, analytics) falls through to `required` too.
+  { pattern: /^\/newsletters\/(?!my(?:[/;]|$))[^/]+\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+  // Newsletter invite landing (#5235) — a signed-out invitee reads without an account; the signed
+  // token rides in the URL fragment and is checked by the public API, so the page itself is optional.
+  { pattern: /^\/newsletters\/invite\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
   // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.
@@ -74,9 +89,6 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
 
   // Profile auth start — needs auth but no bearer token (initiates redirect)
   { pattern: '/api/profile/auth/start', type: 'api', auth: 'required', tokenRequired: false },
-
-  // Crowdfunding auth start — needs session auth but no bearer token (initiates CF auth-code redirect)
-  { pattern: '/api/crowdfunding/auth/start', type: 'api', auth: 'required', tokenRequired: false },
 
   // Protected API routes - require authentication and token. `classifyRoute`'s `apiFallback` mirrors this row's
   // shape so a malformed/undecodable API path fails closed the same way — keep the two in sync.
@@ -308,29 +320,6 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
 }
 
 /**
- * Loads the LFX Crowdfunding API token onto req.crowdfundingToken.
- * If the session token is valid, uses it directly. If it is expired or absent but a
- * refresh token is stored, attempts a silent refresh before falling through — avoiding
- * the auth-code redirect round-trip on token expiry.
- */
-async function extractCrowdfundingToken(req: Request): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  if (req.appSession?.crowdfundingToken && req.appSession.crowdfundingTokenExpiresAt && now < req.appSession.crowdfundingTokenExpiresAt) {
-    req.crowdfundingToken = req.appSession.crowdfundingToken;
-    logger.debug(req, 'crowdfunding_token', 'Using cached Crowdfunding token');
-    return;
-  }
-
-  if (crowdfundingAuthService.isConfigured() && req.appSession?.crowdfundingRefreshToken) {
-    const refreshed = await crowdfundingAuthService.tryRefreshToken(req);
-    if (refreshed && req.appSession?.crowdfundingToken) {
-      req.crowdfundingToken = req.appSession.crowdfundingToken;
-      logger.debug(req, 'crowdfunding_token', 'Crowdfunding token silently refreshed');
-    }
-  }
-}
-
-/**
  * Makes authentication decision based on route config and auth status
  */
 function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecision {
@@ -485,7 +474,7 @@ async function executeAuthDecision(decision: AuthDecision, req: Request, res: Re
       // Log user out due to token refresh failure
       logger.debug(req, 'auth_logout_execution', 'Executing logout due to token refresh failure', {
         path: req.path,
-        originalUrl: req.originalUrl,
+        originalUrl: redactLoggedUrl(req.originalUrl, 'http://localhost'),
       });
       // Redirect to home page after logout to avoid redirect loops
       res.oidc.logout({ returnTo: '/' });
@@ -543,10 +532,9 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
         needsLogout = tokenResult.needsLogout;
       }
 
-      // 4. Silently fetch secondary tokens when the user is authenticated
+      // 4. Silently fetch the API-gateway token when the user is authenticated
       if (hasToken) {
         await populateApiGatewayToken(req);
-        await extractCrowdfundingToken(req);
       }
 
       // 5. Build result for decision making

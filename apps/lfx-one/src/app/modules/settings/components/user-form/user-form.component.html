@@ -90,8 +90,17 @@
     <div class="bg-gray-50 p-3 rounded-md text-sm">
       <div class="font-medium text-gray-700 mb-1">Permission Summary:</div>
       <div class="text-gray-600">
-        <strong>{{ form().get('role')?.value === 'view' ? 'View-only' : 'Full management' }}</strong> access to the <strong>entire project</strong> including
-        all committees, meetings, and mailing lists.
+        @switch (form().get('role')?.value) {
+          @case ('manage') {
+            <strong>Full management</strong> access to the <strong>entire project</strong> including all committees, meetings, and mailing lists.
+          }
+          @case ('meeting_coordinator') {
+            Can <strong>create, update and delete meetings</strong> and past meetings for the project.
+          }
+          @default {
+            <strong>View-only</strong> access to the <strong>entire project</strong> including all committees, meetings, and mailing lists.
+          }
+        }
       </div>
     </div>
   </div>
@@ -120,6 +129,7 @@
   <div class="flex flex-col">
     <div><strong>View:</strong> Read-only access to view and browse all project content</div>
     <div><strong>Manage:</strong> Full access to create, edit, delete, and manage all project content</div>
+    <div><strong>Meeting Coordinator:</strong> Create, update and delete meetings and past meetings</div>
   </div>
 </ng-template>
 

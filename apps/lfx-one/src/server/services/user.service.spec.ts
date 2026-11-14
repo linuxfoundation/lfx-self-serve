@@ -10,6 +10,8 @@ import {
   ApiGatewayUserProfile,
   Meeting,
   MeetingRegistrant,
+  MeetingRsvp,
+  PastMeeting,
   ProfileVisibilitySections,
   ProfileVisibilityUpdateRequest,
   QueryServiceResponse,
@@ -19,14 +21,16 @@ import {
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork, isImpersonating, getEffectiveEmail } = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  getMyPendingInvitations: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
-  getMyFormationWork: vi.fn(),
-  isImpersonating: vi.fn(() => false),
-  getEffectiveEmail: vi.fn(),
-}));
+const { proxyRequest, getMyPendingInvitations, getManagedPendingApplications, getUsernameFromAuth, getMyFormationWork, isImpersonating, getEffectiveEmail } =
+  vi.hoisted(() => ({
+    proxyRequest: vi.fn(),
+    getMyPendingInvitations: vi.fn(),
+    getManagedPendingApplications: vi.fn(),
+    getUsernameFromAuth: vi.fn(),
+    getMyFormationWork: vi.fn(),
+    isImpersonating: vi.fn(() => false),
+    getEffectiveEmail: vi.fn(),
+  }));
 
 // Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
 // side-effect-free — validateUserMetadata is pure and synchronous and touches none of them.
@@ -43,6 +47,7 @@ vi.mock('./access-check.service', () => ({ AccessCheckService: vi.fn() }));
 vi.mock('./committee.service', () => ({
   CommitteeService: class {
     public getMyPendingInvitations = getMyPendingInvitations;
+    public getManagedPendingApplications = getManagedPendingApplications;
   },
 }));
 vi.mock('./formation.service', () => ({
@@ -493,6 +498,7 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getMyPendingInvitations.mockReset();
+    getManagedPendingApplications.mockReset().mockResolvedValue([]);
     getUsernameFromAuth.mockReset();
     getMyFormationWork.mockReset();
 
@@ -543,10 +549,10 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     expect(rsvpActions).toHaveLength(1);
     expect(rsvpActions[0].meetingUid).toBe('tracked-meeting');
     expect(rsvpActions[0].buttonText).toBe('Set RSVP');
-    expect(actions.filter((action) => action.type === 'Agenda').map((action) => action.text)).toEqual([
-      'Review Legacy Board Agenda and Materials',
-      'Review Tracked Board Agenda and Materials',
-    ]);
+    expect(rsvpActions[0].text).toBe(trackedMeeting.title);
+    expect(rsvpActions[0].date).toBeTruthy();
+    expect(rsvpActions[0].startTime).toBe(new Date(tomorrow).toISOString());
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).toEqual(expect.arrayContaining(['v1_meeting', 'v1_meeting_registrant', 'v1_meeting_rsvp']));
   });
 
@@ -569,9 +575,332 @@ describe('UserService.getPendingActions RSVP gating (GH-1951)', () => {
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
     expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(0);
-    expect(actions.some((action) => action.type === 'Agenda')).toBe(true);
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
     expect(queriedTypes()).not.toContain('v1_meeting_registrant');
     expect(queriedTypes()).not.toContain('v1_meeting_rsvp');
+  });
+
+  it('finds an RSVP the email/username lookup misses by its registrant_id, so no Set RSVP nag', async () => {
+    // RSVP rows can carry a different email than the auth email and often a null username, so the
+    // identity query returns nothing for them; the registrant_id is the reliable link.
+    const trackedMeeting: Partial<Meeting> = {
+      id: 'tracked-meeting',
+      title: 'Tracked Board',
+      start_time: tomorrow,
+      duration: 60,
+      use_new_invite_email_address: true,
+    };
+    const rsvp: Partial<MeetingRsvp> = {
+      id: 'rsvp-1',
+      meeting_id: 'tracked-meeting',
+      registrant_id: 'reg-tracked',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+    };
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage([trackedMeeting]);
+        case 'v1_meeting_registrant':
+          return queryPage([{ uid: 'reg-tracked', meeting_id: 'tracked-meeting' }]);
+        case 'v1_meeting_rsvp':
+          return queryPage(params.filters_or?.includes('registrant_id:reg-tracked') ? [rsvp] : []);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(0);
+  });
+});
+
+describe('UserService.getUserMeetings my_rsvp enrichment', () => {
+  const req = {} as unknown as Request;
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset();
+    getEffectiveEmail.mockReset();
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getEffectiveEmail.mockReturnValue('auth-address@example.com');
+  });
+
+  it('sets my_rsvp from an RSVP that only the registrant_id lookup can reach', async () => {
+    // The RSVP row carries another email and no username, so the identity query finds nothing; the
+    // meeting card still shows it because it resolves through the registrant.
+    const meeting: Partial<Meeting> = { id: 'meeting-1', title: 'Sync', start_time: tomorrow, duration: 60, use_new_invite_email_address: true };
+    const rsvp: Partial<MeetingRsvp> = {
+      id: 'rsvp-1',
+      meeting_id: 'meeting-1',
+      registrant_id: 'reg-1',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+    };
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage([meeting]);
+        case 'v1_meeting_registrant':
+          return queryPage([{ uid: 'reg-1', meeting_id: 'meeting-1' }]);
+        case 'v1_meeting_rsvp':
+          return queryPage(params.filters_or?.includes('registrant_id:reg-1') ? [rsvp] : []);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const service = new UserService();
+    // The project-name and access-check steps run after the RSVP enrichment under test; both
+    // services are module-mocked, so pass the meetings straight through.
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+
+    const meetings = await service.getUserMeetings(req);
+
+    expect(meetings).toHaveLength(1);
+    expect(meetings[0].my_rsvp?.response_type).toBe('accepted');
+    expect(meetings[0].my_registrant_ids).toEqual(['reg-1']);
+    expect(meetings[0].my_rsvps).toEqual([rsvp]);
+  });
+
+  it('lists every RSVP from an active registration in my_rsvps and drops stale ones', async () => {
+    const occurrenceId = String(Math.floor(Date.parse(tomorrow) / 1000));
+    const meeting: Partial<Meeting> = {
+      id: 'synthetic-weekly',
+      start_time: tomorrow,
+      duration: 60,
+      recurrence: { type: 2, repeat_interval: 1 },
+      occurrences: [{ occurrence_id: occurrenceId, start_time: tomorrow, duration: 60 }],
+    };
+    const series: Partial<MeetingRsvp> = { id: 'series', meeting_id: meeting.id, registrant_id: 'reg-active', response_type: 'accepted', scope: 'all' };
+    const single: Partial<MeetingRsvp> = { ...series, id: 'single', response_type: 'declined', scope: 'single', occurrence_id: occurrenceId };
+    const stale: Partial<MeetingRsvp> = { ...series, id: 'stale', registrant_id: 'reg-removed' };
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_meeting') return queryPage([meeting]);
+      if (params?.type === 'v1_meeting_registrant') return queryPage([{ uid: 'reg-active', meeting_id: meeting.id }]);
+      if (params?.type === 'v1_meeting_rsvp') return queryPage([series, single, stale]);
+      return queryPage([]);
+    });
+    const service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+
+    const [result] = await service.getUserMeetings(req);
+
+    expect(result.my_rsvps?.map((rsvp) => rsvp.id)).toEqual(['series', 'single']);
+  });
+
+  it.each(['identity-rsvp', 'registrant', 'registrant-rsvp', 'empty'])(
+    'distinguishes unavailable prerequisite enrichment from a successful empty lookup (%s)',
+    async (lookup) => {
+      const meeting = { id: 'synthetic-enrichment', start_time: tomorrow, duration: 60 } satisfies Partial<Meeting>;
+      proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string; filters_or?: string[] }) => {
+        if (params?.type === 'v1_meeting') return queryPage([meeting]);
+        if (params?.type === 'v1_meeting_registrant') {
+          if (lookup === 'registrant') return Promise.reject(new Error('Synthetic registration lookup unavailable'));
+          return queryPage(lookup === 'registrant-rsvp' ? [{ uid: 'synthetic-reg', meeting_id: meeting.id }] : []);
+        }
+        if (params?.type === 'v1_meeting_rsvp') {
+          if (lookup === 'identity-rsvp' || (lookup === 'registrant-rsvp' && params.filters_or?.includes('registrant_id:synthetic-reg'))) {
+            return Promise.reject(new Error('Synthetic RSVP lookup unavailable'));
+          }
+        }
+        return queryPage([]);
+      });
+      const service = new UserService();
+      Object.assign(service, {
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
+        accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+      });
+
+      const result = await service.getUserMeetings(req);
+
+      expect(result).toHaveLength(1);
+      if (lookup === 'empty') {
+        expect(result[0].my_rsvp).toBeNull();
+        expect(result[0].my_registrant_ids).toEqual([]);
+        expect(result[0].my_rsvps).toEqual([]);
+      } else {
+        expect(result[0].my_rsvp).toBeUndefined();
+        expect(result[0].my_registrant_ids).toBeUndefined();
+        expect(result[0].my_rsvps).toBeUndefined();
+      }
+    }
+  );
+
+  it.each(['single', 'this_and_following'] as const)(
+    'keeps an older all-date answer before a newer %s response when the recurring date is unresolved',
+    async (scope) => {
+      const occurrenceId = String(Math.floor(Date.parse(tomorrow) / 1000));
+      const meetings: Partial<Meeting>[] = [
+        { id: 'synthetic-series', start_time: tomorrow, duration: 60, recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] },
+        { id: 'synthetic-scoped-only', start_time: tomorrow, duration: 60, recurrence: { type: 1, repeat_interval: 1 }, occurrences: [] },
+        { id: 'synthetic-one-time', start_time: tomorrow, duration: 60 },
+        {
+          id: 'synthetic-resolved',
+          start_time: tomorrow,
+          duration: 60,
+          recurrence: { type: 1, repeat_interval: 1 },
+          occurrences: [{ occurrence_id: occurrenceId, start_time: tomorrow, duration: 60 }],
+        },
+      ];
+      const registrants = meetings.map((meeting) => ({ uid: `reg-${meeting.id}`, meeting_id: meeting.id }));
+      const responses: Partial<MeetingRsvp>[] = meetings.flatMap((meeting) => {
+        const all: Partial<MeetingRsvp> = {
+          id: `all-${meeting.id}`,
+          meeting_id: meeting.id,
+          registrant_id: `reg-${meeting.id}`,
+          response_type: 'accepted',
+          scope: 'all',
+          created_at: '2026-01-01T00:00:00Z',
+        };
+        const scoped: Partial<MeetingRsvp> = {
+          ...all,
+          id: `scoped-${meeting.id}`,
+          response_type: 'declined',
+          scope,
+          occurrence_id: occurrenceId,
+          created_at: '2026-02-01T00:00:00Z',
+        };
+        return meeting.id === 'synthetic-scoped-only' ? [scoped] : [all, scoped];
+      });
+      proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+        if (params?.type === 'v1_meeting') return queryPage(meetings);
+        if (params?.type === 'v1_meeting_registrant') return queryPage(registrants);
+        if (params?.type === 'v1_meeting_rsvp') return queryPage(responses);
+        return queryPage([]);
+      });
+      const service = new UserService();
+      Object.assign(service, {
+        meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
+        accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+      });
+
+      const result = await service.getUserMeetings(req);
+      expect(result.find((meeting) => meeting.id === 'synthetic-series')?.my_rsvp?.id).toBe('all-synthetic-series');
+      expect(result.find((meeting) => meeting.id === 'synthetic-scoped-only')?.my_rsvp?.id).toBe('scoped-synthetic-scoped-only');
+      expect(result.find((meeting) => meeting.id === 'synthetic-one-time')?.my_rsvp?.id).toBe('scoped-synthetic-one-time');
+      expect(result.find((meeting) => meeting.id === 'synthetic-resolved')?.my_rsvp?.id).toBe('scoped-synthetic-resolved');
+    }
+  );
+
+  it('flags a meeting as invited through a committee only when a committee registration backs it', async () => {
+    const meetings: Partial<Meeting>[] = [
+      { id: 'via-committee', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true },
+      { id: 'direct', title: 'Sync', start_time: tomorrow, duration: 60, use_new_invite_email_address: true },
+    ];
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage(meetings);
+        case 'v1_meeting_registrant':
+          return queryPage([
+            { uid: 'reg-c', meeting_id: 'via-committee', type: 'committee' },
+            { uid: 'reg-d', meeting_id: 'direct', type: 'direct' },
+          ]);
+        default:
+          return queryPage([]);
+      }
+    });
+
+    const service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap: async () => new Map<string, string>() },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+
+    const result = await service.getUserMeetings(req);
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.invited_via_committee]))).toEqual({ 'via-committee': true, direct: false });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.my_registrant_ids]))).toEqual({ 'via-committee': ['reg-c'], direct: ['reg-d'] });
+  });
+});
+
+describe('UserService meeting fetch failure propagation (GH-4780)', () => {
+  // A failing `filter_grants=direct` query-service call (the `fga-sync` read_tuples RPC) must
+  // reject rather than degrade to [] — an empty result is indistinguishable from "no meetings".
+  const req = {} as unknown as Request;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset();
+    getEffectiveEmail.mockReset();
+    getUsernameFromAuth.mockResolvedValue(null);
+    getEffectiveEmail.mockReturnValue('');
+  });
+
+  it('getUserMeetings rejects when the v1_meeting query fails', async () => {
+    proxyRequest.mockRejectedValue(new Error('query service unavailable'));
+    const service = new UserService();
+
+    await expect(service.getUserMeetings(req)).rejects.toThrow('query service unavailable');
+  });
+
+  it('getUserPastMeetings rejects when the v1_past_meeting query fails', async () => {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_past_meeting') return Promise.reject(new Error('query service unavailable'));
+      return queryPage([]);
+    });
+    const service = new UserService();
+
+    await expect(service.getUserPastMeetings(req, 'user@example.com')).rejects.toThrow('query service unavailable');
+  });
+
+  it('getUserLatestPastMeetings rejects when the v1_past_meeting query fails', async () => {
+    proxyRequest.mockRejectedValue(new Error('query service unavailable'));
+    const service = new UserService();
+
+    await expect(service.getUserLatestPastMeetings(req)).rejects.toThrow('query service unavailable');
+  });
+});
+
+describe('UserService.getPendingActions meeting rows (GH-3311)', () => {
+  const req = {} as unknown as Request;
+  const email = 'invitee@example.com';
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getMyPendingInvitations.mockReset();
+    getManagedPendingApplications.mockReset().mockResolvedValue([]);
+    getUsernameFromAuth.mockReset();
+    getMyFormationWork.mockReset();
+
+    getMyPendingInvitations.mockResolvedValue([]);
+    getUsernameFromAuth.mockResolvedValue('testuser');
+    getMyFormationWork.mockResolvedValue({ formations: [], items: [], state: 'complete' });
+
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      params?.type === 'v1_meeting'
+        ? queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false } satisfies Partial<Meeting>])
+        : queryPage([])
+    );
+
+    service = new UserService();
+  });
+
+  it.each([
+    ['the Me lens', undefined, undefined],
+    ['a project/foundation lens', 'proj-uid-1', 'acme-project'],
+  ])('emits no Agenda rows on %s while still fetching meetings for RSVP', async (_label, projectUid, projectSlug) => {
+    const actions = await service.getPendingActions(req, projectUid, email, projectSlug);
+
+    expect(actions.some((action) => action.type === 'Agenda')).toBe(false);
+    expect(queriedTypes()).toContain('v1_meeting');
   });
 });
 
@@ -597,6 +926,7 @@ describe('UserService.getPendingActions formation items (GH-1956)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getMyPendingInvitations.mockReset();
+    getManagedPendingApplications.mockReset().mockResolvedValue([]);
     getUsernameFromAuth.mockReset();
     getMyFormationWork.mockReset();
 
@@ -672,6 +1002,7 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getMyPendingInvitations.mockReset();
+    getManagedPendingApplications.mockReset().mockResolvedValue([]);
     getUsernameFromAuth.mockReset();
     getEffectiveEmail.mockReset();
     getMyFormationWork.mockReset();
@@ -847,15 +1178,18 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
         return Promise.reject(new Error('query service down'));
       }
       if (params?.type === 'v1_meeting') {
-        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true }]);
+      }
+      if (params?.type === 'v1_meeting_registrant') {
+        return queryPage([{ uid: 'reg-1', meeting_id: 'm-1' }]);
       }
       return queryPage([]);
     });
 
-    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
 
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
-    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(1);
   });
 
   it('fails closed on a mid-pagination survey_response failure, hiding partial rows but not other sources', async () => {
@@ -869,16 +1203,19 @@ describe('UserService.getPendingActions pending surveys (GH-2987)', () => {
         return surveyCalls === 1 ? Promise.resolve({ ...queryPage([openSurveyRow]), page_token: 'token-2' }) : Promise.reject(new Error('page 2 boom'));
       }
       if (params?.type === 'v1_meeting') {
-        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: false }]);
+        return queryPage([{ id: 'm-1', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true }]);
+      }
+      if (params?.type === 'v1_meeting_registrant') {
+        return queryPage([{ uid: 'reg-1', meeting_id: 'm-1' }]);
       }
       return queryPage([]);
     });
 
-    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    const actions = await service.getPendingActions(req, 'proj-uid-1', email, 'acme-project');
 
     expect(surveyCalls).toBe(2);
     expect(actions.filter((action) => action.type === 'Survey')).toHaveLength(0);
-    expect(actions.filter((action) => action.type === 'Agenda')).toHaveLength(1);
+    expect(actions.filter((action) => action.type === 'RSVP')).toHaveLength(1);
   });
 
   it('pushes project scoping server-side via the project_uid tag when a project lens is active', async () => {
@@ -932,6 +1269,7 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getMyPendingInvitations.mockReset();
+    getManagedPendingApplications.mockReset().mockResolvedValue([]);
     getUsernameFromAuth.mockReset();
     // mockReset leaves getEffectiveEmail unset — this block's specs assume username-only identity.
     getEffectiveEmail.mockReset();
@@ -952,6 +1290,8 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
 
     expect(voteActions).toHaveLength(1);
     expect(voteActions[0]).toMatchObject({ buttonText: 'Cast Vote', voteUid: 'vote-active', text: 'Cast your vote on Active Ballot' });
+    // The secondary link opens this vote's detail page, not the My Votes list.
+    expect(voteActions[0].buttonLink).toBe('/votes/vote-active');
   });
 
   it('queries vote_response by identity filters_or with no filter_grants (the #2985 fix)', async () => {
@@ -1063,5 +1403,452 @@ describe('UserService.getPendingActions pending votes (GH #2985)', () => {
     const actions = await service.getPendingActions(req, undefined, email, undefined);
 
     expect(actions.some((action) => action.type === 'Vote')).toBe(false);
+  });
+});
+
+describe('UserService.getPendingActions managed applications (GH-3131)', () => {
+  const req = {} as Request;
+  const email = 'manager@example.com';
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const applications = [0, 1, 2].map((index) => ({
+    uid: `application-${index}`,
+    committee_uid: `committee-${index}`,
+    committee_name: `Group ${index}`,
+    applicant_email: 'applicant@example.com',
+    applicant_name: index === 0 ? 'Applicant' : undefined,
+    status: 'pending',
+    created_at: tomorrow,
+    message: 'I maintain the upstream driver and want to help review patches.',
+    project_name: 'Project Alpha',
+    committee_category: 'Technical Steering Committee',
+    project_slug: 'project-alpha',
+    is_foundation: false,
+    reviewer_notes: 'private notes',
+    reason: 'private reason',
+  }));
+  const expectedTypes = ['Invitation', 'FormationItem', ...applications.map(() => 'JoinApplication'), 'RSVP', 'Vote', 'Survey'];
+  let service: UserService;
+
+  function routeSources(failedType?: string): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === failedType) return Promise.reject(new Error('source unavailable'));
+      switch (params?.type) {
+        case 'v1_meeting':
+          return queryPage([{ id: 'meeting', title: 'Board', start_time: tomorrow, duration: 60, use_new_invite_email_address: true }]);
+        case 'v1_meeting_registrant':
+          return queryPage([{ uid: 'registrant', meeting_id: 'meeting' }]);
+        case 'vote_response':
+          return queryPage([{ vote_uid: 'vote', vote_status: 'awaiting_response', username: 'testuser' }]);
+        case 'vote':
+          return queryPage([{ vote_uid: 'vote', name: 'Ballot', status: 'active', end_time: tomorrow }]);
+        case 'survey_response':
+          return queryPage([
+            {
+              uid: 'response',
+              survey_uid: 'survey',
+              survey_title: 'Survey',
+              survey_status: 'sent',
+              survey_cutoff_date: tomorrow,
+              survey_link: 'https://www.research.net/r/ABC123',
+              response_datetime: '',
+            },
+          ]);
+        default:
+          return queryPage([]);
+      }
+    });
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getManagedPendingApplications.mockReset().mockResolvedValue(applications);
+    getMyPendingInvitations.mockReset().mockResolvedValue([{ uid: 'invite', committee_uid: 'committee', committee_name: 'Board' }]);
+    getUsernameFromAuth.mockReset().mockResolvedValue('testuser');
+    getEffectiveEmail.mockReset().mockReturnValue(email);
+    getMyFormationWork.mockReset().mockResolvedValue({
+      formations: [],
+      items: [
+        {
+          item_uid: 'item',
+          title: 'Legal review',
+          project_uid: 'project',
+          project_slug: 'project',
+          project_name: 'Project',
+          status: 'not_started',
+          can_write: true,
+        },
+      ],
+      state: 'complete',
+    });
+    routeSources();
+    service = new UserService();
+  });
+
+  it('includes every review address without an email, exposes the reviewer context but not reviewer-only notes, and has no navigation CTA', async () => {
+    getEffectiveEmail.mockReturnValue(null);
+    const actions = (await service.getPendingActions(req, undefined, null, undefined)).filter((action) => action.type === 'JoinApplication');
+    expect(actions.map((action) => [action.committeeUid, action.applicationUid])).toEqual(applications.map((row) => [row.committee_uid, row.uid]));
+    expect(actions[0]).toMatchObject({ applicationApplicantEmail: 'applicant@example.com', applicationApplicantName: 'Applicant', badge: 'Group 0' });
+    expect(actions[0]).toMatchObject({
+      applicationProjectName: 'Project Alpha',
+      applicationGroupCategory: 'Technical Steering Committee',
+      applicationProjectSlug: 'project-alpha',
+      applicationIsFoundation: false,
+      applicationMessage: 'I maintain the upstream driver and want to help review patches.',
+      applicationSubmittedAt: tomorrow,
+    });
+    expect(actions[1].text).toContain('applicant@example.com');
+    for (const action of actions) {
+      expect(action.buttonText).toBe('');
+      expect(Object.keys(action)).toEqual(expect.arrayContaining(['committeeUid', 'applicationUid', 'applicationApplicantEmail']));
+      for (const field of ['message', 'reviewer_notes', 'reason', 'applicationReviewerNotes', 'buttonLink']) expect(action).not.toHaveProperty(field);
+    }
+  });
+
+  it.each([
+    ['project', undefined],
+    [undefined, 'project-slug'],
+  ])('excludes reviews with project UID %s or slug %s', async (uid, slug) => {
+    const actions = await service.getPendingActions(req, uid, email, slug);
+    expect(actions.some((action) => action.type === 'JoinApplication')).toBe(false);
+    expect(getManagedPendingApplications).not.toHaveBeenCalled();
+  });
+
+  it('keeps source priority and all rows unless the existing optional aggregation limit is supplied', async () => {
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    expect(actions.map((action) => action.type)).toEqual(expectedTypes);
+    expect(await service.getPendingActions(req, undefined, email, undefined, 4)).toEqual(actions.slice(0, 4));
+  });
+
+  it('retains every healthy source when application discovery fails', async () => {
+    getManagedPendingApplications.mockRejectedValue(new Error('applications unavailable'));
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    expect(actions.map((action) => action.type)).toEqual(expectedTypes.filter((type) => type !== 'JoinApplication'));
+  });
+
+  it.each(['Invitation', 'FormationItem', 'RSVP', 'Vote', 'Survey'])('retains applications and healthy sources when %s fails', async (failed) => {
+    if (failed === 'Invitation') getMyPendingInvitations.mockRejectedValue(new Error('invitations unavailable'));
+    else if (failed === 'FormationItem') getMyFormationWork.mockRejectedValue(new Error('formation unavailable'));
+    else if (failed === 'RSVP') routeSources('v1_meeting_rsvp');
+    else if (failed === 'Vote') routeSources('vote_response');
+    else routeSources('survey_response');
+    const actions = await service.getPendingActions(req, undefined, email, undefined);
+    expect(actions.map((action) => action.type)).toEqual(expectedTypes.filter((type) => type !== failed));
+  });
+});
+
+describe('UserService.getUserMeetingRegistrations', () => {
+  const req = {} as unknown as Request;
+  let service: UserService;
+
+  const registrantPage = (rows: Partial<MeetingRegistrant>[]) => ({
+    resources: rows.map((data) => ({ id: String(data.uid), type: 'v1_meeting_registrant', data })),
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue('testuser');
+    service = new UserService();
+  });
+
+  it('marks a meeting as committee-sourced when any of the caller registrations for it came from a committee', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      registrantPage([
+        { uid: 'r1', meeting_id: 'via-committee', type: 'committee' },
+        { uid: 'r2', meeting_id: 'direct-only', type: 'direct' },
+        { uid: 'r3', meeting_id: 'mixed', type: 'direct' },
+        { uid: 'r4', meeting_id: 'mixed', type: 'committee' },
+      ])
+    );
+
+    const registrations = await service.getUserMeetingRegistrations(req, 'user@example.com');
+
+    expect(Object.fromEntries(registrations)).toEqual({ 'via-committee': true, 'direct-only': false, mixed: true });
+  });
+
+  it('keeps getUserRegisteredMeetingIds returning just the meeting ids', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      registrantPage([
+        { uid: 'r1', meeting_id: 'm1', type: 'committee' },
+        { uid: 'r2', meeting_id: 'm2', type: 'direct' },
+      ])
+    );
+
+    const ids = await service.getUserRegisteredMeetingIds(req, 'user@example.com');
+
+    expect([...ids].sort()).toEqual(['m1', 'm2']);
+  });
+
+  it('returns an empty result when the caller has no email or username to match on', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+
+    expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.enrichPastMeetingsWithUserAttendance', () => {
+  const req = {} as unknown as Request;
+  let service: UserService;
+
+  const participantPage = (rows: { meeting_and_occurrence_id: string; is_attended: boolean }[]) => ({
+    resources: rows.map((data, i) => ({ id: String(i), type: 'v1_past_meeting_participant', data })),
+  });
+  const buildMeeting = (id: string): PastMeeting => ({ id, meeting_and_occurrence_id: id }) as PastMeeting;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    service = new UserService();
+  });
+
+  it('marks meetings the user attended and the rest as not attended', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      participantPage([
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: true },
+        { meeting_and_occurrence_id: 'm2-o1', is_attended: false },
+      ])
+    );
+    const meetings = [buildMeeting('m1-o1'), buildMeeting('m2-o1'), buildMeeting('m3-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'User@Example.com', meetings);
+
+    expect(meetings.map((m) => m.user_attended)).toEqual([true, false, false]);
+  });
+
+  it('treats an occurrence as attended when any participant record says so', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      participantPage([
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: false },
+        { meeting_and_occurrence_id: 'm1-o1', is_attended: true },
+      ])
+    );
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', meetings);
+
+    expect(meetings[0].user_attended).toBe(true);
+  });
+
+  it('leaves user_attended undefined when the participant scan fails', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('upstream down'));
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', meetings);
+
+    expect(meetings[0].user_attended).toBeUndefined();
+  });
+
+  it('leaves user_attended undefined and skips the scan when there is no identity', async () => {
+    const meetings = [buildMeeting('m1-o1')];
+
+    await service.enrichPastMeetingsWithUserAttendance(req, '', meetings);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+    expect(meetings[0].user_attended).toBeUndefined();
+  });
+
+  it('skips the scan for an empty meeting list', async () => {
+    await service.enrichPastMeetingsWithUserAttendance(req, 'user@example.com', []);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserService.getUserPastMeetings artifact flags', () => {
+  const req = {} as unknown as Request;
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const pastMeeting = (id: string): Partial<PastMeeting> => ({
+    id: `row-${id}`,
+    meeting_and_occurrence_id: id,
+    start_time: yesterday,
+    scheduled_end_time: yesterday,
+  });
+  const recording = (id: string, shareUrl?: string) => ({
+    meeting_and_occurrence_id: id,
+    sessions: [{ uuid: 's', start_time: yesterday, total_size: 1, share_url: shareUrl }],
+  });
+  const summary = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id: `summary-${id}`,
+    meeting_and_occurrence_id: id,
+    content: 'Notes',
+    approved: true,
+    requires_approval: true,
+    ...overrides,
+  });
+
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    service = new UserService();
+    Object.assign(service, {
+      meetingService: {
+        getMeetingProjectName: async (_req: Request, items: PastMeeting[]) => items,
+        getCommitteeNameMap: async () => new Map<string, string>(),
+      },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: PastMeeting[]) => items },
+    });
+  });
+
+  function mockIndexes(meetings: Partial<PastMeeting>[], recordings: unknown[] | Error, summaries: unknown[] | Error): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === 'v1_past_meeting') return queryPage(meetings);
+      if (params?.type === 'v1_past_meeting_recording') return recordings instanceof Error ? Promise.reject(recordings) : queryPage(recordings);
+      if (params?.type === 'v1_past_meeting_summary') return summaries instanceof Error ? Promise.reject(summaries) : queryPage(summaries);
+      return queryPage([]);
+    });
+  }
+
+  it('flags recordings with a share URL, returns that URL, and flags visible summaries with content', async () => {
+    mockIndexes(
+      [pastMeeting('m1:1'), pastMeeting('m2:1'), pastMeeting('m3:1')],
+      [recording('m1:1', 'https://zoom.example/rec/1'), recording('m2:1')],
+      [summary('m1:1'), summary('m2:1', { approved: false }), summary('m3:1', { content: '', requires_approval: false })]
+    );
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(result.map((m) => [m.id, m.has_recording, m.recording_share_url, m.has_ai_summary])).toEqual([
+      ['m1:1', true, 'https://zoom.example/rec/1', true],
+      ['m2:1', false, undefined, false],
+      ['m3:1', false, undefined, false],
+    ]);
+    expect(result.map((m) => m.ai_summary_awaiting_approval)).toEqual([false, undefined, undefined]);
+    for (const type of ['v1_past_meeting_recording', 'v1_past_meeting_summary']) {
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        expect.objectContaining({ type, tags: ['meeting_and_occurrence_id:m1:1', 'meeting_and_occurrence_id:m2:1', 'meeting_and_occurrence_id:m3:1'] })
+      );
+    }
+  });
+
+  it('reports a summary awaiting approval only to organizers', async () => {
+    mockIndexes(
+      [pastMeeting('invited:1'), pastMeeting('organized:1')],
+      [],
+      [summary('invited:1', { approved: false, uid: 'sum-invited' }), summary('organized:1', { approved: false, uid: 'sum-organized' })]
+    );
+    Object.assign(service, {
+      accessCheckService: {
+        addAccessToResources: async (_req: Request, items: PastMeeting[]) => items.map((m) => ({ ...m, organizer: m.id === 'organized:1' })),
+      },
+    });
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'invited:1': false, 'organized:1': true });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.ai_summary_awaiting_approval]))).toEqual({ 'invited:1': undefined, 'organized:1': true });
+    expect(Object.fromEntries(result.map((m) => [m.id, m.ai_summary_uid]))).toEqual({ 'invited:1': undefined, 'organized:1': 'sum-organized' });
+  });
+
+  it('does not flag a whitespace-only summary', async () => {
+    mockIndexes([pastMeeting('blank:1'), pastMeeting('real:1')], [], [summary('blank:1', { content: ' \n\t ' }), summary('real:1')]);
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(Object.fromEntries(result.map((m) => [m.id, m.has_ai_summary]))).toEqual({ 'blank:1': false, 'real:1': true });
+  });
+
+  it('leaves only the failed flag undefined when one index lookup fails', async () => {
+    mockIndexes([pastMeeting('m1:1')], new Error('recording index down'), [summary('m1:1')]);
+
+    const [result] = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    expect(result.has_recording).toBeUndefined();
+    expect(result.recording_share_url).toBeUndefined();
+    expect(result.has_ai_summary).toBe(true);
+  });
+
+  it('skips the artifact lookups and leaves the flags absent unless asked', async () => {
+    mockIndexes([pastMeeting('m1:1')], [recording('m1:1', 'https://zoom.example/rec/1')], [summary('m1:1')]);
+
+    const [result] = await service.getUserPastMeetings(req, 'user@example.com');
+
+    const types = proxyRequest.mock.calls.map(([, , , , params]) => params?.type);
+    expect(types).not.toContain('v1_past_meeting_recording');
+    expect(types).not.toContain('v1_past_meeting_summary');
+    expect(result).not.toHaveProperty('has_recording');
+    expect(result).not.toHaveProperty('recording_share_url');
+    expect(result).not.toHaveProperty('has_ai_summary');
+  });
+
+  it('queries at most 100 past meetings per request', async () => {
+    const meetings = Array.from({ length: 150 }, (_, i) => pastMeeting(`m${i}:1`));
+    mockIndexes(meetings, [], []);
+
+    const result = await service.getUserPastMeetings(req, 'user@example.com', undefined, undefined, { includeArtifacts: true });
+
+    const recordingCalls = proxyRequest.mock.calls.filter(([, , , , params]) => params?.type === 'v1_past_meeting_recording');
+    expect(recordingCalls.map(([, , , , params]) => params.tags.length)).toEqual([100, 50]);
+    expect(result.every((m) => m.has_recording === false)).toBe(true);
+  });
+});
+
+describe('UserService meeting feeds committee names', () => {
+  const req = {} as unknown as Request;
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const getCommitteeNameMap = vi.fn();
+  let service: UserService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getCommitteeNameMap.mockReset().mockResolvedValue(new Map([['c1', 'Board']]));
+    getUsernameFromAuth.mockReset().mockResolvedValue(null);
+    getEffectiveEmail.mockReset().mockReturnValue('');
+    service = new UserService();
+    Object.assign(service, {
+      meetingService: { getMeetingProjectName: async (_req: Request, items: Meeting[]) => items, getCommitteeNameMap },
+      accessCheckService: { addAccessToResources: async (_req: Request, items: Meeting[]) => items },
+    });
+  });
+
+  function mockFeed(type: string, rows: Partial<PastMeeting>[]): void {
+    proxyRequest.mockImplementation((_req: Request, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      queryPage(params?.type === type ? rows : [])
+    );
+  }
+
+  it('names upcoming meeting committees and keeps the uid of a committee the lookup missed', async () => {
+    mockFeed('v1_meeting', [
+      { id: 'm1', start_time: tomorrow, duration: 60, committees: [{ uid: 'c1' }, { uid: 'gone' }] },
+      { id: 'm2', start_time: tomorrow, duration: 60 },
+    ]);
+
+    const meetings = await service.getUserMeetings(req);
+
+    expect(getCommitteeNameMap).toHaveBeenCalledTimes(1);
+    expect(meetings.find((m) => m.id === 'm1')?.committees).toEqual([{ uid: 'c1', name: 'Board' }, { uid: 'gone' }]);
+    expect(meetings.find((m) => m.id === 'm2')?.committees).toBeUndefined();
+  });
+
+  it('names past meeting committees', async () => {
+    mockFeed('v1_past_meeting', [{ meeting_and_occurrence_id: 'p1:1', start_time: yesterday, scheduled_end_time: yesterday, committees: [{ uid: 'c1' }] }]);
+
+    const [meeting] = await service.getUserPastMeetings(req, '');
+
+    expect(meeting.committees).toEqual([{ uid: 'c1', name: 'Board' }]);
+  });
+
+  it('names latest past meeting committees', async () => {
+    mockFeed('v1_past_meeting', [{ meeting_and_occurrence_id: 'p1:1', start_time: yesterday, scheduled_end_time: yesterday, committees: [{ uid: 'c1' }] }]);
+
+    const [meeting] = await service.getUserLatestPastMeetings(req);
+
+    expect(meeting.committees).toEqual([{ uid: 'c1', name: 'Board' }]);
+  });
+
+  it('returns the feed with uid-only committees when the lookup finds nothing', async () => {
+    getCommitteeNameMap.mockResolvedValue(new Map());
+    mockFeed('v1_meeting', [{ id: 'm1', start_time: tomorrow, duration: 60, committees: [{ uid: 'c1' }] }]);
+
+    const [meeting] = await service.getUserMeetings(req);
+
+    expect(meeting.committees).toEqual([{ uid: 'c1' }]);
   });
 });

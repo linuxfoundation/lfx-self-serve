@@ -3,7 +3,171 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { canonicalHttpUrl, extractUrls, isInviteLandingPath, isPrivateHost, isProfileHubPath, isRelativeInAppPath } from './url.utils';
+import {
+  canonicalHttpUrl,
+  extractUrlCandidates,
+  extractUrls,
+  isHttpsUrl,
+  isInviteLandingPath,
+  isMentorshipMentorInvitePath,
+  isPrivateHost,
+  isProfileHubPath,
+  isRelativeInAppPath,
+  isValidUrl,
+  normalizeToUrl,
+} from './url.utils';
+
+describe('isValidUrl', () => {
+  it('accepts http and https URLs', () => {
+    expect(isValidUrl('https://example.com')).toBe(true);
+    expect(isValidUrl('http://example.com/path?q=1')).toBe(true);
+    expect(isValidUrl('https://sub.example.com/a/b')).toBe(true);
+  });
+
+  it('rejects dangerous schemes (the newsletter renderer / inline-link gate)', () => {
+    expect(isValidUrl('javascript:alert(1)')).toBe(false);
+    expect(isValidUrl('JavaScript:alert(1)')).toBe(false); // case-insensitive
+    expect(isValidUrl('data:text/html,<script>alert(1)</script>')).toBe(false);
+    expect(isValidUrl('vbscript:msgbox(1)')).toBe(false);
+    expect(isValidUrl('file:///etc/passwd')).toBe(false);
+    expect(isValidUrl('ftp://host/file')).toBe(false);
+  });
+
+  it('rejects non-http(s) protocols', () => {
+    expect(isValidUrl('mailto:someone@example.com')).toBe(false);
+  });
+
+  it('rejects empty, relative, and scheme-less values', () => {
+    expect(isValidUrl('')).toBe(false);
+    expect(isValidUrl('   ')).toBe(false);
+    expect(isValidUrl('/relative/path')).toBe(false);
+    expect(isValidUrl('example.com')).toBe(false); // no protocol
+  });
+});
+
+describe('normalizeToUrl', () => {
+  it.each(['HTTPS://example.com/team', 'hTtPs://example.com/team', 'HTTP://example.com/team'])('preserves the destination of %s', (input) => {
+    const destination = normalizeToUrl(input);
+    expect(destination).not.toBeNull();
+    expect(new URL(destination!).href).toBe(new URL(input).href);
+    expect(new URL(destination!).hostname).toBe('example.com');
+  });
+
+  it.each(['HTTPS://localhost/chat', 'HTTP://127.0.0.1/chat', 'JaVaScRiPt:alert(1)', '#general'])('does not create a destination for %s', (input) => {
+    expect(normalizeToUrl(input)).toBeNull();
+  });
+});
+
+describe('extractUrlCandidates', () => {
+  it.each(['https://example.com[1]', 'https://example.com:443[12]', 'https://[2606:4700:4700::1111][1]'])(
+    'ends a hostname URL before a citation: %s',
+    (text) => {
+      const url = text.slice(0, text.lastIndexOf('['));
+      expect(extractUrlCandidates(text)).toEqual([{ url, index: 0 }]);
+      expect(extractUrls(text)).toEqual([url]);
+    }
+  );
+
+  it('separates adjacent labeled links without losing original offsets', () => {
+    const text = '[label](https://one.example/path)[next](https://two.example/path)';
+    const urls = ['https://one.example/path', 'https://two.example/path'];
+    expect(extractUrlCandidates(text)).toEqual(urls.map((url) => ({ url, index: text.indexOf(url) })));
+    expect(extractUrls(text)).toEqual(urls);
+  });
+
+  it.each(['https://one.example/path', 'https://one.example/path[2026]', 'https://[2606:4700:4700::1111]/path'])(
+    'separates a bare URL from an immediately following labeled link: %s',
+    (first) => {
+      const second = 'https://two.example/path';
+      const text = `Read ${first}[next](${second}), then continue`;
+      expect(extractUrlCandidates(text)).toEqual([
+        { url: first, index: text.indexOf(first) },
+        { url: second, index: text.indexOf(second) },
+      ]);
+      expect(extractUrls(text)).toEqual([first, second]);
+    }
+  );
+
+  it.each(['https://one.example/path?next=', 'https://one.example/path#next=', 'http://localhost/path?next='])(
+    'keeps a bracketed nested destination inside a query or fragment: %s',
+    (prefix) => {
+      const url = `${prefix}[next](https://two.example/path)`;
+      expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+      expect(extractUrls(url)).toEqual(prefix.includes('localhost') ? [] : [url]);
+    }
+  );
+
+  it.each([',', ';', '!', '.', ':'])('separates labeled links across %s without changing destinations or offsets', (separator) => {
+    const text = `Read [one](https://one.example/path)${separator}[two](https://two.example/path)`;
+    const urls = ['https://one.example/path', 'https://two.example/path'];
+    expect(extractUrlCandidates(text)).toEqual(urls.map((url) => ({ url, index: text.indexOf(url) })));
+    expect(extractUrls(text)).toEqual(urls);
+  });
+
+  it.each(['https://example.com/?query=release)[2026]', 'https://example.com/releases)[2026]', 'https://example.com/#release)[2026]'])(
+    'retains )[ inside an ordinary URL: %s',
+    (url) => {
+      const text = `Read ${url}, then https://other.example/path`;
+      expect(extractUrlCandidates(text)).toEqual([
+        { url, index: text.indexOf(url) },
+        { url: 'https://other.example/path', index: text.indexOf('https://other.example/path') },
+      ]);
+      expect(extractUrls(text)).toEqual([url, 'https://other.example/path']);
+    }
+  );
+
+  it.each([
+    'https://example.com/path[1]',
+    'https://example.com?items[]=one',
+    'https://example.com#section[1]',
+    'https://[2606:4700:4700::1111]/path[1]?items[]=one#section[1]',
+  ])('retains URL brackets outside hostname citations: %s', (url) => {
+    expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+    expect(extractUrls(url)).toEqual([url]);
+  });
+
+  it('preserves offsets and punctuation boundaries without applying a destination policy', () => {
+    const text = 'Read (https://example.com.localhost/guide), then https://example.com.';
+    expect(extractUrlCandidates(text)).toEqual([
+      { url: 'https://example.com.localhost/guide', index: text.indexOf('https://') },
+      { url: 'https://example.com', index: text.lastIndexOf('https://') },
+    ]);
+  });
+
+  it.each(['https://example.com/guide?topic=data:types', 'https://example.com/ftp:/manual', 'https://172.32.0.1/charter'])(
+    'leaves validation to callers while retaining legacy extractUrls behavior: %s',
+    (url) => {
+      expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+      expect(extractUrls(url)).toEqual([]);
+    }
+  );
+
+  it.each(['[https://example.com/page](https://example.com/page)', '[https://example.com](https://example.com)'])(
+    'keeps separate URL candidates and offsets in %s',
+    (text) => {
+      const url = text.slice(1, text.indexOf(']'));
+      expect(extractUrlCandidates(text)).toEqual([
+        { url, index: 1 },
+        { url, index: text.indexOf('(') + 1 },
+      ]);
+      expect(extractUrls(text)).toEqual([url, url]);
+    }
+  );
+
+  it('ends a reference-style URL label at the unmatched closing bracket', () => {
+    expect(extractUrlCandidates('[https://example.com/path][1]')).toEqual([{ url: 'https://example.com/path', index: 1 }]);
+  });
+
+  it('does not rescan nested URLs inside a rejected destination', () => {
+    const url = 'https://localhost/path?next=https://example.com';
+    expect(extractUrlCandidates(url)).toEqual([{ url, index: 0 }]);
+    expect(extractUrls(url)).toEqual([]);
+  });
+
+  it.each(['', 'no links here'])('returns no candidates for %j', (text) => {
+    expect(extractUrlCandidates(text)).toEqual([]);
+  });
+});
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {
@@ -22,6 +186,29 @@ describe('extractUrls', () => {
 
   it('keeps balanced brackets that are part of the URL path', () => {
     expect(extractUrls('https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual(['https://en.wikipedia.org/wiki/Foo_(bar)']);
+  });
+
+  it.each([
+    'https://example.com/list?ids[]=1',
+    'https://example.com/list?ids[]=1&ids[]=2',
+    'https://example.com/items[1]',
+    'https://example.com/page#section[1]',
+    'https://[2606:4700:4700::1111]/',
+  ])('preserves square brackets in %s', (url) => {
+    expect(extractUrls(`See ${url} for details`)).toEqual([url]);
+  });
+
+  it.each([
+    ['[https://example.com/list?ids[]=1&ids[]=2],', 'https://example.com/list?ids[]=1&ids[]=2'],
+    ['[https://example.com/items[1]]', 'https://example.com/items[1]'],
+    ['([https://example.com/page.])', 'https://example.com/page'],
+    ['[[https://example.com/page]],', 'https://example.com/page'],
+  ])('trims only prose brackets and punctuation from %s', (text, url) => {
+    expect(extractUrls(text)).toEqual([url]);
+  });
+
+  it.each(['https://[::1]/', 'https://[fe80::1]/', 'https://[fd00::1]/', 'https://[::ffff:127.0.0.1]/'])('does not link private IPv6 destination %s', (url) => {
+    expect(extractUrls(url)).toEqual([]);
   });
 
   it('re-trims punctuation exposed by stripping an unmatched bracket', () => {
@@ -80,6 +267,19 @@ describe('isProfileHubPath', () => {
   });
 });
 
+describe('isMentorshipMentorInvitePath', () => {
+  it.each(['/mentorship/mentor/invites', '/mentorship/mentor/invites/', '/mentorship/mentor/invites?token=a.b', '/mentorship/mentor/invites#x'])(
+    'matches %s',
+    (url) => {
+      expect(isMentorshipMentorInvitePath(url)).toBe(true);
+    }
+  );
+
+  it.each(['/invite', '/mentorship/mentor/invites-extra', '/mentorship/mentor', '/x/mentorship/mentor/invites'])('does not match %s', (url) => {
+    expect(isMentorshipMentorInvitePath(url)).toBe(false);
+  });
+});
+
 describe('isInviteLandingPath', () => {
   it('matches /invite and /invite/error exactly', () => {
     expect(isInviteLandingPath('/invite')).toBe(true);
@@ -108,6 +308,28 @@ describe('isInviteLandingPath', () => {
   it('does not match an empty string or an absolute URL (callers pass pathname)', () => {
     expect(isInviteLandingPath('')).toBe(false);
     expect(isInviteLandingPath('https://lfx.example.com/invite')).toBe(false);
+  });
+});
+
+describe('isHttpsUrl', () => {
+  it('accepts an absolute https URL', () => {
+    expect(isHttpsUrl('https://example.org/sign?session=abc')).toBe(true);
+  });
+
+  it('refuses every other scheme, including the forms a browser normalizes into javascript:', () => {
+    expect(isHttpsUrl('http://example.org/sign')).toBe(false);
+    expect(isHttpsUrl('javascript:alert(1)')).toBe(false);
+    expect(isHttpsUrl(' javascript:alert(1)')).toBe(false);
+    expect(isHttpsUrl('JaVaScRiPt:alert(1)')).toBe(false);
+    expect(isHttpsUrl('data:text/html,hi')).toBe(false);
+  });
+
+  it('refuses a relative path, an unparseable string and a non-string', () => {
+    expect(isHttpsUrl('/sign')).toBe(false);
+    expect(isHttpsUrl('not a url')).toBe(false);
+    expect(isHttpsUrl('')).toBe(false);
+    expect(isHttpsUrl(undefined)).toBe(false);
+    expect(isHttpsUrl(42)).toBe(false);
   });
 });
 

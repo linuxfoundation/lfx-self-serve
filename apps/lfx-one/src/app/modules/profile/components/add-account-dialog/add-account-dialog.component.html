@@ -19,16 +19,37 @@
             <i [class]="provider.icon + ' text-lg text-slate-600'"></i>
           </div>
           <div class="flex-1">
-            <span class="mb-0.5 block text-sm font-bold text-slate-900">{{ provider.name }}</span>
+            <span class="mb-0.5 flex items-center gap-2 text-sm font-bold text-slate-900">
+              {{ provider.name }}
+              @if (provider.id === 'gitlab') {
+                <span class="text-xs font-medium text-slate-500" data-testid="provider-gitlab-coming-soon">Coming soon</span>
+              }
+            </span>
             <span class="text-[13px] leading-snug text-slate-500">{{ provider.description }}</span>
           </div>
-          <lfx-button
-            [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
-            severity="secondary"
-            [outlined]="true"
-            size="small"
-            (onClick)="onSelectProvider(provider)"
-            [attr.data-testid]="'provider-action-' + provider.id" />
+          <!-- Keep GitLab unavailable until the #4151 rollout is verified; enable it in a follow-up PR. -->
+          <span class="relative inline-flex">
+            <lfx-button
+              [label]="provider.id === 'email' ? 'Add email' : 'Continue with ' + provider.name"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              [disabled]="provider.id === 'gitlab'"
+              (onClick)="onSelectProvider(provider)"
+              [attr.data-testid]="'provider-action-' + provider.id" />
+            @if (provider.id === 'gitlab') {
+              <!-- A child-free tooltip target keeps PrimeNG's focus listener off the disabled .p-component button. -->
+              <span
+                class="absolute inset-0 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                tabindex="0"
+                role="group"
+                aria-label="GitLab account linking: Coming soon"
+                pTooltip="Coming soon"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                data-testid="provider-action-hint-gitlab"></span>
+            }
+          </span>
         </div>
       }
     </div>
@@ -36,7 +57,11 @@
 
   <!-- Step: Connect (email only) -->
   @if (step() === 'connect') {
-    <p class="text-sm text-slate-600">Enter your email address and we'll send you a verification code.</p>
+    @if (codeSent()) {
+      <p class="text-sm text-slate-600">{{ verificationSentMessage }}</p>
+    } @else {
+      <p class="text-sm text-slate-600">Enter your email address. If it can be added to your account, we'll send you a verification code.</p>
+    }
 
     <div class="flex flex-col gap-4">
       <!-- Email input -->
@@ -52,7 +77,7 @@
           styleClass="text-sm"
           data-testid="add-account-email" />
         @if (!codeSent()) {
-          <p class="text-xs text-slate-500">You'll receive a verification code after clicking Send verification code.</p>
+          <p class="text-xs text-slate-500">Codes are sent only to addresses that can be added to your account.</p>
         }
       </div>
 
@@ -61,22 +86,26 @@
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between">
             <label class="text-sm font-semibold text-slate-700">Verification code</label>
-            <button
-              class="text-sm font-medium"
-              [class.cursor-pointer]="resendCooldown() === 0"
-              [class.text-blue-600]="resendCooldown() === 0"
-              [class.hover:text-blue-700]="resendCooldown() === 0"
-              [class.text-slate-400]="resendCooldown() > 0"
-              [class.cursor-not-allowed]="resendCooldown() > 0"
-              [disabled]="resendCooldown() > 0"
-              (click)="onResendCode()"
-              data-testid="add-account-resend">
-              @if (resendCooldown() > 0) {
-                Resend in {{ resendCooldown() }}s
-              } @else {
-                Resend Code
-              }
-            </button>
+            @if (!showResendSupport()) {
+              <button
+                class="text-sm font-medium"
+                [class.cursor-pointer]="resendCooldown() === 0 && !isConnecting()"
+                [class.text-blue-600]="resendCooldown() === 0 && !isConnecting()"
+                [class.hover:text-blue-700]="resendCooldown() === 0 && !isConnecting()"
+                [class.text-slate-400]="resendCooldown() > 0 || isConnecting()"
+                [class.cursor-not-allowed]="resendCooldown() > 0 || isConnecting()"
+                [disabled]="resendCooldown() > 0 || isConnecting()"
+                (click)="onResendCode()"
+                data-testid="add-account-resend">
+                @if (isConnecting()) {
+                  Requesting code…
+                } @else if (resendCooldown() > 0) {
+                  Resend code in {{ resendCooldown() }}s
+                } @else {
+                  Resend code
+                }
+              </button>
+            }
           </div>
           <p-inputotp
             [ngModel]="verificationCode()"
@@ -87,25 +116,47 @@
             data-testid="add-account-otp" />
           @if (verificationError()) {
             <p class="text-center text-sm text-red-600" role="alert" data-testid="add-account-otp-error">
-              {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
               @if (showSupportLink()) {
-                If you believe this is an error,
-                <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
+                This email is already linked to an LFX account. If you believe this is an error,
+                <button
+                  type="button"
+                  lfxOpenIntercom
+                  [intercomMessage]="linkedSupportMessage()"
+                  class="font-medium underline"
+                  data-testid="add-account-linked-support-button">
+                  contact support</button
+                >.
+              } @else {
+                {{ verificationError() }}
               }
             </p>
+          }
+          @if (showResendSupport()) {
+            <div class="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3" role="status" data-testid="add-account-resend-support-callout">
+              <div class="flex flex-col gap-1">
+                <p class="text-sm font-semibold text-blue-900">{{ resendSupportTitle }}</p>
+                <p class="text-xs text-blue-900">{{ resendSupportMessage }}</p>
+              </div>
+              <lfx-button type="button" lfxOpenIntercom label="Contact support" severity="primary" size="small" data-testid="add-account-resend-support" />
+            </div>
+          } @else {
+            <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="add-account-otp-hint">
+              <i class="fa-light fa-circle-info mt-0.5 shrink-0 text-sm text-blue-600" aria-hidden="true"></i>
+              <div class="flex flex-col items-start gap-1">
+                <p class="text-sm font-semibold text-blue-900">{{ codeNotReceivedTitle }}</p>
+                <p class="text-xs text-blue-900">{{ codeNotReceivedHint }}</p>
+                <button type="button" lfxOpenIntercom class="text-xs font-medium text-blue-900 underline" data-testid="add-account-otp-support-button">
+                  Contact support
+                </button>
+              </div>
+            </div>
           }
         </div>
       }
     </div>
 
     @if (!codeSent() && verificationError()) {
-      <p class="text-sm text-red-600" role="alert" data-testid="add-account-send-error">
-        {{ verificationError() }}{{ showSupportLink() ? '. ' : '' }}
-        @if (showSupportLink()) {
-          If you believe this is an error,
-          <button type="button" lfxOpenIntercom class="font-medium underline">contact support</button>.
-        }
-      </p>
+      <p class="text-sm text-red-600" role="alert" data-testid="add-account-send-error">{{ verificationError() }}</p>
     }
 
     @if (!codeSent()) {
@@ -115,12 +166,12 @@
         styleClass="w-full"
         [loading]="isConnecting()"
         [disabled]="isConnecting()"
-        [label]="isConnecting() ? 'Sending code...' : 'Send verification code'"
+        [label]="isConnecting() ? 'Requesting code…' : 'Send verification code'"
         (onClick)="onSendCode()"
         data-testid="add-account-send-code" />
     } @else {
       <lfx-button
-        severity="primary"
+        [severity]="showResendSupport() ? 'secondary' : 'primary'"
         size="small"
         styleClass="w-full"
         [loading]="isVerifying()"
@@ -128,6 +179,16 @@
         [label]="isVerifying() ? 'Verifying...' : 'Verify email'"
         (onClick)="onVerify()"
         data-testid="add-account-verify" />
+      <lfx-button
+        type="button"
+        label="Use a different email"
+        severity="secondary"
+        variant="outlined"
+        size="small"
+        styleClass="w-full"
+        [disabled]="isConnecting() || isVerifying()"
+        (onClick)="onChangeEmail()"
+        data-testid="add-account-change-email" />
     }
   }
 </div>

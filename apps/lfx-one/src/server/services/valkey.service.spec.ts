@@ -54,7 +54,15 @@ vi.mock('./logger.service', () => ({
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
-import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, buildOrgCacheKey, buildPerUserOrgKey, ValkeyService } from './valkey.service';
+import { allOrgPeopleDirectoryNamespaces } from '../helpers/org-people-directory-cache.helper';
+import {
+  buildAuthStateCacheKey,
+  buildGatewazeHostSessionKeyPrefix,
+  buildMeetingInviteLockCacheKey,
+  buildOrgCacheKey,
+  buildPerUserOrgKey,
+  ValkeyService,
+} from './valkey.service';
 
 import { logger } from './logger.service';
 
@@ -267,6 +275,20 @@ describe('buildAuthStateCacheKey (#1938)', () => {
   });
 });
 
+describe('buildGatewazeHostSessionKeyPrefix (#2738)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('is the app prefix, the optional deployment namespace and gatewaze:v1, ending in a separator', () => {
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', '');
+    expect(buildGatewazeHostSessionKeyPrefix()).toBe('lfx-ui:gatewaze:v1:');
+
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', 'ui-pr-42');
+    expect(buildGatewazeHostSessionKeyPrefix()).toBe('lfx-ui:ui-pr-42:gatewaze:v1:');
+  });
+});
+
 describe('buildMeetingInviteLockCacheKey (LFXV2 #2241)', () => {
   beforeEach(() => {
     // Pin the deployment namespace segment so this doesn't flake under a developer/CI
@@ -388,16 +410,16 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
   it('lets a per-sub-resource cap take precedence over a per-namespace cap for the same family', async () => {
     // No shipped namespace has both kinds of entry, so this installs a namespace cap for the
     // Snowflake family for this test only (restored in `finally`) — precedence can't be driven
-    // through the real tables. `people-all:v2` keeps its 3 MiB sub-resource cap; `projects:v7` has
-    // none and falls through to the 4 MiB namespace cap.
+    // through the real tables. `people-all:v8` keeps its 6 MiB sub-resource cap; `projects:v7` has
+    // none and falls through to the 8 MiB namespace cap.
     const tables = VALKEY_CACHE as { MAX_VALUE_BYTES_BY_NAMESPACE: Readonly<Record<string, number>> };
     const original = tables.MAX_VALUE_BYTES_BY_NAMESPACE;
-    tables.MAX_VALUE_BYTES_BY_NAMESPACE = { ...original, [VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE]: 4 * 1_048_576 };
+    tables.MAX_VALUE_BYTES_BY_NAMESPACE = { ...original, [VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE]: 8 * 1_048_576 };
     try {
-      const between = { padding: 'x'.repeat(3.5 * 1_048_576) };
+      const between = { padding: 'x'.repeat(7 * 1_048_576) };
       setMock.mockResolvedValue('OK');
 
-      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v2')!, between, 60)).resolves.toBe(false);
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, 'people-all:v8:365d:all')!, between, 60)).resolves.toBe(false);
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, between, 60)).resolves.toBe(true);
     } finally {
       tables.MAX_VALUE_BYTES_BY_NAMESPACE = original;
@@ -411,7 +433,7 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     // a REAL table entry rather than one installed here: `MAX_VALUE_BYTES_BY_SUBRESOURCE` is a
     // release decision, not a runtime knob, and a test that overwrote it would be changing
     // production behaviour for every later test in the run.
-    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v2')!;
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v8:all:all')!;
     const serialized = JSON.stringify(oversized);
     expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
     setMock.mockResolvedValue('OK');
@@ -444,13 +466,46 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     // storable for exactly these caches and refused for their siblings.
     setMock.mockResolvedValue('OK');
 
-    for (const subResource of ['people-all:v2', 'people-event-attendees:v2', 'people-trainees:v2']) {
+    for (const subResource of [
+      'people-all:v8:365d:all',
+      'people-all:v8:roster',
+      'people-contributors:v5:all:all',
+      'people-former:v4:all:all',
+      'people-event-attendees:v7:730d:all',
+      'people-trainees:v10:all',
+    ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
     }
-    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-contributors:v2:all']) {
+    for (const subResource of [
+      UNCAPPED_SUB_RESOURCE,
+      'people-all:v3:365d',
+      'people-all:v5:365d:all:all',
+      'people-all:v6:365d:all',
+      'people-all:v7:365d:all',
+      'people-all:v4:roster',
+      'people-former:v3:all:all:all',
+      'people-event-attendees:v3:730d:all:all',
+      'people-event-attendees:v4:730d:all:all',
+      'people-event-attendees:v5:730d:verified:all',
+      'people-event-attendees:v6:730d:verified:all',
+      'people-unclassified:v2:all:all',
+      'people-contributors:v3:all:all',
+      'people-contributors:v4:all:all',
+      'people-contributors-roles:v2:all:all:exclude',
+      'people-detail-roles:v1:person-one:365d',
+      'maintainer-roles:v1',
+      'foundations:v2',
+      'memberships-projects:v3:cncf',
+      'people-trainees:v2',
+      'people-trainees:v3:all',
+      'people-trainees:v4:all',
+      'people-trainees:v5:all',
+      'people-trainees:v6:all',
+      'people-trainees:v8:all',
+    ]) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
-    for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE]) {
+    for (const namespace of [VALKEY_CACHE.ORG_SEATS_NAMESPACE, ...allOrgPeopleDirectoryNamespaces()]) {
       await expect(ValkeyService.getInstance().setJson(buildPerUserOrgKey(namespace, 'alice', ORG_UID)!, oversized, 60)).resolves.toBe(true);
     }
     await expect(ValkeyService.getInstance().setJson(buildPerUserOrgKey(VALKEY_CACHE.ORG_PEOPLE_KC_NAMESPACE, 'alice', ORG_UID)!, oversized, 60)).resolves.toBe(

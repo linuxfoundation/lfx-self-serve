@@ -75,7 +75,7 @@ export class OrgRoiProjectsDonutComponent {
 
   /**
    * The disclosure names the investment figure, but Net Return is `totalReturn - totalExpenditure`
-   * — a direct function of the modelled cost — and the negative list below renders per-project
+   * — a direct function of the modelled cost — and the negative note below states a total in
    * money on that tab. Total Return alone owes no modelled-cost disclosure; the other two do.
    */
   protected readonly showsModelledCost: Signal<boolean> = computed(() => this.measure() !== 'return');
@@ -94,16 +94,14 @@ export class OrgRoiProjectsDonutComponent {
   /**
    * Net return is negative for 6.45% of project rows across 775 organizations — a mainline path,
    * not an edge case. A doughnut arc cannot be negative, so the geometry is clamped at zero while
-   * the label keeps the true signed figure. The projects concerned are named explicitly below
-   * rather than silently vanishing into a zero-width arc.
+   * the note below keeps the true signed total. The individual loss-making projects are not listed
+   * here; their figures are in the All projects table.
    */
-  protected readonly negatives: Signal<{ count: number; total: number; rows: { key: string; label: string; amount: string }[] }> = computed(() => {
+  protected readonly negatives: Signal<{ count: number; total: number }> = computed(() => {
     const losing = this.ranked().filter((entry) => entry.value < 0);
     return {
       count: losing.length,
       total: losing.reduce((sum, entry) => sum + entry.value, 0),
-      // Each carries its own signed figure; a count alone would not disclose the losses.
-      rows: losing.map((entry) => ({ key: entry.row.projectId, label: entry.row.projectName, amount: formatCurrency(entry.value) })),
     };
   });
 
@@ -111,7 +109,7 @@ export class OrgRoiProjectsDonutComponent {
     const { count, total } = this.negatives();
     const subject = count === 1 ? '1 project has' : `${count.toLocaleString('en-US')} projects have`;
     // Accurate about the partition: these are in neither a slice nor the remainder, so the chart
-    // above genuinely does not represent them and this list is their only reporting.
+    // above genuinely does not represent them. Their individual figures are in the All projects table.
     return `${subject} a negative net return, totalling ${formatCurrency(total)}. A negative value cannot be sized as a slice, so these are excluded from the chart and from its remainder, and reported here instead.`;
   });
 
@@ -122,7 +120,7 @@ export class OrgRoiProjectsDonutComponent {
    */
   protected readonly slices: Signal<OrgLensRoiProjectSlice[]> = computed(() => {
     // Partition once, at zero, and let the chart and the negative disclosure own disjoint halves.
-    // Folding loss-making projects into the remainder as well as naming them below would report
+    // Folding loss-making projects into the remainder as well as reporting them in the note below would report
     // them twice, and would leave the remainder's arc (drawn from clamped magnitudes) disagreeing
     // with its own legend figure (summed signed) with nothing to explain the gap. Every entry here
     // is >= 0, so `weight` equals `value` throughout and each arc matches the number beside it.

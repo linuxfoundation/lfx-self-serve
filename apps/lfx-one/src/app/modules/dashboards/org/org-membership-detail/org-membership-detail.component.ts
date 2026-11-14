@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, signal, type Signal } from '@a
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
@@ -62,6 +63,7 @@ export class OrgMembershipDetailComponent {
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -135,14 +137,9 @@ export class OrgMembershipDetailComponent {
 
   protected readonly memberSinceFormatted = computed(() => this.formatDateShort(this.foundation()?.memberSince ?? null));
 
-  // Writer-only edit gating (UX), widened to roll-up-derived editors (LFXV2-3029). The selected
-  // org's uid keys the role-grants editor set. When the uid is unknown we stay permissive — the
-  // backend still enforces (Constitution I).
-  protected readonly canEdit = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    if (!uid) return true;
-    return this.roleGrants.editorSet().has(uid);
-  });
+  // Edit gating (UX, #3136): roster editor or authorizer `writer`. When the uid is unknown we stay
+  // permissive — the backend still enforces (Constitution I).
+  protected readonly canEdit = computed(() => !this.accountContext.selectedAccount()?.uid || this.orgEditAccess.canEditSelected());
 
   protected readonly editDisabledTooltip = 'Only admins can edit. To view a list of admins, visit the Access page.';
 

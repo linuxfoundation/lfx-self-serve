@@ -4,6 +4,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
 import { newsletterAccessGuard } from '@shared/guards/newsletter-access.guard';
+import { newsletterPublicationsEnabledGuard } from '@shared/guards/newsletter-publications-enabled.guard';
 
 export const NEWSLETTER_ROUTES: Routes = [
   {
@@ -27,13 +28,21 @@ export const NEWSLETTER_ROUTES: Routes = [
     data: { preload: false },
   },
   {
-    // Me-lens member feed: sent newsletters reachable via the user's committee
-    // memberships. authGuard only — newsletterAccessGuard is the manager
-    // (ED/project-writer) gate and must not block regular committee members.
-    path: 'my',
-    title: 'My Newsletters',
-    canActivate: [authGuard],
-    loadComponent: () => import('./my-newsletters/my-newsletters.component').then((m) => m.MyNewslettersComponent),
+    // Publications carry projectUid and a third segment on purpose: the flat mount's reader
+    // permalink owns any two-segment /newsletters/:projectSlug/:id (see the note below).
+    path: ':projectUid/publications/create',
+    title: 'New Publication',
+    canMatch: [newsletterPublicationsEnabledGuard],
+    canActivate: [authGuard, newsletterAccessGuard],
+    loadComponent: () => import('./newsletter-publication-form/newsletter-publication-form.component').then((m) => m.NewsletterPublicationFormComponent),
+    data: { preload: false },
+  },
+  {
+    path: ':projectUid/publications/:publicationUid/edit',
+    title: 'Edit Publication',
+    canMatch: [newsletterPublicationsEnabledGuard],
+    canActivate: [authGuard, newsletterAccessGuard],
+    loadComponent: () => import('./newsletter-publication-form/newsletter-publication-form.component').then((m) => m.NewsletterPublicationFormComponent),
     data: { preload: false },
   },
   {

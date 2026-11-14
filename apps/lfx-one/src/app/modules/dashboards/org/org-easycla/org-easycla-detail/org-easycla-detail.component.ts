@@ -7,8 +7,9 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
+  ClaGroupOption,
+  OrgClaAttestationClose,
   OrgClaCoverageChip,
-  OrgClaDesigneeNextStep,
   OrgClaDesigneeRefusal,
   OrgClaDetailTab,
   OrgClaDetailTabView,
@@ -16,24 +17,28 @@ import type {
   OrgClaGroupList,
   OrgClaGroupPickerResult,
   OrgClaIdentifyManagerResult,
-  OrgClaManagerAnswer,
   OrgClaSignAttestations,
+  OrgClaSignHandoffDialogData,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
-  OrgClaAttestationClose,
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_AUTO_ECLA_LOCKED_HINT,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
-  ORG_CLA_DESIGNEE_START_COPY,
+  ORG_CLA_DESIGNEE_RESTING_COPY,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_DOWNLOAD_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
-  ORG_CLA_REVIEW_COPY_FILENAME,
+  ORG_CLA_REVIEW_COPY_FAILURE,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
+  ORG_CLA_VIEW_ONLY_COPY,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
@@ -48,8 +53,12 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaIsViewOnly,
+  orgClaPairFoundationSfid,
   orgClaPairProjectSfid,
+  orgClaCatalogueGroup,
   orgClaPreviewGroup,
+  orgClaReviewCopyFilename,
   isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
 import { ToggleComponent } from '@components/toggle/toggle.component';
@@ -91,7 +100,9 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
@@ -129,6 +140,7 @@ function designeeRefusalCopy(error: unknown): string {
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OpenIntercomDirective,
     OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
@@ -149,20 +161,24 @@ export class OrgEasyclaDetailComponent {
    *
    * EasyCLA writes the signature when DocuSign calls it back, and that callback races the
    * signatory's return trip — so a list that arrives without the row is "not yet", not "no". The
-   * budget bounds how long the page is willing to say that: three further attempts, two seconds
-   * apart.
+   * budget bounds how long the page is willing to say that: twelve further attempts, two seconds
+   * apart (about 24 seconds when each list returns quickly).
    *
    * `perAttemptTimeoutMs` bounds the poll in wall-clock time, not only in count. Without it a
    * stalled BFF can leave each attempt waiting the gateway timeout (`API_GW_TIMEOUT_MS`, 30s), and
-   * `concatMap` runs the attempts in series — so three stalled attempts would take about 90s
-   * against a doc comment that says "a few seconds". A timed-out attempt is treated the same as a
-   * failed one: another try if the budget still has one, otherwise the same exhausted-wait
-   * settlement. Sized well below the gateway timeout so one network stall cannot swallow the whole
-   * budget.
+   * `concatMap` runs the attempts in series — twelve of those would take about six minutes. The
+   * cap keeps each attempt to 3s. A timed-out attempt is treated the same as a failed one: another
+   * try if the budget still has one, otherwise the same exhausted-wait settlement. Sized well below
+   * the gateway timeout so one network stall cannot swallow the whole budget.
+   *
+   * `waitDeadlineMs` bounds the whole wait. The interval keeps ticking while `concatMap` is busy,
+   * so slow attempts queue behind each other and twelve near-timeout attempts would run to about
+   * 38s. The deadline ends the wait at 30s with whatever the last answer was.
    */
   private static readonly signedRowRetryDelayMs = 2000;
-  private static readonly signedRowRetries = 3;
+  private static readonly signedRowRetries = 12;
   private static readonly signedRowPerAttemptTimeoutMs = 3000;
+  private static readonly signedRowWaitDeadlineMs = 30_000;
 
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -173,6 +189,7 @@ export class OrgEasyclaDetailComponent {
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -189,9 +206,21 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly reviewCopyDownloading = signal(false);
   protected readonly fetchError = signal(false);
+
+  /**
+   * Catalogue read for a pasted group address (#2293). Idle when a signed row or a matching
+   * picker selection already names the page, so those visits make no extra upstream call.
+   * Keyed on organization and group id so a reused component (A → B → A) cannot keep the
+   * previous group's name. In flight is not a state here: `cataloguePending` reads it as a key
+   * with no answer yet.
+   */
+  private readonly catalogue = signal<
+    { kind: 'idle' } | { kind: 'group'; key: string; option: ClaGroupOption } | { kind: 'not-found'; key: string } | { kind: 'error'; key: string }
+  >({ kind: 'idle' });
+  protected readonly easyclaRoleMissing = signal(false);
+  protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
-
   /**
    * Lists fetched by the flagged wait, fed back into the page's own `claData`.
    *
@@ -201,6 +230,9 @@ export class OrgEasyclaDetailComponent {
    * the one the page must then render — so they arrive here instead.
    */
   private readonly retriedList$ = new Subject<OrgClaGroupList | null>();
+  private readonly rosterChanged$ = new Subject<string>();
+  /** Fires on each organization load, so a roster re-read requested before it can never land after it. */
+  private readonly listReloaded$ = new Subject<void>();
 
   /**
    * A signing trip is in flight: this address carries the flag EasyCLA was told to return with.
@@ -244,16 +276,29 @@ export class OrgEasyclaDetailComponent {
   /** The copy shown under the skeleton while the just-signed agreement is still being confirmed. */
   protected readonly confirmingSignatureCopy = CCLA_SIGN_COPY.returnWait;
 
+  /**
+   * The flagged wait ended with a list in hand and no row for this group.
+   *
+   * Survives `settleReturn` stripping `signed=1`, so this visit does not fall through to the
+   * hasn't-signed empty state. A later load of the stripped address does not set it, and moving to
+   * another organization or agreement clears it — the component is reused across both.
+   */
+  protected readonly signatureStillUnlisted = signal(false);
+
+  protected readonly returnPendingTitle = CCLA_SIGN_COPY.returnPendingTitle;
+  protected readonly returnPendingSubtitle = CCLA_SIGN_COPY.returnPendingSubtitle;
+  protected readonly returnPendingRefresh = CCLA_SIGN_COPY.returnPendingRefresh;
+
   /** One hand-off at a time. Also what disables Start while a flow is open. */
   protected readonly signingOpen = signal(false);
 
   /**
    * Every agreement a send-by-email POST has succeeded for on this component instance.
    *
-   * Keyed to the *displayed* agreement rather than the route param: Angular reuses this component
-   * when `:claGroupId` changes, and the picker preview is captured at construction, so a reused
-   * instance can keep showing the emailed group after the address has moved. Comparing the route
-   * would lift the lock while Start still posts from `signingChoice()`.
+   * Keyed to the displayed agreement. The address decides which group is displayed, including
+   * when this component is reused across `:claGroupId`, so a move away from the emailed group
+   * stops showing it. Coming back still finds the lock, because the list remembers every group
+   * emailed on this instance.
    *
    * A list rather than one key, because emailing a different group is deliberately allowed: with a
    * single slot the sequence A → B → A forgets A. The unsigned overview does not reload on a route
@@ -290,10 +335,12 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
-   * `null` while the hop is in flight — the toggle is withheld during that window rather than
-   * shown enabled from an unchecked grant. `false` hides the toggle entirely, matching the
-   * design's choice to hide rather than disable a control the viewer cannot use, until the
-   * read-only banner (#1989) exists to explain a disabled state.
+   * `null` while the hop is in flight — the toggle stays disabled during that window rather than
+   * enabled from an unchecked grant; enablement waits for this answer, while the explanation
+   * follows the roster on its own, so an off-roster viewer sees it even while this is `null`.
+   * `false` disables it (#3406); it never hides
+   * it, because the stored value is readable by anyone who can open the agreement. Whether a
+   * sentence explains the disabled switch follows the roster alone — see `initAutoEclaLocked`.
    *
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
@@ -344,24 +391,16 @@ export class OrgEasyclaDetailComponent {
    * before starting a corporate CLA (#1983). Null on the server, and on an address the choice does
    * not belong to.
    *
-   * Carried by the navigation rather than by the address because the address cannot supply the
-   * display names: the CLA service exposes no fetch-a-CLA-group-by-id endpoint, so the names would
-   * have to ride along in the URL for the heading to render at all. Angular copies the non-router
-   * keys of a restored `history.state` onto the navigation it synthesises, so in-app back and
-   * forward arrive here with the choice still attached.
+   * Carried by the navigation so a card click names the page without a further read. An address
+   * with no selection — pasted, bookmarked, or restored without its state — is named by the
+   * catalogue read instead (#2293). Angular copies the non-router keys of a restored
+   * `history.state` onto the navigation it synthesises, so in-app back and forward arrive here with
+   * the choice still attached.
+   *
+   * Captured once. Whether it is what renders is `showingPreview`, which also weighs the list and
+   * the live route param.
    */
   private readonly previewSelection: OrgClaSignSelection | null = this.readPreviewSelection();
-
-  /**
-   * Previewing an agreement nobody has signed, so there is no list row to find.
-   *
-   * Since #2364 the preview shares its address with the agreement view, so this can no longer be
-   * decided at construction from the route shape alone — a signed row for the same group outranks
-   * a selection. It stays a field for the one thing that *is* fixed for the life of the page (the
-   * selection belongs to this address at all); whether the preview is what renders is
-   * `showingPreview`, which also weighs the list.
-   */
-  private readonly hasPreviewSelection = !!this.previewSelection;
 
   // Every selection the viewer makes, including clearing it.
   private readonly selectedOrgUid$ = toObservable(computed(() => this.accountContext.selectedAccount()?.uid)).pipe(distinctUntilChanged());
@@ -466,26 +505,105 @@ export class OrgEasyclaDetailComponent {
   protected readonly claGroup: Signal<OrgClaGroup | undefined> = computed(() => this.initClaGroup());
 
   /**
+   * Picker state names this address. Re-checked against the live route param: the selection is
+   * captured once, and Angular reuses this component when only `:claGroupId` changes.
+   */
+  private readonly previewMatchesAddress = computed(() => !!this.previewSelection && isSameClaGroup(this.previewSelection.claGroupId, this.claGroupId()));
+
+  /**
    * Whether the preview is what this address resolves to: a selection that names this group, and
    * no signed row for it (#2364).
    *
    * The selection alone is not enough. It survives history restoration, so a signatory who signs
    * and comes back to this address still has it — and the agreement they now hold has to win.
    */
-  private readonly showingPreview = computed(() => this.hasPreviewSelection && !this.listedGroupForAddress());
+  private readonly showingPreview = computed(() => this.previewMatchesAddress() && !this.listedGroupForAddress());
 
   /**
-   * A group address that names nothing this organization has signed and nothing the picker chose
-   * (#2364). A pasted or bookmarked link, or one whose selection did not survive the trip.
+   * When set, the page still needs the catalogue. Null while the list is in flight, or once a
+   * signed row or a matching picker selection has already answered — those must not call upstream.
+   */
+  private readonly catalogueLookupKey = computed(() => {
+    if (!isPlatformBrowser(this.platformId)) return null;
+    if (!this.hasCompany() || this.claLoading() || this.fetchError() || !this.claData()) return null;
+    const id = this.claGroupId();
+    const orgUid = this.selectedOrgUid();
+    if (!id || !orgUid) return null;
+    // A just-signed return is waiting on the list, not on the catalogue. Fetching the unsigned
+    // overview here would tell someone who just signed that the agreement has not been started.
+    if (this.awaitingSignedRow() || this.signatureStillUnlisted()) return null;
+    if (this.listedGroupForAddress() || this.previewMatchesAddress()) return null;
+    return `${orgUid}::${id}`;
+  });
+
+  protected readonly cataloguePending = computed(() => {
+    const key = this.catalogueLookupKey();
+    if (!key) return false;
+    const cat = this.catalogue();
+    if (cat.kind === 'error' && cat.key === key) return false;
+    if ((cat.kind === 'group' || cat.kind === 'not-found') && cat.key === key) return false;
+    return true;
+  });
+
+  protected readonly catalogueFailed = computed(() => {
+    const key = this.catalogueLookupKey();
+    const cat = this.catalogue();
+    return !!key && cat.kind === 'error' && cat.key === key;
+  });
+
+  protected readonly groupNotFound = computed(() => {
+    const key = this.catalogueLookupKey();
+    const cat = this.catalogue();
+    return !!key && cat.kind === 'not-found' && cat.key === key;
+  });
+
+  /** The catalogue row naming this page, when neither a signed row nor the picker does. */
+  private readonly catalogueOption = computed(() => {
+    if (this.listedGroupForAddress() || this.showingPreview()) return undefined;
+    const key = `${this.selectedOrgUid()}::${this.claGroupId()}`;
+    const cat = this.catalogue();
+    return cat.kind === 'group' && cat.key === key ? cat.option : undefined;
+  });
+
+  /** Why Start is hidden on a catalogue-backed unsigned overview, or '' when Start is offered. */
+  protected readonly catalogueSignBlockReason = computed(() => {
+    const option = this.catalogueOption();
+    if (!option) return '';
+    if (!option.projectSfid) return CCLA_SIGN_COPY.picker.multiProjectDisabledReason;
+    if (option.cclaEnabled !== true) return CCLA_SIGN_COPY.picker.cclaDisabledReason;
+    return '';
+  });
+
+  /**
+   * The non-executable review copy is the group's corporate template, and the CLA service refuses
+   * that template for a group with no corporate CLA. Hidden there rather than offered to fail. A
+   * group covering several projects still has one, so it keeps the review copy and loses only Start.
+   */
+  protected readonly offersReviewCopy = computed(() => {
+    const option = this.catalogueOption();
+    return !option || option.cclaEnabled === true;
+  });
+
+  /**
+   * A group address this page can say nothing about (#2364): no signed row, no matching picker
+   * choice, and no catalogue answer to build an overview from.
    *
-   * Rendered in place rather than redirected to the list, which is the behaviour this issue
-   * changes: the group address is the one a named signing overview will claim, so sending it to
-   * the list would contradict that. It is also not `notFound` — the group may well exist and be
-   * signable; what is absent is anything *this page* can say about it, because the list read
-   * returns signed agreements only and there is no fetch-a-group-by-id read to fall back on.
+   * Rendered in place rather than redirected to the list, because the group address is the one the
+   * signing overview claims. The catalogue read (#2293) names such an address, and an id it does
+   * not know is `groupNotFound`. What is left is a just-signed return, which the catalogue is
+   * deliberately not asked about and whose own pending state normally renders first.
    */
   protected readonly cannotPreview = computed(
-    () => this.hasCompany() && !this.claLoading() && !this.fetchError() && !!this.claData() && !!this.claGroupId() && !this.claGroup()
+    () =>
+      this.hasCompany() &&
+      !this.claLoading() &&
+      !this.fetchError() &&
+      !this.catalogueFailed() &&
+      !this.cataloguePending() &&
+      !this.groupNotFound() &&
+      !!this.claData() &&
+      !!this.claGroupId() &&
+      !this.claGroup()
   );
 
   // Withheld while `cannotPreview` owns the empty state, so one visit cannot render both. An
@@ -497,28 +615,42 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly status = computed(() => this.initStatus());
 
+  protected readonly viewOnly = computed(() => this.initViewOnly());
+
+  protected readonly viewOnlyCopy = ORG_CLA_VIEW_ONLY_COPY;
+
   protected readonly coverageChips = computed(() => this.initCoverageChips());
 
   protected readonly cclaHeading = computed(() => this.initCclaHeading());
 
   protected readonly coverageHint = computed(() => this.initCoverageHint());
 
-  // Read from `signed` rather than the status, because this component serves two sources and only
-  // the flag answers both: the preview builds an agreement nobody has signed, and `status` there
-  // is `not-started` while on a sanctioned list row it says nothing about whether a document
-  // exists. Offering the download on an agreement without one is a control that can only fail.
-  protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
+  protected readonly showDownload = computed(() => this.claGroup()?.signed === true);
+
+  protected readonly canDownload = computed(() => this.initCanDownload());
+
+  protected readonly downloadBlockedReason = computed(() => (this.canDownload() ? undefined : ORG_CLA_DOWNLOAD_COPY.offRosterTooltip));
+
+  protected readonly downloadAriaLabel = computed(() => this.initDownloadAriaLabel());
 
   /**
    * Whether the Auto ECLA toggle is shown at all.
-   *
-   * Three conjuncts: the row is signed (the producer stores the flag on the corporate signature,
-   * so an unsigned row has nothing to update), ACS granted the write (hide-on-deny — the design
-   * withholds the control from a viewer who cannot use it, since the disabled-with-banner
-   * pattern needs #1989 to explain itself), and this page is not showing the pre-sign preview
-   * (the row it would flip does not exist yet).
    */
-  protected readonly showAutoEclaToggle = computed(() => this.claGroup()?.signed === true && !this.showingPreview() && this.autoEclaAllowed() === true);
+  protected readonly showAutoEclaToggle = computed(() => this.initShowAutoEclaToggle());
+
+  /** Whether this viewer may move the switch, as opposed to only read it (#3406). */
+  protected readonly autoEclaWritable = computed(() => this.initAutoEclaWritable());
+
+  /** Whether the switch carries the sentence naming who can change it (#3406). */
+  protected readonly autoEclaLocked = computed(() => this.initAutoEclaLocked());
+
+  protected readonly autoEclaLockedHint = ORG_CLA_AUTO_ECLA_LOCKED_HINT;
+
+  /** Disabled for a viewer who cannot write, and for the length of a running write. */
+  protected readonly autoEclaDisabled = computed(() => !this.autoEclaWritable() || this.autoEclaPending());
+
+  /** Carries the locked sentence whenever it shows, so the reason is not sighted-only. */
+  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto Acknowledge — ${this.autoEclaLockedHint}` : 'Auto Acknowledge'));
 
   /**
    * The current toggle value the template binds to.
@@ -538,12 +670,14 @@ export class OrgEasyclaDetailComponent {
 
   private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
 
+  private readonly autoEclaFoundationSfid = computed(() => this.initAutoEclaFoundationSfid());
+
   private readonly autoEclaPermissionPair = computed(() => this.initAutoEclaPermissionPair());
 
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
   /**
-   * Read from the status rather than from `signed` being false, unlike `canDownload` above.
+   * Read from the status rather than from `signed` being false, unlike `showDownload` above.
    * Sanctions occupy the same status slot, and a sanctioned agreement carries its own explanatory
    * body in the design — walking that viewer through how to start signing would talk past the
    * reason they cannot.
@@ -568,7 +702,7 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
-  protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
+  protected readonly designeeRestingCopy = ORG_CLA_DESIGNEE_RESTING_COPY;
 
   /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
   private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
@@ -608,19 +742,17 @@ export class OrgEasyclaDetailComponent {
       this.hasPageState() ||
       !this.orgContextLoaded() ||
       !this.signingChoice() ||
-      this.previewOrgMismatch()
+      this.previewOrgMismatch() ||
+      !!this.catalogueSignBlockReason()
   );
 
   protected readonly startDisabledReason: Signal<string> = this.initStartDisabledReason();
 
+  protected readonly startLabel = computed(() => (this.alreadyDesignee() ? this.designeeRestingCopy.proceedLabel : this.notStartedCopy.startLabel));
+
   protected readonly startAriaLabel = computed(() => {
     const reason = this.startDisabledReason();
-    return reason ? `${this.notStartedCopy.startLabel} — ${reason}` : this.notStartedCopy.startLabel;
-  });
-
-  protected readonly identifySomeoneElseAriaLabel = computed(() => {
-    const reason = this.startDisabledReason();
-    return reason ? `${this.notStartedCopy.identifySomeoneElseLabel} — ${reason}` : this.notStartedCopy.identifySomeoneElseLabel;
+    return reason ? `${this.startLabel()} — ${reason}` : this.startLabel();
   });
 
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());
@@ -663,11 +795,66 @@ export class OrgEasyclaDetailComponent {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
       this.designeeNotice.set(null);
+      this.signatureStillUnlisted.set(false);
       if (this.pendingDesigneeWrite) {
         this.pendingDesigneeWrite = null;
         this.signingOpen.set(false);
       }
     });
+
+    // Pasted group address (#2293). Starts only once the signed list and any matching picker
+    // state have failed to name the page, and follows the live route param.
+    toObservable(this.catalogueLookupKey)
+      .pipe(
+        distinctUntilChanged(),
+        switchMap((key) => {
+          if (!key) return of(null);
+          const separator = key.indexOf('::');
+          const orgUid = key.slice(0, separator);
+          const claGroupId = key.slice(separator + 2);
+          return this.claService.getClaGroupCatalogue(orgUid, claGroupId).pipe(
+            map((option) => ({ key, outcome: 'group' as const, option })),
+            catchError((error: HttpErrorResponse) =>
+              of({ key, outcome: error.status === 404 || error.status === 400 ? ('not-found' as const) : ('error' as const) })
+            )
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((result) => {
+        if (!result) {
+          this.catalogue.set({ kind: 'idle' });
+          return;
+        }
+        if (result.outcome === 'group') {
+          this.catalogue.set({ kind: 'group', key: result.key, option: result.option });
+          return;
+        }
+        this.catalogue.set({ kind: result.outcome, key: result.key });
+      });
+
+    // Only the latest re-read may land: an older one can still name a viewer who has since
+    // removed themselves, and it would clear that hide.
+    this.rosterChanged$
+      .pipe(
+        switchMap((uid) =>
+          this.claService.getClaGroups(uid).pipe(
+            map((list) => ({ uid, list })),
+            takeUntil(this.listReloaded$),
+            catchError((error: unknown) => {
+              console.warn('Failed to refresh organization CLA groups after a manager change:', error);
+              return of(null);
+            })
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((refreshed) => {
+        if (!refreshed || this.selectedOrgUid() !== refreshed.uid) return;
+        const stillListed = new Set((refreshed.list?.claGroups ?? []).filter((group) => group.viewerIsClaManager === true).map((group) => group.id));
+        this.selfRemovals.keepOnly(refreshed.uid, stillListed);
+        this.retriedList$.next(refreshed.list);
+      });
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
     // change, because that change does not refetch the list.
@@ -708,8 +895,9 @@ export class OrgEasyclaDetailComponent {
     // Auto ECLA ACS check (#1988). Keyed on (organization, project SFID) exactly like the peer
     // managers panel — the pair the grant is written on, not the signature id, because ACS scopes
     // the grant to `project|organization`. The project is the pinned pair project, else the first
-    // covered project, else the foundation. Withheld while the group is unsigned (nothing to toggle) or while the pair
-    // is unresolvable (a data problem upstream that the toggle would silently open a 403 into).
+    // covered project, else the foundation. Not asked while the group is unsigned (nothing to toggle). An unresolvable
+    // pair (a data problem upstream that a write would open a 403 into) answers `false` without asking, so the
+    // toggle settles disabled rather than left pending.
     // `null` resets the allowed signal so a stale answer cannot outlive the row it was fetched for.
     toObservable(this.autoEclaPermissionPair)
       .pipe(
@@ -719,8 +907,8 @@ export class OrgEasyclaDetailComponent {
         }),
         switchMap((pair) => {
           if (!pair) return of(false);
-          const [orgUid, projectSfid] = pair.split('::');
-          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid);
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid, foundationSfid || undefined);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -747,6 +935,12 @@ export class OrgEasyclaDetailComponent {
     // since left, and re-rendering it under the new one would be wrong rather than merely empty.
   }
 
+  /** Reloads the address `settleReturn` already stripped, so a copied link cannot reopen the wait. */
+  protected reloadPage(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    globalThis.location.reload();
+  }
+
   protected selectTab(tab: OrgClaDetailTab): void {
     this.activeTab.set(tab);
   }
@@ -769,6 +963,16 @@ export class OrgEasyclaDetailComponent {
     const signatureId = this.claGroup()?.id;
     if (!signatureId) return;
     this.loadedManagerCount.set({ signatureId, count });
+  }
+
+  /**
+   * Re-reads the organization's CLA list after a manager was added or the viewer removed themselves,
+   * so the roster flag is recomputed by the server. Fed through `retriedList$` rather than `orgUid$`, which would put
+   * the skeleton over the Managers panel that just reported the change.
+   */
+  protected onRosterChanged(): void {
+    const uid = this.selectedOrgUid();
+    if (uid) this.rosterChanged$.next(uid);
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
@@ -804,27 +1008,13 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.continueAsManager(context.orgUid, context.chosen, 'attest');
-  }
-
-  /**
-   * Opens the send-by-email path from the unsigned Overview, skipping attestation (#2365).
-   *
-   * Same guards as Start: the page already named the CLA Group, and a race click against the
-   * wrong organization must not mail a signature request for it.
-   */
-  protected identifySomeoneElse(): void {
-    const context = this.requireSignableContext();
-    if (!context) return;
-
-    this.signingOpen.set(true);
-    this.continueAsManager(context.orgUid, context.chosen, 'mail');
+    this.continueAsManager(context.orgUid, context.chosen);
   }
 
   protected onDownload(): void {
     const group = this.claGroup();
     const orgUid = this.accountContext.selectedAccount()?.uid;
-    if (!group || !orgUid || this.downloading()) return;
+    if (!group || !orgUid || !this.canDownload() || this.downloading()) return;
 
     this.downloading.set(true);
     this.claService
@@ -859,7 +1049,7 @@ export class OrgEasyclaDetailComponent {
   protected onReviewCopyDownload(): void {
     const claGroupId = this.claGroup()?.claGroupId || this.claGroupId();
     const orgUid = this.accountContext.selectedAccount()?.uid;
-    if (!claGroupId || !orgUid || this.reviewCopyDownloading()) return;
+    if (!claGroupId || !orgUid || this.reviewCopyDownloading() || !this.offersReviewCopy()) return;
 
     this.reviewCopyDownloading.set(true);
     this.claService
@@ -872,16 +1062,11 @@ export class OrgEasyclaDetailComponent {
       .subscribe({
         next: (blob) => {
           const url = URL.createObjectURL(blob);
-          const groupName = this.claGroup()?.claGroupName;
-          downloadFromUrl(url, groupName ? `${groupName}-ccla-review.pdf` : ORG_CLA_REVIEW_COPY_FILENAME);
+          downloadFromUrl(url, orgClaReviewCopyFilename(this.claGroup()?.claGroupName));
           setTimeout(() => URL.revokeObjectURL(url), 0);
         },
         error: () => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Download failed',
-            detail: 'Could not download a review copy of the CCLA. Please try again.',
-          });
+          this.messageService.add({ severity: 'error', ...ORG_CLA_REVIEW_COPY_FAILURE });
         },
       });
   }
@@ -907,8 +1092,8 @@ export class OrgEasyclaDetailComponent {
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
-   * `serverAuthoredMessage`. The toast summary names the value that failed to save
-   * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
+   * `serverAuthoredMessage`. The toast summary names the value that failed to save.
+   * The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
@@ -919,6 +1104,12 @@ export class OrgEasyclaDetailComponent {
    */
   protected onAutoEclaToggle(next: boolean): void {
     if (this.autoEclaPending()) return;
+
+    // The switch is rendered for a viewer who cannot move it (#3406), so this path can now be
+    // reached by something other than a click on an enabled control. Refusing here keeps the
+    // optimistic value from being written for a viewer whose request the server will refuse; it
+    // is not what stops the write, which the application server and EasyCLA each do themselves.
+    if (!this.autoEclaWritable()) return;
 
     const group = this.claGroup();
     const orgUid = this.selectedOrgUid();
@@ -942,7 +1133,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'success',
-          summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+          summary: written ? 'Auto Acknowledge turned on.' : 'Auto Acknowledge turned off.',
         });
       },
       error: (error: HttpErrorResponse) => {
@@ -950,7 +1141,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'error',
-          summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+          summary: next ? "Couldn't turn Auto Acknowledge on" : "Couldn't turn Auto Acknowledge off",
           detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
         });
       },
@@ -969,46 +1160,42 @@ export class OrgEasyclaDetailComponent {
   /**
    * The organization and agreement to sign, or null when this click must be refused.
    *
-   * Shared by both entry points so a guard cannot be added to one and missed on the other,
-   * leaving the same agreement signable down one path and refused down the other.
-   *
-   * The wrong-org refusal is not redundant with the disabled state: the mismatch redirect is
-   * asynchronous, so a click can arrive during a brief window where the button is enabled against
-   * a currently-selected organization the preview was not made for.
+   * Refuses on exactly `startDisabled`, read again at the click, so an enabled Start is never one
+   * that drops the click. That includes the wrong-org refusal: the mismatch redirect is
+   * asynchronous, so a click can arrive while the selected organization is not the one the preview
+   * was made for, and `previewOrgMismatch` already says so. A picker choice the page is no longer
+   * showing is not consulted, because it no longer names the agreement on screen.
    */
   private requireSignableContext(): { orgUid: string; chosen: OrgClaGroupPickerResult } | null {
     const orgUid = this.accountContext.selectedAccount()?.uid;
     const chosen = this.signingChoice();
-    if (!orgUid || !chosen || this.signingOpen() || this.alreadyMailedCurrentAgreement()) return null;
-    if (this.previewSelection && this.previewSelection.orgUid !== orgUid) return null;
+    if (!orgUid || !chosen || this.startDisabled()) return null;
 
     return { orgUid, chosen };
   }
 
   /** The Start lock stays held until whichever step ends the flow. */
-  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult): void {
     if (this.alreadyDesignee()) {
-      this.openChosenStep(orgUid, chosen, next);
+      this.confirmThenHandOff(orgUid, chosen);
       return;
     }
 
-    const questionRef = this.dialogService.open(OrgEasyclaManagerQuestionDialogComponent, orgClaManagerQuestionDialogConfig()) as DynamicDialogRef;
+    const questionRef = this.dialogService.open(
+      OrgEasyclaManagerQuestionDialogComponent,
+      orgClaManagerQuestionDialogConfig({ onYes: () => this.assignDesignee(orgUid, chosen, questionRef) })
+    ) as DynamicDialogRef;
+    nameDynamicDialog(this.dialogService, questionRef, OrgEasyclaManagerQuestionDialogComponent.headingId);
     this.uncommittedSigningDialog = questionRef;
 
-    this.whenSigningDialogEnds(questionRef, (answer: OrgClaManagerAnswer) => {
+    this.whenSigningDialogEnds(questionRef, () => {
       // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
-      // the answer names no organization or agreement.
+      // the result names no organization or agreement.
       this.afterDialogTornDown(questionRef, () => {
         if (!this.signingContextHeld(orgUid, chosen)) return;
-        if (answer === 'yes') this.assignDesignee(orgUid, chosen, next);
-        else this.openIdentifyManager(orgUid, chosen);
+        this.openIdentifyManager(orgUid, chosen);
       });
     });
-  }
-
-  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
-    if (next === 'attest') this.confirmThenHandOff(orgUid, chosen);
-    else this.openSendByEmailIfContextHeld(orgUid, chosen);
   }
 
   /** Whether the page is still on this organization and signing pair; releases Start when it is not. */
@@ -1026,18 +1213,24 @@ export class OrgEasyclaDetailComponent {
     return false;
   }
 
-  /** Yes: make the viewer the designee, then continue; a refusal leaves them on the overview with the reason. */
-  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, questionRef: DynamicDialogRef): void {
+    // A dismissed question stays clickable through its leave animation, still `asking`.
+    if (this.uncommittedSigningDialog !== questionRef) return;
+    if (!this.signingContextHeld(orgUid, chosen)) {
+      questionRef.close();
+      return;
+    }
+
     const write = this.holdDesigneeWrite();
     this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
       next: () => {
         this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
-        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
-        this.openChosenStep(orgUid, chosen, next);
+        this.releaseDesigneeWrite(write);
+        questionRef.close();
       },
       error: (error: unknown) => {
+        questionRef.close();
         if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
-        this.signingOpen.set(false);
         this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
       },
     });
@@ -1150,7 +1343,13 @@ export class OrgEasyclaDetailComponent {
       closable: false,
       closeOnEscape: false,
       dismissableMask: false,
-      data: { orgUid, projectSfid: chosen.projectSfid, claGroupId: chosen.claGroupId, attestations },
+      data: {
+        orgUid,
+        projectSfid: chosen.projectSfid,
+        claGroupId: chosen.claGroupId,
+        attestations,
+        claGroupName: this.claGroup()?.claGroupName,
+      } satisfies OrgClaSignHandoffDialogData,
     }) as DynamicDialogRef;
 
     nameDynamicDialog(this.dialogService, handoffRef, OrgEasyclaSignHandoffComponent.headingId);
@@ -1279,7 +1478,7 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * Why Start and Identify someone else are refused, or '' when they are not.
+   * Why Start is refused, or '' when it is not.
    *
    * Ordered most-general first, so the reason names the outermost cause: an account without Org
    * Lens at all is told that, not that it has yet to select an organization.
@@ -1305,16 +1504,26 @@ export class OrgEasyclaDetailComponent {
     // for an unsigned row, which carries the organization's own coverage and counts where the
     // selection carries only two names.
     const listed = this.listedGroupForAddress();
-    if (listed) return listed;
+    if (listed) {
+      return this.selfRemovals.removed(this.selectedOrgUid(), listed.id) ? { ...listed, viewerIsClaManager: false } : listed;
+    }
 
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.
-    return this.showingPreview() && this.previewSelection ? orgClaPreviewGroup(this.previewSelection) : undefined;
+    if (this.showingPreview() && this.previewSelection) return orgClaPreviewGroup(this.previewSelection);
+
+    const option = this.catalogueOption();
+    return option ? orgClaCatalogueGroup(option) : undefined;
   }
 
-  private initStatus(): OrgClaStatusDisplay | undefined {
+  private initViewOnly(): boolean {
     const group = this.claGroup();
-    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : undefined;
+    return !!group && orgClaIsViewOnly(group);
+  }
+
+  private initStatus(): OrgClaStatusDisplay | null {
+    const group = this.claGroup();
+    return group ? ORG_CLA_STATUS_DISPLAY[group.status] : null;
   }
 
   private initCoverageChips(): OrgClaCoverageChip[] {
@@ -1384,6 +1593,87 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
   }
 
+  /**
+   * Whether the control does anything, as opposed to {@link showDownload}, which is whether it is
+   * on the page at all. Off the roster it renders disabled and explains itself, because a reader
+   * who cannot download is better served learning the document exists and who to ask than by a
+   * section that silently loses a button.
+   *
+   * Read from `signed` rather than the status, because this component serves two sources and only
+   * the flag answers both: the preview builds an agreement nobody has signed, and `status` there
+   * is `not-started` while on a sanctioned list row it says nothing about whether a document
+   * exists.
+   *
+   * The roster conjunct is the authorization half. EasyCLA authorizes the signed document on an
+   * ACS `project` or `project|organization` grant, and the company-level grant that let the
+   * viewer open this page is not one of them, so an organization admin is routinely refused. The
+   * roster stands in for that grant rather than duplicating it, because holding the CLA manager
+   * role is what issues it, so there is no second ACS conjunct here as there is on the Auto ECLA
+   * toggle. The two disagree only while ACS propagates, which is what `onDownload`'s fail-closed
+   * toast covers. Restricting the control is the decided shape rather than widening the
+   * producer's ACL.
+   */
+  private initCanDownload(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && group.viewerIsClaManager === true;
+  }
+
+  /**
+   * The reason a disabled control is disabled belongs in the accessible name, not only in the
+   * tooltip: a disabled button is not focusable, so a keyboard or screen-reader user never reaches
+   * the hover the sighted reader gets. Same reasoning as the refused sign control above.
+   */
+  private initDownloadAriaLabel(): string {
+    if (this.downloading()) return 'Preparing the signed CCLA PDF for download';
+    if (!this.canDownload()) return `Download signed CCLA PDF. ${ORG_CLA_DOWNLOAD_COPY.offRosterTooltip}`;
+    return 'Download signed CCLA PDF';
+  }
+
+  /**
+   * Two conjuncts, both about whether there is a value to read: the row is signed (the producer
+   * stores the flag on the corporate signature, so an unsigned row has nothing to show or
+   * update), and this page is not showing the pre-sign preview (the row it would flip does not
+   * exist yet).
+   *
+   * Neither authorization check is here (#3406). Whether Auto ECLA is on is a fact about the
+   * agreement, and a viewer who may read the agreement may read it — so the two write checks
+   * decide whether the switch can be moved, not whether it is rendered. That narrows the
+   * hide-on-deny rule to the controls whose state says nothing on its own (the approval-list
+   * mutations and Invalidate), which keep it.
+   */
+  private initShowAutoEclaToggle(): boolean {
+    const group = this.claGroup();
+    return group?.signed === true && !this.showingPreview();
+  }
+
+  /**
+   * Whether this viewer may move the switch.
+   *
+   * Both of the write path's own checks, and both must pass: the viewer is on the agreement's
+   * CLA Manager list (EasyCLA refuses the write otherwise, whatever ACS says) and ACS granted
+   * `ecla_auto_create:update` for the pair. Neither is a guard — the application server refuses
+   * the write independently, and EasyCLA refuses it again. This only decides what the control
+   * offers to do.
+   *
+   * Fails closed, including while the ACS answer is still `null`.
+   */
+  private initAutoEclaWritable(): boolean {
+    return this.claGroup()?.viewerIsClaManager === true && this.autoEclaAllowed() === true;
+  }
+
+  /**
+   * Whether to explain why the switch cannot be moved: only when the roster is the reason.
+   *
+   * Deliberately not `!autoEclaWritable()`. The sentence names CLA Manager as the role that can
+   * change the setting, which is false for a viewer on the roster. A roster CLA manager whose ACS
+   * answer is `false` (a missing grant, or a failed check, which `checkPermission` cannot tell
+   * apart) gets a disabled switch with no sentence rather than one that contradicts them. The
+   * ACS answer plays no part, so a viewer off the roster is told at once, not a round trip later.
+   */
+  private initAutoEclaLocked(): boolean {
+    return this.showAutoEclaToggle() && this.claGroup()?.viewerIsClaManager !== true;
+  }
+
   private initAutoEclaValue(): boolean {
     const orgUid = this.selectedOrgUid();
     const signatureId = this.claGroup()?.id;
@@ -1419,12 +1709,18 @@ export class OrgEasyclaDetailComponent {
     return group ? (orgClaPairProjectSfid(group) ?? '') : '';
   }
 
+  private initAutoEclaFoundationSfid(): string {
+    const group = this.claGroup();
+    return group ? (orgClaPairFoundationSfid(group) ?? '') : '';
+  }
+
   private initAutoEclaPermissionPair(): string {
     const group = this.claGroup();
     if (!group?.signed || this.showingPreview()) return '';
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.autoEclaProjectSfid();
-    return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+    const foundationSfid = this.autoEclaFoundationSfid();
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   private initDesigneePair(): string | null {
@@ -1574,7 +1870,10 @@ export class OrgEasyclaDetailComponent {
       tap(() => {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
+        this.easyclaRoleMissing.set(false);
         this.autoEclaWrites.forgetSettled();
+        this.selfRemovals.forgetAll();
+        this.listReloaded$.next();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(
@@ -1582,6 +1881,7 @@ export class OrgEasyclaDetailComponent {
           catchError((error: HttpErrorResponse) => {
             console.error('Failed to load organization CLA groups:', error.status, error.message);
             this.fetchError.set(true);
+            this.easyclaRoleMissing.set(error.status === 403 && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE);
             this.claLoadingState.set(false);
             return of(null);
           })
@@ -1728,7 +2028,23 @@ export class OrgEasyclaDetailComponent {
       skipWhile((current) => current !== uid),
       filter((current) => current !== uid)
     );
-    movedOff$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
+
+    // The address picks out which agreement this return is about: `:claGroupId` names the group,
+    // `sig` the row within it. The component is reused when either changes, so a wait left running
+    // can complete after the page has moved to another agreement and set the still-confirming
+    // state on *that* visit — one nobody just signed. Watched here, independent of the retries,
+    // so the trip is torn down and settled regardless of which half of the wait is in flight.
+    const startClaGroupId = this.claGroupId();
+    const startSignatureId = this.signatureId();
+    const agreementChanged$ = combineLatest([
+      toObservable(this.claGroupId, { injector: this.injector }),
+      toObservable(this.signatureId, { injector: this.injector }),
+    ]).pipe(
+      skip(1),
+      filter(([group, sig]) => group !== startClaGroupId || sig !== startSignatureId)
+    );
+    const tripEnded$ = merge(movedOff$, agreementChanged$);
+    tripEnded$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => this.settleReturn());
 
     const settled$ = toObservable(
       computed(() => ({
@@ -1741,7 +2057,7 @@ export class OrgEasyclaDetailComponent {
       // thing right up until they are not, and the moment they diverge is the moment this matters.
     ).pipe(filter(({ data, fetching, failed }) => failed || (data?.orgUid === uid && !fetching)));
 
-    settled$.pipe(takeUntil(movedOff$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+    settled$.pipe(takeUntil(tripEnded$), take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       // Nothing may be decided on a list that arrives after the trip is already over — acting on it
       // would flash the confirming line and spend a retry budget on a company nobody asked about.
       // The uid binding above and `movedOff$` are what close that window; this is the cheap check
@@ -1754,7 +2070,7 @@ export class OrgEasyclaDetailComponent {
       }
 
       this.confirmingSignature.set(true);
-      this.retryForSignedRow(uid, movedOff$);
+      this.retryForSignedRow(uid, startClaGroupId, startSignatureId, tripEnded$);
     });
   }
 
@@ -1770,11 +2086,12 @@ export class OrgEasyclaDetailComponent {
    * company they deliberately left. Giving up still spends the trip, so the address is cleaned up
    * rather than left to reopen the wait on reload.
    *
-   * `uid` and `movedOff$` are both handed down rather than rebuilt here: reading the selection
-   * again would ask the same question at a later moment and can get a different answer, which is
-   * the whole family of bug this keying exists to end.
+   * `uid`, the captured agreement ids, and `tripEnded$` are all handed down rather than rebuilt
+   * here: reading the selection or the address again would ask the same question at a later
+   * moment and can get a different answer, which is the whole family of bug this keying exists to
+   * end.
    */
-  private retryForSignedRow(uid: string, movedOff$: Observable<string | null | undefined>): void {
+  private retryForSignedRow(uid: string, startClaGroupId: string, startSignatureId: string, tripEnded$: Observable<unknown>): void {
     timer(OrgEasyclaDetailComponent.signedRowRetryDelayMs, OrgEasyclaDetailComponent.signedRowRetryDelayMs)
       .pipe(
         take(OrgEasyclaDetailComponent.signedRowRetries),
@@ -1799,13 +2116,26 @@ export class OrgEasyclaDetailComponent {
           if (!list) return;
           this.retriedList$.next(list);
           this.fetchError.set(false);
+          this.easyclaRoleMissing.set(false);
         }),
         map(() => this.listedGroupForAddress()),
-        takeUntil(movedOff$),
+        takeUntil(tripEnded$),
+        takeUntil(timer(OrgEasyclaDetailComponent.signedRowWaitDeadlineMs)),
         first((found) => !!found, undefined),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.settleReturn());
+      .subscribe((found) => {
+        // A list that came back without the row is "still landing", not "hasn't signed". A hard
+        // failure leaves the load error in place, and leaving the organization — or opening
+        // another agreement in this component — must not stamp *that* visit with a confirmation
+        // state for one nobody just signed. The agreement check is the fence; `tripEnded$`
+        // already cancels in those cases, but a late emission that races the cancellation would
+        // still carry the stale ids without this guard.
+        const stillHere =
+          this.accountContext.selectedAccount()?.uid === uid && this.claGroupId() === startClaGroupId && this.signatureId() === startSignatureId;
+        if (!found && stillHere && !this.fetchError()) this.signatureStillUnlisted.set(true);
+        this.settleReturn();
+      });
   }
 
   /**
@@ -1818,10 +2148,12 @@ export class OrgEasyclaDetailComponent {
    * `replaceUrl` because the address being left behind is the return address, and a history entry
    * for it is one Back re-enters — spending the wait again and stripping the parameters all over.
    *
-   * Once the flag is gone the page settles through its ordinary discriminator: the row if the wait
-   * found one, otherwise `cannotPreview` on this group's own address. It stays here rather than
-   * redirecting to the list, because this address is the one the agreement will have once EasyCLA
-   * catches up, and a reload is then all it takes.
+   * Once the flag is gone the page settles on this group's own address. A wait that ended with a
+   * list and no row shows the still-confirming empty state for the rest of this visit. Every other
+   * ending uses the ordinary discriminator, including `cannotPreview` for an unflagged address. It
+   * stays here rather than redirecting to the list, because this address is the one the agreement
+   * will have once EasyCLA catches up, and a reload is then all it takes. A reload of the stripped
+   * address does not remember the trip: if the row is still absent, that load is `cannotPreview`.
    */
   private settleReturn(): void {
     // Once only. A switch away from the named organization and the wait's own answer can both land

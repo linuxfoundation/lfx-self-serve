@@ -3,7 +3,7 @@
 
 import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -32,7 +32,9 @@ import { MenteeApplyComponent } from './mentee-apply.component';
   selector: 'lfx-mentorship-profile-card',
   template: '<div data-testid="mentorship-profile-card-stub"></div>',
 })
-class StubProfileCardComponent {}
+class StubProfileCardComponent {
+  public readonly syncMentorshipProfiles = input(false);
+}
 
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
@@ -131,6 +133,14 @@ describe('MenteeApplyComponent', () => {
     expect(getMenteeProfile).not.toHaveBeenCalled();
   });
 
+  it('tells the profile card to copy a saved LFX profile onto the mentorship profiles', async () => {
+    await bootstrap(applyParams);
+
+    expect((fixture.debugElement.query(By.directive(StubProfileCardComponent)).componentInstance as StubProfileCardComponent).syncMentorshipProfiles()).toBe(
+      true
+    );
+  });
+
   it('renders the header, back link, and the four review sections', async () => {
     await bootstrap(applyParams);
 
@@ -215,6 +225,40 @@ describe('MenteeApplyComponent', () => {
     expect(clearMenteeCaches).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
     expect(toast).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['eligibility criteria not met: create a mentee profile, confirming the eligibility criteria, before applying', 'Complete your mentee profile first'],
+    [
+      'eligibility criteria not met: reapplication limit reached: you have withdrawn 3 applications for this term and cannot apply to it again',
+      'You can no longer apply to this term',
+    ],
+    ['eligibility criteria not met: the mentee already holds an accepted mentorship', 'You are already in a mentorship'],
+    [
+      'eligibility criteria not met: you already have 3 applications under review; withdraw one before applying again',
+      'You have reached the application limit',
+    ],
+    ['eligibility criteria not met: application window has not opened yet', 'Applications have not opened yet'],
+  ])('shows the specific state for the upstream reason "%s"', async (message, title) => {
+    applyToMenteeTerm.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422, error: { error: message, code: 'VALIDATION_ERROR' } })));
+    await bootstrap(applyParams);
+
+    submit();
+
+    expect(blockedState()?.getAttribute('data-reason')).toBe('closed');
+    expect(blockedState()?.textContent).toContain(title);
+    expect(blockedState()?.textContent).not.toContain('eligibility criteria not met');
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("keeps the status's own copy when upstream's message names no known rule", async () => {
+    applyToMenteeTerm.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'conflict', code: 'CONFLICT' } })));
+    await bootstrap(applyParams);
+
+    submit();
+
+    expect(blockedState()?.textContent).toContain('You already applied to this term');
+    expect(blockedState()?.textContent).not.toContain('conflict');
   });
 
   it('shows the already-applied state on 409 and drops the cached applications', async () => {

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { EMAIL_LINKED_SUPPORT_CONTEXT_PARAM, EMAIL_LINKED_SUPPORT_HANDLE_PATTERN } from '../../../../../packages/shared/src/constants/profile.constants';
+import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
 
 // profile.controller.spec.ts mocks AuthStateService entirely (its `authStateSvc` is a bare
 // vi.fn() object), so a regression to the real issue/consume wiring — e.g. reverting the atomic
@@ -9,9 +11,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // that suite unnoticed. This suite uses the REAL AuthStateService and only fakes its Valkey
 // dependency, so it genuinely exercises the nonce lifecycle through the controller (#1938 review,
 // copilot-pull-request-reviewer on PR #2604).
-const { profileAuthSvc, fakeValkey, stubConstructor } = vi.hoisted(() => {
+const { profileAuthSvc, fakeValkey, stubConstructor, verifyOtp } = vi.hoisted(() => {
   const store = new Map<string, string>();
   return {
+    verifyOtp: vi.fn(),
     stubConstructor: vi.fn(function (this: object) {
       return this;
     }),
@@ -44,23 +47,33 @@ const { profileAuthSvc, fakeValkey, stubConstructor } = vi.hoisted(() => {
 
 vi.mock('@lfx-one/shared/constants', () => ({
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(),
   AUTH0_TO_CDP_PROVIDER_MAP: {},
   CDP_DISPLAYABLE_IDENTITY_COMBOS: [],
   CDP_PLATFORM_ICONS: {},
   CDP_PLATFORM_TO_TYPE_MAP: {},
   CDP_TO_AUTH0_PROVIDER_MAP: {},
+  EMAIL_ALREADY_CONNECTED_MESSAGE: 'already connected',
+  EMAIL_ALREADY_CONNECTED_STATUS: 'already_connected',
   EMAIL_ALREADY_LINKED_MESSAGE: 'already linked',
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS: 'already_linked',
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: 'retry_required',
+  EMAIL_CALLBACK_STATUS_PARAM: 'email_status',
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
+  EMAIL_LINKED_SUPPORT_HANDLE_PATTERN,
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
+  GITLAB_AUTH0_CONNECTION: 'gitlab',
+  GITLAB_AUTH0_PROVIDER: 'oauth2',
   PROFILE_EMAIL_PATH: '/profile/email',
   PROFILE_EMAILS_PATH: '/profile/emails',
   PROFILE_PASSWORD_PATH: '/profile/password',
   PROFILE_SETTINGS_PATH: '/profile/settings',
   PROFILE_VISIBILITY_KEYS: [],
   PURCHASE_LINUX_URL: 'https://example.com',
-  VALKEY_CACHE: { AUTH_STATE_TTL_SECONDS: 600, AUTH_STATE_OP_TIMEOUT_MS: 3000 },
+  VALKEY_CACHE,
 }));
 vi.mock('@lfx-one/shared/utils', () => ({
-  isIdentityAlreadyLinkedError: vi.fn(() => false),
+  isIdentityAlreadyLinkedError: (error: unknown) => error === 'email already linked',
   isMeetingInvitePrimarySentinel: (value: string | null | undefined) => (value ?? '').trim().toLowerCase() === 'primary',
   emailsEqual: (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase(),
 }));
@@ -93,7 +106,11 @@ vi.mock('../services/logger.service', () => ({
 // only exercises the Flow C callback path, which never calls them.
 vi.mock('../services/auth0.service', () => ({ Auth0Service: stubConstructor }));
 vi.mock('../services/cdp.service', () => ({ CdpService: stubConstructor }));
-vi.mock('../services/email-verification.service', () => ({ EmailVerificationService: stubConstructor }));
+vi.mock('../services/email-verification.service', () => ({
+  EmailVerificationService: vi.fn(function () {
+    return { verifyOtp };
+  }),
+}));
 vi.mock('../services/enrollment.service', () => ({ EnrollmentService: stubConstructor }));
 vi.mock('../services/forwards.service', () => ({ ForwardsService: stubConstructor }));
 vi.mock('../services/meeting-preference.service', () => ({ MeetingPreferenceService: stubConstructor }));
@@ -115,6 +132,7 @@ vi.mock('../services/profile-auth.service', () => ({
 vi.mock('../services/valkey.service', () => ({
   valkeyService: fakeValkey,
   buildAuthStateCacheKey: (state: string) => `lfx-ui:auth-state:v1:${state}`,
+  buildLinkedEmailSupportCacheKey: (sub: string, handle: string) => JSON.stringify([sub, handle]),
 }));
 
 import { AuthStateService } from '../services/auth-state.service';
@@ -203,5 +221,81 @@ describe('ProfileController + real AuthStateService — Flow C survives a concur
     // A fault must be treated the same as an authoritative miss — no session fallback, no
     // acceptance of the nonce (auth-state.service.ts's fail-closed-on-fault guarantee).
     expect(res.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+  });
+
+  // A pending email verification is replayed only after the nonce and sub checks pass. Without a
+  // usable management token it is dropped once with the generic retry marker and never replayed.
+  describe('with a pending email verification (#4253)', () => {
+    const pendingEmailVerification = { email: 'pending@example.test', otp: '654321' };
+
+    it('rejects a nonce issued to a different sub and leaves the pending attempt untouched', async () => {
+      const authStateService = new AuthStateService();
+      const state = await authStateService.issue(buildReq(), 'user-1', '/profile/emails');
+      const appSession = { pendingEmailVerification: { ...pendingEmailVerification } };
+
+      const res = buildRes();
+      await controller.handleProfileAuthCallback(buildReq({ query: { code: 'c', state }, oidc: { user: { sub: 'someone-else' } }, appSession }), res);
+
+      expect(res.redirect).toHaveBeenCalledWith('/profile/emails?error=invalid_state');
+      expect(profileAuthSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+      expect(profileAuthSvc.getManagementToken).not.toHaveBeenCalled();
+      expect(appSession.pendingEmailVerification).toEqual(pendingEmailVerification);
+    });
+
+    it('consumes the attempt once on the valid callback and rejects a replay without an email outcome', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+      const authStateService = new AuthStateService();
+      const state = await authStateService.issue(buildReq(), 'user-1', '/profile/emails');
+      const appSession: { pendingEmailVerification?: typeof pendingEmailVerification } = { pendingEmailVerification: { ...pendingEmailVerification } };
+
+      const res = buildRes();
+      await controller.handleProfileAuthCallback(buildReq({ query: { code: 'c', state }, oidc: { user: { sub: 'user-1' } }, appSession }), res);
+
+      expect(res.redirect).toHaveBeenCalledWith('/profile/emails?success=profile_token_obtained&email_status=retry_required');
+      expect(appSession.pendingEmailVerification).toBeUndefined();
+
+      const replayRes = buildRes();
+      await controller.handleProfileAuthCallback(buildReq({ query: { code: 'c2', state }, oidc: { user: { sub: 'user-1' } }, appSession }), replayRes);
+
+      expect(replayRes.redirect).toHaveBeenCalledWith('/profile?error=invalid_state');
+      expect(profileAuthSvc.exchangeCodeForToken).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('Flow C linked-email callback + real one-shot support context', () => {
+  it('passes a proven address through the opaque redirect to its own consume request only', async () => {
+    fakeValkey.store.clear();
+    vi.clearAllMocks();
+    profileAuthSvc.isProfileAuthConfigured.mockReturnValue(true);
+    profileAuthSvc.decodeAndValidateSub.mockReturnValue(true);
+    profileAuthSvc.exchangeCodeForToken.mockResolvedValue({ access_token: 'synthetic-mgmt-token', token_type: 'Bearer', scope: '', expires_in: 3600 });
+    profileAuthSvc.getManagementToken.mockReturnValue('synthetic-mgmt-token');
+    verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+    const state = await new AuthStateService().issue(buildReq(), 'synthetic-user', '/profile/identities');
+    const controller = new ProfileController();
+    const callback = buildReq({
+      query: { code: 'synthetic-code', state },
+      oidc: { user: { sub: 'synthetic-user' } },
+      appSession: { pendingEmailVerification: { email: 'linked@example.test', otp: '654321' } },
+    });
+    const redirectRes = buildRes();
+    await controller.handleProfileAuthCallback(callback, redirectRes);
+    const redirect = new URL(redirectRes.redirect.mock.calls[0][0], 'https://app.example.test');
+    expect(redirect.searchParams.get('email_status')).toBe('already_linked');
+    const handle = redirect.searchParams.get(EMAIL_LINKED_SUPPORT_CONTEXT_PARAM);
+    expect(handle).toMatch(EMAIL_LINKED_SUPPORT_HANDLE_PATTERN);
+    expect(redirect.href).not.toContain('linked%40');
+    expect(redirect.href).not.toContain('654321');
+    expect(callback.appSession.pendingEmailVerification).toBeUndefined();
+    const wrongUser = buildRes();
+    await controller.consumeLinkedEmailSupportContext(buildReq({ oidc: { user: { sub: 'other-synthetic-user' } }, body: { handle } }), wrongUser);
+    expect(wrongUser.json).toHaveBeenCalledWith({});
+    const consumed = buildRes();
+    await controller.consumeLinkedEmailSupportContext(buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: { handle } }), consumed);
+    expect(consumed.json).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    const replay = buildRes();
+    await controller.consumeLinkedEmailSupportContext(buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: { handle } }), replay);
+    expect(replay.json).toHaveBeenCalledWith({});
   });
 });

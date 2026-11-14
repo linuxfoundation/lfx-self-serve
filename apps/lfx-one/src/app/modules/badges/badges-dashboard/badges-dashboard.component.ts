@@ -18,13 +18,24 @@ import { catchError, map, of, startWith, tap } from 'rxjs';
 
 import { BadgesService } from '../../../shared/services/badges.service';
 import { BadgeCardComponent } from './components/badge-card/badge-card.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 const BADGES_PER_PAGE = 12;
 const SKELETON_COUNT = 6;
 
 @Component({
   selector: 'lfx-badges-dashboard',
-  imports: [BadgeCardComponent, CardComponent, FilterPillsComponent, ReactiveFormsModule, SelectComponent, Paginator, PopoverModule, SkeletonModule],
+  imports: [
+    BadgeCardComponent,
+    CardComponent,
+    FilterPillsComponent,
+    ReactiveFormsModule,
+    SelectComponent,
+    Paginator,
+    PopoverModule,
+    SkeletonModule,
+    PageHeaderComponent,
+  ],
   templateUrl: './badges-dashboard.component.html',
   styleUrl: './badges-dashboard.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -16,6 +16,7 @@ import {
   MOCK_CATEGORY_ROWS,
   MOCK_SUMMARY,
   ORG_ROI_URL,
+  skipUnlessLfStaff,
   skipWhenAuthMissing,
   stubOrgLensContext,
   SUB_THRESHOLD_CATEGORY_COUNT,
@@ -38,6 +39,10 @@ const EXPECTED_PROJECT_COUNT = `${MOCK_SUMMARY.nProjects.toLocaleString('en-US')
 
 const LATEST_ANNUAL = MOCK_ANNUAL.rows[MOCK_ANNUAL.rows.length - 1] as { year: number; totalReturn: number; expenditure: number };
 
+/** The cumulative view's final point: every year summed, which is the lifetime total by construction. */
+const EXPECTED_CUMULATIVE_INVESTMENT = formatCurrency(MOCK_ANNUAL.rows.reduce((sum, row) => sum + row.expenditure, 0));
+const EXPECTED_CUMULATIVE_RETURN = formatCurrency(MOCK_ANNUAL.rows.reduce((sum, row) => sum + row.totalReturn, 0));
+
 test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   test('renders the page shell and the four headline figures', async ({ page }) => {
     await stubOrgLensContext(page);
@@ -57,15 +62,13 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(kpi).toContainText(EXPECTED_PROJECT_COUNT);
   });
 
-  test('discloses that the investment figure is a modelled cost, not compensation', async ({ page }) => {
+  test('discloses how the investment figure is derived, and that no pay data is used', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-kpi-explanations-toggle').click();
-    const investment = page.getByTestId('org-roi-kpi-explanation-total-expenditure');
+    await page.getByTestId('org-roi-model-overview-toggle').click();
+    const investment = page.getByTestId('org-roi-model-overview-investment');
     await expect(investment).toBeVisible();
-    await expect(investment).toContainText('modelled cost');
-    await expect(investment).toContainText('not actual or reported compensation');
     await expect(investment).toContainText('same for every organization');
     await expect(investment).toContainText('No salary, payroll, or invoice data is used.');
   });
@@ -84,6 +87,45 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(note).toContainText('not measured independently for each year');
 
     await expect(page.getByTestId('org-roi-annual-trend-partial-year-note')).toContainText(`${CURRENT_YEAR} is a partial year`);
+  });
+
+  test('switches the annual trend between year over year and cumulative', async ({ page }) => {
+    // The running total is computed client-side from the rows `/annual` already returns, so its
+    // final point must land exactly on the lifetime figures the KPI band above reports. The fixture
+    // splits those very totals across its years, which makes that an exact assertion rather than an
+    // approximate one. Summed here rather than through `cumulativeAnnualRows`, so the test does not
+    // share the implementation it is checking.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    const yearly = page.getByTestId('org-roi-annual-trend-series-yearly');
+    const cumulative = page.getByTestId('org-roi-annual-trend-series-cumulative');
+    const table = page.getByTestId('org-roi-annual-trend-table');
+
+    await expect(yearly).toHaveAttribute('aria-pressed', 'true');
+    await expect(cumulative).toHaveAttribute('aria-pressed', 'false');
+    await expect(table).toContainText(formatCurrency(LATEST_ANNUAL.totalReturn));
+    // The fixture's per-year and cumulative figures format to different strings, so the default
+    // view asserting the absence of the lifetime total is a real check, not a tautology.
+    await expect(table).not.toContainText(EXPECTED_CUMULATIVE_RETURN);
+
+    await cumulative.click();
+
+    await expect(cumulative).toHaveAttribute('aria-pressed', 'true');
+    await expect(table).toContainText(EXPECTED_CUMULATIVE_INVESTMENT);
+    await expect(table).toContainText(EXPECTED_CUMULATIVE_RETURN);
+    await expect(table).toContainText('Cumulative investment and return by year');
+    // The existing aria-label regex matches both modes, so assert the wording that distinguishes them.
+    await expect(page.getByTestId('org-roi-annual-trend-chart')).toHaveAttribute('aria-label', /cumulative investment and return by year/i);
+    // The disclosure is restated for a monotonic curve, never dropped.
+    const note = page.getByTestId('org-roi-annual-trend-apportionment-note');
+    await expect(note).toContainText('not measured independently for each year');
+    await expect(note).not.toContainText('movement between years');
+
+    await yearly.click();
+
+    await expect(yearly).toHaveAttribute('aria-pressed', 'true');
+    await expect(table).toContainText(formatCurrency(LATEST_ANNUAL.totalReturn));
   });
 
   test('does not call a completed final year partial', async ({ page }) => {
@@ -111,22 +153,21 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(page.getByTestId('org-roi-annual-trend-apportionment-note')).toHaveCount(0);
   });
 
-  test('presents the drawer rate inputs as global constants, not this organization\u2019s figures', async ({ page }) => {
+  test('presents the rates as global constants, not this organization\u2019s figures', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await expect(page.getByTestId('org-roi-assumptions-drawer-title')).toBeVisible();
+    await page.getByTestId('org-roi-model-overview-toggle').click();
 
-    const scope = page.getByTestId('org-roi-assumptions-rates-scope');
+    const scope = page.getByTestId('org-roi-model-overview-rates-scope');
     await expect(scope).toContainText('global constants');
     await expect(scope).toContainText('applied identically to every organization');
     await expect(scope).toContainText('not specific to your organization');
 
-    await expect(page.getByTestId('org-roi-assumptions-rates')).toContainText('$200,000');
-    await expect(page.getByTestId('org-roi-assumptions-rates')).toContainText('$150,000');
-    await expect(page.getByTestId('org-roi-assumptions-rates-readonly-note')).toContainText('cannot be recalculated');
-    await expect(page.getByTestId('org-roi-assumptions-rates').locator('input')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-model-overview-rates')).toContainText('$200,000');
+    await expect(page.getByTestId('org-roi-model-overview-rates')).toContainText('$150,000');
+    await expect(page.getByTestId('org-roi-model-overview-rates-readonly-note')).toContainText('cannot be recalculated');
+    await expect(page.getByTestId('org-roi-model-overview-rates').locator('input')).toHaveCount(0);
   });
 
   test('switching estimation method refetches every surface and persists across visits', async ({ page }) => {
@@ -141,8 +182,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     const coverageRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/coverage') && req.url().includes('method=direct'));
     const projectsRequest = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
 
     await summaryRequest;
     await annualRequest;
@@ -153,8 +194,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await restoredRequest;
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await expect(page.getByTestId('org-roi-assumptions-method-direct')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await expect(page.getByTestId('org-roi-settings-method-direct')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('does not refetch the category breakdown when only the estimation method changes', async ({ page }) => {
@@ -174,8 +215,8 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     // Wait on a method-scoped sibling so the switch has demonstrably completed before counting.
     const projectsRefetch = page.waitForRequest((req) => req.url().includes('/lens/roi/projects') && req.url().includes('method=direct'));
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
     await projectsRefetch;
 
     expect(breakdownRequests.length).toBe(beforeSwitch);
@@ -262,12 +303,22 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     await expect(page.getByTestId('org-roi-empty-state')).toBeVisible();
-    const trigger = page.getByTestId('org-roi-assumptions-trigger');
+    const trigger = page.getByTestId('org-roi-settings-trigger');
     await expect(trigger).toBeVisible();
 
     await trigger.click();
-    await expect(page.getByTestId('org-roi-assumptions-method-logit')).toBeVisible();
-    await expect(page.getByTestId('org-roi-assumptions-method-direct')).toBeVisible();
+    await expect(page.getByTestId('org-roi-settings-method-logit')).toBeVisible();
+    await expect(page.getByTestId('org-roi-settings-method-direct')).toBeVisible();
+  });
+
+  test('selects logit by default and lists it first in the assumptions drawer', async ({ page }) => {
+    // A fresh visit stores nothing, so the drawer shows the default; the first option is the first one the drawer renders.
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await expect(page.getByTestId('org-roi-settings-method-logit')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-testid^="org-roi-settings-method-"]').first()).toHaveAttribute('data-testid', 'org-roi-settings-method-logit');
   });
 
   test('exposes the yearly series to assistive technology, not only as a canvas', async ({ page }) => {
@@ -325,7 +376,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await expect(forbidden).toBeVisible();
     await expect(forbidden).toHaveAttribute('data-state', 'section-no-access');
     await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this organization');
-    await expect(page.getByTestId('org-roi-forbidden-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-roi-forbidden-primary')).toContainText('How access to a company is granted');
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
 
     expect(responses.length).toBeGreaterThan(0);
@@ -360,7 +411,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     // Spec 053 FR-015: decided by the refusal's stated code, so a check that could not run never reads
-    // as a permissions message — and it carries a Retry rather than a contact-support action.
+    // as a permissions message — and it carries a Retry rather than a support action.
     const error = page.getByTestId('org-roi-error-state');
     await expect(error).toBeVisible();
     await expect(error).toHaveAttribute('data-state', 'section-could-not-verify');
@@ -399,17 +450,15 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
   test('renders the no-company empty state when no account is selected', async ({ page }) => {
     await stubOrgLensContext(page, { hasAccess: true });
     await page.route('**/api/user/personas*', (route) =>
-      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false })
+      fulfillJson(route, { personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false, isLFStaff: true })
     );
     await page.route('**/api/nav/org-items*', (route) => fulfillJson(route, { items: [], next_page_token: null, upstream_failed: false, total: 0 }));
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
+    await skipUnlessLfStaff(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_ROI_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/roi')) {
-      test.skip(true, 'org-lens-roi-enabled flag appears off — /org/roi redirected away');
-    }
 
     await expect(page.getByTestId('org-roi-no-company-empty-state')).toBeVisible();
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
@@ -420,7 +469,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     await gotoOrgRoiPage(page);
 
     await expect(page.getByTestId('org-roi-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-roi-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-roi-no-access-secondary')).toContainText('How affiliations and access work');
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-no-company-empty-state')).toHaveCount(0);
   });
@@ -493,7 +542,7 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     await expect(page.getByTestId('org-roi-category-donut-total')).toHaveText(EXPECTED_INVESTMENT);
   });
 
-  test('carries the modelled-cost disclosure on the category breakdown', async ({ page }) => {
+  test('carries the investment disclosure on the category breakdown', async ({ page }) => {
     // The surface the privacy audit was most concerned about: 19.4% of covered organizations have a
     // single code contributor, so a lone "Code Contribution" amount can read as one person's pay.
     await stubOrgLensContext(page);
@@ -501,8 +550,6 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
 
     const note = page.getByTestId('org-roi-category-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('modelled cost');
-    await expect(note).toContainText('not actual or reported compensation');
     await expect(note).toContainText('same for every organization');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
   });

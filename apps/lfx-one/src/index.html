@@ -23,6 +23,18 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500;600&family=Roboto+Slab:wght@100..900&display=swap" />
     <!-- defer: kit.fontawesome.com must not block HTML parse / first paint (GH-2290). -->
     <script defer src="https://kit.fontawesome.com/736c27f195.js" crossorigin="anonymous"></script>
+    <!-- Transcend consent manager. Synchronous on purpose: airgap.js must run before any other
+         script so it can regulate them (lfx-self-serve-ops#513).
+         data-ui-allow-in-embeds="off": public pages (the project calendar) are embedded in iframes on
+         project sites, so the consent UI shows only on top-level visits and
+         TranscendService.preferencesAvailable hides the "Cookie settings" entry points in a frame.
+         Without a notice or opt-out in a frame, the app starts no analytics there either (Segment,
+         Plausible, Datadog RUM): privacy decision on lfx-self-serve-ops#1438. -->
+    <script
+      src="https://transcend-cdn.com/cm/f484e2d0-ad2e-43a9-9d64-d07f6fa20966/airgap.js"
+      data-cfasync="false"
+      data-prompt="auto"
+      data-ui-allow-in-embeds="off"></script>
     <script type="speculationrules">
       {
         "prefetch": [

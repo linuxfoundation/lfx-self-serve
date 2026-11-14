@@ -9,12 +9,22 @@ import type {
   CampaignServiceAudienceBucket,
   CampaignServiceKeywords,
   CampaignServiceKeywordRow,
+  CampaignServiceMicrosoftKeywords,
   KeywordMetrics,
   KeywordMetricsResponse,
+  KeywordTotals,
+  MicrosoftKeywordMetrics,
+  MicrosoftKeywordMetricsResponse,
+  CampaignServiceRedditKeywords,
+  CampaignServiceRedditKeywordRow,
+  RedditKeywordMetrics,
+  RedditKeywordMetricsResponse,
+  RedditKeywordTotals,
 } from '@lfx-one/shared/interfaces';
+import { googleAdsCampaignUrl } from '@lfx-one/shared/utils/campaign.utils';
 
 // ---------------------------------------------------------------------------
-// campaign-service → UI conversion for the Google Ads insight reads
+// campaign-service → UI conversion for the Google Ads and Microsoft Advertising insight reads
 //
 // Campaign-service answers in ITS vocabulary — micro-units, a window token, CTR as a
 // fraction, one flat bucket array — and the UI's interfaces predate it: currency amounts, a
@@ -93,18 +103,11 @@ function percentFromFraction(fraction: number): number {
 }
 
 /**
- * Build the Google Ads deep link for a campaign.
- *
- * The same link the legacy path builds, with the id percent-encoded. Campaign ids are numeric,
- * so the rendered URL is identical in practice and the cutover does not change where the "open
- * in Google Ads" affordance points; the encoding is belt-and-braces for an id that reaches here
- * from an upstream response rather than from a literal.
+ * One keyword row in the UI's units, with no platform deep link. Shared by the Google and the
+ * Microsoft reads, whose rows have the same wire shape and the same units (micro-units, CTR as a
+ * fraction), so the conversion cannot drift between the two tables.
  */
-function buildGoogleAdsUrl(campaignId: string): string {
-  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${encodeURIComponent(campaignId)}` : '';
-}
-
-function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
+function toKeywordRowMetrics(row: CampaignServiceKeywordRow): MicrosoftKeywordMetrics {
   const spend = spendFromMicros(row.cost_micros);
   return {
     keyword: row.text,
@@ -119,7 +122,6 @@ function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
     criterionId: row.criterion_id,
     campaign: row.campaign_name,
     campaignId: row.campaign_id,
-    googleAdsUrl: buildGoogleAdsUrl(row.campaign_id),
     impressions: row.impressions,
     clicks: row.clicks,
     ctr: percentFromFraction(row.ctr),
@@ -129,6 +131,27 @@ function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
     avgCpc: row.clicks > 0 ? spend / row.clicks : 0,
     spend,
     conversions: row.conversions,
+  };
+}
+
+function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
+  return { ...toKeywordRowMetrics(row), googleAdsUrl: googleAdsCampaignUrl(row.campaign_id) };
+}
+
+/**
+ * Totals over converted rows. Spend is already in currency units, so it cannot be
+ * double-converted; avgCtr is recomputed from the summed counters rather than averaged over
+ * per-row CTRs, which would weight a ten-impression keyword the same as a ten-thousand one.
+ */
+function keywordTotals(keywords: readonly MicrosoftKeywordMetrics[]): KeywordTotals {
+  const impressions = keywords.reduce((sum, k) => sum + k.impressions, 0);
+  const clicks = keywords.reduce((sum, k) => sum + k.clicks, 0);
+  return {
+    impressions,
+    clicks,
+    spend: keywords.reduce((sum, k) => sum + k.spend, 0),
+    conversions: keywords.reduce((sum, k) => sum + k.conversions, 0),
+    avgCtr: impressions > 0 ? (clicks / impressions) * 100 : 0,
   };
 }
 
@@ -145,25 +168,89 @@ function toKeywordMetrics(row: CampaignServiceKeywordRow): KeywordMetrics {
 export function toKeywordMetricsResponse(payload: CampaignServiceKeywords, effectiveDays: number, pulledAt: string): KeywordMetricsResponse {
   const keywords = payload.rows.map(toKeywordMetrics);
 
-  // Totals are summed from the CONVERTED rows, so spend is already in currency units and
-  // cannot be double-converted. avgCtr is recomputed from the summed counters rather than
-  // averaged over per-row CTRs — averaging percentages weights a ten-impression keyword the
-  // same as a ten-thousand-impression one.
-  const impressions = keywords.reduce((sum, k) => sum + k.impressions, 0);
-  const clicks = keywords.reduce((sum, k) => sum + k.clicks, 0);
-
   return {
     pulledAt,
     days: effectiveDays,
     totalKeywords: keywords.length,
     truncated: payload.truncated,
-    totals: {
-      impressions,
-      clicks,
-      spend: keywords.reduce((sum, k) => sum + k.spend, 0),
-      conversions: keywords.reduce((sum, k) => sum + k.conversions, 0),
-      avgCtr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-    },
+    totals: keywordTotals(keywords),
+    keywords,
+    // campaign-service reports keyword cost in the account's native currency and names none (#4807).
+    amountsInAccountCurrency: true,
+  };
+}
+
+/**
+ * Convert campaign-service's Microsoft keyword read into the UI's `MicrosoftKeywordMetricsResponse`.
+ *
+ * Rows and totals convert exactly as the Google read's do. What is added is the report's
+ * freshness, passed through rather than interpreted: rows come from the last finished
+ * asynchronous report, so the UI needs `metricsAsOf` to say how old they are, `metricsPending`
+ * to say a newer one is building (with no rows yet on a first read), and `conversionsComplete`
+ * so a blank conversion count shown as 0 is not presented as a measurement.
+ *
+ * The row ORDER is upstream's (impressions descending) and is kept.
+ */
+export function toMicrosoftKeywordMetricsResponse(payload: CampaignServiceMicrosoftKeywords, pulledAt: string): MicrosoftKeywordMetricsResponse {
+  const keywords = payload.rows.map(toKeywordRowMetrics);
+
+  return {
+    pulledAt,
+    window: payload.window,
+    totalKeywords: keywords.length,
+    truncated: payload.truncated,
+    metricsAsOf: typeof payload.metrics_as_of === 'string' && payload.metrics_as_of !== '' ? payload.metrics_as_of : null,
+    metricsPending: payload.metrics_pending === true,
+    // Fails CLOSED: only an explicit `true` says every row's conversions were measured.
+    conversionsComplete: payload.conversions_complete === true,
+    dataIncomplete: payload.data_incomplete === true,
+    totals: keywordTotals(keywords),
+    keywords,
+  };
+}
+
+function toRedditKeywordRow(row: CampaignServiceRedditKeywordRow, index: number): RedditKeywordMetrics {
+  const keyword = typeof row.text === 'string' && row.text !== '' ? row.text : null;
+  return {
+    // Unique within one read: upstream returns one row per (campaign, keyword), and at most one
+    // keyword-less row per campaign. The index keeps it unique even if that ever stops holding.
+    key: `${row.campaign_id}|${keyword ?? ''}|${index}`,
+    campaignId: row.campaign_id,
+    keyword,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    ctr: percentFromFraction(row.ctr),
+    spend: spendFromMicros(row.cost_micros),
+  };
+}
+
+function redditKeywordTotals(keywords: readonly RedditKeywordMetrics[]): RedditKeywordTotals {
+  const impressions = keywords.reduce((sum, k) => sum + k.impressions, 0);
+  const clicks = keywords.reduce((sum, k) => sum + k.clicks, 0);
+  return {
+    impressions,
+    clicks,
+    // One ad account per project (upstream reads the bound account only), so one currency.
+    spend: keywords.reduce((sum, k) => sum + k.spend, 0),
+    avgCtr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+  };
+}
+
+/**
+ * Convert campaign-service's Reddit keyword read (`get-reddit-ads-keywords`, #331) into the UI's
+ * `RedditKeywordMetricsResponse`: micro-units to currency, CTR fraction to percentage, a keyword
+ * Reddit left null kept as `null` (delivery attributed to no keyword). Rows keep upstream's order
+ * (impressions descending). No conversions and no report-freshness fields: the read is live and
+ * requests none.
+ */
+export function toRedditKeywordMetricsResponse(payload: CampaignServiceRedditKeywords, pulledAt: string): RedditKeywordMetricsResponse {
+  const keywords = (Array.isArray(payload.rows) ? payload.rows : []).map(toRedditKeywordRow);
+  return {
+    pulledAt,
+    window: payload.window,
+    totalKeywords: keywords.length,
+    truncated: payload.truncated === true,
+    totals: redditKeywordTotals(keywords),
     keywords,
   };
 }

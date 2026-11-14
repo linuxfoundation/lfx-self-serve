@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Each data section reports its reads to the shell, which holds a deep link until they all land. -->
+<lfx-health-metrics-l2-shell
+  #shell
+  [sections]="sections"
+  [idPrefix]="idPrefix"
+  [dataSections]="dataSections"
+  [subNavItems]="subNavItems"
+  [blank]="blank"
+  navLabel="Training sections"
+  testIdPrefix="training">
+  <ng-template lfxHealthMetricsL2Section="enroll">
+    <lfx-training-enroll (reading)="shell.sectionReading('enroll')" (settled)="shell.sectionSettled('enroll', $event)" />
+  </ng-template>
+  <ng-template lfxHealthMetricsL2Section="courses">
+    <lfx-training-courses (reading)="shell.sectionReading('courses')" (settled)="shell.sectionSettled('courses', $event)" />
+  </ng-template>
+</lfx-health-metrics-l2-shell>

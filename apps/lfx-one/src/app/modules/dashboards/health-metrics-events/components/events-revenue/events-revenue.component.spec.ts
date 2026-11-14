@@ -28,6 +28,8 @@ function revenueEvent(overrides: Partial<HealthMetricsEventsRevenueEvent> = {}):
     hasUnconverted: false,
     registrationGoalWithheld: false,
     sponsorshipGoalWithheld: false,
+    isPastEvent: true,
+    goalMet: null,
     ranges: ['YTD'],
     ...overrides,
   };
@@ -76,6 +78,7 @@ describe('EventsRevenueComponent', () => {
   let getEventsRevenue: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEventsRevenue | Error = revenue()): Promise<void> {
     getEventsRevenue = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -94,7 +97,10 @@ describe('EventsRevenueComponent', () => {
 
     fixture = TestBed.createComponent(EventsRevenueComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -121,6 +127,7 @@ describe('EventsRevenueComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation once and settles once the revenue lands', async () => {
@@ -129,6 +136,7 @@ describe('EventsRevenueComponent', () => {
     expect(getEventsRevenue).toHaveBeenCalledTimes(1);
     expect(getEventsRevenue).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('events-revenue-loading')).toBeNull();
   });
 
@@ -137,6 +145,8 @@ describe('EventsRevenueComponent', () => {
 
     expect(text('events-revenue-pending')).toBe('All figures pending validation');
     expect(text('events-revenue-headline-value')).toBe('$258K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-revenue-hero')?.classList).not.toContain('border');
     expect(text('events-revenue-headline-delta')).toBe('+6%');
     expect(text('events-revenue-side-registration-value')).toBe('$180K');
     expect(query('events-revenue-side-registration-delta')).not.toBeNull();
@@ -145,14 +155,20 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-side-split-delta')).toBeNull();
   });
 
-  it('lists the events in the period with their goals, leaving an unset goal out', async () => {
+  it('lists the events in the period, each value bold over its goal or a "no goal set" line', async () => {
     await render();
 
     expect(query('events-revenue-row-rev-1')).not.toBeNull();
     expect(query('events-revenue-row-rev-2')).toBeNull();
+    expect(query('events-revenue-registration-value-rev-1')?.tagName).toBe('B');
     expect(text('events-revenue-registration-value-rev-1')).toBe('$180K');
     expect(text('events-revenue-registration-goal-rev-1')).toBe('/ $200K');
+    expect(query('events-revenue-registration-goal-rev-1')?.classList).toContain('text-[12px]');
+    expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
     expect(query('events-revenue-sponsorship-goal-rev-1')).toBeNull();
+    expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
+    expect(query('events-revenue-sponsorship-no-goal-rev-1')?.classList).toContain('text-[12px]');
+    expect(query('events-revenue-row-rev-1')?.textContent).not.toContain('Set goal');
     expect(query('events-revenue-unconverted-rev-1')).toBeNull();
     expect(query('events-revenue-unconverted-note')).toBeNull();
     expect(query('events-revenue-headline-unconverted')).toBeNull();
@@ -177,6 +193,28 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-side-sponsorship-unconverted')).toBeNull();
   });
 
+  it('lists upcoming events first in the one table on the current-year view, with no goal chip', async () => {
+    const upcoming = revenueEvent({ eventId: 'rev-3', eventName: 'Winter Summit', eventStartDate: '2026-12-01', isPastEvent: false, ranges: [] });
+    await render(revenue({ events: [revenueEvent({ goalMet: true }), upcoming] }));
+
+    const rowIds = Array.from(query('events-revenue-table')?.querySelectorAll('[data-testid^="events-revenue-row-"]') ?? []).map((row) =>
+      row.getAttribute('data-testid')
+    );
+    expect(rowIds).toEqual(['events-revenue-row-rev-3', 'events-revenue-row-rev-1']);
+    expect(query('events-revenue-table')?.textContent).not.toContain('Hit goal');
+
+    await pickRange('COMPLETED_YEAR');
+
+    expect(query('events-revenue-row-rev-3')).toBeNull();
+  });
+
+  it('says a goal is unset only when none is set, not when it is withheld', async () => {
+    await render(revenue({ events: [revenueEvent({ registrationGoal: null, registrationGoalWithheld: true })] }));
+
+    expect(query('events-revenue-registration-no-goal-rev-1')).toBeNull();
+    expect(text('events-revenue-sponsorship-no-goal-rev-1')).toBe('no goal set');
+  });
+
   it('says a goal is withheld for its currency without marking the revenue', async () => {
     await render(revenue({ events: [revenueEvent({ registrationGoal: null, registrationGoalWithheld: true })] }));
 
@@ -186,14 +224,23 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-unconverted-note')).toBeNull();
   });
 
-  it('shows the empty table note for a measured period with no events', async () => {
+  // $0 with no event in the period is nothing to show, so the shell's empty state takes the section over.
+  it('settles empty, with no body, for a $0 period with no events', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
 
-    expect(text('events-revenue-headline-value')).toBe('$0');
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-revenue-hero')).toBeNull();
+  });
+
+  it('shows the empty table note for a period with revenue but no listed events', async () => {
+    await render(revenue({ events: [revenueEvent({ ranges: ['COMPLETED_YEAR'] })] }));
+
+    expect(text('events-revenue-headline-value')).toBe('$258K');
     expect(query('events-revenue-empty')).not.toBeNull();
     expect(query('events-revenue-table')).toBeNull();
+    expect(verdicts).toEqual([false]);
   });
 
   it('says per-event figures are missing, not that no event ran, when only the totals were read', async () => {
@@ -204,21 +251,19 @@ describe('EventsRevenueComponent', () => {
     expect(query('events-revenue-empty')).toBeNull();
   });
 
-  it('shows the unavailable state for a period the response does not carry', async () => {
+  it('settles empty, with no body, for a period the response does not carry', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_3');
 
-    expect(query('events-revenue-unmeasured')).not.toBeNull();
-    expect(query('events-revenue-foundation-unmeasured')).toBeNull();
+    expect(verdicts).toEqual([false, true]);
     expect(query('events-revenue-hero')).toBeNull();
   });
 
-  it('says the foundation has no revenue recorded, not to pick another period, when no period was read', async () => {
+  it('settles empty, with no body, when no period was read for the foundation', async () => {
     await render(revenue({ periods: [], events: [], eventsMeasured: false }));
 
-    expect(text('events-revenue-foundation-unmeasured')).toContain('No event revenue has been recorded for this foundation yet.');
-    expect(query('events-revenue-unmeasured')).toBeNull();
+    expect(verdicts).toEqual([true]);
     expect(query('events-revenue-hero')).toBeNull();
   });
 
@@ -227,6 +272,7 @@ describe('EventsRevenueComponent', () => {
 
     expect(query('events-revenue-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
 
     await pickRange('COMPLETED_YEAR');
 

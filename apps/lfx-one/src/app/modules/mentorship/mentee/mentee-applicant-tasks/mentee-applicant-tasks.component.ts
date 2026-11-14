@@ -8,11 +8,12 @@ import { MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY, MENTORSHIP_MENTEE_TASKS_TAB_
 import { MentorshipMenteeApplicationView } from '@lfx-one/shared/interfaces';
 
 import { MenteeTaskRowComponent } from '../mentee-task-row/mentee-task-row.component';
+import { ProgramLinkComponent } from '../../components/program-link/program-link.component';
 
 /** Pending applications on the My Tasks tab — one card per application with its prerequisite tasks. */
 @Component({
   selector: 'lfx-mentee-applicant-tasks',
-  imports: [NgClass, MenteeTaskRowComponent],
+  imports: [NgClass, MenteeTaskRowComponent, ProgramLinkComponent],
   templateUrl: './mentee-applicant-tasks.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

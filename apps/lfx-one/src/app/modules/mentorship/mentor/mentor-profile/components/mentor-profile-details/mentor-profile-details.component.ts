@@ -8,17 +8,14 @@ import {
   MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL,
   MENTORSHIP_MENTOR_PROFILE_DETAILS_TITLE,
   MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL,
-  MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY,
-  MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL,
-  MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL,
   MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY,
   MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMentorProfileDetails } from '@lfx-one/shared/interfaces';
-import { mentorshipDescriptionLength, normalizeToUrl } from '@lfx-one/shared/utils';
+import { mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 
 /**
- * Read-only display of the mentor's own profile fields — About Me, Skills, Resume —
+ * Read-only display of the mentor's own profile fields — About Me and Skills —
  * as they appear on the dedicated `/mentorship/mentor/profile` page. The parent owns
  * the load / error state and passes a resolved `profile` in; this card just renders
  * it. `editClick` is emitted rather than routed so the parent decides whether the
@@ -38,11 +35,8 @@ export class MentorProfileDetailsComponent {
   protected readonly editLabel = MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL;
   protected readonly aboutLabel = MENTORSHIP_MENTOR_PROFILE_ABOUT_LABEL;
   protected readonly skillsLabel = MENTORSHIP_MENTOR_PROFILE_SKILLS_LABEL;
-  protected readonly resumeLabel = MENTORSHIP_MENTOR_PROFILE_RESUME_LABEL;
-  protected readonly resumeViewLabel = MENTORSHIP_MENTOR_PROFILE_RESUME_VIEW_LABEL;
   protected readonly aboutEmpty = MENTORSHIP_MENTOR_PROFILE_ABOUT_EMPTY;
   protected readonly skillsEmpty = MENTORSHIP_MENTOR_PROFILE_SKILLS_EMPTY;
-  protected readonly resumeEmpty = MENTORSHIP_MENTOR_PROFILE_RESUME_EMPTY;
 
   /**
    * `aboutMe` is authored in the register form via `lfx-rich-editor` (Quill under the
@@ -58,29 +52,6 @@ export class MentorProfileDetailsComponent {
   protected readonly aboutMeHtml = computed(() => this.profile().aboutMe ?? '');
   protected readonly aboutMeIsEmpty = computed(() => mentorshipDescriptionLength(this.aboutMeHtml()) === 0);
   protected readonly skills = computed(() => this.profile().skills);
-  protected readonly resumeFileName = computed(() => this.profile().resumeFileName?.trim() ?? '');
-  /**
-   * The resume URL is server-supplied and gets bound to `[href]`. `normalizeToUrl`
-   * (a) allow-lists `http(s)` — an unknown/bad URL degrades to the non-link display
-   * (`resume-name`) rather than reaching the anchor at all — and (b) upgrades a
-   * bare host (e.g. `example.com/resume.pdf`) to `https://…`. Returning the
-   * normalized value rather than the raw input is load-bearing: a scheme-less
-   * value bound to `[href]` would otherwise resolve as an in-app relative path.
-   */
-  protected readonly resumeUrl = computed(() => {
-    const raw = this.profile().resumeUrl?.trim() ?? '';
-    if (!raw) return '';
-    return normalizeToUrl(raw) ?? '';
-  });
-  /**
-   * The profile contract lets `resumeFileName` and `resumeUrl` be present
-   * independently, so the empty state has to be `neither`, not `no filename`.
-   * A URL without a filename previously fell into the "No resume uploaded yet."
-   * branch and discarded the working link; the template now renders that case
-   * as `View resume` (see `resumeLinkLabel`).
-   */
-  protected readonly hasResume = computed(() => Boolean(this.resumeFileName() || this.resumeUrl()));
-  protected readonly resumeLinkLabel = computed(() => this.resumeFileName() || this.resumeViewLabel);
 
   protected onEdit(): void {
     this.editClick.emit();

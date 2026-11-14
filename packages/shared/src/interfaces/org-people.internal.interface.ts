@@ -2,28 +2,44 @@
 // SPDX-License-Identifier: MIT
 
 // Internal All Employees roster shapes for the Org Lens People backend services.
-// They live in the shared package because CLAUDE.md prohibits module-level interfaces
+// They live in the shared package because AGENTS.md prohibits module-level interfaces
 // inside apps/lfx-one/; they are NOT part of the wire contract consumed by the frontend.
 // Merge-only data never leaves the server: `toWireRow` strips it before the
 // response is cached or sent, and the cache validator rejects any entry carrying it.
 
-import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgAllEmployeeStats } from './org-people.interface';
+import type { ContributorPersonProjectRow } from './org-people-contributors.interface';
+import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeRow, OrgEmploymentFilter } from './org-people.interface';
 
-/** In-memory merge row — the wire shape plus the field the identity merge accumulates. Never cached, never sent. */
-export interface OrgAllEmployeeRowInternal extends OrgAllEmployeeRow {
+/**
+ * Roster row carrying every code count the commit filters can pick (lfx-self-serve#4164): `commitsCount` is
+ * authored commits here, and the wire projection replaces it with the count the request's `commitScope` /
+ * `metric` select. The stored roster and the cached directory hold this shape, so one entry serves every
+ * commit scope and metric. Never sent.
+ */
+export interface OrgAllEmployeeCountedRow extends OrgAllEmployeeRow {
+  /** Authored commits merged to the main branch. */
+  mergedCommitsCount: number;
+}
+
+/** In-memory merge row — the counted shape plus the field the identity merge accumulates. Never cached, never sent. */
+export interface OrgAllEmployeeRowInternal extends OrgAllEmployeeCountedRow {
   /** Every lowercased address that contributed to this row. Length > 1 is the normal result of a merge. */
   emails: string[];
 }
 
-/** In-memory merge payload — the stored seed and the pre-strip merge result. Never cached, never sent. */
-export interface OrgAllEmployeesInternalResponse {
+/** Counted roster payload, before the commit filters pick a count and the tiles are counted. Never sent. */
+export interface OrgAllEmployeesCountedResponse {
   accountId: string;
-  rows: OrgAllEmployeeRowInternal[];
-  stats: OrgAllEmployeeStats;
+  rows: OrgAllEmployeeCountedRow[];
   foundations: OrgAllEmployeeFoundationOption[];
 }
 
-/** Per-(account, person) row from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL`. */
+/** In-memory merge payload — the stored seed. Never cached, never sent. */
+export interface OrgAllEmployeesInternalResponse extends OrgAllEmployeesCountedResponse {
+  rows: OrgAllEmployeeRowInternal[];
+}
+
+/** Per-(account, person) roster row: one time range of `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_RANGES`, or the unranged `ORG_PEOPLE_ALL`. */
 export interface OrgPeopleAllRow {
   ACCOUNT_ID: string;
   PERSON_KEY: string;
@@ -37,26 +53,117 @@ export interface OrgPeopleAllRow {
   SEATS_COUNT: number;
   BOARD_SEATS_COUNT: number;
   COMMITTEE_SEATS_COUNT: number;
-  COMMITS_COUNT: number;
+  /**
+   * Authored commits (any branch); the unranged roster's code count. Absent on a ranged read: All Employees counts a
+   * range's code live from the People → Contributors rows (lfx-self-serve#4735).
+   */
+  COMMITS_COUNT?: number;
+  /** Authored commits merged to the main branch; the unranged roster repeats its COMMITS_COUNT. Absent on a ranged read. */
+  MERGED_COMMITS_COUNT?: number;
+  /** Code-contribution activities; the unranged roster repeats its COMMITS_COUNT. Absent on a ranged read. */
+  CODE_ACTIVITIES_COUNT?: number;
   EVENTS_COUNT: number;
   COURSES_COUNT: number;
 }
 
-/** Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed array). */
+/**
+ * Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed
+ * array). A ranged read fills it from `NON_CODE_ENGAGED_FOUNDATION_IDS`, the code foundations being live (lfx-self-serve#4735).
+ */
 export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
 
-/** One-row aggregate from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_STATS`. */
-export interface OrgPeopleAllStatsRow {
-  ACCOUNT_ID: string;
-  ACTIVE_IN_OSS: number;
-  IN_GOVERNANCE: number;
-  CODE_CONTRIBUTORS: number;
-  EVENT_ATTENDEES: number;
-  TRAINEES: number;
+/** Who an off-roster person is — a former employee's ORG_PEOPLE_ALL_RANGES row or an ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row; no counts. */
+export type OrgPeopleIdentityRow = Pick<OrgPeopleAllRow, 'PERSON_KEY' | 'LFID' | 'LF_USERNAME' | 'CDP_MEMBER_ID' | 'NAME' | 'PHOTO'>;
+
+/** One person's code in a range, project scope and organization scope, summed over their People → Contributors project rows (lfx-self-serve#4735). */
+export interface OrgPersonLiveCode {
+  /** Their first project row, whose identity columns stand in when no roster or unclassified row names them. */
+  identity: ContributorPersonProjectRow;
+  commitsCount: number;
+  mergedCommitsCount: number;
+  codeActivitiesCount: number;
+  /** Foundations of the projects they have code in, sorted. */
+  foundationIds: string[];
+}
+
+/** The live code of a range, project scope and organization scope, per person key, with the labels of its foundations. */
+export interface OrgPeopleLiveCode {
+  people: Map<string, OrgPersonLiveCode>;
+  foundationNames: Map<string, string>;
 }
 
 /** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pair powering the All Foundations dropdown. */
 export interface OrgPeopleFoundationOptionRow {
   FOUNDATION_ID: string;
   FOUNDATION_NAME: string;
+}
+
+/** Raw All Employees reads for one range: roster rows and the foundation dropdown pairs. */
+export interface OrgAllEmployeesRaw {
+  rowsRaw: OrgPeopleAllRowRaw[];
+  foundationRaw: OrgPeopleFoundationOptionRow[];
+}
+
+/**
+ * One address row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS` or `ORG_PEOPLE_EXTENDED_COMPANY_EMAILS`. `ADDRESS_SOURCE`
+ * is `current` for the current-people view and the extended view's own `lf_account` / `key_contact_record`.
+ */
+export interface OrgPersonCompanyEmailRow {
+  EMAIL: string | null;
+  /** Snowflake BOOLEAN arrives as a boolean; a 0/1 column is accepted too so the flag survives either shape. */
+  IS_PRIMARY: boolean | number | null;
+  ADDRESS_SOURCE: string | null;
+}
+
+/**
+ * One row of `PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAIL_KEYS`: what the drawer's lookup answers for one identity at the
+ * account. KEY_TYPE `person_key` (a roster person key holding an address), `lf_username` (the username's lookup finds an
+ * address) or `lf_username_none` (the username names exactly one roster person, who holds no address).
+ */
+export interface OrgPeopleCompanyEmailKeyRow {
+  KEY_TYPE: string | null;
+  KEY_VALUE: string | null;
+}
+
+/** The account's company-email keys, as cached for the All Employees Company email filter. */
+export interface OrgCompanyEmailKeys {
+  /** PERSON_KEY values (as stored) holding at least one address. */
+  personKeys: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values whose drawer lookup finds at least one address. */
+  usernames: string[];
+  /** LOWER(TRIM(LF_USERNAME)) values naming exactly one roster person, who holds no address ("none on file"). */
+  noneUsernames: string[];
+}
+
+/**
+ * What the drawer's username lookup answers for LF usernames the company-email keys do not cover (live-only All Employees
+ * rows off the warehouse roster): `usernames` name an LF account holding a qualifying address at the account,
+ * `noneUsernames` one holding none. A username the warehouse does not know is in neither.
+ */
+export type OrgLfUsernameCompanyEmailStatuses = Pick<OrgCompanyEmailKeys, 'usernames' | 'noneUsernames'>;
+
+/** A person's employment at the account — current or former; the Employment filter's `all` is not a classification. */
+export type OrgPersonEmployment = Exclude<OrgEmploymentFilter, 'all'>;
+
+/**
+ * One person's ORG_PEOPLE_ALL_RANGES row for a (range, project scope), classified by `IS_FORMER` (lfx-self-serve#4627).
+ * Someone with no row is neither current nor former, so only the Employment filter's `all` lists them.
+ */
+export interface OrgPersonEmploymentRow {
+  PERSON_KEY: string;
+  EMPLOYMENT: OrgPersonEmployment;
+}
+
+/**
+ * The account's classification for a (range, project scope) as stored in Valkey: the person keys of each class, without
+ * the per-row field names (`people-employment:v2`). Someone in neither list has no roster row.
+ */
+export type OrgPersonEmploymentKeys = Record<OrgPersonEmployment, string[]>;
+
+/** The organization-scope columns of the account's `ORG_LENS_ACCOUNT_CONTEXT` row — one per account (lfx-self-serve-ops#1219). */
+export interface OrgLensOrgScopeRow {
+  CDEV_ORG_ID: string | null;
+  CDEV_ORG_NAME: string | null;
+  RELATED_ORG_COUNT: number | null;
+  HAS_INSIGHTS_ORG: boolean | null;
 }

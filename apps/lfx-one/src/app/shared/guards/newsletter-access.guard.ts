@@ -1,14 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject } from '@angular/core';
-import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { catchError, map, Observable, of } from 'rxjs';
+import { inject, PLATFORM_ID } from '@angular/core';
+import { ActivatedRouteSnapshot, CanActivateFn, RedirectCommand, Router, UrlTree } from '@angular/router';
+import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
+import { catchError, defer, map, Observable, of } from 'rxjs';
 
 import { PersonaService } from '../services/persona.service';
 import { ProjectContextService } from '../services/project-context.service';
+import { ProjectRecoveryService } from '../services/project-recovery.service';
 import { ProjectService } from '../services/project.service';
+import { isTransientHttpError, retryTransientHttpError } from '../utils/http-error.utils';
 
 /**
  * Route guard for the newsletters feature.
@@ -29,17 +33,48 @@ import { ProjectService } from '../services/project.service';
  *   2. The URL's `?project=<slug>` query param, then the active context's
  *      slug — the legacy chain, used by the list/create routes and as the
  *      fallback only when the uid lookup confirms the project is gone
- *      (400/404); a transient lookup failure fails closed instead of
- *      re-checking the writer bit against a possibly-stale context.
+ *      (400/404); a transient lookup failure retries once, then fails closed with
+ *      an error notice instead of checking access against a possibly-stale context.
  *
  * Redirects to the lens-appropriate overview on denial to preserve
  * the active project context without triggering a lens switch.
+ * Query-slug lookups share the selected-project strict/retry policy: persistent
+ * transient failures render the unavailable view instead of losing the requested page.
+ * Non-transient query-slug failures render not-found in-place; resolved writer denials
+ * still redirect to overview.
+ *
+ * SSR behaviour is split by mount (GH-3274). On the Gatewaze embed mounts
+ * (`GW_EMBED_ROUTE_PREFIXES`) the server returns `true` and the gate runs
+ * only in the browser: the embed's sign-in return is a full page load, and
+ * a transient writer-lookup failure during SSR became a real HTTP 302 that
+ * stranded the sign-in return on the overview page. Those mounts render no
+ * data during SSR (the embed mounts browser-only, behind
+ * `requireGwEmbedAccess` server-side), so nothing ships early. Every other
+ * newsletter route keeps full SSR enforcement, because analytics and
+ * recipient engagement DO fetch during SSR and the page policy (writer)
+ * is stricter than some upstream read permissions.
  */
-export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state) => {
+  // SSR defers to the browser on the Gatewaze embed mounts ONLY (see the JSDoc's SSR
+  // paragraph for the GH-3274 rationale; gatewazeEmbedEnabledGuard on the same mounts
+  // defers identically). Scoped to the gw mounts because they render no SSR data — the
+  // embed mounts browser-only — while the ordinary newsletter routes do fetch during SSR
+  // (analytics and recipient engagement subscribe in their constructors), so deferring
+  // there would let a token that passes upstream reads ship writer-page data in the SSR
+  // response before the browser guard denies the page.
+  if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+    const mountPath = route.routeConfig?.path ?? '';
+    if (GW_EMBED_ROUTE_PREFIXES.some((prefix) => `/${mountPath}` === prefix)) {
+      return true;
+    }
+    // Every other newsletter route falls through to full SSR enforcement below.
+  }
+
   const personaService = inject(PersonaService);
   const projectContextService = inject(ProjectContextService);
   const projectService = inject(ProjectService);
   const router = inject(Router);
+  const projectRecoveryService = inject(ProjectRecoveryService);
 
   // Edit/analytics routes carry the owning project as `:projectUid` — for writer
   // checks it wins over the query param and the cookie-restored context, both of
@@ -78,8 +113,9 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
   const routeLens = route.parent?.data?.['lens'] ?? route.data?.['lens'];
   const overviewPath = routeLens === 'foundation' ? '/foundation/overview' : '/project/overview';
 
-  const checkWriterAccess = (slug: string): Observable<boolean | UrlTree> =>
-    projectService.getProject(slug, false).pipe(
+  const querySlug = route.queryParamMap.get('project');
+  const checkWriterAccess = (slug: string): Observable<boolean | UrlTree | RedirectCommand> =>
+    (querySlug === slug ? projectRecoveryService.resolve(slug) : projectService.getProject(slug, false)).pipe(
       map((project) => {
         if (project?.writer !== true) {
           // Legacy list/create denial — plain redirect, no `_notice` toast: GH-1570 requires
@@ -87,6 +123,15 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
           return router.createUrlTree([overviewPath], { queryParams: { project: slug } });
         }
         return true;
+      }),
+      catchError((error: unknown) => {
+        if (isTransientHttpError(error)) {
+          return of(projectRecoveryService.unavailable(state.url));
+        }
+        if (querySlug === slug) {
+          return of(new RedirectCommand(router.parseUrl('/not-found'), { skipLocationChange: true }));
+        }
+        return of(router.createUrlTree([overviewPath], { queryParams: { project: slug } }));
       })
     );
 
@@ -103,7 +148,10 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
     // the wrong-context authorization this guard removed (GH-1570). The lookup is
     // shareReplay-cached, so this guard's mount- and child-route invocations and
     // reconcileRouteProjectContext share the one request per deep link.
-    return projectService.getProjectStrict(projectUid).pipe(
+    // Re-enter the service on retry: the first error evicts its cache entry, so
+    // resubscribing to that old observable would leave recovery uncached.
+    return defer(() => projectService.getProjectStrict(projectUid)).pipe(
+      retryTransientHttpError(),
       map((resolved): boolean | UrlTree => {
         // The uid lookup already returned the project entity, so check writer
         // directly on it; the resolved slug is only needed for the denial redirect.
@@ -125,9 +173,12 @@ export const newsletterAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsh
           // than deny outright.
           return contextSlug ? checkWriterAccess(contextSlug) : of(router.parseUrl(overviewPath));
         }
-        // Transient/unknown failure — fail closed rather than authorize against a
-        // stale context. Plain overview redirect without `_notice: 'access'`: a blip
-        // is not a denial, and the user can retry the navigation.
+        if (isTransientHttpError(error)) {
+          // Mirror writerGuard's outage notice without serializing a stale project.
+          return of(router.createUrlTree([overviewPath], { queryParams: { _notice: 'error' } }));
+        }
+        // Other non-transient/unknown failures keep the plain, fail-closed redirect
+        // rather than authorize against a stale context or mislabel an outage.
         return of(router.parseUrl(overviewPath));
       })
     );

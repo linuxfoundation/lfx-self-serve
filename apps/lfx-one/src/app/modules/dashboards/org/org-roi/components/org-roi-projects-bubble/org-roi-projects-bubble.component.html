@@ -19,9 +19,11 @@
       <lfx-chart type="bubble" [data]="chartData()" [options]="chartOptions()" height="100%" />
     </div>
 
-    <!-- Describes the encoding actually rendered. An earlier version pointed at a break-even
-         diagonal that is never drawn — and could not be, since the axes are scaled independently,
-         so the corner-to-corner line is not y = x. -->
+    <!-- The line's endpoints are data points, so both axes share one domain and the diagonal stays on the chart. -->
+    <p class="text-xs text-gray-500" data-testid="org-roi-projects-bubble-breakeven-note">
+      The dashed line is break-even, where investment equals return; both axes share one scale so it always stays on the chart. Projects above it returned more
+      than they cost; projects below it lost money.
+    </p>
     <p class="text-xs text-gray-500" data-testid="org-roi-projects-bubble-scale-note">
       Both axes are logarithmic: return spans several orders of magnitude across a portfolio, and on a linear scale every project but the largest would sit in
       the corner. Bubbles are sized by how large a project's net return is, and an amber bubble lost money. The further a project sits towards the top-left, the

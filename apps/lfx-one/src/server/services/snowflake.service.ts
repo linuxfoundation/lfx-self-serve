@@ -17,7 +17,13 @@ import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
-import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError } from '../helpers/snowflake-error.helper';
+import {
+  isInvalidIdentifierError,
+  isInvalidRowCountError,
+  isMissingObjectError,
+  isPoolQueueFullError,
+  isValueConversionError,
+} from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -88,8 +94,8 @@ export class SnowflakeService {
     }
   }
 
-  public static isMissingObjectError(error: unknown): boolean {
-    return isMissingObjectError(error);
+  public static isMissingObjectError(error: unknown, expectedObject?: string): boolean {
+    return isMissingObjectError(error, expectedObject);
   }
 
   private constructor() {
@@ -115,15 +121,21 @@ export class SnowflakeService {
     // Validate that query is read-only
     this.validateReadOnlyQuery(sqlText);
 
+    // Reject request-sized statements before the breaker is consulted: they neither take the HALF_OPEN
+    // probe slot nor count as a Snowflake failure.
+    this.validateBindCount(binds);
+
     // Fail fast if the circuit is OPEN (Snowflake is known to be unreachable)
     this.checkCircuit();
 
     // Generate query hash for deduplication
     const queryHash = this.lockManager.hashQuery(sqlText, binds, options);
 
-    const sqlOp = sqlText.trim().split(/\s+/)[0]?.toUpperCase() || 'QUERY';
+    // The statement without its leading comments: a commented query would otherwise be named `--` in traces.
+    const statement = this.stripLeadingComments(sqlText);
+    const sqlOp = statement.split(/\s+/)[0]?.toUpperCase() || 'QUERY';
     // Strip string literals from SQL for span attributes to avoid PII leaks
-    const sanitizedSql = sqlText.replace(/'[^']*'/g, '?').substring(0, 100);
+    const sanitizedSql = statement.replace(/'[^']*'/g, '?').substring(0, 100);
 
     // Lock first to deduplicate, then open span only for the executing query
     return this.lockManager.executeLocked(queryHash, async () => {
@@ -142,7 +154,7 @@ export class SnowflakeService {
         async (span) => {
           logger.debug(undefined, 'snowflake_query', 'Executing query', {
             query_hash: queryHash,
-            sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+            sql_preview: statement.substring(0, 100).replace(/\s+/g, ' ').trim(),
             bind_count: binds?.length || 0,
             circuit_state: this.circuitState,
           });
@@ -164,14 +176,31 @@ export class SnowflakeService {
             // complete callback so generic-pool holds the connection until the statement
             // finishes, keeping pool accounting (max, maxWaitingClients, acquireTimeout)
             // accurate for in-flight queries.
+            //
+            // A statement still running when the timeout fires is cancelled, so its complete
+            // callback fires with an error and the connection goes back to the pool instead of
+            // being held until Snowflake finishes. A timeout while still waiting for a pooled
+            // connection has no statement to cancel; `timedOut` makes the callback release that
+            // connection at once, without executing, when it finally arrives. A statement is kept
+            // for cancelling only while not `completed` (`complete` may fire synchronously, before
+            // `execute` returns), so a statement that finished is never cancelled.
+            let timedOut = false;
+            let runningStatement: Pick<RowStatement, 'cancel'> | undefined;
             const executePromise = pool.use(
               (connection: Connection) =>
                 new Promise<SnowflakeQueryResult<T>>((resolve, reject) => {
-                  connection.execute({
+                  if (timedOut) {
+                    reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                    return;
+                  }
+                  let completed = false;
+                  const statement = connection.execute({
                     sqlText,
                     binds: binds as any[],
                     fetchAsString: options?.fetchAsString,
                     complete: (err: SnowflakeError | undefined, stmt: RowStatement, rows: any[] | undefined) => {
+                      completed = true;
+                      runningStatement = undefined;
                       if (err) {
                         reject(err);
                       } else {
@@ -183,12 +212,19 @@ export class SnowflakeService {
                       }
                     },
                   });
+                  if (!completed) {
+                    runningStatement = statement;
+                  }
                 })
             );
 
             let timeoutHandle: ReturnType<typeof setTimeout>;
             const timeoutPromise = new Promise<never>((_, reject) => {
-              timeoutHandle = setTimeout(() => reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`)), queryTimeoutMs);
+              timeoutHandle = setTimeout(() => {
+                timedOut = true;
+                reject(new Error(`Snowflake query timed out after ${queryTimeoutMs}ms`));
+                this.cancelTimedOutStatement(runningStatement, queryHash, queryTimeoutMs);
+              }, queryTimeoutMs);
             });
 
             let result: SnowflakeQueryResult<T>;
@@ -218,21 +254,42 @@ export class SnowflakeService {
           } catch (error) {
             // Expected schema-rollout errors still reject so callers can use their fallback,
             // but they must not emit error telemetry or count toward the global circuit breaker.
-            const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
-            const expectedIdentifier = options?.expectInvalidIdentifier;
-            const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
+            // A caller that named an object exempts only that one: a missing CORE table in the same
+            // statement is a genuine fault and must keep its error telemetry and breaker failure.
+            const expectedObject = options?.expectMissingObject;
+            // A list exempts only an error blaming one of its objects, as a single name does.
+            const listedMissingObject =
+              typeof expectedObject === 'object' ? expectedObject.find((name) => SnowflakeService.isMissingObjectError(error, name)) : undefined;
+            const expectedMissing =
+              expectedObject !== undefined &&
+              expectedObject !== false &&
+              (typeof expectedObject === 'object'
+                ? listedMissingObject !== undefined
+                : SnowflakeService.isMissingObjectError(error, typeof expectedObject === 'string' ? expectedObject : undefined));
+            const expectedIdentifier = [options?.expectInvalidIdentifier ?? []].flat().find((identifier) => isInvalidIdentifierError(error, identifier));
+            const expectedInvalidIdentifier = expectedIdentifier !== undefined;
             const poolQueueFull = isPoolQueueFullError(error);
             const invalidRowCount = isInvalidRowCountError(error);
+            const valueConversion = isValueConversionError(error);
 
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
               if (expectedMissing) {
-                span.setAttribute('snowflake.expected_missing_object', true);
+                span.setAttribute('snowflake.expected_missing_object', typeof expectedObject === 'string' ? expectedObject : (listedMissingObject ?? true));
               }
               if (expectedInvalidIdentifier) {
                 span.setAttribute('snowflake.expected_invalid_identifier', expectedIdentifier);
               }
-              this.recordSuccess();
+              // `releaseProbe`, NOT `recordSuccess`. This query did not succeed; it hit an error the
+              // caller said to expect. `recordSuccess` resets `consecutiveFailures` to 0 POD-WIDE, so
+              // it would discard failures accumulated by unrelated queries. That is reachable: when
+              // the address table and a core table are both gone, Snowflake blames the exempt object
+              // on the scoped statement, so every uncached drawer request clears the count here and
+              // then books a single failure on the unscoped retry — the threshold is never reached and
+              // the breaker never opens through a real outage. `releaseProbe` leaves the count and the
+              // state alone and only frees the HALF_OPEN probe slot, which is what an error that says
+              // nothing about Snowflake's health should do.
+              this.releaseProbe();
               logger.warning(undefined, 'snowflake_query', 'Query hit an expected schema compatibility error', {
                 query_hash: queryHash,
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
@@ -248,14 +305,14 @@ export class SnowflakeService {
               });
               span.setAttribute('snowflake.pool_queue_full', true);
               this.releaseProbe();
-            } else if (invalidRowCount) {
-              // Out-of-range LIMIT/OFFSET is a request fault, not a Snowflake outage, so it must not count
-              // toward the breaker. Rethrown as a 500, logged once by apiErrorHandler.
+            } else if (invalidRowCount || valueConversion) {
+              // Out-of-range LIMIT/OFFSET and unrecognized values are request/data faults, not Snowflake
+              // outages. Leave the breaker untouched; the rethrown 500 is logged once by apiErrorHandler.
               span.setStatus({
                 code: SpanStatusCode.ERROR,
                 message: error instanceof Error ? error.message : String(error),
               });
-              span.setAttribute('snowflake.invalid_row_count', true);
+              span.setAttribute(invalidRowCount ? 'snowflake.invalid_row_count' : 'snowflake.value_conversion', true);
               this.releaseProbe();
             } else {
               span.setStatus({
@@ -481,6 +538,9 @@ export class SnowflakeService {
       database: requiredEnvVars.SNOWFLAKE_DATABASE!,
       warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE!,
       timeout: SNOWFLAKE_CONFIG.CONNECTION_TIMEOUT,
+      // snowflake-sdk 3.4 turned OCSP off by default; CRL validation replaces it. ADVISORY rejects
+      // a revoked certificate but not a CRL fetch or parse error, the same fail-open stance OCSP had.
+      certRevocationCheckMode: 'ADVISORY',
     };
 
     const poolOptions: PoolOptions = {
@@ -528,6 +588,27 @@ export class SnowflakeService {
         },
         originalError: error instanceof Error ? error : undefined,
       });
+    }
+  }
+
+  /**
+   * Cancel a statement that outlived its per-query timeout, so Snowflake stops it and its complete callback releases the
+   * pooled connection. Runs on the timer: a cancel failure is logged, never thrown. No statement (still waiting for a
+   * connection, or already complete) does nothing.
+   * @private
+   */
+  private cancelTimedOutStatement(statement: Pick<RowStatement, 'cancel'> | undefined, queryHash: string, timeoutMs: number): void {
+    if (!statement) {
+      return;
+    }
+    const warn = (err: unknown): void =>
+      logger.warning(undefined, 'snowflake_query', 'Failed to cancel a timed-out query', { query_hash: queryHash, timeout_ms: timeoutMs, err });
+    try {
+      statement.cancel((err) => {
+        if (err) warn(err);
+      });
+    } catch (error) {
+      warn(error);
     }
   }
 
@@ -588,9 +669,14 @@ export class SnowflakeService {
   }
 
   /**
-   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it, or
-   * the request carried an out-of-range row count. Leaves the failure count and circuit state untouched,
-   * but frees the HALF_OPEN probe slot so the next caller can probe.
+   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it, it
+   * carried an out-of-range row count/unrecognized value, or it hit a schema-rollout error the caller
+   * named through `expectMissingObject`/`expectInvalidIdentifier`. Leaves failure count and state
+   * untouched, but frees the HALF_OPEN probe slot so the next caller can probe.
+   *
+   * Deliberately not `recordSuccess` for the expected-error cases: none of them is a successful query, and
+   * resetting the shared count would discard failures booked by unrelated queries. A HALF_OPEN probe that
+   * ends here therefore stays HALF_OPEN, waiting for a real success to close the circuit.
    * @private
    */
   private releaseProbe(): void {
@@ -661,12 +747,47 @@ export class SnowflakeService {
       }
     }
 
-    // Ensure query starts with SELECT or WITH (for CTEs)
-    if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
+    // Ensure query starts with SELECT or WITH (for CTEs). Leading comments are skipped so a query can be documented
+    // above its SELECT; the write-operation scan above already covers the whole text, comments included.
+    const statementStart = this.stripLeadingComments(normalizedSql);
+    if (!/^SELECT\b/i.test(statementStart) && !/^WITH\b/i.test(statementStart)) {
       logger.warning(undefined, 'snowflake_validation', 'Blocked non-SELECT query (not starting with SELECT or WITH)', {
         sql_preview: normalizedSql.substring(0, 100),
       });
       throw new Error('Only SELECT queries are allowed');
     }
+  }
+
+  /**
+   * Drop the whitespace, `--` line comments and slash-star block comments that precede a statement. An unterminated
+   * block comment is left in place, so the caller's SELECT/WITH check still rejects it.
+   * @private
+   */
+  private stripLeadingComments(sql: string): string {
+    return sql.replace(/^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/, '');
+  }
+
+  /**
+   * Reject a statement carrying more than SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES binds (400).
+   * Bind count scales with caller-supplied filter lists, and Snowflake rejects an oversized statement as a
+   * compilation error — a request fault that must not reach the pod-wide circuit breaker.
+   * @private
+   */
+  private validateBindCount(binds: (Bind | Date)[] | undefined): void {
+    const bindCount = binds?.length ?? 0;
+    if (bindCount <= SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES) {
+      return;
+    }
+    throw new MicroserviceError(
+      `Snowflake statement has ${bindCount} bind variables (max ${SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES})`,
+      400,
+      'SNOWFLAKE_TOO_MANY_BINDS',
+      {
+        clientMessage: 'Too many filter values in this request. Narrow the selection and try again.',
+        operation: 'snowflake_bind_validation',
+        service: 'snowflake',
+        errorBody: { bind_count: bindCount, max_bind_count: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES },
+      }
+    );
   }
 }

@@ -3,23 +3,36 @@
 
 import { createRequire } from 'node:module';
 
-import type { CompactOrgAllEmployeesRawCache, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CompactOrgAllEmployeesRawCache,
+  OrgAllEmployeesResponse,
+  OrgCommitFilters,
+  OrgLensTimeRange,
+  OrgPersonCompanyEmailsResponse,
+} from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, getLive, cacheValues } = vi.hoisted(() => ({
+const { execute, getLive, getKeyContacts, fetchAllOrgSeats, getAccessPrincipals, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
+  resolveOrgScope: vi.fn(),
   execute: vi.fn(),
   getLive: vi.fn(),
+  getKeyContacts: vi.fn(),
+  fetchAllOrgSeats: vi.fn(),
+  getAccessPrincipals: vi.fn(),
   cacheValues: new Map<string, string>(),
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/string.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-people-stats.utils')),
   // Real, not stubbed: the roster cache encodes and decodes through these on every read/write, so a
   // stub would make the round-trip assertions below vacuous.
   ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-people.constants')),
@@ -27,10 +40,28 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   // Real, not stubbed: the roster guard validates the stored columns against these lists, so a
   // hand-written copy here would let a column-drift regression pass.
   ...(await import('../../../../../packages/shared/src/constants/org-cache-compact.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/org-commit-filters.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/org-maintainer-roles.constants')),
+  ...(await import('../../../../../packages/shared/src/constants/training.constants')),
 }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute }) },
+}));
+vi.mock('./org-people-key-contacts.service', () => ({
+  OrgPeopleKeyContactsService: class {
+    public getKeyContacts = getKeyContacts;
+  },
+}));
+vi.mock('./org-lens-board-committee.service', () => ({
+  OrgLensBoardCommitteeService: class {
+    public fetchAllOrgSeats = fetchAllOrgSeats;
+  },
+}));
+vi.mock('./org-lens-access.service', () => ({
+  OrgLensAccessService: class {
+    public getAccessPrincipals = getAccessPrincipals;
+  },
 }));
 vi.mock('./org-people-directory.service', () => ({
   OrgPeopleDirectoryService: class {
@@ -54,6 +85,11 @@ vi.mock('ioredis', () => ({
     }
   },
 }));
+// The scope served (lfx-self-serve-ops#1219): `all` unless a test grants the account an Insights organization.
+vi.mock('../helpers/org-scope.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/org-scope.helper')>()),
+  resolveOrgScope,
+}));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
 vi.mock('./valkey.service', async () => {
   const actual = await vi.importActual<typeof import('./valkey.service')>('./valkey.service');
@@ -73,13 +109,19 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
+import { ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE } from '@lfx-one/shared/constants';
+
+import { orgTrainingEnrolledWindowPredicate } from '../helpers/org-training-sql.helper';
+import { logger } from './logger.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
+import { OrgPeopleContributorsService } from './org-people-contributors.service';
+import { withCompanyEmailStatus } from './org-people-wire.mapper';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
   exec(sql: string): void;
   prepare(sql: string): {
-    run(...values: (string | number)[]): unknown;
+    run(...values: (string | number | null)[]): unknown;
     all(...values: string[]): Record<string, unknown>[];
   };
   close(): void;
@@ -89,17 +131,183 @@ interface SqlDatabase {
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new (path: string) => SqlDatabase };
 
 const ACCOUNT = 'account-one';
+const REQ = {} as never;
+const FILTERS: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
 const LIVE_PERSON = 'live-access-mixeduser';
 const GOVERNANCE_USERNAME = agreedUsername([' MixedUser ', 'mixeduser'])!;
-const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], companyEmailsStatus: 'unavailable' };
+const UNCONFIRMED: OrgPersonCompanyEmailsResponse = {
+  companyEmails: [],
+  primaryEmail: null,
+  companyEmailsStatus: 'unavailable',
+  companyEmailsReason: 'unconfirmed',
+};
+const FAILED: OrgPersonCompanyEmailsResponse = { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' };
+/** SQLite reading of the Snowflake enrollment window, so the detail read's real SQL runs here too. */
+const SQLITE_ENROLLED_WINDOW = `date(LAST_ENROLLED_TS) >= date('now', '-12 months') AND date(LAST_ENROLLED_TS) < date('now')`;
+/** Rows on the people list (IS_ON_PEOPLE_LIST keeps its default, 1). */
+const STATUS_INSERT =
+  'INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS (ACCOUNT_ID, PERSON_KEY, COURSE_ID, STATUS, COURSE_NAME, LAST_ENROLLED_TS, LAST_CERTIFIED_TS) VALUES (?, ?, ?, ?, ?, ?, ?)';
+// SQLite form of the bound range start in the maintainer roles overlap predicate.
+const SQLITE_DAYS_BEFORE_TODAY = "date('now', '-' || ? || ' days')";
 let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
-function addPerson(account: string, personKey: string, username: string, emails: string[] = []): void {
+function addPerson(account: string, personKey: string, username: string | null, emails: string[] = []): void {
   const insertEmail = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)');
   for (const [index, email] of emails.entries()) {
     insertEmail.run(account, personKey, username, email, index === 0 ? 1 : 0);
   }
+}
+
+/**
+ * An LF account (ORG_PEOPLE_LF_USERNAMES, every LF user, its username stored normalized) and its qualifying addresses at
+ * each account (ORG_PEOPLE_LF_USER_COMPANY_EMAILS), the first one primary.
+ */
+function addLfUser(personKey: string, username: string, emailsByAccount: Record<string, string[]> = {}): void {
+  database.prepare('INSERT INTO ORG_PEOPLE_LF_USERNAMES VALUES (?, ?)').run(username, personKey);
+  const insertEmail = database.prepare('INSERT INTO ORG_PEOPLE_LF_USER_COMPANY_EMAILS VALUES (?, ?, ?, ?)');
+  for (const [account, emails] of Object.entries(emailsByAccount)) {
+    for (const [index, email] of emails.entries()) {
+      insertEmail.run(account, personKey, email, index === 0 ? 1 : 0);
+    }
+  }
+}
+
+/** One ORG_PEOPLE_EXTENDED_COMPANY_EMAILS row: a former employee's LF-account address, or the address on a key-contact record. */
+function addExtendedEmail(
+  account: string,
+  row: {
+    personKey: string;
+    email: string;
+    source: 'lf_account' | 'key_contact_record';
+    username?: string | null;
+    keyContactId?: string | null;
+    isPrimary?: boolean;
+  }
+): void {
+  database
+    .prepare('INSERT INTO ORG_PEOPLE_EXTENDED_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(account, row.personKey, row.username ?? null, row.keyContactId ?? null, row.email, row.source, row.isPrimary ? 1 : 0);
+}
+
+/** `YYYY-MM-DD`, `days` before today (UTC, as SQLite's `date('now')`). */
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+function addDailyCode(account: string, key: string, activityDate: string, foundationId: string, foundationName: string, isLfProject = 1): void {
+  database
+    .prepare(
+      'INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(account, key, `project-${foundationId}`, activityDate, foundationId, foundationName, isLfProject);
+}
+
+function addRosterRow(account: string, key: string, username: string): void {
+  database.prepare('INSERT INTO ORG_PEOPLE_ALL (ACCOUNT_ID, PERSON_KEY, LF_USERNAME) VALUES (?, ?, ?)').run(account, key, username);
+}
+
+/** Days before today of a code day inside a range and outside every narrower one. */
+const RANGE_DAY: Record<string, number> = { '30d': 5, '90d': 60, '365d': 200, '730d': 500, all: 1000 };
+
+/**
+ * One day of a person's code in `range` — the People → Contributors rows All Employees counts live (lfx-self-serve#4735):
+ * authored commits, merged commits and code activities, in the foundation's project, an LF project unless `isLfProject` is 0.
+ */
+function addCodeDay(
+  account: string,
+  key: string,
+  range: string,
+  counts: { commits: number; merged: number; code: number },
+  foundation: [string, string] = ['foundation-two', 'Foundation Two'],
+  isLfProject = 1
+): void {
+  database
+    .prepare(
+      `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+        ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME,
+        DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      account,
+      key,
+      `project-${foundation[0]}`,
+      daysAgo(RANGE_DAY[range]),
+      ...foundation,
+      isLfProject,
+      `member-${key}`,
+      `Daily ${key}`,
+      counts.commits,
+      counts.merged,
+      counts.commits,
+      counts.merged,
+      counts.code
+    );
+}
+
+/**
+ * One ORG_PEOPLE_ALL_RANGES row, foundation-two engaged, and — as the warehouse builds it from them — a day of code in
+ * `range` and `projectScope` with `commits` authored commits (merged commits and code activities default to the same
+ * number unless given). The row's own code counts are the build's; All Employees counts the code day live.
+ */
+function addRangeRow(
+  account: string,
+  key: string,
+  range: string,
+  isFormer: boolean,
+  username: string,
+  name: string,
+  email: string | null,
+  commits: number,
+  counts: { projectScope?: string; merged?: number; code?: number } = {}
+): void {
+  database
+    .prepare(
+      `INSERT INTO ORG_PEOPLE_ALL_RANGES (
+        ACCOUNT_ID, PERSON_KEY, TIME_RANGE, PROJECT_SCOPE, IS_FORMER, LFID, LF_USERNAME, CDP_MEMBER_ID, NAME, TITLE, EMAIL, PHOTO,
+        SEATS_COUNT, BOARD_SEATS_COUNT, COMMITTEE_SEATS_COUNT, COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT,
+        EVENTS_COUNT, COURSES_COUNT, ENGAGED_FOUNDATION_IDS
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      account,
+      key,
+      range,
+      counts.projectScope ?? 'all',
+      isFormer ? 1 : 0,
+      key,
+      username,
+      null,
+      name,
+      null,
+      email,
+      null,
+      0,
+      0,
+      0,
+      commits,
+      counts.merged ?? commits,
+      counts.code ?? commits,
+      0,
+      0,
+      '["foundation-two"]'
+    );
+  const code = { commits, merged: counts.merged ?? commits, code: counts.code ?? commits };
+  if (code.commits > 0 || code.code > 0) addCodeDay(account, key, range, code, undefined, counts.projectScope === 'non_lf' ? 0 : 1);
+}
+
+/** One ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS row (lfx-self-serve#4730) and its day of code in `range`: code credited to `account`, no employment row there. */
+function addUnclassifiedRow(account: string, key: string, range: string, username: string, name: string, commits: number, teamMember = false): void {
+  database
+    .prepare(
+      `INSERT INTO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS (
+        ACCOUNT_ID, PERSON_KEY, TIME_RANGE, PROJECT_SCOPE, LFID, LF_USERNAME, CDP_MEMBER_ID, NAME, PHOTO,
+        COMMITS_COUNT, MERGED_COMMITS_COUNT, CODE_ACTIVITIES_COUNT, ENGAGED_FOUNDATION_IDS, IS_CDP_TEAM_MEMBER
+      ) VALUES (?, ?, ?, 'all', NULL, ?, NULL, ?, NULL, ?, ?, ?, '["foundation-three"]', ?)`
+    )
+    .run(account, key, range, username, name, commits, commits, commits, teamMember ? 1 : 0);
+  addCodeDay(account, key, range, { commits, merged: commits, code: commits }, ['foundation-three', 'Foundation Three']);
 }
 
 beforeEach(() => {
@@ -109,17 +317,73 @@ beforeEach(() => {
   ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  database.exec(
+    'CREATE TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, KEY_CONTACT_ID TEXT, EMAIL TEXT, ADDRESS_SOURCE TEXT, IS_PRIMARY INTEGER)'
+  );
+  database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAIL_KEYS (ACCOUNT_ID TEXT, KEY_TYPE TEXT, KEY_VALUE TEXT)');
+  database.exec('CREATE TABLE ORG_PEOPLE_LF_USERNAMES (LF_USERNAME TEXT, PERSON_KEY TEXT)');
+  database.exec('CREATE TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  // Unranged roster (the reassign pickers' read, and the username → person-key lookup).
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_ALL (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT, EMAIL TEXT,
+      PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER, COMMITTEE_SEATS_COUNT INTEGER, COMMITS_COUNT INTEGER,
+      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT, IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+    )
+  `);
+  // Per-range, per-project-scope roster (lfx-self-serve#4163, #4164); empty unless a test adds someone.
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_ALL_RANGES (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, TIME_RANGE TEXT, PROJECT_SCOPE TEXT, IS_FORMER INTEGER, LFID TEXT, LF_USERNAME TEXT,
+      CDP_MEMBER_ID TEXT, NAME TEXT, TITLE TEXT, EMAIL TEXT, PHOTO TEXT, SEATS_COUNT INTEGER, BOARD_SEATS_COUNT INTEGER,
+      COMMITTEE_SEATS_COUNT INTEGER, COMMITS_COUNT INTEGER, MERGED_COMMITS_COUNT INTEGER, CODE_ACTIVITIES_COUNT INTEGER,
+      EVENTS_COUNT INTEGER, COURSES_COUNT INTEGER, ENGAGED_FOUNDATION_IDS TEXT, NON_CODE_ENGAGED_FOUNDATION_IDS TEXT DEFAULT '[]', IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+    )
+  `);
+  // Contributors daily rows (foundation labels, Code detail); also read for the account's CDP team members (lfx-self-serve#4685).
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER,
+      LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
+      DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER,
+      IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+    )
+  `);
+  // People with code but no employment row (lfx-self-serve#4730); empty unless a test adds someone.
+  database.exec(`
+    CREATE TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS (
+      ACCOUNT_ID TEXT, PERSON_KEY TEXT, TIME_RANGE TEXT, PROJECT_SCOPE TEXT, LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT,
+      NAME TEXT, PHOTO TEXT, COMMITS_COUNT INTEGER, MERGED_COMMITS_COUNT INTEGER, CODE_ACTIVITIES_COUNT INTEGER,
+      ENGAGED_FOUNDATION_IDS TEXT, IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
+    )
+  `);
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
-    const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
+    const rows = database
+      .prepare(
+        query
+          .replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')
+          .replaceAll(orgTrainingEnrolledWindowPredicate('LAST_ENROLLED_TS'), SQLITE_ENROLLED_WINDOW)
+          .replaceAll('DATEADD(day, 0 - ?, CURRENT_DATE())', SQLITE_DAYS_BEFORE_TODAY)
+          .replace(/DATEADD\(day, -(\d+), CURRENT_DATE\(\)\)/g, "date('now', '-$1 days')")
+          .replaceAll('CURRENT_DATE()', "date('now')")
+          .replaceAll('IFF(', 'IIF(')
+      )
+      .all(...binds)
+      // Snowflake answers unquoted identifiers upper-cased, whatever case the query wrote them in.
+      .map((row) => Object.fromEntries(Object.entries(row).map(([column, value]) => [column.toUpperCase(), value])));
     for (const row of rows) {
-      for (const column of ['IS_BOARD', 'IS_MAINTAINER', 'IS_SPEAKER']) {
+      for (const column of ['IS_BOARD', 'IS_SPEAKER']) {
         if (column in row) row[column] = row[column] === 1;
       }
     }
     return { rows };
   });
   getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
+  getKeyContacts.mockResolvedValue({ assignments: [] });
+  fetchAllOrgSeats.mockResolvedValue([]);
+  getAccessPrincipals.mockResolvedValue([]);
+  resolveOrgScope.mockResolvedValue('all');
   service = new OrgLensPeopleService();
 });
 
@@ -130,52 +394,117 @@ afterEach(() => {
 });
 
 async function expectBothPaths(expected: OrgPersonCompanyEmailsResponse): Promise<void> {
-  expect(await service.getCompanyEmailsByUsername(ACCOUNT, GOVERNANCE_USERNAME)).toEqual(expected);
-  expect(await service.getEmployeeDetail({} as never, ACCOUNT, LIVE_PERSON)).toMatchObject(expected);
+  expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, GOVERNANCE_USERNAME)).toEqual(expected);
+  expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(expected);
 }
 
 describe('OrgLensPeopleService username company emails', () => {
-  it('resolves preserved-case governance and lowercased live usernames to the same account-scoped person', async () => {
-    addPerson(ACCOUNT, 'person-one', ' MiXeDuSeR ', ['z-primary@company.example', 'a-secondary@company.example']);
-    addPerson('other-account', 'person-one', 'MIXEDUSER', ['other-employer@other.example']);
-    addPerson(ACCOUNT, 'unrelated-person', 'someoneelse', ['unrelated@company.example']);
+  it("resolves preserved-case governance and lowercased live usernames to the same LF account's addresses at this account", async () => {
+    addLfUser('lf-user-one', 'mixeduser', {
+      [ACCOUNT]: ['z-primary@company.example', 'a-secondary@company.example'],
+      'other-account': ['other-employer@other.example'],
+    });
+    addLfUser('unrelated-person', 'someoneelse', { [ACCOUNT]: ['unrelated@company.example'] });
 
     await expectBothPaths({
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example'],
+      primaryEmail: 'z-primary@company.example',
       companyEmailsStatus: 'resolved',
     });
   });
 
-  it('reports a known identity without qualifying addresses as unavailable, never as none on record', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser');
+  // Ranges are nested, so someone live-only in the range on screen is live-only in 30d too, while the all
+  // range may hold a stored row for them instead — their `live-` key is then only in the 30d directory.
+  it('resolves a live-only key on the 30d directory, where a wider range would hold a stored row instead', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    getLive.mockImplementation(async (_req: unknown, _account: string, range: string | null) => ({
+      rows: [range === '30d' ? { personKey: LIVE_PERSON, lfUsername: 'mixeduser' } : { personKey: 'person-one', lfUsername: 'mixeduser' }],
+    }));
 
-    await expectBothPaths(UNAVAILABLE);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+      primaryEmail: 'first@company.example',
+    });
+  });
+
+  // Live-only rows are listed under All and LF projects only (Non-LF lists stored people alone), and the LF roster is
+  // inside All, so the 30d LF directory is the one probe.
+  it('probes only the 30d LF directory, since the Non-LF one lists no live-only row', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'person-one', lfUsername: 'mixeduser' }] });
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(UNCONFIRMED);
+    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([['30d', 'lf']]);
+  });
+
+  // The page has just filled the directory it shows; reading that one is a cache hit, while the 30d probes would each be
+  // a cold full merge of the live sources.
+  it('resolves a live-only key on the directory the drawer was opened from, without the 30d probes', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] });
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON, { range: '365d', projectScope: 'all' })).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+      primaryEmail: 'first@company.example',
+    });
+    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([['365d', 'all']]);
+  });
+
+  it('falls back to the 30d probes when the directory the drawer was opened from no longer lists the key', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    getLive.mockImplementation(async (_req: unknown, _account: string, range: string) => ({
+      rows: range === '30d' ? [{ personKey: LIVE_PERSON, lfUsername: 'mixeduser' }] : [],
+    }));
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON, { range: '90d', projectScope: 'non_lf' })).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+      primaryEmail: 'first@company.example',
+    });
+    expect(getLive.mock.calls.map(([, , range, filters]) => [range, (filters as OrgCommitFilters).projectScope])).toEqual([
+      ['90d', 'non_lf'],
+      ['30d', 'lf'],
+    ]);
+  });
+
+  it('reports a known LF account without qualifying addresses as none on record', async () => {
+    addLfUser('lf-user-one', 'mixeduser');
+
+    await expectBothPaths({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'resolved' });
+  });
+
+  it('reports a username the warehouse does not know as unavailable, never as none on record', async () => {
+    addLfUser('lf-user-two', 'someoneelse', { [ACCOUNT]: ['someone@company.example'] });
+
+    await expectBothPaths(UNCONFIRMED);
   });
 
   it('reports a failed lookup when the address table is unavailable', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    database.exec('DROP TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
 
-    await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
+    await expectBothPaths(FAILED);
   });
 
-  it('fails closed for case-folded collisions between people with addresses', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson(ACCOUNT, 'person-two', 'mixeduser', ['second@company.example']);
+  it('fails closed when the username names more than one LF account', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    addLfUser('lf-user-two', 'mixeduser', { [ACCOUNT]: ['second@company.example'] });
 
-    await expectBothPaths(UNAVAILABLE);
+    await expectBothPaths(UNCONFIRMED);
   });
 
-  it('does not treat identities that exist only at another account as resolved', async () => {
-    addPerson('other-account', 'person-one', 'MixedUser', ['other@other.example']);
+  it("never shows an LF account's addresses at another account", async () => {
+    addLfUser('lf-user-one', 'mixeduser', { 'other-account': ['other@other.example'] });
 
-    await expectBothPaths(UNAVAILABLE);
+    await expectBothPaths({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'resolved' });
   });
 
-  it('reads the address table only, never the identity spine view', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
+  it('reads the LF-account views only, never the identity spine view', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
 
-    await service.getCompanyEmailsByUsername(ACCOUNT, GOVERNANCE_USERNAME);
+    await service.getCompanyEmailsByUsername(REQ, ACCOUNT, GOVERNANCE_USERNAME);
 
     for (const [query] of execute.mock.calls as [string][]) {
       expect(query).not.toMatch(/_ORG_PEOPLE_SPINE/i);
@@ -183,80 +512,368 @@ describe('OrgLensPeopleService username company emails', () => {
   });
 
   it('does not resolve blank usernames to blank warehouse identities', async () => {
-    addPerson(ACCOUNT, 'person-one', ' ', ['someone@company.example']);
+    addLfUser('lf-user-one', '', { [ACCOUNT]: ['someone@company.example'] });
 
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, ' ')).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' ')).toEqual(UNCONFIRMED);
   });
 
   it('reuses a normalized username result without rerunning the warehouse read and keeps other accounts separate', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    addPerson('other-account', 'person-two', 'mixeduser', ['other@other.example']);
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MixedUser')).toEqual({
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    database.prepare('INSERT INTO ORG_PEOPLE_LF_USER_COMPANY_EMAILS VALUES (?, ?, ?, ?)').run('other-account', 'lf-user-one', 'other@other.example', 1);
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MixedUser')).toEqual({
       companyEmails: ['first@company.example'],
+      primaryEmail: 'first@company.example',
       companyEmailsStatus: 'resolved',
     });
-    expect(await service.getCompanyEmailsByUsername('other-account', 'MixedUser')).toEqual({
+    expect(await service.getCompanyEmailsByUsername(REQ, 'other-account', 'MixedUser')).toEqual({
       companyEmails: ['other@other.example'],
+      primaryEmail: 'other@other.example',
       companyEmailsStatus: 'resolved',
     });
     const warehouseReads = execute.mock.calls.length;
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, ' mixeduser ')).toEqual({
+    database.exec('DROP TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' mixeduser ')).toEqual({
       companyEmails: ['first@company.example'],
+      primaryEmail: 'first@company.example',
       companyEmailsStatus: 'resolved',
     });
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
-    expect(cacheValues.size).toBe(2);
+    // Per account: the person-key lookup and the address result (both reads cache their answer).
+    expect(cacheValues.size).toBe(4);
     for (const key of cacheValues.keys()) {
       expect(key.toLowerCase()).not.toContain('mixeduser');
     }
   });
 
   it('retries a failed username lookup instead of caching the outage', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    database.exec('ALTER TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
       companyEmails: [],
+      primaryEmail: null,
       companyEmailsStatus: 'failed',
     });
-    database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+    database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
       companyEmails: ['first@company.example'],
+      primaryEmail: 'first@company.example',
       companyEmailsStatus: 'resolved',
     });
   });
 
   it('reuses a stable unavailable result without turning it into another state', async () => {
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual(UNAVAILABLE);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'MIXEDUSER')).toEqual(UNAVAILABLE);
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual(UNCONFIRMED);
+    database.exec('DROP TABLE ORG_PEOPLE_LF_USERNAMES');
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'MIXEDUSER')).toEqual(UNCONFIRMED);
   });
 
   it('rejects a cached failed or status-less response instead of replaying it', async () => {
-    addPerson(ACCOUNT, 'person-one', 'MixedUser', ['first@company.example']);
-    await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser');
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser');
     for (const stale of [
-      { companyEmails: [], companyEmailsStatus: 'failed' },
+      { companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' },
       { companyEmails: ['stale@company.example'] },
       { companyEmails: ['stale@company.example'], companyEmailsStatus: 'unavailable' },
     ]) {
       for (const key of cacheValues.keys()) cacheValues.set(key, JSON.stringify(stale));
-      expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
         companyEmails: ['first@company.example'],
+        primaryEmail: 'first@company.example',
         companyEmailsStatus: 'resolved',
       });
+    }
+  });
+
+  it('replays a cache entry written before primaryEmail existed, reading it as no primary on record', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+    await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser');
+    for (const key of cacheValues.keys()) {
+      cacheValues.set(key, JSON.stringify({ companyEmails: ['cached@company.example'], companyEmailsStatus: 'resolved' }));
+    }
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['cached@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it("answers a client-supplied username the org's live directory does not list as unconfirmed, without reading its LF account", async () => {
+    addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'Outsider')).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string][]).some(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
+    expect(getLive.mock.calls.map(([, , range, filters, teamMembers]) => [range, (filters as OrgCommitFilters).projectScope, teamMembers])).toEqual([
+      ['30d', 'lf', 'include'],
+    ]);
+  });
+
+  it("resolves a client-supplied username once the org's live directory lists it", async () => {
+    addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'live-committee-outsider', lfUsername: ' Outsider ' }] });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'outsider')).toEqual({
+      companyEmails: ['outsider@company.example'],
+      primaryEmail: 'outsider@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  // The directory merges a key contact into an existing row by email without taking the key contact's username.
+  it("resolves a key contact's username that no directory row carries, from the org's key-contact assignments", async () => {
+    addLfUser('lf-kc', 'kcuser', { [ACCOUNT]: ['kc@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'person-kc', lfUsername: null }] });
+    getKeyContacts.mockResolvedValue({ assignments: [{ contactUid: 'a0F000000000001AAA', username: ' KCUser ', email: 'kc@personal.example' }] });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'kcuser')).toEqual({
+      companyEmails: ['kc@company.example'],
+      primaryEmail: 'kc@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+    expect(getKeyContacts).toHaveBeenCalledWith(REQ, ACCOUNT);
+
+    addLfUser('lf-stranger', 'stranger', { [ACCOUNT]: ['stranger@company.example'] });
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'stranger')).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string, unknown[]][]).some(([query, binds]) => query.includes('ORG_PEOPLE_LF_USERNAMES') && binds[0] === 'stranger')).toBe(
+      false
+    );
+  });
+
+  it.each([
+    ['a board or committee seat', () => fetchAllOrgSeats.mockResolvedValue([{ username: 'SeatUser ' }]), [getAccessPrincipals, getLive]],
+    ['an Org Lens access principal', () => getAccessPrincipals.mockResolvedValue([{ username: 'seatuser' }]), [getLive]],
+  ])('proves membership from %s, cheapest source first, without reading later sources', async (_label, seed, unread) => {
+    addLfUser('lf-seat', 'seatuser', { [ACCOUNT]: ['seat@company.example'] });
+    seed();
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'seatuser')).toMatchObject({
+      companyEmailsStatus: 'resolved',
+      companyEmails: ['seat@company.example'],
+    });
+    expect(getKeyContacts).toHaveBeenCalledWith(REQ, ACCOUNT);
+    for (const read of unread) expect(read).not.toHaveBeenCalled();
+  });
+
+  it('stops at the key-contact assignments when they carry the username', async () => {
+    addLfUser('lf-kc', 'kcuser', { [ACCOUNT]: ['kc@company.example'] });
+    getKeyContacts.mockResolvedValue({ assignments: [{ contactUid: 'a0F000000000001AAA', username: 'kcuser', email: 'kc@company.example' }] });
+
+    expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'kcuser')).companyEmailsStatus).toBe('resolved');
+    expect(fetchAllOrgSeats).not.toHaveBeenCalled();
+    expect(getAccessPrincipals).not.toHaveBeenCalled();
+    expect(getLive).not.toHaveBeenCalled();
+  });
+
+  it('answers failed, caching nothing, when no source carries the username and one of them failed', async () => {
+    addLfUser('lf-seat', 'seatuser', { [ACCOUNT]: ['seat@company.example'] });
+    getLive.mockResolvedValue({ rows: [] });
+    fetchAllOrgSeats.mockRejectedValue(new Error('committee-service down'));
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'seatuser')).toEqual(FAILED);
+    expect(getLive).toHaveBeenCalled();
+    expect([...cacheValues.keys()].some((key) => key.includes('people-username-emails'))).toBe(false);
+    expect((execute.mock.calls as [string][]).some(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
+    expect(logger.warning).toHaveBeenCalledWith(
+      REQ,
+      'get_org_lens_people_company_emails_by_username',
+      expect.any(String),
+      expect.objectContaining({ source: 'seats' })
+    );
+
+    // A later source still proves membership past a failed one.
+    getAccessPrincipals.mockResolvedValue([{ username: 'seatuser' }]);
+    expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'seatuser')).companyEmails).toEqual(['seat@company.example']);
+  });
+
+  it('checks the directory before the cache, so a cached LF-account answer never reaches an unproven caller', async () => {
+    addLfUser('lf-outsider', 'outsider', { [ACCOUNT]: ['outsider@company.example'] });
+    getLive.mockResolvedValue({ rows: [{ personKey: 'live-committee-outsider', lfUsername: 'outsider' }] });
+    expect((await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'outsider')).companyEmailsStatus).toBe('resolved');
+
+    getLive.mockResolvedValue({ rows: [] });
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'outsider')).toEqual(UNCONFIRMED);
+  });
+
+  it('reads the directory only once for a live-only key and never for a key-contact username, both derived server-side', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+
+    expect((await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).companyEmails).toEqual(['first@company.example']);
+    expect(getLive).toHaveBeenCalledTimes(1);
+
+    getLive.mockClear();
+    getLive.mockResolvedValue({ rows: [] });
+    const viaKeyContacts = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ['a0F000000000001AAA'], 'mixeduser', new Set(), false);
+    expect(viaKeyContacts.companyEmails).toEqual(['first@company.example']);
+    expect(getLive).not.toHaveBeenCalled();
+    expect(getKeyContacts).not.toHaveBeenCalled();
+  });
+
+  it('reads the LF-account views as an expected-missing object, so a pre-deploy view cannot trip the circuit breaker', async () => {
+    addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+
+    await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser');
+    await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['mixeduser', 'other']);
+
+    const reads = (execute.mock.calls as [string, unknown[], unknown][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
+    expect(reads).toHaveLength(2);
+    // Only the two LF-account views are exempt: the batch read also reads ORG_PEOPLE_ALL, a core table.
+    for (const [, , options] of reads) {
+      expect((options as { expectMissingObject?: unknown }).expectMissingObject).toEqual(['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS']);
     }
   });
 
   it('reports warehouse failures without claiming there are no addresses', async () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 
-    await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
+    await expectBothPaths(FAILED);
+  });
+
+  it("reads a roster person's addresses by person key, even when the address rows carry no username", async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' MixedUser ');
+    addPerson(ACCOUNT, 'person-one', null, ['first@company.example']);
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['first@company.example'],
+      primaryEmail: 'first@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('reports a roster person without addresses as none on record, not unavailable', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'MixedUser');
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: [],
+      primaryEmail: null,
+      companyEmailsStatus: 'resolved',
+    });
+  });
+});
+
+// The directory keys a key contact without an LF username on their address; their All Employees row lists the roles
+// held at it, and the drawer must read them as the Key Contacts tab's drawer does.
+describe('OrgLensPeopleService live key contacts without an LF username', () => {
+  const KEY = 'live-key-contact-ana';
+  const ADDRESS = 'ana.contact@company.example';
+  const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+  const OTHER_ID = 'a0F000000000009AAA';
+  const assignment = (contactUid: string, email: string, username: string | null = null) => ({ contactUid, email, username, role: 'Legal Contact' });
+  const addRecord = (keyContactId: string, email: string): void =>
+    addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email, source: 'key_contact_record', keyContactId });
+
+  beforeEach(() => {
+    getLive.mockResolvedValue({ rows: [{ personKey: KEY, lfUsername: null, email: ADDRESS }] });
+    getKeyContacts.mockResolvedValue({
+      assignments: [assignment(ids[0], ' Ana.Contact@Company.example '), assignment(ids[1], ADDRESS), assignment(OTHER_ID, 'other@company.example')],
+    });
+  });
+
+  it("reads the drawer's addresses from the records of the assignments at the row's address, still that address", async () => {
+    addRecord(ids[1], 'Ana.Contact@company.example');
+    // A record address that is no longer the contact's own, and another person's record, are never shown.
+    addRecord(ids[0], 'previous@company.example');
+    addRecord(OTHER_ID, 'other@company.example');
+
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual({
+      companyEmails: ['Ana.Contact@company.example'],
+      primaryEmail: null,
+      keyContactRecordEmails: ['Ana.Contact@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+    const [, binds] = (execute.mock.calls as [string, string[]][]).find(([sql]) => /KEY_CONTACT_ID IN/.test(sql))!;
+    expect(binds).toEqual([ACCOUNT, ...ids]);
+  });
+
+  it('answers unlinked when no record names an LF username and none carries the address', async () => {
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual({ ...UNCONFIRMED, companyEmailsReason: 'unlinked_identity' });
+  });
+
+  // The directory merges a key contact into a username-less row by address without its username (DR-010), so the drawer
+  // must not read that username's LF account either: the row's filter status is read from the records alone.
+  it("never reads the LF account of a username the row's records carry, answering unconfirmed without a record address", async () => {
+    addLfUser('lf-someone', 'someone', { [ACCOUNT]: ['someone@company.example'] });
+    getKeyContacts.mockResolvedValue({ assignments: [assignment(ids[0], ADDRESS, 'someone'), assignment(ids[1], ADDRESS, ' Someone ')] });
+
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual(UNCONFIRMED);
+    expect((execute.mock.calls as [string][]).some(([sql]) => sql.includes('ORG_PEOPLE_LF_USERNAMES'))).toBe(false);
+  });
+
+  it('keeps a username-less row holding no assignment at its address unconfirmed, without reading any record', async () => {
+    getKeyContacts.mockResolvedValue({ assignments: [assignment(OTHER_ID, 'other@company.example')] });
+
+    expect(await service.getCompanyEmails(REQ, ACCOUNT, KEY)).toEqual(UNCONFIRMED);
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, KEY)).toEqual({ username: null, emails: [], emailsStatus: 'unavailable' });
+    expect((execute.mock.calls as [string][]).some(([sql]) => /KEY_CONTACT_ID IN/.test(sql))).toBe(false);
+  });
+
+  it("identifies the Key Contacts tab on the row's address, where the roles its row lists are", async () => {
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, KEY)).toEqual({ username: null, emails: [ADDRESS], emailsStatus: 'resolved' });
+  });
+
+  it('identifies a roster person on their roster username and resolved addresses', async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' JDoe ');
+    addPerson(ACCOUNT, 'person-one', 'JDoe', ['first@company.example']);
+
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, 'person-one')).toEqual({
+      username: 'jdoe',
+      emails: ['first@company.example'],
+      emailsStatus: 'resolved',
+    });
+  });
+
+  // The address status decides what an unmatched identity may claim, so a failed lookup must reach the match intact.
+  it('forwards a failed address lookup as failed rather than as an empty address list', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'JDoe');
+    const realExecute = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: string[]) =>
+      query.includes('COMPANY_EMAILS') ? Promise.reject(new Error('warehouse unavailable')) : realExecute(query, binds)
+    );
+
+    expect(await service.getPersonKeyContactsIdentity(REQ, ACCOUNT, 'person-one')).toEqual({ username: 'jdoe', emails: [], emailsStatus: 'failed' });
+  });
+
+  it('lists for the filter exactly the addresses the drawer shows a record address for, caching no address', async () => {
+    getKeyContacts.mockResolvedValue({
+      assignments: [
+        assignment(ids[0], ADDRESS),
+        assignment(ids[1], ' Ana.Contact@Company.example '),
+        assignment('a0F000000000003AAA', 'moved@company.example'),
+        assignment('a0F000000000004AAA', 'unlinked@company.example'),
+      ],
+    });
+    addRecord(ids[1], ADDRESS);
+    addRecord('a0F000000000003AAA', 'previous@company.example');
+    const addresses = [' Ana.Contact@company.example', 'moved@company.example', 'unlinked@company.example', 'nobody@company.example'];
+
+    expect(await service.getLiveKeyContactAddressesWithCompanyEmail(REQ, ACCOUNT, addresses)).toEqual([ADDRESS]);
+
+    const reads = execute.mock.calls.length;
+    expect(await service.getLiveKeyContactAddressesWithCompanyEmail(REQ, ACCOUNT, [...addresses].reverse())).toEqual([ADDRESS]);
+    expect(execute).toHaveBeenCalledTimes(reads);
+    for (const [key, value] of cacheValues) {
+      expect(`${key}${value}`).not.toMatch(/@company\.example/);
+    }
+  });
+
+  it('answers null for the filter, logged, when the record read fails', async () => {
+    execute.mockRejectedValue(new Error('warehouse unavailable'));
+
+    expect(await service.getLiveKeyContactAddressesWithCompanyEmail(REQ, ACCOUNT, [ADDRESS])).toBeNull();
+    expect(logger.warning).toHaveBeenCalledWith(
+      REQ,
+      'get_org_lens_people_key_contact_email_statuses',
+      expect.any(String),
+      expect.objectContaining({ address_count: 1 })
+    );
   });
 });
 
 describe('OrgLensPeopleService person-key company emails', () => {
   const personKey = 'person-one';
+  // The roster's foundation dropdown also reads the training foundations of people-list rows, which the detail fixture
+  // below omits; the off-roster read classifies against that roster read (lfx-self-serve#4735, lfx-self-serve#4287).
+  const TRAINING_FOUNDATION_COLUMNS =
+    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_ID TEXT; ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN FOUNDATION_NAME TEXT; ' +
+    'ALTER TABLE ORG_PEOPLE_TRAINING ADD COLUMN IS_ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1;';
   const activity = {
     boardSeats: [
       {
@@ -286,11 +903,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
         projectName: 'Project One',
         foundationId: 'foundation-one',
         foundationName: 'Foundation One',
-        totalCommits: 12,
+        commits: 12,
         lastActivityDate: '2026-04-12',
         isMaintainer: true,
       },
     ],
+    totalCommits: 12,
     events: [
       {
         eventId: 'event-one',
@@ -321,14 +939,21 @@ describe('OrgLensPeopleService person-key company emails', () => {
       );
       CREATE TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, PROJECT_NAME TEXT, FOUNDATION_ID TEXT,
-        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, IS_MAINTAINER INTEGER, LAST_ACTIVITY_DATE TEXT
+        FOUNDATION_NAME TEXT, TOTAL_COMMITS INTEGER, PROJECT_COMMITS INTEGER, LAST_ACTIVITY_DATE TEXT
+      );
+      CREATE TABLE ORG_MAINTAINER_ROLES (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, MEMBER_ID TEXT, SEGMENT_ID TEXT, PROJECT_ID TEXT, ROLE_START_DATE TEXT, ROLE_END_DATE TEXT
       );
       CREATE TABLE ORG_PEOPLE_EVENTS (
         ACCOUNT_ID TEXT, PERSON_KEY TEXT, EVENT_ID TEXT, EVENT_NAME TEXT, EVENT_END_DATE TEXT,
         IS_SPEAKER INTEGER, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT
       );
       CREATE TABLE ORG_PEOPLE_TRAINING (
-        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_OR_CERT_ID TEXT, STATUS TEXT, COURSE_ID TEXT, COURSE_NAME TEXT, ACTIVITY_TS TEXT
+      );
+      CREATE TABLE ORG_PEOPLE_TRAINING_COURSE_STATUS (
+        ACCOUNT_ID TEXT, PERSON_KEY TEXT, COURSE_ID TEXT, STATUS TEXT, COURSE_NAME TEXT, LAST_ENROLLED_TS TEXT, LAST_CERTIFIED_TS TEXT,
+        IS_ON_PEOPLE_LIST INTEGER NOT NULL DEFAULT 1
       );
     `);
     database
@@ -339,107 +964,1586 @@ describe('OrgLensPeopleService person-key company emails', () => {
       .run(ACCOUNT, personKey, 'committee-one', 'Technical Committee', 'Technical', 0, 'Member', 'Observer', 'foundation-one', 'Foundation One');
     database
       .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 1, '2026-04-12');
+      .run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 12, 12, '2026-04-12');
+    // An open role with the unknown-start sentinel: the person maintains project-one in every range.
+    database
+      .prepare('INSERT INTO ORG_MAINTAINER_ROLES VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'member-one', 'segment-one', 'project-one', '2000-01-01', null);
     database
       .prepare('INSERT INTO ORG_PEOPLE_EVENTS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(ACCOUNT, personKey, 'event-one', 'Community Summit', '2026-04-10', 1, 'foundation-one', 'Foundation One');
-    database
-      .prepare('INSERT INTO ORG_PEOPLE_TRAINING VALUES (?, ?, ?, ?, ?, ?)')
-      .run(ACCOUNT, personKey, 'cert-one', 'Certified', 'course-one', 'Project Fundamentals');
+    database.prepare(STATUS_INSERT).run(ACCOUNT, personKey, 'course-one', 'Certified', 'Project Fundamentals', null, '2026-04-01');
   });
 
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
     addPerson(ACCOUNT, 'cdp:member-one', 'MixedUser', ['first@company.example']);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, 'cdp:member-one')).toMatchObject(UNAVAILABLE);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, 'cdp:member-one')).toEqual({ ...UNCONFIRMED, companyEmailsReason: 'unlinked_identity' });
   });
 
-  it('returns only the keyed person and account addresses in primary-first alphabetical order alongside activity', async () => {
+  it('returns activity without reading the address view', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({ personKey, ...activity });
+    const addressReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
+    expect(addressReads).toEqual([]);
+  });
+
+  it('lists certificates of any age but enrollments from the last 12 months only, today excluded', async () => {
+    const insert = database.prepare(STATUS_INSERT);
+    insert.run(ACCOUNT, personKey, 'course-old-cert', 'Certified', 'Old Certificate', null, daysAgo(1500));
+    insert.run(ACCOUNT, personKey, 'course-recent', 'Enrolled', 'Recent Enrollment', daysAgo(30), null);
+    insert.run(ACCOUNT, personKey, 'course-old', 'Enrolled', 'Old Enrollment', daysAgo(500), null);
+    insert.run(ACCOUNT, personKey, 'course-today', 'Enrolled', 'Today Enrollment', daysAgo(0), null);
+    // Another person's and another account's courses never reach this drawer.
+    insert.run(ACCOUNT, 'person-two', 'course-other-person', 'Enrolled', 'Other Person', daysAgo(30), null);
+    insert.run('other-account', personKey, 'course-other-account', 'Certified', 'Other Account', null, daysAgo(30));
+    // A row linked only by the learner's own enrollment (lfx-self-serve#4287) can share this key; it is not this employee's.
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_TRAINING_COURSE_STATUS VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'course-outside-link', 'Certified', 'Outside Link', null, daysAgo(30), 0);
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.training.map((row) => [row.courseId, row.status]).sort()).toEqual([
+      ['course-old-cert', 'Certified'],
+      ['course-one', 'Certified'],
+      ['course-recent', 'Enrolled'],
+    ]);
+    expect(detail.training[0]?.coursesCount).toBe(3);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail:v7:${personKey}`)!)).toBe(true);
+  });
+
+  // lf-dbt resolves one status per course, Certified winning over a re-enrollment; the drawer shows it as is, so a
+  // certified course keeps its certificate whatever the age of the re-enrollment beside it.
+  it('shows the resolved status per course, Certified with an enrollment beside it, and counts the rows shown', async () => {
+    const insert = database.prepare(STATUS_INSERT);
+    insert.run(ACCOUNT, personKey, 'course-two', 'Certified', 'Course Two', daysAgo(30), daysAgo(400));
+    insert.run(ACCOUNT, personKey, 'course-three', 'Certified', 'Course Three', daysAgo(900), daysAgo(800));
+    insert.run(ACCOUNT, personKey, 'course-four', 'Enrolled', 'Course Four', daysAgo(10), null);
+
+    const { training } = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(training.map((row) => [row.courseId, row.status]).sort()).toEqual([
+      ['course-four', 'Enrolled'],
+      ['course-one', 'Certified'],
+      ['course-three', 'Certified'],
+      ['course-two', 'Certified'],
+    ]);
+    for (const row of training) {
+      expect(row.coursesCount).toBe(4);
+      expect(row.certificationsCount).toBe(3);
+    }
+  });
+
+  it("counts a mirrored commit in every project's row and once in the total", async () => {
+    // 3 commits only in project-one, 4 more mirrored into project-two: credit 7 + 0, distinct per project 7 and 4.
+    database.exec('DELETE FROM ORG_PEOPLE_CODE_CONTRIBUTIONS');
+    const insert = database.prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insert.run(ACCOUNT, personKey, 'project-one', 'Project One', 'foundation-one', 'Foundation One', 7, 7, '2026-04-12');
+    insert.run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 0, 4, '2026-04-11');
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.code.map((row) => [row.projectId, row.commits])).toEqual([
+      ['project-one', 7],
+      ['project-two', 4],
+    ]);
+    expect(detail.totalCommits).toBe(7);
+  });
+
+  it('marks a code project Maintainer when the person holds a role on it overlapping the range, 730 days by default', async () => {
+    database.exec('DELETE FROM ORG_MAINTAINER_ROLES');
+    database
+      .prepare('INSERT INTO ORG_PEOPLE_CODE_CONTRIBUTIONS VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(ACCOUNT, personKey, 'project-two', 'Project Two', 'foundation-one', 'Foundation One', 2, 2, '2026-04-11');
+    const insert = database.prepare('INSERT INTO ORG_MAINTAINER_ROLES VALUES (?, ?, ?, ?, ?, ?, ?)');
+    // Ended 200 days ago: inside the past 2 years and all time, outside the past 90 days.
+    insert.run(ACCOUNT, personKey, 'member-one', 'segment-one', 'project-one', daysAgo(900), daysAgo(200));
+    // Not started yet, another person's role, another account's role: never this person's pill.
+    insert.run(ACCOUNT, personKey, 'member-one', 'segment-two', 'project-two', daysAgo(-10), null);
+    insert.run(ACCOUNT, 'person-two', 'member-two', 'segment-two', 'project-two', daysAgo(900), null);
+    insert.run('other-account', personKey, 'member-one', 'segment-two', 'project-two', daysAgo(900), null);
+    const pills = async (range?: '90d' | 'all'): Promise<[string, boolean][]> =>
+      (await service.getEmployeeDetail({} as never, ACCOUNT, personKey, range)).code.map((row) => [row.projectId, row.isMaintainer]);
+
+    expect(await pills()).toEqual([
+      ['project-one', true],
+      ['project-two', false],
+    ]);
+    expect(await pills('90d')).toEqual([
+      ['project-one', false],
+      ['project-two', false],
+    ]);
+    expect(await pills('all')).toEqual([
+      ['project-one', true],
+      ['project-two', false],
+    ]);
+    const roleReads = (execute.mock.calls as [string, unknown[]][]).filter(([query]) => query.includes('ORG_MAINTAINER_ROLES'));
+    expect(roleReads.map(([, binds]) => binds)).toEqual([
+      [ACCOUNT, personKey, 730],
+      [ACCOUNT, personKey, 90],
+      [ACCOUNT, personKey],
+    ]);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:90d`)!)).toBe(true);
+  });
+
+  it('flags the roles unavailable, shows no pill, and stores no roles, when the roles table is missing', async () => {
+    const warehouse = execute.getMockImplementation()!;
+    execute.mockImplementation(async (query: string, binds: string[]) => {
+      if (query.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      return warehouse(query, binds);
+    });
+
+    const detail = await service.getEmployeeDetail({} as never, ACCOUNT, personKey);
+
+    expect(detail.maintainerRolesUnavailable).toBe(true);
+    expect(detail.code.length).toBeGreaterThan(0);
+    expect(detail.code.every((row) => row.isMaintainer === false)).toBe(true);
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-roles:v1:${personKey}:730d`)!)).toBe(false);
+  });
+
+  it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
     addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);
     addPerson(ACCOUNT, 'person-two', 'mixeduser', ['other-person@company.example']);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
-      personKey,
-      ...activity,
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example', 'b-secondary@company.example'],
+      primaryEmail: 'z-primary@company.example',
       companyEmailsStatus: 'resolved',
     });
   });
 
-  it('preserves board, committee, code, event and training activity when the optional keyed email lookup fails', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
+  it('keeps the flagged primary first when another address has no IS_PRIMARY value', async () => {
+    // Ordered in the app, after both views are folded together, so Snowflake's NULLs-first DESC sort cannot lead with an unflagged address.
+    database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(ACCOUNT, personKey, 'MixedUser', 'a-unflagged@company.example', null);
+    database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)').run(ACCOUNT, personKey, 'MixedUser', 'z-primary@company.example', 1);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
-      personKey,
-      ...activity,
-      companyEmails: [],
-      companyEmailsStatus: 'failed',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
+      companyEmails: ['z-primary@company.example', 'a-unflagged@company.example'],
+      primaryEmail: 'z-primary@company.example',
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('folds both views into one address list: deduplicated, primary when any row is, record-only addresses named', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['b-current@company.example']);
+    addExtendedEmail(ACCOUNT, { personKey, email: 'B-Current@company.example', source: 'lf_account', isPrimary: true });
+    addExtendedEmail(ACCOUNT, { personKey, email: 'c-record@company.example', source: 'key_contact_record', keyContactId: 'a0F000000000001AAA' });
+    addExtendedEmail(ACCOUNT, { personKey, email: 'a-account@company.example', source: 'lf_account' });
+
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
+      companyEmails: ['b-current@company.example', 'a-account@company.example', 'c-record@company.example'],
+      primaryEmail: 'b-current@company.example',
+      keyContactRecordEmails: ['c-record@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it("resolves a username off the roster to its LF account's addresses, ignoring account address rows that carry the username", async () => {
+    addLfUser('lf-user-one', 'mixeduser');
+    database.prepare('INSERT INTO ORG_PEOPLE_LF_USER_COMPANY_EMAILS VALUES (?, ?, ?, ?)').run(ACCOUNT, 'lf-user-one', 'left@company.example', null);
+    addPerson(ACCOUNT, 'person-elsewhere', 'MixedUser', ['roster-row@company.example']);
+    addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', username: 'mixeduser' });
+
+    expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['left@company.example'],
+      primaryEmail: null,
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  describe('key-contact record addresses', () => {
+    const ids = ['a0F000000000001AAA', 'a0F000000000002AAA'];
+    // The contact emails the org's assignments show for these records now.
+    const current = new Set(['first@company.example', 'second@company.example', 'shared@company.example', 'record@company.example']);
+
+    it('reads the addresses on the given records only, every one record-only, binding each id', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'second@company.example', source: 'key_contact_record', keyContactId: ids[1] });
+      addExtendedEmail(ACCOUNT, {
+        personKey: '003000000000009AAA',
+        email: 'other@company.example',
+        source: 'key_contact_record',
+        keyContactId: 'a0F000000000009AAA',
+      });
+      addExtendedEmail('other-account', {
+        personKey: '003000000000001AAA',
+        email: 'elsewhere@other.example',
+        source: 'key_contact_record',
+        keyContactId: ids[0],
+      });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).toEqual({
+        companyEmails: ['first@company.example', 'second@company.example'],
+        primaryEmail: null,
+        keyContactRecordEmails: ['first@company.example', 'second@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+      const [query, binds] = (execute.mock.calls as [string, string[]][]).find(([sql]) => /KEY_CONTACT_ID IN/.test(sql))!;
+      expect(query).toMatch(/KEY_CONTACT_ID IN \(\?, \?\)/);
+      expect(binds).toEqual([ACCOUNT, ...ids]);
+    });
+
+    it('answers unlinked when no record names an LF username and none of their addresses qualifies', async () => {
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, true)).toEqual({
+        companyEmails: [],
+        primaryEmail: null,
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unlinked_identity',
+      });
+    });
+
+    it('still shows a record address when no record names an LF username', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, true)).toMatchObject({
+        companyEmails: ['first@company.example'],
+        keyContactRecordEmails: ['first@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('answers unconfirmed when neither the records nor the username find an address', async () => {
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current, false)).toEqual(UNCONFIRMED);
+    });
+
+    it("merges the username's addresses, which win over the record-only mark", async () => {
+      addRosterRow(ACCOUNT, personKey, 'MixedUser');
+      addPerson(ACCOUNT, personKey, 'MixedUser', ['shared@company.example']);
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'shared@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'record@company.example', source: 'key_contact_record', keyContactId: ids[1] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'MixedUser', current, false)).toEqual({
+        companyEmails: ['shared@company.example', 'record@company.example'],
+        primaryEmail: 'shared@company.example',
+        keyContactRecordEmails: ['record@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('answers resolved empty when the username resolves to a roster person with none on file', async () => {
+      addRosterRow(ACCOUNT, personKey, 'MixedUser');
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current, false)).toEqual({
+        companyEmails: [],
+        primaryEmail: null,
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('keeps the addresses of one leg when the other fails', async () => {
+      addLfUser('lf-user-one', 'mixeduser', { [ACCOUNT]: ['first@company.example'] });
+      vi.spyOn(
+        service as unknown as { readKeyContactRecordEmails: () => Promise<OrgPersonCompanyEmailsResponse> },
+        'readKeyContactRecordEmails'
+      ).mockResolvedValue(FAILED);
+
+      const result = await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, 'mixeduser', current, false);
+
+      expect(result.companyEmailsStatus).toBe('resolved');
+      expect(result.companyEmails).toEqual(['first@company.example']);
+    });
+
+    it('answers failed without caching it, and recovers', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      database.exec('ALTER TABLE ORG_PEOPLE_EXTENDED_COMPANY_EMAILS RENAME TO SAVED_EXTENDED');
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).toEqual(FAILED);
+      expect([...cacheValues.keys()].some((key) => key.includes('people-key-contact-emails'))).toBe(false);
+
+      database.exec('ALTER TABLE SAVED_EXTENDED RENAME TO ORG_PEOPLE_EXTENDED_COMPANY_EMAILS');
+      expect((await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, current, false)).companyEmails).toEqual(['first@company.example']);
+    });
+
+    // A role reassigned from A to B keeps its record id, so a record row (or a cached read) can still carry A's address.
+    it("shows only the record address of the role's current holder after a reassignment under the same id", async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'a.previous@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000002AAA', email: 'B.Current@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, [ids[0]], null, new Set(['b.current@company.example']), false)).toEqual({
+        companyEmails: ['B.Current@company.example'],
+        primaryEmail: null,
+        keyContactRecordEmails: ['B.Current@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('shows no record address when there are no current contact emails (the assignments read failed)', async () => {
+      addExtendedEmail(ACCOUNT, { personKey: '003000000000001AAA', email: 'first@company.example', source: 'key_contact_record', keyContactId: ids[0] });
+
+      expect(await service.getCompanyEmailsByKeyContacts(REQ, ACCOUNT, ids, null, new Set(), false)).toEqual(UNCONFIRMED);
+    });
+  });
+
+  describe('company-email keys', () => {
+    it("splits the account's keys by type and keeps the warehouse's username keys verbatim", async () => {
+      const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
+      insert.run(ACCOUNT, 'person_key', personKey);
+      insert.run(ACCOUNT, 'lf_username', 'mixeduser');
+      insert.run(ACCOUNT, 'lf_username_none', '\tpadded');
+      insert.run('other-account', 'person_key', 'person-elsewhere');
+
+      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toEqual({ personKeys: [personKey], usernames: ['mixeduser'], noneUsernames: ['\tpadded'] });
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-company-email-keys:v3')!)).toBe(true);
+    });
+
+    it('tags a live row exactly as the drawer answers it, a tab-padded stored username included', async () => {
+      // The warehouse keys compare LOWER(TRIM()) of the stored username, as the drawer's SQL does: a stored "\tpadded"
+      // stays padded, so neither the drawer nor the filter resolves the row's JavaScript-trimmed "padded".
+      addRosterRow(ACCOUNT, 'padded-person', '\tpadded');
+      addRosterRow(ACCOUNT, 'known-person', 'known');
+      const insert = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAIL_KEYS VALUES (?, ?, ?)');
+      insert.run(ACCOUNT, 'lf_username_none', '\tpadded');
+      insert.run(ACCOUNT, 'lf_username_none', 'known');
+
+      const keys = await service.getCompanyEmailKeys(REQ, ACCOUNT);
+      const liveRow = (key: string, lfUsername: string) => ({ personKey: key, lfUsername }) as unknown as OrgAllEmployeesResponse['rows'][number];
+      const tagged = withCompanyEmailStatus(
+        { accountId: ACCOUNT, rows: [liveRow('live-padded', 'padded'), liveRow('live-known', ' Known ')] } as OrgAllEmployeesResponse,
+        keys
+      );
+
+      expect(tagged.rows.map((row) => row.companyEmailStatus)).toEqual(['unconfirmed', 'none']);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'padded')).toMatchObject({
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unconfirmed',
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, ' Known ')).toMatchObject({ companyEmailsStatus: 'resolved', companyEmails: [] });
+    });
+
+    it('answers uncovered usernames by LF account as the drawer does, an unknown or ambiguous one in neither list', async () => {
+      addLfUser('lf-has', 'hasuser', { [ACCOUNT]: ['has@company.example'] });
+      addLfUser('lf-none', 'noneuser', { 'other-account': ['elsewhere@other.example'] });
+      addLfUser('lf-twice-a', 'twice', { [ACCOUNT]: ['a@company.example'] });
+      addLfUser('lf-twice-b', 'twice');
+      // Live-only rows of the org's directory, as the filter's usernames are.
+      getLive.mockResolvedValue({
+        rows: ['hasuser', 'noneuser', 'unknown', 'twice'].map((lfUsername) => ({ personKey: `live-access-${lfUsername}`, lfUsername })),
+      });
+
+      const statuses = await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['noneuser', 'hasuser', 'unknown', 'twice', 'hasuser']);
+
+      expect(statuses).toEqual({ usernames: ['hasuser'], noneUsernames: ['noneuser'] });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'hasuser')).toMatchObject({
+        companyEmailsStatus: 'resolved',
+        companyEmails: ['has@company.example'],
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'noneuser')).toMatchObject({ companyEmailsStatus: 'resolved', companyEmails: [] });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'unknown')).toEqual(UNCONFIRMED);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'twice')).toEqual(UNCONFIRMED);
+
+      // Cached per account and username set, in any order; no raw username in a key.
+      const reads = execute.mock.calls.length;
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['twice', 'unknown', 'hasuser', 'noneuser'])).toEqual(statuses);
+      expect(execute).toHaveBeenCalledTimes(reads);
+      for (const key of cacheValues.keys()) {
+        expect(key).not.toContain('hasuser');
+      }
+    });
+
+    it('binds at most ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE usernames per read, one read at a time', async () => {
+      const size = ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE;
+      const usernames = Array.from({ length: 2 * size + 1 }, (_, index) => `user-${String(index).padStart(4, '0')}`);
+      addLfUser('lf-last', usernames[2 * size], { [ACCOUNT]: ['last@company.example'] });
+      let running = 0;
+      let peak = 0;
+      const realExecute = execute.getMockImplementation()!;
+      execute.mockImplementation(async (...args: Parameters<typeof realExecute>) => {
+        peak = Math.max(peak, ++running);
+        await Promise.resolve();
+        try {
+          return await realExecute(...args);
+        } finally {
+          running -= 1;
+        }
+      });
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, usernames)).toEqual({ usernames: [usernames[2 * size]], noneUsernames: [] });
+      const reads = (execute.mock.calls as [string, string[]][]).filter(([query]) => query.includes('ORG_PEOPLE_LF_USERNAMES'));
+      // Each chunk binds the account, its usernames twice (roster check and LF-account lookup), and the account again.
+      expect(reads.map(([, binds]) => binds.length)).toEqual([2 * size + 2, 2 * size + 2, 4]);
+      expect(reads.every(([, binds]) => binds[0] === ACCOUNT && binds.at(-1) === ACCOUNT)).toBe(true);
+      expect(peak).toBe(1);
+    });
+
+    it('normalizes the usernames at entry, so raw and normalized sets share one read and one cache entry', async () => {
+      addLfUser('lf-has', 'hasuser', { [ACCOUNT]: ['has@company.example'] });
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, [' HasUser ', '\u00a0', 'NoneUser'])).toEqual({
+        usernames: ['hasuser'],
+        noneUsernames: [],
+      });
+      const reads = execute.mock.calls.length;
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['noneuser', 'hasuser'])).toEqual({ usernames: ['hasuser'], noneUsernames: [] });
+      expect(execute).toHaveBeenCalledTimes(reads);
+      expect([...cacheValues.keys()].filter((key) => key.includes('people-lf-username-email-statuses'))).toHaveLength(1);
+    });
+
+    it('leaves a username naming one roster person to that person, as the drawer does', async () => {
+      // The drawer answers a username on the roster from the roster person (a `cdp:` key is unlinked), never the LF account.
+      addRosterRow(ACCOUNT, 'cdp:member-one', 'rosteruser');
+      addLfUser('lf-roster', 'rosteruser', { [ACCOUNT]: ['roster@company.example'] });
+      addLfUser('lf-off', 'offroster');
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['offroster', 'rosteruser'])).toEqual({
+        usernames: [],
+        noneUsernames: ['offroster'],
+      });
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'rosteruser')).toMatchObject({
+        companyEmailsStatus: 'unavailable',
+        companyEmailsReason: 'unlinked_identity',
+      });
+    });
+
+    it('answers null and warns, storing nothing, when the LF-account read fails', async () => {
+      addLfUser('lf-has', 'hasuser', { [ACCOUNT]: ['has@company.example'] });
+      database.exec('ALTER TABLE ORG_PEOPLE_LF_USER_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
+
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['hasuser'])).toBeNull();
+      expect([...cacheValues.keys()].some((key) => key.includes('people-lf-username-email-statuses'))).toBe(false);
+
+      database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_LF_USER_COMPANY_EMAILS');
+      expect(await service.getLfUsernameCompanyEmailStatuses(REQ, ACCOUNT, ['hasuser'])).toEqual({ usernames: ['hasuser'], noneUsernames: [] });
+    });
+
+    it('answers null and warns, storing nothing, when the keys read fails', async () => {
+      database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAIL_KEYS');
+
+      expect(await service.getCompanyEmailKeys(REQ, ACCOUNT)).toBeNull();
+      expect(logger.warning).toHaveBeenCalledWith(
+        REQ,
+        'get_org_lens_people_company_email_keys',
+        expect.any(String),
+        expect.objectContaining({ org_uid: ACCOUNT })
+      );
+      expect([...cacheValues.keys()].some((key) => key.includes('people-company-email-keys'))).toBe(false);
     });
   });
 
   it('retries a failed email lookup instead of replaying the failure from cache', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
     database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'failed',
-      companyEmails: [],
-    });
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({ companyEmails: [], primaryEmail: null, companyEmailsStatus: 'failed' });
     database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['first@company.example'],
+      primaryEmail: 'first@company.example',
+      companyEmailsStatus: 'resolved',
     });
     database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['first@company.example'],
+      primaryEmail: 'first@company.example',
+      companyEmailsStatus: 'resolved',
     });
   });
 
-  it('keeps activity rows cached while the email lookup is failing', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
+  describe('former employees (lfx-self-serve#4311)', () => {
+    const formerKey = 'person-former';
 
-    database.exec(
-      'DROP TABLE ORG_PEOPLE_COMMITTEE_MEMBERSHIP; DROP TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS; DROP TABLE ORG_PEOPLE_EVENTS; DROP TABLE ORG_PEOPLE_TRAINING'
+    beforeEach(() => {
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
+      addRangeRow(ACCOUNT, formerKey, '365d', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
+      addRangeRow(ACCOUNT, formerKey, 'all', true, 'leftuser', '[[Unknown]]', 'left@personal.example', 4);
+      addDailyCode(ACCOUNT, formerKey, '2026-05-01', 'foundation-two', 'Foundation Two');
+    });
+
+    it('returns former employees flagged as former, with tiles counted over them and the foundations of their code', async () => {
+      const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS);
+
+      expect(response.rows).toEqual([expect.objectContaining({ personKey: formerKey, commitsCount: 4, isFormer: true })]);
+      expect(response.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
+      expect(response.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
+    });
+
+    it('labels the All Time foundations of code older than a year', async () => {
+      addRangeRow(ACCOUNT, 'person-long-gone', 'all', true, 'longgone', 'Long Gone', null, 2);
+      addDailyCode(ACCOUNT, 'person-long-gone', '2023-03-01', 'foundation-old', 'Foundation Old');
+
+      const response = await service.getFormerEmployees(ACCOUNT, 'all', FILTERS);
+
+      expect(response.foundations).toEqual([
+        { foundationId: 'foundation-old', foundationName: 'Foundation Old' },
+        { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+      ]);
+    });
+
+    it('reads only the former rows of the requested range, foundations included', async () => {
+      addRangeRow(ACCOUNT, personKey, '30d', false, 'stayer', 'Still Here', 'stayer@company.example', 1);
+
+      const response = await service.getFormerEmployees(ACCOUNT, '30d', FILTERS);
+
+      expect(response.rows).toEqual([]);
+      expect(response.foundations).toEqual([]);
+      expect(response.stats.activeInOss).toBe(0);
+    });
+
+    it('never sends an address for a former employee, not even as the fallback for a placeholder name', async () => {
+      const [formerRow] = (await service.getFormerEmployees(ACCOUNT, '365d', FILTERS)).rows;
+
+      expect(formerRow?.email).toBeNull();
+      expect(formerRow?.name).toBe('Unknown member');
+      expect(JSON.stringify(formerRow)).not.toContain('left@personal.example');
+      const formerReads = (execute.mock.calls as [string][]).filter(([query]) => /IS_FORMER = TRUE/.test(query));
+      expect(formerReads.length).toBeGreaterThan(0);
+      for (const [query] of formerReads) {
+        expect(query).not.toMatch(/^\s*EMAIL,/m);
+      }
+    });
+
+    it('never sends a title or an address-shaped name for a former employee', async () => {
+      addRangeRow(ACCOUNT, 'former-address-name', '365d', true, 'addressuser', 'gone@personal.example', null, 4);
+
+      const formerRow = (await service.getFormerEmployees(ACCOUNT, '365d', FILTERS)).rows.find((row) => row.lfUsername === 'addressuser');
+
+      expect(formerRow?.name).toBe('addressuser');
+      expect(formerRow?.title).toBeNull();
+      const formerRead = (execute.mock.calls as [string][]).find(([query]) => /IS_FORMER = TRUE/.test(query) && /SELECT PERSON_KEY, LFID/.test(query));
+      expect(formerRead?.[0]).not.toMatch(/\bTITLE\b|\bEMAIL\b/);
+    });
+
+    it("reads a former employee's LF-account addresses by person key and by LF username, with no former-employee short-circuit", async () => {
+      addExtendedEmail(ACCOUNT, { personKey: formerKey, email: 'left@company.example', source: 'lf_account', username: 'LeftUser', isPrimary: true });
+      // Off the roster, the username reads the former employee's LF account, which holds the same qualifying address.
+      addLfUser(formerKey, 'leftuser', { [ACCOUNT]: ['left@company.example'] });
+      // Still holding a seat, so the org's live directory lists the username.
+      getLive.mockResolvedValue({ rows: [{ personKey: 'live-board-leftuser', lfUsername: 'LeftUser' }] });
+      const resolved = { companyEmails: ['left@company.example'], primaryEmail: 'left@company.example', companyEmailsStatus: 'resolved' };
+
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual(resolved);
+      expect(await service.getCompanyEmailsByUsername(REQ, ACCOUNT, 'leftuser')).toEqual(resolved);
+      expect((execute.mock.calls as [string][]).some(([query]) => /IS_FORMER = TRUE/.test(query) && /LIMIT 1/.test(query))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-company-emails:v2:${formerKey}`)!)).toBe(true);
+    });
+
+    it('answers a former employee with no address on file as resolved empty by person key', async () => {
+      expect(await service.getCompanyEmails({} as never, ACCOUNT, formerKey)).toEqual({
+        companyEmails: [],
+        primaryEmail: null,
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('reads the former rows of the requested project scope, with the foundations of their code in that scope', async () => {
+      addRangeRow(ACCOUNT, 'person-non-lf', '365d', true, 'nonlf', 'Non Lf', null, 7, { projectScope: 'non_lf' });
+      addDailyCode(ACCOUNT, 'person-non-lf', '2026-05-01', 'foundation-x', 'Foundation X', 0);
+
+      const response = await service.getFormerEmployees(ACCOUNT, '365d', { ...FILTERS, projectScope: 'non_lf' });
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-non-lf', 7]]);
+      expect(response.foundations).toEqual([
+        { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+        { foundationId: 'foundation-x', foundationName: 'Foundation X' },
+      ]);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v4:365d:non_lf')!)).toBe(true);
+    });
+
+    it('fails the read, storing nothing, when the live code read fails, and recovers on the next request', async () => {
+      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY RENAME TO SAVED_DAILY');
+
+      // Team members included: their read shares the renamed table, and this case is about the code read alone.
+      await expect(service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include')).rejects.toThrow();
+      expect([...cacheValues.keys()].some((key) => key.includes('people-contributors:'))).toBe(false);
+
+      database.exec('ALTER TABLE SAVED_DAILY RENAME TO ORG_PEOPLE_CONTRIBUTORS_DAILY');
+      const recovered = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS);
+      expect(recovered.rows.map((row) => row.personKey)).toEqual([formerKey]);
+      expect(recovered.foundations).toEqual([{ foundationId: 'foundation-two', foundationName: 'Foundation Two' }]);
+    });
+
+    it('fails the former read when the roster read fails', async () => {
+      database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES RENAME TO SAVED_RANGES');
+
+      await expect(service.getFormerEmployees(ACCOUNT, '365d', FILTERS)).rejects.toThrow();
+      database.exec('ALTER TABLE SAVED_RANGES RENAME TO ORG_PEOPLE_ALL_RANGES');
+    });
+
+    it('lists the lowercased usernames of the all-time former population, cached per account', async () => {
+      addRangeRow(ACCOUNT, 'person-blank', 'all', true, '  ', 'Blank', null, 1);
+      addRangeRow(ACCOUNT, 'person-mixed', 'all', true, ' MixedLeaver ', 'Mixed', null, 1);
+      addRangeRow(ACCOUNT, 'person-current', 'all', false, 'stayer', 'Stayer', null, 1);
+      addRangeRow(ACCOUNT, 'person-ranged', '365d', true, 'rangedonly', 'Ranged', null, 1);
+
+      expect((await service.getFormerUsernames(ACCOUNT)).sort()).toEqual(['leftuser', 'mixedleaver']);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former-usernames:v1')!)).toBe(true);
+    });
+
+    it('rejects the former usernames on a warehouse error', async () => {
+      database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES RENAME TO SAVED_RANGES');
+
+      await expect(service.getFormerUsernames(ACCOUNT)).rejects.toThrow();
+      database.exec('ALTER TABLE SAVED_RANGES RENAME TO ORG_PEOPLE_ALL_RANGES');
+    });
+
+    describe('with people who have code but no employment row (lfx-self-serve#4730)', () => {
+      const unclassifiedKey = 'cdp:member-seven';
+
+      beforeEach(() => {
+        addUnclassifiedRow(ACCOUNT, unclassifiedKey, '365d', 'noroster', 'nobody@personal.example', 3);
+        addDailyCode(ACCOUNT, unclassifiedKey, '2026-05-01', 'foundation-three', 'Foundation Three');
+      });
+
+      it('lists them after the former employees, tagged unclassified, code only, in the tiles and the foundation labels', async () => {
+        const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows).toEqual([
+          expect.objectContaining({ personKey: formerKey, isFormer: true }),
+          expect.objectContaining({ personKey: unclassifiedKey, isUnclassified: true, commitsCount: 3, seatsCount: 0, eventsCount: 0, coursesCount: 0 }),
+        ]);
+        expect(response.rows[1]).not.toHaveProperty('isFormer');
+        // An address-shaped name is never sent; the LF username stands in, as for a former employee.
+        expect(response.rows[1]?.name).toBe('noroster');
+        expect(response.rows[1]?.email).toBeNull();
+        expect(response.stats.codeContributors).toBe(2);
+        expect(response.foundations).toEqual([
+          { foundationId: 'foundation-three', foundationName: 'Foundation Three' },
+          { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+        ]);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v2:365d:all')!)).toBe(true);
+      });
+
+      it('drops a CDP team member among them under Exclude team members, as their code is all they have, still naming them', async () => {
+        addUnclassifiedRow(ACCOUNT, 'cdp:team-member', '365d', 'teamer', 'Team Member', 5, true);
+        // The team-member keys come from the contributor rows' person-level flag (lfx-self-serve#4685).
+        database
+          .prepare('INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (ACCOUNT_ID, PERSON_KEY, IS_CDP_TEAM_MEMBER) VALUES (?, ?, 1)')
+          .run(ACCOUNT, 'cdp:team-member');
+
+        const excluded = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'exclude');
+
+        expect(excluded.rows.map((row) => row.personKey)).toEqual([formerKey, unclassifiedKey]);
+        // Named all the same, so the page never takes their live Org Lens access row for a current employee.
+        expect(excluded.unclassifiedUsernames?.sort()).toEqual(['noroster', 'teamer']);
+      });
+
+      it('lists someone on both populations once, as the former employee, when the two reads come from different builds', async () => {
+        // The two reads are cached separately, so right after a build one can still hold someone who has since moved.
+        addUnclassifiedRow(ACCOUNT, formerKey, '365d', 'leftuser', 'Left User', 6);
+        addUnclassifiedRow(ACCOUNT, 'cdp:left-user', '365d', ' LeftUser ', 'Left User', 6);
+        // A CDP-only identity the newer build resolved to an LF identity: same CDP member, no username on the stale row.
+        database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = '${formerKey}'`);
+        addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', '', 'Left User', 6);
+        database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
+
+        const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => [row.personKey, row.isFormer === true, row.isUnclassified === true])).toEqual([
+          [formerKey, true, false],
+          [unclassifiedKey, false, true],
+        ]);
+        expect(response.stats.codeContributors).toBe(2);
+      });
+
+      it('lists once, as former, someone whose stale former row lacks the username their unclassified row has, taking it', async () => {
+        // A stale former row without an LF username, and a newer unclassified row for the same CDP member that has one.
+        database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET LF_USERNAME = NULL, CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = '${formerKey}'`);
+        addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', 'leftuser', 'Left User', 6);
+        database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
+
+        const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => [row.personKey, row.isFormer === true, row.lfUsername])).toEqual([
+          [formerKey, true, 'leftuser'],
+          [unclassifiedKey, false, 'noroster'],
+        ]);
+        expect(response.stats.codeContributors).toBe(2);
+      });
+
+      it('gives the kept former row the CDP member only the unclassified row has', async () => {
+        addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', 'leftuser', 'Left User', 6);
+        database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
+
+        const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => [row.personKey, row.cdpMemberId])).toEqual([
+          [formerKey, 'member-left'],
+          [unclassifiedKey, null],
+        ]);
+      });
+
+      it('names them from their contributor rows while the table is not built, and does not remember that answer', async () => {
+        database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
+        const missing = new Error(
+          "SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' does not exist or not authorized."
+        );
+        const sqlite = execute.getMockImplementation()!;
+        execute.mockImplementation(async (query: string, binds: string[]) => {
+          if (query.includes('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS')) throw missing;
+          return sqlite(query, binds);
+        });
+
+        const before = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(before.rows.map((row) => [row.personKey, row.name, row.commitsCount])).toEqual([
+          [formerKey, 'Unknown member', 4],
+          [unclassifiedKey, `Daily ${unclassifiedKey}`, 3],
+        ]);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v2:365d:all')!)).toBe(false);
+        const unclassifiedRead = (execute.mock.calls as [string, unknown[], unknown][]).find(([query]) =>
+          query.includes('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS')
+        );
+        expect(unclassifiedRead?.[2]).toEqual({ expectMissingObject: 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS' });
+
+        database.exec('ALTER TABLE SAVED_UNCLASSIFIED RENAME TO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS');
+        execute.mockImplementation(sqlite);
+        const after = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+        expect(after.rows.map((row) => [row.personKey, row.name])).toEqual([
+          [formerKey, 'Unknown member'],
+          [unclassifiedKey, 'noroster'],
+        ]);
+      });
+
+      it('lowercases a username named from mixed-case contributor rows, as the warehouse rows are', async () => {
+        database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET LF_USERNAME = ' NoRoster ' WHERE PERSON_KEY = '${unclassifiedKey}'`);
+        database.exec('DELETE FROM ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS');
+
+        const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+        expect(response.rows.map((row) => row.personKey)).toContain(unclassifiedKey);
+        expect(response.unclassifiedUsernames).toEqual(['noroster']);
+      });
+
+      it('fails the read on any other warehouse error', async () => {
+        database.exec('ALTER TABLE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS RENAME TO SAVED_UNCLASSIFIED');
+
+        await expect(service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include')).rejects.toThrow();
+        database.exec('ALTER TABLE SAVED_UNCLASSIFIED RENAME TO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS');
+      });
+    });
+  });
+
+  describe('current employees by time range (lfx-self-serve#4163)', () => {
+    beforeEach(() => {
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
+    });
+
+    it('reads only the current rows of the requested range and counts the tiles over them', async () => {
+      addRangeRow(ACCOUNT, personKey, '30d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addRangeRow(ACCOUNT, 'person-older', '365d', false, 'older', 'Older Person', 'older@company.example', 5);
+      addRangeRow(ACCOUNT, 'person-left', '30d', true, 'left', 'Left Person', null, 2);
+
+      const response = await service.getAllEmployees(ACCOUNT, '30d', FILTERS);
+
+      expect(response.rows.map((row) => row.personKey)).toEqual([personKey]);
+      expect(response.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
+      const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
+      expect(rosterRead?.[0]).toContain('IS_FORMER = FALSE');
+      expect(rosterRead?.[1]).toEqual([ACCOUNT, '30d', 'all']);
+    });
+
+    it("reads Past 2 years as the warehouse's 730d rows, apart from the other ranges", async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addRangeRow(ACCOUNT, personKey, '730d', false, 'recent', 'Recent Person', 'recent@company.example', 7);
+      addRangeRow(ACCOUNT, 'person-two-years', '730d', false, 'twoyears', 'Two Years', 'twoyears@company.example', 2);
+
+      const response = await service.getAllEmployees(ACCOUNT, '730d', FILTERS);
+
+      // The past two years hold both of the person's code days.
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        [personKey, 10],
+        ['person-two-years', 2],
+      ]);
+      const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ORG_PEOPLE_ALL_RANGES/.test(query));
+      expect(rosterRead?.[1]).toEqual([ACCOUNT, '730d', 'all']);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:730d:all')!)).toBe(true);
+    });
+
+    it('offers the training foundations of people-list rows only, not those of learners outside the list', async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      const insert = database.prepare(
+        'INSERT INTO ORG_PEOPLE_TRAINING (ACCOUNT_ID, PERSON_KEY, COURSE_OR_CERT_ID, STATUS, ACTIVITY_TS, FOUNDATION_ID, FOUNDATION_NAME, IS_ON_PEOPLE_LIST) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      );
+      insert.run(ACCOUNT, personKey, 'enrolled:listed', 'Enrolled', daysAgo(30), 'foundation-listed', 'Foundation Listed', 1);
+      insert.run(ACCOUNT, 'ti:outside-learner', 'enrolled:outside', 'Enrolled', daysAgo(30), 'foundation-outside', 'Foundation Outside', 0);
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
+
+      const foundationIds = response.foundations.map((foundation) => foundation.foundationId);
+      expect(foundationIds).toContain('foundation-listed');
+      expect(foundationIds).not.toContain('foundation-outside');
+    });
+
+    it('lists the rows of the requested project scope only, counting the code in it', async () => {
+      // Each person's code day is in their scope; the `all` rows carry no code day of their own.
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'both', 'In Both', 'both@company.example', 3, { projectScope: 'lf' });
+      addRangeRow(ACCOUNT, 'person-non-lf', '365d', false, 'nonlf', 'Non Lf', 'nonlf@company.example', 2, { projectScope: 'non_lf' });
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'both', 'In Both', 'both@company.example', 0);
+      addRangeRow(ACCOUNT, 'person-non-lf', '365d', false, 'nonlf', 'Non Lf', 'nonlf@company.example', 0);
+
+      const all = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
+      const lf = await service.getAllEmployees(ACCOUNT, '365d', { ...FILTERS, projectScope: 'lf' });
+      const nonLf = await service.getAllEmployees(ACCOUNT, '365d', { ...FILTERS, projectScope: 'non_lf' });
+
+      expect(all.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        [personKey, 3],
+        ['person-non-lf', 2],
+      ]);
+      expect(lf.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([[personKey, 3]]);
+      expect(nonLf.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-non-lf', 2]]);
+    });
+
+    // The code tile counts Code Contributors under every option (lfx-self-serve#4160): the reviewer has no commit but counts.
+    it.each([
+      [{ commitScope: 'all', metric: 'commits' }, 10],
+      [{ commitScope: 'merged', metric: 'commits' }, 4],
+      [{ commitScope: 'all', metric: 'code' }, 25],
+      [{ commitScope: 'merged', metric: 'code' }, 25],
+    ] as const)('shows the count %o picks, with the code tile counting every code contributor', async (picked, expected) => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'coder', 'Coder', 'coder@company.example', 10, { merged: 4, code: 25 });
+      // Reviews only: no commit at all, but code contributions.
+      addRangeRow(ACCOUNT, 'person-reviewer', '365d', false, 'reviewer', 'Reviewer', 'reviewer@company.example', 0, { merged: 0, code: 6 });
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', { ...FILTERS, ...picked });
+
+      expect(response.rows.find((row) => row.personKey === personKey)?.commitsCount).toBe(expected);
+      expect(response.rows.find((row) => row.personKey === 'person-reviewer')?.commitsCount).toBe(picked.metric === 'code' ? 6 : 0);
+      expect(response.stats.codeContributors).toBe(2);
+    });
+
+    it('caches per range and project scope, one entry serving every commit scope and metric', async () => {
+      addRangeRow(ACCOUNT, personKey, '30d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+      addRangeRow(ACCOUNT, personKey, 'all', false, 'recent', 'Recent Person', 'recent@company.example', 9, { merged: 5, code: 40 });
+
+      expect((await service.getAllEmployees(ACCOUNT, '30d', FILTERS)).rows[0]?.commitsCount).toBe(3);
+      // All Time counts the 30-day code day too.
+      expect((await service.getAllEmployees(ACCOUNT, 'all', FILTERS)).rows[0]?.commitsCount).toBe(12);
+      const readsBeforeSwitch = execute.mock.calls.length;
+      expect((await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, commitScope: 'merged' })).rows[0]?.commitsCount).toBe(8);
+      expect((await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, metric: 'code' })).rows[0]?.commitsCount).toBe(43);
+      // Switching commit scope or metric re-projects the cached rows; it does not read the warehouse again.
+      expect(execute.mock.calls.length).toBe(readsBeforeSwitch);
+      await service.getFormerEmployees(ACCOUNT, '30d', FILTERS);
+      await service.getFormerEmployees(ACCOUNT, 'all', { ...FILTERS, metric: 'code' });
+      await service.getAllEmployees(ACCOUNT, 'all', { ...FILTERS, projectScope: 'lf' });
+
+      // The live code read is People → Contributors' own entry, shared by the current and the off-roster reads.
+      expect([...cacheValues.keys()].filter((key) => !key.includes('people-team-members')).sort()).toEqual(
+        [
+          'people-all:v8:30d:all',
+          'people-all:v8:all:all',
+          'people-all:v8:all:lf',
+          'people-contributors:v5:30d:all:all',
+          'people-contributors:v5:all:all:all',
+          'people-contributors:v5:all:lf:all',
+          'people-former:v4:30d:all',
+          'people-former:v4:all:all',
+          'people-unclassified:v2:30d:all',
+          'people-unclassified:v2:all:all',
+        ]
+          .map((subResource) => buildOrgCacheKey(ACCOUNT, subResource)!)
+          .sort()
+      );
+    });
+
+    it('labels the All Time foundations of code older than a year', async () => {
+      addRangeRow(ACCOUNT, personKey, 'all', false, 'veteran', 'Veteran', 'veteran@company.example', 2);
+      addDailyCode(ACCOUNT, personKey, '2023-03-01', 'foundation-old', 'Foundation Old');
+
+      const response = await service.getAllEmployees(ACCOUNT, 'all', FILTERS);
+
+      expect(response.foundations).toEqual([
+        { foundationId: 'foundation-old', foundationName: 'Foundation Old' },
+        { foundationId: 'foundation-one', foundationName: 'Foundation One' },
+        { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+      ]);
+    });
+
+    // The reassign pickers ask for no range: they keep the pre-#4163 roster.
+    it('reads the unranged ORG_PEOPLE_ALL roster when no range is given, cached apart from 365d', async () => {
+      addRosterRow(ACCOUNT, 'person-roster', 'rosteruser');
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
+
+      const roster = await service.getAllEmployees(ACCOUNT, null, FILTERS);
+      const ranged = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
+
+      expect(roster.rows.map((row) => row.personKey)).toEqual(['person-roster']);
+      expect(ranged.rows.map((row) => row.personKey)).toEqual([personKey]);
+      const rosterRead = (execute.mock.calls as [string, string[]][]).find(([query]) => /ENGAGED_FOUNDATION_IDS/.test(query));
+      expect(rosterRead?.[0]).toMatch(/ORG_PEOPLE_ALL\s/);
+      expect(rosterRead?.[0]).not.toContain('ORG_PEOPLE_ALL_RANGES');
+      expect(rosterRead?.[1]).toEqual([ACCOUNT]);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:roster')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
+    });
+
+    // lfx-self-serve#4685
+    it('drops CDP team members from the current and former rows and their tiles under exclude, and from neither under include', async () => {
+      addRangeRow(ACCOUNT, personKey, '365d', false, 'kept', 'Kept Person', 'kept@company.example', 3);
+      addRangeRow(ACCOUNT, 'person-team', '365d', false, 'team', 'Team Person', 'team@company.example', 5);
+      addRangeRow(ACCOUNT, 'person-team-left', '365d', true, 'teamleft', 'Team Left', null, 2);
+      database.exec("UPDATE ORG_PEOPLE_ALL_RANGES SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY IN ('person-team', 'person-team-left')");
+
+      const included = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
+      const excluded = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude');
+      const formerIncluded = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+      const formerExcluded = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'exclude');
+
+      expect(included.rows.map((row) => row.personKey).sort()).toEqual([personKey, 'person-team']);
+      expect(included.stats.codeContributors).toBe(2);
+      expect(excluded.rows.map((row) => row.personKey)).toEqual([personKey]);
+      expect(excluded.stats).toEqual({ activeInOss: 1, inGovernance: 0, codeContributors: 1, eventAttendees: 0, trainees: 0 });
+      expect(formerIncluded.rows.map((row) => row.personKey)).toEqual(['person-team-left']);
+      expect(formerExcluded.rows).toEqual([]);
+      // One roster entry per range and scope serves both picks; the team members are cached once per account.
+      expect([...cacheValues.keys()].filter((key) => key.includes('people-team-members') || key.includes('people-all:'))).toEqual(
+        expect.arrayContaining([buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!, buildOrgCacheKey(ACCOUNT, 'people-team-members:v1')!])
+      );
+      expect((execute.mock.calls as [string][]).filter(([query]) => query.includes('IS_CDP_TEAM_MEMBER'))).toHaveLength(1);
+    });
+
+    // lfx-self-serve#4735: the roster rows and the live code are cached apart, so right after a build they can name one
+    // person by different keys (here a CDP-only identity resolved to an LF identity).
+    it('counts someone once when the stored rows and the live code name them by different person keys', async () => {
+      addRangeRow(ACCOUNT, 'cdp:moved-current', '365d', false, 'movedcurrent', 'Moved Current', null, 0);
+      addRangeRow(ACCOUNT, 'cdp:moved-former', '365d', true, 'movedformer', 'Moved Former', null, 0);
+      for (const key of ['lfid-moved-current', 'lfid-moved-former']) addCodeDay(ACCOUNT, key, '365d', { commits: 2, merged: 2, code: 2 });
+
+      const current = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
+      const offRoster = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
+
+      // The stale keys have no code and nothing else, so they are not listed; the live keys are on no roster row.
+      expect(current.rows).toEqual([]);
+      expect(offRoster.rows.map((row) => [row.personKey, row.isUnclassified === true])).toEqual([
+        ['lfid-moved-current', true],
+        ['lfid-moved-former', true],
+      ]);
+      expect(current.stats.codeContributors + offRoster.stats.codeContributors).toBe(2);
+      // The off-roster read classifies against the roster entry the page lists, not a separate classification read.
+      expect((execute.mock.calls as [string][]).some(([query]) => query.includes("IFF(IS_FORMER, 'former', 'current')"))).toBe(false);
+    });
+  });
+
+  describe('by LF username (lfx-self-serve-ops#894)', () => {
+    it("resolves the username to its one roster person in this account and returns that person's activity", async () => {
+      addRosterRow(ACCOUNT, personKey, ' MixedUser ');
+      addRosterRow(ACCOUNT, 'person-two', 'someone-else');
+      // The same username in another account never makes this account's lookup ambiguous.
+      addRosterRow('other-account', 'person-three', 'mixeduser');
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'MIXEDUSER')).toEqual({ personKey, ...activity });
+    });
+
+    it('fails closed without reading activity when the username matches no roster person or several', async () => {
+      addRosterRow(ACCOUNT, personKey, 'shared');
+      addRosterRow(ACCOUNT, 'person-two', 'shared');
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'shared')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'nobody')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, '  ')).toBeNull();
+      const activityReads = (execute.mock.calls as [string][]).filter(([query]) =>
+        /ORG_PEOPLE_(COMMITTEE_MEMBERSHIP|CODE_CONTRIBUTIONS|EVENTS|TRAINING|COMPANY_EMAILS)/.test(query)
+      );
+      expect(activityReads).toEqual([]);
+    });
+  });
+
+  describe("Code tab in the opener's view (lfx-self-serve#4404)", () => {
+    const LF_COMMITS: OrgCommitFilters = { projectScope: 'lf', commitScope: 'all', metric: 'commits' };
+    const ALL_MERGED: OrgCommitFilters = { projectScope: 'all', commitScope: 'merged', metric: 'commits' };
+    const NON_LF_CODE: OrgCommitFilters = { projectScope: 'non_lf', commitScope: 'all', metric: 'code' };
+    const LF_MERGED: OrgCommitFilters = { projectScope: 'lf', commitScope: 'merged', metric: 'commits' };
+
+    /** One day of code: authored, merged, in-scope authored, in-scope merged commits and code activities. */
+    function addCode(key: string, projectId: string, isLfProject: number, daysBefore: number, counts: number[], account = ACCOUNT): void {
+      database
+        .prepare(
+          `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+            ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME, PROJECT_NAME,
+            DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(account, key, projectId, daysAgo(daysBefore), 'foundation-one', 'Foundation One', isLfProject, `cdp-${key}`, key, `Name ${projectId}`, ...counts);
+    }
+
+    async function codeIn(range: OrgLensTimeRange, filters: OrgCommitFilters): Promise<{ total: number; code: [string, number][] }> {
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, range, filters);
+      return { total: detail.totalCommits, code: detail.code.map((row) => [row.projectId, row.commits]) };
+    }
+
+    function dailyReads(): string[] {
+      return (execute.mock.calls as [string][]).map(([query]) => query).filter((query) => query.includes('ORG_PEOPLE_CONTRIBUTORS_DAILY'));
+    }
+
+    beforeEach(() => {
+      // The People → Contributors read filters the maintainer roles by project type and, under the default, team members.
+      database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_LF_PROJECT INTEGER');
+      database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0');
+      // A mirrored commit credits each scope once, so an LF day can carry more in-scope than all-project commits.
+      addCode(personKey, 'project-lf', 1, 10, [3, 2, 4, 3, 9]);
+      addCode(personKey, 'project-lf', 1, 200, [5, 5, 5, 5, 6]);
+      addCode(personKey, 'project-other', 0, 50, [1, 0, 2, 1, 4]);
+      addCode(personKey, 'project-old', 1, 800, [7, 7, 7, 7, 7]);
+      // Another person's and another account's code never counts.
+      addCode('person-two', 'project-lf', 1, 10, [50, 50, 50, 50, 50]);
+      addCode(personKey, 'project-lf', 1, 10, [90, 90, 90, 90, 90], 'other-account');
+    });
+
+    it('counts the range, project type and code count per project and in total, highest count first', async () => {
+      expect(await codeIn('90d', LF_COMMITS)).toEqual({ total: 4, code: [['project-lf', 4]] });
+      expect(await codeIn('365d', ALL_MERGED)).toEqual({
+        total: 7,
+        code: [
+          ['project-lf', 7],
+          ['project-other', 0],
+        ],
+      });
+      expect(await codeIn('365d', NON_LF_CODE)).toEqual({ total: 4, code: [['project-other', 4]] });
+      expect(await codeIn('all', LF_MERGED)).toEqual({
+        total: 15,
+        code: [
+          ['project-lf', 8],
+          ['project-old', 7],
+        ],
+      });
+    });
+
+    it('equals the People → Contributors row and its project rows for the same range and filters', async () => {
+      const contributors = new OrgPeopleContributorsService();
+      const combos: [OrgLensTimeRange, OrgCommitFilters][] = [
+        ['90d', LF_COMMITS],
+        ['365d', ALL_MERGED],
+        ['730d', NON_LF_CODE],
+        ['all', LF_MERGED],
+        ['all', { projectScope: 'all', commitScope: 'all', metric: 'code' }],
+      ];
+
+      for (const [range, filters] of combos) {
+        const response = await contributors.getContributors(ACCOUNT, range, filters);
+        const count = (row: { commits: number; codeActivities: number }): number => (filters.metric === 'code' ? row.codeActivities : row.commits);
+        const row = response.contributors.find((contributor) => contributor.personKey === personKey);
+        const projects = response.projects.filter((project) => project.personKey === personKey).map((project) => [project.projectId, count(project)]);
+        const drawer = await codeIn(range, filters);
+
+        expect(drawer.total).toBe(row ? count(row) : 0);
+        expect([...drawer.code].sort()).toEqual(projects.sort());
+      }
+    });
+
+    it('echoes the view, dates each project by its last activity in it, and never reads the trailing-year table', async () => {
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '365d', ALL_MERGED);
+
+      expect(detail.codeView).toEqual({ range: '365d', ...ALL_MERGED });
+      expect(detail.code.find((row) => row.projectId === 'project-lf')?.lastActivityDate).toBe(daysAgo(10));
+      expect((execute.mock.calls as [string][]).some(([query]) => query.includes('ORG_PEOPLE_CODE_CONTRIBUTIONS'))).toBe(false);
+    });
+
+    it('serves every code count of a range and project type from one cached read', async () => {
+      await codeIn('365d', LF_COMMITS);
+      await codeIn('365d', LF_MERGED);
+      await codeIn('365d', { ...LF_COMMITS, metric: 'code' });
+
+      expect(dailyReads()).toHaveLength(1);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:lf:all`)!)).toBe(true);
+    });
+
+    it('keeps the trailing-year commits, without a view, when the opener sends no filters', async () => {
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d');
+
+      expect(detail.codeView).toBeUndefined();
+      expect(detail.code.map((row) => [row.projectId, row.commits])).toEqual([['project-one', 12]]);
+      expect(detail.totalCommits).toBe(12);
+      expect(dailyReads()).toEqual([]);
+    });
+
+    // lfx-self-serve#4685
+    it("shows no code for a CDP team member under the opener's Exclude pick, as their row counts none, and their code under Include", async () => {
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY = '${personKey}'`);
+
+      const excluded = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'exclude');
+      const included = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'include');
+      const codeFree = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d');
+
+      expect([excluded.code, excluded.totalCommits]).toEqual([[], 0]);
+      expect(included.totalCommits).toBe(4);
+      // Without the opener's code filters the drawer is not a page's view, so the pick does not apply.
+      expect(codeFree.totalCommits).toBe(12);
+    });
+
+    it('keeps the code view while the team-member flag is not in the warehouse yet', async () => {
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET IS_CDP_TEAM_MEMBER = 1 WHERE PERSON_KEY = '${personKey}'`);
+      const warehouse = execute.getMockImplementation()!;
+      execute.mockImplementation(async (query: string, binds: string[]) => {
+        if (query.includes('IS_CDP_TEAM_MEMBER'))
+          throw Object.assign(new Error("SQL compilation error:\ninvalid identifier 'IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+        return warehouse(query, binds);
+      });
+
+      const detail = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '90d', LF_COMMITS, 'exclude');
+
+      expect(detail.totalCommits).toBe(4);
+    });
+
+    it('follows the view for a username opener and answers a live-only person with an empty view without a read', async () => {
+      addRosterRow(ACCOUNT, personKey, 'mixeduser');
+
+      const byUsername = await service.getEmployeeDetailByUsername(REQ, ACCOUNT, 'mixeduser', '90d', LF_COMMITS);
+      expect(byUsername?.codeView).toEqual({ range: '90d', ...LF_COMMITS });
+      expect(byUsername?.totalCommits).toBe(4);
+
+      execute.mockClear();
+      const liveOnly = await service.getEmployeeDetail(REQ, ACCOUNT, LIVE_PERSON, '90d', LF_COMMITS);
+      expect(liveOnly).toMatchObject({ code: [], totalCommits: 0, codeView: { range: '90d', ...LF_COMMITS } });
+      expect(execute).not.toHaveBeenCalled();
+    });
+  });
+
+  // lfx-self-serve-ops#1219
+  describe('organization scope', () => {
+    const grantInsights = () => resolveOrgScope.mockImplementation(async (_snowflake: unknown, _account: string, scope: string) => scope);
+    const queries = (): string[] => (execute.mock.calls as [string][]).map(([query]) => query);
+
+    /**
+     * The Insights organization's share of a ranged row's code, `[commits, merged, code activities]`: on the stored row
+     * (its gate) and on its code day, which All Employees counts live.
+     */
+    function setInsightsCounts(table: string, key: string, range: string, counts: [number, number, number], foundations = '["foundation-insights"]'): void {
+      database
+        .prepare(
+          `UPDATE ${table} SET INSIGHTS_COMMITS_COUNT = ?, INSIGHTS_MERGED_COMMITS_COUNT = ?, INSIGHTS_CODE_ACTIVITIES_COUNT = ?, INSIGHTS_ENGAGED_FOUNDATION_IDS = ? WHERE PERSON_KEY = ? AND TIME_RANGE = ?`
+        )
+        .run(...counts, foundations, key, range);
+      const [commits, merged, code] = counts;
+      database
+        .prepare(
+          `UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET INSIGHTS_DAILY_COMMITS = ?, INSIGHTS_DAILY_MERGED_COMMITS = ?, INSIGHTS_DAILY_SCOPE_COMMITS = ?,
+            INSIGHTS_DAILY_SCOPE_MERGED_COMMITS = ?, INSIGHTS_DAILY_CODE_ACTIVITIES = ? WHERE PERSON_KEY = ? AND ACTIVITY_DATE = ?`
+        )
+        .run(commits, merged, commits, merged, code, key, daysAgo(RANGE_DAY[range]));
+    }
+
+    beforeEach(() => {
+      database.exec(TRAINING_FOUNDATION_COLUMNS);
+      for (const table of ['ORG_PEOPLE_ALL_RANGES', 'ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS']) {
+        database.exec(`
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_COMMITS_COUNT INTEGER DEFAULT 0;
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_MERGED_COMMITS_COUNT INTEGER DEFAULT 0;
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_CODE_ACTIVITIES_COUNT INTEGER DEFAULT 0;
+          ALTER TABLE ${table} ADD COLUMN INSIGHTS_ENGAGED_FOUNDATION_IDS TEXT;
+        `);
+      }
+      database.exec('ALTER TABLE ORG_PEOPLE_ALL_RANGES ADD COLUMN CERTIFICATIONS_COUNT INTEGER DEFAULT 0');
+      for (const column of ['COMMITS', 'MERGED_COMMITS', 'SCOPE_COMMITS', 'SCOPE_MERGED_COMMITS', 'CODE_ACTIVITIES']) {
+        database.exec(`ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_${column} INTEGER DEFAULT 0`);
+      }
+    });
+
+    // lfx-self-serve#4735: a current employee is listed for seats, events or courses in the range and scope, or for live
+    // code there (under insights the Insights organization's); the stored row's own code columns decide nothing.
+    it.each(['insights', 'all'] as const)(
+      'lists current employees with live code or another engagement under %s, with the foundations of both',
+      async (orgScope) => {
+        grantInsights();
+        addRangeRow(ACCOUNT, 'person-insights', '365d', false, 'insights', 'Insights Coder', 'insights@company.example', 10);
+        setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'person-insights', '365d', [4, 3, 6]);
+        // Built before their Insights code arrived: the stored Insights count is 0, the shared read has it.
+        addRangeRow(ACCOUNT, 'person-new-insights', '365d', false, 'newinsights', 'New Insights Coder', 'new@company.example', 7);
+        setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'person-new-insights', '365d', [2, 2, 2]);
+        database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET INSIGHTS_CODE_ACTIVITIES_COUNT = 0 WHERE PERSON_KEY = 'person-new-insights'`);
+        addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
+        addRangeRow(ACCOUNT, 'person-seat', '365d', false, 'seat', 'Seat Holder', 'seat@company.example', 5);
+        // Stored code foundations (ENGAGED_FOUNDATION_IDS) are the build's; only the seat's foundation is not code.
+        database.exec(
+          `UPDATE ORG_PEOPLE_ALL_RANGES SET SEATS_COUNT = 1, ENGAGED_FOUNDATION_IDS = '["foundation-old-code","foundation-seat"]', NON_CODE_ENGAGED_FOUNDATION_IDS = '["foundation-seat"]' WHERE PERSON_KEY = 'person-seat'`
+        );
+        addRangeRow(ACCOUNT, 'person-event', '365d', false, 'event', 'Event Goer', 'event@company.example', 0);
+        database.exec(
+          `UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1, NON_CODE_ENGAGED_FOUNDATION_IDS = '["foundation-event"]' WHERE PERSON_KEY = 'person-event'`
+        );
+        // Listed by the build for code the window has since passed, with nothing else.
+        addRangeRow(ACCOUNT, 'person-passed', '365d', false, 'passed', 'Passed Coder', 'passed@company.example', 0);
+        database.exec(
+          `UPDATE ORG_PEOPLE_ALL_RANGES SET COMMITS_COUNT = 3, CODE_ACTIVITIES_COUNT = 3, INSIGHTS_CODE_ACTIVITIES_COUNT = 3 WHERE PERSON_KEY = 'person-passed'`
+        );
+
+        const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', orgScope);
+
+        const listed = Object.fromEntries(response.rows.map((row) => [row.personKey, [row.commitsCount, row.engagedFoundationIds]]));
+        expect(listed).toEqual(
+          orgScope === 'insights'
+            ? {
+                'person-insights': [4, ['foundation-two']],
+                'person-new-insights': [2, ['foundation-two']],
+                'person-seat': [0, ['foundation-seat']],
+                'person-event': [0, ['foundation-event']],
+              }
+            : {
+                'person-insights': [10, ['foundation-two']],
+                'person-new-insights': [7, ['foundation-two']],
+                'person-other-org': [8, ['foundation-two']],
+                'person-seat': [5, ['foundation-seat', 'foundation-two']],
+                'person-event': [0, ['foundation-event']],
+              }
+        );
+        expect(response.stats.codeContributors).toBe(orgScope === 'insights' ? 2 : 4);
+        const rosterRead = queries().find(
+          (query) => /FROM ORG_PEOPLE_ALL_RANGES|PLATINUM_LFX_ONE\.ORG_PEOPLE_ALL_RANGES/.test(query) && /IS_FORMER = FALSE/.test(query)
+        );
+        // The stored row carries no code count and no Insights column; one entry serves both scopes.
+        expect(rosterRead).not.toMatch(/COMMITS_COUNT|CODE_ACTIVITIES_COUNT|INSIGHTS/);
+        expect(rosterRead).toContain('NON_CODE_ENGAGED_FOUNDATION_IDS AS ENGAGED_FOUNDATION_IDS');
+        expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(orgScope === 'insights' ? 1 : 0);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
+      }
     );
-    const warehouseReads = execute.mock.calls.length;
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
-    expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
+
+    it("reads today's code and the shared roster entry when an insights request resolves to all", async () => {
+      addRangeRow(ACCOUNT, 'person-other-org', '365d', false, 'otherorg', 'Other Org Coder', 'other@company.example', 8);
+
+      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
+      expect(queries().some((query) => /INSIGHTS|insights_daily/.test(query))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(true);
+    });
+
+    it('leaves the unranged roster unscoped, without resolving the scope', async () => {
+      grantInsights();
+
+      await service.getAllEmployees(ACCOUNT, null, FILTERS, 'exclude', 'insights');
+
+      expect(resolveOrgScope).not.toHaveBeenCalled();
+      expect(queries().some((query) => query.includes('INSIGHTS'))).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:roster')!)).toBe(true);
+    });
+
+    it('lists former and unclassified people only for Insights-scoped code under insights, with its foundation labels, still naming every unclassified person', async () => {
+      grantInsights();
+      addRangeRow(ACCOUNT, 'former-insights', '365d', true, 'formerinsights', 'Former Insights', null, 9);
+      setInsightsCounts('ORG_PEOPLE_ALL_RANGES', 'former-insights', '365d', [2, 2, 2]);
+      addRangeRow(ACCOUNT, 'former-other-org', '365d', true, 'formerother', 'Former Other', null, 9);
+      addDailyCode(ACCOUNT, 'former-insights', daysAgo(5), 'foundation-two', 'Foundation Two');
+      addDailyCode(ACCOUNT, 'former-other-org', daysAgo(5), 'foundation-x', 'Foundation X');
+      addUnclassifiedRow(ACCOUNT, 'unclassified-insights', '365d', 'uninsights', 'Unclassified Insights', 5);
+      setInsightsCounts('ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS', 'unclassified-insights', '365d', [1, 1, 3]);
+      addUnclassifiedRow(ACCOUNT, 'unclassified-other-org', '365d', 'unother', 'Unclassified Other', 5);
+
+      const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'exclude', 'insights');
+
+      expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([
+        ['former-insights', 2],
+        ['unclassified-insights', 1],
+      ]);
+      expect(response.foundations).toEqual([
+        { foundationId: 'foundation-three', foundationName: 'Foundation Three' },
+        { foundationId: 'foundation-two', foundationName: 'Foundation Two' },
+      ]);
+      // Someone with no employment record but only other organizations' code is not listed, but is still named, so the
+      // page never takes their access-only live row for a current employee.
+      expect(response.unclassifiedUsernames?.sort()).toEqual(['uninsights', 'unother']);
+      // Who they are does not depend on the scope; their code is the People → Contributors read of the scope.
+      const offRoster = queries().filter((query) => /ORG_PEOPLE_(ALL_RANGES|UNCLASSIFIED_CONTRIBUTORS)/.test(query) && /SELECT PERSON_KEY, LFID/.test(query));
+      expect(offRoster).toHaveLength(2);
+      for (const query of offRoster) expect(query).not.toContain('INSIGHTS');
+      expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(1);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v4:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v2:365d:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:insights')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(false);
+    });
+
+    it("counts the Code tab's Insights-scoped code under insights, and today's code under all", async () => {
+      database
+        .prepare(
+          `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+            ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME, PROJECT_NAME,
+            DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES,
+            INSIGHTS_DAILY_COMMITS, INSIGHTS_DAILY_MERGED_COMMITS, INSIGHTS_DAILY_SCOPE_COMMITS, INSIGHTS_DAILY_SCOPE_MERGED_COMMITS, INSIGHTS_DAILY_CODE_ACTIVITIES
+          ) VALUES (?, ?, ?, ?, 'foundation-one', 'Foundation One', 1, 'cdp', 'name', 'Project', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(ACCOUNT, personKey, 'project-both', daysAgo(10), 6, 6, 6, 6, 9, 2, 2, 2, 2, 3);
+      database
+        .prepare(
+          `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+            ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME, PROJECT_NAME,
+            DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES
+          ) VALUES (?, ?, ?, ?, 'foundation-one', 'Foundation One', 1, 'cdp', 'name', 'Project', 4, 4, 4, 4, 4)`
+        )
+        .run(ACCOUNT, personKey, 'project-other-org', daysAgo(10));
+      const commits: OrgCommitFilters = { projectScope: 'all', commitScope: 'all', metric: 'commits' };
+
+      const all = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '365d', commits, 'include', 'all');
+      expect(all.code.map((row) => [row.projectId, row.commits])).toEqual([
+        ['project-both', 6],
+        ['project-other-org', 4],
+      ]);
+
+      grantInsights();
+      execute.mockClear();
+      const insights = await service.getEmployeeDetail(REQ, ACCOUNT, personKey, '365d', commits, 'include', 'insights');
+
+      expect(insights.code.map((row) => [row.projectId, row.commits])).toEqual([['project-both', 2]]);
+      expect(insights.totalCommits).toBe(2);
+      const codeRead = queries().find((query) => query.includes('ORG_PEOPLE_CONTRIBUTORS_DAILY') && query.includes('GROUP BY project_id'));
+      expect(codeRead).toContain('SUM(insights_daily_commits) AS COMMITS');
+      expect(codeRead).toContain('SUM(insights_daily_code_activities) AS CODE_ACTIVITIES');
+      expect(codeRead).toContain('AND insights_daily_code_activities > 0');
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:all:insights`)!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, `people-detail-code-view:v1:${personKey}:365d:all:all`)!)).toBe(true);
+    });
+
+    // lfx-self-serve#4735: the acceptance invariant. The warehouse rows were built the day before (each window reached one
+    // day further back), so some stored rows hold code the live window has passed.
+    describe('All employees Code Contributors equals the People → Contributors tile, live', () => {
+      const WINDOW_DAYS: Record<OrgLensTimeRange, number> = { '30d': 30, '90d': 90, '365d': 365, '730d': 730, all: Number.POSITIVE_INFINITY };
+      interface CodeDay {
+        day: number;
+        lf: boolean;
+        insights: boolean;
+      }
+      interface Person {
+        key: string;
+        kind: 'current' | 'former' | 'unclassified';
+        days: CodeDay[];
+        seat?: boolean;
+        teamMember?: boolean;
+        storedIdentity?: boolean;
+      }
+      const PEOPLE: Person[] = [
+        { key: 'cur-recent', kind: 'current', days: [{ day: 5, lf: true, insights: true }] },
+        { key: 'cur-old', kind: 'current', days: [{ day: 300, lf: false, insights: false }] },
+        { key: 'cur-passed-30d', kind: 'current', days: [{ day: 31, lf: true, insights: true }] },
+        { key: 'cur-seat', kind: 'current', seat: true, days: [{ day: 400, lf: true, insights: true }] },
+        { key: 'cur-team', kind: 'current', teamMember: true, days: [{ day: 10, lf: true, insights: true }] },
+        {
+          key: 'former-a',
+          kind: 'former',
+          days: [
+            { day: 20, lf: false, insights: true },
+            { day: 800, lf: true, insights: false },
+          ],
+        },
+        { key: 'former-passed-90d', kind: 'former', days: [{ day: 91, lf: true, insights: false }] },
+        { key: 'uncl-a', kind: 'unclassified', days: [{ day: 50, lf: true, insights: true }] },
+        { key: 'uncl-team', kind: 'unclassified', teamMember: true, days: [{ day: 3, lf: false, insights: true }] },
+        { key: 'uncl-not-built', kind: 'unclassified', storedIdentity: false, days: [{ day: 15, lf: true, insights: true }] },
+      ];
+
+      /** The rows lf-dbt built yesterday for each person, and their code days. */
+      function seed(): void {
+        for (const person of PEOPLE) {
+          for (const code of person.days) {
+            database
+              .prepare(
+                `INSERT INTO ORG_PEOPLE_CONTRIBUTORS_DAILY (
+                  ACCOUNT_ID, PERSON_KEY, PROJECT_ID, ACTIVITY_DATE, FOUNDATION_ID, FOUNDATION_NAME, IS_LF_PROJECT, CDP_MEMBER_ID, DISPLAY_NAME,
+                  DAILY_COMMITS, DAILY_MERGED_COMMITS, DAILY_SCOPE_COMMITS, DAILY_SCOPE_MERGED_COMMITS, DAILY_CODE_ACTIVITIES,
+                  INSIGHTS_DAILY_COMMITS, INSIGHTS_DAILY_MERGED_COMMITS, INSIGHTS_DAILY_SCOPE_COMMITS, INSIGHTS_DAILY_SCOPE_MERGED_COMMITS,
+                  INSIGHTS_DAILY_CODE_ACTIVITIES, IS_CDP_TEAM_MEMBER
+                ) VALUES (?, ?, ?, ?, 'foundation-one', 'Foundation One', ?, ?, ?, 1, 1, 1, 1, 2, ?, ?, ?, ?, ?, ?)`
+              )
+              .run(
+                ACCOUNT,
+                person.key,
+                code.lf ? 'project-lf' : 'project-other',
+                daysAgo(code.day),
+                code.lf ? 1 : 0,
+                `member-${person.key}`,
+                person.key,
+                ...Array<number>(5).fill(code.insights ? 1 : 0),
+                person.teamMember ? 1 : 0
+              );
+          }
+          for (const range of Object.keys(WINDOW_DAYS) as OrgLensTimeRange[]) {
+            for (const projectScope of ['all', 'lf', 'non_lf'] as const) {
+              const built = person.days.filter((code) => code.day <= WINDOW_DAYS[range] + 1 && (projectScope === 'all' || code.lf === (projectScope === 'lf')));
+              const seat = person.seat && projectScope !== 'non_lf';
+              if (!built.length && !seat) continue;
+              const insightsCode = built.filter((code) => code.insights).length;
+              if (person.kind === 'unclassified') {
+                if (person.storedIdentity === false) continue;
+                database
+                  .prepare(
+                    `INSERT INTO ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS (ACCOUNT_ID, PERSON_KEY, TIME_RANGE, PROJECT_SCOPE, LF_USERNAME, NAME, COMMITS_COUNT,
+                      CODE_ACTIVITIES_COUNT, INSIGHTS_CODE_ACTIVITIES_COUNT, IS_CDP_TEAM_MEMBER) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                  )
+                  .run(ACCOUNT, person.key, range, projectScope, person.key, person.key, built.length, built.length, insightsCode, person.teamMember ? 1 : 0);
+                continue;
+              }
+              database
+                .prepare(
+                  `INSERT INTO ORG_PEOPLE_ALL_RANGES (ACCOUNT_ID, PERSON_KEY, TIME_RANGE, PROJECT_SCOPE, IS_FORMER, LF_USERNAME, NAME, SEATS_COUNT,
+                    BOARD_SEATS_COUNT, COMMITTEE_SEATS_COUNT, EVENTS_COUNT, COURSES_COUNT, COMMITS_COUNT, CODE_ACTIVITIES_COUNT, INSIGHTS_CODE_ACTIVITIES_COUNT,
+                    ENGAGED_FOUNDATION_IDS, INSIGHTS_ENGAGED_FOUNDATION_IDS, IS_CDP_TEAM_MEMBER) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0, ?, ?, ?, '[]', '[]', ?)`
+                )
+                .run(
+                  ACCOUNT,
+                  person.key,
+                  range,
+                  projectScope,
+                  person.kind === 'former' ? 1 : 0,
+                  person.key,
+                  person.key,
+                  seat ? 1 : 0,
+                  seat ? 1 : 0,
+                  built.length,
+                  built.length,
+                  insightsCode,
+                  person.teamMember ? 1 : 0
+                );
+            }
+          }
+        }
+      }
+
+      beforeEach(() => {
+        database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_LF_PROJECT INTEGER');
+        database.exec('ALTER TABLE ORG_MAINTAINER_ROLES ADD COLUMN IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0');
+        grantInsights();
+        seed();
+      });
+
+      const combos = (Object.keys(WINDOW_DAYS) as OrgLensTimeRange[]).flatMap((range) =>
+        (['all', 'lf', 'non_lf'] as const).flatMap((projectScope) =>
+          (['insights', 'all'] as const).flatMap((orgScope) =>
+            (['exclude', 'include'] as const).map((teamMembers) => [range, projectScope, orgScope, teamMembers] as const)
+          )
+        )
+      );
+
+      it.each(combos)('%s, %s projects, %s organizations, team members %s', async (range, projectScope, orgScope, teamMembers) => {
+        const filters: OrgCommitFilters = { projectScope, commitScope: 'all', metric: 'commits' };
+        const live = PEOPLE.filter(
+          (person) =>
+            !(teamMembers === 'exclude' && person.teamMember) &&
+            person.days.some(
+              (code) =>
+                code.day <= WINDOW_DAYS[range] && (projectScope === 'all' || code.lf === (projectScope === 'lf')) && (orgScope === 'all' || code.insights)
+            )
+        );
+
+        const [current, offRoster, contributors] = await Promise.all([
+          service.getAllEmployees(ACCOUNT, range, filters, teamMembers, orgScope),
+          service.getFormerEmployees(ACCOUNT, range, filters, teamMembers, orgScope),
+          new OrgPeopleContributorsService().getContributors(ACCOUNT, range, filters, 'all', teamMembers, orgScope),
+        ]);
+
+        expect(current.stats.codeContributors + offRoster.stats.codeContributors).toBe(contributors.stats.contributors);
+        expect(contributors.stats.contributors).toBe(live.length);
+        // Current: who has code in the window now, or a seat; nobody is listed for code the window has passed.
+        expect(current.rows.map((row) => row.personKey).sort()).toEqual(
+          PEOPLE.filter((person) => person.kind === 'current' && ((person.seat && projectScope !== 'non_lf') || live.includes(person)))
+            .map((person) => person.key)
+            .sort()
+        );
+        expect(offRoster.rows.map((row) => row.personKey).sort()).toEqual(
+          live
+            .filter((person) => person.kind !== 'current')
+            .map((person) => person.key)
+            .sort()
+        );
+      });
+    });
   });
 });
 
+describe('OrgLensPeopleService person-key username resolution (#4402)', () => {
+  // The Key Contacts tab matches on the LF username when there is one, and the drawer only ever holds a
+  // person key — resolving it here keeps the username out of the request URL, and so out of the logs.
+  it("returns the roster row's username, normalized", async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' MixedUser ');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBe('mixeduser');
+  });
+
+  it('returns null for a person key the roster gives no username for', async () => {
+    addRosterRow(ACCOUNT, 'person-one', '');
+    addRosterRow(ACCOUNT, 'person-two', '   ');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBeNull();
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-two')).toBeNull();
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'nobody')).toBeNull();
+  });
+
+  // Fails closed rather than picking one: a key whose rows disagree is not an identity.
+  it('returns null when a person key carries more than one username', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'first-name');
+    addRosterRow(ACCOUNT, 'person-one', 'second-name');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBeNull();
+  });
+
+  it('treats rows differing only by case or padding as one username', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'MixedUser');
+    addRosterRow(ACCOUNT, 'person-one', ' mixeduser ');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBe('mixeduser');
+  });
+
+  it("never reads another account's roster for the same key", async () => {
+    addRosterRow('other-account', 'person-one', 'elsewhere');
+
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, 'person-one')).toBeNull();
+  });
+
+  it('resolves a live-only key through the live directory instead of the warehouse', async () => {
+    expect(await service.resolveUsernameByPersonKey({} as never, ACCOUNT, LIVE_PERSON)).toBe('mixeduser');
+    const rosterReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_ALL/.test(query));
+    expect(rosterReads).toEqual([]);
+  });
+});
+
+/** One People → Contributors (person, project) row: the live code a ranged roster row counts (lfx-self-serve#4735). */
+function liveCodeRow(personKey: string, foundationId: string, commits: number, merged: number, code: number): Record<string, unknown> {
+  return {
+    PERSON_KEY: personKey,
+    PROJECT_ID: `project-${foundationId}`,
+    LFID: null,
+    LF_USERNAME: null,
+    CDP_MEMBER_ID: `member-${personKey}`,
+    DISPLAY_NAME: null,
+    TITLE: null,
+    PROJECT_NAME: null,
+    PROJECT_SLUG: null,
+    FOUNDATION_ID: foundationId,
+    FOUNDATION_NAME: null,
+    FOUNDATION_SLUG: null,
+    COMMITS: commits,
+    MERGED_COMMITS: merged,
+    CODE_ACTIVITIES: code,
+    LAST_ACTIVE_DATE: '2026-10-01',
+  };
+}
+
+/** Answers each warehouse read by what it reads: the live code rows, the roster rows, or the foundation labels. */
+function mockWarehouse(roster: Record<string, unknown>[], foundations: Record<string, unknown>[], live: Record<string, unknown>[]): void {
+  execute.mockImplementation(async (query: string) => {
+    if (query.includes('GROUP BY person_key, project_id')) return { rows: live };
+    return { rows: query.includes('ORDER BY NAME') ? roster : foundations };
+  });
+}
+
 describe('OrgLensPeopleService roster wire shape (#2179)', () => {
   it('strips merge-only fields from the wire roster while the internal roster retains them', async () => {
-    execute
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            PERSON_KEY: 'person-wire-user',
-            LFID: null,
-            LF_USERNAME: 'WireUser',
-            CDP_MEMBER_ID: null,
-            NAME: 'Wire User',
-            TITLE: null,
-            EMAIL: 'WireUser@Example.COM',
-            PHOTO: null,
-            SEATS_COUNT: 0,
-            BOARD_SEATS_COUNT: 0,
-            COMMITTEE_SEATS_COUNT: 0,
-            COMMITS_COUNT: 0,
-            EVENTS_COUNT: 0,
-            COURSES_COUNT: 0,
-            ENGAGED_FOUNDATION_IDS: [],
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [{ ACTIVE_IN_OSS: 1, IN_GOVERNANCE: 0, CODE_CONTRIBUTORS: 0, EVENT_ATTENDEES: 0, TRAINEES: 0 }] })
-      .mockResolvedValueOnce({ rows: [] });
+    mockWarehouse(
+      [
+        {
+          PERSON_KEY: 'person-wire-user',
+          LFID: null,
+          LF_USERNAME: 'WireUser',
+          CDP_MEMBER_ID: null,
+          NAME: 'Wire User',
+          TITLE: null,
+          EMAIL: 'WireUser@Example.COM',
+          PHOTO: null,
+          SEATS_COUNT: 0,
+          BOARD_SEATS_COUNT: 0,
+          COMMITTEE_SEATS_COUNT: 0,
+          EVENTS_COUNT: 0,
+          COURSES_COUNT: 0,
+          ENGAGED_FOUNDATION_IDS: [],
+        },
+      ],
+      [],
+      [liveCodeRow('person-wire-user', 'foundation-one', 1, 1, 1)]
+    );
 
-    const wire = await service.getAllEmployees(ACCOUNT);
+    const wire = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
 
     expect(execute).toHaveBeenCalledTimes(3);
     expect(wire.rows).toHaveLength(1);
@@ -448,67 +2552,66 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
     expect(wire.rows[0].email).toBe('WireUser@Example.COM');
 
     // The internal accessor serves the same cached raw rows; merge-only fields survive for the live merge.
-    const internal = await service.getAllEmployeesInternal(ACCOUNT);
+    const internal = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
     expect(execute).toHaveBeenCalledTimes(3);
     expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
   });
 });
 
 describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
-  /** Two rows exercising both ENGAGED_FOUNDATION_IDS arrivals (the driver returns either) plus a null-heavy row. */
+  const rosterKey = (): string => [...cacheValues.keys()].find((key) => key.includes(':people-all:'))!;
+
+  /** Two rows exercising both ENGAGED_FOUNDATION_IDS arrivals (the driver returns either) plus a null-heavy row, and their live code. */
   function mockRoster(): void {
-    execute
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            ACCOUNT_ID: ACCOUNT,
-            PERSON_KEY: 'person-one',
-            LFID: 'lfid-one',
-            LF_USERNAME: 'RosterUser',
-            CDP_MEMBER_ID: 'cdp-1',
-            NAME: 'Roster User',
-            TITLE: 'Engineer',
-            EMAIL: 'roster.user@example.com',
-            PHOTO: 'https://avatars.example.com/roster.png',
-            SEATS_COUNT: 2,
-            BOARD_SEATS_COUNT: 1,
-            COMMITTEE_SEATS_COUNT: 1,
-            COMMITS_COUNT: 30,
-            EVENTS_COUNT: 2,
-            COURSES_COUNT: 1,
-            ENGAGED_FOUNDATION_IDS: '["foundation-one","foundation-two"]',
-          },
-          {
-            ACCOUNT_ID: ACCOUNT,
-            PERSON_KEY: 'person-two',
-            LFID: null,
-            LF_USERNAME: null,
-            CDP_MEMBER_ID: null,
-            NAME: null,
-            TITLE: null,
-            EMAIL: null,
-            PHOTO: null,
-            SEATS_COUNT: 0,
-            BOARD_SEATS_COUNT: 0,
-            COMMITTEE_SEATS_COUNT: 0,
-            COMMITS_COUNT: 0,
-            EVENTS_COUNT: 0,
-            COURSES_COUNT: 0,
-            ENGAGED_FOUNDATION_IDS: ['foundation-one'],
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [{ ACCOUNT_ID: ACCOUNT, ACTIVE_IN_OSS: 2, IN_GOVERNANCE: 1, CODE_CONTRIBUTORS: 1, EVENT_ATTENDEES: 1, TRAINEES: 1 }] })
-      .mockResolvedValueOnce({ rows: [{ FOUNDATION_ID: 'foundation-one', FOUNDATION_NAME: 'Foundation One' }] });
+    mockWarehouse(
+      [
+        {
+          ACCOUNT_ID: ACCOUNT,
+          PERSON_KEY: 'person-one',
+          LFID: 'lfid-one',
+          LF_USERNAME: 'RosterUser',
+          CDP_MEMBER_ID: 'cdp-1',
+          NAME: 'Roster User',
+          TITLE: 'Engineer',
+          EMAIL: 'roster.user@example.com',
+          PHOTO: 'https://avatars.example.com/roster.png',
+          SEATS_COUNT: 2,
+          BOARD_SEATS_COUNT: 1,
+          COMMITTEE_SEATS_COUNT: 1,
+          EVENTS_COUNT: 2,
+          COURSES_COUNT: 1,
+          ENGAGED_FOUNDATION_IDS: '["foundation-one","foundation-two"]',
+        },
+        {
+          ACCOUNT_ID: ACCOUNT,
+          PERSON_KEY: 'person-two',
+          LFID: null,
+          LF_USERNAME: null,
+          CDP_MEMBER_ID: null,
+          NAME: null,
+          TITLE: null,
+          EMAIL: null,
+          PHOTO: null,
+          SEATS_COUNT: 0,
+          BOARD_SEATS_COUNT: 0,
+          COMMITTEE_SEATS_COUNT: 0,
+          EVENTS_COUNT: 0,
+          COURSES_COUNT: 0,
+          ENGAGED_FOUNDATION_IDS: ['foundation-one'],
+        },
+      ],
+      [{ FOUNDATION_ID: 'foundation-one', FOUNDATION_NAME: 'Foundation One' }],
+      [liveCodeRow('person-one', 'foundation-two', 30, 12, 90), liveCodeRow('person-two', 'foundation-one', 0, 0, 2)]
+    );
   }
 
   it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
     mockRoster();
-    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT);
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
     // Second call reads the entry the first one wrote, through the real serialize/parse round trip
     // the in-memory Valkey fixture performs.
-    const fromHit = await service.getAllEmployeesInternal(ACCOUNT);
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
     // `toStrictEqual` distinguishes null from undefined from an absent key — the distinction this
     // exercises via `accessBadge`, which is optional and unset on a stored-only roster row. The
@@ -517,12 +2620,21 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
     expect(execute).toHaveBeenCalledTimes(3);
+    // Tiles are counted over the projected rows, so a cache hit recomputes the same numbers.
+    expect((await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include')).stats).toEqual({
+      activeInOss: 2,
+      inGovernance: 1,
+      codeContributors: 2,
+      eventAttendees: 1,
+      trainees: 1,
+    });
+    expect(execute).toHaveBeenCalledTimes(3);
     // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it — the
     // column is stored verbatim, so a decode that normalized it would show up here.
     expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
     // ACCOUNT_ID is hoisted off every row at encode; a decode that forgot to put it back would
     // leave the stored rows unusable for anything keyed on it.
-    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgAllEmployeesRawCache;
+    const stored = JSON.parse(cacheValues.get(rosterKey())!) as CompactOrgAllEmployeesRawCache;
     expect(stored.accountId).toBe(ACCOUNT);
     expect(stored.rowsRaw.k).not.toContain('ACCOUNT_ID');
   });
@@ -532,15 +2644,15 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // reaches `mapEmployeeRow`, which calls `.trim()` on it — so without this check a cache HIT
     // becomes a 500 rather than a miss.
     mockRoster();
-    await service.getAllEmployeesInternal(ACCOUNT);
-    const [key] = [...cacheValues.keys()];
+    await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
+    const key = rosterKey();
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
     const usernameIndex = stored.rowsRaw.k.indexOf('LF_USERNAME');
     stored.rowsRaw.r = stored.rowsRaw.r.map((row) => row.map((cell, index) => (index === usernameIndex ? 42 : cell)));
     cacheValues.set(key, JSON.stringify(stored));
     mockRoster();
 
-    const response = await service.getAllEmployeesInternal(ACCOUNT);
+    const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
     expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
   });
@@ -550,14 +2662,14 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // missing data, so the guard has to reject the entry up front rather than serve a roster with
     // holes in it — silently dropping LF_USERNAME returns the directory to email-only matching.
     mockRoster();
-    await service.getAllEmployeesInternal(ACCOUNT);
-    const [key] = [...cacheValues.keys()];
+    await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
+    const key = rosterKey();
     const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
     stored.rowsRaw.k = stored.rowsRaw.k.filter((column) => column !== 'LF_USERNAME');
     cacheValues.set(key, JSON.stringify(stored));
     mockRoster();
 
-    const response = await service.getAllEmployeesInternal(ACCOUNT);
+    const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
     expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
   });
@@ -567,23 +2679,24 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // it from — or an org with no roster would refetch on every request forever.
     execute.mockReset();
     execute.mockResolvedValue({ rows: [] });
-    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT);
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
-    const fromHit = await service.getAllEmployeesInternal(ACCOUNT);
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
-    expect(cacheValues.size).toBe(1);
+    // The roster entry and the live code entry.
+    expect(cacheValues.size).toBe(2);
   });
 
   it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {
     // The shape guard, not just the key bump, has to reject this: decoding an array as a
     // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
-    const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], statsRaw: [], foundationRaw: [] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v2')!, JSON.stringify(legacy));
+    const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], foundationRaw: [] };
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!, JSON.stringify(legacy));
     mockRoster();
 
-    const response = await service.getAllEmployeesInternal(ACCOUNT);
+    const response = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
 
     expect(response.rows.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
   });

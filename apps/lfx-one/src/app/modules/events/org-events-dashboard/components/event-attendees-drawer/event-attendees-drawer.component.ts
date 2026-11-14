@@ -10,7 +10,8 @@ import { DrawerModule } from 'primeng/drawer';
 import { InputTextModule } from 'primeng/inputtext';
 import { catchError, combineLatest, finalize, of, skip, switchMap } from 'rxjs';
 
-import type { OrgEventAttendeesDrawerResponse, OrgEventAttendeeVm } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_EVENTS_PARTICIPATION, ORG_EVENTS_PARTICIPATION_BADGE_LABEL } from '@lfx-one/shared/constants';
+import type { OrgEventAttendeeVm, OrgEventsParticipation } from '@lfx-one/shared/interfaces';
 import { avatarColorClass } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { EventsService } from '@services/events.service';
@@ -29,12 +30,21 @@ export class EventAttendeesDrawerComponent {
   public readonly eventId = input<string>('');
   public readonly eventName = input<string>('');
   public readonly attendeeCount = input<number>(0);
+  public readonly participation = input<OrgEventsParticipation>(DEFAULT_ORG_EVENTS_PARTICIPATION);
 
   protected readonly searchTerm = signal('');
   protected readonly loading = signal(false);
+  // A failed read is not a count of zero: the opener's count stays and the list says it could not load.
+  protected readonly loadFailed = signal(false);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName ?? '');
 
+  // The status badge on every row says what the drawer counts: Registered, Attended, or Registered or attended.
+  protected readonly participationLabel = computed(() => ORG_EVENTS_PARTICIPATION_BADGE_LABEL[this.participation()]);
+
   private readonly attendeesData = this.initAttendeesData();
+
+  // The counted total for the current selection: everyone the response lists. Until the first response lands, the count the opener passed in.
+  protected readonly countedTotal = computed(() => this.attendeesData()?.data.length ?? this.attendeeCount());
 
   protected readonly filteredAttendees = computed<OrgEventAttendeeVm[]>(() => {
     const term = this.searchTerm().toLowerCase().trim();
@@ -45,16 +55,20 @@ export class EventAttendeesDrawerComponent {
 
   private initAttendeesData() {
     return toSignal(
-      combineLatest([toObservable(this.visible), toObservable(this.eventId)]).pipe(
+      combineLatest([toObservable(this.visible), toObservable(this.eventId), toObservable(this.participation)]).pipe(
         skip(1),
-        switchMap(([isVisible, currentEventId]) => {
+        switchMap(([isVisible, currentEventId, participation]) => {
           if (!isVisible || !currentEventId) return of(null);
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId) return of(null);
           this.searchTerm.set('');
+          this.loadFailed.set(false);
           this.loading.set(true);
-          return this.eventsService.getEventAttendees(accountId, currentEventId).pipe(
-            catchError(() => of({ eventId: currentEventId, eventName: this.eventName(), total: 0, data: [] } as OrgEventAttendeesDrawerResponse)),
+          return this.eventsService.getEventAttendees(accountId, currentEventId, { participation }).pipe(
+            catchError(() => {
+              this.loadFailed.set(true);
+              return of(null);
+            }),
             finalize(() => this.loading.set(false))
           );
         })

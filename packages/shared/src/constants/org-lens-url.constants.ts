@@ -38,8 +38,58 @@ export const ORG_LENS_PAGE_SEGMENTS: Readonly<Record<string, true>> = {
   meetings: true,
   groups: true,
   profile: true,
+  initiatives: true,
+  donations: true,
   'not-found': true,
 };
+
+/** Route path of the Org Lens EasyCLA page, `/org/{segment}/easycla`. */
+export const ORG_EASYCLA_PAGE_SEGMENT = 'easycla';
+
+/**
+ * Prefix of the reserved `/org/{segment}` value selecting a **family roll-up** — the combined view
+ * over the organizations the caller holds in one Salesforce family (lfx-self-serve#4125). The full
+ * segment is the prefix followed by the family's top Salesforce account id, e.g.
+ * `family-001A000000abcdeXYZ`: one roll-up per family, so a caller holding organizations in two
+ * families has two. A view mode, not an organization: it names no `b2b_org` row, carries no grant of
+ * its own, and is expanded to the caller's organizations in that family server-side on every request.
+ *
+ * Reserved rather than page-listed. It is deliberately **not** added to `ORG_LENS_PAGE_SEGMENTS`:
+ * that map answers "is this segment a page", and callers act on the answer — `orgLensDestinationKey`
+ * would stop stripping the segment and the sidebar would lose row identity across a switch. The
+ * reservation is enforced in `isOrgSlugSegment` instead, so an organization whose indexed slug has
+ * the roll-up shape is addressed by its SFID, the same fallback a reserved page name already gets
+ * (DR-007 §5).
+ */
+export const ORG_ROLLUP_SEGMENT_PREFIX = 'family-';
+
+export const ORG_LENS_ROLL_UP_READ_METHODS: readonly string[] = ['GET', 'HEAD'];
+
+/**
+ * A family roll-up segment, capturing the family's top account id. The id is matched exactly as an
+ * SFID is (`ORG_ACCOUNT_ID_PATTERN`): Salesforce ids are case-sensitive, so the prefix is the only
+ * part `normalizeOrgSegment` may lowercase.
+ */
+export const ORG_ROLLUP_SEGMENT_PATTERN = /^family-(001[A-Za-z0-9]{15})$/;
+
+/** The roll-up shape regardless of case — what a slug may never be, since slugs are matched after lowercasing. */
+export const ORG_ROLLUP_SEGMENT_RESERVED_PATTERN = /^family-001[a-z0-9]{15}$/i;
+
+/** Display name of a family roll-up whose family name is not known yet (cookie restore or deep link before the grant sets load). */
+export const ROLLUP_ACCOUNT_NAME = 'All Organizations Roll-Up';
+
+/** Fewest organizations in one family a roll-up is worth offering over: with one, it is the organization. */
+export const ROLLUP_MIN_ORGANIZATIONS = 2;
+
+/**
+ * Query parameters an organization switch nulls (a `queryParamsHandling: 'merge'` navigation) on every Org Lens
+ * page: an Employees selection came from the previous organization's roster, so it would match nothing, or the
+ * wrong people, under the next one. Back does not restore it: the pages that filter by Employees (Projects, Code
+ * Contributions) clear the selection whenever the organization changes between two resolved organizations.
+ */
+export const ORG_LENS_SWITCH_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
+  employees: null,
+});
 
 /** Shape of a slug segment after lowercasing: URL-safe, starts alphanumeric, ≤128 chars. Anything that is neither this nor an SFID is rejected before any lookup. */
 export const ORG_SLUG_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9-]{0,127}$/;

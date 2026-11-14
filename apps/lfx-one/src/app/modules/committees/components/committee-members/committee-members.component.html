@@ -5,6 +5,25 @@
   <!-- Confirm dialog host for revoke-invite and remove-member actions -->
   <p-confirmDialog></p-confirmDialog>
 
+  @if (showMemberRoster() && membersError()) {
+    <div class="flex flex-col gap-2 rounded-lg border border-red-200 bg-red-50 p-3" role="alert" data-testid="committee-members-load-error">
+      <p class="text-sm text-red-700">
+        We couldn't load the complete member list. Add Member and Import Members are unavailable until loading succeeds. Retry the load; if the loading limit is
+        reached again, contact support.
+      </p>
+      <div class="flex">
+        <lfx-button
+          label="Retry"
+          severity="secondary"
+          size="small"
+          [outlined]="true"
+          [disabled]="membersLoading()"
+          data-testid="committee-members-load-retry"
+          (onClick)="retryMembers.emit()" />
+      </div>
+    </div>
+  }
+
   <!-- Committee Members Section -->
   <lfx-card [styleClass]="showPendingInvites() ? '[&_.p-card-body]:p-0 [&_.p-card-content]:p-0' : ''">
     @if (!showMembersSection()) {
@@ -28,9 +47,9 @@
       }
 
       <div [class]="showPendingInvites() ? 'p-4 md:p-6' : ''">
-        @if (activeTab() === 'all') {
-          <!-- Quick Filter Chips + engagement window controls -->
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <!-- Member filters and management actions -->
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4" data-testid="members-toolbar">
+          @if (activeTab() === 'all') {
             <div class="flex flex-wrap items-center gap-2" data-testid="members-filter-chips">
               @for (chip of chipConfig(); track chip.key) {
                 <button
@@ -44,23 +63,47 @@
                 </button>
               }
             </div>
-            @if (engagementEnabled() && engagementAccessible()) {
-              <div class="flex flex-wrap items-center gap-3" data-testid="members-engagement-controls">
-                @if (isMockEngagement()) {
-                  <lfx-tag value="Sample data" severity="warn" data-testid="members-engagement-mock-tag" />
-                }
-                @if (engagementDataAvailable()) {
-                  <span class="text-xs text-gray-400" data-testid="members-engagement-freshness">{{ engagementFreshnessLabel() }}</span>
-                }
-                <lfx-filter-pills [options]="engagementWindowOptions" [selectedFilter]="engagementWindow()" (filterChange)="onEngagementWindowChange($event)" />
-              </div>
-            }
-          </div>
-        }
+          }
+          @if (canManageMembers()) {
+            <div class="flex flex-wrap items-center justify-end gap-3 ml-auto" data-testid="members-toolbar-actions">
+              <lfx-button
+                icon="fa-light fa-user-plus"
+                label="Add Member"
+                size="small"
+                severity="info"
+                [disabled]="!membersReady() || membersLoading() || membersError()"
+                (onClick)="openAddMemberDialog()"
+                data-testid="add-member-btn">
+              </lfx-button>
+              <lfx-button
+                icon="fa-light fa-file-csv"
+                label="Import Members"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="!membersReady() || membersError() || membersLoading() || invitesLoading() || importSnapshotsLoading()"
+                (onClick)="openImportMembersDialog()"
+                data-testid="import-members-csv-btn">
+              </lfx-button>
+            </div>
+          }
+        </div>
 
-        <!-- Search, Filter Controls, and Add Member -->
-        <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 mb-6">
-          @if (activeTab() === 'all') {
+        @if (activeTab() === 'all') {
+          @if (engagementEnabled() && engagementAccessible()) {
+            <div class="flex flex-wrap items-center justify-end gap-3 mb-4" data-testid="members-engagement-controls">
+              @if (isMockEngagement()) {
+                <lfx-tag value="Sample data" severity="warn" data-testid="members-engagement-mock-tag" />
+              }
+              @if (engagementDataAvailable()) {
+                <span class="text-xs text-gray-400" data-testid="members-engagement-freshness">{{ engagementFreshnessLabel() }}</span>
+              }
+              <lfx-filter-pills [options]="engagementWindowOptions" [selectedFilter]="engagementWindow()" (filterChange)="onEngagementWindowChange($event)" />
+            </div>
+          }
+
+          <!-- Search and dropdown filters -->
+          <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 mb-6" data-testid="members-search-filters">
             <!-- Search Input -->
             <div class="flex-1">
               <lfx-input-text [form]="filterForm" control="search" placeholder="Search members..." icon="fa-light fa-search" styleClass="w-full" size="small">
@@ -105,28 +148,18 @@
                 styleClass="w-full">
               </lfx-select>
             </div>
-          }
-
-          @if (canManageMembers()) {
-            <lfx-button
-              icon="fa-light fa-user-plus"
-              label="Add Member"
-              size="small"
-              severity="info"
-              (onClick)="openAddMemberDialog()"
-              data-testid="add-member-btn">
-            </lfx-button>
-          } @else if (canSendMemberInvites()) {
-            <lfx-button
-              icon="fa-light fa-paper-plane"
-              label="Invite Someone"
-              size="small"
-              severity="info"
-              (onClick)="openInviteMemberDialog()"
-              data-testid="invite-member-btn">
-            </lfx-button>
-          }
-        </div>
+            @if (!canManageMembers() && canSendMemberInvites()) {
+              <lfx-button
+                icon="fa-light fa-paper-plane"
+                label="Invite Someone"
+                size="small"
+                severity="info"
+                (onClick)="openInviteMemberDialog()"
+                data-testid="invite-member-btn">
+              </lfx-button>
+            }
+          </div>
+        }
 
         <!-- Table View -->
         <lfx-table
@@ -142,9 +175,11 @@
               <th>
                 <span class="text-sm font-inter text-gray-500">Name</span>
               </th>
-              <th>
-                <span class="text-sm font-inter text-gray-500">Email</span>
-              </th>
+              @if (!isVisitor()) {
+                <th>
+                  <span class="text-sm font-inter text-gray-500">Email</span>
+                </th>
+              }
               <th>
                 <span class="text-sm font-inter text-gray-500">Organization</span>
               </th>
@@ -181,22 +216,30 @@
               <td>
                 @if (row.rowType === 'member') {
                   <span class="text-sm font-inter text-gray-900 font-medium">
-                    {{ row.data | fullName | titlecase }}
+                    {{ row.data.first_name || row.data.last_name ? (row.data | fullName | titlecase) : '-' }}
                   </span>
                 } @else {
                   <div class="flex flex-wrap items-center gap-2">
-                    <lfx-tag value="Pending invitation" severity="warn" />
+                    @let expiry = inviteExpiryByUid().get(row.data.uid);
+                    @if (expiry?.expired) {
+                      <lfx-tag value="Invitation expired" severity="danger" data-testid="invite-expired-tag" />
+                    } @else {
+                      <lfx-tag value="Pending invitation" severity="warn" />
+                    }
+                    <span class="text-xs text-gray-500" data-testid="invite-expiry">{{ expiry?.text }}</span>
                   </div>
                 }
               </td>
-              <!-- Email -->
-              <td>
-                @if (row.rowType === 'member') {
-                  <span class="text-sm font-inter text-gray-500">{{ row.data.email || '-' }}</span>
-                } @else {
-                  <span class="text-sm font-inter text-gray-500">{{ row.data.invitee_email }}</span>
-                }
-              </td>
+              <!-- Email (hidden for visitors — BASIC_PROFILE exposes name/org/role only) -->
+              @if (!isVisitor()) {
+                <td>
+                  @if (row.rowType === 'member') {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.email || '-' }}</span>
+                  } @else {
+                    <span class="text-sm font-inter text-gray-500">{{ row.data.invitee_email }}</span>
+                  }
+                </td>
+              }
               <!-- Organization -->
               <td>
                 @if (row.rowType === 'member') {
@@ -296,7 +339,7 @@
                       severity="secondary"
                       (onClick)="toggleMemberActionMenu($event, row.data, memberActionMenu)">
                     </lfx-button>
-                  } @else {
+                  } @else if (!isVisitor()) {
                     <lfx-button
                       icon="fa-light fa-envelope"
                       [text]="true"
@@ -341,13 +384,13 @@
                   </div>
                 </td>
               </tr>
-            } @else {
+            } @else if (!membersError() || activeTab() === 'pending') {
               <tr>
                 <td [attr.colspan]="emptyStateColspan()" class="text-center py-8">
                   <div class="text-center">
                     <i class="fa-light fa-users text-3xl text-gray-300 mb-2"></i>
                     <p class="text-sm font-medium text-gray-600">{{ activeTab() === 'pending' ? 'No pending invitations' : 'No members found' }}</p>
-                    @if (canManageMembers() && activeTab() !== 'pending') {
+                    @if (canManageMembers() && membersReady() && activeTab() !== 'pending') {
                       <div class="mt-3">
                         <button class="text-xs text-blue-600 hover:text-blue-700 font-medium" (click)="openAddMemberDialog()">
                           <i class="fa-light fa-user-plus mr-1"></i>Add the first member

@@ -22,7 +22,14 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { FORMATION_ENABLED_FLAG, PERSONA_PRIORITY, ROLE_PRIORITY, VOTING_STATUS_PRIORITY } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
-import { formatFormationAnnouncementLabel, getActiveOccurrences, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
+import {
+  buildRoleAriaLabel,
+  buildRoleTooltip,
+  formatFormationAnnouncementLabel,
+  getActiveOccurrences,
+  getDetectionLabels,
+  getSurveyDisplayStatus,
+} from '@lfx-one/shared/utils';
 
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -34,6 +41,7 @@ import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap, take, tap } from 'rxjs';
 
 import { CardComponent } from '@components/card/card.component';
@@ -41,10 +49,20 @@ import { TableComponent } from '@components/table/table.component';
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-multi-persona-dashboard',
-  imports: [SkeletonModule, MyMeetingsComponent, PendingActionsComponent, CardComponent, TableComponent, DashboardCastDrawerHostComponent],
+  imports: [
+    SkeletonModule,
+    TooltipModule,
+    MyMeetingsComponent,
+    PendingActionsComponent,
+    CardComponent,
+    TableComponent,
+    DashboardCastDrawerHostComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './multi-persona-dashboard.component.html',
   styleUrl: './multi-persona-dashboard.component.scss',
 })
@@ -220,6 +238,8 @@ export class MultiPersonaDashboardComponent {
       const rows = projects.map((project) => {
         const isFoundation = project.isFoundation;
         const perFoundation = isFoundation ? analytics?.perFoundation[project.projectSlug] : null;
+        const role = this.getRowRole(project);
+        const detectionLabels = getDetectionLabels(project.detections);
 
         return {
           projectUid: project.projectUid,
@@ -228,7 +248,9 @@ export class MultiPersonaDashboardComponent {
           logoUrl: project.logoUrl,
           type: isFoundation ? ('foundation' as const) : ('project' as const),
           subtitle: this.getRowSubtitle(project, perFoundation),
-          role: this.getRowRole(project),
+          role,
+          roleTooltip: buildRoleTooltip(detectionLabels),
+          roleAriaLabel: buildRoleAriaLabel(role, detectionLabels),
           healthStatus: isFoundation ? this.getHealthStatus(perFoundation?.healthScores) : null,
           healthDetail: isFoundation ? this.getHealthDetail(perFoundation?.healthScores) : null,
           votingStatus: this.getHighestVotingStatus(project),
@@ -280,12 +302,10 @@ export class MultiPersonaDashboardComponent {
     return toSignal(
       this.refresh$.pipe(
         switchMap(() => {
-          this.pendingActionsLoading.set(true);
           // Single unscoped request — the backend aggregates across all of the user's FGA grants.
           return this.projectService.getPendingActions().pipe(catchError(() => of([] as PendingActionItem[])));
         }),
         // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
-        // Pass the raw aggregated list and let the child render the top 5 unhidden items.
         tap(() => this.pendingActionsLoading.set(false))
       ),
       { initialValue: [] }

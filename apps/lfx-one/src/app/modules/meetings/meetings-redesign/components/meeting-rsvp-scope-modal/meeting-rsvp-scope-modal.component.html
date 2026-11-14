@@ -1,0 +1,31 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<lfx-ui-modal heading="RSVP to recurring meeting" data-testid="meetings-home-rsvp-scope-modal">
+  <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meetings-home-rsvp-scope-info" />
+
+  <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-rsvp-scope-text">
+    You are responding “{{ responseLabel }}” to a recurring meeting. Apply it to:
+  </p>
+  @if (!canSelectOccurrence) {
+    <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-rsvp-scope-all-only">
+      A specific upcoming date could not be resolved. Only all dates can be selected.
+    </p>
+  }
+
+  <lfx-ui-radio-group ariaLabel="Apply RSVP to" [(value)]="scope" data-testid="meetings-home-rsvp-scope-options">
+    @for (option of options; track option.value) {
+      <lfx-ui-radio
+        class="[&_label]:font-medium"
+        [value]="option.value"
+        [label]="option.label"
+        [attr.data-testid]="'meetings-home-rsvp-scope-' + option.value" />
+    }
+  </lfx-ui-radio-group>
+
+  <ng-container modalActions>
+    <lfx-ui-button variant="secondary" (click)="cancel()" data-testid="meetings-home-rsvp-scope-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button (click)="confirm()" data-testid="meetings-home-rsvp-scope-ok">OK</lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

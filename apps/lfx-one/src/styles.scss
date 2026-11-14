@@ -4,7 +4,181 @@
 /* Google Fonts are linked from index.html (preconnect + stylesheet) so they start
    in parallel with this file instead of waiting on a CSS @import (GH-2290). */
 
+@use '@angular/cdk' as cdk;
+
+/* Navbar v2 — global because its body-level popovers/tooltips and the selectors' navbar variant sit
+   outside the component's view; see the note in the partial. */
+@use 'styles/navbar';
+@use 'styles/mktg-family-print';
+/* The portrait print grammar (fixed Letter frames, `pp-*`): global for the same reason, its type helpers
+   are set on content a document projects into the frame. */
+@use 'app/modules/mktg-os-agents/components/mktg-portrait/mktg-portrait';
+@use 'app/modules/mktg-os-agents/mktg-brand-kit-print/mktg-brand-kit-pages';
+@use 'app/modules/mktg-os-agents/mktg-framework-print/mktg-framework-print-pages';
+/* LFX UI Library tokens (generated); see shared/uikit/README.md */
+@use 'styles/ui-tokens.css';
+
 @layer tailwind-base, primeng, tailwind-utilities;
+
+/* LiveAnnouncer appends its region to body without loading the visually-hidden styles. */
+@include cdk.a11y-visually-hidden();
+
+/* The Brand Kit book is the kit's PRINT rendering: on screen the kit is its web
+   view, and the book in its print-only wrapper (BRAND_KIT_PRINT_ONLY_CLASS) is
+   never shown there. Download PDF prints it: while the body carries the print
+   class (BRAND_KIT_PRINT_BODY_CLASS, set by the web view for the print only),
+   the book is the only thing on paper — 16 letter pages, landscape, one per
+   sheet. Global because the book sits inside the app shell, whose chrome must
+   not print around it. */
+.lfx-brand-kit-print-only {
+  display: none;
+}
+
+@media print {
+  /* Both print documents are placed against the page (inset 0), so no
+     element around them may be their containing block. The app shell's are:
+     the document page's wrapper is positioned (relative) and the document
+     view is a size container (@container), so the print document started at
+     the page wrapper's offset (the shell's padding and top margin) — shifted
+     right and clipped at the right edge, and pushed down so the framework's
+     cover ran onto a second sheet. While a print class is on the body, every
+     element holding the print document stops being a containing block. */
+  body.lfx-print-brand-kit :has(.lfx-brand-kit-book),
+  body.lfx-print-framework :has(.lfx-framework-print) {
+    position: static !important;
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    perspective: none !important;
+    contain: none !important;
+    container-type: normal !important;
+    will-change: auto !important;
+  }
+}
+
+@media print {
+  /* A named page, so only the book prints landscape — every other print keeps its own setup.
+     The print frame repeats these values as its unnamed @page rule: MKTG_PRINT_PAGE_SETUPS (shared constants). */
+  @page brand-kit {
+    size: letter landscape;
+    margin: 0;
+  }
+
+  body.lfx-print-brand-kit {
+    /* The app shell takes no room and leaves no trailing blank sheets; the
+       book, positioned against the viewport, is what the sheets hold. The body
+       names no page: only the book's pages do (one named page per print). */
+    height: 0 !important;
+    overflow: hidden !important;
+
+    & * {
+      visibility: hidden;
+    }
+
+    .lfx-brand-kit-print-only {
+      display: block;
+    }
+
+    .lfx-brand-kit-book,
+    .lfx-brand-kit-book * {
+      visibility: visible;
+    }
+
+    .lfx-brand-kit-book {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 11in;
+      margin: 0;
+      gap: 0;
+    }
+
+    .lfx-brand-kit-page {
+      width: 11in;
+      height: 8.5in;
+      margin: 0;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+      page: brand-kit;
+      break-after: page;
+      break-inside: avoid;
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+  }
+}
+
+/* The Messaging Framework prints the same way: on screen it is its app page,
+   and its print document (lfx-mktg-framework-print) sits in a print-only
+   wrapper (FOUNDATION_MESSAGE_PRINT_ONLY_CLASS) never shown there. While the
+   body carries FOUNDATION_MESSAGE_PRINT_BODY_CLASS (set by Download PDF for
+   the print only) that document is the only thing on paper: a book of fixed
+   US Letter frames, one per sheet, on the portrait grammar's own named page
+   (`.pp-page { page: mktg-portrait }`, `@page mktg-portrait` in
+   _mktg-portrait.scss, 8.5in × 11in with no margin, which the print frame
+   also writes unnamed: MKTG_PRINT_PAGE_SETUPS['mktg-portrait']). Nothing
+   flows across a frame. */
+.lfx-framework-print-only {
+  display: none;
+}
+
+@media print {
+  /* The setup of the FLOWING print documents (the FAQ, the boilerplates and the AEO/GEO report, which run from
+     page to page through the shared sheet): no paper size, so the document is as wide as whichever paper the
+     dialog has; no margin, so the browser's header and footer (drawn only in the margin area) never reach the
+     PDF, and the page's room is inside the document (lfx-mktg-print-sheet: 0.55in top and bottom per page; the
+     print roots' side padding below: 0.6in). The print frame writes these values as its unnamed @page rule from
+     MKTG_PRINT_PAGE_SETUPS['mktg-framework'] (shared constants). In WebKit, which prints a table's head and foot
+     once, the frame writes the margins instead ('mktg-framework-page-margins'), restates this named rule with
+     them (mktg-print.service.ts), and marks its body MKTG_PRINT_PAGE_MARGINS_CLASS, under which the documents'
+     own room collapses. No element names this page any more (the framework's frames moved to the grammar's
+     `mktg-portrait`, the last `page: mktg-framework` went with them), so this named block is unused: nothing
+     reaches it; the service restates the name for WebKit on its own. Removing it is a clean-up of that shared
+     mechanism (the kit's and main's), not this book's. */
+  @page mktg-framework {
+    size: portrait;
+    margin: 0;
+  }
+
+  /* The sides' room of the flowing print roots that carry this class (the FAQ's, the boilerplates', the
+     document view's AEO/GEO report): the root's, so every page fragment keeps it; the top and bottom room
+     repeats per page from the sheet tables (lfx-mktg-print-sheet). None on the page margins, which give it.
+     The fourth root with the class, the framework book's, is a portrait book: the grammar zeroes its padding
+     (_mktg-portrait.scss), a frame is the whole sheet and carries its own room. */
+  .lfx-framework-print {
+    box-sizing: border-box;
+    padding: 0 0.6in;
+  }
+  body.lfx-print-page-margins .lfx-framework-print {
+    padding: 0;
+  }
+
+  body.lfx-print-framework {
+    /* The body names no page: the print frame's unnamed @page rule is the setup. */
+    height: 0 !important;
+    overflow: hidden !important;
+
+    & * {
+      visibility: hidden;
+    }
+
+    .lfx-framework-print-only {
+      display: block;
+    }
+
+    .lfx-framework-print,
+    .lfx-framework-print * {
+      visibility: visible;
+    }
+
+    /* As wide as the page area of the chosen paper, from its top left corner. */
+    .lfx-framework-print {
+      position: absolute;
+      inset: 0 0 auto;
+      margin: 0;
+    }
+  }
+}
 
 @layer tailwind-base {
   @tailwind base;
@@ -67,6 +241,11 @@
   @tailwind components;
   @tailwind utilities;
 }
+/* shortcut: CDK overlays above PrimeNG's 1100 modal layer and the person drawer's fixed 9999. revisit: when PrimeNG overlays are removed, move to --ui-z-* tokens */
+.cdk-overlay-container {
+  z-index: 10000;
+}
+
 /* PrimeNG component overrides */
 .p-toggleswitch .p-toggleswitch-handle {
   border-radius: 9999px;
@@ -92,6 +271,63 @@
 .p-datatable .p-datatable-thead > tr > th,
 .p-datatable .p-datatable-tbody > tr:not(:last-child) > td {
   border-bottom: 1px solid #f1f5f9; /* slate-100 */
+}
+
+/* Health Metrics tables (the design's tables), in exact px: a 32px gray-50 header with an inset rule and
+   12px medium labels, 14px cells with column 1 at 500, 16px between columns and 6px at the row's ends. */
+.p-datatable.hm-table .p-datatable-thead > tr > th {
+  height: 32px;
+  padding: 0 8px;
+  border-bottom: 0;
+  background: theme('colors.gray.50');
+  box-shadow: inset 0 -1px 0 theme('colors.gray.200');
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: theme('colors.gray.600');
+  white-space: nowrap;
+}
+
+.p-datatable.hm-table .p-datatable-tbody > tr > td {
+  padding: 11px 8px;
+  border-bottom: 1px solid theme('colors.gray.100');
+  font-size: 14px;
+  font-weight: 400;
+  color: theme('colors.gray.900');
+}
+
+.p-datatable.hm-table .p-datatable-thead > tr > th:first-child,
+.p-datatable.hm-table .p-datatable-tbody > tr > td:first-child {
+  padding-left: 6px;
+}
+
+.p-datatable.hm-table .p-datatable-thead > tr > th:last-child,
+.p-datatable.hm-table .p-datatable-tbody > tr > td:last-child {
+  padding-right: 6px;
+}
+
+.p-datatable.hm-table .p-datatable-tbody > tr > td:first-child {
+  border-radius: 8px 0 0 8px;
+  font-weight: 500;
+}
+
+.p-datatable.hm-table .p-datatable-tbody > tr > td:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+/* A clickable row (a selectable table, or a row marked `cursor-pointer`) lights up gray-50 on hover. */
+.p-datatable.hm-table.lfx-table-selectable .p-datatable-tbody > tr:hover > td,
+.p-datatable.hm-table .p-datatable-tbody > tr.cursor-pointer:hover > td {
+  background: theme('colors.gray.50');
+}
+
+/* The Health Metrics event dialog on a phone, 12px from the screen's edges: PrimeNG sets the desktop inset inline. */
+@media (max-width: 640px) {
+  .p-dialog.hm-event-dialog {
+    width: calc(100vw - 24px) !important;
+    max-height: calc(100dvh - 24px) !important;
+    margin-top: 12px !important;
+  }
 }
 
 .p-menu .p-menu-item.text-red-500 .p-menu-item-content,
@@ -387,6 +623,29 @@ html {
   white-space: normal !important;
 }
 
+// Health Metrics help tips: the design's dark bubble, 8px off the icon, with no arrow. Appended to <body> like the
+// tooltips above, so styled globally; PrimeNG flips the bubble above the icon when there's no room below.
+.p-tooltip.lfx-hm-tip {
+  max-width: 320px !important;
+  padding: 8px 0 !important;
+}
+
+.p-tooltip.lfx-hm-tip .p-tooltip-arrow {
+  display: none;
+}
+
+.p-tooltip.lfx-hm-tip .p-tooltip-text {
+  padding: 10px 12px !important;
+  border-radius: 8px !important;
+  background: theme('colors.gray.900') !important;
+  box-shadow: 0 4px 12px theme('colors.gray.900 / 18%') !important;
+  color: theme('colors.white') !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 17px !important;
+  white-space: pre-line !important;
+}
+
 // Public-profile visibility drawer Private/Public master control. PrimeNG appends the drawer to <body>,
 // so the select button is styled globally via its wrapper data-testid as one segmented pill.
 [data-testid='profile-visibility-drawer-mode'] .p-selectbutton {
@@ -419,4 +678,27 @@ html {
 // content falls outside the component's view encapsulation, so the shared class must live globally.
 .toast-action {
   @apply mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline;
+}
+
+// Brand marks used where a menu expects an icon class (e.g. SidebarMenuItem.icon). The SVG is a CSS
+// mask filled with `currentColor`, so it inherits the menu icon colour (default / hover / active)
+// exactly like a Font Awesome glyph, and sizes from font-size like one. The Akrites mark's viewBox is
+// cropped to its shape (83×71); it sits a touch under 1em tall because a solid mark reads heavier
+// than the light-weight outline glyphs beside it.
+.lfx-icon-akrites {
+  display: inline-block;
+  width: 1.11em;
+  height: 0.95em;
+  vertical-align: -0.1em;
+  background-color: currentColor;
+  -webkit-mask: url('/images/icons/akrites.svg') center / contain no-repeat;
+  mask: url('/images/icons/akrites.svg') center / contain no-repeat;
+}
+
+// Pages that carry their own cookie notice, privacy/terms line and a "Cookie settings" link (the
+// signed-out newsletter pages) hide Transcend's automatic prompt — only where nothing tracks until the
+// visitor agrees, or they already chose (TranscendService.suppressPrompt() lifts it otherwise). airgap.js
+// still regulates scripts; only the prompt UI is hidden, and showPreferences() lifts the class first.
+html.lfx-consent-prompt-hidden #transcend-consent-manager {
+  display: none !important;
 }

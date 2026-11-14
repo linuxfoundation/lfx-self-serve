@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorship-mentee.constants';
+import type { MentorshipLfxProfileFields, MentorshipUpstreamLfxProfileFields } from './mentorship-lfx-profile-card.interface';
+import type { MentorshipRegisterSubmitFailure } from './mentorship.interface';
 
 // ---------------------------------------------------------------------------
 // Become a Mentee form types
@@ -10,8 +12,7 @@ import type { MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS } from '../constants/mentorsh
 /**
  * Become a Mentee form state. Name, email, and avatar are not here — they come from the
  * signed-in LFX account, matching the mentor form's `MentorshipMentorRegisterForm`.
- * `resumeFileName` is metadata only: there is no upload endpoint yet, so the picked bytes
- * are never sent. The five demographic fields are each optional and independently
+ * The five demographic fields are each optional and independently
  * consent-gated — a mentee can decline any of them without blocking submission.
  */
 export interface MentorshipMenteeRegisterForm {
@@ -19,7 +20,8 @@ export interface MentorshipMenteeRegisterForm {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
-  resumeFileName: string;
+  /** ISO 3166-1 alpha-2 code of the mentee's country of residence; `''` until one is picked. */
+  country: string;
   ageConsent: boolean;
   age: string;
   raceEthnicityConsent: boolean;
@@ -43,13 +45,13 @@ export interface MentorshipMenteeRegisterForm {
  * mentee wants to improve, so a blank on either side breaks that match. The demographic
  * fields have no entries: each is optional unless its consent checkbox is checked, and
  * that pairing is enforced by the demographics section itself rather than surfaced as a
- * submit-blocking error, matching how the resume picker validates at selection time
- * instead of at submit.
+ * submit-blocking error.
  */
 export interface MentorshipMenteeRegisterFieldErrors {
   introduction?: string;
   skillsHave?: string;
   skillsWant?: string;
+  country?: string;
   ageEligible?: string;
   workAuthorized?: string;
   noDuplicateProfile?: string;
@@ -59,35 +61,29 @@ export interface MentorshipMenteeRegisterFieldErrors {
 
 /**
  * Body of `POST /api/mentorship/mentee/profile`. Built from the register form by
- * `buildMentorshipMenteeRegisterRequest`. `resumeFileName` is deliberately absent: resume upload is
- * coming soon and no file metadata is sent. `demographics` carries only answers whose consent box was
+ * `buildMentorshipMenteeRegisterRequest`. `demographics` carries only answers whose consent box was
  * checked; it is omitted when there are none. The five flags are the real checkbox values, validated
- * `true` by both the client and the BFF.
+ * `true` by both the client and the BFF. `lfxProfile` carries the name and avatar the profile card
+ * shows; it is omitted when the card had none to give. The BFF adds the primary email itself.
  */
 export interface MentorshipMenteeRegisterRequest {
   introduction: string;
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  /** ISO 3166-1 alpha-2 code from `COUNTRIES`; stored upstream as `address.country`. */
+  country: string;
   demographics?: MentorshipMenteeDemographics;
   ageEligible: boolean;
   workAuthorized: boolean;
   noDuplicateProfile: boolean;
   complianceAccepted: boolean;
   termsAccepted: boolean;
+  lfxProfile?: MentorshipLfxProfileFields;
 }
 
-/** How a failed registration submit is shown. */
-export type MentorshipMenteeRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
-
-/** Result of `mapMentorshipMenteeRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
-export interface MentorshipMenteeRegisterSubmitFailure {
-  kind: MentorshipMenteeRegisterSubmitFailureKind;
-  /** Banner / toast copy. For 'field-errors' this is the first field message. */
-  message: string;
-  /** Present only for kind 'field-errors'; contains only keys of MentorshipMenteeRegisterFieldErrors. */
-  fieldErrors?: MentorshipMenteeRegisterFieldErrors;
-}
+/** A failed Become a Mentee submit, as `mapMentorshipRegisterFailure` classifies it. */
+export type MentorshipMenteeRegisterSubmitFailure = MentorshipRegisterSubmitFailure<MentorshipMenteeRegisterFieldErrors>;
 
 /** One selectable option in a mentee demographic question. */
 export interface MentorshipDemographicOption {
@@ -126,7 +122,7 @@ export type MentorshipMenteePageTab = 'overview' | 'tasks' | 'profile';
  * NOTE: These are the stored `tasks.status` values plus `pending`, the status
  * dropdown's To Do option. They intentionally differ from
  * `MentorshipApplicantTaskStatus` (the kebab-case admin/mentor vocabulary:
- * `pending` / `in-progress` / `submitted` / `completed`), which still reads mocks.
+ * `pending` / `in-progress` / `submitted` / `completed`), which the BFF maps to and from the stored values.
  */
 export type MentorshipMenteeTaskStatus = 'pending' | 'incomplete' | 'in_progress' | 'submitted' | 'complete';
 
@@ -141,9 +137,10 @@ export type MentorshipMenteeTaskCategory = 'prerequisite' | 'non_prerequisite';
  * One task on a mentee application.
  *
  * BFF mapping from `GET /mentorship/v1/applications/{id}/tasks`:
- * - `submitFile` ← `tasks.submit_file` (`null` | `'required'` | URL)
- * - `fileUrl` ← `tasks.file`
- * - `dueDate` ← `tasks.due_date`, else the term's application close for a prerequisite task, as its UTC midnight instant
+ * - `submitFile` ← `'required'` when `tasks.submit_file` is set (upstream treats any value as required), else `null`
+ * - `hasFile` ← whether `tasks.file` is set (upstream sends its download route, which the browser cannot fetch)
+ * - `dueDate` ← `tasks.due_date` as its UTC midnight instant, else, for a prerequisite task, the term's application
+ *   close as the end of its UTC day
  * - `submittedOn` ← `tasks.updated_on` when status is `submitted` or `complete`
  * - `updatedOn` ← `tasks.updated_on`
  */
@@ -157,13 +154,14 @@ export interface MentorshipMenteeApplicationTask {
   description: string;
   category: MentorshipMenteeTaskCategory;
   status: MentorshipMenteeTaskStatus;
-  /** `null` = no submission needed, `'required'` = needs upload, URL string = file already uploaded */
-  submitFile: string | null;
-  /** Uploaded file URL — present when `submitFile` is a URL or after a successful upload */
-  fileUrl?: string;
+  /** `'required'` when the task needs a file before it can be submitted, else `null`. */
+  submitFile: 'required' | null;
+  /** Whether a submission file is stored; it downloads through `GET /api/mentorship/tasks/:taskId/file`. */
+  hasFile: boolean;
   /**
-   * ISO 8601 UTC instant, rendered via `DatePipe` with `'UTC'`. The BFF turns the upstream date-only
-   * value into its UTC midnight instant, since `DatePipe` reads a bare date as local midnight.
+   * ISO 8601 UTC instant, rendered via `DatePipe` with `'UTC'`. The BFF turns a bare date into a UTC
+   * instant (a task's own due date at the start of its day, a term's application close at the end of
+   * it), since `DatePipe` reads a bare date as local midnight.
    */
   dueDate?: string;
   /**
@@ -193,20 +191,22 @@ export interface MentorshipMenteeTaskView {
   inProgress: boolean;
   /** Tailwind badge classes for the status pill. */
   statusClass: string;
-  /** A submission file already exists (renders View/Download). */
+  /** A submission file is stored (renders Download, and Replace or Remove while the file can change). */
   hasUploadedFile: boolean;
-  /** An upload is required but no file exists yet (renders Upload). */
-  needsUpload: boolean;
   /**
-   * True when upstream requires a file to submit (`submit_file` non-empty: `'required'` or a URL) and none is
-   * stored yet. Computed from the raw stored file, not the display-fallback `fileUrl`. Gates the `submitted`
-   * option. Note a URL-valued `submit_file` with no stored file also has `hasUploadedFile = true`; upstream
-   * still treats it as file-required, and no upstream path writes a URL there today.
+   * The task needs a file to be submitted and none is stored yet. Renders Upload, and gates the `submitted`
+   * option, since upstream refuses that move without the file.
    */
   requiresFile: boolean;
-  fileUrl: string | null;
+  /** The reviewer completed the task, so upstream refuses any change to its file. */
+  fileLocked: boolean;
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
+  /**
+   * True once the due date's UTC day has ended, when the task was built. A past-due task can no longer be
+   * submitted, and its file can no longer be uploaded, replaced or removed; `false` when there is no due date.
+   */
+  pastDue: boolean;
   /**
    * ISO 8601 UTC date string, or `null`. Named for its value (like `dueDate`/`submittedDate`),
    * not "label" — the template formats it via `DatePipe` with `'UTC'` (same contract as `dueDate`).
@@ -253,6 +253,8 @@ export interface MentorshipMenteeTaskStatusOptionsState {
  */
 export interface MentorshipMenteeApplicationView {
   id: string;
+  /** Links the program name to its public page; empty when upstream sent none. */
+  programId: string;
   programName: string;
   /** Absent when the program has no LF project; the card then shows only the term. */
   projectName?: string;
@@ -274,11 +276,6 @@ export interface MentorshipMenteeApplicationView {
   progressPercent: number;
   /** ISO 8601 instant: the latest change to the application or any of its tasks. */
   lastUpdatedOn: string;
-  /**
-   * ISO 8601 date the term's application window closes, or `null` for an accepted or graduated
-   * application (already decided) or when the term has none.
-   */
-  decisionExpectedDate: string | null;
   tasks: MentorshipMenteeTaskView[];
 }
 
@@ -290,16 +287,14 @@ export interface MentorshipMenteeApplicationView {
  * - `skillsHave` ← `skill_set.skills`
  * - `skillsWant` ← `skill_set.improvementSkills`
  * - `additionalNotes` ← `skill_set.comments`
- * - `resumeUrl` ← `profile_links.resumeLink` (Mentorship stores a URL; it has no upload API)
- * - `resumeFileName` is display-only (derived from the URL). Not a stored column.
+ * - `country` ← `address.country` (ISO 3166-1 alpha-2), absent when none is stored
  */
 export interface MentorshipMenteeProfileDetails {
   aboutMe: string;
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes?: string;
-  resumeFileName?: string;
-  resumeUrl?: string;
+  country?: string;
 }
 
 /** Status on an Application History row: the stored `applications.status` value. */
@@ -374,11 +369,13 @@ export interface MentorshipMenteeSocioeconomicsGroupUpdate {
 
 /** Body of `PATCH /api/mentorship/mentee/profile`. Only changed groups are present; at least one is required. */
 export interface MentorshipMenteeProfileUpdateRequest {
-  /** PLAIN TEXT. The BFF converts it to HTML. `''` clears the introduction. Omitted means unchanged. */
+  /** The rich editor's HTML, stored as sent; held to the register rule (`getMentorshipMenteeIntroductionError`). Omitted means unchanged. */
   introduction?: string;
   skillSet?: MentorshipMenteeSkillSetUpdate;
   demographics?: MentorshipMenteeDemographicsGroupUpdate;
   socioeconomics?: MentorshipMenteeSocioeconomicsGroupUpdate;
+  /** ISO 3166-1 alpha-2 code from `COUNTRIES`, written to `address.country`. Omitted means unchanged. */
+  country?: string;
 }
 
 /** 200 body of `PATCH /api/mentorship/mentee/profile`: the saved profile, re-mapped. History is not returned. */
@@ -393,6 +390,7 @@ export interface MentorshipMenteeProfileFormValue {
   skillsHave: string[];
   skillsWant: string[];
   additionalNotes: string;
+  country: string;
 }
 
 /** `form.getRawValue()` of the demographics drawer: `${key}Consent` booleans and `${key}` answers per `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS`. */
@@ -413,11 +411,7 @@ export interface MentorshipMenteeApplyTarget {
   /** Empty when upstream has no LF project on the program. */
   projectName: string;
   termName: string;
-  /**
-   * Whether the term takes applications today, by the same rule upstream applies on submit: the
-   * term is `open` and today is inside its application window. A missing window date leaves that
-   * side open.
-   */
+  /** Whether upstream says the term takes applications now (`accepting_applications` on its apply-target read). */
   acceptingApplications: boolean;
 }
 
@@ -432,6 +426,15 @@ export interface MentorshipMenteeApplyBlockedState {
   icon: string;
   title: string;
   subtitle: string;
+}
+
+/**
+ * A blocked state chosen by the reason upstream gave for refusing an application. `match` is a
+ * lowercase fragment of the mentorship service's error message, which names the rule that failed.
+ */
+export interface MentorshipMenteeApplyUpstreamErrorState {
+  match: string;
+  state: MentorshipMenteeApplyBlockedState;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +468,6 @@ export interface MentorshipMenteeTermRef {
  * - `programName` / `programLogoUrl` ← the embedded `program`
  * - `projectName` ← the embedded `program.project_name`; absent when the program has no LF project
  * - `term` ← the embedded `term`
- * - `decisionExpectedDate` ← `term.application_end_date` as its UTC midnight instant
  * - `tasks` ← `GET /mentorship/v1/applications/{id}/tasks`, read only with `withTasks=true` and
  *   only for pending, accepted and graduated applications; absent otherwise, never an empty stand-in
  */
@@ -479,7 +481,6 @@ export interface MentorshipMenteeApplication {
   upstreamStatus: MentorshipUpstreamApplicationStatus;
   createdOn: string;
   updatedOn: string;
-  decisionExpectedDate?: string;
   tasks?: MentorshipMenteeApplicationTask[];
 }
 
@@ -499,6 +500,8 @@ export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'on-hol
 /** One row in the Past Applications table. */
 export interface MentorshipMenteePastApplication {
   id: string;
+  /** Links the program name to its public page; empty when upstream sent none. */
+  programId: string;
   programName: string;
   projectName?: string;
   termName: string;
@@ -612,6 +615,17 @@ export interface MentorshipUpstreamProgramTerm {
   updated_on: string;
 }
 
+/**
+ * Body of `GET /mentorship/v1/programs/{programID}/terms/{termID}/apply-target`: the names for the mentee
+ * apply page and whether upstream's submit check would accept an application today.
+ */
+export interface MentorshipUpstreamProgramTermApplyTarget {
+  program_name: string;
+  project_name?: string;
+  term_name: string;
+  accepting_applications: boolean;
+}
+
 /** One task row from the mentorship service. `due_date` is a date-only `YYYY-MM-DD` string. */
 export interface MentorshipUpstreamTask {
   id: string;
@@ -655,22 +669,50 @@ export interface MentorshipUpstreamMenteeSocioeconomicsInput {
 }
 
 /**
- * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
- * upstream from the token and path; name, email, phone and slug are intentionally not sent. A PUT to an
- * existing profile replaces ALL columns, which is why the BFF pre-checks.
+ * The `address` column. The mentee forms own only `country` (ISO 3166-1 alpha-2, which the HR
+ * acceptance notice expands to a name); the index signature carries the legacy keys (`city`,
+ * `address1`, `zipCode`) a profile update keeps, because upstream replaces the column whole.
  */
-export interface MentorshipUpstreamMenteeProfileInput {
+export interface MentorshipUpstreamMenteeAddress {
+  country: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Body of `PUT /mentorship/v1/me/profiles/mentee`. `user_id` and `profile_type` are overridden
+ * upstream from the token and path; the name, email and logo come from the LFX profile, and phone and
+ * slug are intentionally not sent. A PUT to an existing profile replaces ALL columns, which is why the
+ * BFF pre-checks.
+ */
+export interface MentorshipUpstreamMenteeProfileInput extends MentorshipUpstreamLfxProfileFields {
   introduction: string;
   terms_and_conditions: boolean;
   age_eligible: boolean;
   work_eligible: boolean;
   skill_set: MentorshipUpstreamMenteeSkillSetInput;
+  address: MentorshipUpstreamMenteeAddress;
   demographics?: MentorshipUpstreamMenteeDemographicsInput;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomicsInput;
 }
-/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. `file` is intentionally omitted: upload is not in scope. */
+/** Body for `PATCH /mentorship/v1/tasks/{id}/submission`. Upstream refuses `file` here: it is written only through the file route. */
 export interface MentorshipUpstreamTaskSubmissionUpdate {
   status: MentorshipMenteeUpdatableTaskStatus;
+}
+
+/** Upstream `201` from `POST /mentorship/v1/tasks/{id}/file-upload`. */
+export interface MentorshipUpstreamTaskFileUpload {
+  /** The multipart file name cleaned to `[A-Za-z0-9._-]`, at most 100 characters; the download returns it. */
+  filename: string;
+  /** The type upstream detected from the bytes, not the one the browser sent. */
+  content_type: string;
+  size: number;
+}
+
+/** BFF `201` from `POST /api/mentorship/mentee/tasks/:taskId/file`. */
+export interface MentorshipMenteeTaskFileUploadResponse {
+  fileName: string;
+  contentType: string;
+  size: number;
 }
 
 /**
@@ -736,4 +778,5 @@ export interface MentorshipUpstreamMenteeProfileUpdate {
   skill_set?: MentorshipUpstreamMenteeSkillSet;
   demographics?: MentorshipUpstreamMenteeDemographics;
   socioeconomics?: MentorshipUpstreamMenteeSocioeconomics;
+  address?: MentorshipUpstreamMenteeAddress;
 }

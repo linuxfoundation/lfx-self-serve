@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MEETING_INVITE_PRIMARY_SENTINEL } from '../constants/profile.constants';
-import { EMAIL_REGEX } from '../constants/regex.constants';
+import { EMAIL_REGEX, MAILTO_SAFE_EMAIL_REGEX } from '../constants/regex.constants';
 import type { EmailListParseResult } from '../interfaces';
 
 /** True when `value` is a syntactically valid email address. Trims before testing. */
@@ -11,6 +11,15 @@ export function isValidEmail(value: string | null | undefined): boolean {
     return false;
   }
   return EMAIL_REGEX.test(value.trim());
+}
+
+/**
+ * True when `value` is a plain single-recipient address that can be placed verbatim after `mailto:`
+ * without adding recipients or header fields. Does not trim: the exact tested string is the one a
+ * caller may interpolate. Use before building any `mailto:` href from upstream data.
+ */
+export function isMailtoSafeEmail(value: string | null | undefined): boolean {
+  return !!value && MAILTO_SAFE_EMAIL_REGEX.test(value);
 }
 
 /**
@@ -70,6 +79,44 @@ export function maskEmailForLogs(email: string | null | undefined): string {
   }
 
   return `***@${trimmed.slice(at + 1).toLowerCase()}`;
+}
+
+/**
+ * Mask an address for display to someone who may not own it, e.g. on a page opened from a forwarded
+ * invite link: enough to recognise your own address, not enough to read someone else's
+ * (`jane.doe+news@example.org` → `ja***@exam***.org`). The local part keeps two characters (one
+ * when it is two or three long); the host before the last dot keeps four (one when it is two to six
+ * long); a one-character part shows nothing, so `***` never stands in front of a complete part. The
+ * top-level domain stays. Anything that is not a single-`@` address with a dotted domain collapses
+ * to `***`.
+ */
+export function maskEmailForDisplay(email: string | null | undefined): string {
+  const trimmed = (email ?? '').trim();
+  const at = trimmed.indexOf('@');
+  if (at <= 0 || at !== trimmed.lastIndexOf('@')) {
+    return '***';
+  }
+
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1).toLowerCase();
+  const dot = domain.lastIndexOf('.');
+  if (dot <= 0 || dot === domain.length - 1) {
+    return '***';
+  }
+
+  const host = domain.slice(0, dot);
+  const tld = domain.slice(dot + 1);
+  const shownLocal = local.slice(0, visiblePrefixLength(local.length, 3, 2));
+  const shownHost = host.slice(0, visiblePrefixLength(host.length, 6, 4));
+  return `${shownLocal}***@${shownHost}***.${tld}`;
+}
+
+/** How many leading characters of a `length`-long address part to show: `longKeep` above `shortMax`, one for a short part, none for a single character. */
+function visiblePrefixLength(length: number, shortMax: number, longKeep: number): number {
+  if (length <= 1) {
+    return 0;
+  }
+  return length > shortMax ? longKeep : 1;
 }
 
 /**

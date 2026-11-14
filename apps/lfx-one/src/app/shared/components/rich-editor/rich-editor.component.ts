@@ -106,18 +106,11 @@ export class RichEditorComponent {
       return;
     }
 
-    const [{ Editor: TiptapEditor }, starterKitModule, underlineModule, linkModule, placeholderModule] = await Promise.all([
+    const [{ Editor: TiptapEditor }, { StarterKit }, { Placeholder }] = await Promise.all([
       import('@tiptap/core'),
       import('@tiptap/starter-kit'),
-      import('@tiptap/extension-underline'),
-      import('@tiptap/extension-link'),
-      import('@tiptap/extension-placeholder'),
+      import('@tiptap/extensions'),
     ]);
-
-    const StarterKit = starterKitModule.default ?? starterKitModule;
-    const Underline = underlineModule.default ?? underlineModule;
-    const Link = linkModule.default ?? linkModule;
-    const Placeholder = placeholderModule.default ?? placeholderModule;
 
     const ctrl = this.getControl();
     const initialValue = typeof ctrl?.value === 'string' ? ctrl.value : '';
@@ -125,13 +118,18 @@ export class RichEditorComponent {
     this.editor = new TiptapEditor({
       element: this.editorHost().nativeElement,
       extensions: [
-        StarterKit.configure({ heading: { levels: [2, 3] } }),
-        Underline,
-        Link.configure({
-          openOnClick: false,
-          autolink: true,
-          linkOnPaste: true,
-          HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: '_blank' },
+        // StarterKit bundles Link and Underline since v3. TrailingNode stays off: it appends an empty
+        // paragraph after content ending in a list or heading on the first click, which rewrites the
+        // saved HTML and marks an untouched form dirty.
+        StarterKit.configure({
+          heading: { levels: [2, 3] },
+          link: {
+            openOnClick: false,
+            autolink: true,
+            linkOnPaste: true,
+            HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: '_blank' },
+          },
+          trailingNode: false,
         }),
         Placeholder.configure({ placeholder: this.placeholder() }),
       ],
@@ -176,7 +174,7 @@ export class RichEditorComponent {
           return;
         }
         this.suppressUpdate = true;
-        editor.commands.setContent(next || '', false);
+        editor.commands.setContent(next || '', { emitUpdate: false });
         this.suppressUpdate = false;
         this.refreshActiveStates();
       });

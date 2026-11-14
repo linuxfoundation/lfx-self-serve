@@ -1,0 +1,56 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-1 min-w-0 break-words [overflow-wrap:anywhere]" [attr.data-testid]="testIdPrefix() + '-summary'">
+  <!-- Applicant: the name sits next to the email only when the application carries one. -->
+  <div class="flex flex-wrap items-baseline gap-x-1.5">
+    @if (item().applicationApplicantName) {
+      <span class="text-sm font-medium text-gray-900" [attr.data-testid]="testIdPrefix() + '-name'">{{ item().applicationApplicantName }}</span>
+    }
+    <span class="text-sm text-gray-900" [attr.data-testid]="testIdPrefix() + '-email'">{{ item().applicationApplicantEmail }}</span>
+  </div>
+
+  <!-- Destination: the group (linked to its detail page) and its category, then the project and request date. -->
+  <span class="text-xs text-gray-700" [attr.data-testid]="testIdPrefix() + '-destination'">
+    <span class="text-gray-500">Requested to join </span>
+    @if (groupCommands(); as commands) {
+      <a
+        class="font-medium text-blue-600 hover:underline"
+        [routerLink]="commands"
+        [queryParams]="groupQueryParams()"
+        [attr.aria-label]="'View group ' + item().badge"
+        (click)="groupLinkClick.emit()"
+        [attr.data-testid]="testIdPrefix() + '-group'"
+        >{{ item().badge }}</a
+      >
+    } @else {
+      <span class="font-medium" [attr.data-testid]="testIdPrefix() + '-group'">{{ item().badge }}</span>
+    }
+    @if (item().applicationGroupCategory) {
+      <span class="text-gray-500" [attr.data-testid]="testIdPrefix() + '-category'"> · {{ item().applicationGroupCategory }}</span>
+    }
+  </span>
+  @if (item().applicationProjectName || item().applicationSubmittedAt) {
+    <span class="flex flex-wrap gap-x-1.5 text-xs text-gray-500">
+      @if (item().applicationProjectName) {
+        <span [attr.data-testid]="testIdPrefix() + '-project'">Project: {{ item().applicationProjectName }}</span>
+      }
+      @if (item().applicationProjectName && item().applicationSubmittedAt) {
+        <span aria-hidden="true">·</span>
+      }
+      @if (item().applicationSubmittedAt) {
+        <span [attr.data-testid]="testIdPrefix() + '-submitted'">Requested {{ item().applicationSubmittedAt | date: 'mediumDate' }}</span>
+      }
+    </span>
+  }
+
+  <!-- The applicant's own words are the main input to the decision. Labelled so it is never mistaken for group or system text. -->
+  @if (item().applicationMessage) {
+    <div class="flex flex-col gap-0.5 pt-0.5">
+      <span class="text-xs font-medium text-gray-500" [attr.data-testid]="testIdPrefix() + '-message-label'">Message from applicant</span>
+      <blockquote class="border-l-2 border-gray-200 pl-2 text-xs text-gray-700 italic line-clamp-3" [attr.data-testid]="testIdPrefix() + '-message'">
+        {{ item().applicationMessage }}
+      </blockquote>
+    </div>
+  }
+</div>

@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  AudienceAttachExistingRequest,
+  AudienceAttachExistingResult,
   AudienceBuilderCapabilities,
   AudienceComposeMasterRequest,
   AudienceComposeMasterResult,
   AudienceComposedList,
+  AudienceCustomCriteria,
+  AudienceCustomInterpretRequest,
+  AudienceCustomInterpretResult,
+  AudienceCustomOperator,
+  AudienceCustomPreview,
+  AudienceCustomRequest,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
   AudienceDiscoveryResult,
@@ -16,19 +24,33 @@ import type {
   AudiencePreviewCount,
   AudienceQaCandidate,
   AudienceQaCheck,
+  AudienceQaCheckVerdict,
   AudienceQaFinding,
   AudienceQaResult,
   AudienceQaRunRequest,
   AudienceQaSeverity,
+  AudienceQaStageScopedCheck,
   AudienceQaVerdict,
   AudienceSignal,
   AudienceSpeakerScope,
   AudienceSuppressionCategory,
-  AudienceSuppressionList,
+  AudienceSuppressionListsResult,
+  CampaignAudience,
 } from '@lfx-one/shared/interfaces';
+import {
+  AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS,
+  AUDIENCE_CUSTOM_OPERATORS,
+  AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS,
+  AUDIENCE_LAST_SENT_MATCH_REASONS,
+  AUDIENCE_SPEAKER_SCOPES,
+} from '@lfx-one/shared/constants';
+
+import { AUDIENCE_CAPABILITIES_TIMEOUT_MS } from '../constants/audience-builder.constants';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { toAudienceStatus } from '../helpers/campaign-audience.helper';
+import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -65,6 +87,7 @@ interface WireDiscoveryResult {
   lists: WireDiscoveredList[];
   missing_signals: string[];
   inspected?: number;
+  hidden?: number;
 }
 
 interface WireListSearchResult {
@@ -82,6 +105,7 @@ interface WireSuppressionList {
   size?: number;
   category: string;
   hubspot_url: string;
+  will_create?: boolean;
 }
 
 interface WireListBrief {
@@ -90,6 +114,7 @@ interface WireListBrief {
   size?: number;
   missing: boolean;
   resolved_from_legacy_id?: string;
+  hubspot_url?: string;
 }
 
 interface WireLastSentEmail {
@@ -100,6 +125,8 @@ interface WireLastSentEmail {
   included_lists: WireListBrief[];
   suppression_lists: WireListBrief[];
   lists_unavailable?: boolean;
+  subject?: string;
+  match_reason?: string;
 }
 
 interface WireMasterListBrief {
@@ -127,6 +154,32 @@ interface WireComposeMasterResult {
   master: WireComposedList;
   suppression?: WireComposedList;
   source_list_ids: string[];
+  suppression_list_ids?: string[];
+  recorded?: boolean;
+  audience?: WireRecordedAudience;
+}
+
+interface WireAttachExistingResult {
+  master: WireComposedList;
+  suppression_list_ids: string[];
+  suppression?: WireComposedList;
+  audience: WireRecordedAudience;
+}
+
+/**
+ * The slim audience row a recording compose returns.
+ *
+ * Slim by design upstream: it deliberately omits `built_in_portal_id`, because provenance a
+ * client can send back is provenance that proves nothing. It also omits the project id, which is
+ * why {@link toRecordedAudience} leaves that field unset rather than inventing one.
+ */
+interface WireRecordedAudience {
+  id: string;
+  status: string;
+  version: number;
+  platform_master_list_id: string;
+  /** Present only on an audience attached from several existing include lists. */
+  include_list_ids?: string[];
 }
 
 interface WireQaFinding {
@@ -147,12 +200,64 @@ interface WireQaSuppressionCheck extends WireQaCheck {
 
 interface WireQaExclusionCheck extends WireQaCheck {
   exclusion_count: number;
+  send_time_count?: number;
 }
 
 interface WireQaChecks {
   signal_mapping: WireQaCheck;
   suppression: WireQaSuppressionCheck;
   exclusion_completeness: WireQaExclusionCheck;
+  current_registrants?: WireQaStageScopedCheck;
+}
+
+/** Check 4's wire shape: it may also be NOT APPLICABLE, with a note saying why. */
+interface WireQaStageScopedCheck extends WireQaCheck {
+  note?: string;
+}
+
+interface WireCustomPropertyFilter {
+  property: string;
+  operator: string;
+  values?: string[];
+}
+
+interface WireCustomCriteria {
+  cities?: string[];
+  countries?: string[];
+  contact_location?: boolean;
+  event_registered?: boolean;
+  education_enrolled?: boolean;
+  registered_for?: string[];
+  gate_event_history?: boolean;
+  gate_list_id?: string;
+  property_filters?: WireCustomPropertyFilter[];
+  speakers?: { scope: string; list_id?: string; event_names?: string[] };
+  ambassadors?: boolean;
+  education_topics?: string[];
+  education_topic_property?: string;
+  page_view_urls?: string[];
+  label?: string;
+}
+
+interface WireCustomInterpretResult {
+  criteria: WireCustomCriteria;
+  brand_short?: string;
+  gate?: WireListSearchResult;
+  speakers_list?: WireListSearchResult;
+  questions: { id: string; question: string; why?: string; options: string[] }[];
+  notes: string[];
+  similar?: { list: WireListSearchResult; recommendation?: string; reason?: string }[];
+  event?: WireEventIdentity;
+}
+
+interface WireCustomPreviewResult {
+  name: string;
+  criteria: WireCustomCriteria;
+  branch_count: number;
+  education_topic_candidates?: string[];
+  gate?: WireListSearchResult;
+  upper_bound?: number;
+  warnings: string[];
 }
 
 interface WireQaCandidate {
@@ -184,6 +289,7 @@ interface WireComposePartialError {
   suppression?: WireComposedList;
   suppression_name?: string;
   master_name?: string;
+  master?: WireComposedList;
 }
 
 /**
@@ -199,13 +305,22 @@ export class AudienceComposePartialError extends Error {
   public readonly suppressionName?: string;
   /** Set when the master create is unconfirmed. */
   public readonly masterName?: string;
+  /**
+   * Set when BOTH lists exist and only the attach to the brief failed.
+   *
+   * Never set alongside `masterName`: one asserts the master is confirmed, the other that it is
+   * not. This is the shape whose lists are usable, so the UI it drives points the operator at
+   * this list rather than at a retry.
+   */
+  public readonly master?: AudienceComposedList;
 
-  public constructor(message: string, suppression?: AudienceComposedList, suppressionName?: string, masterName?: string) {
+  public constructor(message: string, suppression?: AudienceComposedList, suppressionName?: string, masterName?: string, master?: AudienceComposedList) {
     super(message);
     this.name = 'AudienceComposePartialError';
     this.suppression = suppression;
     this.suppressionName = suppressionName;
     this.masterName = masterName;
+    this.master = master;
   }
 }
 
@@ -231,6 +346,25 @@ function required<T>(value: T | undefined | null, field: string): T {
   return value;
 }
 
+/**
+ * A HubSpot link from upstream, kept only when it is an absolute `http(s)` URL.
+ *
+ * Every `hubspot_url` ends up in an `[href]`, and Angular's sanitizer is the only other thing
+ * standing between a `javascript:` value and a click. Checking the scheme once here, where the
+ * wire value enters the app, means no template has to remember to. An unusable value becomes
+ * `''` so the templates' existing `@if (hubspotUrl)` guards drop the link rather than render it.
+ */
+function httpHref(value: string | undefined | null): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  try {
+    const { protocol } = new URL(trimmed);
+    return protocol === 'http:' || protocol === 'https:' ? trimmed : '';
+  } catch {
+    return '';
+  }
+}
+
 function toDiscoveredList(wire: WireDiscoveredList): AudienceDiscoveredList {
   return {
     listId: wire.list_id,
@@ -240,7 +374,7 @@ function toDiscoveredList(wire: WireDiscoveredList): AudienceDiscoveredList {
     reason: wire.reason,
     listType: wire.list_type,
     scope: wire.scope === undefined ? undefined : (wire.scope as AudienceSpeakerScope),
-    hubspotUrl: wire.hubspot_url,
+    hubspotUrl: httpHref(wire.hubspot_url),
   };
 }
 
@@ -251,6 +385,7 @@ function toListBrief(wire: WireListBrief): AudienceListBrief {
     size: wire.size,
     missing: wire.missing,
     resolvedFromLegacyId: wire.resolved_from_legacy_id,
+    hubspotUrl: httpHref(wire.hubspot_url) || undefined,
   };
 }
 
@@ -258,17 +393,22 @@ function toComposedList(wire: WireComposedList): AudienceComposedList {
   return {
     listId: wire.list_id,
     name: wire.name,
-    hubspotUrl: wire.hubspot_url,
+    hubspotUrl: httpHref(wire.hubspot_url),
     size: wire.size,
   };
 }
 
 /**
- * A list reported as CREATED on the SUCCESS path, with every identifying field validated.
+ * A list reported as CREATED on the SUCCESS path, with its identifying fields validated.
  *
  * Separate from {@link toComposedList} rather than replacing it, because the two paths want
- * opposite things. A create is non-idempotent, so on success a blank name or url renders a
- * confirmed, actionable list the operator cannot reconcile — that must fail. On the PARTIAL
+ * opposite things. A create is non-idempotent, so on success a blank id or name renders a
+ * confirmed list the operator cannot reconcile — that must fail, and the caller turns the
+ * failure into a do-not-retry partial, since the list exists. The `hubspot_url` is NOT an
+ * identifying field: a blank or non-http one (upstream returns `''` when the portal id is
+ * unknown) is kept as `''`, the UI then shows the name without a link, and the operator finds
+ * the list by name. Failing on it reported a created list as an error and invited the retry
+ * that orphaned a duplicate. On the PARTIAL
  * path the same blank must NOT throw: that code runs inside a catch, and throwing there
  * replaces the orphan banner with a generic error, destroying the one record of a list that
  * already exists in the portal. Validating there would be strictly worse than tolerating it.
@@ -279,8 +419,134 @@ function toCreatedList(wire: WireComposedList, label: string): AudienceComposedL
   return {
     listId: required(wire.list_id, `${label}.list_id`),
     name: required(wire.name, `${label}.name`),
-    hubspotUrl: required(wire.hubspot_url, `${label}.hubspot_url`),
+    // A link that fails the scheme check is dropped like a blank one; the list is still identified.
+    hubspotUrl: httpHref(wire.hubspot_url),
     size: wire.size,
+  };
+}
+
+/**
+ * The recorded audience row, widened to the shape the rest of the app already speaks.
+ *
+ * Three fields are supplied here rather than read off the wire, and each is knowable with
+ * certainty at this point:
+ *
+ *  - `briefId` is the id this request SENT. Upstream records the row under exactly that brief or
+ *    refuses the compose outright, so echoing it states a fact rather than a guess.
+ *  - `platform` is `hubspot` because the audience builder has no other backend — every route in
+ *    it composes HubSpot lists — and upstream stamps the row the same way.
+ *  - `projectId` is left UNSET, on purpose. Upstream does not return it and this layer holds the
+ *    project slug, not its id; writing the slug into an id field would be a value that looks
+ *    usable and is not.
+ *
+ * `status` goes through the shared coercion so an unrecognised wire string cannot masquerade as
+ * a usable audience — though a recording compose only ever reports `built`.
+ */
+function toRecordedAudience(wire: WireRecordedAudience, briefId: string): CampaignAudience {
+  return {
+    id: required(wire.id, 'audience.id'),
+    briefId,
+    platform: 'hubspot',
+    platformMasterListId: required(wire.platform_master_list_id, 'audience.platform_master_list_id'),
+    ...(Array.isArray(wire.include_list_ids) && wire.include_list_ids.length ? { includeListIds: wire.include_list_ids } : {}),
+    status: toAudienceStatus(required(wire.status, 'audience.status')),
+    version: required(wire.version, 'audience.version'),
+  };
+}
+
+function toSearchResult(wire: WireListSearchResult | undefined): AudienceListSearchResult | undefined {
+  if (!wire) return undefined;
+  return { listId: wire.list_id, name: wire.name, size: wire.size, hubspotUrl: httpHref(wire.hubspot_url) };
+}
+
+/** The value when it is one of `labels`' keys, else undefined: an unknown enum is dropped, never passed through. */
+function oneOf<K extends string>(labels: Readonly<Record<K, string>>, value: unknown): K | undefined {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(labels, value) ? (value as K) : undefined;
+}
+
+/** The event a plan was built from, or undefined unless it names one: the tab reads its name. */
+function toPlannedEvent(wire: WireEventIdentity | undefined): AudienceDiscoveredEvent | undefined {
+  if (!wire || typeof wire.event_name !== 'string' || !wire.event_name.trim()) return undefined;
+  return {
+    eventName: wire.event_name,
+    brandShort: typeof wire.brand_short === 'string' ? wire.brand_short : '',
+    eventDates: Array.isArray(wire.event_dates) ? wire.event_dates.filter((d): d is string => typeof d === 'string') : [],
+  };
+}
+
+const UPSTREAM_OPERATORS: readonly AudienceCustomOperator[] = AUDIENCE_CUSTOM_OPERATORS.map((o) => o.value);
+const UPSTREAM_SPEAKER_SCOPES: readonly AudienceSpeakerScope[] = AUDIENCE_SPEAKER_SCOPES.map((s) => s.key);
+
+/**
+ * An upstream criteria enum, checked against the values the UI offers. Unlike a label enum, an
+ * unknown one is REFUSED rather than dropped: dropping a filter or a speaker scope would silently
+ * widen the audience the operator then previews and creates.
+ */
+function knownEnum<T extends string>(allowed: readonly T[], value: unknown, field: string): T {
+  if (typeof value === 'string' && (allowed as readonly string[]).includes(value)) {
+    return value as T;
+  }
+  throw new Error(`audience-builder: upstream response has an unknown value in \`${field}\``);
+}
+
+/** Upstream criteria → client criteria. Every array is present, never undefined. */
+function toCustomCriteria(wire: WireCustomCriteria): AudienceCustomCriteria {
+  return {
+    cities: wire.cities ?? [],
+    countries: wire.countries ?? [],
+    contactLocation: wire.contact_location === true,
+    eventRegistered: wire.event_registered === true,
+    educationEnrolled: wire.education_enrolled === true,
+    registeredFor: wire.registered_for ?? [],
+    gateEventHistory: wire.gate_event_history === true,
+    gateListId: wire.gate_list_id || undefined,
+    propertyFilters: (wire.property_filters ?? []).map((f) => ({
+      property: f.property,
+      operator: knownEnum(UPSTREAM_OPERATORS, f.operator, 'criteria.property_filters.operator'),
+      values: f.values ?? [],
+    })),
+    speakers: wire.speakers
+      ? {
+          scope: knownEnum(UPSTREAM_SPEAKER_SCOPES, wire.speakers.scope, 'criteria.speakers.scope'),
+          listId: wire.speakers.list_id || undefined,
+          eventNames: wire.speakers.event_names ?? [],
+        }
+      : undefined,
+    ambassadors: wire.ambassadors === true,
+    educationTopics: wire.education_topics ?? [],
+    educationTopicProperty: wire.education_topic_property || undefined,
+    pageViewUrls: wire.page_view_urls ?? [],
+    label: wire.label || undefined,
+  };
+}
+
+/** Client criteria → upstream criteria. Optional ids are omitted rather than sent blank. */
+function toWireCriteria(criteria: AudienceCustomCriteria): WireCustomCriteria {
+  return {
+    cities: criteria.cities,
+    countries: criteria.countries,
+    contact_location: criteria.contactLocation,
+    event_registered: criteria.eventRegistered,
+    education_enrolled: criteria.educationEnrolled,
+    registered_for: criteria.registeredFor,
+    gate_event_history: criteria.gateEventHistory,
+    ...(criteria.gateListId ? { gate_list_id: criteria.gateListId } : {}),
+    property_filters: criteria.propertyFilters.map((f) => ({ property: f.property, operator: f.operator, values: f.values })),
+    ...(criteria.speakers
+      ? {
+          speakers: {
+            scope: criteria.speakers.scope,
+            ...(criteria.speakers.listId ? { list_id: criteria.speakers.listId } : {}),
+            event_names: criteria.speakers.eventNames,
+          },
+        }
+      : {}),
+    ambassadors: criteria.ambassadors,
+    education_topics: criteria.educationTopics,
+    page_view_urls: criteria.pageViewUrls,
+    // Upstream honours it only when it is one of the portal's candidates.
+    ...(criteria.educationTopicProperty ? { education_topic_property: criteria.educationTopicProperty } : {}),
+    ...(criteria.label ? { label: criteria.label } : {}),
   };
 }
 
@@ -296,6 +562,15 @@ function toCheck(wire: WireQaCheck): AudienceQaCheck {
   return {
     verdict: wire.verdict as AudienceQaVerdict,
     findings: (wire.findings ?? []).map(toFinding),
+  };
+}
+
+/** Check 4, which keeps upstream's NOT APPLICABLE verdict and its note. */
+function toStageScopedCheck(wire: WireQaStageScopedCheck): AudienceQaStageScopedCheck {
+  return {
+    verdict: wire.verdict as AudienceQaCheckVerdict,
+    findings: (wire.findings ?? []).map(toFinding),
+    ...(typeof wire.note === 'string' && wire.note.trim() ? { note: wire.note.trim() } : {}),
   };
 }
 
@@ -330,7 +605,7 @@ function narrowQaResult(wire: WireQaResult): AudienceQaResult {
     needsDisambiguation: false,
     listId: wire.list_id ?? '',
     name: wire.name ?? '',
-    hubspotUrl: wire.hubspot_url ?? '',
+    hubspotUrl: httpHref(wire.hubspot_url),
     checks: {
       signalMapping: toCheck(checks.signal_mapping),
       // Upstream reports the two regulatory booleans FLAT alongside the verdict; the client
@@ -346,7 +621,11 @@ function narrowQaResult(wire: WireQaResult): AudienceQaResult {
       exclusionCompleteness: {
         ...toCheck(checks.exclusion_completeness),
         exclusionCount: checks.exclusion_completeness.exclusion_count,
+        ...(checks.exclusion_completeness.send_time_count ? { sendTimeCount: checks.exclusion_completeness.send_time_count } : {}),
       },
+      // Omitted, not defaulted: absent means the check did not run, and a defaulted verdict
+      // would read as a result.
+      ...(checks.current_registrants ? { currentRegistrants: toStageScopedCheck(checks.current_registrants) } : {}),
     },
     findings: (wire.findings ?? []).map(toFinding),
     overall: (wire.overall ?? 'NEEDS VERIFY') as AudienceQaVerdict,
@@ -380,7 +659,15 @@ export class AudienceBuilderProxyService {
   }
 
   public async getCapabilities(req: Request, projectSlug: string): Promise<AudienceBuilderCapabilities> {
-    const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(req, projectSlug, 'capabilities');
+    // Opted down from the shared ceiling: this answers one boolean about whether a connection row
+    // exists, so it never legitimately runs long -- see `timeout()`.
+    const wire = await this.get<{ hubspot_configured: boolean; detail?: string }>(
+      req,
+      projectSlug,
+      'capabilities',
+      undefined,
+      AUDIENCE_CAPABILITIES_TIMEOUT_MS
+    );
     // `detail` was declared here and then dropped, so every unusable connection rendered as
     // "no credentials configured" — the wrong remediation for an inactive or undecryptable one.
     const detail = typeof wire.detail === 'string' ? wire.detail.trim() : '';
@@ -413,6 +700,7 @@ export class AudienceBuilderProxyService {
       result: {
         lists: (wire.lists ?? []).map(toDiscoveredList),
         missingSignals: (wire.missing_signals ?? []) as AudienceSignal[],
+        ...(wire.hidden ? { hidden: wire.hidden } : {}),
       },
       inspected: wire.inspected ?? 0,
     };
@@ -424,27 +712,39 @@ export class AudienceBuilderProxyService {
       listId: list.list_id,
       name: list.name,
       size: list.size,
-      hubspotUrl: list.hubspot_url,
+      hubspotUrl: httpHref(list.hubspot_url),
     }));
   }
 
-  public async getSuppressionLists(req: Request, projectSlug: string, brandShort: string, eventName: string): Promise<AudienceSuppressionList[]> {
-    // Both params are optional upstream and omitted rather than sent empty: an empty
+  public async getSuppressionLists(
+    req: Request,
+    projectSlug: string,
+    brandShort: string,
+    eventName: string,
+    registrantsEvent = ''
+  ): Promise<AudienceSuppressionListsResult> {
+    // Every param is optional upstream and omitted rather than sent empty: an empty
     // `event_name` is a filter that matches nothing, where an absent one means "do not filter".
-    const wire = await this.get<{ lists?: WireSuppressionList[] }>(req, projectSlug, 'suppression-lists', {
+    const wire = await this.get<{ lists?: WireSuppressionList[]; standard_list?: WireComposedList }>(req, projectSlug, 'suppression-lists', {
       ...(brandShort === '' ? {} : { brand_short: brandShort }),
       ...(eventName === '' ? {} : { event_name: eventName }),
+      ...(registrantsEvent === '' ? {} : { registrants_event: registrantsEvent }),
     });
 
-    return required(wire.lists, 'lists').map((list) => ({
+    const lists = required(wire.lists, 'lists').map((list) => ({
       key: list.key,
       label: list.label,
       listId: list.list_id,
       name: list.name,
       size: list.size,
       category: list.category as AudienceSuppressionCategory,
-      hubspotUrl: list.hubspot_url,
+      hubspotUrl: httpHref(list.hubspot_url),
+      ...(list.will_create ? { willCreate: true } : {}),
     }));
+    // Present only once the project's standing list exists; its absence tells the tab that the next
+    // attach or compose applying every standard row CREATES it. One without an id is no evidence it
+    // exists, so it is dropped rather than reported as an existing list.
+    return { lists, ...(confirmedWireList(wire.standard_list) ? { standardList: toComposedList(wire.standard_list) } : {}) };
   }
 
   public async getLastSent(req: Request, projectSlug: string, eventName: string, brandShort: string, limit: number): Promise<AudienceLastSentEmail[]> {
@@ -457,8 +757,10 @@ export class AudienceBuilderProxyService {
     return (wire.emails ?? []).map((email) => ({
       emailId: email.email_id,
       emailName: email.email_name,
+      subject: email.subject || undefined,
+      matchReason: oneOf(AUDIENCE_LAST_SENT_MATCH_REASONS, email.match_reason),
       sentAt: email.sent_at ?? '',
-      hubspotUrl: email.hubspot_url,
+      hubspotUrl: httpHref(email.hubspot_url),
       includedLists: (email.included_lists ?? []).map(toListBrief),
       suppressionLists: (email.suppression_lists ?? []).map(toListBrief),
       // Dropped, the two empty arrays above are indistinguishable from a send that genuinely
@@ -477,7 +779,7 @@ export class AudienceBuilderProxyService {
       listId: list.list_id,
       name: list.name,
       size: list.size,
-      hubspotUrl: list.hubspot_url,
+      hubspotUrl: httpHref(list.hubspot_url),
     }));
   }
 
@@ -492,7 +794,8 @@ export class AudienceBuilderProxyService {
   }
 
   /**
-   * Creates the combined suppression list and then the master list, upstream.
+   * Creates the master list upstream, excluding the selected suppressions through the project's
+   * standing suppression lists (found by name and reused, never one per compose).
    *
    * `eventUrl` on the request is dropped deliberately: upstream's compose input takes the
    * REVIEWED naming inputs (`brand_short`, `event_name`, `event_dates`) and no URL, because the
@@ -507,41 +810,99 @@ export class AudienceBuilderProxyService {
       ...(request.brandShort ? { brand_short: request.brandShort } : {}),
       ...(request.eventName ? { event_name: request.eventName } : {}),
       ...(request.eventDates?.length ? { event_dates: request.eventDates } : {}),
+      ...(request.currentRegistrantsEvent ? { current_registrants_event: request.currentRegistrantsEvent } : {}),
+      // Forwarded only when set. Sending `brief_id: ''` is NOT the same request: upstream reads a
+      // present-but-empty id as an attach that then fails its own brief lookup, turning the
+      // exploratory compose the builder is designed for into a 404 — after refusing to create
+      // anything.
+      ...(request.briefId ? { brief_id: request.briefId } : {}),
     };
 
+    let wire: WireComposeMasterResult;
     try {
-      const wire = await this.post<WireComposeMasterResult>(req, projectSlug, 'compose-master', { compose });
-      // Validated before it is reported as a success: this is a non-idempotent create, and a
-      // rewritten `{ master: {}, source_list_ids: [] }` would render "Master list created" over
-      // a list id the operator cannot act on.
-      // toComposedList validates every identifying field of BOTH lists — the suppression object
-      // was previously passed through unchecked beside a validated master.
-      return {
-        master: toCreatedList(required(wire.master, 'master'), 'master'),
-        suppression: wire.suppression ? toCreatedList(wire.suppression, 'suppression') : undefined,
-        sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
-      };
+      wire = await this.post<WireComposeMasterResult>(req, projectSlug, 'compose-master', { compose });
     } catch (error) {
       const partial = asComposePartial(error);
       if (partial) {
         throw new AudienceComposePartialError(
           // The old default described only the one shape that carries a confirmed suppression
-          // list; three of the four reachable shapes do not, so it stated the wrong thing for
-          // most of them. The generic default is correct for all four and upstream's own
+          // list; four of the five reachable shapes do not, so it stated the wrong thing for
+          // most of them. The generic default is correct for all five and upstream's own
           // message is preferred whenever it sends one.
           partial.message?.trim() || 'The compose did not complete. Some lists may already exist in HubSpot.',
           // Truthiness is not enough now that the discriminator admits bodies without a
           // confirmed suppression: forwarding an object whose `list_id` is missing or blank
           // makes the banner render a HubSpot link for a create that was never confirmed —
           // reintroducing, one layer up, exactly the false certainty this widening removed.
-          partial.suppression && typeof partial.suppression.list_id === 'string' && partial.suppression.list_id.length > 0
-            ? toComposedList(partial.suppression)
-            : undefined,
+          confirmedWireList(partial.suppression) ? toComposedList(partial.suppression) : undefined,
           partial.suppression_name?.trim() || undefined,
-          partial.master_name?.trim() || undefined
+          partial.master_name?.trim() || undefined,
+          // Same id check as the suppression above, for the same reason — and it matters more
+          // here: this is the shape whose whole message is "the master EXISTS, attach it by
+          // hand", so a blank id would send the operator looking for a list that was never
+          // confirmed to exist.
+          confirmedWireList(partial.master) ? toComposedList(partial.master) : undefined
         );
       }
       throw error;
+    }
+
+    // Upstream answered 2xx, so the master EXISTS. An unusable reply is therefore a do-not-retry
+    // partial carrying whatever names it has, never a plain error: the client lets an operator
+    // retry a plain error, and a retry composes a second master list.
+    try {
+      // Validated before it is reported as a success: this is a non-idempotent create, and a
+      // rewritten `{ master: {}, source_list_ids: [] }` would render "Master list created" over
+      // a list id the operator cannot act on.
+      // toCreatedList validates every identifying field of BOTH lists — the suppression object
+      // was previously passed through unchecked beside a validated master.
+      // `recorded` defaults to FALSE, and the default is the whole point of reading it separately
+      // from `audience`. Goa's decoder ignores unknown body fields, so an upstream deployed before
+      // this feature accepts the request, composes normally and returns neither field — which must
+      // degrade to today's unattached behaviour, not to a UI claiming the send is wired up.
+      const recorded = wire.recorded === true;
+      return {
+        master: toCreatedList(required(wire.master, 'master'), 'master'),
+        suppression: wire.suppression ? toCreatedList(wire.suppression, 'suppression') : undefined,
+        sourceListIds: required(wire.source_list_ids, 'source_list_ids'),
+        // Optional: an older upstream omits it, and the UI then falls back to what it sent.
+        ...(Array.isArray(wire.suppression_list_ids)
+          ? { suppressionListIds: wire.suppression_list_ids.filter((id) => typeof id === 'string' && id !== '') }
+          : {}),
+        recorded,
+        // Validated with `required` exactly as `master` is, and for the same reason: this is the
+        // object the UI reads to say "attached". A rewritten `audience: {}` beside `recorded: true`
+        // would render an attachment over a row the operator cannot address.
+        audience: recorded ? toRecordedAudience(required(wire.audience, 'audience'), request.briefId ?? '') : undefined,
+      };
+    } catch (error) {
+      // Which field was unusable is the one thing the partial cannot carry, so it is logged here.
+      logger.warning(req, 'audience_compose_master', 'Compose reply unusable; reporting it as a do-not-retry partial', {
+        reason: error instanceof Error ? error.message : String(error),
+        master_list_id: wire?.master?.list_id,
+      });
+      // The suppression is never passed: on a 2xx it is the project's standing standard list, which
+      // the master that exists excludes and every other audience in the project shares, so the
+      // partial banner must not present it as this compose's leftover.
+      if (wire?.recorded === true) {
+        // Upstream reported the attach, so the master is not "unattached"; only the reply is
+        // unreadable. No list is passed, so the client does not offer to attach it again.
+        throw new AudienceComposePartialError(
+          'HubSpot created the master list and reported it attached, but the reply could not be read. Refresh the campaign before composing again.'
+        );
+      }
+      // A master with a confirmed id is passed as the list; one without, only by name to search
+      // for. Never both (see AudienceComposePartialError). A confirmed list is never nameless.
+      const master = confirmedWireList(wire?.master)
+        ? { ...toComposedList(wire.master), name: wireName(wire.master) || request.name || `list ${wire.master.list_id.trim()}` }
+        : undefined;
+      throw new AudienceComposePartialError(
+        'HubSpot created the master list, but the reply could not be fully read. Check the portal for it before composing again.',
+        undefined,
+        undefined,
+        master ? undefined : wireName(wire?.master) || request.name || undefined,
+        master
+      );
     }
   }
 
@@ -550,8 +911,132 @@ export class AudienceBuilderProxyService {
       list_ref: request.listRef,
       targets_eu: request.targetsEu === true,
       targets_ca: request.targetsCa === true,
+      ...(request.eventName ? { event_name: request.eventName } : {}),
+      // Same spelling as campaign-service's stage enum, so it is forwarded as is. A
+      // campaign-service that predates the field ignores it (its JSON decoder drops unknown keys).
+      ...(request.stage ? { stage: request.stage } : {}),
+      ...(request.sendSuppressionListIds?.length ? { send_suppression_list_ids: request.sendSuppressionListIds } : {}),
     });
     return narrowQaResult(wire);
+  }
+
+  /** Free text → draft criteria. Uses a model upstream; creates nothing. */
+  public async interpretCustom(req: Request, projectSlug: string, request: AudienceCustomInterpretRequest): Promise<AudienceCustomInterpretResult> {
+    const wire = await this.post<WireCustomInterpretResult>(req, projectSlug, 'custom/interpret', {
+      request: request.request,
+      ...(request.eventUrl ? { event_url: request.eventUrl } : {}),
+      ...(request.answers?.length
+        ? {
+            answers: request.answers.map((a) => ({
+              ...(a.questionId ? { question_id: a.questionId } : {}),
+              ...(a.question ? { question: a.question } : {}),
+              answer: a.answer,
+            })),
+          }
+        : {}),
+    });
+    return {
+      criteria: toCustomCriteria(required(wire.criteria, 'criteria')),
+      brandShort: wire.brand_short || undefined,
+      gate: toSearchResult(wire.gate),
+      speakersList: toSearchResult(wire.speakers_list),
+      // Only well-formed questions reach the UI: each is rendered and keyed by its id.
+      questions: (Array.isArray(wire.questions) ? wire.questions : [])
+        .filter((q) => typeof q?.id === 'string' && q.id !== '' && typeof q.question === 'string' && (q.options === undefined || Array.isArray(q.options)))
+        .map((q) => ({
+          id: q.id,
+          question: q.question,
+          why: typeof q.why === 'string' && q.why ? q.why : undefined,
+          options: (q.options ?? []).filter((o): o is string => typeof o === 'string'),
+        })),
+      notes: wire.notes ?? [],
+      similar: (wire.similar ?? [])
+        .filter((s) => !!s.list?.list_id)
+        .map((s) => ({
+          list: toSearchResult(s.list) as AudienceListSearchResult,
+          recommendation: oneOf(AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS, s.recommendation),
+          reason: s.reason || undefined,
+        })),
+      event: toPlannedEvent(wire.event),
+    };
+  }
+
+  /** What `createCustom` would build. Creates nothing. */
+  public async previewCustom(req: Request, projectSlug: string, request: AudienceCustomRequest): Promise<AudienceCustomPreview> {
+    const wire = await this.post<WireCustomPreviewResult>(req, projectSlug, 'custom/preview', { custom: this.customBody(request) });
+    return {
+      name: required(wire.name, 'name'),
+      criteria: toCustomCriteria(required(wire.criteria, 'criteria')),
+      branchCount: required(wire.branch_count, 'branch_count'),
+      educationTopicCandidates: wire.education_topic_candidates ?? [],
+      gate: toSearchResult(wire.gate),
+      upperBound: wire.upper_bound,
+      warnings: wire.warnings ?? [],
+    };
+  }
+
+  /**
+   * Creates ONE list in the project's portal. Not idempotent: an unconfirmed create is thrown as
+   * an {@link AudienceComposePartialError} carrying the name, exactly as compose does.
+   */
+  public async createCustom(req: Request, projectSlug: string, request: AudienceCustomRequest): Promise<AudienceComposedList> {
+    let wire: WireComposedList;
+    try {
+      wire = await this.post<WireComposedList>(req, projectSlug, 'custom/create', { custom: this.customBody(request) });
+    } catch (error) {
+      const partial = asComposePartial(error);
+      if (partial) {
+        throw new AudienceComposePartialError(
+          partial.message?.trim() || 'HubSpot did not confirm the list was created. Search the portal for it before trying again.',
+          undefined,
+          undefined,
+          partial.master_name?.trim() || undefined
+        );
+      }
+      throw error;
+    }
+    try {
+      return toCreatedList(wire, 'list');
+    } catch (error) {
+      logger.warning(req, 'audience_create_custom', 'Create reply unusable; reporting it as a do-not-retry partial', {
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      // Upstream answered 2xx, so the list EXISTS; only its reply is unusable. That is still a
+      // do-not-retry outcome — a retry would create a second list.
+      throw new AudienceComposePartialError(
+        'HubSpot created the list but its details could not be read. Search the portal for it before trying again.',
+        undefined,
+        undefined,
+        (typeof wire?.name === 'string' && wire.name.trim()) || request.name || undefined
+      );
+    }
+  }
+
+  /**
+   * Records EXISTING lists as the brief's send audience. Its only creates are the project's standing
+   * standard suppression list and the edition's current-registrants list, both found by name and
+   * reused, so unlike compose it has no partial state and every failure is safe to retry.
+   */
+  public async attachExisting(req: Request, projectSlug: string, request: AudienceAttachExistingRequest): Promise<AudienceAttachExistingResult> {
+    const attach = {
+      brief_id: request.briefId,
+      // Exactly one of the two: several include lists go to the send directly, with no master.
+      ...(request.includeListIds?.length ? { include_list_ids: request.includeListIds } : { master_list_id: request.masterListId }),
+      ...(request.suppressionListIds?.length ? { suppression_list_ids: request.suppressionListIds } : {}),
+      ...(request.currentRegistrantsEvent ? { current_registrants_event: request.currentRegistrantsEvent } : {}),
+      ...(request.inclusionSummary ? { inclusion_summary: request.inclusionSummary } : {}),
+    };
+    const wire = await this.post<WireAttachExistingResult>(req, projectSlug, 'attach-existing', { attach });
+    return {
+      master: toCreatedList(required(wire.master, 'master'), 'master'),
+      suppressionListIds: required(wire.suppression_list_ids, 'suppression_list_ids'),
+      ...(wire.suppression ? { standardSuppression: toCreatedList(wire.suppression, 'suppression') } : {}),
+      audience: toRecordedAudience(required(wire.audience, 'audience'), request.briefId),
+    };
+  }
+
+  private customBody(request: AudienceCustomRequest): Record<string, unknown> {
+    return { criteria: toWireCriteria(request.criteria), ...(request.name ? { name: request.name } : {}) };
   }
 
   /**
@@ -568,15 +1053,69 @@ export class AudienceBuilderProxyService {
     return `/projects/${encodeURIComponent(projectSlug)}/audience-builder/${suffix}`;
   }
 
-  private get<T>(req: Request, projectSlug: string, suffix: string, query?: Record<string, unknown>): Promise<T> {
+  private get<T>(req: Request, projectSlug: string, suffix: string, query?: Record<string, unknown>, timeoutMs?: number): Promise<T> {
     // Query params go in the FIFTH argument. `proxyRequest(req, service, path, method, query,
-    // data)` — passing them sixth would send them as a body, which a GET discards.
-    return this.microserviceProxy.proxyRequest<T>(req, 'LFX_V2_CAMPAIGN_SERVICE', this.path(projectSlug, suffix), 'GET', query);
+    // data)` — passing them sixth would send them as a body, which a GET discards. The eighth
+    // carries the raised timeout every audience-builder call needs — see `timeout()` below.
+    return this.microserviceProxy.proxyRequest<T>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      this.path(projectSlug, suffix),
+      'GET',
+      query,
+      undefined,
+      undefined,
+      timeout(timeoutMs)
+    );
   }
 
   private post<T>(req: Request, projectSlug: string, suffix: string, body: unknown): Promise<T> {
-    return this.microserviceProxy.proxyRequest<T>(req, 'LFX_V2_CAMPAIGN_SERVICE', this.path(projectSlug, suffix), 'POST', undefined, body);
+    return this.microserviceProxy.proxyRequest<T>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      this.path(projectSlug, suffix),
+      'POST',
+      undefined,
+      body,
+      undefined,
+      timeout()
+    );
   }
+}
+
+/**
+ * The per-request options every audience-builder call carries.
+ *
+ * A function rather than a shared const so no caller can mutate the options object out from
+ * under the others. See AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS for why 30s was not enough.
+ *
+ * The long ceiling is the DEFAULT, and an endpoint opts down only where its cost is known from
+ * this repo. `capabilities` is the one that qualifies -- it answers a single boolean about whether
+ * a connection row exists. Everything else walks the HubSpot Marketing API, and `last-sent` was
+ * MEASURED at 32s (the limit the panel asks for) and 58s against the live TLF portal, which is
+ * why the ceiling was raised in the first place: at 30s it aborted mid-flight and the panel
+ * rendered a failure on every load while upstream went on to answer 200. Lowering a call on the
+ * assumption that it is cheap is how that regression comes back.
+ */
+function timeout(timeoutMs: number = AUDIENCE_BUILDER_REQUEST_TIMEOUT_MS): { timeoutMs: number } {
+  return { timeoutMs };
+}
+
+/** A wire list's trimmed name, or undefined when it has none. */
+function wireName(list: WireComposedList | undefined | null): string | undefined {
+  return (typeof list?.name === 'string' && list.name.trim()) || undefined;
+}
+
+/**
+ * Does this wire object describe a list whose creation was CONFIRMED?
+ *
+ * Trimmed, not merely non-empty. A `list_id` of `'  '` survives a length check and then reaches
+ * the operator as a HubSpot link to nothing — the same unconfirmed-create-rendered-as-real bug the
+ * length check was added to close, through a narrower door. One predicate rather than a copy per
+ * arm, because two copies of this rule is how one of them ends up admitting a blank id.
+ */
+function confirmedWireList(list: WireComposedList | undefined | null): list is WireComposedList {
+  return list !== undefined && list !== null && typeof list.list_id === 'string' && list.list_id.trim().length > 0;
 }
 
 /**
@@ -602,7 +1141,12 @@ function asComposePartial(error: unknown): WireComposePartialError | null {
   const hasSuppression = !!body.suppression && typeof body.suppression.list_id === 'string';
   const hasSuppressionName = typeof body.suppression_name === 'string' && body.suppression_name.length > 0;
   const hasMasterName = typeof body.master_name === 'string' && body.master_name.length > 0;
-  if (!hasSuppression && !hasSuppressionName && !hasMasterName) return null;
+  // The fifth shape: both lists created, the attach to the brief failed. It carries a confirmed
+  // `master` and no `master_name`, so without this arm it fell through to an ordinary 500 — and
+  // a 500 on a non-idempotent create is exactly the prompt to retry that would mint a second
+  // master list for one send.
+  const hasMaster = !!body.master && typeof body.master.list_id === 'string' && body.master.list_id.length > 0;
+  if (!hasSuppression && !hasSuppressionName && !hasMasterName && !hasMaster) return null;
 
   return body;
 }

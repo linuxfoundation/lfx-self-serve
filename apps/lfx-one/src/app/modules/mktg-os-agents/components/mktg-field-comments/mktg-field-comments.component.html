@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+@if (comments.loaded()) {
+  <div class="flex flex-col gap-2">
+    <div
+      class="flex flex-wrap items-center gap-2 opacity-100 group-hover/commentfield:opacity-100 group-focus-within/commentfield:opacity-100"
+      [class]="alwaysVisible() ? '' : '[@media(hover:hover)]:opacity-0'">
+      <lfx-button
+        [label]="openLabel()"
+        [ariaLabel]="openLabel() === 'Comment' ? 'Comment on ' + label() : openLabel() + ' ' + label()"
+        [ariaExpanded]="opened()"
+        [text]="true"
+        size="small"
+        (onClick)="open()"
+        data-testid="mktg-field-comment-open" />
+      <span class="text-xs text-blue-700" [class.invisible]="!threads().length" data-testid="mktg-field-comment-count">{{ countLabel() }}</span>
+    </div>
+    <span class="sr-only" role="status" aria-live="polite">{{ announcement() }}</span>
+    @for (thread of threads(); track thread.id) {
+      <lfx-mktg-comment-thread [comment]="thread" [fieldLabel]="label()" />
+    }
+    @if (opened()) {
+      <div class="flex flex-col gap-2 border-t border-gray-200 pt-2" [id]="inputId() + '-composer'" data-testid="mktg-field-comment-composer">
+        <label class="text-xs text-gray-600" [for]="inputId()">Comment on {{ label() }}</label>
+        <lfx-textarea
+          class="block min-w-0 w-full"
+          styleClass="w-full min-w-0 max-w-full"
+          [form]="form()"
+          control="text"
+          [inputId]="inputId()"
+          [rows]="2"
+          [maxlength]="maxChars"
+          placeholder="What should change here"
+          [required]="true"
+          [invalid]="form().controls.text.touched && form().controls.text.invalid"
+          [describedBy]="form().controls.text.touched && form().controls.text.invalid ? validationId() : undefined"
+          dataTest="mktg-field-comment-text" />
+        @if (form().controls.text.touched && form().controls.text.invalid) {
+          <p class="text-xs text-red-700" role="alert" [id]="validationId()">Enter a comment of 1–{{ maxChars }} characters.</p>
+        }
+        @if (error()) {
+          <p class="text-sm text-red-700" role="alert">{{ error() }}</p>
+        }
+        <div class="flex flex-wrap gap-2">
+          <lfx-button
+            label="Add comment"
+            size="small"
+            [loading]="busy()"
+            [disabled]="busy() || comments.saving()"
+            (onClick)="save()"
+            data-testid="mktg-field-comment-add" />
+          <lfx-button
+            label="Cancel"
+            size="small"
+            [text]="true"
+            [disabled]="busy() || comments.saving()"
+            (onClick)="close(true)"
+            data-testid="mktg-field-comment-cancel" />
+        </div>
+      </div>
+    }
+  </div>
+}

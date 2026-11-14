@@ -4,6 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { MEETUP_STATUS_ICON_MAP } from '@lfx-one/shared/constants';
 import { MeetupSortChangeEvent, MeetupSortField, MeetupSortOrder, MyMeetupsResponse, PageChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
 
 type MeetupSortAria = 'ascending' | 'descending' | 'none';
@@ -22,6 +23,8 @@ export class MeetupsTableComponent {
   public readonly sortOrder = input<MeetupSortOrder>('ASC');
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<MeetupSortChangeEvent>();
+
+  protected readonly statusIconMap: Partial<Record<string, string>> = MEETUP_STATUS_ICON_MAP;
 
   protected readonly statusSeverityMap: Partial<Record<string, TagSeverity>> = {
     Registered: 'info',

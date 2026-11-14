@@ -1,0 +1,385 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Screen-only containment sizes native grids to their column without changing the print document's positioning context. -->
+<section class="[@media_screen]:@container/asset flex min-w-0 flex-col gap-4 w-full" data-testid="mktg-framework-view">
+  <!-- Asset header: what this is, which version, where the run stands -->
+  <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-framework-view-header">
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-framework-view-title">{{ title() }}</h2>
+        @if (ready()) {
+          <lfx-mktg-asset-meta [metadata]="header()" prefix="mktg-framework-view" />
+        }
+      </div>
+      @if (modeLabel()) {
+        <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-framework-view-mode">{{ modeLabel() }}</span>
+      }
+    }
+    @if (stateLabel()) {
+      <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700" data-testid="mktg-framework-view-state">
+        {{ stateLabel() }}
+      </span>
+    }
+    @if (ready() && showMetadata()) {
+      <div class="grow"></div>
+      <!-- What you can do with the framework, as on the Brand Kit's web view: print it as one document, or export it to Google Slides (the panel below the header shows the export). -->
+      <div class="flex flex-wrap items-center gap-2" data-testid="mktg-framework-view-actions">
+        <ng-container [ngTemplateOutlet]="titleActions" />
+        <ng-content select="[asset-actions]" />
+      </div>
+    }
+  </div>
+
+  <ng-template #titleActions>
+    @if (viewingDraft()) {
+      <p class="text-sm text-gray-500" data-testid="mktg-framework-view-approval-required">Export is available once this version is approved</p>
+    } @else {
+      <span
+        [pTooltip]="slidesExport.disabledReason()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="slidesExport.disabledReason() || null"
+        [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
+        <lfx-button
+          label="Export to Google Slides"
+          icon="fa-light fa-presentation-screen"
+          [outlined]="true"
+          [loading]="slidesExport.busy()"
+          [disabled]="!slidesExport.canExport()"
+          ariaLabel="Export the messaging framework to Google Slides"
+          data-testid="mktg-framework-view-export-slides"
+          (onClick)="slidesExport.onExport()" />
+      </span>
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
+        <lfx-button
+          label="Download PDF"
+          icon="fa-light fa-file-pdf"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current messaging framework as a PDF"
+          data-testid="mktg-framework-view-download-pdf"
+          (onClick)="onDownloadPdf()" />
+      </span>
+    }
+  </ng-template>
+
+  @if (ready() && !exportTarget()) {
+    @if (approvedLoading()) {
+      <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
+    } @else if (approvedError()) {
+      <lfx-message severity="error" [text]="approvedError()" />
+    }
+  }
+  <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
+  <lfx-mktg-slides-export
+    #slidesExport
+    [target]="exportTarget()"
+    [lookupTarget]="exportLookupTarget()"
+    (lookupAnswered)="exportLookupAnswered.emit($event)"
+    [viewingDraft]="viewingDraft()"
+    data-testid="mktg-framework-view-slides-export" />
+
+  <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
+  <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">
+    <div class="flex flex-wrap gap-x-1">
+      @for (tab of tabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:text-gray-300"
+          [ngClass]="tab.tabClass"
+          [id]="tab.tabId"
+          [attr.aria-selected]="tab.selected"
+          [attr.aria-controls]="tab.panelId"
+          [attr.tabindex]="tab.selected ? 0 : -1"
+          [disabled]="!ready()"
+          [attr.data-testid]="'mktg-framework-view-tab-' + tab.id"
+          (click)="onSelectTab(tab.id)">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (!ready()) {
+    <!-- The run is live: the feed, or the questions, where the framework will be -->
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="mktg-framework-view-generating">
+      <ng-content />
+    </div>
+  } @else if (content(); as framework) {
+    @switch (selectedTab()) {
+      <!-- FRAMEWORK: the statements, the goal columns, say and avoid -->
+      @case ('framework') {
+        <div
+          class="flex min-w-0 flex-col gap-5 [overflow-wrap:anywhere]"
+          role="tabpanel"
+          id="mktg-framework-panel-framework"
+          aria-labelledby="mktg-framework-tab-framework"
+          data-testid="mktg-framework-view-panel-framework">
+          <!-- The framework as one table (Jim's definitions, Paul 29 Oct 2026): the four statements across the top, then one column per goal, in the plan's rank order -->
+          <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="mktg-framework-view-table">
+            <div
+              class="grid grid-cols-1 @lg/asset:grid-cols-4 divide-y divide-gray-200 @lg/asset:divide-y-0 @lg/asset:divide-x border-b border-gray-200"
+              data-testid="mktg-framework-view-statements">
+              <div class="group/commentfield p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Vision</span>
+                <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-vision">{{ framework.mf.vision }}</p>
+                <lfx-mktg-field-comments field="mf.vision" />
+              </div>
+              <div class="group/commentfield p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Mission</span>
+                <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-mission">{{ framework.mf.mission }}</p>
+                <lfx-mktg-field-comments field="mf.mission" />
+              </div>
+              <div class="group/commentfield p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Positioning statement</span>
+                <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-positioning">{{ framework.mf.positioning }}</p>
+                <lfx-mktg-field-comments field="mf.positioning" />
+              </div>
+              <div class="group/commentfield bg-blue-50 p-4 flex flex-col gap-1">
+                <span class="text-xs font-semibold uppercase tracking-wider text-blue-700">Tagline</span>
+                <p class="font-display text-xl text-blue-900" data-testid="mktg-framework-view-tagline">{{ framework.mf.tagline }}</p>
+                <lfx-mktg-field-comments field="mf.tagline" />
+              </div>
+            </div>
+
+            <!-- Goal columns: a scrolling table below its least width (one reading width per goal, FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM), so the columns never squeeze below reading width however many goals the plan has -->
+            <!-- `relative`: the field comments' sr-only live regions take the scroll container as their containing block, so they stay inside its clip at narrow widths (#4885). -->
+            <div class="relative overflow-x-auto">
+              <table class="w-full table-fixed border-collapse text-sm" [style.min-width.rem]="goalsTableMinWidthRem()" data-testid="mktg-framework-view-goals">
+                <thead>
+                  <tr class="bg-gray-50 text-left">
+                    <th scope="col" class="w-28 px-4 py-3 text-2xs font-semibold uppercase tracking-wider text-gray-500"><span class="sr-only">Row</span></th>
+                    @for (goal of goals(); track goal.id) {
+                      <th scope="col" class="group/commentfield px-4 py-3 align-bottom" [attr.data-testid]="'mktg-framework-view-goal-' + goal.id">
+                        <span class="block text-2xs font-normal uppercase tracking-wider text-gray-400">Goal {{ goal.n }}</span>
+                        <span class="block text-base font-semibold text-gray-900">{{ goal.t }}</span>
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + ']'" />
+                      </th>
+                    }
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Value proposition</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3 text-gray-800">
+                        {{ goal.vp }}
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].vp'" />
+                      </td>
+                    }
+                  </tr>
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Key message</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3 font-medium text-gray-900">
+                        {{ goal.key }}
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].key'" />
+                      </td>
+                    }
+                  </tr>
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Proof</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3">
+                        <ul class="flex flex-col gap-1">
+                          @for (proof of goal.proofRows; track $index) {
+                            <li class="flex items-start gap-2 text-gray-800">
+                              <span class="grow">{{ proof.fact }}</span>
+                              <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
+                            </li>
+                          }
+                        </ul>
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].proof'" />
+                      </td>
+                    }
+                  </tr>
+                  <tr class="align-top">
+                    <th scope="row" class="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">Sound bite</th>
+                    @for (goal of goals(); track goal.id) {
+                      <td class="group/commentfield px-4 py-3">
+                        <blockquote class="rounded-lg bg-gray-50 px-3 py-2 italic text-gray-700" [attr.data-testid]="'mktg-framework-view-bite-' + goal.id">
+                          “{{ goal.bite }}”
+                        </blockquote>
+                        <lfx-mktg-field-comments [field]="'mf.goals[' + $index + '].bite'" />
+                      </td>
+                    }
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="group/commentfield border-t border-gray-200 px-4 py-3">
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-crosscut">{{ framework.mf.crosscut }}</p>
+              <lfx-mktg-field-comments field="mf.crosscut" />
+            </div>
+          </div>
+
+          <!-- Say and avoid -->
+          <div class="grid grid-cols-1 @2xl/asset:grid-cols-2 gap-3">
+            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+              <h3 class="text-sm font-semibold text-gray-900">Say</h3>
+              <ul class="flex flex-wrap gap-1.5" data-testid="mktg-framework-view-say">
+                @for (phrase of framework.mf.say; track phrase) {
+                  <li class="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs text-emerald-800">{{ phrase }}</li>
+                }
+              </ul>
+              <lfx-mktg-field-comments field="mf.say" />
+            </div>
+            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+              <h3 class="text-sm font-semibold text-gray-900">Avoid</h3>
+              @if (avoidRows().length > 0) {
+                <table class="w-full text-sm" data-testid="mktg-framework-view-avoid">
+                  <thead>
+                    <tr class="text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">
+                      <th class="pb-1 pr-2 font-semibold">Avoid</th>
+                      <th class="pb-1 font-semibold">Say instead</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of avoidRows(); track row.avoid) {
+                      <tr class="border-t border-gray-100 align-top">
+                        <td class="py-1.5 pr-2 text-red-700 line-through decoration-red-300">{{ row.avoid }}</td>
+                        <td class="py-1.5 text-gray-800">{{ row.instead }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else {
+                <p class="text-xs text-gray-500" data-testid="mktg-framework-view-avoid-empty">Nothing to avoid was stated.</p>
+              }
+              <lfx-mktg-field-comments field="mf.avoid" />
+            </div>
+          </div>
+
+          <!-- The anchor questions and the reviewer's notes -->
+          <div class="grid grid-cols-1 @2xl/asset:grid-cols-2 gap-3">
+            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+              <h3 class="text-sm font-semibold text-gray-900">Every piece of content answers</h3>
+              <ol class="flex flex-col gap-1 list-decimal pl-5 text-sm text-gray-800" data-testid="mktg-framework-view-anchor">
+                @for (question of framework.mf.anchor; track question) {
+                  <li>{{ question }}</li>
+                }
+              </ol>
+              <lfx-mktg-field-comments field="mf.anchor" />
+            </div>
+            @if (framework.mf.notes) {
+              <!-- The agent writes each choice with a link to the page it rests on (4.0.2); restricted Markdown renders the links and nothing else. -->
+              <div class="group/commentfield bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-2">
+                <h3 class="text-sm font-semibold text-amber-800">For the reviewer</h3>
+                <div class="text-sm text-amber-900 [&_a]:underline [&_a]:text-amber-900 hover:[&_a]:text-amber-700" data-testid="mktg-framework-view-notes">
+                  <lfx-markdown-renderer [content]="framework.mf.notes" [breaks]="true" [restricted]="true" />
+                </div>
+                <lfx-mktg-field-comments field="mf.notes" />
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- KEY NUMBERS -->
+      @case ('numbers') {
+        <div
+          class="grid min-w-0 grid-cols-2 @2xl/asset:grid-cols-4 gap-3 [overflow-wrap:anywhere]"
+          role="tabpanel"
+          id="mktg-framework-panel-numbers"
+          aria-labelledby="mktg-framework-tab-numbers"
+          data-testid="mktg-framework-view-panel-numbers">
+          @for (row of numbers(); track $index) {
+            <div class="group/commentfield bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-1 text-center">
+              <span class="font-display text-3xl text-gray-900">{{ row.number }}</span>
+              <span class="text-xs text-gray-500">{{ row.label }}</span>
+              <lfx-mktg-field-comments [field]="'nums[' + $index + ']'" />
+            </div>
+          }
+        </div>
+      }
+
+      <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
+      @case ('sources') {
+        <div
+          class="grid min-w-0 grid-cols-1 @2xl/asset:grid-cols-2 gap-3 [overflow-wrap:anywhere]"
+          role="tabpanel"
+          id="mktg-framework-panel-sources"
+          aria-labelledby="mktg-framework-tab-sources"
+          data-testid="mktg-framework-view-panel-sources">
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Sources read</h3>
+            @if (report()?.sources_read?.length) {
+              <ul class="flex flex-col gap-1 text-sm text-gray-800 break-all" data-testid="mktg-framework-view-sources-read">
+                @for (source of report()?.sources_read; track source) {
+                  <li class="flex items-start gap-2">
+                    <i class="fa-light fa-check mt-1 text-xs text-emerald-600 shrink-0" aria-hidden="true"></i>{{ source }}
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-read-empty">Nothing was read.</p>
+            }
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Could not be read</h3>
+            @if (report()?.sources_failed?.length) {
+              <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-framework-view-sources-failed">
+                @for (failed of report()?.sources_failed; track failed.name) {
+                  <li class="flex flex-col">
+                    <span class="text-gray-800 break-all">{{ failed.name }}</span>
+                    <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
+            }
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Gaps</h3>
+            @if (report()?.gaps?.length) {
+              <ul class="flex flex-col gap-1 list-disc pl-5 text-sm text-gray-800" data-testid="mktg-framework-view-gaps">
+                @for (gap of report()?.gaps; track gap) {
+                  <li>{{ gap }}</li>
+                }
+              </ul>
+              @if (acceptedGapsNote(); as accepted) {
+                <p class="text-xs text-gray-500" data-testid="mktg-framework-view-gaps-accepted">{{ accepted }}</p>
+              }
+            } @else {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-gaps-empty">The sources left no gap.</p>
+            }
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Notes and checks</h3>
+            @if (reportNotes().length > 0) {
+              <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="mktg-framework-view-report-notes">
+                @for (line of reportNotes(); track line) {
+                  <li>{{ line }}</li>
+                }
+              </ul>
+            }
+            @if (findings().length > 0) {
+              <ul class="flex flex-col gap-1 text-sm text-amber-800" data-testid="mktg-framework-view-findings">
+                @for (finding of findings(); track finding) {
+                  <li class="flex items-start gap-2"><i class="fa-light fa-triangle-exclamation mt-1 text-xs shrink-0" aria-hidden="true"></i>{{ finding }}</li>
+                }
+              </ul>
+            }
+            @if (reportNotes().length === 0 && findings().length === 0) {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-checks-empty">Nothing to check.</p>
+            }
+          </div>
+        </div>
+      }
+    }
+
+    <!-- The print rendering: never shown on screen; Download PDF prints it alone (styles.scss). -->
+    @if (printView(); as print) {
+      <div [class]="printOnlyClass" data-testid="mktg-framework-view-print">
+        <lfx-mktg-framework-print [view]="print" />
+      </div>
+    }
+  }
+</section>

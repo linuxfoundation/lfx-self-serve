@@ -5,7 +5,7 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { ApplicationConfig, ErrorHandler, provideZonelessChangeDetection } from '@angular/core';
 import { provideClientHydration, withEventReplay, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideRouter, TitleStrategy, withInMemoryScrolling, withPreloading } from '@angular/router';
+import { provideRouter, TitleStrategy, withInMemoryScrolling, withNavigationErrorHandler, withPreloading } from '@angular/router';
 import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
 import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeuix/themes';
@@ -20,6 +20,7 @@ import { provideDataDogRum } from './shared/providers/datadog-rum.provider';
 import { provideFeatureFlags } from './shared/providers/feature-flag.provider';
 import { provideRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { ChunkLoadErrorHandler } from './shared/utils/chunk-load-error.handler';
+import { handleChunkLoadNavigationError } from './shared/utils/chunk-load-navigation-error.util';
 import { CustomPreloadingStrategy } from './shared/strategies/custom-preloading.strategy';
 import { LfxTitleStrategy } from './shared/strategies/lfx-title.strategy';
 
@@ -37,7 +38,12 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideZonelessChangeDetection(),
     { provide: ErrorHandler, useClass: ChunkLoadErrorHandler },
-    provideRouter(routes, withPreloading(CustomPreloadingStrategy), withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })),
+    provideRouter(
+      routes,
+      withPreloading(CustomPreloadingStrategy),
+      withNavigationErrorHandler(handleChunkLoadNavigationError),
+      withInMemoryScrolling({ scrollPositionRestoration: 'top', anchorScrolling: 'enabled' })
+    ),
     { provide: TitleStrategy, useClass: LfxTitleStrategy },
     // `includeHeaders` selects which *response* headers get serialized into the transfer cache
     // state — it has no effect on which requests are eligible for caching. The prior

@@ -4,14 +4,13 @@
 /**
  * Shared setup for the Org Lens EasyCLA specs (GH-1978).
  *
- * The gate spec, the content spec and the structural spec all need the same thing before they can
- * assert anything: an authenticated app with an organization selected and the M3 flag pinned. Only
- * the CLA list response differs between them, so that is the parameter and the rest is fixed here.
+ * The content spec and the structural spec both need the same thing before they can assert
+ * anything: an authenticated app with an organization selected. Only the CLA list response differs
+ * between them, so that is the parameter and the rest is fixed here.
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
-import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type {
   OrgClaActivityLogEntry,
   OrgClaActivityLogPage,
@@ -26,7 +25,6 @@ import type {
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './org-roi.helper';
 
 /** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
 export const EASYCLA_URL = ORG_EASYCLA_PATH;
@@ -60,6 +58,15 @@ export const ACTIVITY_LOG_ROUTE = '**/api/orgs/*/lens/cla-groups/*/activity**';
  */
 export const PDF_URL_ROUTE = '**/api/orgs/*/lens/cla-groups/*/pdf-url';
 
+/** Catalogue read for a pasted group address (#2293). */
+export const CLA_GROUP_CATALOGUE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/catalogue';
+
+export function stubCatalogueNotFound(page: Page): Promise<void> {
+  return page.route(CLA_GROUP_CATALOGUE_ROUTE, (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ code: 'CLA_GROUP_NOT_FOUND' }) })
+  );
+}
+
 export function fulfillJson(page: Page, glob: string, body: unknown): Promise<void> {
   return page.route(glob, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
 }
@@ -84,6 +91,7 @@ export function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     needsClaManager: false,
     claManagersCount: 2,
     approvalCriteriaCount: 4,
+    viewerIsClaManager: true,
     ...overrides,
   };
 }
@@ -173,13 +181,12 @@ export async function stubPermissionChecks(page: Page, allowed = true): Promise<
 }
 
 /**
- * Land on `/org/easycla` with the M3 flag on and the CLA list stubbed by the caller.
+ * Land on `/org/easycla` with the CLA list stubbed by the caller.
  *
  * The visit to `/` first, then a reload, is the sequence the other Org Lens specs use to get an
  * authenticated app running before the guarded URL is requested.
  */
 export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>, permissionAllowed = true): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
@@ -220,7 +227,6 @@ export async function gotoEasyclaDetail(
   signatureId?: string,
   permissionAllowed = true
 ): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
   await stubActivityLog(page);

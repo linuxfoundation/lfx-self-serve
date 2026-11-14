@@ -86,6 +86,73 @@ The `page_token` from the query service passes through unchanged.
 > only for internal consumers that need the raw upstream cursor, like committee-activity's
 > saturation walk.
 
+### Management vote summaries, status-tab counts, and closing-only lists
+
+`GET /api/votes/summary` accepts exactly one nonempty `parent=project:<uid>` and an optional
+nonempty `group` committee name. Other keys and repeated values are rejected. Accepted Group
+names are trimmed before the caller-authorized indexed scan uses `committee_name:<group>`.
+The endpoint returns `{ active_votes, closing_soon, as_of }`. No invitation lookup or project enrichment
+is needed. Search, status, and pagination never affect these totals; foundation scope is the
+selected foundation's project UID, not an expansion into descendants.
+
+`GET /api/votes?closing_soon=true` applies the shared active/deadline predicate to the complete
+normalized set **before** sorting and slicing. This BFF-only flag accepts a single `true` or
+`false` and is never forwarded upstream. True responses add `total_records` from the same
+snapshot as the returned page; the dashboard skips the separate count request in this mode.
+False/omitted flags preserve the ordinary response shape. Summary and list both require
+`failOnPartial: true`, so a failed scan is unavailable, never a partial total.
+
+`GET /api/votes/status-counts` returns `{ all, active, disabled, ended }` for the votes table's
+status tabs (#3687). It accepts exactly one nonempty `parent=project:<uid>`, plus an optional
+nonempty `name` search and an optional nonempty `group` committee name. Other keys and repeated
+values are rejected, and accepted values are trimmed. Unlike the summary, the search applies
+here, because each tab count must equal its tab's list total. One caller-authorized scan
+(`failOnPartial: true`) forwards `name` and `committee_name:<group>` upstream, then buckets rows
+with the shared `countVotesByStatus`. `all` counts every row, including statuses that are
+unrecognized after normalization; those rows fall into no per-status bucket. Status, quick
+filters, and pagination never affect these counts.
+
+Any `filters=status:<x>` clause whose value normalizes to a known `PollStatus` (`active`,
+`disabled`, `ended`) is evaluated locally with normalized status for both `GET /api/votes` and
+`GET /api/votes/count`. Forwarding it as an exact upstream term would exclude legacy mixed-case
+votes that the summary and status-tab counts include. The BFF removes only that clause, keeps
+other filters/search/scope upstream, and applies normalized status matching to the complete
+authorized scan. Status-filtered counts therefore drain pages rather than using the upstream
+exact-value count; they ignore list pagination and reject incomplete scans. Count queries
+without a recognized status clause, and the internal upstream-cursor passthrough, retain their
+existing behavior. Recognized indexed statuses are canonicalized in returned rows so
+status-dependent actions agree with the normalized predicates; unrecognized values are
+preserved.
+
+Returned vote-list rows are batch-decorated with effective `vote#writer` access, including committee-derived grants. Only the returned slice is checked; failed access checks default to `writer: false`. The reminder menu uses this per-row field, not the active project's writer flag. The reminder API independently enforces a strict writer check before reading voter identities.
+
+Reminder recipient reads validate the current poll's active status and deadline, then drain `vote_response` rows matching either `vote_uid` or legacy `poll_id` with `failOnPartial: true`. Rows must match the canonical parent, still be awaiting an uncast response, and not be removed; recipient UIDs are deduplicated before the identity-only projection. A send repeats this check and rejects the entire selection if any recipient is no longer eligible. `409 VOTE_REMINDER_INACTIVE` identifies an inactive poll; `409 VOTE_REMINDER_SELECTION_STALE` means no reminders were queued and the selection must be reloaded. The index is eventually consistent, so this recheck is not an atomic exclusion of ballots submitted concurrently with queuing.
+
+Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
+votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
+list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.
+Existing cursor recovery handles shrinking sets. Refresh/re-entry reloads totals and rows,
+but cannot promise immediate convergence of the search index after mutations.
+
+### Personal vote-feed completeness
+
+`GET /api/votes/my-votes` preserves its array response by default for already-open browser
+clients. New clients request `include_status=true` to receive `{ votes, complete }`, following
+the personal-newsletter feed's opt-in convention. Only the exact single string `true` opts in.
+Invitation enumeration retains successfully fetched pages when a later page exhausts retries,
+but marks the feed incomplete.
+Per-vote detail reads that explicitly return upstream 403/404 are skipped as not visible to the
+caller without marking the feed incomplete; exact counts describe the remaining readable votes.
+Other failed or empty required vote-detail reads still mark it incomplete while keeping usable
+votes. A first-page failure still fails the request. Optional project metadata does not prove
+invitation or vote-detail completeness.
+
+The Me-lens status tabs show unavailable counts unless `complete` is explicitly true; a
+partial feed with no usable rows is not a confirmed zero. Filtering or switching status tabs
+does not change completeness. Refresh fetches a new feed and restores counts on complete success.
+The frontend also accepts legacy array responses, retaining their rows with unknown completeness
+and withholding exact tab totals.
+
 ## Backend: Complete Fetch (All Pages)
 
 When the server needs all records (e.g., meeting registrants for invitation checks), use the `fetchAllQueryResources` helper:
@@ -105,12 +172,78 @@ const registrants = await fetchAllQueryResources<MeetingRegistrant>(req, (pageTo
 
 The helper:
 
-- Follows `page_token` automatically until all pages are fetched
+- Follows `page_token` automatically, up to `QUERY_SERVICE_MAX_PAGES` (100) pages, and stops early when upstream hands back a `page_token` it already requested. This bounds token chains that could otherwise keep accumulating rows and exhaust the SSR heap (#4964); the original preview crash trigger was not reproduced locally
+- Treats either stop like a failed later page: strict (`failOnPartial: true`) callers get a 502 `MicroserviceError` with code `QUERY_SERVICE_PAGINATION_LIMIT`, others get the rows fetched so far, an `onPartial()` call and a `warning` log carrying `reason` (`max_pages` or `repeated_page_token`), `page` and `accumulated_count`
+- Counts pages, not rows: the query service's default page size of 50 allows up to 5,000 rows, while an explicit `page_size: QUERY_SERVICE_MAX_PAGE_SIZE` (1,000) allows up to 100,000 rows. A continuation token after page 100 triggers the stop even for a legitimate large dataset; a terminal page at the cap succeeds. Strict callers must handle the error, and best-effort callers must not treat a partial prefix as a complete result
 - Accumulates results into a single array
 - Retries on 5xx errors (up to 2 retries with 100ms delay)
 - Logs pagination progress at DEBUG level
 
 See [Server Helpers](./server-helpers.md) for more details on the helper implementation.
+
+### CSV member-import snapshots
+
+The existing committee member and invitation list endpoints accept the BFF-only
+`require_complete=true` flag. Only the exact single string `true` enables strict
+pagination (`failOnPartial: true`); the flag is consumed in the committee service
+and never forwarded to the upstream query service. Ordinary list reads retain
+their existing partial-result behavior, and internal strict member callers cannot
+be downgraded by the flag.
+
+The Members-tab CSV import requests strict member and invitation snapshots. The
+Edit Group member manager requires a strict roster load, reconciles locally staged
+member changes onto that complete roster, and requests a strict invitation snapshot
+before opening its collect-only preview. If any requested page still fails after
+the helper's retry policy, the request fails and the existing member-load or import
+error guard blocks the preview. This guarantees successful pagination, not immediate
+search-index consistency or an atomic snapshot across requests.
+
+### Complete rosters and membership context
+
+The meeting committee manager also requests `require_complete=true`: its existing
+error/retry gate withholds both roster emissions and resolved-group coverage when
+pagination fails or stops early, preventing reconciliation from deleting saved guests
+that were merely absent from a partial response. The legacy registrants manager forwards
+that coverage to the meeting page, which blocks both Update Meeting and invitation-only
+submission until the selected rosters resolve. Selection changes immediately invalidate
+previous coverage; a successful retry re-enables submission.
+The coverage contract also invalidates a pending member fetch explicitly. The v2 composer records
+the normalized group/filter selection alongside the covered UIDs, so a voting-status edit cannot
+reuse a saved roster after a failed fetch. Identical group/filter writes, label updates, and
+reordering do not invalidate already resolved coverage; actual selection changes do, including
+a return to an earlier selection. Saved unchanged selections remain usable for unrelated edits
+without mounting the Guests picker.
+
+`CommitteeService.getCommitteeMembers` fixes `page_size` at the supported maximum of 1,000
+for its all-pages drains, rather than accepting a caller's page size or falling back to 50.
+Strict scans still fail at the shared 100-page bound. The meeting picker identifies pagination-limit
+errors and explains Retry or removing an editable group selection; a locked context requires
+cancelling and contacting support rather than saving incomplete invitations.
+
+The group Members tab requests strict completeness as well. Failed reads retain a persistent
+error/Retry state, withhold the roster count, and block Add Member and Import Members until a
+complete read succeeds. A successful empty roster is distinct from a failed load. Roster visibility
+rules and the separate invite-only flow for callers without roster access remain unchanged.
+
+`OrgMembershipResolverService` uses `failOnPartial: true` before resolving or caching
+a membership context, so key-contact writes cannot select a membership from a partial
+scan. Its `org-membership:v2` cache namespace excludes partial arrays produced by older
+pods during rollout; those legacy entries expire under their existing TTL.
+
+`MailingListService.getMembers` likewise requires complete pagination and explicitly uses
+`QUERY_SERVICE_MAX_PAGE_SIZE` (1,000), avoiding the upstream 50-row default. Failures
+reach a persistent error message and Retry action instead of an empty-list message or a
+searchable prefix with a misleading total. The 100-page cap remains: a continuing scan
+after 100,000 raw records still fails, and access filtering can reduce the visible roster
+below that bound. These reads do not introduce user-facing cursor pagination.
+
+### Bound multi-request dashboard sources
+
+For a paginated source that also performs authorization and enrichment, a timeout per HTTP request is not a timeout for the entire source. Pass the same `ApiRequestOptions.deadlineAt` (absolute epoch milliseconds) to every standard JSON proxy request and strict access check. `ApiClientService` uses the smaller of the per-request timeout and the remaining deadline, aborts an in-flight transfer when that budget expires, and rejects before dispatch when no budget remains. Pagination retry delays can briefly extend source completion beyond the transport deadline, but cannot dispatch another expired request.
+
+`CommitteeService.getManagedPendingApplications` shares a five-second deadline across discovery pages, writer checks, live reads, and committee-name enrichment. Writer checks run sequentially in batches of at most 100. Groups that pass are then narrowed to those whose own `settings.writers` roster lists the caller (username, then email), so project/foundation admins with inherited writer access do not get every group's requests in their pending actions; roster reads run ten at a time, a 403/404 means "not on the roster", and any other failure rejects the source. Live reads run ten at a time and do not start another wave after the deadline. Metadata reads are likewise limited to one 100-UID batch at a time and pass the same deadline through `getCommitteesByIds`. Timeout or other strict failures reject the entire application source; the Me pending-actions aggregator isolates that failure from its other sources rather than returning an incomplete application list.
+
+This is containment, not writer-scoped discovery. The query service filters returned applications by viewer access, but its status-only candidate search can still walk unrelated pending records upstream. Its direct-grant filter and access-check's `/my-grants` do not enumerate effective inherited writers, so using them as a no-manager short-circuit would exclude legitimate managers. Fully scoped discovery requires an upstream contract that preserves effective writer access.
 
 ## Frontend: Service Layer
 

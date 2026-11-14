@@ -1,0 +1,482 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { expect, test, type Page } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants/mktg-document-store.constants';
+import { MKTG_LAST_INTAKE_API } from '@lfx-one/shared/constants/mktg-last-intake.constants';
+
+import {
+  DOCUMENTS_URL,
+  DOCUMENT_PROJECT,
+  DOCUMENT_VIEW_URL,
+  DOCUMENT_TYPE,
+  documentFixture,
+  fulfillDocumentJson,
+  openDocuments,
+  setupDocuments,
+  startedDocumentRun,
+} from './helpers/mktg-os-documents.helper';
+
+test.describe('Marketing OS current revisions', () => {
+  const progressReadTimeout = 15_000;
+  test.use({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
+  test.afterEach(async ({ page }, testInfo) => {
+    await page.screenshot({ path: testInfo.outputPath('final-state.png'), fullPage: true });
+  });
+
+  async function setupApprovedCurrent(page: Page, highest = 3) {
+    await setupDocuments(page, { currentRevisionNumber: 3 });
+    const approval = { approvedAt: '2026-11-02T16:00:00Z', approvedBy: { name: 'Synthetic reviewer' } };
+    let metadata = documentFixture(3, 3);
+    const revisions = metadata.revisions.map((row) => {
+      const number = row.number + highest - 3;
+      return { ...row, number, id: `${String(number).padStart(6, '0')}-${row.contentSha256}`, approval };
+    });
+    metadata = {
+      ...metadata,
+      revisions,
+      current: { revisionId: revisions[0].id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+      approvedCurrent: { revisionId: revisions[0].id, number: highest },
+    };
+    let polls = 0;
+    const path = `/api/mktg-agents/documents/${DOCUMENT_TYPE.agentKey}/living`;
+    const move = (number: number) => {
+      const selected = metadata.revisions.find((row) => row.number === number);
+      if (!selected) throw new Error('Missing synthetic approved current');
+      metadata = {
+        ...metadata,
+        revisions: metadata.revisions.map((row) => ({ ...row, latest: row.id === selected.id })),
+        current: { revisionId: selected.id, changedAt: approval.approvedAt, changedBy: approval.approvedBy },
+        approvedCurrent: { revisionId: selected.id, number },
+      };
+    };
+    await page.route(
+      (url) => url.pathname === path || url.pathname.startsWith(`${path}/revisions/`),
+      async (route) => {
+        const url = new URL(route.request().url());
+        if (url.pathname === path) {
+          if (url.searchParams.get('poll') === '1') polls++;
+          await fulfillDocumentJson(route, metadata);
+          return;
+        }
+        const id = decodeURIComponent(url.pathname.slice(`${path}/revisions/`.length).split('/')[0]);
+        const selected = metadata.revisions.find((row) => row.id === id);
+        if (!selected) {
+          await route.fallback();
+          return;
+        }
+        if (route.request().method() === 'POST' && url.pathname.endsWith('/restore')) move(selected.number);
+        else if (route.request().method() !== 'GET' || url.pathname !== `${path}/revisions/${id}`) {
+          await route.fallback();
+          return;
+        }
+        const revision = metadata.revisions.find((row) => row.id === id) ?? selected;
+        await fulfillDocumentJson(route, { ...metadata, revision, approval: revision.approval, markdown: `# Revision ${revision.number}`, sidecar: null });
+      }
+    );
+    return { move, polls: () => polls, revisionId: (number: number) => metadata.revisions.find((row) => row.number === number)?.id ?? '' };
+  }
+
+  test('opening an older revision shows only the Current pill for the approved current, and its Open link leads there', async ({ page }) => {
+    const state = await setupApprovedCurrent(page);
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
+    await expect(page.getByTestId('mktg-document-view-current-3')).toHaveText('Current');
+    await expect(page.getByTestId('mktg-document-view-page')).not.toContainText('is now the current version');
+    await expect(page.getByTestId('mktg-document-view-page')).not.toContainText('Keep reading');
+    const open = page.getByTestId('mktg-document-view-open-3');
+    await expect(open).toHaveAttribute('href', new RegExp(`revision=${state.revisionId(3)}`));
+    await open.click();
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
+  });
+
+  test('the viewed non-current row keeps Make current beside here', async ({ page }) => {
+    const state = await setupApprovedCurrent(page);
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${state.revisionId(1)}`);
+    const row = page.getByTestId('mktg-document-view-revision-1');
+    await expect(row).toContainText('here');
+    await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveText('Make current');
+    await row.getByTestId('mktg-document-view-viewed-make-current').click();
+    await expect(page.getByTestId('mktg-document-view-current-1')).toBeVisible();
+    await expect(row.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
+  });
+
+  for (const [state, text] of [
+    ['writing', 'Writing the document'],
+    ['questions', 'Waiting for your answers'],
+    ['storing', 'Storing the revision'],
+    ['failed', 'A previous run did not finish'],
+  ] as const) {
+    test(`shows a ${state} run before a draft exists without claiming empty history`, async ({ page }) => {
+      const run = startedDocumentRun(state);
+      await setupDocuments(page, { empty: true, runs: [run] });
+      await openDocuments(page);
+      await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toContainText(text);
+      await expect(page.getByTestId('mktg-documents-pending-document')).toBeVisible();
+      await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
+      if (state === 'questions') {
+        const link = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
+        await expect(link).toHaveText('Answer the questions');
+        await expect(link).toHaveAttribute(
+          'href',
+          new RegExp(`/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}\\?project=${DOCUMENT_PROJECT.slug}&run=${run.runId}$`)
+        );
+        await link.click();
+        await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+        await expect(page.getByTestId('mktg-run-progress-status')).toContainText('Waiting for your answers');
+        await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
+        return;
+      }
+      await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
+      await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
+      await expect(page.getByTestId(state === 'failed' ? 'mktg-document-view-page' : 'mktg-run-public-progress')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(state === 'failed' ? 1 : 0);
+      if (state !== 'failed') await expect(page.getByTestId('mktg-run-progress-status')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-revision-chip')).toHaveCount(0);
+      if (state === 'failed') {
+        const details = page.getByTestId('mktg-document-view-failure-details');
+        await expect(details).not.toHaveAttribute('open');
+        await details.locator('summary').click();
+        await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
+      }
+    });
+  }
+
+  test('links a Member 360 waiting-for-answers run to its run page from row and navigation', async ({ page }) => {
+    const run: ReturnType<typeof startedDocumentRun> = { ...startedDocumentRun('questions'), agentKey: 'member-360', documentId: 'run-' + 'c'.repeat(24) };
+    await setupDocuments(page, { empty: true, runs: [run] });
+    await openDocuments(page);
+    const row = page.getByTestId(`mktg-documents-started-run-${run.runId}`);
+    await expect(row).toContainText('Waiting for your answers');
+    await expect(row).not.toContainText('Paused — the run needs input');
+    const action = page.getByTestId(`mktg-documents-open-started-${run.runId}`);
+    await expect(action).toHaveText('Answer the questions');
+    await expect(action).toHaveAttribute('href', /\/mktg-os-agents\/member-360\?project=[^&]+$/);
+    const nav = page.getByTestId('mktg-documents-nav-member-360');
+    await expect(nav).toContainText('Needs answers');
+    await expect(nav).toHaveAttribute('href', (await action.getAttribute('href')) ?? '');
+  });
+
+  for (const entry of ['Started runs Open', 'another-tab run URL'] as const) {
+    test(`${entry} shows public writing on the run page then opens the current document`, async ({ page }) => {
+      const run = startedDocumentRun('writing');
+      const runs = [run];
+      await setupDocuments(page, { empty: true, runs });
+      let complete = false;
+      let generations = 0;
+      await page.route('**/api/mktg-agents/*/generate', (route) => {
+        generations++;
+        return fulfillDocumentJson(route, {}, 500);
+      });
+      await page.route('**/api/mktg-agents/documents/' + run.agentKey + '/living?*', (route) =>
+        fulfillDocumentJson(route, complete ? { ...documentFixture(), runs: [] } : { ...documentFixture(), revisions: [], current: null, runs })
+      );
+      if (entry === 'Started runs Open') {
+        await openDocuments(page);
+        await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
+      } else {
+        await page.evaluate((url) => {
+          history.pushState({}, '', url);
+          dispatchEvent(new PopStateEvent('popstate'));
+        }, `/project/mktg-os-agents/${DOCUMENT_TYPE.catalogAgentId}?project=${DOCUMENT_PROJECT.slug}&run=${run.runId}`);
+      }
+      await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+      await expect(page).not.toHaveURL(/\/documents\//);
+      await expect(page.getByTestId('mktg-document-view-run-steps')).toContainText('Writing the asset');
+      runs.length = 0;
+      complete = true;
+      await expect(page.getByTestId('mktg-document-view-page')).toBeVisible({ timeout: progressReadTimeout });
+      expect(new URL(page.url()).searchParams.has('revision')).toBe(false); // Public completion has no exact-run receipt.
+      await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
+      expect(generations).toBe(0);
+    });
+  }
+
+  test('recovers an initial list failure with a same-scope Refresh progress', async ({ page }) => {
+    await setupDocuments(page);
+    let reads = 0;
+    await page.route('**/api/mktg-agents/documents?*', (route) => {
+      reads++;
+      if (reads === 1) return fulfillDocumentJson(route, { error: 'Synthetic list outage' }, 500);
+      return route.fallback();
+    });
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-list-failed')).toBeVisible();
+    await page.getByTestId('mktg-documents-refresh-progress').getByRole('button').click();
+    await expect(page.getByTestId('mktg-documents-list-failed')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-error')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
+    expect(reads).toBe(2);
+  });
+
+  test('Retry checks the recorded run without a Generate POST and keeps current selection', async ({ page }) => {
+    let generates = 0;
+    await setupDocuments(page, { runs: [startedDocumentRun('failed')] });
+    await page.route('**/api/mktg-agents/*/generate', (route) => {
+      generates++;
+      return fulfillDocumentJson(route, {}, 500);
+    });
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&run=${startedDocumentRun().runId}`);
+    const details = page.getByTestId('mktg-document-view-failure-details');
+    await expect(details).not.toHaveAttribute('open');
+    await details.locator('summary').click();
+    await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
+    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button', { name: 'Check on it again', exact: true }).click();
+    await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-run')).toHaveCount(0);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
+    expect(generates).toBe(0);
+  });
+
+  test('opens the selected run without changing the stored current revision', async ({ page }) => {
+    const run = startedDocumentRun();
+    await setupDocuments(page, { runs: [run] });
+    await page.route(`**${MKTG_LAST_INTAKE_API}/${DOCUMENT_TYPE.agentKey}/last?*`, (route) => fulfillDocumentJson(route, { intake: null }));
+    await openDocuments(page);
+    await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
+    await expect(page).toHaveURL(new RegExp(`run=${run.runId}`));
+    await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
+    await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
+    await expect(page.getByTestId('mktg-agent-run-result')).toHaveCount(0);
+  });
+
+  test('retains loaded revisions on a transient poll error and removes completed progress after retry', async ({ page }) => {
+    const runs = [startedDocumentRun()];
+    await setupDocuments(page, { runs });
+    let polls = 0;
+    await page.route(/\/api\/mktg-agents\/documents\?/, async (route) => {
+      if (new URL(route.request().url()).searchParams.get('poll') !== '1') return route.fallback();
+      if (++polls === 1) return fulfillDocumentJson(route, {}, 503);
+      runs.length = 0;
+      return route.fallback();
+    });
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded', { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-started-runs')).toContainText('No runs in progress', { timeout: progressReadTimeout });
+    await expect(page.getByTestId('mktg-documents-started-slot')).not.toHaveClass(/min-h-40/);
+    const card = await page.getByTestId('mktg-documents-started-runs').boundingBox();
+    const navigation = await page.getByTestId('mktg-documents-nav').boundingBox();
+    if (!card || !navigation) throw new Error('Missing settled Documents geometry');
+    expect(navigation.y - card.y - card.height).toBeLessThanOrEqual(24); // No pending-height band below the retained empty card.
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
+    await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toContainText('v2 · current');
+  });
+
+  test('retains current selection on a transient type refetch and offers manual refresh', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
+    let failReload = true;
+    await page.route(/\/api\/mktg-agents\/documents\?/, async (route) => {
+      if (failReload) {
+        failReload = false;
+        return fulfillDocumentJson(route, {}, 503);
+      }
+      return route.fallback();
+    });
+    await page.getByTestId('mktg-documents-nav-faq').click();
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('last loaded');
+    await page.getByTestId('mktg-documents-refresh-progress').getByRole('button').click();
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toHaveCount(0);
+    await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+    await expect(page.getByTestId('mktg-documents-current-2')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-revisions').locator('tbody tr')).toHaveCount(3);
+  });
+
+  test('retains a known run instead of asserting absence when tracking becomes unavailable', async ({ page }) => {
+    const run = startedDocumentRun();
+    const options = { empty: true, runs: [run], progressUnavailable: false };
+    await setupDocuments(page, options);
+    await openDocuments(page);
+    await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toBeVisible();
+    options.runs = [];
+    options.progressUnavailable = true;
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('Retrying', { timeout: progressReadTimeout });
+    await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-pending-document')).toContainText('unavailable');
+    await expect(page.getByTestId('mktg-documents-nav')).not.toContainText(/Not generated yet|No runs yet/);
+    await expect(page.getByTestId('mktg-documents-refresh-progress').getByRole('button')).toBeVisible();
+  });
+
+  for (const state of ['unavailable', 'started']) {
+    test(`one-off ${state} progress never asserts that no runs exist`, async ({ page }) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+      if (!type) throw new Error('Missing synthetic one-off document type');
+      await setupDocuments(page, {
+        empty: true,
+        progressUnavailable: state === 'unavailable',
+        runs: state === 'started' ? [{ ...startedDocumentRun(), agentKey: type.agentKey }] : [],
+      });
+      const url = new URL(DOCUMENTS_URL, 'http://localhost');
+      url.searchParams.set('type', type.agentKey);
+      await openDocuments(page, url.pathname + url.search);
+      await expect(page.getByTestId('mktg-documents-empty-runs')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-documents-pending-run')).toContainText(state === 'unavailable' ? 'unavailable' : 'recorded run');
+    });
+  }
+
+  test('does not expose progress to a project reader without writer access', async ({ page }) => {
+    await setupDocuments(page, { writer: false, runs: [startedDocumentRun()] });
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-error')).toContainText('write access');
+    await expect(page.getByTestId('mktg-documents-started-runs')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
+  });
+
+  test('keeps table attribution but simplifies the document side panel and Make current help', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-revision-3')).toContainText('The writer');
+    await expect(page.getByTestId('mktg-documents-revision-3')).toContainText('revised from 4 comments · based on v1');
+    await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('Current');
+    await expect(page.getByTestId('mktg-documents-revision-1')).toContainText('no name (stored before names were recorded)');
+    await expect(page.getByTestId('mktg-documents-revision-2')).toContainText('name unavailable');
+    await page.getByTestId('mktg-documents-view-latest').click();
+    await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
+    await expect(page.getByTestId('mktg-document-view-revision-label-3')).toHaveText('v3 · Draft · 13 Oct');
+    await expect(page.getByTestId('mktg-document-view-revision-label-1')).toHaveText('v1 · Draft · 13 Oct');
+    await expect(page.getByTestId('mktg-document-view-revision-label-2')).toHaveText('v2 · Draft · 13 Oct · Current');
+    await expect(page.getByTestId('mktg-document-view-current-2')).toHaveText('Current');
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-hash')).toHaveCount(0);
+    await expect(page.getByText('Make current selects the revision agents read.', { exact: false })).toHaveCount(0);
+    const makeCurrent = page.getByTestId('mktg-document-view-restore-1');
+    const hint = 'Agents read the current version. Nothing is added or deleted.';
+    await makeCurrent.hover();
+    await expect(page.getByRole('tooltip')).toHaveText(hint);
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await makeCurrent.focus();
+    await expect(page.getByRole('tooltip')).toHaveText(hint);
+    await page.screenshot({ path: test.info().outputPath('document-side-panel-focus-help.png'), fullPage: true });
+  });
+
+  test('historical documents default to newest without inventing current-selection attribution', async ({ page }) => {
+    await setupDocuments(page, { withoutCurrentRecord: true });
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
+    await expect(page.getByTestId('mktg-document-view-revision-3')).toContainText('Current');
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
+  });
+
+  test('Make current adds no revision and opening another revision clears success', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture().revisions[2].id}`);
+    await page.getByTestId('mktg-document-view-viewed-make-current').click();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-notice')).toContainText('No revision was added');
+    await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 1 of 3');
+    await expect(page.getByTestId('mktg-document-view-revision-1')).toContainText('Current');
+    await expect(page.locator('[data-testid^="mktg-document-view-current-since-"]')).toHaveCount(0);
+    await page.getByTestId('mktg-document-view-open-3').click();
+    await expect(page.getByTestId('mktg-document-view-notice')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
+  });
+
+  test('two background list polls keep type selection, revision-link focus and scroll', async ({ page }) => {
+    await setupDocuments(page, { runs: [startedDocumentRun('writing')] });
+    let polls = 0;
+    page.on('response', (response) => {
+      const url = new URL(response.url());
+      if (url.pathname === '/api/mktg-agents/documents' && url.searchParams.get('poll') === '1' && response.ok()) polls++;
+    });
+    await openDocuments(page, DOCUMENTS_URL);
+    const link = page.getByTestId('mktg-documents-view-1');
+    await link.focus();
+    await link.evaluate((node) => (node.dataset['refreshIdentity'] = 'kept'));
+    const scroll = await page.evaluate(() => window.scrollY);
+    const before = polls;
+    await expect.poll(() => polls, { timeout: 30_000 }).toBeGreaterThanOrEqual(before + 2);
+    await expect(page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`)).toHaveAttribute('aria-current', 'page');
+    await expect(link).toBeFocused();
+    await expect(link).toHaveAttribute('data-refresh-identity', 'kept');
+    expect(await page.evaluate(() => window.scrollY)).toBe(scroll);
+    await expect(page).toHaveURL(new RegExp(`type=${DOCUMENT_TYPE.agentKey}`));
+  });
+
+  test('a history within four rows has no expansion control', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(3);
+    await expect(page.getByTestId('mktg-document-view-show-all-revisions')).toHaveCount(0);
+  });
+
+  test('nine revisions keep older open/current within four rows and expand in place without moving the card top', async ({ page }) => {
+    await setupDocuments(page, { revisionCount: 9, currentRevisionNumber: 2 });
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture(9, 2).revisions[8].id}`);
+    const list = page.getByTestId('mktg-document-view-revisions');
+    await expect(list.locator('ol > li')).toHaveCount(4);
+    await expect(page.getByTestId('mktg-document-view-revision-1')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-revision-2')).toContainText('Current');
+    await expect(page.getByTestId('mktg-document-view-revision-3')).toHaveCount(0);
+    const disclosure = list.getByTestId('mktg-document-view-show-all-revisions');
+    await expect(disclosure).toHaveText('Show all 9 ▾');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    const top = await list.evaluate((card) => card.getBoundingClientRect().top + window.scrollY);
+    await disclosure.click();
+    await expect(list.locator('ol > li')).toHaveCount(9);
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    await expect.poll(() => list.evaluate((card) => card.getBoundingClientRect().top + window.scrollY)).toBeCloseTo(top, 0);
+    await page.getByTestId('mktg-document-view-open-3').click();
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 3');
+    await expect(list.locator('ol > li')).toHaveCount(9);
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeVisible();
+  });
+
+  test('opens older revisions rather than making them current from the table', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-revisions').getByRole('button')).toHaveCount(0);
+    await expect(page.getByText('To switch back to an older one, open it and choose Make current there;', { exact: false })).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-run-again-' + DOCUMENT_TYPE.agentKey)).toHaveText('Create a new version');
+    await expect(page.getByTestId('mktg-documents-view-latest').getByRole('link')).toHaveAccessibleName('Open');
+    await page.getByTestId('mktg-documents-view-1').click();
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeVisible();
+  });
+
+  test('empty documents follow their family header without starting a live session', async ({ page }) => {
+    const framework = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message');
+    if (!framework) throw new Error('Framework type must exist');
+    await setupDocuments(page, { empty: true, documentType: framework });
+    await openDocuments(page, DOCUMENTS_URL.replace(`type=${DOCUMENT_TYPE.agentKey}`, `type=${framework.agentKey}`));
+    await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
+    const run = page.locator('[data-testid^="mktg-documents-run-agent-"]').getByRole('link');
+    await expect(run).toHaveAccessibleName('Create messaging framework');
+    await expect(run).toHaveAttribute('href', /mktg-os-agents\//);
+    await run.click();
+    await expect(page).not.toHaveURL(/\/documents\?/);
+  });
+
+  for (const status of [403, 404, 500]) {
+    test(`load failure ${status} is distinct from an empty document`, async ({ page }) => {
+      await setupDocuments(page, { status, writer: status !== 403 });
+      await openDocuments(page, DOCUMENT_VIEW_URL);
+      const error = page.getByTestId('mktg-document-view-error');
+      if (status === 403) await expect(error).toContainText('write access');
+      else if (status === 404) await expect(error).toContainText('This document could not be found');
+      else await expect(error).toContainText('could not be loaded');
+      await expect(page.getByTestId('mktg-document-view-document')).toHaveCount(0);
+    });
+  }
+
+  for (const writeStatus of [403, 404, 412]) {
+    test(`Make current failure ${writeStatus} preserves the open body`, async ({ page }) => {
+      await setupDocuments(page, { writeStatus });
+      await openDocuments(page, `${DOCUMENT_VIEW_URL}&revision=${documentFixture().revisions[2].id}`);
+      await page.getByTestId('mktg-document-view-viewed-make-current').click();
+      await expect(page.getByTestId('mktg-document-view-error')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
+      await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toBeEnabled();
+    });
+  }
+});

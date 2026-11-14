@@ -1,0 +1,41 @@
+---
+title: Edit Your Mentor Profile
+description: How to update your LFX Mentorship mentor profile and review your mentoring history.
+audience: [all]
+product_area: Mentorship
+tags: [mentorship, mentor, profile, skills, history]
+last_generated: 2026-10-26
+last_updated: 2026-10-30
+intercom_collection: Mentorship
+---
+
+Your mentor profile is what Program Admins read when they decide on your request, and what applicants read before applying.
+
+## Before you begin
+
+Sign in at [app.lfx.dev](https://app.lfx.dev) and go to **Mentorship → Mentor → Mentor Profile**.
+
+The tab opens with the **From Your LFX Profile** card, which shows the account details your mentor profile uses. See [Your LFX Profile Card](../lfx-profile-card/).
+
+## Steps
+
+1. Open [app.lfx.dev/mentorship/mentor/profile](https://app.lfx.dev/mentorship/mentor/profile).
+2. Select **Edit Mentor Profile**. A panel opens on the right.
+3. Under **Introduction**, edit what you wrote about yourself.
+4. Under **Skills**, update **Which of your skills should we feature?**. Up to 100 skills, each up to 300 characters.
+5. Select **Save**.
+
+## Mentoring history
+
+The profile also lists the programs you have mentored:
+
+| Status          | What it means         |
+| --------------- | --------------------- |
+| **In Progress** | The term is running   |
+| **Completed**   | The term has finished |
+
+## Related
+
+- [Become a Mentor](../become-a-mentor/)
+- [Your Mentor Programs](../mentor-programs/)
+- [Your LFX Profile Card](../lfx-profile-card/)

@@ -55,6 +55,19 @@
               </td>
             </tr>
           }
+          @for (term of closedTermRows(); track term.id) {
+            <tr class="border-b border-gray-100 last:border-b-0" data-testid="mentorship-enroll-closed-term">
+              <td class="px-4 py-3 text-sm text-gray-500">
+                <div class="flex items-center gap-2">
+                  <span>{{ term.name }}</span>
+                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">Closed</span>
+                </div>
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-500">{{ term.startsLabel }}</td>
+              <td class="px-4 py-3 text-sm text-gray-500">{{ term.endsLabel }}</td>
+              <td class="px-4 py-3 text-xs text-gray-500">Managed in the Terms tab</td>
+            </tr>
+          }
         </tbody>
       </table>
     </div>

@@ -1,0 +1,65 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { NgClass, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, input } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { BrandKitBookView } from '@lfx-one/shared/interfaces';
+import { MktgPrintService } from '@services/mktg-print.service';
+import { distinctUntilChanged, filter } from 'rxjs';
+
+// The Brand Kit of one revision, laid out as the reference kit's 16 letter
+// pages, landscape: cover and back cover on the dark grid, the contents, then
+// 01 Logo (the lockups from the real files, the colorways, clear space and
+// minimum sizes, the symbol, the partnership lockup, the watchouts), 02 Color
+// (the palette with every value's source, the proportion, the WCAG contrast
+// table), 03 Type (the typeface from Google Fonts, the weights, the scale),
+// 04 Visual (icons, imagery, the graphic elements), 05 Usage (keynote slide,
+// social card, report cover, announcement header) and 06 Voice in brief.
+// This is the PRINT rendering: on screen the kit is the web view
+// (lfx-brand-kit-web-view), which holds this book in a print-only wrapper and
+// prints it with Download PDF (the browser's print; the global print rules
+// show the book alone). Every value comes from the kit: the colours and the
+// typeface are the project's, never the app's.
+@Component({
+  selector: 'lfx-brand-kit-view',
+  imports: [NgClass, NgTemplateOutlet],
+  templateUrl: './brand-kit-view.component.html',
+  styleUrl: './brand-kit-view.component.scss',
+})
+export class BrandKitViewComponent {
+  // === Injections ===
+  private readonly printService = inject(MktgPrintService);
+
+  // === Inputs ===
+  /**
+   * The kit to lay out, as the web view built it (`buildBrandKitBookView`
+   * with the version the page shows, which the cover and the running heads
+   * print): built once there, never again here.
+   */
+  public readonly view = input.required<BrandKitBookView>();
+
+  // === Computed ===
+  /** The proportion bar's accessible name: every colour and its share, since the segments themselves are paint. */
+  protected readonly proportionLabel = computed(
+    () =>
+      'How much of a surface each color takes: ' +
+      this.view()
+        .proportion.map((row) => `${row.name} ${row.share}%`)
+        .join(', ')
+  );
+  /** The Google Fonts stylesheet of the kit's typeface, when the kit says it is there (null otherwise). */
+  private readonly fontUrl$ = toObservable(computed(() => this.view().fontUrl));
+
+  public constructor() {
+    // The typeface comes from Google Fonts, loaded once per stylesheet (the
+    // print service shares the link with the framework print).
+    this.fontUrl$
+      .pipe(
+        filter((url): url is string => !!url),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((url) => this.printService.ensureFontStylesheet(url));
+  }
+}

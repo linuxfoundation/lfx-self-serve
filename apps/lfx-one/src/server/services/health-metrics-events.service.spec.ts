@@ -34,6 +34,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -46,6 +47,9 @@ import type { Request } from 'express';
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
 const req = {} as Request;
+// The forecast view keeps closed events, so its reads take the registrations view's past flag.
+const NOT_ENDED_SCOPE =
+  /EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_REGISTRATIONS r\s*WHERE r\.event_id = f\.event_id\s*AND r\.event_is_past = FALSE\s*\)/;
 
 function eventRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -119,13 +123,14 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     execute.mockResolvedValue({ rows: [eventRow()] });
   });
 
-  it('binds only the foundation, keeps upcoming events, and reads one past the cap', async () => {
+  it('binds only the foundation, keeps events that have not ended, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['acme']);
     expect(sql).toContain('is_all_projects = TRUE');
-    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
+    expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}`);
     expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id');
     expect(sql).not.toContain('GROUP BY');
@@ -158,6 +163,16 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     expect(events.map((event) => event.daysLeft)).toEqual([0, null]);
+  });
+
+  it('shows no days left once a running event is past its start day, rather than counting the elapsed days up', async () => {
+    execute.mockResolvedValue({
+      rows: [eventRow({ EVENT_ID: 'day-2', DAYS_LEFT: 0 }), eventRow({ EVENT_ID: 'day-4', DAYS_LEFT: 2 }), eventRow({ EVENT_ID: 'ahead', DAYS_LEFT: -41 })],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    expect(events.map((event) => event.daysLeft)).toEqual([null, null, 40]);
   });
 
   it('keeps nulls as unmeasured and drops an event with no id', async () => {
@@ -193,6 +208,8 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
 
     const [sql, binds] = execute.mock.calls[0];
     expect(binds).toEqual(['acme', 'evt-1']);
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
+    expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain('pred_type');
     expect(sql).not.toContain('GROUP BY');
     expect(curve.eventId).toBe('evt-1');
@@ -224,6 +241,155 @@ describe('HealthMetricsEventsService.getRegistrationForecastCurve', () => {
     await expect(new HealthMetricsEventsService().getRegistrationForecastCurve(req, { foundationSlug: 'acme', eventId: 'evt-9' })).resolves.toBe(
       HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED
     );
+  });
+});
+
+describe('HealthMetricsEventsService.getRegistrationHistory', () => {
+  const historyRow = (overrides: Record<string, unknown> = {}) => ({
+    DAYS_TO_EVENT: -30,
+    EVENT_REGISTRATION_TYPE: 'In Person',
+    REGISTRATIONS: 300,
+    PRIOR_YEAR: 260,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('binds event, window and foundation, scopes the event through the past-events view and reads each day once', async () => {
+    execute.mockResolvedValue({ rows: [historyRow()] });
+
+    await new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+    const [sql, binds] = execute.mock.calls[0];
+    expect(binds).toEqual(['evt-1', -180, 'acme']);
+    expect(sql).toContain('MARKETING_EVENT_REGISTRATION_PREDICTIONS');
+    // The past-events view alone decides that the event has ended; no start-date rule of its own.
+    expect(sql).not.toContain('event_start_date < CURRENT_DATE()');
+    expect(sql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS p\s*WHERE p\.foundation_slug = \?/);
+    // Blank or padded formats fold into one series rather than splitting the curve.
+    expect(sql).toContain("NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type");
+    expect(sql).toContain("GROUP BY NULLIF(TRIM(h.event_registration_type), ''), h.days_to_event");
+  });
+
+  it('maps every day as measured, by format, with no forecast', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        historyRow(),
+        historyRow({ DAYS_TO_EVENT: 0, REGISTRATIONS: 480, PRIOR_YEAR: 410 }),
+        historyRow({ EVENT_REGISTRATION_TYPE: 'Virtual', PRIOR_YEAR: null }),
+      ],
+    });
+
+    const curve = await new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+    expect(curve.eventId).toBe('evt-1');
+    expect(curve.formats.map((series) => series.format)).toEqual(['In Person', 'Virtual']);
+    expect(curve.formats[0].points).toEqual([
+      { daysToEvent: -30, actual: 300, forecastAvg: null, forecastLow: null, forecastHigh: null, priorYear: 260 },
+      { daysToEvent: 0, actual: 480, forecastAvg: null, forecastLow: null, forecastHigh: null, priorYear: 410 },
+    ]);
+    expect(curve.formats[1].points[0].priorYear).toBeNull();
+  });
+
+  it('returns the unmeasured curve for an event with no history, or another foundation’s', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await expect(new HealthMetricsEventsService().getRegistrationHistory(req, { foundationSlug: 'acme', eventId: 'evt-9' })).resolves.toBe(
+      HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED
+    );
+  });
+});
+
+describe('HealthMetricsEventsService.getSnapshot', () => {
+  const weekRow = (overrides: Record<string, unknown> = {}) => ({
+    WEEK_START_DATE: '2026-10-26',
+    WEEK_END_DATE: '2026-11-01',
+    REGISTRATIONS: 6969,
+    REGISTRATIONS_DELTA: 713,
+    REGISTRATION_REVENUE_USD: 4575877.26,
+    REGISTRATION_REVENUE_DELTA_USD: 630511.58,
+    IN_7D: true,
+    IN_30D: true,
+    IN_90D: true,
+    TODAY: '2026-11-05',
+    ...overrides,
+  });
+  const tierRow = (overrides: Record<string, unknown> = {}) => ({
+    SPONSORSHIP_TIER: 'Gold',
+    SOLD: 37,
+    SOLD_7D: 0,
+    SOLD_30D: 1,
+    SOLD_90D: 5,
+    REVENUE_USD: 2952895,
+    REVENUE_7D_USD: 0,
+    REVENUE_30D_USD: 80000,
+    REVENUE_90D_USD: 446040,
+    TODAY: '2026-11-05',
+    ...overrides,
+  });
+  const read = () => new HealthMetricsEventsService().getSnapshot(req, { foundationSlug: 'acme', eventId: 'evt-1' });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('reads the event’s all-projects weeks and its USD tiers, scoping the tiers to the foundation through the week view', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await read();
+
+    const [weeksSql, weekBinds] = execute.mock.calls[0];
+    expect(weekBinds).toEqual(['acme', 'evt-1']);
+    expect(weeksSql).toContain('EVENT_REGISTRATIONS_WEEK_OVER_WEEK');
+    expect(weeksSql).toContain('is_all_projects = TRUE');
+
+    const [tiersSql, tierBinds] = execute.mock.calls[1];
+    expect(tierBinds).toEqual(['evt-1', 'acme']);
+    expect(tiersSql).toContain('MARKETING_EVENT_SPONSORSHIPS_BY_TIER');
+    expect(tiersSql).toContain("t.currency_code = 'USD'");
+    expect(tiersSql).toMatch(/EXISTS \(\s*SELECT 1\s*FROM ANALYTICS\.PLATINUM_LFX_ONE\.EVENT_REGISTRATIONS_WEEK_OVER_WEEK w\s*WHERE w\.foundation_slug = \?/);
+  });
+
+  it('maps the weeks and folds tiers into packages, priciest per package first, an unnamed tier as Other and fee lines in the revenue only', async () => {
+    execute
+      .mockResolvedValueOnce({ rows: [weekRow({ WEEK_START_DATE: '2026-10-19', WEEK_END_DATE: '2026-10-25', REGISTRATIONS: 5759, IN_7D: false }), weekRow()] })
+      .mockResolvedValueOnce({
+        rows: [
+          tierRow(),
+          tierRow({ SPONSORSHIP_TIER: 'Diamond', SOLD: 10, SOLD_90D: 1, REVENUE_USD: 2114350, REVENUE_90D_USD: 246600 }),
+          tierRow({ SPONSORSHIP_TIER: 'Gold ', SOLD: 1, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 80000, REVENUE_30D_USD: 0, REVENUE_90D_USD: 0 }),
+          tierRow({ SPONSORSHIP_TIER: 'Sales Tax', SOLD: 0, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 13289, REVENUE_30D_USD: 1732, REVENUE_90D_USD: 4897 }),
+          tierRow({ SPONSORSHIP_TIER: null, SOLD: 2, SOLD_30D: 0, SOLD_90D: 0, REVENUE_USD: 2000, REVENUE_30D_USD: 0, REVENUE_90D_USD: 0 }),
+        ],
+      });
+
+    const snapshot = await read();
+
+    expect(snapshot.today).toBe('2026-11-05');
+    expect(snapshot.weeks[0]).toEqual({
+      weekStartDate: '2026-10-19',
+      weekEndDate: '2026-10-25',
+      registrations: 5759,
+      registrationsDelta: 713,
+      registrationRevenueUsd: 4575877.26,
+      registrationRevenueDeltaUsd: 630511.58,
+      inPeriod: { '7d': false, '30d': true, '90d': true },
+    });
+    expect(snapshot.packages).toEqual([
+      { tier: 'Diamond', sold: 10, soldInPeriod: { '7d': 0, '30d': 1, '90d': 1 }, revenueUsd: 2114350 },
+      { tier: 'Gold', sold: 38, soldInPeriod: { '7d': 0, '30d': 1, '90d': 5 }, revenueUsd: 3032895 },
+      { tier: 'Other', sold: 2, soldInPeriod: { '7d': 0, '30d': 0, '90d': 0 }, revenueUsd: 2000 },
+    ]);
+    expect(snapshot.sponsorshipRevenueUsd).toBe(2952895 + 2114350 + 80000 + 13289 + 2000);
+    expect(snapshot.sponsorshipRevenueInPeriodUsd).toEqual({ '7d': 0, '30d': 80000 * 2 + 1732, '90d': 446040 + 246600 + 4897 });
+  });
+
+  it('returns the unmeasured snapshot for an event with no rows, or another foundation’s', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await expect(read()).resolves.toBe(HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED);
   });
 });
 
@@ -432,7 +598,7 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     expect(sql).toMatch(/FROM ANALYTICS\.PLATINUM_LFX_ONE\.MARKETING_EVENT_PAST_EVENTS\s+WHERE foundation_slug = \?\s+AND is_all_projects = TRUE\s+LIMIT 1/);
   });
 
-  it('keeps the tab when the only event is still to come, reading the forecast after past events', async () => {
+  it('keeps the tab when the only event has not ended, reading the forecast after past events', async () => {
     execute
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
@@ -443,8 +609,8 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     const [sql, binds] = execute.mock.calls[2];
     expect(glance.hasEvents).toBe(true);
     expect(binds).toEqual(['acme']);
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST');
-    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST f');
+    expect(sql).toMatch(NOT_ENDED_SCOPE);
   });
 
   it('keeps the tab for a foundation with revenue rows but no event in the events views', async () => {
@@ -620,6 +786,9 @@ function revenueRow(overrides: Record<string, unknown> = {}) {
     SPONSORSHIP_REVENUE_GOAL: 0,
     HAS_UNCONVERTED_REGISTRATION_REVENUE: false,
     HAS_UNCONVERTED_REVENUE_GOAL: false,
+    COMBINED_REVENUE_GOAL: 200000,
+    IS_PAST_EVENT: true,
+    IS_REVENUE_GOAL_MET: false,
     FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
     FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
     FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
@@ -652,7 +821,7 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     execute.mockResolvedValue({ rows: [revenueRow()] });
   });
 
-  it('binds only the foundation, sorts events outside every period last, and reads one past the cap', async () => {
+  it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
@@ -665,7 +834,11 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     );
     expect(sql).toContain('foundation_total_revenue_change_pct_prev_completed_year');
     expect(sql).not.toContain('change_pct_3rd_last_completed_year');
-    expect(sql).toContain('ORDER BY IFF(');
+    expect(sql).toContain('is_past_event,');
+    expect(sql).toContain('is_revenue_goal_met,');
+    expect(sql).toContain('combined_revenue_goal,');
+    expect(sql).toContain('ORDER BY IFF(is_past_event = FALSE OR (');
+    expect(sql).toContain('), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}`);
   });
 
@@ -684,8 +857,30 @@ describe('HealthMetricsEventsService.getRevenue', () => {
         hasUnconverted: false,
         registrationGoalWithheld: false,
         sponsorshipGoalWithheld: false,
+        isPastEvent: true,
+        goalMet: false,
         ranges: ['YTD'],
       },
+    ]);
+  });
+
+  it('keeps an upcoming event outside every period, and reads attainment only for a past event with a goal in USD', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        revenueRow({ IS_REVENUE_GOAL_MET: true }),
+        revenueRow({ EVENT_ID: 'no-goal', COMBINED_REVENUE_GOAL: 0, IS_REVENUE_GOAL_MET: null }),
+        revenueRow({ EVENT_ID: 'withheld', HAS_UNCONVERTED_REVENUE_GOAL: true, IS_REVENUE_GOAL_MET: true }),
+        revenueRow({ EVENT_ID: 'upcoming', IS_PAST_EVENT: false, IN_PERIOD_YTD: false, IS_REVENUE_GOAL_MET: true }),
+      ],
+    });
+
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(events.map(({ eventId, isPastEvent, goalMet, ranges }) => ({ eventId, isPastEvent, goalMet, ranges }))).toEqual([
+      { eventId: 'rev-1', isPastEvent: true, goalMet: true, ranges: ['YTD'] },
+      { eventId: 'no-goal', isPastEvent: true, goalMet: null, ranges: ['YTD'] },
+      { eventId: 'withheld', isPastEvent: true, goalMet: null, ranges: ['YTD'] },
+      { eventId: 'upcoming', isPastEvent: false, goalMet: null, ranges: [] },
     ]);
   });
 
@@ -794,6 +989,17 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
   });
 
+  it('warns when an upcoming event falls past the cap', async () => {
+    const rows = Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) =>
+      revenueRow({ EVENT_ID: `rev-${i}`, ...(i === HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP ? { IS_PAST_EVENT: false, IN_PERIOD_YTD: false } : {}) })
+    );
+    execute.mockResolvedValue({ rows });
+
+    await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    expect(warning).toHaveBeenCalledWith(req, 'get_events_revenue', expect.any(String), expect.objectContaining({ foundation_slug: 'acme' }));
+  });
+
   it('does not warn when only events outside every period fall past the cap', async () => {
     const rows = Array.from({ length: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1 }, (_, i) =>
       revenueRow({ EVENT_ID: `rev-${i}`, IN_PERIOD_YTD: i < HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP })
@@ -871,6 +1077,9 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(drilldownSql).toContain('sort_rank_3rd_last_completed_year <= 5');
     expect(drilldownSql).toContain('speakers_count_change_pct_last_completed_year');
     expect(drilldownSql).not.toContain('change_pct_prev_completed_year');
+    expect(drilldownSql).toContain(
+      'ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST'
+    );
     expect(listSql).toContain("WHEN is_ytd THEN 'YTD'");
     expect(listSql).toContain("proposal_status_group IN ('Accepted', 'In review')");
     expect(listSql).toContain(`<= ${HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS}`);

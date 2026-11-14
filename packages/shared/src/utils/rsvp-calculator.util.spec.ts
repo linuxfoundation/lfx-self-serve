@@ -19,8 +19,20 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MeetingRsvp } from '../interfaces';
-import { countRegistrantAttendance, getRegistrantAttendanceStatus, isSameOccurrenceId, occurrenceIdToMs, selectApplicableRsvp } from './rsvp-calculator.util';
+import { MeetingRegistrant, MeetingRsvp } from '../interfaces';
+import {
+  buildAttendeePreviewFromRegistrants,
+  buildAttendeePreviewFromRsvps,
+  countRegistrantAttendance,
+  getRegistrantAttendanceStatus,
+  getRegistrantStatusLabel,
+  isRsvpSupersededBy,
+  isSameOccurrenceId,
+  occurrenceIdToMs,
+  occurrenceIdToSeconds,
+  retainConfirmedRsvp,
+  selectApplicableRsvp,
+} from './rsvp-calculator.util';
 
 /**
  * Build a MeetingRsvp with just the fields the resolver reads. Any other required
@@ -90,6 +102,18 @@ const OCC_AUG_04_SECONDS = '1785852000';
 const OCC_AUG_11_SECONDS = '1786456800';
 const OCC_AUG_18_SECONDS = '1787061600';
 const OCC_JUL_14_SECONDS = '1784037600';
+
+describe('occurrenceIdToSeconds', () => {
+  it('converts a millisecond id to seconds and keeps a seconds id', () => {
+    expect(occurrenceIdToSeconds('1786456800000')).toBe('1786456800');
+    expect(occurrenceIdToSeconds('1786456800')).toBe('1786456800');
+  });
+
+  it('returns null for an unparseable id', () => {
+    expect(occurrenceIdToSeconds(undefined)).toBeNull();
+    expect(occurrenceIdToSeconds('abc')).toBeNull();
+  });
+});
 
 describe('occurrenceIdToMs', () => {
   it('leaves ms-encoded ids alone', () => {
@@ -508,5 +532,202 @@ describe('countRegistrantAttendance', () => {
       maybe: 0,
       total: 3,
     });
+  });
+});
+
+describe('buildAttendeePreviewFromRegistrants', () => {
+  type PreviewRegistrant = Pick<MeetingRegistrant, 'uid' | 'email' | 'first_name' | 'last_name' | 'avatar_url' | 'rsvp' | 'invite_accepted'>;
+  const registrant = (uid: string, overrides: Partial<PreviewRegistrant> = {}): PreviewRegistrant => ({
+    uid,
+    email: `${uid}@example.com`,
+    first_name: uid.toUpperCase(),
+    last_name: 'Doe',
+    avatar_url: null,
+    rsvp: null,
+    invite_accepted: null,
+    ...overrides,
+  });
+  const rsvpOf = (response_type: MeetingRsvp['response_type']): MeetingRsvp =>
+    ({ id: 'x', meeting_id: 'm', registrant_id: 'r', username: 'u', email: 'e', response_type, scope: 'all', created_at: '' }) as MeetingRsvp;
+
+  it('puts attending people first, then maybe, no reply, and declined', () => {
+    const people = buildAttendeePreviewFromRegistrants(
+      [
+        registrant('d', { rsvp: rsvpOf('declined') }),
+        registrant('p'),
+        registrant('m', { rsvp: rsvpOf('maybe') }),
+        registrant('a', { rsvp: rsvpOf('accepted') }),
+      ],
+      { inviteResponsesEnabled: true }
+    );
+    expect(people.map((p) => p.key)).toEqual(['a', 'm', 'p', 'd']);
+  });
+
+  it('falls back to the email when the name is blank and keeps the avatar', () => {
+    const [person] = buildAttendeePreviewFromRegistrants([registrant('x', { first_name: '', last_name: '', avatar_url: 'https://img/x.png' })]);
+    expect(person).toEqual({ key: 'x', name: 'x@example.com', avatarUrl: 'https://img/x.png' });
+  });
+});
+
+describe('buildAttendeePreviewFromRsvps', () => {
+  it('orders RSVP rows by response and uses the name or email', () => {
+    const people = buildAttendeePreviewFromRsvps([
+      rsvp({ id: '1', registrant_id: 'reg-no', email: 'no@example.com', name: 'No One', response_type: 'declined' }),
+      rsvp({ id: '2', registrant_id: 'reg-yes', email: 'yes@example.com', name: '', response_type: 'accepted' }),
+    ]);
+    expect(people).toEqual([
+      { key: 'reg-yes', name: 'yes@example.com', avatarUrl: null },
+      { key: 'reg-no', name: 'No One', avatarUrl: null },
+    ]);
+  });
+
+  it('shows each registrant once, with the response for the displayed occurrence', () => {
+    const series = MIXED_UNIT_RSVPS.map((row) => ({ ...row, name: 'Ada Lovelace' }));
+    const other = rsvp({ id: 'rsvp-9', registrant_id: 'reg-2', email: 'grace@example.com', name: 'Grace Hopper', response_type: 'maybe' });
+
+    const people = buildAttendeePreviewFromRsvps([...series, other], OCC_AUG_11_SECONDS);
+
+    // Ada's Aug-11 `single` decline applies, so she sorts after Grace's maybe, and appears once.
+    expect(people).toEqual([
+      { key: 'reg-2', name: 'Grace Hopper', avatarUrl: null },
+      { key: 'reg-1', name: 'Ada Lovelace', avatarUrl: null },
+    ]);
+  });
+});
+
+describe('retainConfirmedRsvp', () => {
+  const allDates = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', scope: 'all' });
+  const single = rsvp({
+    id: 'rsvp-single',
+    registrant_id: 'reg-2',
+    scope: 'single',
+    occurrence_id: OCC_AUG_11_SECONDS,
+    modified_at: '2026-07-11T00:00:00Z',
+  });
+
+  it('keeps answers from other registrations when a scoped answer is confirmed', () => {
+    expect(retainConfirmedRsvp([allDates], single)).toEqual([single, allDates]);
+  });
+
+  it('replaces an earlier copy of the same response, stamped after it when the acknowledgement reuses its timestamp', () => {
+    const changed = { ...single, response_type: 'declined' as const };
+    const retained = retainConfirmedRsvp([single, allDates], changed);
+
+    expect(retained).toEqual([{ ...changed, modified_at: '2026-07-11T00:00:00.001Z' }, allDates]);
+    // The superseded copy can still resurface from the card or roster index; the update must win the tie.
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, [single, ...retained])?.response_type).toBe('declined');
+  });
+
+  it('lets a new all-dates answer supersede every retained answer, across registrations', () => {
+    const newAll = rsvp({ id: 'rsvp-new-all', registrant_id: 'reg-2', scope: 'all' });
+    expect(retainConfirmedRsvp([single, allDates], newAll)).toEqual([{ ...newAll, modified_at: '2026-07-11T00:00:00.001Z' }]);
+  });
+
+  it('stamps a scoped answer with a stale timestamp after the retained all-dates answer it follows', () => {
+    const laterAll = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', scope: 'all', modified_at: '2026-07-12T00:00:00Z' });
+    const staleSingle = rsvp({
+      id: 'rsvp-single',
+      registrant_id: 'reg-1',
+      response_type: 'declined',
+      scope: 'single',
+      occurrence_id: OCC_AUG_11_SECONDS,
+      modified_at: '2026-07-11T00:00:00Z',
+    });
+
+    const retained = retainConfirmedRsvp([laterAll], staleSingle);
+
+    expect(retained).toEqual([{ ...staleSingle, modified_at: '2026-07-12T00:00:00.001Z' }, laterAll]);
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, retained)?.id).toBe('rsvp-single');
+    expect(selectApplicableRsvp(OCC_AUG_18_SECONDS, retained)?.id).toBe('rsvp-all');
+  });
+
+  it('stamps an all-dates answer with a stale timestamp after the date-specific answer it replaces', () => {
+    const laterSingle = { ...single, registrant_id: 'reg-1', modified_at: '2026-07-12T00:00:00Z' };
+    const staleAll = rsvp({ id: 'rsvp-all', registrant_id: 'reg-1', response_type: 'declined', scope: 'all', modified_at: '2026-07-11T00:00:00Z' });
+
+    const retained = retainConfirmedRsvp([laterSingle], staleAll);
+
+    expect(retained).toEqual([{ ...staleAll, modified_at: '2026-07-12T00:00:00.001Z' }]);
+    // The replaced answer can still resurface from the card or roster index; the new answer must win there too.
+    expect(selectApplicableRsvp(OCC_AUG_11_SECONDS, [...retained, laterSingle])?.id).toBe('rsvp-all');
+  });
+
+  it('ignores unparseable retained timestamps when ordering a scoped answer', () => {
+    const malformed = rsvp({ id: 'rsvp-all', scope: 'all', modified_at: 'not-a-date' });
+    expect(retainConfirmedRsvp([malformed], single)).toEqual([single, malformed]);
+  });
+});
+
+describe('isRsvpSupersededBy', () => {
+  const single = rsvp({ id: 'rsvp-single', scope: 'single', occurrence_id: OCC_AUG_11_SECONDS, modified_at: '2026-07-11T00:00:00Z' });
+  const later = (overrides: Partial<MeetingRsvp>) => rsvp({ id: 'rsvp-later', modified_at: '2026-07-12T00:00:00Z', ...overrides });
+
+  it('treats a newer all-dates answer or a newer rewrite of the same row as covering', () => {
+    expect(isRsvpSupersededBy(single, later({ scope: 'all', registrant_id: 'reg-2' }))).toBe(true);
+    expect(isRsvpSupersededBy(single, later({ id: 'rsvp-single', scope: 'this_and_following', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(true);
+  });
+
+  it('matches the same registration, scope and date across second and millisecond ids', () => {
+    expect(isRsvpSupersededBy(single, later({ scope: 'single', occurrence_id: `${OCC_AUG_11_SECONDS}000` }))).toBe(true);
+    expect(isRsvpSupersededBy(single, later({ scope: 'single', occurrence_id: OCC_AUG_18_SECONDS }))).toBe(false);
+  });
+
+  it.each(['single', 'this_and_following'] as const)('keeps a %s answer when another registration answers the same normalized date', (scope) => {
+    const older = { ...single, scope, registrant_id: 'reg-A' };
+    const newer = later({ scope, registrant_id: 'reg-B', occurrence_id: `${OCC_AUG_11_SECONDS}000` });
+
+    expect(isRsvpSupersededBy(older, newer)).toBe(false);
+    expect([older].filter((saved) => !isRsvpSupersededBy(saved, newer))).toEqual([older]);
+    expect(isRsvpSupersededBy(older, { ...newer, registrant_id: 'reg-A' })).toBe(true);
+  });
+
+  it.each(['single', 'this_and_following'] as const)('retires a %s answer fully covered by a newer following range on the same registration', (scope) => {
+    const older = { ...single, scope };
+    for (const anchor of [OCC_JUL_28_SECONDS, `${OCC_AUG_11_SECONDS}000`]) {
+      const newer = later({ scope: 'this_and_following', occurrence_id: anchor });
+      expect(isRsvpSupersededBy(older, newer)).toBe(true);
+      expect(isRsvpSupersededBy(older, { ...newer, registrant_id: 'reg-other' })).toBe(false);
+    }
+  });
+
+  it('preserves earlier dates of a following range when a newer answer only partly covers it', () => {
+    const older = { ...single, scope: 'this_and_following' as const, occurrence_id: OCC_JUL_28_SECONDS };
+    expect(isRsvpSupersededBy(older, later({ scope: 'this_and_following', occurrence_id: OCC_AUG_11_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(older, later({ scope: 'single', occurrence_id: OCC_JUL_28_SECONDS }))).toBe(false);
+  });
+
+  it('compares composite anchors and refuses to infer coverage from malformed anchors', () => {
+    const newer = later({ scope: 'this_and_following', meeting_and_occurrence_id: `series-1-${OCC_JUL_28_SECONDS}000` });
+    expect(isRsvpSupersededBy(single, newer)).toBe(true);
+    expect(isRsvpSupersededBy(single, { ...newer, occurrence_id: 'not-a-date' })).toBe(false);
+    expect(isRsvpSupersededBy({ ...single, occurrence_id: 'not-a-date' }, newer)).toBe(false);
+  });
+
+  it('keeps an answer that a newer one only partly covers, or that is not strictly older', () => {
+    const allDates = rsvp({ id: 'rsvp-all', scope: 'all', modified_at: '2026-07-11T00:00:00Z' });
+    expect(isRsvpSupersededBy(allDates, later({ scope: 'single', occurrence_id: OCC_AUG_11_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(single, later({ scope: 'this_and_following', occurrence_id: OCC_AUG_18_SECONDS }))).toBe(false);
+    expect(isRsvpSupersededBy(single, { ...single, id: 'rsvp-same-time', scope: 'all' })).toBe(false);
+    expect(isRsvpSupersededBy(single, later({ scope: 'all', modified_at: 'not-a-date' }))).toBe(false);
+  });
+});
+
+describe('getRegistrantStatusLabel', () => {
+  it.each([
+    ['accepted RSVP', { rsvp: { response_type: 'accepted' }, invite_accepted: null }, 'Accepted'],
+    ['maybe RSVP', { rsvp: { response_type: 'maybe' }, invite_accepted: null }, 'Maybe'],
+    ['declined RSVP', { rsvp: { response_type: 'declined' }, invite_accepted: null }, 'Declined'],
+    ['declined RSVP even when the invite was also declined', { rsvp: { response_type: 'declined' }, invite_accepted: false }, 'Declined'],
+    ['accepted RSVP over a declined invite', { rsvp: { response_type: 'accepted' }, invite_accepted: false }, 'Accepted'],
+    ['accepted invite with no RSVP', { rsvp: null, invite_accepted: true }, 'Accepted'],
+    ['declined invite with no RSVP', { rsvp: null, invite_accepted: false }, 'Invite declined'],
+    ['declined invite with an RSVP lacking a response', { rsvp: { response_type: null }, invite_accepted: false }, 'Invite declined'],
+    ['nothing recorded', {}, 'Pending'],
+  ])('labels %s', (_name, registrant, expected) => {
+    expect(getRegistrantStatusLabel(registrant)).toBe(expected);
+  });
+
+  it('is Pending, not Invite declined, when invite responses are not collected for the meeting', () => {
+    expect(getRegistrantStatusLabel({ rsvp: null, invite_accepted: false }, { inviteResponsesEnabled: false })).toBe('Pending');
   });
 });

@@ -3,14 +3,28 @@
 
 import {
   ALLOWED_AVATAR_MIME_TYPES,
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS,
   AUTH0_TO_CDP_PROVIDER_MAP,
   CDP_DISPLAYABLE_IDENTITY_COMBOS,
   CDP_PLATFORM_ICONS,
   CDP_PLATFORM_TO_TYPE_MAP,
   CDP_TO_AUTH0_PROVIDER_MAP,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+  EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   EMAIL_REGEX,
+  EMAIL_VERIFICATION_FAILED_ERROR,
+  EMAIL_VERIFICATION_FAILED_MESSAGE,
+  EMAIL_VERIFICATION_MIN_RESPONSE_MS,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
   ERROR_CODES,
+  GITLAB_AUTH0_CONNECTION,
+  GITLAB_AUTH0_PROVIDER,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
   PROFILE_EMAIL_PATH,
   PROFILE_EMAILS_PATH,
   PROFILE_PASSWORD_PATH,
@@ -22,25 +36,31 @@ import {
 import {
   Auth0Identity,
   CdpIdentity,
+  CdpIdentityType,
   CdpWorkExperienceRequest,
   ClaimAliasRequest,
   ClaimAliasResponse,
   CombinedProfile,
   DeveloperTokenInfo,
   EmailManagementData,
+  EmailVerificationCallbackStatus,
   EnrichedIdentity,
+  IdentitiesPrimaryEmail,
   IdentityDisplayState,
   LinuxAliasData,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
   ProfileUpdateRequest,
   ProfileVisibilityUpdateRequest,
+  SetMeetingInviteResult,
   UpdateForwardRequest,
   UserEmail,
   UserMetadata,
   UserMetadataUpdateRequest,
   UserMetadataUpdateResponse,
   UserProfile,
+  VerifyAndLinkEmailResponse,
+  VerifyEmailOtpNatsResponse,
   WorkExperienceCreateUpdateBody,
 } from '@lfx-one/shared/interfaces';
 import { emailsEqual, isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentinel } from '@lfx-one/shared/utils';
@@ -56,6 +76,7 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { EnrollmentService } from '../services/enrollment.service';
 import { ForwardsService } from '../services/forwards.service';
 import { logger } from '../services/logger.service';
+import { linkedEmailSupportService } from '../services/linked-email-support.service';
 import { MeetingPreferenceService } from '../services/meeting-preference.service';
 import { ObjectStoreService } from '../services/object-store.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
@@ -161,6 +182,9 @@ export class ProfileController {
         return next(validationError);
       }
 
+      // The primary-email and metadata reads are independent; overlap their NATS round trips.
+      const primaryEmailPromise = this.resolveIdentitiesPrimaryEmail(req, getEffectiveUsername(req));
+
       // Get user metadata from NATS (authoritative source). created_at rides top-level on the
       // envelope (not inside UserMetadata) — see #2836. `username` was resolved above via
       // getUsernameFromAuth, which routes through the impersonation-aware getEffectiveUsername
@@ -195,12 +219,14 @@ export class ProfileController {
       // impersonator, so identity/name fields must come from the effective (target) identity and
       // NATS metadata — never fall back to the impersonator's OIDC claims.
       const impersonating = isImpersonating(req);
+      // Match Identities even when the login session still contains the previous primary address.
+      const primaryEmail = await primaryEmailPromise;
       const userProfile: UserProfile = impersonating
         ? {
             // Never fall back to the impersonator's OIDC claims here — the effective helpers resolve
             // the target's identity from the impersonation session.
             id: (getEffectiveSub(req) || '') as string,
-            email: (getEffectiveEmail(req) || '') as string,
+            email: primaryEmail?.email || '',
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
@@ -211,10 +237,11 @@ export class ProfileController {
           }
         : {
             id: oidcUser['sub'] as string,
-            email: oidcUser['email'] as string,
+            email: primaryEmail?.email || '',
             first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
             last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
-            username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
+            // The resolved LFID above — not the OIDC username/preferred_username display claims.
+            username: username as string,
             // created_at: use the real NATS-sourced join date. Never fabricate a timestamp (e.g.
             // new Date()) — an unavailable date must surface as '' so the UI can hide the field,
             // not a moving value. (updated_at below is unrelated and out of scope for this rule.)
@@ -510,7 +537,8 @@ export class ProfileController {
 
     try {
       // Effective identity — during impersonation these resolve to the target user; auth-service
-      // resolves emails/identities from the raw sub string, so the target's emails are returned.
+      // resolves emails from the raw sub string and identities from the request's bearer token
+      // (the target's impersonation token), so the target's data is returned.
       const userSub = getEffectiveSub(req) ?? undefined;
       const sessionEmail = getEffectiveEmail(req) ?? undefined;
 
@@ -526,7 +554,7 @@ export class ProfileController {
 
       const [freshEmails, identities] = await Promise.all([
         this.emailVerificationService.getUserEmails(req, userSub),
-        this.emailVerificationService.listIdentitiesSafe(req, userSub),
+        this.emailVerificationService.listIdentitiesSafe(req),
       ]);
 
       // sessionEmail is the target's email or undefined under impersonation (never the
@@ -576,11 +604,13 @@ export class ProfileController {
 
   /**
    * PUT /api/profile/emails/:email/primary - Set email as primary via auth-service NATS
-   * The :email param is the URL-encoded email address to make primary
+   * The :email param is the URL-encoded email address to make primary. With no meeting-invite
+   * override, the current primary is pinned as the invite email first; failing that, nothing changes.
    */
   public async setPrimaryEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const emailAddress = req.params['emailId'] ?? '';
-    const startTime = logger.startOperation(req, 'set_primary_email', { email: emailAddress });
+    // `email` is PII outside the Pino redact paths — never log the address itself.
+    const startTime = logger.startOperation(req, 'set_primary_email');
 
     try {
       if (!emailAddress) {
@@ -623,18 +653,49 @@ export class ProfileController {
         return;
       }
 
-      const result = await this.emailVerificationService.setPrimaryEmail(req, authToken, emailAddress);
+      const username = await getUsernameFromAuth(req);
 
-      if (!result.success) {
+      if (!username) {
         return next(
-          new MicroserviceError(result.message || 'Failed to set primary email', 502, 'BAD_GATEWAY', {
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'set_primary_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        return next(this.inviteEmailPinFailedError('unavailable'));
+      }
+
+      // Invites stick to an address, not the primary role: pin the current primary as the invite
+      // email before switching, under the lock that guards every other invite-email write (#3983).
+      const outcome = await withMeetingInviteLock(req, username, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, async () => {
+        const pin = await this.pinMeetingInviteToCurrentPrimary(req, v1Token, emailAddress);
+        if (pin.blockedReason) {
+          return { blockedReason: pin.blockedReason };
+        }
+        // A pin that lands before a failed switch is harmless: invites stay on the unchanged primary.
+        return { pinnedInvite: pin.pinned, result: await this.emailVerificationService.setPrimaryEmail(req, authToken, emailAddress) };
+      });
+
+      if ('blockedReason' in outcome) {
+        return next(this.inviteEmailPinFailedError(outcome.blockedReason));
+      }
+
+      if (!outcome.result.success) {
+        return next(
+          new MicroserviceError(outcome.result.message || 'Failed to set primary email', 502, 'BAD_GATEWAY', {
             operation: 'set_primary_email',
             service: 'profile_controller',
           })
         );
       }
 
-      logger.success(req, 'set_primary_email', startTime, { email: emailAddress });
+      logger.success(req, 'set_primary_email', startTime, { pinned_invite: outcome.pinnedInvite });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
     } catch (error) {
@@ -708,7 +769,7 @@ export class ProfileController {
     // Coercing to '' instead routes it through the field-validation error further down.
     const rawEmail: unknown = req.body?.email;
     const emailAddress = typeof rawEmail === 'string' ? rawEmail : '';
-    // Selecting the primary row sends the sentinel instead of an address, to clear the override.
+    // The sentinel clears the override. The UI no longer sends it (#3983) — it pins literal addresses.
     const isReset = isMeetingInvitePrimarySentinel(emailAddress);
     // `email` is PII and `data.email` is not covered by the Pino redact paths — record the shape
     // of the request rather than the address itself.
@@ -1000,6 +1061,13 @@ export class ProfileController {
         return;
       }
 
+      // Enforce the verified-address-only rule server-side before claiming, so a direct call can't
+      // point the new alias at an address the account doesn't own.
+      const verified = await this.validateLinuxForwardTarget(req, forwardTo, domain, 'claim_linux_alias');
+      if ('error' in verified) {
+        return next(verified.error);
+      }
+
       const claim = await this.emailVerificationService.addAlias(req, managementToken, alias, domain);
       if (!claim.success) {
         const { status, message } = this.mapAddAliasError(claim.error);
@@ -1010,7 +1078,7 @@ export class ProfileController {
       const email = claim.email ?? `${alias}@${domain}`;
 
       // forwards-service requires the same Management-API-audience token as add_alias.
-      const forward = await this.forwardsService.setTarget(req, managementToken, forwardTo, domain);
+      const forward = await this.forwardsService.setTarget(req, managementToken, verified.target, domain);
       if (!forward || forward.error) {
         // Alias is claimed but forwarding could not be set — recoverable via the edit path.
         return next(
@@ -1022,7 +1090,7 @@ export class ProfileController {
       }
 
       logger.success(req, 'claim_linux_alias', startTime, { domain });
-      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? forwardTo } satisfies ClaimAliasResponse);
+      res.status(200).json({ state: 'claimed', domain, alias, email, forwardTo: forward.target_email ?? verified.target } satisfies ClaimAliasResponse);
     } catch (error) {
       next(error);
     }
@@ -1064,7 +1132,13 @@ export class ProfileController {
         return;
       }
 
-      const forward = await this.forwardsService.setTarget(req, managementToken, forwardTo, domain);
+      // Enforce the verified-address-only rule server-side — the UI dropdown is not a security boundary.
+      const verified = await this.validateLinuxForwardTarget(req, forwardTo, domain, 'update_linux_forward');
+      if ('error' in verified) {
+        return next(verified.error);
+      }
+
+      const forward = await this.forwardsService.setTarget(req, managementToken, verified.target, domain);
       if (!forward || forward.error) {
         return next(
           new MicroserviceError(forward?.error || 'Failed to update forwarding address', 502, 'FORWARD_SET_FAILED', {
@@ -1075,7 +1149,7 @@ export class ProfileController {
       }
 
       logger.success(req, 'update_linux_forward', startTime, { domain });
-      res.status(200).json({ forwardTo: forward.target_email ?? forwardTo });
+      res.status(200).json({ forwardTo: forward.target_email ?? verified.target });
     } catch (error) {
       next(error);
     }
@@ -1285,41 +1359,35 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_identities');
 
     try {
-      const sub = await getUsernameFromAuth(req);
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_identities',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      // Extract username from sub by removing provider prefix (e.g., "auth0|fghiasy" → "fghiasy").
       // During impersonation these resolve to the target user so CDP/auth-service reads return the
       // target's identities.
-      const lfid = this.resolveEffectiveLfid(req, sub);
       const auth0Sub = (isImpersonating(req) ? getEffectiveSub(req) : req.oidc?.user?.['sub']) as string;
 
-      // Fetch CDP identities and auth-service identities in parallel
-      const [cdpIdentities, auth0Identities] = await Promise.all([
-        this.cdpService.getIdentitiesForUser(req, lfid),
+      // Fetch CDP identities, auth-service identities, and the account's primary email in parallel
+      const [{ memberId, identities: cdpIdentities }, auth0Identities, primaryEmail] = await Promise.all([
+        this.cdpService.getMemberIdentitiesForUser(req, lfid),
         auth0Sub ? this.auth0Service.getUserIdentities(req, auth0Sub) : Promise.resolve([]),
+        this.resolveIdentitiesPrimaryEmail(req, lfid),
       ]);
 
-      logger.debug(req, 'get_identities', 'Raw identity data before reconciliation', {
-        cdp_identities: cdpIdentities,
-        auth_service_identities: auth0Identities,
+      logger.debug(req, 'get_identities', 'Identity counts before reconciliation', {
+        cdp_count: cdpIdentities.length,
+        auth_service_count: auth0Identities.length,
       });
 
       // Reconcile CDP identities with auth-service identities and filter to the
-      // (platform, type) combos LFX One can surface for verification via Auth0. During impersonation
+      // (platform, type) combos LFX One can surface for verification via Auth0, plus the linked-only
+      // combos (GitLab) when backed by a linked auth-service identity. During impersonation
       // the read is preserved but CDP writes (auto-verify + synthetic-identity creation) are skipped —
       // an impersonator must never mutate the target's CDP records.
-      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, cdpIdentities, auth0Identities, lfid);
-      const displayIdentities = enriched.filter((id) => CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${id.platform}+${id.type}`));
+      const { enriched, cdpPostsQueued } = this.reconcileIdentities(req, memberId, cdpIdentities, auth0Identities, lfid, primaryEmail);
+      const displayIdentities = enriched.filter((id) => {
+        const combo = `${id.platform}+${id.type}`;
+        return CDP_DISPLAYABLE_IDENTITY_COMBOS.has(combo) || (AUTH0_LINKED_ONLY_IDENTITY_COMBOS.has(combo) && id.inAuth0 === true);
+      });
 
       logger.success(req, 'get_identities', startTime, {
         lfid,
@@ -1328,6 +1396,8 @@ export class ProfileController {
         display_count: displayIdentities.length,
         hidden_count: enriched.filter((i) => i.displayState === 'hidden').length,
         cdp_posts_queued: cdpPostsQueued,
+        has_primary_email: !!primaryEmail,
+        primary_email_verified: primaryEmail?.verified === true,
       });
 
       res.json(displayIdentities);
@@ -1343,19 +1413,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_work_experiences');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_work_experiences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
 
@@ -1377,19 +1436,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'get_project_affiliations');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_project_affiliations',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const affiliations = await this.cdpService.getProjectAffiliationsForUser(req, lfid);
 
@@ -1412,17 +1460,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'reject_identity');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'reject_identity',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const identityId = req.params['identityId'];
 
@@ -1435,8 +1474,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
 
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
       const { provider, auth0UserId, email } = req.body || {};
@@ -1454,7 +1491,9 @@ export class ProfileController {
       // guard above and the decision to take the lock below must never drift apart.
       const isEmailIdentity = typeof email === 'string' && !!email;
 
-      const finishRejectIdentity = async (): Promise<void> => {
+      // Everything the lock protects: the meeting-invite guard, the Auth0 unlink, and the primary-email
+      // read that decides whether CDP is touched. Returns 'responded' once it has sent an error response.
+      const guardAndUnlink = async (): Promise<'responded' | 'reject_in_cdp' | 'unlink_only'> => {
         if (isEmailIdentity) {
           const v1Token = req.apiGatewayToken;
           const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
@@ -1469,67 +1508,89 @@ export class ProfileController {
                 ? 'This email is set to receive meeting invitations. Choose a different meeting-invitation email before removing it.'
                 : 'Could not confirm your meeting-invitation email. Please try again.',
             });
-            return;
+            return 'responded';
           }
         }
 
         if (provider && auth0UserId) {
-          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
-          const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
+          // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2'). GitLab's
+          // connection name ('gitlab') differs from its Auth0 provider ('oauth2'), and unlink needs the provider.
+          const auth0Provider = provider === 'gitlab' ? GITLAB_AUTH0_PROVIDER : CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
           const mgmtToken = this.profileAuthService.getManagementToken(req);
           if (mgmtToken) {
             const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
             if (!unlinkResult.success) {
-              logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
+              logger.warning(req, 'reject_identity', 'Auth0 unlink failed — identity was not removed', {
                 provider,
-                auth0_user_id: auth0UserId,
+                has_auth0_user_id: true,
                 error: unlinkResult.error,
                 message: unlinkResult.message,
               });
-            } else {
-              logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
-                provider,
-                auth0_user_id: auth0UserId,
+              res.status(502).json({
+                error: 'identity_unlink_failed',
+                message: 'Failed to remove identity. Please try again.',
               });
+              return 'responded';
             }
+            logger.debug(req, 'reject_identity', 'Auth0 identity unlinked successfully', {
+              provider,
+              has_auth0_user_id: true,
+            });
           } else {
             logger.warning(req, 'reject_identity', 'No management token — cannot unlink from Auth0', {
               provider,
-              auth0_user_id: auth0UserId,
+              has_auth0_user_id: true,
             });
             if (!this.profileAuthService.isProfileAuthConfigured()) {
               res.status(501).json({
                 error: 'profile_auth_not_configured',
                 message: 'Removing this identity is not available in this environment.',
               });
-              return;
+              return 'responded';
             }
             res.status(403).json({
               error: 'management_token_required',
               message: 'Profile authorization required to remove this identity',
               authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
             });
-            return;
+            return 'responded';
           }
         }
 
         // Skip CDP rejection for synthetic identities (auth-service-only, prefixed with "auth0:")
         if (identityId.startsWith('auth0:')) {
           logger.debug(req, 'reject_identity', 'Synthetic identity — skipping CDP rejection', { identity_id: identityId });
-        } else {
-          await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+          return 'unlink_only';
         }
-
-        logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
-        res.json({ success: true });
+        if (
+          isEmailIdentity &&
+          (provider === 'email' || provider === 'google') &&
+          emailsEqual(email, (await this.resolveIdentitiesPrimaryEmail(req, lfid))?.email)
+        ) {
+          // Only email/Google rows can represent the account's primary address (applyPrimaryEmail).
+          // Removing that login only unlinks it; LinkedIn rows must still be rejected in CDP (#4123).
+          logger.debug(req, 'reject_identity', 'Primary email address — unlink only, skipping CDP rejection', { identity_id: identityId });
+          return 'unlink_only';
+        }
+        return 'reject_in_cdp';
       };
 
       // Only the email-identity path touches the meeting-invite invariant — lock only that path.
-      if (isEmailIdentity) {
-        await withMeetingInviteLock(req, sub, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, finishRejectIdentity);
-      } else {
-        await finishRejectIdentity();
+      const outcome = isEmailIdentity
+        ? await withMeetingInviteLock(req, lfid, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, guardAndUnlink)
+        : await guardAndUnlink();
+      if (outcome === 'responded') {
+        return;
       }
+
+      // The CDP write runs after the lock is released: meeting-invite resolution never reads CDP, and the
+      // reject waits behind the member's queued reconcile writes (#4523), which must not eat the lock's TTL.
+      if (outcome === 'reject_in_cdp') {
+        await this.cdpService.rejectIdentityForUser(req, lfid, identityId);
+      }
+
+      logger.success(req, 'reject_identity', startTime, { lfid, identity_id: identityId });
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
@@ -1543,17 +1604,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'confirm_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'confirm_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperienceId = req.params['workExperienceId'];
 
@@ -1566,8 +1618,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
 
       await this.cdpService.confirmWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1586,17 +1636,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'patch_project_affiliation');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'patch_project_affiliation',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const projectId = req.params['projectId'];
 
@@ -1622,8 +1663,6 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const lfid = this.resolveEffectiveLfid(req, sub);
-
       await this.cdpService.patchProjectAffiliationForUser(req, lfid, projectId, req.body);
 
       logger.success(req, 'patch_project_affiliation', startTime, { lfid, project_id: projectId, affiliation_count: affiliations.length });
@@ -1641,17 +1680,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'delete_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'delete_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperienceId = req.params['workExperienceId'];
 
@@ -1664,8 +1694,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
 
       await this.cdpService.deleteWorkExperienceForUser(req, lfid, workExperienceId);
 
@@ -1684,17 +1712,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'update_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'update_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const workExperienceId = req.params['workExperienceId'];
 
@@ -1719,8 +1738,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1749,17 +1766,8 @@ export class ProfileController {
     const startTime = logger.startOperation(req, 'create_work_experience');
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'create_work_experience',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const body = req.body as WorkExperienceCreateUpdateBody;
 
@@ -1772,8 +1780,6 @@ export class ProfileController {
 
         return next(validationError);
       }
-
-      const lfid = this.resolveEffectiveLfid(req, sub);
 
       const cdpBody: CdpWorkExperienceRequest = {
         organizationId: body.organizationId,
@@ -1904,68 +1910,13 @@ export class ProfileController {
       // Store token in session
       this.profileAuthService.storeManagementToken(req, tokenResponse);
 
-      // Auto-complete pending email verification if present
+      // Auto-complete pending email verification if present. One-shot: the attempt is removed from
+      // the session before anything else, so whatever the outcome its code is never replayed again.
       const pending = req.appSession?.pendingEmailVerification;
+      let emailStatus: EmailVerificationCallbackStatus | undefined;
       if (pending) {
         delete req.appSession!.pendingEmailVerification;
-
-        try {
-          const otpResponse = await this.emailVerificationService.verifyOtp(req, pending.email, pending.otp);
-
-          if (otpResponse.success && otpResponse.data?.id_token) {
-            const mgmtToken = this.profileAuthService.getManagementToken(req);
-            if (mgmtToken) {
-              const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
-
-              if (linkResponse.success) {
-                // This route's auth config skips the middleware's gateway-token exchange — populate
-                // it here (session-cached, fail-open) so the v1 sync below has a token to work with.
-                await populateApiGatewayToken(req);
-
-                // Sync the freshly verified address into v1 so meeting-invite resolution finds it (fail-open)
-                await this.userService.syncVerifiedEmailToUserService(req, pending.email);
-
-                // Fire-and-forget CDP verification
-                const lfid = this.resolveEffectiveLfid(req, currentUserSub);
-
-                this.cdpService
-                  .getIdentitiesForUser(req, lfid)
-                  .then((identities) => {
-                    const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === pending.email);
-                    if (emailIdentity) {
-                      this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
-                        logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
-                          err,
-                        });
-                      });
-                    }
-                  })
-                  .catch((err: unknown) => {
-                    logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-                      err,
-                    });
-                  });
-
-                logger.info(req, 'profile_auth_callback', 'Pending email verification completed', { email: pending.email });
-              } else {
-                logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
-                  email: pending.email,
-                  error: linkResponse.error,
-                });
-              }
-            }
-          } else {
-            logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
-              email: pending.email,
-              error: otpResponse.error,
-            });
-          }
-        } catch (err) {
-          logger.warning(req, 'profile_auth_callback', 'Pending verification error (non-blocking)', {
-            email: pending.email,
-            err,
-          });
-        }
+        emailStatus = await this.completePendingEmailVerification(req, pending);
       }
 
       // Check for pending social connection (chained from social → Flow C → social)
@@ -1980,19 +1931,48 @@ export class ProfileController {
         return;
       }
 
+      // Only profile-layout returns consume support context; other allowed pages have no consumer.
+      const isProfileReturn = returnTo === ProfileController.profileDefaultReturnTo || returnTo.startsWith(`${ProfileController.profileDefaultReturnTo}/`);
+      const supportHandle =
+        emailStatus === EMAIL_CALLBACK_ALREADY_LINKED_STATUS && pending && isProfileReturn
+          ? await linkedEmailSupportService.issue(currentUserSub, pending.email)
+          : undefined;
+
       logger.success(req, 'profile_auth_callback', startTime, {
         user_sub: currentUserSub,
         token_type: tokenResponse.token_type,
         scope: tokenResponse.scope,
         expires_in: tokenResponse.expires_in,
-        pending_verification_completed: !!pending,
+        pending_verification_completed:
+          !!pending && emailStatus !== EMAIL_CALLBACK_RETRY_REQUIRED_STATUS && emailStatus !== EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
+        pending_email_status: emailStatus,
       });
 
-      res.redirect(`${returnTo}?success=profile_token_obtained`);
+      // The email outcome rides alongside the authorization flag, which on its own proves only that
+      // authorization succeeded. A newly linked address adds no marker (unchanged behavior).
+      const emailStatusQuery = emailStatus ? `&${EMAIL_CALLBACK_STATUS_PARAM}=${emailStatus}` : '';
+      const supportQuery = supportHandle ? `&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${supportHandle}` : '';
+      res.redirect(`${returnTo}?success=profile_token_obtained${emailStatusQuery}${supportQuery}`);
     } catch (err) {
       logger.error(req, 'profile_auth_callback', startTime, err, {});
       res.redirect(`${returnTo}?error=token_exchange_failed`);
     }
+  }
+
+  /** POST /api/profile/auth/email-support-context — consume only this user's private callback draft. */
+  public async consumeLinkedEmailSupportContext(req: Request, res: Response): Promise<void> {
+    res.set('Cache-Control', 'no-store');
+    const sub = req.oidc?.user?.['sub'];
+    if (isImpersonating(req) || typeof sub !== 'string' || !sub) {
+      // Preserve the deliberately empty defensive response; never log the subject or handle.
+      logger.warning(req, 'consume_linked_email_support_context', 'Rejected linked-email support context request');
+      res.status(403).json({});
+      return;
+    }
+    const startTime = logger.startOperation(req, 'consume_linked_email_support_context');
+    const email = await linkedEmailSupportService.consume(sub, req.body?.handle);
+    logger.success(req, 'consume_linked_email_support_context', startTime, { has_context: !!email });
+    res.json(email ? { email } : {});
   }
 
   /**
@@ -2008,7 +1988,7 @@ export class ProfileController {
   }
 
   /**
-   * GET /api/profile/identities/social/connect?provider=github|google|linkedin&returnTo=/path
+   * GET /api/profile/identities/social/connect?provider=github|gitlab|google|linkedin&returnTo=/path
    * Initiates the social identity verification OAuth flow.
    * If no management token exists, chains through Flow C first.
    *
@@ -2051,7 +2031,8 @@ export class ProfileController {
 
   /**
    * GET /social/callback - Handle Auth0 callback from social OAuth flow.
-   * Exchanges code for id_token, links identity via NATS, verifies in CDP.
+   * Exchanges code for id_token, links identity via NATS, and redirects to the initiating page.
+   * CDP verification is deferred to ownership-matched reconciliation on the next identities GET.
    */
   public async handleSocialCallback(req: Request, res: Response): Promise<void> {
     // Set by startSocialConnect; re-validated here because a session can outlive a page rename.
@@ -2114,20 +2095,19 @@ export class ProfileController {
         return;
       }
 
-      // Decode id_token sub claim to log the social identity being linked
-      let socialSub: string | undefined;
-      try {
-        const payloadB64 = tokenResponse.id_token.split('.')[1];
-        if (payloadB64) {
-          const decoded = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-          socialSub = decoded.sub;
-          logger.info(req, 'social_auth_callback', 'Social identity being linked', {
-            social_sub: socialSub,
-            social_email: decoded.email,
-          });
-        }
-      } catch {
-        logger.debug(req, 'social_auth_callback', 'Could not decode id_token payload for audit logging');
+      // Decode the id_token subject for the same-account reconnect check.
+      const socialSub = this.getIdTokenSubject(req, tokenResponse.id_token);
+
+      // Same subject as the signed-in session: the identity already resolves to this account
+      // (e.g. reconnecting an owned social identity via Add identity or Verify). A successful
+      // no-op — nothing is linked, verified in CDP, or synced. The token came from the direct,
+      // state-checked code exchange above; the decode is plain JSON, not signature verification,
+      // so this only selects a presentation outcome and never authorizes a write.
+      const sessionSub = req.oidc?.user?.['sub'];
+      if (socialSub && typeof sessionSub === 'string' && sessionSub.length > 0 && socialSub === sessionSub) {
+        logger.success(req, 'social_auth_callback', startTime, { status: IDENTITY_ALREADY_CONNECTED_STATUS });
+        res.redirect(`${returnTo}?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+        return;
       }
 
       // Link the social identity via NATS (reuses existing email verification linking)
@@ -2138,7 +2118,6 @@ export class ProfileController {
         logger.error(req, 'social_auth_callback', startTime, new Error('Identity link failed'), {
           error: linkResponse.error,
           message: linkResponse.message,
-          social_sub: socialSub,
           is_already_linked: isAlreadyLinked,
         });
         // Do not include the owning LFID — leaking it would enable account enumeration.
@@ -2146,31 +2125,8 @@ export class ProfileController {
         return;
       }
 
-      // Fire-and-forget CDP identity verification
-      const currentUserSub = req.oidc?.user?.['sub'] as string;
-      const lfid = this.resolveEffectiveLfid(req, currentUserSub);
-
-      if (lfid) {
-        this.cdpService
-          .getIdentitiesForUser(req, lfid)
-          .then((identities) => {
-            // Find the newly linked social identity — look for unverified identities on this platform
-            const unverifiedSocial = identities.filter((id) => !id.verified);
-            for (const identity of unverifiedSocial) {
-              this.cdpService.verifyIdentityForUser(req, lfid, identity.id).catch((err: unknown) => {
-                logger.warning(req, 'social_auth_callback', 'CDP verify failed (non-blocking)', {
-                  identity_id: identity.id,
-                  err,
-                });
-              });
-            }
-          })
-          .catch((err: unknown) => {
-            logger.warning(req, 'social_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-              err,
-            });
-          });
-      }
+      // The next identities GET reconciles CDP against linked platform/type/value ownership.
+      // A successful social link is not proof of ownership of other unverified CDP identities.
 
       logger.success(req, 'social_auth_callback', startTime, {
         has_id_token: true,
@@ -2227,11 +2183,13 @@ export class ProfileController {
         return next(validationError);
       }
 
+      const upstreamStartedAt = Date.now();
       const response = await this.emailVerificationService.sendVerificationCode(req, email);
+      await this.holdUntilFloor(upstreamStartedAt);
 
       if (response.success) {
-        logger.success(req, 'send_email_verification', startTime, { email });
-        res.json({ success: true, message: response.message || 'Verification code sent' });
+        logger.success(req, 'send_email_verification', startTime);
+        res.json({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
       } else {
         logger.debug(req, 'send_email_verification', 'Verification response on failure', {
           response_keys: Object.keys(response),
@@ -2240,19 +2198,8 @@ export class ProfileController {
         });
 
         if (isIdentityAlreadyLinkedError(response.error, response.message)) {
-          // Upstream auth-service emits the "already linked" error without identifying the
-          // owning account, so resolve it here via EMAIL_TO_USERNAME → EMAIL_TO_SUB lookups.
-          // The resolved account is logged for support/debugging only — never returned to the
-          // client, so we don't expose another user's LFID.
-          const linkedTo =
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
-
-          logger.warning(req, 'send_email_verification', 'Email already linked to another account', {
-            email,
-            linked_to: linkedTo,
-          });
-
-          res.status(409).json({ success: false, error: response.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
+          this.logLinkedEmailConflict(req, 'send_email_verification');
+          res.json({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
         } else if (response.error === 'Service temporarily unavailable') {
           res.status(503).json({ success: false, error: response.error, message: response.message });
         } else {
@@ -2273,17 +2220,8 @@ export class ProfileController {
     });
 
     try {
-      const sub = await getUsernameFromAuth(req);
-
-      if (!sub) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'verify_and_link_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
+      // Throws 401 when no IdP-asserted LFID resolves — before any input validation.
+      const lfid = this.resolveEffectiveLfid(req);
 
       const { email, otp } = req.body as { email: string; otp: string };
 
@@ -2314,6 +2252,9 @@ export class ProfileController {
       const isProfileAuthConfigured = this.profileAuthService.isProfileAuthConfigured();
 
       let authToken: string;
+      // The caller's own Flow C token, also sent with the OTP so auth-service can recognize an
+      // address already connected to this account. Never set from the link-only M2M fallback below.
+      let userManagementToken: string | undefined;
 
       if (!isAuthelia && isProfileAuthConfigured) {
         const mgmtToken = this.profileAuthService.getManagementToken(req);
@@ -2338,21 +2279,58 @@ export class ProfileController {
           return;
         }
         authToken = mgmtToken;
+        userManagementToken = mgmtToken;
       } else {
         const authServiceAudience = new URL('api/v2/', issuerBaseUrl).toString();
         authToken = await generateM2MToken(req, { audience: authServiceAudience });
       }
 
       // Step 2: Verify OTP via NATS
-      const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp);
+      const otpStartedAt = Date.now();
+      const otpResponse = await this.emailVerificationService.verifyOtp(req, email, otp, userManagementToken);
 
-      if (!otpResponse.success || !otpResponse.data?.id_token) {
-        const error = otpResponse.error || (otpResponse.success ? 'token_missing' : 'verification_failed');
-        const message =
-          otpResponse.message ||
-          (otpResponse.success
-            ? 'Verification succeeded but identity token was not returned. Please try again.'
-            : 'Verification failed. Please try again or request a new code.');
+      if (!otpResponse.success) {
+        const isLinkedConflict = isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message);
+        if (!isLinkedConflict) {
+          logger.debug(req, 'verify_and_link_email', 'OTP verification failed', { error: otpResponse.error, message: otpResponse.message });
+        }
+
+        if (otpResponse.error === 'Service temporarily unavailable') {
+          res.status(503).json({
+            success: false,
+            error: otpResponse.error,
+            message: otpResponse.message || EMAIL_VERIFICATION_FAILED_MESSAGE,
+          });
+          return;
+        }
+
+        // auth-service validates the code before any ownership lookup, so a conflict here means the
+        // caller proved the inbox. Reply with fixed copy — never the upstream text, which could name
+        // the owning account — and keep the same floor as generic 400 failures (outages return above).
+        if (isLinkedConflict) {
+          this.logLinkedEmailConflict(req, 'verify_and_link_email');
+        }
+        await this.holdUntilFloor(otpStartedAt);
+        if (isLinkedConflict) {
+          res.status(409).json({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+          return;
+        }
+        res.status(400).json({ success: false, error: EMAIL_VERIFICATION_FAILED_ERROR, message: EMAIL_VERIFICATION_FAILED_MESSAGE });
+        return;
+      }
+
+      // Already connected to the caller's own account: a proven, successful no-op. Nothing is
+      // linked, synced, or verified — the address is already part of the account.
+      if (userManagementToken && this.isEmailAlreadyConnected(otpResponse)) {
+        logger.success(req, 'verify_and_link_email', startTime, { status: EMAIL_ALREADY_CONNECTED_STATUS });
+        const response: VerifyAndLinkEmailResponse = { success: true, status: EMAIL_ALREADY_CONNECTED_STATUS, message: EMAIL_ALREADY_CONNECTED_MESSAGE };
+        res.json(response);
+        return;
+      }
+
+      if (!otpResponse.data?.id_token) {
+        const error = otpResponse.error || 'token_missing';
+        const message = otpResponse.message || 'Verification succeeded but identity token was not returned. Please try again.';
 
         if (error.includes('invalid') || error.includes('otp')) {
           res.status(400).json({ success: false, error, message });
@@ -2371,14 +2349,7 @@ export class ProfileController {
 
       if (!linkResponse.success) {
         if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
-          // Resolve the owning account for support/debugging only — never returned to the client.
-          const linkedTo =
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
-
-          logger.warning(req, 'verify_and_link_email', 'Email already linked to another account', {
-            email,
-            linked_to: linkedTo,
-          });
+          this.logLinkedEmailConflict(req, 'verify_and_link_email');
 
           // Never forward the upstream message here — it could name the owning account.
           res.status(409).json({ success: false, error: linkResponse.error, message: EMAIL_ALREADY_LINKED_MESSAGE });
@@ -2394,13 +2365,11 @@ export class ProfileController {
       await this.userService.syncVerifiedEmailToUserService(req, email);
 
       // Step 4: Fire-and-forget CDP identity verification
-      const lfid = this.resolveEffectiveLfid(req, sub);
-
       // Find the newly linked email identity in CDP and verify it
       this.cdpService
         .getIdentitiesForUser(req, lfid)
         .then((identities) => {
-          const emailIdentity = identities.find((id) => (id.platform === 'email' || id.platform === 'custom') && id.value === email);
+          const emailIdentity = identities.find((id) => id.platform === 'email' && emailsEqual(id.value, email));
           if (emailIdentity) {
             this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
               logger.warning(req, 'verify_and_link_email', 'CDP verify failed (non-blocking)', {
@@ -2526,16 +2495,189 @@ export class ProfileController {
   }
 
   /**
-   * Resolves the effective LFID for CDP/auth-service reads. During impersonation this is the target
-   * user's username (from the impersonation session); otherwise it mirrors the pre-existing
-   * derivation (OIDC username/preferred_username, falling back to the prefix-stripped sub).
+   * With no invite override, invitations follow the primary — pin the current primary so they stay
+   * put when it changes. `blockedReason` is set when that couldn't be confirmed.
    */
-  private resolveEffectiveLfid(req: Request, sub: string): string {
-    const subUsername = sub?.includes('|') ? sub.split('|')[1] : sub;
-    if (isImpersonating(req)) {
-      return (getEffectiveUsername(req) || subUsername) as string;
+  private async pinMeetingInviteToCurrentPrimary(
+    req: Request,
+    v1Token: string,
+    newPrimary: string
+  ): Promise<{ pinned: boolean; blockedReason?: SetMeetingInviteResult['reason'] }> {
+    const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
+    if (!preference) {
+      return { pinned: false, blockedReason: 'unavailable' };
     }
-    return (req.oidc?.user?.['username'] || req.oidc?.user?.['preferred_username'] || subUsername) as string;
+    if (preference.email !== null) {
+      return { pinned: false };
+    }
+
+    const sub = getEffectiveSub(req);
+    const currentPrimary = sub ? (await this.emailVerificationService.getUserEmails(req, sub))?.primary_email : undefined;
+    if (!currentPrimary) {
+      logger.warning(req, 'set_primary_email', 'Could not resolve the current primary email to pin as the meeting-invite email');
+      return { pinned: false, blockedReason: 'unavailable' };
+    }
+    if (emailsEqual(currentPrimary, newPrimary)) {
+      return { pinned: false };
+    }
+
+    const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, currentPrimary);
+    return result.success ? { pinned: true } : { pinned: false, blockedReason: result.reason ?? 'upstream' };
+  }
+
+  private inviteEmailPinFailedError(reason: SetMeetingInviteResult['reason']): ServiceValidationError | MicroserviceError {
+    const errorOptions = { operation: 'set_primary_email', service: 'profile_controller' };
+
+    // Retrying can't fix a rejected address — point at the way out: pick a different invite address.
+    if (reason === 'validation') {
+      const message =
+        "Your primary email wasn't changed because your meeting invitations can't stay on your current primary email. Choose a different address for meeting invitations in Settings, then try again.";
+      return new ServiceValidationError([{ field: 'email', message, code: 'FIELD_VALIDATION_ERROR' }], message, errorOptions);
+    }
+
+    // SERVICE_ADVISORY lets the frontend surface this copy from a 5xx body.
+    return new MicroserviceError(
+      "Your primary email wasn't changed because we couldn't keep your meeting invitations on their current address. Please try again in a few minutes.",
+      503,
+      ERROR_CODES.SERVICE_ADVISORY,
+      errorOptions
+    );
+  }
+
+  /** Hold upstream send-code replies and non-outage OTP failures until the shared upstream-to-response floor. */
+  private async holdUntilFloor(startedAt: number): Promise<void> {
+    const remainingMs = EMAIL_VERIFICATION_MIN_RESPONSE_MS - (Date.now() - startedAt);
+    if (remainingMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
+    }
+  }
+
+  /** Keep linked-address conflicts request-correlated without resolving or logging another account's identity. */
+  private logLinkedEmailConflict(req: Request, operation: string): void {
+    logger.warning(req, operation, 'Email already linked to another account');
+  }
+
+  /**
+   * The explicit own-account outcome: OTP proof succeeded and auth-service reports the address is
+   * already connected to the caller. Only meaningful when the request carried the caller's own
+   * token; any other tokenless success stays malformed.
+   */
+  private isEmailAlreadyConnected(otpResponse: VerifyEmailOtpNatsResponse): boolean {
+    return otpResponse.success === true && otpResponse.data?.status === EMAIL_ALREADY_CONNECTED_STATUS;
+  }
+
+  /**
+   * Replays a pending email verification during the Flow C callback, after the caller has already
+   * removed it from the session. Returns the outcome to surface on the redirect: `already_connected`,
+   * `already_linked` when the proven address is linked to an LFX account (at OTP verification or at
+   * link time — no follow-up writes run), `retry_required` for any other attempt that did not finish,
+   * or undefined when a new address was linked. Never throws — the authorization has already succeeded.
+   */
+  private async completePendingEmailVerification(req: Request, pending: { email: string; otp: string }): Promise<EmailVerificationCallbackStatus | undefined> {
+    // Resolve the freshly stored user token before replaying the code, so its absence never consumes it.
+    const mgmtToken = this.profileAuthService.getManagementToken(req);
+    if (!mgmtToken) {
+      logger.warning(req, 'profile_auth_callback', 'Pending verification skipped: management token unavailable');
+      return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+    }
+
+    try {
+      const otpResponse = await this.emailVerificationService.verifyOtp(req, pending.email, pending.otp, mgmtToken);
+
+      if (this.isEmailAlreadyConnected(otpResponse)) {
+        logger.info(req, 'profile_auth_callback', 'Pending email already connected to this account');
+        return EMAIL_ALREADY_CONNECTED_STATUS;
+      }
+
+      // The code was validated before the ownership lookup, so the conflict is proven — no new code helps.
+      if (!otpResponse.success && isIdentityAlreadyLinkedError(otpResponse.error, otpResponse.message)) {
+        this.logLinkedEmailConflict(req, 'profile_auth_callback');
+        return EMAIL_CALLBACK_ALREADY_LINKED_STATUS;
+      }
+
+      if (!otpResponse.success || !otpResponse.data?.id_token) {
+        logger.warning(req, 'profile_auth_callback', 'Pending OTP verification failed (may have expired)', {
+          error: otpResponse.error,
+          has_token: !!otpResponse.data?.id_token,
+        });
+        return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+      }
+
+      const linkResponse = await this.emailVerificationService.linkIdentity(req, mgmtToken, otpResponse.data.id_token);
+      if (!linkResponse.success) {
+        if (isIdentityAlreadyLinkedError(linkResponse.error, linkResponse.message)) {
+          this.logLinkedEmailConflict(req, 'profile_auth_callback');
+          return EMAIL_CALLBACK_ALREADY_LINKED_STATUS;
+        }
+        logger.warning(req, 'profile_auth_callback', 'Pending verification link failed', {
+          error: linkResponse.error,
+        });
+        return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+      }
+    } catch (err) {
+      logger.warning(req, 'profile_auth_callback', 'Pending verification error (non-blocking)', {
+        err,
+      });
+      return EMAIL_CALLBACK_RETRY_REQUIRED_STATUS;
+    }
+
+    // Linked — the follow-up writes below are fail-open and never turn a completed link into a retry.
+    try {
+      // This route's auth config skips the middleware's gateway-token exchange — populate
+      // it here (session-cached, fail-open) so the v1 sync below has a token to work with.
+      await populateApiGatewayToken(req);
+
+      // Sync the freshly verified address into v1 so meeting-invite resolution finds it (fail-open)
+      await this.userService.syncVerifiedEmailToUserService(req, pending.email);
+    } catch (err) {
+      logger.warning(req, 'profile_auth_callback', 'Pending verification follow-up sync failed (non-blocking)', {
+        err,
+      });
+    }
+
+    // Fire-and-forget CDP verification
+    const lfid = getEffectiveUsername(req);
+
+    if (lfid) {
+      this.cdpService
+        .getIdentitiesForUser(req, lfid)
+        .then((identities) => {
+          const emailIdentity = identities.find((id) => id.platform === 'email' && emailsEqual(id.value, pending.email));
+          if (emailIdentity) {
+            this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
+              logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
+                err,
+              });
+            });
+          }
+        })
+        .catch((err: unknown) => {
+          logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
+            err,
+          });
+        });
+    }
+
+    logger.info(req, 'profile_auth_callback', 'Pending email verification completed');
+    return undefined;
+  }
+
+  /**
+   * Resolves the effective LFID for CDP/auth-service calls. During impersonation this is the target
+   * user's username (from the impersonation session); otherwise it is the IdP-asserted LF username
+   * claim. Never derived from display claims or the `sub`, since CDP writes are keyed on it — throws
+   * when no LFID can be resolved.
+   */
+  private resolveEffectiveLfid(req: Request): string {
+    const lfid = getEffectiveUsername(req);
+    if (!lfid) {
+      throw new AuthenticationError('User authentication required', {
+        operation: 'resolve_effective_lfid',
+        service: 'profile_controller',
+        path: req.path,
+      });
+    }
+    return lfid;
   }
 
   /**
@@ -2548,28 +2690,43 @@ export class ProfileController {
    * 3. In auth-service but NOT in CDP → VERIFIED (synthetic entry + fire-and-forget POST to CDP,
    *    skipping the POST when a `custom` row for the same email value has already been written
    *    in this loop or already exists as a CDP custom-email row owned by this user (verifiedBy=lfid))
-   * 4. In CDP but NOT in auth-service, multi-LFID + verifiedBy=lfxOne → HIDDEN
+   * 4. In CDP but NOT in auth-service, multi-LFID + verified & verifiedBy≠lfid → HIDDEN
    * 5. In CDP but NOT in auth-service (all other) → UNVERIFIED
+   * 6. Primary email (applyPrimaryEmail, runs last) → exactly one email/google row for the
+   *    account's primary address is marked isPrimary; its verified state comes only from the IdP
+   *    `email_verified` proof (or an existing verified auth-service match), unlinked duplicates are
+   *    hidden, and a display-only synthetic row is added when neither source has it. No CDP writes.
+   *
+   * Email-type values match case-insensitively between auth-service and CDP (identityMatchKey);
+   * username values (e.g. GitHub) match exactly. Values written to CDP keep their original casing.
+   * When several CDP rows match one auth-service login (e.g. case variants), only the first is
+   * shown; the rest are HIDDEN so each login has a single row and Remove menu.
+   *
+   * CDP writes (rules 2 and 3) are queued and run one at a time against `memberId` after the loop,
+   * never in parallel and never alongside another chain for the same member on this pod (#4523).
    */
   private reconcileIdentities(
     req: Request,
+    memberId: string | null,
     cdpIdentities: CdpIdentity[],
     authServiceIdentities: Auth0Identity[],
-    lfid: string
+    lfid: string,
+    primaryEmail: IdentitiesPrimaryEmail | null = null
   ): { enriched: EnrichedIdentity[]; cdpPostsQueued: number } {
     // Under impersonation, produce the read-only enriched list without any CDP mutation: no
     // auto-verify, no synthetic-identity creation. Derived here (not a caller-supplied flag) so a
     // future call site can't accidentally re-enable CDP writes against the target's records. The
-    // returned identities are unchanged either way.
-    const skipCdpMutations = isImpersonating(req);
+    // returned identities are unchanged either way. Also null when CDP has no member to write to.
+    const writeMemberId = isImpersonating(req) ? null : memberId;
+    const cdpWrites: (() => Promise<void>)[] = [];
 
-    // Build a map of "platform:value" → Auth0Identity for matching
+    // Build a map of "platform:type:value" → Auth0Identity for matching
     const authServiceMap = new Map<string, Auth0Identity>();
     for (const authId of authServiceIdentities) {
-      const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+      const cdpPlatform = this.resolveAuth0IdentityPlatform(authId);
       const value = this.getAuth0IdentityValue(authId);
       if (cdpPlatform && value) {
-        authServiceMap.set(`${cdpPlatform}:${value}`, authId);
+        authServiceMap.set(this.identityMatchKey(cdpPlatform, CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username', value), authId);
       }
     }
 
@@ -2580,47 +2737,61 @@ export class ProfileController {
     const lfidCount = cdpIdentities.filter((id) => id.platform === 'lfid').length;
     const hasMultiLfid = lfidCount > 1;
 
+    // Auth-service logins already shown by an earlier CDP row — case-variant CDP rows (dev@ / DEV@)
+    // match the same login, which must appear once with one Remove menu.
+    const claimedAuthIdentityKeys = new Set<string>();
+
     // Process CDP identities
     const enriched: EnrichedIdentity[] = cdpIdentities.map((cdp): EnrichedIdentity => {
-      const authKey = `${cdp.platform}:${cdp.value}`;
+      const authKey = this.identityMatchKey(cdp.platform, cdp.type, cdp.value);
       // Google OAuth creates email-type CDP entries — cross-match CDP email entries against Google auth identities
-      const authIdentity = authServiceMap.get(authKey) ?? (cdp.platform === 'email' ? authServiceMap.get(`google:${cdp.value}`) : undefined);
+      const googleKey = cdp.platform === 'email' && cdp.type === 'email' ? this.identityMatchKey('google', 'email', cdp.value) : null;
+      const authIdentity = authServiceMap.get(authKey) ?? (googleKey ? authServiceMap.get(googleKey) : undefined);
 
       const inAuthService = !!authIdentity;
 
       if (inAuthService) {
         matchedAuthKeys.add(authKey);
         // Also mark the Google auth key as matched to prevent duplicate synthetic entries
-        if (cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2') {
-          matchedAuthKeys.add(`google:${cdp.value}`);
+        if (googleKey && authIdentity?.provider === 'google-oauth2') {
+          matchedAuthKeys.add(googleKey);
         }
       }
 
       // Rule: The logged-in user's own LFID is always verified
       if (cdp.platform === 'lfid' && cdp.value === lfid) {
         // Auto-verify LFID in CDP if not already verified with their LFID (skipped when read-only)
-        if (!skipCdpMutations && !(cdp.verified && cdp.verifiedBy === lfid)) {
-          this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
-            logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
-              identity_id: cdp.id,
-              err,
-            });
-          });
+        if (writeMemberId && !(cdp.verified && cdp.verifiedBy === lfid)) {
+          cdpWrites.push(() =>
+            this.cdpService.verifyIdentity(req, writeMemberId, cdp.id, lfid).catch((err: unknown) => {
+              logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
+                identity_id: cdp.id,
+                err,
+              });
+            })
+          );
         }
         return { ...cdp, displayState: 'verified', inAuth0: true };
       }
 
       if (inAuthService) {
         // In both auth-service and CDP — auto-verify if needed (skipped when read-only)
-        if (!skipCdpMutations && !(cdp.verified && cdp.verifiedBy === lfid)) {
-          this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
-            logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
-              identity_id: cdp.id,
-              platform: cdp.platform,
-              err,
-            });
-          });
+        if (writeMemberId && !(cdp.verified && cdp.verifiedBy === lfid)) {
+          cdpWrites.push(() =>
+            this.cdpService.verifyIdentity(req, writeMemberId, cdp.id, lfid).catch((err: unknown) => {
+              logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
+                identity_id: cdp.id,
+                platform: cdp.platform,
+                err,
+              });
+            })
+          );
         }
+        const authIdentityKey = `${authIdentity.provider}:${authIdentity.user_id}`;
+        if (claimedAuthIdentityKeys.has(authIdentityKey)) {
+          return { ...cdp, displayState: 'hidden', inAuth0: true };
+        }
+        claimedAuthIdentityKeys.add(authIdentityKey);
         // If a Google OAuth identity matched a CDP email entry, show it as a Google identity
         const isGoogleCrossMatch = cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2';
         return {
@@ -2633,14 +2804,14 @@ export class ProfileController {
       }
 
       // In CDP but NOT in auth-service
-      const isCdpVerifiedWithOwner = cdp.verified && !!cdp.verifiedBy;
+      const isVerifiedByOtherOwner = cdp.verified && !!cdp.verifiedBy && cdp.verifiedBy !== lfid;
       let displayState: IdentityDisplayState;
 
       if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdp.platform}+${cdp.type}`)) {
-        // Combo not surfaceable via Auth0 (e.g. linkedin+username, gitlab+username) —
-        // we have no way to help the user verify it, so hide.
+        // Combo not surfaceable via Auth0 (e.g. linkedin+username) — we have no way to help the
+        // user verify it, so hide. GitLab is shown only when linked (matched above), never from CDP alone.
         displayState = 'hidden';
-      } else if (isCdpVerifiedWithOwner && hasMultiLfid) {
+      } else if (isVerifiedByOtherOwner && hasMultiLfid) {
         // Multi-LFID merged profile — hide identities verified by another LFID
         displayState = 'hidden';
       } else {
@@ -2661,21 +2832,21 @@ export class ProfileController {
     // 'custom'), so the enriched-array-only check below misses them.
     const postedCustomEmails = new Set<string>();
     for (const [, authId] of authServiceMap) {
-      const cdpPlatform = AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+      const cdpPlatform = this.resolveAuth0IdentityPlatform(authId);
       const value = this.getAuth0IdentityValue(authId);
       if (!cdpPlatform || !value) {
         continue;
       }
 
-      const authKey = `${cdpPlatform}:${value}`;
-      if (matchedAuthKeys.has(authKey)) {
+      const type = CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username';
+      if (matchedAuthKeys.has(this.identityMatchKey(cdpPlatform, type, value))) {
         continue;
       }
 
-      const type = CDP_PLATFORM_TO_TYPE_MAP[cdpPlatform] ?? 'username';
-
-      // Skip combos LFX One can't surface for verification (e.g. lfid, gitlab)
-      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(`${cdpPlatform}+${type}`)) {
+      // Skip combos LFX One can't surface (e.g. lfid). Linked-only combos (gitlab) are kept: this
+      // identity is linked, so it is shown and synced to CDP.
+      const combo = `${cdpPlatform}+${type}`;
+      if (!CDP_DISPLAYABLE_IDENTITY_COMBOS.has(combo) && !AUTH0_LINKED_ONLY_IDENTITY_COMBOS.has(combo)) {
         continue;
       }
 
@@ -2688,31 +2859,33 @@ export class ProfileController {
       const cdpPostPlatform = cdpPlatform === 'email' || cdpPlatform === 'google' ? 'custom' : cdpPlatform;
       const wouldDuplicateCustomEmail =
         cdpPostPlatform === 'custom' &&
-        (postedCustomEmails.has(value) || enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid));
+        (postedCustomEmails.has(value.trim().toLowerCase()) ||
+          enriched.some((id) => id.platform === 'email' && emailsEqual(id.value, value) && id.verified && id.verifiedBy === lfid));
 
       // Skip the CDP create entirely when read-only (impersonation) — the synthetic display entry
       // below is still produced, so the impersonator sees the identity without any CDP mutation.
-      if (!skipCdpMutations && !wouldDuplicateCustomEmail) {
+      if (writeMemberId && !wouldDuplicateCustomEmail) {
         cdpPostsQueued++;
         if (cdpPostPlatform === 'custom') {
-          postedCustomEmails.add(value);
+          postedCustomEmails.add(value.trim().toLowerCase());
         }
-        this.cdpService
-          .createIdentityForUser(req, [lfid], {
-            value,
-            platform: cdpPostPlatform,
-            type,
-            source: 'lfxOne',
-            verified: true,
-            verifiedBy: lfid,
-          })
-          .catch((err: unknown) => {
-            logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
-              platform: cdpPlatform,
+        cdpWrites.push(() =>
+          this.cdpService
+            .createIdentity(req, writeMemberId, {
               value,
-              err,
-            });
-          });
+              platform: cdpPostPlatform,
+              type,
+              source: 'lfxOne',
+              verified: true,
+              verifiedBy: lfid,
+            })
+            .catch((err: unknown) => {
+              logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
+                platform: cdpPlatform,
+                err,
+              });
+            })
+        );
       }
 
       // Create synthetic EnrichedIdentity for display
@@ -2733,7 +2906,94 @@ export class ProfileController {
       });
     }
 
-    return { enriched, cdpPostsQueued };
+    this.applyPrimaryEmail(enriched, primaryEmail);
+
+    // Skipped when this member already has a chain on this pod; the next GET re-queues anything still missing.
+    const cdpWritesStarted = !!writeMemberId && cdpWrites.length > 0 && this.cdpService.runMemberIdentityWrites(req, writeMemberId, cdpWrites);
+
+    return { enriched, cdpPostsQueued: cdpWritesStarted ? cdpPostsQueued : 0 };
+  }
+
+  /**
+   * The account's primary email for the profile and identities list: auth-service `primary_email`
+   * (keyed on the LFID username), falling back to the session email for display even when the IdP hasn't
+   * verified it (the target's stored email while impersonating). Verification follows
+   * `resolveVerifiedUserEmails`: the session must hold an IdP-verified email
+   * (`getEffectiveEmail(req)`), and then the auth-service primary is trusted even when it differs
+   * from that session email — auth-service only promotes verified addresses, and the session claim
+   * stays stale after a mid-session primary change. A session-only fallback is verified only when
+   * it is that verified email. An unavailable LFID or failed auth-service read falls back rather than
+   * failing the endpoint; returns null when neither source resolves an address.
+   */
+  private async resolveIdentitiesPrimaryEmail(req: Request, lfid: string | null): Promise<IdentitiesPrimaryEmail | null> {
+    const sessionEmail = getEffectiveEmail(req);
+    const sessionDisplayEmail = isImpersonating(req) ? sessionEmail : (req.oidc?.user?.['email'] as string | undefined)?.trim() || null;
+    const emails = lfid ? await this.emailVerificationService.getUserEmails(req, lfid).catch(() => null) : null;
+    const authServicePrimary = emails?.primary_email?.trim();
+    const email = authServicePrimary || sessionDisplayEmail;
+    if (!email) {
+      return null;
+    }
+    return { email, verified: !!sessionEmail && (!!authServicePrimary || emailsEqual(email, sessionEmail)) };
+  }
+
+  /**
+   * Key for matching auth-service identities against CDP identities. Email values are trimmed and
+   * lowercased so a casing difference doesn't split one owned address into two rows; username
+   * values (e.g. GitHub) match exactly. Include the type so unsupported username rows cannot claim
+   * a linked email identity with the same value.
+   */
+  private identityMatchKey(platform: string, type: CdpIdentityType, value: string): string {
+    return `${platform}:${type}:${type === 'email' ? value.trim().toLowerCase() : value}`;
+  }
+
+  /**
+   * Marks exactly one email/google row for the account's primary address as `isPrimary` (preferring
+   * an auth-service-backed verified row), hides any further unlinked rows for the same address, and
+   * adds a display-only synthetic row when neither CDP nor auth-service has it. Linked auth-service
+   * rows (auth0UserId) are never hidden, so a Google or email login on the primary address stays
+   * removable. A row that isn't already verified takes its state from the IdP proof only. LinkedIn
+   * rows are never candidates (#4124). Performs no CDP writes.
+   */
+  private applyPrimaryEmail(enriched: EnrichedIdentity[], primaryEmail: IdentitiesPrimaryEmail | null): void {
+    if (!primaryEmail) {
+      return;
+    }
+
+    const candidates = enriched.filter(
+      (id) => id.type === 'email' && (id.platform === 'email' || id.platform === 'google') && emailsEqual(id.value, primaryEmail.email)
+    );
+
+    if (candidates.length === 0) {
+      enriched.push({
+        id: 'primary-email',
+        platform: 'email',
+        type: 'email',
+        value: primaryEmail.email,
+        verified: primaryEmail.verified,
+        verifiedBy: null,
+        source: 'auth-service',
+        icon: CDP_PLATFORM_ICONS['email'],
+        createdAt: '',
+        updatedAt: '',
+        displayState: primaryEmail.verified ? 'verified' : 'unverified',
+        inAuth0: false,
+        isPrimary: true,
+      });
+      return;
+    }
+
+    const pick = candidates.find((id) => id.displayState === 'verified' && id.inAuth0) ?? candidates[0];
+    for (const candidate of candidates) {
+      if (candidate !== pick && !candidate.auth0UserId) {
+        candidate.displayState = 'hidden';
+      }
+    }
+
+    pick.isPrimary = true;
+    if (pick.displayState !== 'verified') {
+      pick.displayState = primaryEmail.verified ? 'verified' : 'unverified';
+    }
   }
 
   /** Build a LinuxAliasData for a non-claimed state (no alias/forward yet). */
@@ -2751,6 +3011,69 @@ export class ProfileController {
       primaryEmail,
       ...(state === 'not_purchased' ? { purchaseUrl: PURCHASE_LINUX_URL } : {}),
     };
+  }
+
+  /**
+   * Verify a Linux.com forwarding target is one of the caller's own verified addresses — the same
+   * set the claim/edit dropdown offers: the primary email, verified alternate emails from
+   * `user_emails.read`, and email-valued identities linked in auth-service (shown as verified on the
+   * Identities tab). Addresses on the forward domain itself are rejected (an alias can't forward to
+   * itself). A legacy external target stays readable via getLinuxAlias but is never re-accepted here.
+   * Returns the matching owned address (as stored upstream, so the caller forwards to exactly that
+   * address rather than to the raw input), or the error to pass to next(). Throws when the identity
+   * list is unavailable, so an outage surfaces as 503 rather than a misleading validation error.
+   */
+  private async validateLinuxForwardTarget(
+    req: Request,
+    forwardTo: string,
+    domain: string,
+    operation: 'claim_linux_alias' | 'update_linux_forward'
+  ): Promise<{ target: string } | { error: ServiceValidationError | MicroserviceError }> {
+    const userSub = getEffectiveSub(req) ?? undefined;
+    if (!userSub) {
+      return {
+        error: ServiceValidationError.forField('user_id', 'User authentication required', { operation, service: 'profile_controller', path: req.path }),
+      };
+    }
+
+    const notAllowed = ServiceValidationError.forField('forwardTo', 'Choose one of your verified email addresses to forward to', {
+      operation,
+      service: 'profile_controller',
+    });
+    if (forwardTo.trim().toLowerCase().endsWith(`@${domain.toLowerCase()}`)) {
+      return { error: notAllowed };
+    }
+
+    const [emails, identities] = await Promise.all([
+      this.emailVerificationService.getUserEmails(req, userSub),
+      this.emailVerificationService.listIdentities(req),
+    ]);
+    // Fail closed: without the caller's email list, ownership can't be established.
+    if (emails === null) {
+      return {
+        error: new MicroserviceError('Unable to verify your forwarding address right now. Please try again later.', 503, 'SERVICE_UNAVAILABLE', {
+          operation,
+          service: 'profile_controller',
+        }),
+      };
+    }
+
+    // Same primary fallback as getLinuxAlias, which feeds the dropdown's "(Primary)" option.
+    const primaryEmail = emails.primary_email || getEffectiveEmail(req) || null;
+    const owned = [
+      primaryEmail,
+      ...(emails.alternate_emails ?? []).filter((e) => e.verified === true).map((e) => e.email),
+      ...identities
+        .filter((id) => CDP_PLATFORM_TO_TYPE_MAP[AUTH0_TO_CDP_PROVIDER_MAP[id.provider] ?? ''] === 'email')
+        .map((id) => this.getAuth0IdentityValue(id)),
+    ];
+
+    const match = owned.find((email) => emailsEqual(email, forwardTo));
+    // Re-check the canonical address too: an owned address on the forward domain is never a valid target.
+    if (!match || match.trim().toLowerCase().endsWith(`@${domain.toLowerCase()}`)) {
+      return { error: notAllowed };
+    }
+    return { target: match.trim() };
   }
 
   /** Map an auth-service add_alias error code to an HTTP status + user message. */
@@ -2822,6 +3145,47 @@ export class ProfileController {
   }
 
   /**
+   * Reads the `sub` claim of a social id_token for the same-account check without logging its claims.
+   * Plain JSON decoding — no signature verification — so callers must only use it on a token from
+   * their own server-side code exchange, and never to authorize a write. Returns undefined unless
+   * the token is a three-segment JWT whose payload is an object with a nonempty string `sub`.
+   */
+  private getIdTokenSubject(req: Request, idToken: string): string | undefined {
+    try {
+      const segments = idToken.split('.');
+      if (segments.length !== 3 || !segments[1]) return undefined;
+
+      const decoded: unknown = JSON.parse(Buffer.from(segments[1], 'base64url').toString());
+      if (!decoded || typeof decoded !== 'object') return undefined;
+
+      const { sub } = decoded as Record<string, unknown>;
+      return typeof sub === 'string' && sub.length > 0 ? sub : undefined;
+    } catch {
+      logger.debug(req, 'social_auth_callback', 'Could not decode social id_token subject');
+      return undefined;
+    }
+  }
+
+  /**
+   * Whether an Auth0 identity came from the GitLab generic OAuth2 connection (#4187). `oauth2` is
+   * shared by any custom social connection, so the connection name must match too (fail closed).
+   */
+  private isGitlabAuth0Identity(authId: Auth0Identity): boolean {
+    return authId.provider === GITLAB_AUTH0_PROVIDER && authId.connection === GITLAB_AUTH0_CONNECTION;
+  }
+
+  /**
+   * Resolve the CDP platform for an Auth0 identity. GitLab is identified by its connection; every
+   * other provider maps through AUTH0_TO_CDP_PROVIDER_MAP. Returns undefined for unmapped providers.
+   */
+  private resolveAuth0IdentityPlatform(authId: Auth0Identity): string | undefined {
+    if (this.isGitlabAuth0Identity(authId)) {
+      return 'gitlab';
+    }
+    return AUTH0_TO_CDP_PROVIDER_MAP[authId.provider];
+  }
+
+  /**
    * Extract the matching value from an Auth0 identity's profileData
    * Used for value-level cross-referencing with CDP identities
    */
@@ -2829,6 +3193,11 @@ export class ProfileController {
     const pd = auth0Id.profileData;
     if (!pd) {
       return null;
+    }
+    if (this.isGitlabAuth0Identity(auth0Id)) {
+      // GitLab username. No name fallback: with type='username' on POST, persisting pd.name (a
+      // display name, not a username) would corrupt CDP. Skip the identity if there is no nickname.
+      return pd.nickname ?? null;
     }
     switch (auth0Id.provider) {
       case 'email':

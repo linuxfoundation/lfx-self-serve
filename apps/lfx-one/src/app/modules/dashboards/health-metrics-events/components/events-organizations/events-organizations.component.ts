@@ -5,8 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AvatarComponent } from '@components/avatar/avatar.component';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -43,7 +42,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-organizations',
-  imports: [AvatarComponent, EmptyStateComponent, FilterPillsComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, RouterLink, TableComponent],
   templateUrl: './events-organizations.component.html',
 })
 export class EventsOrganizationsComponent {
@@ -54,10 +53,8 @@ export class EventsOrganizationsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every active organization in the period, for the sub-nav badge; `null` while a read is pending or failed. */
-  public readonly countChange = output<number | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -97,6 +94,8 @@ export class EventsOrganizationsComponent {
   );
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
+  /** No organization was active at the period's events; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.scopeTotal());
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => formatHealthMetricsEventsOrganizationsCountLabel(this.totalRecords()));
 
@@ -115,6 +114,10 @@ export class EventsOrganizationsComponent {
 
   protected onSegmentChange(id: string): void {
     this.segment.set(this.toSegment(id));
+  }
+
+  protected openOrganization(view: HealthMetricsEventsOrganizationRowView): void {
+    void this.router.navigate(view.link.commands, { fragment: view.link.fragment, queryParams: view.link.queryParams, queryParamsHandling: 'merge' });
   }
 
   protected onTablePage(event: { first?: number; rows?: number }): void {
@@ -150,7 +153,6 @@ export class EventsOrganizationsComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -162,13 +164,12 @@ export class EventsOrganizationsComponent {
               return of(HEALTH_METRICS_EVENTS_ORGANIZATIONS_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a count.
+              // A clamped page fires a follow-up read, so this one does not settle.
               if (this.clampPage(response.totalRecords)) return;
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && !response.scopeTotal);
             })
           )
         )

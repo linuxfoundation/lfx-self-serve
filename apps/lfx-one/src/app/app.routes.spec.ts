@@ -1,0 +1,258 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, provideRouter, Router, UrlSegment } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
+import { HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
+import { Lens } from '@lfx-one/shared/interfaces';
+import { describe, expect, it, vi } from 'vitest';
+
+import { routes } from './app.routes';
+import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metrics-training/health-metrics-training.component';
+import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
+import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
+import { NewsletterSharePreviewComponent } from './modules/newsletters/newsletter-share-preview/newsletter-share-preview.component';
+import { NEWSLETTER_ROUTES } from './modules/newsletters/newsletters.routes';
+import { VoteDetailComponent } from './modules/votes/vote-detail/vote-detail.component';
+import { authGuard } from './shared/guards/auth.guard';
+import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
+import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
+import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
+import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
+import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
+import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
+import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
+import { LensService } from './shared/services/lens.service';
+
+import type { Route } from '@angular/router';
+
+function findRoute(tree: Route[], path: string): Route | undefined {
+  for (const route of tree) {
+    if (route.path === path) return route;
+    const nested = route.children ? findRoute(route.children, path) : undefined;
+    if (nested) return nested;
+  }
+  return undefined;
+}
+
+// The authenticated shell: the pathless route that hosts every logged-in page. Top-level chrome-less routes (such as
+// the login-free vote link) are mounted before it, so it is not `routes[0]`.
+const shellRoute = routes.find((route) => route.path === '' && !!route.children)!;
+
+// The flag decides legacy page vs outlet inside the gate (its own spec); this pins the child routes.
+describe('Health Metrics routes', () => {
+  const healthMetrics = findRoute(routes, 'foundation/health-metrics');
+
+  it('gives every tab in the bar a child route under the gate', () => {
+    const childPaths = (healthMetrics?.children ?? []).map((child) => child.path);
+
+    expect(childPaths).toEqual(HEALTH_METRICS_TABS.map((tab) => tab.route));
+  });
+
+  it('lazy-loads the Training page on its route', async () => {
+    const training = healthMetrics?.children?.find((child) => child.path === 'training');
+
+    expect(training?.title).toBe('Health Metrics — Training');
+    expect(await training?.loadComponent?.()).toBe(HealthMetricsTrainingComponent);
+  });
+});
+
+describe('Personal newsletter route isolation', () => {
+  it('mounts the auth-only Me reader ahead of permalink and publisher matches', async () => {
+    const children = shellRoute.children!;
+    const personal = findRoute(routes, 'newsletters/my')!;
+    expect(personal).toMatchObject({ pathMatch: 'full', title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(await personal.loadComponent!()).toBe(MyNewsletterFoundationsComponent);
+    const foundation = findRoute(routes, 'newsletters/my/:foundationSlug')!;
+    expect(foundation).toMatchObject({ title: 'Newsletters', data: { lens: 'me', preload: false }, canActivate: [authGuard] });
+    expect(await foundation.loadComponent!()).toBe(MyNewslettersComponent);
+    // Look these up in the shell: the signed-out share preview mounts its own top-level `newsletters/:projectSlug/:id`.
+    for (const path of ['newsletters/:projectSlug/:id', 'newsletters']) {
+      const later = children.find((route) => route.path === path)!;
+      expect(children.indexOf(personal)).toBeLessThan(children.indexOf(later));
+      expect(children.indexOf(foundation)).toBeLessThan(children.indexOf(later));
+    }
+    expect(NEWSLETTER_ROUTES.map((route) => route.path)).toEqual([
+      '',
+      'list',
+      'create',
+      ':projectUid/publications/create',
+      ':projectUid/publications/:publicationUid/edit',
+      ':projectUid/:id/edit',
+      ':projectUid/:id/analytics',
+    ]);
+  });
+  it('preserves reader and publisher guards', () => {
+    expect(shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')?.canActivate).toEqual([authGuard]);
+    expect(findRoute(routes, 'newsletters')?.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+    for (const lens of ['foundation', 'project']) {
+      expect(findRoute(routes, `${lens}/newsletters`)?.canActivate).toEqual([newsletterAccessGuard, projectQueryParamGuard]);
+    }
+    for (const route of NEWSLETTER_ROUTES.filter((route) => route.loadComponent)) {
+      expect(route.canActivate).toEqual([authGuard, newsletterAccessGuard]);
+    }
+  });
+});
+
+describe('Newsletter share preview route (#4940)', () => {
+  const preview = routes.find((route) => route.path === 'newsletters/:projectSlug/:id' && route.canMatch?.includes(newsletterAnonymousSsrMatchGuard))!;
+
+  it('mounts the signed-out share preview ahead of the authenticated shell', async () => {
+    expect(preview).toMatchObject({ pathMatch: 'full', canMatch: [newsletterAnonymousSsrMatchGuard] });
+    expect(preview.canActivate).toBeUndefined();
+    expect(routes.indexOf(preview)).toBeLessThan(routes.indexOf(shellRoute));
+    expect(await preview.loadComponent!()).toBe(NewsletterSharePreviewComponent);
+  });
+
+  it('leaves the signed-in reader in the shell behind authGuard', () => {
+    const reader = shellRoute.children!.find((route) => route.path === 'newsletters/:projectSlug/:id')!;
+    expect(reader.canActivate).toEqual([authGuard]);
+    expect(reader.canMatch).toBeUndefined();
+  });
+});
+
+describe('Vote permalink route isolation', () => {
+  const children = shellRoute.children!;
+  const voteIdEntries = children.filter((route) => route.path === 'votes/:id');
+  const flat = children.find((route) => route.path === 'votes')!;
+
+  it('mounts the vote detail page as the only auth-only /votes/:id entry, ahead of the lens-redirected votes mount', async () => {
+    expect(voteIdEntries).toHaveLength(1);
+    const [page] = voteIdEntries;
+
+    expect(await page.loadComponent!()).toBe(VoteDetailComponent);
+    expect(children.indexOf(page)).toBeLessThan(children.indexOf(flat));
+    expect(page).toMatchObject({ pathMatch: 'full', canMatch: [votePermalinkMatchGuard], canActivate: [authGuard] });
+    expect(flat.canActivate).toEqual([lensRedirectGuard, projectQueryParamGuard]);
+  });
+
+  it('keeps the lens the user came from on the detail page — no lens data, no lens redirect', () => {
+    const [page] = voteIdEntries;
+
+    expect(page.data).toEqual({ preload: false });
+    expect(page.canActivate).not.toContain(lensRedirectGuard);
+  });
+
+  it('leaves /votes/create to the votes module and matches a vote uid', () => {
+    const segments = (id: string) => [new UrlSegment('votes', {}), new UrlSegment(id, {})];
+    const [page] = voteIdEntries;
+    expect(votePermalinkMatchGuard(page, segments('create'))).toBe(false);
+    expect(votePermalinkMatchGuard(page, segments('3f2b6c1e-0000-4000-8000-000000000001'))).toBe(true);
+  });
+});
+
+describe('Login-free vote link route (#4363)', () => {
+  const tokenRoute = routes.find((route) => route.path === 'votes/:id')!;
+  const segments = (...parts: string[]) => parts.map((part) => new UrlSegment(part, {}));
+  const matchWith = (platformId: string, hash: string, parts: string[] = ['votes', 'abc123']) => {
+    window.location.hash = hash;
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: platformId }] });
+    return TestBed.runInInjectionContext(() => voteTokenMatchGuard(tokenRoute, segments(...parts)) as boolean);
+  };
+
+  it('mounts a chrome-less top-level route before the authenticated shell', () => {
+    expect(routes.indexOf(tokenRoute)).toBeGreaterThanOrEqual(0);
+    expect(routes.indexOf(tokenRoute)).toBeLessThan(routes.indexOf(shellRoute));
+    expect(tokenRoute).toMatchObject({ pathMatch: 'full', canMatch: [voteTokenMatchGuard] });
+    expect(tokenRoute.canActivate).toBeUndefined();
+    expect(tokenRoute.children).toBeUndefined();
+  });
+
+  it('matches only in the browser and only when the fragment carries vote_token', () => {
+    expect(matchWith('browser', '#vote_token=synthetic')).toBe(true);
+    expect(matchWith('browser', '#other=1&vote_token=synthetic')).toBe(true);
+    expect(matchWith('browser', '')).toBe(false);
+    expect(matchWith('browser', '#section')).toBe(false);
+    expect(matchWith('server', '#vote_token=synthetic')).toBe(false);
+    window.location.hash = '';
+  });
+
+  it('does not match the create segment', () => {
+    expect(matchWith('browser', '#vote_token=synthetic', ['votes', 'create'])).toBe(false);
+    window.location.hash = '';
+  });
+
+  it('renders the neutral page, not the authenticated shell, for an anonymous server render of /votes/:id', () => {
+    const anonymousRoute = routes.find((route) => route.path === 'votes/:id' && route.canMatch?.includes(voteAnonymousSsrMatchGuard))!;
+    expect(routes.indexOf(anonymousRoute)).toBeLessThan(routes.indexOf(shellRoute));
+
+    const matches = (platformId: string, auth: unknown, parts = ['votes', 'abc123']) => {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: PLATFORM_ID, useValue: platformId },
+          { provide: REQUEST_CONTEXT, useValue: auth === undefined ? null : { auth } },
+        ],
+      });
+      return TestBed.runInInjectionContext(() => voteAnonymousSsrMatchGuard(anonymousRoute, segments(...parts)) as boolean);
+    };
+
+    expect(matches('server', { authenticated: false })).toBe(true);
+    expect(matches('server', { authenticated: true })).toBe(false);
+    expect(matches('server', undefined)).toBe(false);
+    expect(matches('browser', { authenticated: false })).toBe(false);
+    expect(matches('server', { authenticated: false }, ['votes', 'create'])).toBe(false);
+  });
+
+  it('leaves the authenticated permalink and presenter routes untouched', () => {
+    const permalink = shellRoute.children!.find((route) => route.path === 'votes/:id')!;
+    expect(permalink).toMatchObject({ canMatch: [votePermalinkMatchGuard], canActivate: [authGuard] });
+    expect(findRoute(routes, 'votes/:id/present')?.canActivate).toContain(authGuard);
+  });
+});
+
+@Component({ selector: 'lfx-route-sentinel', template: '{{ page }}' })
+class RouteSentinelComponent {
+  public readonly page = inject(ActivatedRoute).snapshot.data['page'];
+}
+
+describe('My Meetups routes', () => {
+  const meetups = findRoute(routes, 'meetups');
+  const legacyMeetups = findRoute(routes, 'me/meetups');
+
+  it('guards the production meetup mount and keeps the full-match legacy redirect', () => {
+    expect(meetups?.canActivate).toEqual([meetupsLensGuard]);
+    expect(meetups?.loadChildren).toBeTypeOf('function');
+    expect(legacyMeetups).toMatchObject({ redirectTo: 'meetups', pathMatch: 'full' });
+  });
+
+  for (const path of ['/meetups', '/me/meetups']) {
+    it.each(['me', 'foundation', 'project', 'org'] as Lens[])(
+      `retains query and fragment on ${path} from %s without a lens-prefixed rewrite or 404`,
+      async (initialLens) => {
+        expect(meetups).toBeDefined();
+        expect(legacyMeetups).toBeDefined();
+        const activeLens = signal<Lens>(initialLens);
+        const setLens = vi.fn((lens: Lens) => activeLens.set(lens));
+        // Keep production route policy; replace only the lazy page with a lightweight sentinel.
+        const meetupMount = { ...meetups, loadChildren: undefined };
+        TestBed.configureTestingModule({
+          providers: [
+            { provide: LensService, useValue: { activeLens, setLens } },
+            provideRouter([
+              { ...meetupMount, children: [{ path: '', component: RouteSentinelComponent, data: { page: 'My Meetups' } }] },
+              { ...legacyMeetups! },
+              { path: '**', component: RouteSentinelComponent, data: { page: 'Page Not Found' } },
+            ]),
+          ],
+        });
+        const harness = await RouterTestingHarness.create();
+
+        await harness.navigateByUrl(`${path}?tab=past&community=synthetic#anchor`, RouteSentinelComponent);
+
+        expect(TestBed.inject(Router).url).toBe('/meetups?tab=past&community=synthetic#anchor');
+        expect(harness.routeNativeElement?.textContent).toBe('My Meetups');
+        expect(activeLens()).toBe(initialLens === 'org' ? 'org' : 'me');
+        if (initialLens === 'org') {
+          expect(setLens).not.toHaveBeenCalled();
+        } else {
+          expect(setLens).toHaveBeenCalledExactlyOnceWith('me');
+        }
+      }
+    );
+  }
+});

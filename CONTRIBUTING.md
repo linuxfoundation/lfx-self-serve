@@ -147,7 +147,7 @@ yarn format
 Before making changes that affect how the application works at a foundational
 level, understand the decisions already in place. The project has established
 patterns for SSR, authentication, component structure, logging, and forms — all
-documented in [CLAUDE.md](CLAUDE.md) and the [architecture docs](docs/). Changes
+documented in [AGENTS.md](AGENTS.md) and the [architecture docs](docs/). Changes
 that deviate from these patterns need discussion and approval before
 implementation.
 
@@ -191,7 +191,7 @@ relevant documentation:
 - [Shared Package](docs/architecture/shared/package-architecture.md) — Types,
   constants, validators, and utilities
 
-See [CLAUDE.md](CLAUDE.md) for the complete reference on project patterns and
+See [AGENTS.md](AGENTS.md) for the complete reference on project patterns and
 conventions, and the [Architecture Navigation Hub](docs/architecture/README.md)
 for the full documentation index.
 

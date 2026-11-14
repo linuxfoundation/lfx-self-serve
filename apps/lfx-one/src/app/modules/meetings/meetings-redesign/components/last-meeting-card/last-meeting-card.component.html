@@ -1,0 +1,176 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root; 16px is the library's md radius. -->
+@if (loading()) {
+  <div
+    class="flex flex-col gap-[20px] rounded-[16px] bg-gradient-to-b from-gray-100 to-white to-[45%] p-[20px] shadow-small"
+    role="status"
+    aria-label="Loading last meeting"
+    data-testid="meetings-home-last-card-loading">
+    <lfx-ui-skeleton width="44px" height="46px" />
+    <div class="flex flex-col gap-[8px]">
+      <lfx-ui-skeleton width="40%" height="10px" />
+      <lfx-ui-skeleton width="80%" height="16px" />
+      <lfx-ui-skeleton width="50%" height="10px" />
+    </div>
+    <lfx-ui-skeleton height="32px" />
+  </div>
+} @else if (row(); as row) {
+  <div
+    class="flex cursor-pointer flex-col gap-[20px] rounded-[16px] bg-gradient-to-b from-gray-100 to-white to-[45%] p-[20px] shadow-small transition-shadow duration-150 hover:shadow-large motion-reduce:transition-none"
+    (click)="open()"
+    data-testid="meetings-home-last-card">
+    <div class="flex min-w-0 items-start justify-between gap-[12px]">
+      <!-- Date tile: grey band for a past meeting -->
+      <div class="relative flex h-[46px] w-[44px] flex-none flex-col rounded-[10px] border border-gray-200 bg-white" data-testid="meetings-home-last-card-date">
+        <span
+          class="flex h-[14px] flex-none items-center justify-center rounded-t-[9px] bg-gray-200 text-[9px] font-semibold uppercase leading-none tracking-[.08em] text-gray-900"
+          >{{ row.startTime | date: 'MMM' }}</span
+        >
+        <span class="flex flex-auto items-center justify-center text-[18px] leading-none text-gray-900">{{ row.startTime | date: 'd' }}</span>
+        <!-- Restricted and Private together: two stacked 8px dots, no icons -->
+        @let stacked = visibilityBadges().length > 1;
+        <span class="absolute flex" [class]="stacked ? '-right-[7px] -top-[7px] flex-col gap-[2px]' : '-right-[11px] -top-[11px]'">
+          @for (badge of visibilityBadges(); track badge.kind) {
+            <span
+              role="img"
+              tabindex="0"
+              class="box-content inline-flex cursor-default items-center justify-center rounded-full border-2 border-white leading-none text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [class]="visibilityBg[badge.kind] + (stacked ? ' h-[8px] w-[8px]' : ' h-[17px] w-[17px]')"
+              [attr.aria-label]="badge.title"
+              [lfxUiTooltip]="badge.description ?? ''"
+              [lfxUiTooltipTitle]="badge.title"
+              [attr.data-testid]="'meetings-home-last-card-visibility-' + badge.kind">
+              @if (!stacked) {
+                <i class="text-[9px]" [class]="badge.icon" aria-hidden="true"></i>
+              }
+            </span>
+          }
+        </span>
+      </div>
+      <!-- Actions menu slot; its clicks never open the card -->
+      <span class="-mr-[6px] -mt-[4px] inline-flex flex-none empty:hidden" (click)="$event.stopPropagation()" data-testid="meetings-home-last-card-menu">
+        <ng-content select="[last-meeting-card-menu]" />
+      </span>
+    </div>
+
+    <!-- -8px pulls the text toward the tile, per the design -->
+    <div class="-mt-[8px] flex min-w-0 flex-col gap-[3px]">
+      @if (project(); as project) {
+        @if (project.url; as url) {
+          <a
+            class="group/eyebrow mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500 transition-colors duration-150 hover:text-gray-900 focus-visible:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 motion-reduce:transition-none"
+            [href]="url"
+            [attr.aria-label]="project.label"
+            [lfxUiTooltip]="project.name"
+            [lfxUiTooltipDisabled]="!projectTruncated()"
+            (click)="onLinkClick($event, url)"
+            data-testid="meetings-home-last-card-project">
+            <lfx-meeting-project-logo [src]="project.logo" />
+            <span
+              #projectName
+              class="min-w-0 truncate underline decoration-transparent underline-offset-[3px] transition-colors duration-150 group-hover/eyebrow:decoration-current group-focus-visible/eyebrow:decoration-current motion-reduce:transition-none"
+              >{{ project.name }}</span
+            >
+          </a>
+        } @else {
+          <span
+            class="mb-[2px] inline-flex max-w-full items-center gap-[6px] self-start whitespace-nowrap text-[12px] text-gray-500"
+            data-testid="meetings-home-last-card-project">
+            <lfx-meeting-project-logo [src]="project.logo" />
+            <span
+              #projectName
+              class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [attr.tabindex]="projectTruncated() ? 0 : null"
+              [lfxUiTooltip]="project.name"
+              [lfxUiTooltipDisabled]="!projectTruncated()"
+              >{{ project.name }}</span
+            >
+          </span>
+        }
+      }
+
+      <h3 class="line-clamp-2 text-[15px] font-semibold leading-[1.35] text-gray-900">
+        @if (link(); as link) {
+          <a
+            class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            [href]="link.url"
+            (click)="onTitleClick($event)"
+            data-testid="meetings-home-last-card-title"
+            >{{ row.title }}</a
+          >
+        }
+      </h3>
+
+      <span class="truncate text-[12px] text-gray-500" data-testid="meetings-home-last-card-when">{{ when() }}</span>
+
+      @if (meetingType() || groups().length || recurrenceTooltip()) {
+        <span class="mt-[6px] flex flex-wrap items-center gap-[6px]">
+          @if (meetingType(); as type) {
+            <!-- Muted tag text per the design; the library outline badge uses neutral-900. -->
+            <lfx-ui-badge class="!text-gray-600" variant="outline" size="sm" data-testid="meetings-home-last-card-type"
+              ><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge
+            >
+          }
+          @for (group of groups(); track group) {
+            <!-- A long group name truncates inside the card; the title keeps it whole. -->
+            <lfx-ui-badge class="max-w-full !text-gray-600" variant="outline" size="sm" [attr.title]="group" data-testid="meetings-home-last-card-group"
+              ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group }}</span></lfx-ui-badge
+            >
+          }
+          @if (recurrenceTooltip(); as tooltip) {
+            <lfx-ui-badge
+              class="cursor-default !text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              variant="outline"
+              size="sm"
+              role="img"
+              tabindex="0"
+              aria-label="Recurring"
+              [lfxUiTooltip]="tooltip"
+              data-testid="meetings-home-last-card-recurring"
+              ><i class="fa-light fa-arrows-repeat" aria-hidden="true"></i>Recurring</lfx-ui-badge
+            >
+          }
+        </span>
+      }
+    </div>
+
+    @if (attendance(); as attendance) {
+      <lfx-meeting-home-attendance class="mb-[14px] mt-[4px]" [attendance]="attendance" data-testid="meetings-home-last-card-attendance" />
+    }
+
+    @if (recordingUrl() || summaryContent()) {
+      <div class="flex flex-col gap-[8px]">
+        @if (recordingUrl(); as recordingUrl) {
+          <!-- Full width: the main half grows and the copy half stays square. -->
+          <lfx-ui-split-button
+            class="w-full [&>lfx-ui-button>button]:w-full [&>lfx-ui-button]:flex-auto"
+            label="Recording"
+            variant="recording"
+            icon="fa-light fa-play"
+            secondaryIcon="fa-light fa-link"
+            secondaryTooltip="Copy recording link"
+            (click)="$event.stopPropagation()"
+            (triggered)="openRecording(recordingUrl)"
+            (secondaryTriggered)="copyRecordingLink(recordingUrl)"
+            data-testid="meetings-home-last-card-recording" />
+        }
+        @if (summaryContent()) {
+          <lfx-ui-button
+            [variant]="summaryAwaitingReview() ? 'secondary-accent' : 'secondary'"
+            [icon]="summaryAwaitingReview() ? '' : 'fa-light fa-sparkles'"
+            fullWidth
+            (click)="openSummary($event)"
+            data-testid="meetings-home-last-card-summary">
+            {{ summaryAwaitingReview() ? 'Review summary' : 'AI Summary' }}
+          </lfx-ui-button>
+        }
+      </div>
+    }
+  </div>
+} @else {
+  <div class="rounded-[16px] bg-gradient-to-b from-gray-100 to-white to-[45%] shadow-small" data-testid="meetings-home-last-card-empty">
+    <lfx-ui-empty-state size="small" icon="fa-light fa-clock-rotate-left" heading="No past meetings yet" description="Your past meetings will appear here." />
+  </div>
+}

@@ -22,10 +22,14 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_AT_RISK_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP,
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_OPTION_CAP,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP,
+  HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
@@ -42,30 +46,16 @@ function tierRow(overrides: Record<string, unknown> = {}) {
     MEMBERSHIP_TIER: 'Gold',
     TIER_SORT_RANK: 2,
     MEMBER_COUNT: 12,
-    NEW_MEMBER_COUNT: 3,
     TIER_REVENUE_USD: 600000,
-    IS_PARTIAL_YEAR: false,
     ...overrides,
   };
 }
 
-const REVENUE_ROW = {
-  FOUNDATION_TOTAL_REVENUE_USD_YTD: 4000000,
-  FOUNDATION_TOTAL_REVENUE_USD_LAST_COMPLETED_YEAR: 3500000,
-  FOUNDATION_TOTAL_REVENUE_USD_PREV_COMPLETED_YEAR: null,
-  FOUNDATION_TOTAL_REVENUE_USD_3RD_LAST_COMPLETED_YEAR: 2000000,
-};
-
-/** The SQL and binds of the read against one view; the two reads run in parallel, so call order is not fixed. */
+/** The SQL and binds of the read against one view. */
 function readOf(view: string): [string, unknown[]] {
   const call = execute.mock.calls.find(([statement]) => String(statement).includes(view));
   if (!call) throw new Error(`No read against ${view}`);
   return call as [string, unknown[]];
-}
-
-/** Routes each read by its view, since the two run in parallel. */
-function respond(tierRows: unknown[], revenueRows: unknown[]) {
-  execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('MEMBERSHIP_TIER_YEAR') ? tierRows : revenueRows }));
 }
 
 describe('isSupportedMembersRange', () => {
@@ -76,10 +66,69 @@ describe('isSupportedMembersRange', () => {
   });
 });
 
+describe('HealthMetricsMembersService.getGrowth', () => {
+  function growthRow(overrides: Record<string, unknown> = {}) {
+    return { YEAR: 2026, MONTH: 3, CUMULATIVE_NEW_MEMBERS: 36, ...overrides };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [growthRow()] });
+  });
+
+  it('reads every month from the first year drawn, newest year first, bound to the foundation and that year', async () => {
+    await new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = readOf('MEMBERSHIP_GROWTH_MONTHLY');
+    expect(binds).toEqual(['acme', HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR]);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_GROWTH_MONTHLY');
+    expect(sql).toContain('WHERE foundation_slug = ?');
+    expect(sql).toContain('AND year >= ?');
+    expect(sql).toContain('ORDER BY year DESC, month ASC');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP + 1}`);
+  });
+
+  it('maps month rows, keeps an unmeasured total null and drops a row without a year or month', async () => {
+    execute.mockResolvedValue({
+      rows: [growthRow(), growthRow({ MONTH: 4, CUMULATIVE_NEW_MEMBERS: null }), growthRow({ MONTH: null }), growthRow({ YEAR: null })],
+    });
+
+    const response = await new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' });
+
+    expect(response.months).toEqual([
+      { year: 2026, month: 3, cumulative: 36 },
+      { year: 2026, month: 4, cumulative: null },
+    ]);
+  });
+
+  it('warns and keeps whole years when the rows hit the cap', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_GROWTH_ROW_CAP - 1 }, (_, index) => growthRow({ YEAR: 2026 - Math.floor(index / 12) }));
+    const cutYear = newest.at(-1)?.YEAR;
+    execute.mockResolvedValue({ rows: [...newest, growthRow({ YEAR: cutYear }), growthRow({ YEAR: cutYear })] });
+
+    const response = await new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' });
+
+    expect(response.months.some((row) => row.year === cutYear)).toBe(false);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_members_growth',
+      'Member growth rows hit the read cap',
+      expect.objectContaining({ foundation_slug: 'acme' })
+    );
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getGrowth(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
+  });
+});
+
 describe('HealthMetricsMembersService.getTiers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    respond([tierRow()], [REVENUE_ROW]);
+    execute.mockResolvedValue({ rows: [tierRow()] });
   });
 
   it('reads every year of the tier view in matrix order, bound only to the foundation', async () => {
@@ -95,43 +144,33 @@ describe('HealthMetricsMembersService.getTiers', () => {
     expect(sql).not.toMatch(/WHERE[\s\S]*year\s*=/);
   });
 
-  it('reads the foundation total off the Memberships revenue row for every period', async () => {
-    await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
-
-    const [sql, binds] = readOf('HEALTH_OVERVIEW_REVENUE');
-    expect(binds).toEqual(['acme']);
-    expect(sql).toContain("LOWER(revenue_domain) = 'memberships'");
-    for (const suffix of ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year']) {
-      expect(sql).toContain(`foundation_total_revenue_usd_${suffix}`);
-    }
-  });
-
-  it('maps tier rows and leaves out a period with no foundation total', async () => {
+  it('maps tier rows', async () => {
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toEqual([{ year: 2025, tier: 'Gold', sortRank: 2, memberCount: 12, newMemberCount: 3, revenueUsd: 600000, isPartialYear: false }]);
-    expect(response.foundationRevenue).toEqual([
-      { range: 'COMPLETED_YEAR_3', totalUsd: 2000000 },
-      { range: 'COMPLETED_YEAR', totalUsd: 3500000 },
-      { range: 'YTD', totalUsd: 4000000 },
+    expect(response.rows).toEqual([
+      {
+        year: 2025,
+        tier: 'Gold',
+        sortRank: 2,
+        memberCount: 12,
+        revenueUsd: 600000,
+      },
     ]);
   });
 
   it('keeps null counts null, sorts an unranked tier last and drops a row without a tier', async () => {
-    respond([tierRow({ MEMBER_COUNT: null, TIER_SORT_RANK: null, IS_PARTIAL_YEAR: null }), tierRow({ MEMBERSHIP_TIER: null })], []);
+    execute.mockResolvedValue({ rows: [tierRow({ MEMBER_COUNT: null, TIER_SORT_RANK: null }), tierRow({ MEMBERSHIP_TIER: null })] });
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
-    expect(response.rows).toEqual([expect.objectContaining({ memberCount: null, sortRank: Number.MAX_SAFE_INTEGER, isPartialYear: false })]);
-    expect(response.foundationRevenue).toEqual([]);
+    expect(response.rows).toEqual([expect.objectContaining({ memberCount: null, sortRank: Number.MAX_SAFE_INTEGER })]);
   });
 
   it('warns and drops the year the cap cuts through, so no year shows part of its tiers', async () => {
     const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 2 }, (_, index) => tierRow({ YEAR: 2026, MEMBERSHIP_TIER: `Tier ${index}` }));
-    respond(
-      [...newest, tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Gold' }), tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Silver' }), tierRow({ YEAR: 2025 })],
-      [REVENUE_ROW]
-    );
+    execute.mockResolvedValue({
+      rows: [...newest, tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Gold' }), tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Silver' }), tierRow({ YEAR: 2025 })],
+    });
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
@@ -147,10 +186,9 @@ describe('HealthMetricsMembersService.getTiers', () => {
 
   it('keeps the last capped year whole when the cap lands on a year boundary', async () => {
     const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP - 2 }, (_, index) => tierRow({ YEAR: 2026, MEMBERSHIP_TIER: `Tier ${index}` }));
-    respond(
-      [...newest, tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Gold' }), tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Silver' }), tierRow({ YEAR: 2024 })],
-      [REVENUE_ROW]
-    );
+    execute.mockResolvedValue({
+      rows: [...newest, tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Gold' }), tierRow({ YEAR: 2025, MEMBERSHIP_TIER: 'Silver' }), tierRow({ YEAR: 2024 })],
+    });
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
@@ -159,10 +197,9 @@ describe('HealthMetricsMembersService.getTiers', () => {
   });
 
   it('keeps the capped rows when the cap cuts through the only year', async () => {
-    respond(
-      Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1 }, (_, index) => tierRow({ MEMBERSHIP_TIER: `Tier ${index}` })),
-      [REVENUE_ROW]
-    );
+    execute.mockResolvedValue({
+      rows: Array.from({ length: HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP + 1 }, (_, index) => tierRow({ MEMBERSHIP_TIER: `Tier ${index}` })),
+    });
 
     const response = await new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' });
 
@@ -174,182 +211,6 @@ describe('HealthMetricsMembersService.getTiers', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getTiers(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
-  });
-});
-
-function bridgeRow(overrides: Record<string, unknown> = {}) {
-  return {
-    YEAR: 2025,
-    MOVEMENT_TYPE: 'new',
-    SORT_ORDER: 2,
-    IS_PARTIAL_YEAR: false,
-    MEMBER_COUNT: 7,
-    SIGNED_MEMBER_COUNT: 7,
-    REVENUE_IMPACT_USD: 140000,
-    ...overrides,
-  };
-}
-
-describe('HealthMetricsMembersService.getBridge', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    execute.mockResolvedValue({ rows: [bridgeRow()] });
-  });
-
-  it('reads every year of the waterfall in bar order, bound only to the foundation', async () => {
-    await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
-
-    const [sql, binds] = readOf('MEMBERSHIP_WATERFALL');
-    expect(binds).toEqual(['acme']);
-    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_WATERFALL');
-    expect(sql).toContain('ORDER BY year DESC, sort_order ASC NULLS LAST, movement_type ASC');
-    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP + 1}`);
-  });
-
-  it("maps steps with the model's own sign and keeps unmeasured counts null", async () => {
-    execute.mockResolvedValue({
-      rows: [
-        bridgeRow({ MOVEMENT_TYPE: 'churned', SORT_ORDER: 5, SIGNED_MEMBER_COUNT: -2, MEMBER_COUNT: 2, REVENUE_IMPACT_USD: -50000 }),
-        bridgeRow({ MOVEMENT_TYPE: 'today', SORT_ORDER: 6, MEMBER_COUNT: null, SIGNED_MEMBER_COUNT: null, REVENUE_IMPACT_USD: null, IS_PARTIAL_YEAR: null }),
-      ],
-    });
-
-    const response = await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
-
-    expect(response.steps).toEqual([
-      { year: 2025, movementType: 'churned', sortOrder: 5, isPartialYear: false, memberCount: 2, signedMemberCount: -2, revenueImpactUsd: -50000 },
-      { year: 2025, movementType: 'today', sortOrder: 6, isPartialYear: false, memberCount: null, signedMemberCount: null, revenueImpactUsd: null },
-    ]);
-  });
-
-  it('drops a row with no year or a movement type the bridge does not draw', async () => {
-    execute.mockResolvedValue({ rows: [bridgeRow({ YEAR: null }), bridgeRow({ MOVEMENT_TYPE: 'reactivated' }), bridgeRow()] });
-
-    const response = await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
-
-    expect(response.steps).toHaveLength(1);
-  });
-
-  it('warns and drops the year the cap cuts through', async () => {
-    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP - 1 }, () => bridgeRow({ YEAR: 2026 }));
-    execute.mockResolvedValue({ rows: [...newest, bridgeRow(), bridgeRow()] });
-
-    const response = await new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' });
-
-    expect(response.steps).toHaveLength(HEALTH_METRICS_MEMBERS_BRIDGE_ROW_CAP - 1);
-    expect(response.steps.every((step) => step.year === 2026)).toBe(true);
-    expect(warning).toHaveBeenCalledWith(req, 'get_members_bridge', 'Membership bridge rows hit the read cap', expect.objectContaining({ row_cap: 600 }));
-  });
-
-  it('rethrows a failed read', async () => {
-    const failure = new Error('warehouse down');
-    execute.mockRejectedValue(failure);
-
-    await expect(new HealthMetricsMembersService().getBridge(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
-  });
-});
-
-function movementRow(overrides: Record<string, unknown> = {}) {
-  return {
-    TOTAL_RECORDS: 3,
-    IS_PAGE_ROW: true,
-    ACCOUNT_ID: '0014100000AcmeAAAA',
-    ACCOUNT_NAME: 'Acme Motors',
-    MEMBERSHIP_TIER: 'Gold',
-    DUES_IMPACT_USD: 89000,
-    MOVEMENT_DATE: new Date('2025-03-14T00:00:00Z'),
-    LAST_ENGAGED_DATE: null,
-    ...overrides,
-  };
-}
-
-describe('HealthMetricsMembersService.getMovements', () => {
-  const query = { foundationSlug: 'acme', year: 2025, movementType: 'upgrade' as const, offset: 25, pageSize: 25 };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    execute.mockResolvedValue({ rows: [movementRow()] });
-  });
-
-  it('binds foundation, year and movement in placeholder order and pages in sort-rank order', async () => {
-    await new HealthMetricsMembersService().getMovements(req, query);
-
-    const [sql, binds] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
-    expect(binds).toEqual(['acme', 2025, 'upgrade']);
-    expect(sql.match(/\?/g)).toHaveLength(binds.length);
-    expect(sql).toContain('ORDER BY sort_rank ASC NULLS LAST, account_id ASC NULLS LAST');
-    expect(sql).toContain('LIMIT 25 OFFSET 25');
-    expect(sql).toContain('LEFT JOIN page ON TRUE');
-  });
-
-  it('leaves rows without an account id out of both the total and the page window', async () => {
-    await new HealthMetricsMembersService().getMovements(req, query);
-
-    const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
-    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
-    expect(scoped).toContain('AND account_id IS NOT NULL');
-    expect(scoped).toContain("AND account_id <> ''");
-  });
-
-  it('clamps an oversized page and offset before interpolating them', async () => {
-    await new HealthMetricsMembersService().getMovements(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
-
-    const [sql] = readOf('MEMBERSHIP_MOVEMENT_DETAIL');
-    const size = HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE;
-    expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
-  });
-
-  it('maps rows with ISO dates and falls back to the account id for a missing name', async () => {
-    execute.mockResolvedValue({
-      rows: [movementRow(), movementRow({ ACCOUNT_ID: '0014100000BetaAAAA', ACCOUNT_NAME: null, MEMBERSHIP_TIER: '', MOVEMENT_DATE: '2025-06-01' })],
-    });
-
-    const response = await new HealthMetricsMembersService().getMovements(req, query);
-
-    expect(response).toEqual({
-      totalRecords: 3,
-      rows: [
-        {
-          accountId: '0014100000AcmeAAAA',
-          accountName: 'Acme Motors',
-          membershipTier: 'Gold',
-          duesImpactUsd: 89000,
-          movementDate: '2025-03-14',
-          lastEngagedDate: null,
-        },
-        {
-          accountId: '0014100000BetaAAAA',
-          accountName: '0014100000BetaAAAA',
-          membershipTier: null,
-          duesImpactUsd: 89000,
-          movementDate: '2025-06-01',
-          lastEngagedDate: null,
-        },
-      ],
-    });
-  });
-
-  it('falls back to the account id for a blank name', async () => {
-    execute.mockResolvedValue({ rows: [movementRow({ ACCOUNT_NAME: '' })] });
-
-    const response = await new HealthMetricsMembersService().getMovements(req, query);
-
-    expect(response.rows[0].accountName).toBe('0014100000AcmeAAAA');
-  });
-
-  it('keeps the total when the page is past the end', async () => {
-    execute.mockResolvedValue({ rows: [{ TOTAL_RECORDS: 3, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
-
-    const response = await new HealthMetricsMembersService().getMovements(req, query);
-
-    expect(response).toEqual({ rows: [], totalRecords: 3 });
-  });
-
-  it('rethrows a failed read', async () => {
-    const failure = new Error('warehouse down');
-    execute.mockRejectedValue(failure);
-
-    await expect(new HealthMetricsMembersService().getMovements(req, query)).rejects.toBe(failure);
   });
 });
 
@@ -559,6 +420,8 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
       OUTSTANDING_BALANCE_USD: 70000,
       DAYS_OVERDUE: 104,
       LAST_ENGAGED_DATE: new Date(Date.UTC(2026, 2, 4)),
+      AGING_BUCKET: '90_plus_days',
+      CHURN_RISK: 'High',
       SORT_RANK: 1,
       ...overrides,
     };
@@ -583,6 +446,9 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('matched AS'));
     expect(scoped).toContain("AND account_id <> ''");
     expect(scoped).toContain('AND aging_bucket IN (?, ?)');
+    expect(scoped).toContain('churn_risk');
+    const page = sql.slice(sql.indexOf('page AS'));
+    expect(page).toMatch(/aging_bucket,\s+churn_risk,/);
     expect(sql).not.toMatch(/FROM scoped WHERE/);
   });
 
@@ -630,6 +496,8 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
           outstandingBalanceUsd: 70000,
           daysOverdue: 104,
           lastEngagedDate: '2026-03-04',
+          churnRisk: 'High',
+          agingBucket: '90_plus_days',
         },
       ],
     });
@@ -639,11 +507,16 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     execute.mockResolvedValue({ rows: [{ ...totals, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
     expect(await new HealthMetricsMembersService().getAtRisk(req, query)).toMatchObject({ rows: [], totalRecords: 3 });
 
-    execute.mockResolvedValue({ rows: [atRiskRow({ ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', LAST_ENGAGED_DATE: null })] });
+    execute.mockResolvedValue({
+      rows: [atRiskRow({ ACCOUNT_NAME: '', MEMBERSHIP_TIER: '', LAST_ENGAGED_DATE: null, CHURN_RISK: 'Severe', AGING_BUCKET: null })],
+    });
     expect((await new HealthMetricsMembersService().getAtRisk(req, query)).rows[0]).toMatchObject({
       accountName: '0014100000AcmeRsk1',
       membershipTier: null,
       lastEngagedDate: null,
+      // A value outside the model's own set is not shown as a risk level.
+      churnRisk: null,
+      agingBucket: null,
     });
   });
 
@@ -682,5 +555,748 @@ describe('HealthMetricsMembersService.getAtRisk', () => {
     execute.mockRejectedValue(failure);
 
     await expect(new HealthMetricsMembersService().getAtRisk(req, query)).rejects.toBe(failure);
+  });
+});
+
+describe('HealthMetricsMembersService.getRenewals', () => {
+  const query = { foundationSlug: 'acme', window: '90_days' as const, offset: 0, pageSize: 10 };
+  const totals = { SCOPE_RECORDS: 5, TOTAL_RECORDS: 3, RENEWALS_COUNT: 3, VALUE_USD: 185000, WITHOUT_DUES_COUNT: 1 };
+
+  function renewalRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ...totals,
+      IS_PAGE_ROW: true,
+      ACCOUNT_ID: '0014100000AcmeRnw1',
+      ACCOUNT_NAME: 'Acme Studios',
+      MEMBERSHIP_TIER: 'General',
+      RENEWAL_DATE: new Date(Date.UTC(2026, 10, 18)),
+      DAYS_UNTIL_RENEWAL: 40,
+      DUES_USD: 20000,
+      HAS_OUTSTANDING_BALANCE: true,
+      HAS_RENEWED: false,
+      ...overrides,
+    };
+  }
+
+  function renewalsRead(): [string, unknown[]] {
+    return execute.mock.calls[0] as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [renewalRow()] });
+  });
+
+  it.each([
+    ['90_days', 'is_renewing_within_90_days', 'foundation_within_90_days'],
+    ['180_days', 'is_renewing_within_180_days', 'foundation_within_180_days'],
+    ['this_year', 'is_renewing_this_year', 'foundation_this_year'],
+  ] as const)('scopes the %s window to its model flag and totals, renewed rows included', async (window, flag, totalsPrefix) => {
+    await new HealthMetricsMembersService().getRenewals(req, { ...query, window });
+
+    const [sql, binds] = renewalsRead();
+    expect(binds).toEqual(['acme']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_RENEWALS');
+    const scoped = sql.slice(sql.indexOf('WITH scoped AS'), sql.indexOf('totals AS'));
+    expect(scoped).toContain("AND account_id <> ''");
+    expect(scoped).toContain(`COALESCE(${flag}, FALSE) AS in_window`);
+    expect(scoped).not.toContain(`${flag} = TRUE`);
+    expect(sql.slice(sql.indexOf('page AS'))).toContain('FROM scoped\n        WHERE in_window\n');
+    expect(scoped).toContain(`${totalsPrefix}_renewals_count AS renewals_count`);
+    expect(scoped).toContain(`${totalsPrefix}_dues_usd AS window_dues_usd`);
+    expect(scoped).not.toContain('has_renewed, FALSE');
+    expect(sql).not.toMatch(/renewal_status/i);
+  });
+
+  it("takes the window's count and value from the model before the window filter, counting the renewals without dues", async () => {
+    await new HealthMetricsMembersService().getRenewals(req, query);
+
+    const [sql] = renewalsRead();
+    const totalsCte = sql.slice(sql.indexOf('totals AS'), sql.indexOf('page AS'));
+    expect(totalsCte).toContain('COUNT(*) AS scope_records');
+    expect(totalsCte).toContain('COUNT_IF(in_window) AS total_records');
+    expect(totalsCte).toContain('ANY_VALUE(renewals_count) AS renewals_count');
+    expect(totalsCte).toContain('ANY_VALUE(window_dues_usd) AS value_usd');
+    expect(totalsCte).toContain('COUNT_IF(in_window AND dues_usd IS NULL) AS without_dues_count');
+  });
+
+  it('pages soonest first, largest dues first on a date, and clamps an oversized page and offset', async () => {
+    await new HealthMetricsMembersService().getRenewals(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = renewalsRead();
+    const size = HEALTH_METRICS_MEMBERS_RENEWALS_MAX_PAGE_SIZE;
+    expect(sql).toContain(
+      `ORDER BY renewal_date ASC NULLS LAST, dues_usd DESC NULLS LAST, account_id ASC\n        LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`
+    );
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('maps the totals and a renewal with an ISO date', async () => {
+    expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({
+      totalRecords: 3,
+      summary: { renewalCount: 3, valueUsd: 185000, withoutDuesCount: 1 },
+      rows: [
+        {
+          accountId: '0014100000AcmeRnw1',
+          accountName: 'Acme Studios',
+          membershipTier: 'General',
+          renewalDate: '2026-11-18',
+          daysUntilRenewal: 40,
+          duesUsd: 20000,
+          hasOutstandingBalance: true,
+          hasRenewed: false,
+        },
+      ],
+    });
+  });
+
+  it('reports the model count over the paged rows when the two differ, and maps a renewed row', async () => {
+    execute.mockResolvedValue({ rows: [renewalRow({ RENEWALS_COUNT: 2, HAS_RENEWED: true })] });
+
+    const result = await new HealthMetricsMembersService().getRenewals(req, query);
+    expect(result.totalRecords).toBe(3);
+    expect(result.summary.renewalCount).toBe(2);
+    expect(result.rows[0].hasRenewed).toBe(true);
+  });
+
+  it('keeps the totals when the page is past the end, and maps missing fields to null, not zero', async () => {
+    execute.mockResolvedValue({ rows: [{ ...totals, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+    expect(await new HealthMetricsMembersService().getRenewals(req, query)).toMatchObject({ rows: [], totalRecords: 3 });
+
+    execute.mockResolvedValue({
+      rows: [
+        renewalRow({
+          ACCOUNT_NAME: '',
+          MEMBERSHIP_TIER: '',
+          RENEWAL_DATE: null,
+          DAYS_UNTIL_RENEWAL: null,
+          DUES_USD: null,
+          HAS_OUTSTANDING_BALANCE: null,
+          HAS_RENEWED: null,
+        }),
+      ],
+    });
+    expect((await new HealthMetricsMembersService().getRenewals(req, query)).rows[0]).toMatchObject({
+      accountName: '0014100000AcmeRnw1',
+      membershipTier: null,
+      renewalDate: null,
+      daysUntilRenewal: null,
+      duesUsd: null,
+      hasOutstandingBalance: false,
+      hasRenewed: false,
+    });
+  });
+
+  it("reads the model's totals for an empty window, and keeps an unset one null", async () => {
+    const empty = { ...totals, TOTAL_RECORDS: 0, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null };
+    execute.mockResolvedValue({ rows: [{ ...empty, RENEWALS_COUNT: 0, VALUE_USD: 0 }] });
+    expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({
+      rows: [],
+      totalRecords: 0,
+      summary: { renewalCount: 0, valueUsd: 0, withoutDuesCount: 0 },
+    });
+
+    execute.mockResolvedValue({ rows: [{ ...empty, RENEWALS_COUNT: null, VALUE_USD: null }] });
+    expect((await new HealthMetricsMembersService().getRenewals(req, query)).summary).toEqual({ renewalCount: null, valueUsd: null, withoutDuesCount: 0 });
+  });
+
+  it('reads measured zeros when the foundation has no renewal rows at all', async () => {
+    for (const rows of [
+      [],
+      [{ SCOPE_RECORDS: 0, TOTAL_RECORDS: 0, RENEWALS_COUNT: null, VALUE_USD: null, WITHOUT_DUES_COUNT: 0, IS_PAGE_ROW: null, ACCOUNT_ID: null }],
+    ]) {
+      execute.mockResolvedValue({ rows });
+
+      expect(await new HealthMetricsMembersService().getRenewals(req, query)).toEqual({
+        rows: [],
+        totalRecords: 0,
+        summary: { renewalCount: 0, valueUsd: 0, withoutDuesCount: 0 },
+      });
+    }
+  });
+
+  it('keeps the value null when no renewal in the window has dues on record', async () => {
+    execute.mockResolvedValue({ rows: [renewalRow({ VALUE_USD: null, WITHOUT_DUES_COUNT: 3, DUES_USD: null })] });
+
+    expect((await new HealthMetricsMembersService().getRenewals(req, query)).summary).toEqual({ renewalCount: 3, valueUsd: null, withoutDuesCount: 3 });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getRenewals(req, query)).rejects.toBe(failure);
+  });
+});
+
+describe('HealthMetricsMembersService.getBoardAttendance', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, cohort: 'board' as const, offset: 0, pageSize: 10 };
+
+  function cohortRow(cohort: string, overrides: Record<string, unknown> = {}) {
+    return {
+      ATTENDANCE_COHORT: cohort,
+      LATEST_ATTENDANCE_PCT: 0.82,
+      LATEST_ATTENDED_COUNT: 9,
+      LATEST_INVITED_COUNT: 11,
+      MEETINGS_IN_RANGE_COUNT: 7,
+      NEVER_ATTENDED_COUNT: 2,
+      IS_BELOW_EXPECTED_LEVEL: true,
+      ...overrides,
+    };
+  }
+
+  function meetingRow(id: string, day: number, overrides: Record<string, unknown> = {}) {
+    return {
+      MEETING_AND_OCCURRENCE_ID: id,
+      COMMITTEE_NAME: 'Acme Board',
+      MEETING_DATE: new Date(Date.UTC(2026, 8, day)),
+      ATTENDED_COUNT: 9,
+      INVITED_COUNT: 11,
+      ATTENDANCE_PCT: 0.8182,
+      IS_LATEST_MEETING: false,
+      ...overrides,
+    };
+  }
+
+  type BoardRead = 'cohorts' | 'page' | 'trend';
+
+  function kindOf(sql: string): BoardRead {
+    if (sql.includes('WITH scoped AS')) return 'page';
+    return sql.includes('MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING') ? 'trend' : 'cohorts';
+  }
+
+  /** Routes each read by its shape, since the three run in parallel. */
+  function respond(rows: Record<BoardRead, unknown[]>) {
+    execute.mockImplementation(async (sql: string) => ({ rows: rows[kindOf(sql)] }));
+  }
+
+  function boardRead(kind: BoardRead): [string, unknown[]] {
+    const call = execute.mock.calls.find(([sql]) => kindOf(String(sql)) === kind);
+    if (!call) throw new Error(`No ${kind} read`);
+    return call as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond({
+      cohorts: [cohortRow('board'), cohortRow('voting_members', { LATEST_ATTENDANCE_PCT: 0.646, IS_BELOW_EXPECTED_LEVEL: false })],
+      page: [{ TOTAL_RECORDS: 7, IS_PAGE_ROW: true, ...meetingRow('m-2', 18, { IS_LATEST_MEETING: true }) }],
+      trend: [meetingRow('m-2', 18, { IS_LATEST_MEETING: true }), meetingRow('m-1', 4)],
+    });
+  });
+
+  it("reads both cohorts' figures from the period's columns, binding every placeholder", async () => {
+    for (const range of HEALTH_METRICS_L2_RANGES) {
+      execute.mockClear();
+      await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, range });
+
+      const [sql, binds] = boardRead('cohorts');
+      const suffix = {
+        YTD: 'ytd',
+        COMPLETED_YEAR: 'last_completed_year',
+        COMPLETED_YEAR_2: 'prev_completed_year',
+        COMPLETED_YEAR_3: '3rd_last_completed_year',
+      }[range];
+      expect(binds).toEqual(['acme', 'board', 'voting_members']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_BOARD_ATTENDANCE\n');
+      expect(sql).toContain(`latest_meeting_attendance_pct_${suffix} AS latest_attendance_pct`);
+      expect(sql).toContain(`is_below_expected_level_${suffix} AS is_below_expected_level`);
+    }
+  });
+
+  it("scopes the meetings to the cohort and the period's dates, binding every placeholder", async () => {
+    await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, range: 'COMPLETED_YEAR', cohort: 'voting_members' });
+
+    for (const kind of ['page', 'trend'] as const) {
+      const [sql, binds] = boardRead(kind);
+      expect(binds).toEqual(['acme', 'voting_members']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('AND attendance_cohort = ?');
+      expect(sql).toContain("AND NULLIF(TRIM(meeting_and_occurrence_id), '') IS NOT NULL");
+      expect(sql).toContain('is_latest_meeting_last_completed_year AS is_latest_meeting');
+      expect(sql).toContain("AND meeting_date >= DATEADD(YEAR, -1, DATE_TRUNC('YEAR', CURRENT_DATE())) AND meeting_date < DATE_TRUNC('YEAR', CURRENT_DATE())");
+    }
+  });
+
+  it('pages newest first behind a totals join, and clamps an oversized page and offset', async () => {
+    await new HealthMetricsMembersService().getBoardAttendance(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = boardRead('page');
+    const size = HEALTH_METRICS_MEMBERS_BOARD_MAX_PAGE_SIZE;
+    expect(sql).toContain(
+      `ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n        LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`
+    );
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  it('caps the trend at the latest twelve meetings and plots them oldest first', async () => {
+    const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
+
+    expect(boardRead('trend')[0]).toContain('ORDER BY meeting_date DESC NULLS LAST, meeting_and_occurrence_id ASC\n      LIMIT 12');
+    expect(result.trend.map((meeting) => meeting.meetingId)).toEqual(['m-1', 'm-2']);
+  });
+
+  it('maps both cohorts, the page and its total', async () => {
+    const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
+
+    expect(result.cohorts.board).toEqual({
+      latestAttendancePct: 0.82,
+      latestAttendedCount: 9,
+      latestInvitedCount: 11,
+      meetingsInRangeCount: 7,
+      neverAttendedCount: 2,
+      isBelowExpectedLevel: true,
+    });
+    expect(result.cohorts.voting_members).toMatchObject({ latestAttendancePct: 0.646, isBelowExpectedLevel: false });
+    expect(result.totalRecords).toBe(7);
+    expect(result.rows).toEqual([
+      {
+        meetingId: 'm-2',
+        committeeName: 'Acme Board',
+        meetingDate: '2026-09-18',
+        attendedCount: 9,
+        invitedCount: 11,
+        attendancePct: 0.8182,
+        isLatestMeeting: true,
+      },
+    ]);
+  });
+
+  it('reads a missing cohort as null, keeps the total past the end, and maps missing fields to null', async () => {
+    respond({
+      cohorts: [cohortRow('board', { LATEST_ATTENDANCE_PCT: null, IS_BELOW_EXPECTED_LEVEL: null })],
+      page: [{ TOTAL_RECORDS: 7, IS_PAGE_ROW: null, MEETING_AND_OCCURRENCE_ID: null }],
+      trend: [
+        meetingRow('m-3', 2, { COMMITTEE_NAME: '', MEETING_DATE: null, ATTENDED_COUNT: null, ATTENDANCE_PCT: null, IS_LATEST_MEETING: null }),
+        meetingRow('  ', 1),
+      ],
+    });
+
+    const result = await new HealthMetricsMembersService().getBoardAttendance(req, query);
+
+    expect(result.cohorts).toMatchObject({ board: { latestAttendancePct: null, isBelowExpectedLevel: null }, voting_members: null });
+    expect(result).toMatchObject({ rows: [], totalRecords: 7 });
+    expect(result.trend).toHaveLength(1);
+    expect(result.trend[0]).toMatchObject({ committeeName: null, meetingDate: null, attendedCount: null, attendancePct: null, isLatestMeeting: false });
+  });
+
+  it('reads a foundation with no board rows as unmeasured cohorts and no meetings', async () => {
+    respond({ cohorts: [], page: [], trend: [] });
+
+    expect(await new HealthMetricsMembersService().getBoardAttendance(req, query)).toEqual({
+      cohorts: { board: null, voting_members: null },
+      trend: [],
+      rows: [],
+      totalRecords: 0,
+    });
+  });
+});
+
+describe('HealthMetricsMembersService.getNps', () => {
+  const query = { foundationSlug: 'acme', range: 'YTD' as const, audience: null };
+
+  function audienceRow(audience: string | null, overrides: Record<string, unknown> = {}) {
+    return {
+      AUDIENCE_TYPE: audience,
+      NPS_SCORE: 62,
+      NPS_SCORE_CHANGE_PP: 4,
+      RECIPIENTS_COUNT: 26,
+      RESPONSES_COUNT: 18,
+      RESPONSE_RATE_PCT: 0.692,
+      PROMOTERS_COUNT: 11,
+      PASSIVES_COUNT: 5,
+      DETRACTORS_COUNT: 2,
+      NO_RESPONSE_COUNT: 8,
+      IS_SAMPLE_TOO_SMALL: false,
+      LAST_UPDATED_QUARTER: 'Q2 2026',
+      ...overrides,
+    };
+  }
+
+  function quarterRow(month: number, overrides: Record<string, unknown> = {}) {
+    return {
+      QUARTER_START_DATE: new Date(Date.UTC(2025, month - 1, 1)),
+      QUARTER_LABEL: `Q${Math.ceil(month / 3)} 25`,
+      NPS_SCORE: 54,
+      RESPONSE_RATE_PCT: 0.71,
+      IS_SAMPLE_TOO_SMALL: false,
+      ...overrides,
+    };
+  }
+
+  type NpsRead = 'audiences' | 'trend';
+
+  function kindOf(sql: string): NpsRead {
+    return sql.includes('MEMBERSHIP_NPS_QUARTERLY_TREND') ? 'trend' : 'audiences';
+  }
+
+  /** Routes each read by its shape, since the two run in parallel. */
+  function respond(rows: Record<NpsRead, unknown[]>) {
+    execute.mockImplementation(async (sql: string) => ({ rows: rows[kindOf(sql)] }));
+  }
+
+  function npsRead(kind: NpsRead): [string, unknown[]] {
+    const call = execute.mock.calls.find(([sql]) => kindOf(String(sql)) === kind);
+    if (!call) throw new Error(`No ${kind} read`);
+    return call as [string, unknown[]];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond({ audiences: [audienceRow('Board'), audienceRow('Committers')], trend: [quarterRow(7), quarterRow(10)] });
+  });
+
+  it('reads the audiences surveyed in the period from its columns, binding every placeholder', async () => {
+    for (const range of HEALTH_METRICS_L2_RANGES) {
+      execute.mockClear();
+      await new HealthMetricsMembersService().getNps(req, { ...query, range });
+
+      const [sql, binds] = npsRead('audiences');
+      const suffix = {
+        YTD: 'ytd',
+        COMPLETED_YEAR: 'last_completed_year',
+        COMPLETED_YEAR_2: 'prev_completed_year',
+        COMPLETED_YEAR_3: '3rd_last_completed_year',
+      }[range];
+      expect(binds).toEqual(['acme']);
+      expect(sql.match(/\?/g)).toHaveLength(binds.length);
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_NPS_BY_AUDIENCE\n');
+      expect(sql).toContain('TRIM(audience_type) AS audience_type,');
+      expect(sql).toContain(`nps_score_change_pp_${suffix} AS nps_score_change_pp`);
+      expect(sql).toContain(`AND recipients_count_${suffix} > 0`);
+      expect(sql).toContain("AND NULLIF(TRIM(audience_type), '') IS NOT NULL");
+      expect(sql).toContain("ORDER BY CASE TRIM(audience_type) WHEN 'Board' THEN 0 WHEN 'Maintainers' THEN 1 ELSE 2 END, TRIM(audience_type) ASC");
+    }
+  });
+
+  it("resolves the trend's audience in the same read and bounds its waves by the period's end", async () => {
+    await new HealthMetricsMembersService().getNps(req, { ...query, range: 'COMPLETED_YEAR', audience: 'Committers' });
+
+    const [sql, binds] = npsRead('trend');
+    expect(binds).toEqual(['acme', 'Committers', 'acme']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('AND recipients_count_last_completed_year > 0');
+    expect(sql).toContain("ORDER BY IFF(TRIM(audience_type) = ?, 0, 1), CASE TRIM(audience_type) WHEN 'Board'");
+    expect(sql).toContain('JOIN chosen ON chosen.audience_type = TRIM(trend.audience_type)');
+    expect(sql).toContain('AND trend.recipients_count > 0');
+    expect(sql).toContain("AND trend.quarter_start_date < DATE_TRUNC('YEAR', CURRENT_DATE())");
+    expect(sql).not.toContain('trend.quarter_start_date >=');
+    expect(sql).toContain('ORDER BY trend.quarter_start_date ASC');
+  });
+
+  it('binds an empty audience when none is requested, so the first in read order wins', async () => {
+    await new HealthMetricsMembersService().getNps(req, query);
+
+    expect(npsRead('trend')[1]).toEqual(['acme', '', 'acme']);
+  });
+
+  it('maps every audience and wave, selecting the first audience by default', async () => {
+    expect(await new HealthMetricsMembersService().getNps(req, query)).toEqual({
+      audiences: [
+        {
+          audience: 'Board',
+          npsScore: 62,
+          scoreChangePp: 4,
+          recipientsCount: 26,
+          responsesCount: 18,
+          responseRatePct: 0.692,
+          promotersCount: 11,
+          passivesCount: 5,
+          detractorsCount: 2,
+          noResponseCount: 8,
+          isSampleTooSmall: false,
+          lastUpdatedQuarter: 'Q2 2026',
+        },
+        expect.objectContaining({ audience: 'Committers' }),
+      ],
+      selectedAudience: 'Board',
+      trend: [
+        { quarterStartDate: '2025-07-01', quarterLabel: 'Q3 25', npsScore: 54, responseRatePct: 0.71, isSampleTooSmall: false },
+        { quarterStartDate: '2025-10-01', quarterLabel: 'Q4 25', npsScore: 54, responseRatePct: 0.71, isSampleTooSmall: false },
+      ],
+    });
+  });
+
+  it('selects a requested audience only when it was surveyed in the period', async () => {
+    const service = new HealthMetricsMembersService();
+
+    expect((await service.getNps(req, { ...query, audience: 'Committers' })).selectedAudience).toBe('Committers');
+    expect((await service.getNps(req, { ...query, audience: 'Ambassador' })).selectedAudience).toBe('Board');
+  });
+
+  it('keeps a flagged score and change with the flag, and drops blank audiences and undated waves', async () => {
+    respond({
+      audiences: [
+        audienceRow('Board', { IS_SAMPLE_TOO_SMALL: true, NPS_SCORE: 80, NPS_SCORE_CHANGE_PP: 12, LAST_UPDATED_QUARTER: null }),
+        audienceRow('  '),
+        audienceRow(null),
+      ],
+      trend: [
+        quarterRow(4, { IS_SAMPLE_TOO_SMALL: true, NPS_SCORE: 90, QUARTER_LABEL: null, RESPONSE_RATE_PCT: null }),
+        quarterRow(7, { QUARTER_START_DATE: null }),
+      ],
+    });
+
+    const result = await new HealthMetricsMembersService().getNps(req, query);
+
+    expect(result.audiences).toEqual([
+      expect.objectContaining({ audience: 'Board', npsScore: 80, scoreChangePp: 12, isSampleTooSmall: true, lastUpdatedQuarter: null, responsesCount: 18 }),
+    ]);
+    expect(result.trend).toEqual([{ quarterStartDate: '2025-04-01', quarterLabel: null, npsScore: 90, responseRatePct: null, isSampleTooSmall: true }]);
+  });
+
+  it('reads a foundation never surveyed as no audiences, no selection and no trend', async () => {
+    respond({ audiences: [], trend: [] });
+
+    expect(await new HealthMetricsMembersService().getNps(req, query)).toEqual({ audiences: [], selectedAudience: null, trend: [] });
+  });
+});
+
+function churnRow(overrides: Record<string, unknown> = {}) {
+  return {
+    YEAR: 2025,
+    IS_PARTIAL_YEAR: false,
+    IS_ALL_TIERS: true,
+    MEMBERSHIP_TIER: null,
+    TIER_SORT_RANK: null,
+    MEMBERSHIPS_LOST_COUNT: 12,
+    MEMBERSHIPS_OPENING_COUNT: 120,
+    DUES_LOST_USD: 450000,
+    DUES_LOST_PRIOR_USD: 300000,
+    REVENUE_NOT_RENEWED_RATE: 15.2,
+    TIER_CHURN_RATE: 10,
+    SHARE_OF_LOSS_PCT: 100,
+    LOGO_CHURN_RATE: 10,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsMembersService.getChurn', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [churnRow()] });
+  });
+
+  it('reads every year of churn, all-tiers row first, bound only to the foundation', async () => {
+    await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = readOf('MEMBERSHIP_CHURN');
+    expect(binds).toEqual(['acme']);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURN');
+    expect(sql).toContain('ORDER BY year DESC, is_all_tiers DESC NULLS LAST, tier_sort_rank ASC NULLS LAST, membership_tier ASC NULLS LAST');
+    expect(sql).toContain(`LIMIT ${HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP + 1}`);
+  });
+
+  // The view's revenue_churn_rate is net of upgrades and can go negative; the headline is the dues that did not renew.
+  it('reads the share of opening dues that did not renew, not the net revenue churn rate', async () => {
+    await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    const [sql] = readOf('MEMBERSHIP_CHURN');
+    expect(sql).toContain('IFF(opening_arr_usd > 0, dues_lost_usd / opening_arr_usd * 100, NULL) AS revenue_not_renewed_rate');
+    const selected = sql.replace(/--.*$/gm, '');
+    expect(selected).not.toMatch(/\brevenue_churn_rate\b/);
+  });
+
+  it('splits the all-tiers rows from the tier rows and keeps unmeasured values null', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        churnRow({ IS_PARTIAL_YEAR: null, MEMBERSHIPS_OPENING_COUNT: null, REVENUE_NOT_RENEWED_RATE: null }),
+        churnRow({
+          IS_ALL_TIERS: false,
+          MEMBERSHIP_TIER: 'Gold',
+          TIER_SORT_RANK: 1,
+          MEMBERSHIPS_LOST_COUNT: 2,
+          TIER_CHURN_RATE: 20,
+          DUES_LOST_USD: 300000,
+          SHARE_OF_LOSS_PCT: 66.7,
+        }),
+        churnRow({
+          IS_ALL_TIERS: false,
+          MEMBERSHIP_TIER: 'Bronze',
+          TIER_SORT_RANK: null,
+          MEMBERSHIPS_LOST_COUNT: 0,
+          TIER_CHURN_RATE: 0,
+          DUES_LOST_USD: 0,
+          SHARE_OF_LOSS_PCT: 0,
+        }),
+      ],
+    });
+
+    const response = await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    expect(response).toEqual({
+      years: [
+        {
+          year: 2025,
+          isPartialYear: false,
+          lostCount: 12,
+          openingCount: null,
+          duesLostUsd: 450000,
+          duesLostPriorUsd: 300000,
+          revenueNotRenewedRate: null,
+          logoChurnRate: 10,
+        },
+      ],
+      tiers: [
+        { year: 2025, tier: 'Gold', tierSortRank: 1, lostCount: 2, churnRate: 20, duesLostUsd: 300000, shareOfLossPct: 66.7 },
+        { year: 2025, tier: 'Bronze', tierSortRank: Number.MAX_SAFE_INTEGER, lostCount: 0, churnRate: 0, duesLostUsd: 0, shareOfLossPct: 0 },
+      ],
+    });
+  });
+
+  it('drops a row with no year, no tier on a tier row, or no all-tiers flag', async () => {
+    execute.mockResolvedValue({
+      rows: [churnRow({ YEAR: null }), churnRow({ IS_ALL_TIERS: false, MEMBERSHIP_TIER: '' }), churnRow({ IS_ALL_TIERS: null }), churnRow()],
+    });
+
+    const response = await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    expect(response.years).toHaveLength(1);
+    expect(response.tiers).toHaveLength(0);
+  });
+
+  it('warns and drops the year the cap cuts through', async () => {
+    const newest = Array.from({ length: HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP - 1 }, () => churnRow({ YEAR: 2026 }));
+    execute.mockResolvedValue({ rows: [...newest, churnRow(), churnRow()] });
+
+    const response = await new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' });
+
+    expect(response.years).toHaveLength(HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP - 1);
+    expect(response.years.every((year) => year.year === 2026)).toBe(true);
+    expect(warning).toHaveBeenCalledWith(
+      req,
+      'get_members_churn',
+      'Membership churn rows hit the read cap',
+      expect.objectContaining({ row_cap: HEALTH_METRICS_MEMBERS_CHURN_ROW_CAP })
+    );
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getChurn(req, { foundationSlug: 'acme' })).rejects.toBe(failure);
+  });
+});
+
+function departureRow(overrides: Record<string, unknown> = {}) {
+  return {
+    TOTAL_RECORDS: 3,
+    IS_PAGE_ROW: true,
+    CHURN_KEY: 'term-acme',
+    ACCOUNT_ID: '0014100000AcmeAAAA',
+    ACCOUNT_NAME: 'Acme Motors',
+    MEMBERSHIP_TIER: 'Gold',
+    REVENUE_LOST_USD: 150000,
+    LAPSED_DATE: new Date('2025-03-31T00:00:00Z'),
+    LAST_ENGAGED_DATE: null,
+    REVENUE_LOST_SORT_RANK: 1,
+    ...overrides,
+  };
+}
+
+describe('HealthMetricsMembersService.getChurnDepartures', () => {
+  const query = { foundationSlug: 'acme', year: 2025, offset: 25, pageSize: 25 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    execute.mockResolvedValue({ rows: [departureRow()] });
+  });
+
+  it('reads the churned members for the year, binding foundation and year once per CTE, in sort-rank order', async () => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    const [sql, binds] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
+    expect(binds).toEqual(['acme', 2025, 'acme', 2025]);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    const scoped = sql.slice(sql.indexOf('scoped AS'), sql.indexOf('totals AS'));
+    expect(scoped).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURNED_MEMBERS lost');
+    expect(scoped).toContain('AND lost._key IS NOT NULL');
+    expect(scoped).toContain("AND lost.account_id <> ''");
+    expect(sql).toContain('ORDER BY revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC');
+    expect(sql).toContain('LIMIT 25 OFFSET 25');
+    expect(sql).toContain('LEFT JOIN page ON TRUE');
+  });
+
+  // A downgrade's lapse is its movement date; one movement row per organization keeps the join from multiplying rows.
+  it('takes the lapse and last engagement from the matching movement, deduplicated per organization', async () => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    const [sql] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
+    const movements = sql.slice(sql.indexOf('WITH movements AS'), sql.indexOf('scoped AS'));
+    expect(movements).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_MOVEMENT_DETAIL');
+    expect(movements).toContain('COALESCE(lapsed_date, movement_date) AS lapsed_date');
+    expect(movements).toContain("AND movement_type IN ('churned', 'downgrade')");
+    expect(movements).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY account_id, movement_type ORDER BY movement_date DESC NULLS LAST) = 1');
+    expect(sql).toContain("AND movements.movement_type = IFF(LOWER(lost.churn_type) = 'downgrade', 'downgrade', 'churned')");
+  });
+
+  it('clamps an oversized page and offset before interpolating them', async () => {
+    await new HealthMetricsMembersService().getChurnDepartures(req, { ...query, pageSize: 10_000, offset: Number.MAX_SAFE_INTEGER });
+
+    const [sql] = readOf('MEMBERSHIP_CHURNED_MEMBERS');
+    const size = HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE;
+    expect(sql).toContain(`LIMIT ${size} OFFSET ${MAX_SNOWFLAKE_PAGINATION_PAGE * size}`);
+  });
+
+  it('maps rows by their lost term with ISO dates, falling back to the account id for a missing name', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        departureRow(),
+        departureRow({
+          CHURN_KEY: 'term-vendor',
+          ACCOUNT_ID: '0014100000VendAAAA',
+          ACCOUNT_NAME: '',
+          MEMBERSHIP_TIER: '',
+          REVENUE_LOST_USD: null,
+          LAPSED_DATE: '2025-06-30',
+        }),
+        departureRow({ CHURN_KEY: null }),
+      ],
+    });
+
+    const response = await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    expect(response).toEqual({
+      totalRecords: 3,
+      rows: [
+        {
+          key: 'term-acme',
+          accountId: '0014100000AcmeAAAA',
+          accountName: 'Acme Motors',
+          membershipTier: 'Gold',
+          duesLostUsd: 150000,
+          lapsedDate: '2025-03-31',
+          lastEngagedDate: null,
+        },
+        {
+          key: 'term-vendor',
+          accountId: '0014100000VendAAAA',
+          accountName: '0014100000VendAAAA',
+          membershipTier: null,
+          duesLostUsd: null,
+          lapsedDate: '2025-06-30',
+          lastEngagedDate: null,
+        },
+      ],
+    });
+  });
+
+  it('keeps the total when the page is past the end', async () => {
+    execute.mockResolvedValue({ rows: [{ TOTAL_RECORDS: 3, IS_PAGE_ROW: null, ACCOUNT_ID: null }] });
+
+    const response = await new HealthMetricsMembersService().getChurnDepartures(req, query);
+
+    expect(response).toEqual({ rows: [], totalRecords: 3 });
+  });
+
+  it('rethrows a failed read', async () => {
+    const failure = new Error('warehouse down');
+    execute.mockRejectedValue(failure);
+
+    await expect(new HealthMetricsMembersService().getChurnDepartures(req, query)).rejects.toBe(failure);
   });
 });

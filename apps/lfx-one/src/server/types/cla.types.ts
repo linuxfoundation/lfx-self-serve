@@ -180,6 +180,10 @@ export interface ResolvedClaIdentity {
   githubUsernames: string[];
   /** True when the session has at least one linked GitHub identity. */
   githubLinked: boolean;
+  /** Numeric GitLab user ids from identities linked through the GitLab Auth0 connection (#4191). */
+  gitlabIds: string[];
+  /** GitLab usernames (from Auth0 profileData.nickname) of those same linked identities. */
+  gitlabUsernames: string[];
 }
 
 /** One manager from `GET /v4/my-clas/{signatureID}/cla-managers` (`#/definitions/my-cla-manager`). */
@@ -537,9 +541,35 @@ export interface EasyClaCompanyClaManagerList {
   list?: EasyClaCompanyClaManager[];
 }
 
-/** `GET /v4/company/external/{companySFID}` — only the field the designee writes address. */
+/** `GET /v4/company/external/{companySFID}` — the designee writes read the id; the CLA-only lens entry reads the name and SFID. */
 export interface EasyClaCompany {
   companyID?: string;
+  companyExternalID?: string;
+  companyName?: string;
+}
+
+/** One scope of a user-service `GET /v1/me/permissions` permission. PascalCase upstream. */
+export interface UserServiceScopePermission {
+  /** For `project|organization`, `[projectSfid, companySfid]`. */
+  ID?: string[];
+  Level?: string;
+  Role?: string;
+  Role_Priority?: number;
+  Type?: string;
+}
+
+/** One resource entry of user-service `GET /v1/me/permissions`. */
+export interface UserServicePermission {
+  Resource?: string;
+  Actions?: string[];
+  Allowed?: boolean;
+  IsAdmin?: boolean;
+  Scopes?: UserServiceScopePermission[];
+}
+
+/** user-service `GET /v1/me/permissions` (`me-user-permissions`). */
+export interface UserServiceMePermissions {
+  Permissions?: UserServicePermission[];
 }
 
 export interface ManagerTarget {

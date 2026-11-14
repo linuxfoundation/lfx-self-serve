@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-admin-accept-dialog">
+  <p class="text-sm text-gray-600">
+    Accept <span class="font-semibold text-gray-900">{{ data.personName }}</span
+    >. Choose how they attend.
+  </p>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700" for="accept-attendance-type"
+      >{{ attendanceLabel }} <span class="text-red-500" aria-hidden="true">*</span></label
+    >
+    <lfx-select
+      [form]="form"
+      control="attendanceType"
+      inputId="accept-attendance-type"
+      [required]="true"
+      [options]="attendanceOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Select attendance type"
+      [ariaLabel]="attendanceLabel"
+      styleClass="w-full"
+      dataTest="mentorship-admin-accept-attendance" />
+    @if (form.controls.attendanceType.touched && form.controls.attendanceType.invalid) {
+      <p class="text-xs text-red-600" role="alert" data-testid="mentorship-admin-accept-attendance-error">{{ requiredMessage }}</p>
+    }
+  </div>
+
+  <div class="flex items-center justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" size="small" [text]="true" (onClick)="onCancel()" data-testid="mentorship-admin-accept-cancel" />
+    <lfx-button label="Accept" severity="primary" size="small" (onClick)="onAccept()" data-testid="mentorship-admin-accept-confirm" />
+  </div>
+</div>

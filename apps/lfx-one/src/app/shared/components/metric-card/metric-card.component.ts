@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, contentChild, input, output, TemplateRef } from '@angular/core';
+import { Component, computed, contentChild, input, output, Signal, TemplateRef } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -30,6 +30,10 @@ export class MetricCardComponent {
   public readonly chartOptions = input<ChartOptions<ChartType>>();
   // Tailwind height/flex class(s) for the chart body; defaults to h-16. Use 'flex-1' to fill available card height.
   public readonly chartHeightClass = input<string>('');
+  // Line under the chart stating its window, e.g. which months the bars cover.
+  public readonly chartCaption = input<string>();
+  /** Stat-only card: no chart area, skeleton or caption. */
+  public readonly hideChart = input<boolean>(false);
 
   // Footer inputs
   public readonly value = input<string>();
@@ -47,6 +51,15 @@ export class MetricCardComponent {
   // Interaction
   public readonly clickable = input<boolean>(false);
   public readonly cardClick = output<void>();
+
+  /** Accessible name of the keyboard entry point: the card's title and value. */
+  protected readonly actionLabel: Signal<string> = computed(() => [this.title(), this.value()].filter(Boolean).join(': '));
+
+  protected handleKeyActivate(event: Event): void {
+    // Space would scroll the page; Enter / Space activate like a click.
+    event.preventDefault();
+    this.handleClick();
+  }
 
   protected handleClick(): void {
     if (this.clickable()) {

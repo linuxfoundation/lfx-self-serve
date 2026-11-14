@@ -1,32 +1,68 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  IMPERSONATION_EMPTY_TARGET_MESSAGE,
+  IMPERSONATION_SELF_MESSAGE,
+  IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
+  IMPERSONATION_USER_NOT_FOUND_MESSAGE,
+} from '@lfx-one/shared/constants';
+import { ImpersonationSuggestion, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
-import { throwError } from 'rxjs';
+import { UserService } from '@services/user.service';
+import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ImpersonationDialogComponent } from './impersonation-dialog.component';
 
+interface DialogHarness {
+  targetUserForm: { controls: { targetUser: { value: string; setValue: (value: unknown) => void } } };
+  suggestions: () => ImpersonationSuggestion[];
+  error: () => string;
+  submit: () => void;
+  onSearchComplete: (event: AutoCompleteCompleteEvent) => void;
+  onEnter: () => void;
+  onSearchCleared: () => void;
+  onSuggestionSelected: (event: AutoCompleteSelectEvent) => void;
+}
+
+function person(overrides: Partial<ImpersonationSuggestion> = {}): ImpersonationSuggestion {
+  return { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe', ...overrides };
+}
+
 describe('ImpersonationDialogComponent', () => {
   let fixture: ComponentFixture<ImpersonationDialogComponent>;
   let startImpersonation: ReturnType<typeof vi.fn>;
+  let searchUsers: ReturnType<typeof vi.fn>;
+  let recents: RecentImpersonation[];
 
-  beforeEach(async () => {
-    startImpersonation = vi.fn();
+  let currentImpersonator: { email: string } | null;
+  let currentUser: { email: string; 'https://sso.linuxfoundation.org/claims/username': string } | null;
+
+  async function createDialog(dialogData?: Record<string, unknown>): Promise<void> {
+    TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ImpersonationDialogComponent],
       providers: [
         provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { closable: true, data: dialogData } },
+        { provide: UserService, useValue: { user: signal(currentUser), impersonator: signal(currentImpersonator) } },
         {
           provide: ImpersonationService,
           useValue: {
             startImpersonation,
-            getRecentImpersonations: () => [],
+            searchUsers,
+            getRecentImpersonations: () => recents,
             addRecentImpersonation: vi.fn(),
           },
         },
@@ -35,16 +71,31 @@ describe('ImpersonationDialogComponent', () => {
 
     fixture = TestBed.createComponent(ImpersonationDialogComponent);
     await fixture.whenStable();
+  }
+
+  function pickTarget(target: string): void {
+    dialog().onSuggestionSelected({
+      value: { targetUser: target, username: target, email: `${target}@example.com` },
+    } as unknown as AutoCompleteSelectEvent);
+  }
+
+  function dialog(): DialogHarness {
+    return fixture.componentInstance as unknown as DialogHarness;
+  }
+
+  beforeEach(async () => {
+    startImpersonation = vi.fn();
+    searchUsers = vi.fn().mockReturnValue(of([]));
+    recents = [];
+    currentUser = null;
+    currentImpersonator = null;
+    await createDialog();
   });
 
   async function submitAs(target: string, httpError: { error?: { error?: string; code?: string } }): Promise<void> {
     startImpersonation.mockReturnValueOnce(throwError(() => httpError));
-    const component = fixture.componentInstance as unknown as {
-      targetUserForm: { controls: { targetUser: { setValue: (value: string) => void } } };
-      submit: () => void;
-    };
-    component.targetUserForm.controls.targetUser.setValue(target);
-    component.submit();
+    pickTarget(target);
+    dialog().submit();
     await fixture.whenStable();
   }
 
@@ -73,5 +124,401 @@ describe('ImpersonationDialogComponent', () => {
     const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
     expect(alert?.textContent).toContain('We could not start impersonation. Please try again.');
     expect(alert?.textContent).not.toContain('TIMEOUT');
+  });
+
+  it('keeps a live status region mounted and fills it only while loading', async () => {
+    const status = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="impersonation-loading-status"]');
+    expect(status()).not.toBeNull();
+    expect(status()?.textContent?.trim()).toBe('');
+
+    startImpersonation.mockReturnValueOnce(NEVER);
+    pickTarget('jdoe');
+    dialog().submit();
+    await fixture.whenStable();
+
+    expect(status()?.textContent).toContain('Starting impersonation...');
+  });
+
+  it('does not let the dialog be dismissed while the request is pending', async () => {
+    const config = TestBed.inject(DynamicDialogConfig);
+    expect(config.closable).toBe(true);
+
+    startImpersonation.mockReturnValueOnce(NEVER);
+    pickTarget('jdoe');
+    dialog().submit();
+    await fixture.whenStable();
+
+    expect(config.closable).toBe(false);
+  });
+
+  describe('single search field', () => {
+    it('renders one field for name, email, or username and no separate context selector', () => {
+      expect(fixture.nativeElement.querySelectorAll('lfx-autocomplete')).toHaveLength(1);
+      expect(fixture.nativeElement.querySelector('[data-test="impersonation-persona-select"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('input')?.getAttribute('placeholder')).toBe('e.g. John Doe, jdoe, or jdoe@example.com');
+    });
+
+    it('submits typed text as entered when nothing was picked', () => {
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().targetUserForm.controls.targetUser.setValue('  Jane.Doe@Example.com ');
+
+      dialog().submit();
+
+      expect(startImpersonation).toHaveBeenCalledWith('Jane.Doe@Example.com', false);
+    });
+
+    it('does not let Enter start typed text that was not picked', () => {
+      dialog().targetUserForm.controls.targetUser.setValue('jdoe@example.com');
+
+      dialog().onEnter();
+
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    const startButton = (): HTMLButtonElement => fixture.nativeElement.querySelector('[data-testid="impersonation-submit-button"] button');
+
+    it('never disables Start for what is in the field, only while a request is running', async () => {
+      expect(startButton().disabled).toBe(false);
+
+      dialog().targetUserForm.controls.targetUser.setValue('   ');
+      await fixture.whenStable();
+      expect(startButton().disabled).toBe(false);
+
+      pickTarget('jdoe');
+      await fixture.whenStable();
+      expect(startButton().disabled).toBe(false);
+
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().submit();
+      await fixture.whenStable();
+      expect(startButton().disabled).toBe(true);
+    });
+
+    it('starts with a single character typed into the real input, even though nothing matches it', async () => {
+      startImpersonation.mockReturnValueOnce(NEVER);
+      const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+      input.value = 'A';
+      input.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      startButton().click();
+
+      expect(startImpersonation).toHaveBeenCalledWith('A', false);
+    });
+
+    it('explains an empty field instead of sending a request', async () => {
+      startButton().click();
+      await fixture.whenStable();
+
+      expect(startImpersonation).not.toHaveBeenCalled();
+      expect(dialog().error()).toBe(IMPERSONATION_EMPTY_TARGET_MESSAGE);
+
+      dialog().targetUserForm.controls.targetUser.setValue('   ');
+      dialog().submit();
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    it('refuses typed text that is the signed-in admin’s own username or email', async () => {
+      currentUser = { email: 'admin@example.com', 'https://sso.linuxfoundation.org/claims/username': 'admin' };
+      await createDialog();
+
+      dialog().targetUserForm.controls.targetUser.setValue('ADMIN');
+      dialog().submit();
+      expect(startImpersonation).not.toHaveBeenCalled();
+      expect(dialog().error()).toBe(IMPERSONATION_SELF_MESSAGE);
+
+      dialog().targetUserForm.controls.targetUser.setValue('Admin@Example.com');
+      dialog().submit();
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    describe('while switching', () => {
+      beforeEach(async () => {
+        currentUser = { email: 'alex.smith@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+        currentImpersonator = { email: 'Admin@example.com' };
+        await createDialog({ switching: true });
+        startImpersonation.mockReturnValue(NEVER);
+      });
+
+      it('refuses the real admin’s email as self', () => {
+        dialog().targetUserForm.controls.targetUser.setValue('ADMIN@example.com');
+
+        dialog().submit();
+
+        expect(startImpersonation).not.toHaveBeenCalled();
+        expect(dialog().error()).toBe(IMPERSONATION_SELF_MESSAGE);
+      });
+
+      it('sends the current target on for the server to refuse, not as self', () => {
+        dialog().targetUserForm.controls.targetUser.setValue('asmith');
+        dialog().submit();
+        expect(startImpersonation).toHaveBeenCalledWith('asmith', true);
+        expect(dialog().error()).not.toBe(IMPERSONATION_SELF_MESSAGE);
+      });
+    });
+
+    const jane: ImpersonationSuggestion = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' };
+
+    function pick(entry: ImpersonationSuggestion): void {
+      dialog().onSuggestionSelected({ value: entry } as unknown as AutoCompleteSelectEvent);
+    }
+
+    function details(): string | undefined {
+      return fixture.nativeElement.querySelector('[data-testid="impersonation-picked-details"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    }
+
+    it('shows a picked person’s name in the field, not their username', () => {
+      pick(jane);
+
+      expect(dialog().targetUserForm.controls.targetUser.value).toBe('Jane Doe');
+    });
+
+    it('falls back to the username, then the email, when the person has no name', () => {
+      pick({ ...jane, name: undefined });
+      expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+
+      pick({ ...jane, name: undefined, username: '' });
+      expect(dialog().targetUserForm.controls.targetUser.value).toBe('jane.doe@example.com');
+    });
+
+    it('lists the picked person’s username and email under the field', async () => {
+      expect(details()).toBeUndefined();
+
+      pick(jane);
+      await fixture.whenStable();
+
+      expect(details()).toBe('Username jdoe · Email jane.doe@example.com');
+    });
+
+    it('submits the picked person’s username while the field shows their name', () => {
+      pick(jane);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().submit();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('does not start on the Enter that picked the person, only on the next one', () => {
+      dialog().onSuggestionSelected({ value: jane, originalEvent: { key: 'Enter' } } as unknown as AutoCompleteSelectEvent);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().onEnter();
+      expect(startImpersonation).not.toHaveBeenCalled();
+
+      dialog().onEnter();
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('does not hold back Enter after a mouse pick', () => {
+      dialog().onSuggestionSelected({ value: jane, originalEvent: { type: 'click' } } as unknown as AutoCompleteSelectEvent);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('submits on Enter once a person is picked', () => {
+      pick(jane);
+      startImpersonation.mockReturnValueOnce(NEVER);
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', false);
+    });
+
+    it('drops the pick and its details, and submits what was typed instead, once the name is edited', async () => {
+      pick(jane);
+      startImpersonation.mockReturnValueOnce(NEVER);
+      dialog().targetUserForm.controls.targetUser.setValue('someone.else');
+      await fixture.whenStable();
+
+      dialog().submit();
+
+      expect(details()).toBeUndefined();
+      expect(startImpersonation).toHaveBeenCalledWith('someone.else', false);
+    });
+
+    it('drops the pick when the field is cleared', async () => {
+      pick(jane);
+      dialog().targetUserForm.controls.targetUser.setValue('');
+      await fixture.whenStable();
+
+      expect(details()).toBeUndefined();
+    });
+
+    it('clears an earlier error when a person is picked', async () => {
+      await submitAs('ghost', { error: { code: IMPERSONATION_TARGET_USER_NOT_FOUND_CODE } });
+      expect(dialog().error()).not.toBe('');
+
+      dialog().onSuggestionSelected({ value: { targetUser: 'jdoe', username: 'jdoe', email: 'j@example.com' } } as unknown as AutoCompleteSelectEvent);
+
+      expect(dialog().error()).toBe('');
+    });
+  });
+
+  describe('suggestions', () => {
+    const recent: RecentImpersonation = { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', name: 'Alex Smith', lastUsedAt: 1 };
+
+    async function search(query: string): Promise<ImpersonationSuggestion[]> {
+      dialog().onSearchComplete({ query } as AutoCompleteCompleteEvent);
+      await fixture.whenStable();
+      return dialog().suggestions();
+    }
+
+    beforeEach(async () => {
+      recents = [recent];
+      await createDialog();
+    });
+
+    it('offers the recents before anything is typed', () => {
+      expect(dialog().suggestions()).toEqual([recent]);
+    });
+
+    it('lists every recent for an empty query without searching', async () => {
+      expect(await search('')).toEqual([recent]);
+      expect(searchUsers).not.toHaveBeenCalled();
+    });
+
+    it('only filters the recents for a single character', async () => {
+      expect(await search('z')).toEqual([]);
+      expect(await search('a')).toEqual([recent]);
+      expect(searchUsers).not.toHaveBeenCalled();
+    });
+
+    it('does not search for two characters, which is less than the search needs', async () => {
+      expect(await search('al')).toEqual([recent]);
+
+      expect(searchUsers).not.toHaveBeenCalled();
+    });
+
+    it('searches once the query has three characters', async () => {
+      await search('jan');
+
+      expect(searchUsers).toHaveBeenCalledWith('jan');
+    });
+
+    it('sends the typed text to the search with its case intact', async () => {
+      await search('  Jane.Doe@Example.com ');
+
+      expect(searchUsers).toHaveBeenCalledWith('Jane.Doe@Example.com');
+    });
+
+    it('lists the people the search finds with their username as the target', async () => {
+      searchUsers.mockReturnValue(of([person()]));
+
+      expect(await search('jane')).toEqual([{ targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', name: 'Jane Doe' }]);
+    });
+
+    it('lists matching recents ahead of found people and does not repeat a person', async () => {
+      searchUsers.mockReturnValue(of([person({ username: 'ASmith', targetUser: 'ASmith', email: 'alex.smith@example.com' }), person({ username: 'jdoe' })]));
+
+      const suggestions = await search('ale');
+
+      // The recent leads; the found row for the same person (same username, different case) is not listed again.
+      expect(suggestions.map((s) => s.username)).toEqual(['asmith', 'jdoe']);
+    });
+
+    it('keeps the order the search returned', async () => {
+      searchUsers.mockReturnValue(of([person({ username: 'zed', targetUser: 'zed' }), person({ username: 'amy', targetUser: 'amy' })]));
+
+      expect((await search('jane')).map((s) => s.username)).toEqual(['zed', 'amy']);
+    });
+
+    it('cancels a pending lookup and restores the recents when the field is cleared', async () => {
+      searchUsers.mockReturnValue(of([person()]));
+      expect((await search('jane')).map((s) => s.username)).toEqual(['jdoe']);
+
+      dialog().onSearchCleared();
+      await fixture.whenStable();
+
+      expect(dialog().suggestions()).toEqual([recent]);
+    });
+
+    it('falls back to the recents when the search yields nothing', async () => {
+      searchUsers.mockReturnValue(of([]));
+
+      expect(await search('ale')).toEqual([recent]);
+    });
+  });
+
+  describe('Enter', () => {
+    beforeEach(() => {
+      startImpersonation.mockReturnValue(NEVER);
+    });
+
+    it('leaves a half-typed name to the suggestion list instead of submitting it', () => {
+      dialog().targetUserForm.controls.targetUser.setValue('al');
+
+      dialog().onEnter();
+
+      expect(startImpersonation).not.toHaveBeenCalled();
+    });
+
+    it('starts the impersonation once a person is picked', () => {
+      pickTarget('asmith');
+
+      dialog().onEnter();
+
+      expect(startImpersonation).toHaveBeenCalledWith('asmith', false);
+    });
+  });
+
+  describe('own identities in the recents', () => {
+    const admin: RecentImpersonation = { targetUser: 'admin', username: 'admin', email: 'admin@example.com', lastUsedAt: 3 };
+    const other: RecentImpersonation = { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', lastUsedAt: 2 };
+
+    it('leaves the signed-in admin out when starting', async () => {
+      recents = [admin, other];
+      currentUser = { email: 'ADMIN@example.com', 'https://sso.linuxfoundation.org/claims/username': 'admin' };
+      await createDialog();
+
+      expect(
+        dialog()
+          .suggestions()
+          .map((s) => s.username)
+      ).toEqual(['jdoe']);
+    });
+
+    it('leaves the impersonating admin out, as well as the current target, when switching', async () => {
+      recents = [admin, other, { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', lastUsedAt: 1 }];
+      currentUser = { email: 'alex.smith@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+      currentImpersonator = { email: 'Admin@example.com' };
+      await createDialog({ switching: true });
+
+      expect(
+        dialog()
+          .suggestions()
+          .map((s) => s.username)
+      ).toEqual(['jdoe']);
+    });
+  });
+
+  describe('when opened from the banner to switch users', () => {
+    it('leaves the current target out of the recents but keeps the others', async () => {
+      recents = [
+        { targetUser: 'asmith', username: 'asmith', email: 'alex.smith@example.com', lastUsedAt: 1 },
+        { targetUser: 'jdoe', username: 'jdoe', email: 'jane.doe@example.com', lastUsedAt: 2 },
+      ];
+      currentUser = { email: 'ALEX.SMITH@example.com', 'https://sso.linuxfoundation.org/claims/username': 'asmith' };
+      await createDialog({ switching: true });
+
+      expect(
+        dialog()
+          .suggestions()
+          .map((s) => s.username)
+      ).toEqual(['jdoe']);
+    });
+
+    it('starts the change as a switch', async () => {
+      await createDialog({ switching: true });
+      startImpersonation.mockReturnValue(NEVER);
+
+      pickTarget('jdoe');
+      dialog().submit();
+
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', true);
+    });
   });
 });

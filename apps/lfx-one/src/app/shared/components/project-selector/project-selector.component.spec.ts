@@ -5,12 +5,22 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { LensItem } from '@lfx-one/shared/interfaces';
+import { FavoriteProjectsService } from '@services/favorite-projects.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectSelectorComponent } from './project-selector.component';
+
+// Favorites are out of scope for the ordering contract under test — this stub only satisfies the
+// component's DI requirement so the suite doesn't construct the real service (and its MessageService
+// and NavigationService dependencies, which these tests don't otherwise provide).
+const favoriteProjectsServiceStub = {
+  state: signal({ data: new Set<string>(), loading: false, readOnly: false, error: null }),
+  favoritesAvailable: signal(true),
+  toggleFavorite: () => undefined,
+};
 
 /**
  * Covers the ordering contract only. Curated mode is used as the harness because it sources items
@@ -53,6 +63,7 @@ describe('ProjectSelectorComponent ordering', () => {
         // `allPersonas` backs the role-badge fallback and is read for every rendered row.
         { provide: PersonaService, useValue: { personaProjects: signal({}), detectedProjects: signal([]), allPersonas: signal([]) } },
         { provide: ProjectContextService, useValue: { isFoundationContext: signal(false) } },
+        { provide: FavoriteProjectsService, useValue: favoriteProjectsServiceStub },
       ],
     }).compileComponents();
 
@@ -64,6 +75,10 @@ describe('ProjectSelectorComponent ordering', () => {
     // The list lives inside a PrimeNG popover that renders lazily into document.body.
     (fixture.nativeElement.querySelector('[data-testid="project-selector"]') as HTMLButtonElement).click();
     await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    favoriteProjectsServiceStub.favoritesAvailable.set(true);
   });
 
   function renderedSlugs(): string[] {
@@ -97,6 +112,27 @@ describe('ProjectSelectorComponent ordering', () => {
 
     expect(renderedSlugs()).toEqual(['alpha-cloud', 'mid-cloud', 'zeta-cloud']);
   });
+
+  it('hides the favorite stars while favorites are unavailable, as during impersonation', async () => {
+    const favoriteToggles = (): number => document.body.querySelectorAll('[data-testid^="favorite-toggle-"]').length;
+    expect(favoriteToggles()).toBe(items.length);
+
+    favoriteProjectsServiceStub.favoritesAvailable.set(false);
+    await fixture.whenStable();
+
+    expect(favoriteToggles()).toBe(0);
+    expect(renderedSlugs()).toEqual(['alpha-cloud', 'mid-cloud', 'zeta-cloud']);
+  });
+
+  it('closes its open panel when the host asks, as a closing mobile drawer does', async () => {
+    expect(fixture.componentInstance.isPanelOpen()).toBe(true);
+
+    fixture.componentInstance.closePanel();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.isPanelOpen()).toBe(false);
+    expect(renderedSlugs()).toEqual([]);
+  });
 });
 
 /**
@@ -119,7 +155,14 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
   // Nav mode (unlike curated) runs the sidebar-relative panel alignment on popover show, which
   // reads `window.matchMedia` — absent in jsdom. Reporting no match takes the early return, so the
   // geometry path stays out of an ordering test.
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setFavorites([]);
+  });
+
+  function setFavorites(uids: string[]): void {
+    favoriteProjectsServiceStub.state.set({ data: new Set(uids), loading: false, readOnly: false, error: null });
+  }
 
   async function build(hybrid: boolean): Promise<void> {
     vi.stubGlobal('matchMedia', () => ({ matches: false }));
@@ -152,6 +195,7 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
           },
         },
         { provide: ProjectContextService, useValue: { isFoundationContext: signal(false) } },
+        { provide: FavoriteProjectsService, useValue: favoriteProjectsServiceStub },
       ],
     }).compileComponents();
 
@@ -206,6 +250,36 @@ describe('ProjectSelectorComponent nav-backed ordering', () => {
     await build(true);
 
     expect(nestedSlugs()).toEqual(['alpha-project']);
+  });
+
+  it('pins a starred un-nested project above the foundation block on the All tab (#4397)', async () => {
+    setFavorites(['p2']);
+    await build(true);
+
+    expect(renderedSlugs()).toEqual(['zeta-project', 'alpha-foundation', 'alpha-project', 'zeta-foundation']);
+  });
+
+  it('pins a starred nested project flat and out of its parent on the All tab (#4397)', async () => {
+    setFavorites(['p1']);
+    await build(true);
+
+    expect(nestedSlugs()).toEqual([]);
+    expect(renderedSlugs()).toEqual(['alpha-project', 'alpha-foundation', 'zeta-foundation', 'zeta-project']);
+  });
+
+  it('lists starred foundations, then starred projects, then the rest on the All tab (#4397)', async () => {
+    setFavorites(['f2', 'p2']);
+    await build(true);
+
+    expect(renderedSlugs()).toEqual(['zeta-foundation', 'zeta-project', 'alpha-foundation', 'alpha-project']);
+  });
+
+  it('keeps unstarred children of a starred foundation below the starred projects (#4397)', async () => {
+    setFavorites(['f1', 'p2']);
+    await build(true);
+
+    expect(nestedSlugs()).toEqual([]);
+    expect(renderedSlugs()).toEqual(['alpha-foundation', 'zeta-project', 'zeta-foundation', 'alpha-project']);
   });
 
   it('flattens the All tab while searching so a match is not hidden under its parent', async () => {

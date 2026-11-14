@@ -2,7 +2,7 @@
 
 Use this reference with `/self-serve-dev` when building or modifying Self Serve Angular
 components, services, templates, drawers, pagination UI, and styling. If this
-reference conflicts with `CLAUDE.md`, `.claude/rules/`, or
+reference conflicts with `AGENTS.md`, `.claude/rules/`, or
 `docs/architecture/frontend/`, the more specific repo-local source wins.
 
 Generate Angular 20 frontend code that is PR-ready. Use these conventions for components, services, drawers, pagination, and templates.

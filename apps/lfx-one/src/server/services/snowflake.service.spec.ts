@@ -69,6 +69,58 @@ describe('SnowflakeService query deduplication', () => {
   });
 });
 
+describe('SnowflakeService read-only validation', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+
+  const serviceWithPool = (use: () => Promise<unknown>) => {
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    const service = SnowflakeService.getInstance();
+    // The pool is private; the test supplies a stub so `execute` runs without a Snowflake connection.
+    const internals = service as unknown as { pool: unknown };
+    internals.pool = { use, borrowed: 0, available: 1, pending: 0, size: 1 };
+    return service;
+  };
+
+  afterEach(() => {
+    SnowflakeService.resetInstance();
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['a line comment', '-- why this is trimmed\nSELECT 1'],
+    ['stacked line comments before a CTE', '-- a\n-- b\nWITH x AS (SELECT 1) SELECT * FROM x'],
+    ['a block comment', '/* why */\nSELECT 1'],
+    ['a block comment before a line comment', '/* a */ -- b\nSELECT 1'],
+  ])('runs a query documented by %s above its SELECT', async (_label, sql) => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await expect(serviceWithPool(use).execute(sql)).resolves.toEqual({ rows: [], metadata: [] });
+    expect(use).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a comment then a non-SELECT statement', '-- c\nSHOW TABLES', 'Only SELECT queries are allowed'],
+    ['only a comment', '-- just a comment', 'Only SELECT queries are allowed'],
+    ['a SELECT that exists only inside a comment', '-- SELECT 1\nSHOW TABLES', 'Only SELECT queries are allowed'],
+    ['a write behind a comment', '-- c\nDROP TABLE x', 'Write operations detected'],
+    ['a write keyword inside a leading block comment', '/* DROP TABLE x */ SELECT 1', 'Write operations detected'],
+    ['an unterminated block comment', '/* unterminated\nSELECT 1', 'Only SELECT queries are allowed'],
+  ])('still rejects %s', async (_label, sql, message) => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await expect(serviceWithPool(use).execute(sql)).rejects.toThrow(message);
+    expect(use).not.toHaveBeenCalled();
+  });
+
+  it('names the span after the statement, not its leading comment', async () => {
+    const use = vi.fn(() => Promise.resolve({ rows: [], metadata: [] }));
+
+    await serviceWithPool(use).execute('-- why this is trimmed\nSELECT 1');
+
+    expect(tracer.startActiveSpan).toHaveBeenCalledWith('Snowflake SELECT', expect.anything(), expect.any(Function));
+  });
+});
+
 describe('SnowflakeService circuit breaker', () => {
   const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
   const poolQueueFull = () => Promise.reject(new Error('max waitingClients count exceeded'));
@@ -78,7 +130,10 @@ describe('SnowflakeService circuit breaker', () => {
     Promise.reject(
       Object.assign(new Error("SQL compilation error:\nInvalid row count '10000000000000000000000000' in result offset clause"), { code: '002011' })
     );
+  const valueConversion = () => Promise.reject(Object.assign(new Error("Date 'x' is not recognized"), { code: '100040' }));
   const missingObject = () => Promise.reject(new Error("SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.EXAMPLE' does not exist or not authorized."));
+  const missingNamedObject = (object: string) => () => Promise.reject(new Error(`SQL compilation error: Object '${object}' does not exist or not authorized.`));
+  const OPTIONAL_TABLE = 'ORG_PEOPLE_COMPANY_EMAILS';
 
   const serviceWithPool = (use: ReturnType<typeof vi.fn>) => {
     vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
@@ -88,9 +143,9 @@ describe('SnowflakeService circuit breaker', () => {
     return { service, internals };
   };
 
-  const runQueries = async (service: SnowflakeService, count: number) => {
+  const runQueries = async (service: SnowflakeService, count: number, options?: SnowflakeQueryOptions) => {
     for (let i = 0; i < count; i++) {
-      await service.execute(`SELECT ${i}`).catch(() => undefined);
+      await service.execute(`SELECT ${i}`, [], options).catch(() => undefined);
     }
   };
 
@@ -173,6 +228,76 @@ describe('SnowflakeService circuit breaker', () => {
     expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
   });
 
+  it('keeps the circuit closed when Snowflake cannot convert a bind value', async () => {
+    const { service } = serviceWithPool(vi.fn(valueConversion));
+
+    await expect(service.execute('SELECT CURRENT_DATE >= ?', ['x'])).rejects.toMatchObject({ statusCode: 500, code: 'SNOWFLAKE_QUERY_ERROR' });
+    await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2);
+
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+    expect(span.setAttribute).toHaveBeenCalledWith('snowflake.value_conversion', true);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('does not reset or increment genuine failures when a bind conversion fails', async () => {
+    const use = vi.fn().mockImplementationOnce(queryFailure).mockImplementation(valueConversion);
+    const { service } = serviceWithPool(use);
+
+    await expect(service.execute('SELECT 1')).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+    await expect(service.execute('SELECT CURRENT_DATE >= ?', ['x'])).rejects.toMatchObject({ statusCode: 500, code: 'SNOWFLAKE_QUERY_ERROR' });
+
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 1 });
+  });
+
+  it('frees the HALF_OPEN probe slot when the probe fails a bind conversion', async () => {
+    const use = vi.fn().mockImplementationOnce(valueConversion).mockImplementation(querySuccess);
+    const { service, internals } = serviceWithPool(use);
+    internals.circuitState = SnowflakeCircuitState.OPEN;
+    internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+
+    await expect(service.execute('SELECT CURRENT_DATE >= ?', ['x'])).rejects.toMatchObject({ statusCode: 500, code: 'SNOWFLAKE_QUERY_ERROR' });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
+
+    await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
+  });
+
+  it('rejects an oversized bind list with a 400 before reaching Snowflake or the circuit breaker', async () => {
+    const use = vi.fn(querySuccess);
+    const { service } = serviceWithPool(use);
+    const binds = Array.from({ length: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES + 1 }, (_, i) => `value-${i}`);
+
+    for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2; i++) {
+      await expect(service.execute(`SELECT ${i}`, binds)).rejects.toMatchObject({ statusCode: 400, code: 'SNOWFLAKE_TOO_MANY_BINDS' });
+    }
+
+    expect(use).not.toHaveBeenCalled();
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+  });
+
+  it('accepts a bind list at the cap', async () => {
+    const use = vi.fn(querySuccess);
+    const { service } = serviceWithPool(use);
+    const binds = Array.from({ length: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES }, (_, i) => `value-${i}`);
+
+    await expect(service.execute('SELECT 1', binds)).resolves.toEqual({ rows: [], metadata: [] });
+    expect(use).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the HALF_OPEN probe slot free when an oversized bind list is rejected', async () => {
+    const use = vi.fn(querySuccess);
+    const { service, internals } = serviceWithPool(use);
+    internals.circuitState = SnowflakeCircuitState.OPEN;
+    internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+    const binds = Array.from({ length: SNOWFLAKE_CONFIG.MAX_BIND_VARIABLES + 1 }, (_, i) => `value-${i}`);
+
+    await expect(service.execute('SELECT 1', binds)).rejects.toMatchObject({ code: 'SNOWFLAKE_TOO_MANY_BINDS' });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+
+    await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
+  });
+
   it('serves the generic client message and no Snowflake text in the full response body', async () => {
     const { service } = serviceWithPool(vi.fn(missingObject));
 
@@ -196,6 +321,278 @@ describe('SnowflakeService circuit breaker', () => {
     const thrown = await service.execute('SELECT 1').catch((error: unknown) => error);
 
     expect(SnowflakeService.isMissingObjectError(thrown)).toBe(true);
+  });
+
+  // lfx-self-serve#4685: a read can depend on more than one not-yet-built column; any of them is expected, nothing else.
+  describe('expected invalid identifiers', () => {
+    const invalidIdentifier = (identifier: string) => () =>
+      Promise.reject(Object.assign(new Error(`SQL compilation error: error line 3 at position 9\ninvalid identifier '${identifier}'`), { code: '000904' }));
+    const EXPECTED = ['IS_CDP_TEAM_MEMBER', 'ORG_REPO_FIRST_NON_TEAM_COMMIT_TS'] as const;
+
+    it.each(EXPECTED)('keeps the circuit closed when %s, one of the listed identifiers, is the invalid one', async (identifier) => {
+      const { service } = serviceWithPool(vi.fn(invalidIdentifier(identifier)));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectInvalidIdentifier: EXPECTED });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_invalid_identifier', identifier);
+    });
+
+    it('keeps the circuit closed when Snowflake names the listed identifier through a table alias', async () => {
+      const { service } = serviceWithPool(vi.fn(invalidIdentifier('R.IS_CDP_TEAM_MEMBER')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectInvalidIdentifier: EXPECTED });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_invalid_identifier', 'IS_CDP_TEAM_MEMBER');
+    });
+
+    it('still opens the circuit when an unlisted identifier is the invalid one', async () => {
+      const { service } = serviceWithPool(vi.fn(invalidIdentifier('SOME_OTHER_COLUMN')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { expectInvalidIdentifier: EXPECTED });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+  });
+
+  // The exemption is what keeps an optional table's absence from opening the POD-WIDE breaker. The
+  // boundary has to hold in both directions, and only `execute` can show that: the matcher spec
+  // proves what the predicate answers, not what the breaker then does with it.
+  describe('named missing-object exemption', () => {
+    it('keeps the circuit closed while the NAMED object is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`)));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectMissingObject: OPTIONAL_TABLE });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', OPTIONAL_TABLE);
+    });
+
+    it('still opens the circuit when a DIFFERENT, core object is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { expectMissingObject: OPTIONAL_TABLE });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+      expect(span.setAttribute).not.toHaveBeenCalledWith('snowflake.expected_missing_object', expect.anything());
+    });
+
+    // A core table going missing must not have its breaker failures wiped out by the scoped retry
+    // that follows it — the exposure that made the bare boolean wrong.
+    it('does not reset failures accumulated from a core outage', async () => {
+      const use = vi.fn().mockImplementationOnce(queryFailure).mockImplementationOnce(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS'));
+      const { service } = serviceWithPool(use);
+
+      await service.execute('SELECT 1').catch(() => undefined);
+      await service.execute('SELECT 2', [], { expectMissingObject: OPTIONAL_TABLE }).catch(() => undefined);
+
+      expect(service.getCircuitStats().consecutiveFailures).toBe(2);
+    });
+
+    // The LF-account reads list their two views: a statement that also reads a core table must keep that table's faults.
+    it('keeps the circuit closed while a LISTED object is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_LF_USERNAMES')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, {
+        expectMissingObject: ['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS'],
+      });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', 'ORG_PEOPLE_LF_USERNAMES');
+    });
+
+    it('still opens the circuit when an UNLISTED core object in the same statement is the missing one', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, {
+        expectMissingObject: ['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_LF_USER_COMPANY_EMAILS'],
+      });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+      expect(span.setAttribute).not.toHaveBeenCalledWith('snowflake.expected_missing_object', expect.anything());
+    });
+
+    // Every other caller still passes `true`, so the broad exemption has to keep working as it did.
+    it('still exempts any missing object when the caller passes true', async () => {
+      const { service } = serviceWithPool(vi.fn(missingNamedObject('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS')));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2, { expectMissingObject: true });
+
+      expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+      expect(span.setAttribute).toHaveBeenCalledWith('snowflake.expected_missing_object', true);
+    });
+
+    /**
+     * The exempt branch must RELEASE the probe, not record a success. Naming the object is not
+     * enough on its own: when the address table and a core table are both gone, Snowflake blames the
+     * exempt one on the scoped statement, so the exemption fires on every uncached request. If that
+     * reset the shared count, the unscoped retry's single genuine failure would be all that ever
+     * accumulated and the breaker could never reach its threshold through a real outage.
+     */
+    it('does not let an alternating expected/genuine sequence hold the breaker closed', async () => {
+      const use = vi.fn();
+      for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD; i++) {
+        use.mockImplementationOnce(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`)).mockImplementationOnce(queryFailure);
+      }
+      const { service } = serviceWithPool(use);
+
+      for (let i = 0; i < SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD; i++) {
+        await service.execute('SELECT scoped', [], { expectMissingObject: OPTIONAL_TABLE }).catch(() => undefined);
+        await service.execute('SELECT unscoped').catch(() => undefined);
+      }
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+
+    /**
+     * HALF_OPEN is the only state `releaseProbe` has any effect in — `probeInFlight` is set by
+     * `checkCircuit` and nowhere else — so the CLOSED-state tests above would all still pass if the
+     * call were deleted outright. Without it a probe that hits the exempt object leaves
+     * `probeInFlight` stuck true, and `checkCircuit` then 503s every Snowflake query on the pod until
+     * the process restarts. Mirrors the pool-queue and row-count probe tests.
+     *
+     * Note what this does NOT assert: that the expected miss closes the circuit. It used to, under
+     * `recordSuccess`. A query that never reached a table proves nothing about recovery, so the
+     * circuit stays HALF_OPEN and waits for a real success — which is what the second call here is.
+     */
+    it('frees the HALF_OPEN probe slot when the probe hits the NAMED missing object', async () => {
+      const use = vi
+        .fn()
+        .mockImplementationOnce(missingNamedObject(`ANALYTICS.PLATINUM_LFX_ONE.${OPTIONAL_TABLE}`))
+        .mockImplementation(querySuccess);
+      const { service, internals } = serviceWithPool(use);
+      internals.circuitState = SnowflakeCircuitState.OPEN;
+      internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+
+      await expect(service.execute('SELECT 1', [], { expectMissingObject: OPTIONAL_TABLE })).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
+
+      // The slot is free, so this one is admitted rather than fast-failed — and it is a real success,
+      // so it is what closes the circuit.
+      await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
+    });
+
+    it('does not exempt an unrelated failure just because an object was named', async () => {
+      const { service } = serviceWithPool(vi.fn(queryFailure));
+
+      await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD, { expectMissingObject: OPTIONAL_TABLE });
+
+      expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+    });
+  });
+});
+
+describe('SnowflakeService query timeout', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+  type Complete = (err: Error | undefined, stmt: unknown, rows: unknown[] | undefined) => void;
+
+  /**
+   * A pool (through the SDK's `createPool`, as the pool-creation tests stub it) whose connection's statement completes at
+   * once (`finishes`) or only once it is cancelled. `connectionReady` holds the connection back, as an exhausted pool does.
+   */
+  const serviceWithStatement = (finishes: boolean, connectionReady: Promise<void> = Promise.resolve(), releaseDelayMs = 0) => {
+    for (const name of ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_ROLE', 'SNOWFLAKE_DATABASE', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_API_KEY']) {
+      vi.stubEnv(name, 'test-value');
+    }
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    let complete: Complete | undefined;
+    const statement = {
+      // As the SDK does: a cancelled statement completes with an error, which releases the connection.
+      cancel: vi.fn((callback?: (err: Error | undefined) => void) => {
+        complete?.(new Error('SQL execution canceled'), statement, undefined);
+        callback?.(undefined);
+      }),
+      getColumns: () => [],
+      getQueryId: () => 'query-id',
+    };
+    const connection = {
+      execute: vi.fn((options: { complete: Complete }) => {
+        complete = options.complete;
+        if (finishes) options.complete(undefined, statement, [{ ONE: 1 }]);
+        return statement;
+      }),
+    };
+    // What the pool.use callback settled with: generic-pool releases the connection once it settles.
+    const released: Promise<unknown>[] = [];
+    const pool = {
+      use: async (fn: (c: typeof connection) => Promise<unknown>) => {
+        await connectionReady;
+        const settled = fn(connection);
+        released.push(settled.catch((error: unknown) => error));
+        const result = await settled;
+        // Settling pool.use can lag the statement's completion (generic-pool's release work).
+        if (releaseDelayMs) await new Promise((resolve) => setTimeout(resolve, releaseDelayMs));
+        return result;
+      },
+      borrowed: 1,
+      available: 0,
+      pending: 0,
+      size: 1,
+    };
+    vi.mocked(snowflakeSdk.createPool).mockReturnValue(pool as never);
+    return { service: SnowflakeService.getInstance(), statement, connection, released };
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+    SnowflakeService.resetInstance();
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it('releases a connection that arrives after the timeout without executing the statement', async () => {
+    vi.useFakeTimers();
+    // Held back until handed over, as an exhausted pool does (the spec lib predates Promise.withResolvers).
+    let handOver: () => void = () => undefined;
+    const connectionReady = new Promise<void>((resolve) => {
+      handOver = resolve;
+    });
+    const { service, connection, released } = serviceWithStatement(true, connectionReady);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+
+    handOver();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(connection.execute).not.toHaveBeenCalled();
+    expect(released).toHaveLength(1);
+    expect(await released[0]).toMatchObject({ message: 'Snowflake query timed out after 1000ms' });
+  });
+
+  it('cancels a statement still running when the timeout fires, rejecting with the timeout error', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(false);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(statement.cancel).toHaveBeenCalledTimes(1);
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+  });
+
+  it('never cancels a statement that completed synchronously, even when the timeout fires before pool.use settles', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(true, Promise.resolve(), 2_000);
+
+    const outcome = service.execute('SELECT 1', [], { timeout: 1_000 }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('Snowflake query timed out after 1000ms') });
+    expect(statement.cancel).not.toHaveBeenCalled();
+  });
+
+  it('never cancels a statement that completed in time', async () => {
+    vi.useFakeTimers();
+    const { service, statement } = serviceWithStatement(true);
+
+    await expect(service.execute('SELECT 1', [], { timeout: 1_000 })).resolves.toMatchObject({ rows: [{ ONE: 1 }] });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(statement.cancel).not.toHaveBeenCalled();
   });
 });
 
@@ -227,5 +624,22 @@ describe('SnowflakeService pool creation failure', () => {
     const body = JSON.stringify(response);
     expect(body).not.toContain('acme.snowflakecomputing.com');
     expect(body).not.toContain('Incorrect username or password');
+  });
+
+  it('creates the pool with CRL revocation checks in advisory mode', async () => {
+    for (const name of ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_ROLE', 'SNOWFLAKE_DATABASE', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_API_KEY']) {
+      vi.stubEnv(name, 'test-value');
+    }
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    vi.mocked(snowflakeSdk.createPool).mockImplementation(() => {
+      throw new Error('stop after the options are captured');
+    });
+
+    await SnowflakeService.getInstance()
+      .execute('SELECT 1')
+      .catch(() => undefined);
+
+    // snowflake-sdk 3.4 turned OCSP off by default; without this the pool would skip revocation checks.
+    expect(vi.mocked(snowflakeSdk.createPool).mock.calls[0]?.[0]).toMatchObject({ certRevocationCheckMode: 'ADVISORY' });
   });
 });

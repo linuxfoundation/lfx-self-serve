@@ -2,8 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRemoval } from '../enums';
-import type { AttachmentCategory, CardSelectorOption, MeetingTypeConfig, MeetingComposerPreviewFeature } from '../interfaces';
+import type {
+  AttachmentCategory,
+  CardSelectorOption,
+  MeetingTypeConfig,
+  MeetingComposerPreviewFeature,
+  RsvpResponse,
+  ShowMeetingAttendeesLockOptions,
+} from '../interfaces';
 import { lfxColors } from './colors.constants';
+
+/** Every valid RSVP answer; used to reject an acknowledgement whose answer is missing or unrecognised. */
+export const RSVP_RESPONSES: readonly RsvpResponse[] = ['accepted', 'maybe', 'declined'];
 
 /**
  * Service-account usernames/emails that own `created_by` on system-created meetings
@@ -19,6 +29,33 @@ export const MEETING_ORGANIZER_SKIP_IDENTIFIERS = ['zoom.webhooks', 'zoom.events
  * this, the import is refused rather than attempted; see meeting.controller.ts:getMeetingRegistrants.
  */
 export const IMPORT_REGISTRANTS_MAX = 50;
+
+/**
+ * Upper bound on registrants a single batch add/update/delete request may carry
+ * (`POST`/`PUT`/`DELETE /api/meetings/:uid/registrants`). Each item becomes one upstream write, so an
+ * uncapped array let one authenticated request start an unbounded number of upstream calls
+ * (CWE-770, lfx-self-serve-ops#439). The BFF rejects a longer array with a 400 before any upstream
+ * call; the frontend `MeetingService` splits larger saves into sequential requests at or under this.
+ */
+export const MEETING_REGISTRANT_BATCH_MAX = 100;
+
+/**
+ * Registrants per request when the frontend `MeetingService` splits a larger batch save.
+ * @description Deliberately below MEETING_REGISTRANT_BATCH_MAX: the BFF runs the first item alone and
+ * the rest MEETING_REGISTRANT_BATCH_CONCURRENCY at a time, so one request costs
+ * 1 + ceil((n - 1) / 5) serial upstream rounds — 21 at the cap, 6 at this size. Against the ingress
+ * read timeout (ingress-nginx defaults to 60s), six rounds fit while a round averages under 10s; 21 needed
+ * under about 2.9s.
+ */
+export const MEETING_REGISTRANT_CLIENT_CHUNK_SIZE = 25;
+
+/**
+ * Max concurrent upstream registrant writes the BFF runs for one batch request.
+ * @description Bounds the per-request fan-out in `MeetingController.processRegistrantOperations`, which
+ * previously fired every item at once. Matches `COMMITTEE_INVITE_CONCURRENCY`, which caps the
+ * comparable committee-invite fan-out against the same v2 services.
+ */
+export const MEETING_REGISTRANT_BATCH_CONCURRENCY = 5;
 
 /**
  * Host-key visibility window — minutes before meeting start when the key becomes visible.
@@ -368,6 +405,23 @@ export const MEETING_COMPOSER_SECTIONS = [
 export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
 
 /**
+ * Sections the composer shows when editing a single occurrence of a recurring meeting.
+ * @description Upstream's occurrence update takes only a title, start time, duration and agenda, so the
+ * section holding nothing but series-level settings — platform and features — is left out. Guests stay:
+ * series guests read-only, while a guest can be invited to, or removed from, this occurrence alone. The sections kept here hide their own series-level
+ * fields (access, recurrence, groups, and documents and links, which upstream cannot scope to an
+ * occurrence).
+ */
+export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
+
+/**
+ * UI surfaces a viewer can remove themselves from a meeting on.
+ * @description Sent with the self-removal request and logged by the BFF so removals can be broken
+ * down by where they came from. A value outside this list is logged as `unknown`.
+ */
+export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link', 'meetings-home'] as const;
+
+/**
  * Feature rows the composer preview lists, in display order.
  * @description Only the labels are the preview's own — shorter wording than the section's toggle
  * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key
@@ -384,19 +438,10 @@ export const MEETING_COMPOSER_PREVIEW_FEATURES: MeetingComposerPreviewFeature[] 
 ).map(({ control, label }) => ({ control, label, icon: MEETING_FEATURE_BY_KEY[control].icon }));
 
 /**
- * Toast key for the composer's post-save confirmation.
- * @description Its own key so the action-bearing create toast renders through the composer's template
- * rather than the app-wide `p-toast`.
- */
-export const MEETING_COMPOSER_TOAST_KEY = 'meeting-composer-toast';
-
-/**
- * Where the composer's post-create toast renders.
- * @description Not the app-wide top-right slot. Two independently positioned `p-toast` containers in the
- * same corner overlap rather than stack, and the composer's own partial-save warning is emitted unkeyed
- * — through the app-wide container — immediately before this success message, so the success toast could
- * cover the warning that matters more. Bottom-right also suits a sticky, action-bearing toast, which is
- * conventionally a snackbar slot.
+ * Where the composer's post-create uikit toast renders.
+ * @description Not the app-wide top-right `p-toast` slot, where the composer's own partial-save warning
+ * is emitted immediately before this success message, so the success toast could cover the warning that
+ * matters more. Bottom-right also suits an action-bearing toast, which is conventionally a snackbar slot.
  */
 export const MEETING_COMPOSER_TOAST_POSITION = 'bottom-right';
 
@@ -460,6 +505,18 @@ export const MIN_EMAIL_REMINDER_HOURS = 2;
  * @description Latest the automatic reminder email can be sent before the meeting starts
  */
 export const MAX_EMAIL_REMINDER_HOURS = 24;
+
+/**
+ * Minimum minutes component of the reminder email lead time
+ * @description Lower bound for the minutes field alongside the reminder hours
+ */
+export const MIN_EMAIL_REMINDER_MINUTES = 0;
+
+/**
+ * Maximum minutes component of the reminder email lead time
+ * @description Upper bound for the minutes field; a full hour rolls into the hours field
+ */
+export const MAX_EMAIL_REMINDER_MINUTES = 59;
 
 /**
  * Default reminder email lead time in hours
@@ -719,15 +776,15 @@ export const RESTRICTED_MEETING_FEATURE = {
 
 /**
  * Show meeting attendees feature configuration
- * @description Feature toggle config for listing the other guests as ATTENDEE lines in each
- * calendar invite. Scoped to the invite deliberately — the copy must not promise meeting-page
- * roster gating, which this toggle does not yet control.
+ * @description Feature toggle config for sharing the guest list with guests in LFX: the guest list
+ * on the meeting card and meeting page, which the BFF withholds from non-organizers when this is off.
+ * Calendar invites never list other guests, whatever this is set to.
  */
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',
-  title: 'Show attendees in calendar invites',
-  description: "Let guests see who else is invited, and who has accepted, in their calendar app's invite",
+  title: 'Show attendees to guests',
+  description: 'Let guests see who else is invited, and who has accepted, on the meeting in LFX',
   recommended: false,
   color: lfxColors.blue[500],
 };
@@ -735,12 +792,21 @@ export const SHOW_MEETING_ATTENDEES_FEATURE = {
 /** Note shown when the attendees toggle is locked off for board or restricted meetings. */
 export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or restricted meetings';
 
+/** Note the meeting v2 composer shows, where only board meetings lock the toggle (`allowRestricted`). */
+export const SHOW_MEETING_ATTENDEES_BOARD_LOCKED_NOTE = 'Not available for board meetings';
+
+/** The meeting v2 composer's attendee-lock rule: board meetings only. */
+export const COMPOSER_ATTENDEE_LOCK: ShowMeetingAttendeesLockOptions = { allowRestricted: true };
+
 // ============================================================================
 // Meeting Duration Options
 // ============================================================================
 
 /** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
+
+/** Character limit for the note sent with a cancelled occurrence (matches the upstream ITX cap) */
+export const MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH = 4000;
 
 /** Agenda length at which the character counter turns amber */
 export const MEETING_AGENDA_WARNING_LENGTH = 1800;
@@ -794,13 +860,26 @@ export const PUBLIC_REGISTRATION_FIELD_LABELS = {
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 
-/** Upper bound for the custom meeting duration, in minutes */
+/**
+ * Upper bound for a custom duration on the pre-v2 screens, in minutes (8 hours)
+ * @description The reschedule-occurrence dialog's cap. Kept at 8 hours so flag-off screens don't
+ * change while the meeting v2 composer, behind its feature flag, uses {@link MAX_MEETING_DURATION}.
+ */
 export const MAX_CUSTOM_DURATION = 480;
+
+/**
+ * Upper bound for a meeting duration, in minutes (10 hours)
+ * @description Matches the meeting service's own `duration` maximum (`Maximum(600)` in
+ * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows. Used by the meeting v2 composer
+ * and by the BFF occurrence-update check, which the composer's single-occurrence edit also calls —
+ * pre-v2 clients stop at {@link MAX_CUSTOM_DURATION} before reaching it.
+ */
+export const MAX_MEETING_DURATION = 600;
 
 /**
  * Duration chips for the meeting composer's Date & Schedule section
  * @description `custom` reveals the `customDuration` control; `MeetingComposerFormService` owns that
- * control's `MIN_CUSTOM_DURATION` / `MAX_CUSTOM_DURATION` validators.
+ * control's `MIN_CUSTOM_DURATION` / `MAX_MEETING_DURATION` validators.
  */
 export const MEETING_DURATION_CHIP_OPTIONS = [
   { label: '15 min', value: 15 },
@@ -862,10 +941,37 @@ export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
  */
 export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;
 
+/** Max concurrent query-service batches when flagging recordings or AI summaries on the Me-lens past feed. */
+export const PAST_MEETING_ARTIFACT_LOOKUP_CONCURRENCY = 5;
+
+/** `include` value that makes GET /api/user/past-meetings add `has_recording` / `recording_share_url` / `has_ai_summary`. */
+export const USER_PAST_MEETINGS_INCLUDE_ARTIFACTS = 'artifacts';
+
+/** `include` value that makes GET /api/user/meetings and /api/user/past-meetings add organizer attendance summaries. */
+export const USER_MEETINGS_INCLUDE_ATTENDANCE = 'attendance';
+
+/** Meetings per query-service request when loading organizer attendance summaries. */
+export const MEETING_ATTENDANCE_BATCH_SIZE = 25;
+
+/** Max concurrent attendance batches per feed request. */
+export const MEETING_ATTENDANCE_CONCURRENCY = 4;
+
 /**
  * Max concurrent per-meeting recording fetches for dashboard "Recordings Available" counts.
  */
 export const MEETING_RECORDING_COUNT_FETCH_CONCURRENCY = 8;
+
+/**
+ * Rolling window, in days, for the My Meetings "Next 7 Days" stat. Counts individual
+ * occurrences rather than series, so a weekly series contributes one per week.
+ */
+export const MY_MEETINGS_STATS_WINDOW_DAYS = 7;
+
+/**
+ * Faces shown in a meeting card's attendee preview before collapsing the rest into "+N".
+ * Keeps the card a fixed height regardless of guest count; the full list opens in a drawer.
+ */
+export const MEETING_ATTENDEE_PREVIEW_LIMIT = 5;
 
 /**
  * Max concurrent attachment writes — deletes, file uploads, link creates — in one composer save.
@@ -1068,3 +1174,33 @@ export const MEETING_DURATION_OPTIONS = [
   { label: '120 minutes', value: 120 },
   { label: 'Custom...', value: 'custom' },
 ];
+
+/** How often the meeting page re-reads the wall clock so time-gated UI (join window, ended) updates without a reload. */
+export const MEETING_CLOCK_TICK_MS = 5_000;
+
+/** Router navigation state that sends a `/meetings/:id` visit to the legacy page when the redesigned one can't serve it. */
+export const MEETING_PAGE_LEGACY_STATE = 'meetingPageLegacy';
+
+/** Copy of the meeting page's cancelled notes, kept in one place so it can change without touching the page. `{date}` is the cancelled date. */
+export const MEETING_PAGE_CANCELLED_COPY = {
+  occurrence: 'This occurrence on {date} was cancelled',
+  series: 'All occurrences of this meeting were cancelled',
+} as const;
+
+/** Router navigation state that opens the legacy page's guest form, to join with another email address. */
+export const MEETING_PAGE_GUEST_FORM_STATE = 'meetingPageGuestForm';
+
+/**
+ * How many upcoming meetings the dashboard meetings card lets a user page through, starting from the
+ * meeting it opens on. Fixed rather than a setting so there is nothing to store per user.
+ */
+export const DASHBOARD_UPCOMING_MEETINGS_PAGE_LIMIT = 5;
+
+/** Height in px past which the meeting details drawer collapses the agenda behind Show more. */
+export const MEETING_DETAILS_AGENDA_COLLAPSED_PX = 200;
+
+/** Primary materials the meeting details drawer lists before Show more. */
+export const MEETING_DETAILS_VISIBLE_FILES = 5;
+
+/** How recent an attachment change must be for the materials to show as Updated. */
+export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

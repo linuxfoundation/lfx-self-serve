@@ -83,8 +83,9 @@ export interface OrgLensProject {
   healthMaxScore: number | null;
   /**
    * Warehouse-computed count (0–3) of categories covered for `health`. `2` marks a partial score and drives only the
-   * ` - Partial` suffix — never availability: a null label is `'unavailable'` regardless of this count. Sourced
-   * straight from `covered_category_count_v2`, never recomputed locally.
+   * partial marking (`*` on the visible label, `, partial score` in the accessible name), never availability: a null
+   * label is `'unavailable'` regardless of this count. Sourced straight from `covered_category_count_v2`, never
+   * recomputed locally.
    */
   healthCoveredCategoryCount: number | null;
   /** Maintainer Health category score (0–40) from the same snapshot row; `null` when the category is uncovered/unavailable. */
@@ -166,6 +167,17 @@ export interface OrgLensProjectsResponse {
   dataUpdatedAt: string;
   /** All projects the organization is associated with. */
   projects: OrgLensProject[];
+  /**
+   * Present (and `true`) only when the maintainer roles table could not be read: every project's `maintainers`
+   * is then empty because the data is unavailable, not because the org has no maintainers. Such a response is
+   * never cached, so the compact cache encoding never needs to carry it.
+   */
+  maintainerRolesUnavailable?: true;
+  /**
+   * Present (and `true`) only when Exclude team members was asked but the team-member flag could not be read
+   * (lfx-self-serve-ops#1246): the contributors then include CDP team members. Never cached, like the flag above.
+   */
+  teamMembersUnavailable?: true;
 }
 
 export interface OrgLensProjectSearchResult {

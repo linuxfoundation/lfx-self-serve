@@ -47,6 +47,13 @@ export const CLA_GROUP_ORG_SOURCE_ICONS = {
 export const MY_CLAS_PATH = '/profile/clas';
 
 /**
+ * Maximum number of values `GET /v4/my-clas` accepts in each repeatable `gitlabId` and `gitlabUsername` query
+ * param (`maxItems: 100` in easycla cla-backend-go/swagger/cla.v2.yaml). Exceeding it fails
+ * validation and 400s the whole request, so each linked-GitLab key list is capped (#4191).
+ */
+export const MY_CLAS_MAX_IDENTITY_KEYS = 100;
+
+/**
  * The Contributor Console's Gerrit signing route, as its own router declares it
  * (`cla/gerrit/project/:projectId/:contractType`). The contract-type segment is chosen on
  * the Gerrit path from the group's enablement flags (#2066).
@@ -119,10 +126,9 @@ export const SIGN_IDENTITY_PLATFORM_LABELS = {
 } as const;
 
 /**
- * Why a GitLab-linked CLA Group cannot be signed here. An identity gap, not a configuration
- * flag: GitLab signing authenticates the contributor through GitLab OAuth at signing time and
- * keys the EasyCLA user record on the GitLab numeric id, and Self Serve can neither obtain nor
- * verify a GitLab identity today.
+ * GitLab account linking is supported in Profile → Identities, but the CLA signing flow
+ * does not yet implement GitLab identity selection or the signing handoff. Linking a
+ * GitLab account does not enable signing a GitLab-only CLA Group here.
  */
 export const GITLAB_UNSUPPORTED_MESSAGE = 'Signing CLA using GitLab is not supported from Self Serve';
 
@@ -212,14 +218,29 @@ export const ORG_CLA_NOT_STARTED_COPY = {
   ],
   downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
-  identifySomeoneElseLabel: 'Not the right person to sign? Identify someone else →',
 } as const;
 
 /**
  * Fallback filename on the BFF `Content-Disposition` for the watermarked review copy (#2317).
- * The unsigned overview saves `${claGroupName}-ccla-review.pdf` at the call site instead.
+ * The browser saves under `orgClaReviewCopyFilename`, which falls back to this when there is no group name.
  */
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
+
+export const ORG_CLA_REVIEW_COPY_FAILURE = {
+  summary: 'Download failed',
+  detail: 'Could not download a review copy of the CCLA. Please try again.',
+} as const;
+
+export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
+
+export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
+  title: "We couldn't load your CLAs",
+  reason: "You don't have an EasyCLA role at this organization.",
+  supportLead: 'Please',
+  supportLabel: 'contact support',
+  supportTail: 'if you need EasyCLA assistance.',
+  signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
+} as const;
 
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
@@ -292,10 +313,11 @@ export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
  * page would see a group the organization has no signed row for and settle immediately on the
  * cannot-preview state, which is the right answer for a pasted address and the wrong one here.
  *
- * So it buys a wait, not a result: the page retries for the row on a short budget and, whether or
- * not one arrives, drops the parameter and settles the ordinary way. **It names nothing and grants
- * nothing** — a crafted link costs one retry budget and then resolves exactly as the bare group
- * address would.
+ * So it buys a wait, not a result: the page retries for the row on a bounded budget and settles
+ * the ordinary way once the row arrives, or stays on this visit with a still-confirming empty
+ * state when the wait is spent without one. **It names nothing and grants nothing** — a crafted
+ * link costs one retry budget and then settles; the still-confirming state is this visit only, so
+ * a reload of the stripped address resolves exactly as the bare group address would.
  */
 export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
 
@@ -454,11 +476,21 @@ export const CCLA_SIGN_COPY = {
    * agreement is not in their organization's list yet.
    *
    * EasyCLA writes the signature when DocuSign calls it back, which races the return trip, so the
-   * page keeps asking on a short budget. Without this line the wait is an unexplained skeleton on
+   * page keeps asking for about half a minute. Without this line the wait is an unexplained skeleton on
    * the one visit where the signatory is most primed to see their agreement, and a reload is the
    * obvious thing to try — which restarts the wait rather than shortening it.
    */
   returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
+  /**
+   * Shown once that wait has ended and the organization's list still has no row for this group.
+   *
+   * Distinct from the hasn't-signed empty state, which is true for a pasted unsigned address and
+   * false for someone who just finished DocuSign. Refresh reloads the address after the return
+   * parameters are gone; a later load that still lacks the row uses the hasn't-signed state.
+   */
+  returnPendingTitle: "We're still confirming your signature",
+  returnPendingSubtitle: 'You finished signing. EasyCLA has not listed this agreement yet. Refresh this page in a moment.',
+  returnPendingRefresh: 'Refresh',
 } as const;
 
 /**
@@ -492,6 +524,25 @@ export const ACS_CLA_AUTO_ECLA_ACTION = 'update';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
+ * Shown under the Auto ECLA toggle to a viewer off the agreement's CLA manager roster, who may
+ * read the setting but not change it (#3406). A roster CLA manager whom ACS denies gets the
+ * disabled switch without it, since it would contradict them. Wording is a placeholder pending a product pass; it lives here so that pass is a
+ * one-line edit rather than a hunt through the template.
+ */
+export const ORG_CLA_AUTO_ECLA_LOCKED_HINT = 'Only CLA Managers can change this setting.';
+
+/**
+ * Copy for the "View only" marker on a signed CCLA the viewer is not a CLA Manager of (#3852).
+ * `label` is the pill on both the card and the detail header; `reason` and `managersLink` appear
+ * on the detail page only.
+ */
+export const ORG_CLA_VIEW_ONLY_COPY = {
+  label: 'View only',
+  reason: 'Only the CLA Managers named on this CLA can change it.',
+  managersLink: 'See who manages it',
+} as const;
+
+/**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
  * this, so the set exists once: a tab added here is a compile error everywhere that switches on
  * the union until it is handled.
@@ -505,10 +556,10 @@ export const ORG_CLA_DETAIL_TABS = [
 ] as const;
 
 /** Pill shown against an agreement in the Organization Lens CLA list and on its detail page. */
-export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay> = {
+export const ORG_CLA_STATUS_DISPLAY: Record<OrgClaGroup['status'], OrgClaStatusDisplay | null> = {
   signed: { label: 'Signed', severity: 'success' },
   'not-started': { label: 'Not started', severity: 'secondary' },
-  sanctioned: { label: 'Sanctioned', severity: 'danger' },
+  sanctioned: null,
 };
 
 /**
@@ -618,18 +669,11 @@ export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
  */
 export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My Organization';
 
-/**
- * Toast copy for a completed approval-list write.
- *
- * A removal's summary names invalidation rather than removal, because that is the consequence a
- * CLA manager needs confirmed: the rule is gone *and* the acknowledgements it covered are no
- * longer valid. Upstream reports no count of the acknowledgements it invalidated, so none of
- * this copy claims one.
- */
+/** Toast copy for a completed approval-list write. */
 export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
-  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
-  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
+  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgments matching the previous value now show as Not Authorized.' },
+  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgments it covered now show as Not Authorized.' },
 } as const;
 
 export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
@@ -660,6 +704,7 @@ export const ORG_CLA_MANAGERS_COPY = {
   addedTitle: 'CLA Manager added',
   removeAction: 'Remove',
   removeBlockedLabel: 'Remove. A CLA must always have at least one CLA Manager.',
+  offRosterReason: 'Only a CLA Manager named on this CCLA can add or remove CLA Managers',
 } as const;
 
 export const ORG_CLA_MANAGER_REMOVE_COPY = {
@@ -701,18 +746,14 @@ export const ORG_CLA_MANAGER_QUESTION_COPY = {
   yesLabel: 'Yes',
 } as const;
 
-/** The unsigned overview for a viewer already identified as the initial CLA Manager (Corporate Console, verbatim). */
-export const ORG_CLA_DESIGNEE_START_COPY = {
-  identified: 'Someone has identified you as the initial CLA Manager from your company for this project.',
-  role: 'The CLA Manager is the person who manages the list of approved contributors.',
-  stepsHeading: 'To proceed, click below to start the process:',
-  steps: [
-    {
-      label: 'Step 1:',
-      body: 'You will be able to either sign the CLA, or send it to someone else for signature if you are not authorized by your company to sign it.',
-    },
-    { label: 'Step 2:', body: 'Then, you will be able to start approving contributors and adding other CLA Managers.' },
-  ],
+/**
+ * One state whether the viewer said Yes in this session or held the role when the page loaded: the
+ * Sign pair check cannot tell the two apart after a reload, and the copy holds for both.
+ */
+export const ORG_CLA_DESIGNEE_RESTING_COPY = {
+  identified: "You've been identified as the initial CLA Manager from your company for this project.",
+  role: 'The CLA Manager is the person who manages the list of approved contributors. When this CLA is signed, you will be the initial CLA Manager.',
+  proceedLabel: 'Proceed with signing',
 } as const;
 
 export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
@@ -801,6 +842,18 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
   invalidateOnly: 'Invalidate to remove for good.',
 } as const;
 
+/**
+ * The signed-document download on a CLA Group's Overview.
+ *
+ * Shown disabled rather than hidden off the roster, so a reader who cannot download learns the
+ * document exists and who to ask — the same read-visible, write-gated shape the Auto ECLA toggle
+ * takes. The approval-list mutations and Invalidate still disappear instead, because their
+ * presence says nothing about the agreement on its own.
+ */
+export const ORG_CLA_DOWNLOAD_COPY = {
+  offRosterTooltip: 'Only a CLA Manager named on this CCLA can download the signed document',
+} as const;
+
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 
@@ -822,20 +875,15 @@ export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corpo
  */
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 
-/**
- * Confirmation-dialog copy for a row invalidate, as the M3 prototype words it.
- *
- * It names the contributor and says what invalidating does not stop: a contributor who still
- * matches the approval list can acknowledge again, or be re-added by Auto ECLA.
- */
+/** Confirmation-dialog copy for a row invalidate, as the M3 prototype words it. */
 export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
   title: (contributor: string): string => `Invalidate acknowledgment for ${contributor}?`,
   marksPrefix: 'This marks',
   marksSuffix:
     " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
-  reacknowledge: (contributor: string): string =>
-    `If ${contributor} still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again`,
-  removeCriteria: " — remove the matching criteria below if that shouldn't be possible.",
+  reacknowledge: (contributor: string): string => `If ${contributor} still matches the approval list, they can acknowledge again themselves`,
+  noAutoReadd: ". Auto Acknowledge won't re-add them.",
+  removeEntries: ' Remove the matching entries below to prevent this.',
   matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
   alsoRemove: (contributor: string, count: number): string =>
     `Also remove ${count > 1 ? 'these entries' : 'this entry'} from the Approval List so ${contributor} can't acknowledge this CCLA again later.`,
@@ -863,8 +911,7 @@ export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
   removalFailedDetail: "The acknowledgment was invalidated, but its approval-list entries couldn't be removed. Remove them from the Approval List tab.",
 } as const;
 
-/** Why the CLA service refused an invalidate: it only invalidates an approved acknowledgment. */
-export const ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE = "This acknowledgment is no longer approved, so it can't be invalidated yet.";
+export const ORG_CLA_INVALIDATE_CONFLICT_MESSAGE = 'This acknowledgment was already invalidated, or changed since the list loaded.';
 
 /** Label and accessible name for the per-row Invalidate control. */
 export const ORG_CLA_INVALIDATE_ACTION_COPY = {
@@ -945,3 +992,38 @@ export const ORG_CLA_RECENT_ACTIVITY_HEADING = 'Recent activity';
 export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
 
 export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
+
+const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+
+const ORG_CLA_MANAGER_DESIGNEE_ROLE = 'cla-manager-designee';
+
+/**
+ * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager`, and the initial CLA Manager
+ * designee holds `cla-manager-designee` until the CCLA is signed (EasyCLA then removes it), each on
+ * one `project|organization` scope per CLA Group. That scope is the only record of either role
+ * readable with the caller's own token, so it is how Self Serve finds the companies whose EasyCLA
+ * tab a caller without a `b2b_org` grant may open. `cla-signatory` and `company-admin` never qualify.
+ */
+export const ORG_CLA_LENS_ENTRY_ROLES: readonly string[] = [ORG_CLA_MANAGER_ROLE, ORG_CLA_MANAGER_DESIGNEE_ROLE];
+
+/** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
+export const ORG_CLA_MANAGER_SCOPE_TYPE = 'project|organization';
+
+/** Per-user cache namespace for the caller's CLA-manager companies. Bump the version when the stored shape changes. */
+export const ORG_CLA_MANAGER_SCOPES_NAMESPACE = 'org-cla-manager-scopes:v1';
+
+/**
+ * How long a non-empty answer is reused. Bounds how long a removed CLA Manager keeps the entry,
+ * on top of whatever the gateway and ACS cache upstream. Empty and failed answers are never stored,
+ * so a newly added CLA Manager is seen on the next request.
+ */
+export const ORG_CLA_MANAGER_SCOPES_TTL_SECONDS = 60;
+
+/** Most CLA-only organizations named through EasyCLA for one selector load, so a caller holding many scopes cannot fan out unbounded upstream reads. */
+export const ORG_CLA_ONLY_ORGS_MAX = 25;
+
+/**
+ * How long the CLA-only page guard waits for the role-grants answer before admitting the page. Admitting
+ * is safe: the BFF refuses every non-CLA page's data to a CLA-only caller regardless.
+ */
+export const ORG_CLA_ONLY_GRANTS_WAIT_MS = 10_000;

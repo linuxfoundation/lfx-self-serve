@@ -132,6 +132,61 @@ export interface CreateCommitteeMemberOptions {
 }
 
 /**
+ * Committee bulk member create request body
+ * @description Mirrors committee-service `POST /committees/{uid}/members/bulk`: 1–100 rows,
+ * processed in submission order, each with the same attributes as a single member create.
+ */
+export interface CommitteeMemberBulkCreateRequest {
+  /** Members to add, in submission order */
+  members: CreateCommitteeMemberRequest[];
+}
+
+/**
+ * Outcome of one submitted row of a bulk member create
+ * @description Mirrors the upstream `committee-member-bulk-create-row-result` type
+ */
+export interface CommitteeMemberBulkCreateRowResult {
+  /** Zero-based position of the row in the submitted `members` list */
+  index: number;
+  /** Email address of the submitted row */
+  email: string;
+  /** Outcome of the row */
+  status: 'added' | 'skipped' | 'failed';
+  /** Why the row was skipped or failed; omitted for added rows */
+  reason?: 'already_member' | 'duplicate_in_request' | 'invalid' | 'temporary' | 'not_attempted';
+  /** Whether resubmitting the row later may succeed */
+  retryable: boolean;
+  /** Human-readable detail for a skipped or failed row */
+  message?: string;
+  /** UID of the added member, or of the existing member for an already_member row */
+  member_uid?: string;
+  /** The created member; present only for added rows */
+  member?: CommitteeMember;
+}
+
+/**
+ * Committee bulk member create response
+ * @description One result per submitted row, in submission order, plus per-status counts
+ */
+export interface CommitteeMemberBulkCreateResult {
+  /** Per-row outcomes, in submission order */
+  results: CommitteeMemberBulkCreateRowResult[];
+  /** Number of rows added */
+  added: number;
+  /** Number of rows skipped */
+  skipped: number;
+  /** Number of rows that failed */
+  failed: number;
+}
+
+/** Client-only wizard state. Strip these options before sending the native member request body. */
+export interface StagedCommitteeMemberRequest extends CreateCommitteeMemberRequest {
+  createOptions?: CreateCommitteeMemberOptions;
+  /** Matching pending invitations to revoke only after this member is successfully created. */
+  pendingInviteUids?: string[];
+}
+
+/**
  * Voting-status option for the member form select
  * @description Legacy values excluded from MEMBER_FORM_VOTING_STATUSES (e.g. None) are
  * appended as disabled display-only options during edit so the select renders the
@@ -186,6 +241,9 @@ export interface CommitteeMemberWithState extends CommitteeMember {
   originalData?: CommitteeMember;
   /** Temporary ID for new members before API creates uid */
   tempId?: string;
+  /** Client-only create behavior retained while a new member is edited or the step remounts. */
+  createOptions?: CreateCommitteeMemberOptions;
+  pendingInviteUids?: string[];
 }
 
 /**
@@ -194,7 +252,7 @@ export interface CommitteeMemberWithState extends CommitteeMember {
  */
 export interface MemberPendingChanges {
   /** Members to be created via API */
-  toAdd: CreateCommitteeMemberRequest[];
+  toAdd: StagedCommitteeMemberRequest[];
   /** Members to be updated via API (full member object) */
   toUpdate: { uid: string; changes: CreateCommitteeMemberRequest }[];
   /** Member UIDs to be deleted via API */
@@ -205,6 +263,8 @@ export interface MemberPendingChanges {
    * the wizard sends nothing (LFXV2-2606).
    */
   toInvite: CreateCommitteeInviteRequest[];
+  /** Pending server-invitation snapshot used to rematch edited CSV emails; retained across wizard-step remounts. */
+  importInvites?: Pick<CommitteeInvite, 'uid' | 'invitee_email'>[];
 }
 
 /** Kind of staged operation flushed by the committee-manage wizard (GH-1608). */
@@ -223,6 +283,8 @@ export interface MemberOperationResult {
   identifier: string;
   success: boolean;
   createdMember?: CommitteeMember;
+  /** Creation succeeded, but at least one matching pending invitation could not be revoked. */
+  cleanupWarning?: boolean;
 }
 
 /**

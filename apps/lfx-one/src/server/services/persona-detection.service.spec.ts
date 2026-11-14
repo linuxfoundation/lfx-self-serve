@@ -4,36 +4,58 @@
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { checkSingleAccess, getProjectIdBySlug, natsRequest, logger } = vi.hoisted(() => ({
+const { checkSingleAccess, checkAccess, getProjectIdBySlug, natsRequest, logger } = vi.hoisted(() => ({
   checkSingleAccess: vi.fn(),
+  checkAccess: vi.fn(),
   getProjectIdBySlug: vi.fn(),
   natsRequest: vi.fn(),
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
 }));
 
+// The strict variants answer from the same stubs (a stub that rejects stands in for an upstream
+// failure), so tests read the same either way; only the service's handling of a rejection differs.
 vi.mock('./access-check.service', () => ({
-  AccessCheckService: vi.fn().mockImplementation(() => ({
-    checkSingleAccess,
-  })),
+  AccessCheckService: vi.fn().mockImplementation(function () {
+    return {
+      checkSingleAccess,
+      checkAccess,
+      checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
+      checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
+    };
+  }),
 }));
 
+// Answers a batched check from the per-relation stub each test sets on checkSingleAccess, without
+// recording checkSingleAccess calls, so a test can tell one batch apart from separate round trips.
+function answerBatchesFromSingleAccessStub(): void {
+  checkAccess.mockImplementation(async (r: Request, resources: { id: string; access: string }[]) => {
+    const answer = checkSingleAccess.getMockImplementation();
+    const entries = await Promise.all(resources.map(async (resource) => [`${resource.id}#${resource.access}`, Boolean(await answer?.(r, resource))] as const));
+    return new Map(entries);
+  });
+}
+
 vi.mock('./project.service', () => ({
-  ProjectService: vi.fn().mockImplementation(() => ({
-    getProjectIdBySlug,
-  })),
+  ProjectService: vi.fn().mockImplementation(function () {
+    return {
+      getProjectIdBySlug,
+    };
+  }),
 }));
 
 // NatsService is only exercised here through resolveRootUid (ROOT slug -> uid). A trivial passthrough
 // codec keeps encode/decode out of scope for these tests, which are about the access-check fan-out, not
 // wire encoding.
 vi.mock('./nats.service', () => ({
-  NatsService: vi.fn().mockImplementation(() => ({
-    getCodec: () => ({
-      encode: (v: string) => v,
-      decode: (v: unknown) => v as string,
-    }),
-    request: natsRequest,
-  })),
+  NatsService: vi.fn().mockImplementation(function () {
+    return {
+      getCodec: () => ({
+        encode: (v: string) => v,
+        decode: (v: unknown) => v as string,
+      }),
+      request: natsRequest,
+    };
+  }),
 }));
 
 vi.mock('./logger.service', () => ({ logger }));
@@ -53,6 +75,8 @@ describe('PersonaDetectionService', () => {
 
   beforeEach(() => {
     checkSingleAccess.mockReset();
+    checkAccess.mockReset();
+    answerBatchesFromSingleAccessStub();
     getProjectIdBySlug.mockReset();
     natsRequest.mockReset();
     logger.warning.mockReset();
@@ -72,8 +96,9 @@ describe('PersonaDetectionService', () => {
 
   describe('checkLFStaff', () => {
     // Staff-only by decision: its consumers are the dashboard / ED / marketing bypasses, none of
-    // which were extended to contractors. Adding `lf-contractor` back to this check fails here:
-    // the authorizer is told the caller is a contractor and the answer must still be "not staff".
+    // which were extended to contractors — and `OrgLensEventsService`, where a `true` DISCLOSES the
+    // event registration goal. Adding `lf-contractor` back to this check fails here: the authorizer
+    // is told the caller is a contractor and the answer must still be "not staff".
     it('asks the authorizer for `team:lf-staff` membership only — a contractor-only caller is not staff', async () => {
       checkSingleAccess.mockImplementation((_req: Request, args: { id: string }) => Promise.resolve(args.id === 'lf-contractor'));
 
@@ -83,17 +108,37 @@ describe('PersonaDetectionService', () => {
       expect(checkSingleAccess).toHaveBeenCalledTimes(1);
       expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'lf-staff', access: 'member' });
     });
+
+    // The `.catch` here is load-bearing for `OrgLensEventsService`, which awaits this outside every
+    // query try: a rejection would 500 the whole Events list, and reject unhandled on the early
+    // returns that never await it, rather than withhold one field. Fail-closed
+    // is also the right direction for a disclosure gate — a staff member briefly missing a number
+    // they can get elsewhere beats an external admin seeing one they should not.
+    it('degrades to `not staff` when the access check fails, rather than rejecting', async () => {
+      checkSingleAccess.mockRejectedValue(new Error('fga unavailable'));
+
+      await expect(service.checkLFStaff(req)).resolves.toBe(false);
+    });
   });
 
   describe('checkRootCampaignManager', () => {
-    it('checks ROOT `marketing_ops`, not `campaign_manager`', async () => {
+    it('checks ROOT `global_marketing_ops` only, not `marketing_ops` or `campaign_manager`', async () => {
       resolvesRootUid();
-      checkSingleAccess.mockResolvedValue(true);
+      checkSingleAccess.mockResolvedValue(false);
 
       const result = await service.checkRootCampaignManager(req);
 
-      expect(result).toBe(true);
-      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-root', access: 'marketing_ops' });
+      expect(result).toBe(false);
+      expect(checkAccess).toHaveBeenCalledTimes(1);
+      expect(checkAccess).toHaveBeenCalledWith(req, [{ resource: 'project', id: 'uid-root', access: 'global_marketing_ops' }]);
+      expect(checkSingleAccess).not.toHaveBeenCalled();
+    });
+
+    it('is granted by ROOT `global_marketing_ops`', async () => {
+      resolvesRootUid();
+      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) => Promise.resolve(args.access === 'global_marketing_ops'));
+
+      await expect(service.checkRootCampaignManager(req)).resolves.toBe(true);
     });
 
     it('fails closed when the ROOT uid cannot be resolved', async () => {
@@ -102,7 +147,7 @@ describe('PersonaDetectionService', () => {
       const result = await service.checkRootCampaignManager(req);
 
       expect(result).toBe(false);
-      expect(checkSingleAccess).not.toHaveBeenCalled();
+      expect(checkAccess).not.toHaveBeenCalled();
     });
 
     it('fails closed when the access-check call rejects', async () => {
@@ -113,6 +158,64 @@ describe('PersonaDetectionService', () => {
 
       expect(result).toBe(false);
       expect(logger.warning).toHaveBeenCalled();
+    });
+  });
+
+  // Staff whose access is a per-project `global_writer`/`global_auditor` grant hold the guard
+  // relations, not the bare ones — checking bare `writer`/`auditor` would silently drop them.
+  describe('checkRootWriter / checkRootAuditor', () => {
+    it('checks ROOT `writer_guard`', async () => {
+      resolvesRootUid();
+      checkSingleAccess.mockResolvedValue(true);
+
+      await expect(service.checkRootWriter(req)).resolves.toBe(true);
+      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-root', access: 'writer_guard' });
+    });
+
+    it('checks ROOT `auditor_guard`', async () => {
+      resolvesRootUid();
+      checkSingleAccess.mockResolvedValue(true);
+
+      await expect(service.checkRootAuditor(req)).resolves.toBe(true);
+      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-root', access: 'auditor_guard' });
+    });
+
+    it('checkProjectWriter checks `writer_guard` on the named project, failing closed for an unknown slug', async () => {
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-project', slug: 'some-project', exists: true });
+      checkSingleAccess.mockResolvedValue(true);
+
+      await expect(service.checkProjectWriter(req, 'some-project')).resolves.toBe(true);
+      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-project', access: 'writer_guard' });
+
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: 'ghost', exists: false });
+      await expect(service.checkProjectWriter(req, 'ghost')).resolves.toBe(false);
+    });
+  });
+
+  describe('checkProjectGlobalMarketingOpsStrict', () => {
+    it('checks `global_marketing_ops` on the named project itself, never ROOT', async () => {
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-project', slug: 'some-project', exists: true });
+      checkSingleAccess.mockResolvedValueOnce(false);
+
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'some-project')).resolves.toBe(false);
+      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-project', access: 'global_marketing_ops' });
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('answers no for a blank or unknown slug without an access check', async () => {
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, '')).resolves.toBe(false);
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: 'ghost', exists: false });
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'ghost')).resolves.toBe(false);
+      expect(checkSingleAccess).not.toHaveBeenCalled();
+    });
+
+    it('throws, rather than answering no, when the slug lookup or the access check fails', async () => {
+      getProjectIdBySlug.mockRejectedValueOnce(new Error('nats unavailable'));
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'slug-a')).rejects.toThrow('nats unavailable');
+
+      getProjectIdBySlug.mockResolvedValueOnce({ uid: 'uid-b', slug: 'slug-b', exists: true });
+      checkSingleAccess.mockRejectedValueOnce(new Error('fga unavailable'));
+      await expect(service.checkProjectGlobalMarketingOpsStrict(req, 'slug-b')).rejects.toThrow('fga unavailable');
     });
   });
 
@@ -147,20 +250,61 @@ describe('PersonaDetectionService', () => {
       });
     }
 
-    it('is granted via the ROOT `marketing_ops` short-circuit without ever consulting the project slug', async () => {
+    it('is granted via ROOT `global_marketing_ops` when no projectSlug is given', async () => {
       personaEnv();
-      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) => Promise.resolve(args.access === 'marketing_ops'));
+      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) => Promise.resolve(args.access === 'global_marketing_ops'));
 
-      const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
+      const response = await service.getPersonas(req, undefined, 'campaign_manager');
 
       expect(response.isCampaignManager).toBe(true);
       expect(getProjectIdBySlug).not.toHaveBeenCalled();
     });
 
-    it('falls back to the requested project scoped `campaign_manager` when ROOT `marketing_ops` is absent', async () => {
+    it('fails closed when the ROOT result omits the relation', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(true);
+      checkAccess.mockResolvedValue(new Map());
+
+      const response = await service.getPersonas(req, undefined, 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.isCampaignManagerRootGrant).toBe(false);
+    });
+
+    // `global_marketing_ops` does not cascade, so a ROOT-only grant must not answer for a named
+    // project; that project's own `campaign_manager` (which folds in the per-project grant) does.
+    it('does not let a ROOT `global_marketing_ops` grant answer for a named project', async () => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve(args.id === 'uid-root' && args.access === 'global_marketing_ops')
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.isCampaignManagerRootGrant).toBe(false);
+      expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'project', id: 'uid-project', access: 'campaign_manager' });
+    });
+
+    // The frontend stores a true `isCampaignManagerRootGrant` as a grant on every project, so a
+    // non-cascading ROOT `global_marketing_ops` must not set it.
+    it('reports a ROOT `global_marketing_ops` grant as not cascading', async () => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve((args.id === 'uid-root' && args.access === 'global_marketing_ops') || (args.id === 'uid-project' && args.access === 'campaign_manager'))
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(true);
+      expect(response.isCampaignManagerRootGrant).toBe(false);
+    });
+
+    it('is granted via the requested project scoped `campaign_manager`', async () => {
       personaEnv();
       checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) => {
-        if (args.access === 'marketing_ops') return Promise.resolve(false);
         return Promise.resolve(args.id === 'uid-project' && args.access === 'campaign_manager');
       });
       getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
@@ -211,6 +355,100 @@ describe('PersonaDetectionService', () => {
       expect(response.isCampaignManager).toBe(false);
       expect(logger.warning).toHaveBeenCalled();
     });
+
+    it('reports a failed project grant check as unverified, not as a denial', async () => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) =>
+        args.access === 'campaign_manager' ? Promise.reject(new Error('fga unavailable')) : Promise.resolve(false)
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('reports a slug lookup that times out as unverified, asking the lookup not to read it as a missing project', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(false);
+      getProjectIdBySlug.mockRejectedValue(new Error('timeout'));
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'campaign_manager');
+
+      expect(getProjectIdBySlug).toHaveBeenCalledWith(expect.anything(), 'some-project', { unavailableAsMissing: false });
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    // Persona detection answers; only the ROOT slug -> uid lookup times out.
+    function rootLookupTimesOut(): void {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.reject(new Error('timeout'));
+      });
+    }
+
+    it('reports a ROOT lookup timeout on the campaign path (global_marketing_ops) as unverified', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(true);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+      expect(checkAccess).not.toHaveBeenCalled();
+    });
+
+    it('treats a verified project grant as verified even when the ROOT check for the same relation failed', async () => {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.reject(new Error('timeout'));
+      });
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve(args.id === 'uid-project' && args.access === 'marketing_auditor')
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'marketing_auditor');
+
+      expect(response.isMarketingAuditor).toBe(true);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
+
+    it('reports a ROOT lookup timeout on the marketing-auditor path as unverified', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(true);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'marketing_auditor');
+
+      expect(response.isMarketingAuditor).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('does not count a failed ROOT lookup for a non-marketing check (auditor_guard) as a marketing failure', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(false);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'none');
+
+      expect(response.isAuditor).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
+
+    it('reports a plain denial as verified', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
   });
 
   describe('getPersonas — marketing auditor OR path', () => {
@@ -258,9 +496,9 @@ describe('PersonaDetectionService', () => {
 
     it('dedupes the slug -> uid lookup across both marketing checks when marketingRelations is `both`', async () => {
       personaEnv();
-      // Both ROOT checks (`marketing_ops`, `marketing_auditor`) fail, forcing checkMarketingAuditorAccess
-      // AND checkCampaignManagerAccess to each fall through to the project-scoped lookup via
-      // resolveProjectSlug — the path that exercises projectSlugRequestCache.
+      // The ROOT `marketing_auditor` check fails, forcing checkMarketingAuditorAccess to fall through
+      // to the project-scoped lookup that checkCampaignManagerAccess always makes for a named
+      // project — both via resolveProjectSlug, the path that exercises projectSlugRequestCache.
       checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) => {
         if (args.id === 'uid-root') return Promise.resolve(false);
         return Promise.resolve(args.id === 'uid-project' && (args.access === 'marketing_auditor' || args.access === 'campaign_manager'));
@@ -286,7 +524,6 @@ describe('PersonaDetectionService', () => {
       expect(response.isCampaignManager).toBe(false);
       expect(getProjectIdBySlug).not.toHaveBeenCalled();
       expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'marketing_auditor' }));
-      expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'marketing_ops' }));
       expect(checkSingleAccess).not.toHaveBeenCalledWith(req, expect.objectContaining({ access: 'campaign_manager' }));
     });
   });

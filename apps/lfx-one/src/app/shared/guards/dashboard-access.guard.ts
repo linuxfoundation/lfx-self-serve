@@ -28,7 +28,9 @@ export const dashboardAccessGuard: CanActivateFn = (route: ActivatedRouteSnapsho
       if (personaService.canViewExecutiveDashboards()) {
         return true;
       }
-      return router.createUrlTree(['/foundation/overview'], { queryParams: { project: route.queryParamMap.get('project') } });
+      // A route can name its own landing page (e.g. project-lens pages redirect to the project overview).
+      const redirectTo = (route.data?.['accessDeniedRedirect'] as string | undefined) ?? '/foundation/overview';
+      return router.createUrlTree([redirectTo], { queryParams: { project: route.queryParamMap.get('project') } });
     })
   );
 };

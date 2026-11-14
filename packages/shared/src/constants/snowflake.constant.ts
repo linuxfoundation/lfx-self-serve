@@ -81,6 +81,14 @@ export const SNOWFLAKE_CONFIG = {
    * If the probe succeeds the circuit closes; if it fails the timer resets.
    */
   CIRCUIT_BREAKER_RESET_TIMEOUT_MS: 60000, // 60 seconds
+
+  /**
+   * Most bind variables a single statement may carry.
+   * Larger statements are rejected with a 400 before the circuit breaker is consulted, so a
+   * request-sized statement that Snowflake would refuse to compile never counts as an outage.
+   * Kept well below Snowflake's 16,384-expression IN-list limit and far above any legitimate query.
+   */
+  MAX_BIND_VARIABLES: 10000,
 } as const;
 
 /**

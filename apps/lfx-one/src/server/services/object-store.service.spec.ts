@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const { sendMock, s3ClientCtor } = vi.hoisted(() => {
@@ -31,6 +31,7 @@ vi.mock('./logger.service', () => ({
 
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -38,6 +39,10 @@ import {
   NotFound,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
+
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
@@ -60,6 +65,15 @@ function buildForbiddenError(): Error & { $metadata: { httpStatusCode: number } 
 
 describe('ObjectStoreService', () => {
   let service: ObjectStoreService;
+  /** Scratch root for the file-backed store — never the app folder's default `.object-store`. */
+  let localDir: string;
+
+  async function useLocalDir(): Promise<void> {
+    if (!localDir) {
+      localDir = await mkdtemp(join(tmpdir(), 'lfx-object-store-spec-'));
+    }
+    process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -67,10 +81,174 @@ describe('ObjectStoreService', () => {
     delete process.env['S3_ENDPOINT_URL'];
     delete process.env['CDN_URL_PREFIX'];
     delete process.env['S3_CREATE_MISSING_BUCKET'];
+    delete process.env['OBJECT_STORE_LOCAL_DIR'];
     process.env['S3_BUCKET'] = 'avatars-bucket';
     process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'] = 'marketing-os-artifacts-test';
     process.env['AWS_REGION'] = 'us-west-2';
+    localDir = '';
     service = new ObjectStoreService();
+  });
+
+  it('passes S3 preconditions and only treats contention as a failed comparison', async () => {
+    sendMock.mockResolvedValue({});
+    const input = { body: Buffer.from('{}'), contentType: 'application/json', cacheControl: 'private', ifNoneMatch: '*' as const };
+    await expect(service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', input)).resolves.toBe(true);
+    expect(sendMock.mock.calls.at(-1)?.[0].input).toMatchObject({ IfNoneMatch: '*' });
+    sendMock.mockRejectedValue({ $metadata: { httpStatusCode: 412 } });
+    await expect(
+      service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', { ...input, ifNoneMatch: undefined, ifMatch: 'observed' })
+    ).resolves.toBe(false);
+    expect(sendMock.mock.calls.at(-1)?.[0].input).toMatchObject({ IfMatch: 'observed' });
+    sendMock.mockRejectedValue(buildForbiddenError());
+    await expect(service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', input)).rejects.toThrow('Forbidden');
+  });
+
+  it('rejects absent or conflicting conditional-write preconditions with a typed validation error', async () => {
+    const input = { body: Buffer.from('{}'), contentType: 'application/json', cacheControl: 'private' };
+    for (const invalid of [input, { ...input, ifMatch: 'token', ifNoneMatch: '*' as const }]) {
+      await expect(service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', invalid)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  afterEach(async () => {
+    try {
+      if (localDir) {
+        await rm(localDir, { recursive: true, force: true });
+      }
+    } finally {
+      process.env = { ...ORIGINAL_ENV };
+    }
+  });
+
+  it('uses the main conditional API for private creates/replacements without logging the key', async () => {
+    let exists = false;
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) {
+        if (!exists) throw buildNotFoundError();
+        return { Body: { transformToString: async () => 'first' }, ETag: 'observed-version' };
+      }
+      if (command instanceof PutObjectCommand) exists = true;
+      return {};
+    });
+    const key = 'profiles/opaque/current.json';
+    await service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+      body: Buffer.from('first'),
+      contentType: 'application/json',
+      cacheControl: 'private',
+    });
+    await service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+      body: Buffer.from('second'),
+      contentType: 'application/json',
+      cacheControl: 'private',
+    });
+    const puts = sendMock.mock.calls.map(([command]) => command).filter((command) => command instanceof PutObjectCommand);
+    expect(puts.map((command) => command.input.Body)).toEqual([Buffer.from('first'), Buffer.from('second')]);
+    expect(puts.map((command) => command.input.Key)).toEqual([key, key]);
+    expect(puts[0].input).toMatchObject({ IfNoneMatch: '*' });
+    expect(puts[1].input).toMatchObject({ IfMatch: 'observed-version' });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+  });
+
+  it('refuses a contended private write without retrying over a concurrent save', async () => {
+    const key = 'profiles/opaque/current.json';
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) return { Body: { transformToString: async () => 'first' }, ETag: 'observed-version' };
+      if (command instanceof PutObjectCommand) throw { $metadata: { httpStatusCode: 412 } };
+      return {};
+    });
+    await expect(
+      service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+        body: Buffer.from('second'),
+        contentType: 'application/json',
+        cacheControl: 'private',
+      })
+    ).rejects.toMatchObject({ code: 'OBJECT_STORE_REPLACE_FAILED' });
+    const puts = sendMock.mock.calls.map(([command]) => command).filter((command) => command instanceof PutObjectCommand);
+    expect(puts).toHaveLength(1);
+    expect(puts[0].input).toMatchObject({ IfMatch: 'observed-version' });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(key);
+  });
+
+  it('reads private objects without logging keys, response bodies or provider error messages', async () => {
+    const key = 'profiles/private-subject-hash/current.json';
+    sendMock.mockResolvedValueOnce({ Body: { transformToString: async () => 'Private body' }, Metadata: {} });
+    expect(await service.getPrivateObject(buildReq(), 'marketing-os-artifacts', key)).toMatchObject({ body: 'Private body' });
+    sendMock.mockRejectedValueOnce(Object.assign(new Error(`PRIVATE_PROVIDER_MESSAGE ${key}`), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }));
+    await expect(service.getPrivateObject(buildReq(), 'marketing-os-artifacts', key)).rejects.toMatchObject({ code: 'OBJECT_STORE_PRIVATE_READ_FAILED' });
+    const logs = JSON.stringify([vi.mocked(logger.debug).mock.calls, vi.mocked(logger.warning).mock.calls, vi.mocked(logger.startOperation).mock.calls]);
+    expect(logs).not.toContain(key);
+    expect(logs).not.toContain('Private body');
+    expect(logs).not.toContain('PRIVATE_PROVIDER_MESSAGE');
+    expect(logs).toContain('AccessDenied');
+  });
+  it('creates private state only if absent, classifying contention without leaking its key', async () => {
+    const key = 'profiles/private-subject-hash/current.json';
+    const input = { body: Buffer.from('{}'), contentType: 'application/json', cacheControl: 'private' };
+    sendMock.mockResolvedValue({});
+    expect(await service.putPrivateObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, input)).toBe(true);
+    expect(sendMock.mock.calls.at(-1)?.[0].input).toMatchObject({ IfNoneMatch: '*' });
+    sendMock.mockRejectedValue({ $metadata: { httpStatusCode: 412 } });
+    expect(await service.putPrivateObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, input)).toBe(false);
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+  });
+
+  it('deletes the current S3 key using only the deployed DeleteObject grant, without version operations or key logging', async () => {
+    const key = 'profiles/private-subject-hash/current.json';
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof DeleteObjectCommand) return { DeleteMarker: true, VersionId: 'synthetic-marker' };
+      throw new Error('Unexpected S3 operation');
+    });
+    await service.deletePrivateObject(buildReq(), 'marketing-os-artifacts', key);
+    expect(sendMock).toHaveBeenCalledOnce();
+    expect(sendMock.mock.calls[0][0].input).toEqual({ Bucket: 'marketing-os-artifacts-test', Key: key });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+    expect(JSON.stringify(vi.mocked(logger.startOperation).mock.calls)).not.toContain(key);
+  });
+
+  it('treats a confirmed missing bucket as an idempotent current-object deletion, but not a denied deletion', async () => {
+    sendMock.mockRejectedValueOnce(Object.assign(new Error('Missing bucket'), { name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } }));
+    await expect(service.deletePrivateObject(buildReq(), 'marketing-os-artifacts', 'profiles/opaque/current.json')).resolves.toBeUndefined();
+    const key = 'profiles/private-subject-hash/current.json';
+    sendMock.mockRejectedValueOnce(
+      Object.assign(new Error(`Denied ${key}`), { name: 'AccessDenied', Code: 'AccessDenied', $metadata: { httpStatusCode: 403 } })
+    );
+    await expect(service.deletePrivateObject(buildReq(), 'marketing-os-artifacts', key)).rejects.toMatchObject({ code: 'OBJECT_STORE_DELETE_FAILED' });
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'object_store_delete', 'Private object storage operation failed', {
+      storage_failure: { name: 'AccessDenied', code: 'AccessDenied', httpStatusCode: 403 },
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(key);
+  });
+
+  it.each([
+    { name: 'AccessDenied', Code: 'AccessDenied', status: 403 },
+    { name: 'NoSuchBucket', code: 'NoSuchBucket', status: 404 },
+    { name: 'NotImplemented', Code: 'NotImplemented', status: 501 },
+    { name: 'SlowDown', code: 'SlowDown', status: 503 },
+    { name: 'AccessDenied', status: 403 },
+  ])('keeps $name storage failures diagnosable without logging private messages/keys', async (failure) => {
+    const key = 'profiles/private-subject-hash/current.json';
+    const error = Object.assign(new Error(`Private object ${key}`), failure, { $metadata: { httpStatusCode: failure.status } });
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) throw buildNotFoundError();
+      if (command instanceof PutObjectCommand) throw error;
+      return {};
+    });
+    await expect(
+      service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+        body: Buffer.from('private'),
+        contentType: 'application/json',
+        cacheControl: 'private',
+      })
+    ).rejects.toMatchObject({ code: 'OBJECT_STORE_REPLACE_FAILED' });
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'object_store_replace', 'Private object storage operation failed', {
+      storage_failure: { name: failure.name, code: failure.Code ?? failure.code, httpStatusCode: failure.status },
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(key);
   });
 
   describe('ensureBucket', () => {
@@ -148,11 +326,49 @@ describe('ObjectStoreService', () => {
       expect(sendMock.mock.calls[0][0].input.Bucket).toBe('marketing-os-artifacts-test');
     });
 
-    it('rejects with no S3 call when the purpose bucket env var is unset', async () => {
+    it('serves the private marketing-os-artifacts purpose from the file-backed store when its bucket env var is unset — no S3 client, no S3 call', async () => {
       delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
+      await useLocalDir();
+
+      await service.ensureBucket('marketing-os-artifacts');
+
+      expect(sendMock).not.toHaveBeenCalled();
+      expect(s3ClientCtor).not.toHaveBeenCalled();
+      await expect(stat(join(localDir, 'marketing-os-artifacts'))).resolves.toMatchObject({ isDirectory: expect.any(Function) });
+    });
+
+    it('keeps S3_BUCKET REQUIRED for the public avatars purpose even outside production — a CDN URL must never point at a file on disk', async () => {
+      delete process.env['S3_BUCKET'];
+      await useLocalDir();
+
+      await expect(service.ensureBucket()).rejects.toThrow('S3_BUCKET environment variable is required');
+      expect(sendMock).not.toHaveBeenCalled();
+      await expect(stat(join(localDir, 'avatars'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('keeps the bucket env var REQUIRED under NODE_ENV=production — deployed environments never fall back to disk', async () => {
+      delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
+      process.env['NODE_ENV'] = 'production';
+      await useLocalDir();
 
       await expect(service.ensureBucket('marketing-os-artifacts')).rejects.toThrow('MARKETING_OS_ARTIFACTS_S3_BUCKET environment variable is required');
       expect(sendMock).not.toHaveBeenCalled();
+      await expect(stat(join(localDir, 'marketing-os-artifacts'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('selects the backend per purpose — a configured avatars bucket stays on S3 while an unconfigured artifacts purpose uses the folder', async () => {
+      delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
+      await useLocalDir();
+      sendMock.mockResolvedValueOnce({});
+
+      await service.ensureBucket();
+      await service.ensureBucket('marketing-os-artifacts');
+
+      expect(sendMock).toHaveBeenCalledOnce();
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(HeadBucketCommand);
+      expect(sendMock.mock.calls[0][0].input.Bucket).toBe('avatars-bucket');
+      await expect(stat(join(localDir, 'marketing-os-artifacts'))).resolves.toBeDefined();
+      await expect(stat(join(localDir, 'avatars'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('memoizes ensureBucket per purpose — one purpose failing does not poison the other', async () => {
@@ -378,6 +594,17 @@ describe('ObjectStoreService', () => {
     });
   });
 
+  describe('headObject', () => {
+    it('returns metadata without downloading a body and propagates the original read error', async () => {
+      sendMock.mockResolvedValueOnce({ Metadata: { state: 'writing' } });
+      await expect(service.headObject(buildReq(), 'marketing-os-artifacts', 'document-runs/p/r.json')).resolves.toEqual({ state: 'writing' });
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(HeadObjectCommand);
+      const failure = buildForbiddenError();
+      sendMock.mockRejectedValueOnce(failure);
+      await expect(service.headObject(buildReq(), 'marketing-os-artifacts', 'document-runs/p/r.json')).rejects.toBe(failure);
+    });
+  });
+
   describe('getObject', () => {
     const key = 'brand-kit/testorbit/abc.md';
 
@@ -531,6 +758,133 @@ describe('ObjectStoreService', () => {
       await expect(service.ensureBucket()).rejects.toThrow('AWS_REGION environment variable is required');
       expect(sendMock).not.toHaveBeenCalled();
       expect(s3ClientCtor).not.toHaveBeenCalled();
+    });
+  });
+
+  // The same public surface, served by the folder under the app directory when
+  // the private marketing-os-artifacts bucket is not configured: what a local
+  // hand test and these unit tests run on.
+  describe('file-backed store (no bucket configured)', () => {
+    const key = 'brand-kit/testorbit/abc.md';
+    const body = Buffer.from('# doc');
+
+    beforeEach(() => {
+      delete process.env['S3_BUCKET'];
+      delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
+      delete process.env['AWS_REGION'];
+    });
+
+    it('defaults the store root to .object-store under the working directory (the app folder) and says so at INFO', async () => {
+      delete process.env['OBJECT_STORE_LOCAL_DIR'];
+
+      // readiness only probes — it never creates the folder, so the default path is safe to resolve here.
+      await service.readiness('marketing-os-artifacts');
+
+      expect(logger.info).toHaveBeenCalledWith(
+        undefined,
+        'object_store_backend',
+        expect.any(String),
+        expect.objectContaining({
+          purpose: 'marketing-os-artifacts',
+          bucket_env: 'MARKETING_OS_ARTIFACTS_S3_BUCKET',
+          directory: resolve(process.cwd(), '.object-store', 'marketing-os-artifacts'),
+        })
+      );
+    });
+
+    it('needs no AWS_REGION and no S3 client at all', async () => {
+      await useLocalDir();
+      await service.ensureBucket('marketing-os-artifacts');
+      await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
+
+      expect(s3ClientCtor).not.toHaveBeenCalled();
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('reports readiness false before the first write and true once the folder exists', async () => {
+      await useLocalDir();
+      await expect(service.readiness('marketing-os-artifacts')).resolves.toBe(false);
+      await service.ensureBucket('marketing-os-artifacts');
+      await expect(service.readiness('marketing-os-artifacts')).resolves.toBe(true);
+    });
+
+    it('persists a document with its metadata and restores it through list + get, exactly like S3', async () => {
+      await useLocalDir();
+      const written = await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', {
+        version: '2',
+        'intake-mode': 'form',
+      });
+      expect(written).toBe(true);
+
+      const objects = await service.listObjects(buildReq(), 'marketing-os-artifacts', 'brand-kit/testorbit/');
+      expect(objects).toHaveLength(1);
+      expect(objects[0].key).toBe(key);
+      expect(objects[0].lastModified).toBeInstanceOf(Date);
+
+      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toMatchObject({
+        etag: expect.any(String),
+        body: '# doc',
+        metadata: { version: '2', 'intake-mode': 'form' },
+      });
+      // The bytes land under <root>/<purpose>/<key>, readable by anyone poking at the folder.
+      await expect(readFile(join(localDir, 'marketing-os-artifacts', key), 'utf8')).resolves.toBe('# doc');
+    });
+
+    it('survives a server restart: a fresh service instance reads what the previous one stored', async () => {
+      await useLocalDir();
+      await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', { version: '1' });
+
+      const restarted = new ObjectStoreService();
+
+      await expect(restarted.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toMatchObject({
+        body: '# doc',
+        metadata: { version: '1' },
+        etag: expect.any(String),
+      });
+    });
+
+    it('keeps the content-addressed no-op and the strictly-newer metadata refresh', async () => {
+      await useLocalDir();
+      await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', { version: '1' });
+
+      const repeat = await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', {
+        version: '1',
+      });
+      expect(repeat).toBe(false);
+
+      const refreshed = await service.putContentAddressedObject(
+        buildReq(),
+        'marketing-os-artifacts',
+        key,
+        body,
+        'text/markdown; charset=utf-8',
+        'private',
+        { version: '2' },
+        { refreshMetadataWhen: (stored) => stored['version'] === '1' }
+      );
+      expect(refreshed).toBe(true);
+      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toMatchObject({ metadata: { version: '2' } });
+    });
+
+    it('lists a prefix that was never written as empty and reads a missing key as null — without a WARN', async () => {
+      await useLocalDir();
+      await expect(service.listObjects(buildReq(), 'marketing-os-artifacts', 'icp/nothing-here/')).resolves.toEqual([]);
+      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', 'icp/nothing-here/abc.md')).resolves.toBeNull();
+      expect(logger.warning).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    it('never serves the public avatars purpose: with CDN_URL_PREFIX set and no S3_BUCKET, uploads fail instead of storing a URL that points at nothing', async () => {
+      await useLocalDir();
+      process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com';
+
+      await expect(service.uploadProfilePicture(buildReq(), 'User1', Buffer.from('img'), 'image/png')).rejects.toThrow(
+        'S3_BUCKET environment variable is required'
+      );
+      await expect(service.putPublicImage(buildReq(), 'mentorship-logos/abc.png', Buffer.from('img'), 'image/png')).rejects.toThrow(
+        'S3_BUCKET environment variable is required'
+      );
+      await expect(stat(join(localDir, 'avatars'))).rejects.toMatchObject({ code: 'ENOENT' });
     });
   });
 });

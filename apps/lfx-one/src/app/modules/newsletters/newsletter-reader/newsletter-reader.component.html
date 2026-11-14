@@ -16,8 +16,14 @@
         <p class="max-w-lg text-gray-600">We couldn't load this newsletter right now. Please try again in a few minutes.</p>
       </div>
     </div>
+  } @else if (membersOnly()) {
+    <!-- Signed in, but not a manager, group member or Linux Foundation member employee -->
+    <lfx-newsletter-not-found
+      reason="members-only"
+      [deniedReason]="access()?.denied_reason ?? null"
+      data-testid="newsletter-reader-members-only"></lfx-newsletter-not-found>
   } @else if (notFound()) {
-    <!-- 404: draft hidden from non-writer OR project/newsletter not found -->
+    <!-- 404: draft hidden from non-manager (server-decided) OR project/newsletter not found -->
     <lfx-newsletter-not-found [reason]="isDraftHidden() ? 'draft' : 'not-found'" data-testid="newsletter-reader-not-found"></lfx-newsletter-not-found>
   } @else if (loading()) {
     <!-- Skeleton loader -->
@@ -29,32 +35,69 @@
     <!-- Page header with breadcrumb -->
     <div class="flex items-center justify-between mb-8 mt-6">
       <div class="flex-1">
-        <nav class="flex items-center gap-2 text-sm text-gray-600 mb-4">
-          <a href="/newsletters/my" (click)="goToMyNewsletters($event)" class="hover:text-gray-900">My Newsletters</a>
-          <i class="fa-light fa-chevron-right text-xs"></i>
-          <span class="text-gray-900" data-testid="newsletter-reader-title">{{ pageTitle() }}</span>
+        <!-- Newsletters › <Foundation>: the middle crumb returns to the foundation's newsletter list
+             (the parent foundation for a child-project issue). Until that foundation resolves — or when
+             the reader doesn't receive it — it shows the project and links to the foundation cards. -->
+        <nav aria-label="Breadcrumb" class="flex items-center gap-2 text-sm text-gray-600 mb-4" data-testid="newsletter-reader-breadcrumb">
+          <a href="/newsletters/my" (click)="goToMyNewsletters($event)" class="hover:text-gray-900" data-testid="newsletter-reader-newsletters-link"
+            >Newsletters</a
+          >
+          <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+          @let crumb = foundationCrumb();
+          <a
+            [attr.href]="crumb.href"
+            (click)="goToMyNewsletters($event, crumb.commands)"
+            class="text-gray-900 hover:underline"
+            data-testid="newsletter-reader-foundation-link"
+            ><span data-testid="newsletter-reader-title">{{ crumb.label }}</span></a
+          >
         </nav>
         <h1 class="font-display font-light text-2xl text-gray-900">{{ newsletter()?.subject }}</h1>
         <p class="mt-2 text-sm text-gray-600" data-testid="newsletter-reader-received">{{ pageSubtitle() }}</p>
       </div>
-      @if (shareUrl()) {
-        <button
-          type="button"
-          (click)="copyLink()"
-          class="ml-4 p-3 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-          title="Copy link"
-          aria-label="Copy link"
-          data-testid="newsletter-reader-copy-link">
-          <i class="fa-light fa-link text-xl"></i>
-        </button>
-      }
+      <div class="ml-4 flex items-center gap-2">
+        @if (canInvite()) {
+          <lfx-button
+            label="Invite a colleague"
+            icon="fa-light fa-user-plus"
+            severity="info"
+            size="small"
+            (onClick)="onInvite()"
+            data-testid="newsletter-reader-invite" />
+        }
+      </div>
     </div>
 
-    <!-- Newsletter preview inline (not a drawer) -->
-    <lfx-newsletter-preview
-      [subject]="newsletter()?.subject ?? ''"
-      [bodyHtml]="newsletter()?.body_html ?? ''"
-      [displayName]="project()?.name ?? ''"
-      data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
+    @if (access()?.access === 'eligible') {
+      <!-- Member benefit: the reader is being / has been added to the newsletter group -->
+      <div class="mb-6" data-testid="newsletter-reader-member-benefit">
+        <lfx-newsletter-member-benefit-banner
+          [joinState]="joinState()"
+          [email]="access()?.qualifying_email ?? ''"
+          [companyName]="access()?.company_name ?? ''"
+          [groupName]="access()?.committee_name ?? ''"
+          (retry)="retryJoin()"></lfx-newsletter-member-benefit-banner>
+      </div>
+    }
+
+    <!-- Engagement rail (views + share) beside the issue on large screens, a row above it on smaller ones -->
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-center lg:gap-8">
+      <lfx-newsletter-engagement-rail
+        class="lg:sticky lg:top-24"
+        [views]="viewCount()"
+        [shares]="shareTally().count"
+        (share)="openShare()"
+        testId="newsletter-reader" />
+
+      <!-- Newsletter preview inline (not a drawer). 600px: matches the email body width in newsletter-preview.component.scss -->
+      <lfx-newsletter-preview
+        class="w-full lg:max-w-[600px]"
+        [subject]="newsletter()?.subject ?? ''"
+        [bodyHtml]="newsletter()?.body_html ?? ''"
+        [displayName]="project()?.name ?? ''"
+        [fullDocument]="!!newsletter()?.body_layout"
+        [sendDate]="newsletter()?.sent_at"
+        data-testid="newsletter-reader-preview"></lfx-newsletter-preview>
+    </div>
   }
 </div>

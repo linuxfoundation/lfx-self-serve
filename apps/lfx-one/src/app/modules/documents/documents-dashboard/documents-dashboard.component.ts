@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -13,21 +15,34 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
+import {
+  DocumentFormMode,
+  FilterPillOption,
+  GroupLinkState,
+  MyDocumentItem,
+  MyDocumentSource,
+  MyDocumentTableRow,
+  ProjectContext,
+  ProjectDocument,
+} from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency, getDocumentSourceLink, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap, take } from 'rxjs';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
+import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-documents-dashboard',
@@ -46,6 +61,8 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
     EmptyStateComponent,
     SkeletonModule,
     TooltipModule,
+    PageHeaderComponent,
+    RouterLink,
   ],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider
@@ -62,9 +79,11 @@ export class DocumentsDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly dialogService = inject(DialogService);
   private readonly projectService = inject(ProjectService);
+  private readonly messageService = inject(MessageService);
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
+  protected readonly pageTitle = DOCUMENT_LABEL.plural;
   protected readonly sourceTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All Sources' },
     { id: 'link', label: 'Links' },
@@ -75,26 +94,35 @@ export class DocumentsDashboardComponent {
   // === Forms ===
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>(''),
-    /** Project-mode source filter: 'link' | 'file' | null. Folders are never filtered out (they're navigation). */
-    projectSource: new FormControl<MyDocumentSource | null>(null),
     foundation: new FormControl<string | null>(null),
     group: new FormControl<string | null>(null),
     meeting: new FormControl<string | null>(null),
     mailingList: new FormControl<string | null>(null),
   });
 
-  /** Source filter options shown on the Project / Foundation lens (mirrors committee-documents). */
-  protected readonly projectSourceOptions: { label: string; value: MyDocumentSource | null }[] = [
-    { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' },
-    { label: 'File', value: 'file' },
+  /** Source pills for the Project / Foundation lens — filter by subsystem origin. */
+  private readonly baseProjectSourceTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'project', label: 'Project' },
+    { id: 'committee', label: COMMITTEE_LABEL.plural },
+    { id: 'meeting', label: 'Meetings' },
+    { id: 'mailing_list', label: 'Mailing Lists' },
   ];
+
+  // === Subjects ===
+  /** Emits immediately when the search box is programmatically cleared (e.g. on folder open),
+   *  bypassing the 300 ms debounce so `searchQuery()` resets in the same tick. */
+  private readonly clearSearch$ = new Subject<string>();
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
   protected readonly sourceTab = signal<string>('all');
+  /** Project-mode source pill: 'all' or a subsystem bucket (project, committee, meeting, mailing_list). */
+  protected readonly projectSourceTab = signal<string>('all');
   /** Bumped after a successful upload/folder/link create so the document list re-fetches. */
   protected readonly refreshTrigger = signal<number>(0);
+  /** Uids of project documents deleted in this session, hidden from the list even if a reload still returns them. */
+  private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
   /** UID of the folder the user has drilled into; null means the root view (project mode only). */
   protected readonly currentFolderUid = signal<string | null>(null);
 
@@ -102,26 +130,52 @@ export class DocumentsDashboardComponent {
   protected readonly project = this.projectContextService.activeContext;
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
-  // Toolbar gated only on project-scope so it can't render under the legacy aggregator (no-op clicks).
-  protected readonly canUpload = computed(() => this.useProjectSource());
-  /** True when the dashboard is project-scoped (Project / Foundation lens with active context). */
+  // Toolbar gated on project-scope (so it can't render under the legacy aggregator, no-op clicks)
+  // and on write access — the upload/folder/link-create endpoints all require project.writer (GH-305).
+  // Also matches activeProject() against the current project uid, like the project staff card and
+  // newsletter audience step gates — canWrite() can still reflect the previous project while the
+  // new one's details are loading (ProjectContextService.initActiveProjectDetails()), so without the
+  // uid check the toolbar could stay visible after switching into a read-only project.
+  protected readonly canUpload = computed(
+    () => this.useProjectSource() && this.projectContextService.canWrite() && this.projectContextService.activeProject()?.uid === this.project()?.uid
+  );
+  /**
+   * True when the dashboard is project-scoped (Project / Foundation lens with active context).
+   *
+   * Prefers `activeRouteLensKind` (set by `projectQueryParamGuard` before the route activates)
+   * over `activeLens()` so that deep-linking or navigating to `/foundation/documents` or
+   * `/project/documents` while the global lens is 'me' or 'org' still enables the project-source
+   * path. `activeLens()` reflects the user's globally-selected lens and is unaffected by route
+   * navigation alone, while `activeRouteLensKind` is scoped to the current route declaration.
+   */
   protected readonly useProjectSource = computed(() => {
+    if (!this.project()?.uid) return false;
+    const routeLensKind = this.projectContextService.activeRouteLensKind();
+    if (routeLensKind) {
+      return routeLensKind === 'project' || routeLensKind === 'foundation';
+    }
     const lens = this.activeLens();
-    return !!this.project()?.uid && (lens === 'project' || lens === 'foundation');
+    return lens === 'project' || lens === 'foundation';
   });
-  protected readonly pageTitle = computed(() => (this.lensService.activeLens() === 'me' ? 'My Documents' : 'Documents'));
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
-  protected readonly projectSourceFilter: Signal<MyDocumentSource | null> = this.initProjectSourceFilter();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
   protected readonly mailingListFilter: Signal<string | null> = this.initMailingListFilter();
-  /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. */
+  /** The list as last fetched, including rows deleted in this session that the index may still return. */
+  private readonly fetchedProjectDocuments: Signal<ProjectDocument[]> = this.initFetchedProjectDocuments();
+  /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. Leaves out rows deleted in this session. */
   protected readonly rawProjectDocuments: Signal<ProjectDocument[]> = this.initRawProjectDocuments();
-  /** Aggregator-fed documents (Me / Org lens, or no project context). */
+  /** Aggregator-fed documents, used only when no project context is selected. */
   protected readonly legacyDocuments: Signal<MyDocumentItem[]> = this.initLegacyDocuments();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
+  /** Rows for the current view (root, folder, or root-wide search) before search/source/legacy filters. */
+  private readonly viewDocuments: Signal<MyDocumentItem[]> = this.initViewDocuments();
+  protected readonly projectSourceTabOptions: Signal<FilterPillOption[]> = this.initProjectSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
+  protected readonly documentRows: Signal<MyDocumentTableRow[]> = this.initDocumentRows();
+  // Group links return to this page. Documents has no Me-lens page, and the global lens can still be Me on a project route, so the Me lens is never restored.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: DOCUMENT_LABEL.plural, backPath: '/documents', fromMeLens: false };
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredDocuments().length > 10 ? [10, 25, 50] : undefined));
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
@@ -144,9 +198,14 @@ export class DocumentsDashboardComponent {
     this.sourceTab.set(tab);
   }
 
+  protected onProjectSourceTabChange(tab: string): void {
+    this.projectSourceTab.set(tab);
+  }
+
   protected resetFilters(): void {
     this.filterForm.reset({ search: '', foundation: null, group: null, meeting: null, mailingList: null });
     this.sourceTab.set('all');
+    this.projectSourceTab.set('all');
   }
 
   protected openDocument(doc: MyDocumentItem): void {
@@ -165,6 +224,10 @@ export class DocumentsDashboardComponent {
   protected onFolderOpen(doc: MyDocumentItem): void {
     const folderUid = doc.id.startsWith('project_folder:') ? doc.id.slice('project_folder:'.length) : null;
     if (folderUid) {
+      // Update the form control visually without going through the debounce pipeline,
+      // then immediately emit '' via clearSearch$ so searchQuery() resets in the same tick.
+      this.filterForm.controls.search.setValue('', { emitEvent: false });
+      this.clearSearch$.next('');
       this.currentFolderUid.set(folderUid);
     }
   }
@@ -172,6 +235,34 @@ export class DocumentsDashboardComponent {
   /** Reset the breadcrumb to the root view. */
   protected onBreadcrumbHome(): void {
     this.currentFolderUid.set(null);
+  }
+
+  /** Deletes a project document the user already confirmed in the table, then refreshes the list. */
+  protected onDocumentDelete(doc: MyDocumentItem): void {
+    const projectUid = this.project()?.uid;
+    const type = doc.manageableType;
+    if (!projectUid || !type) return;
+
+    // Row ids are `project_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+
+    this.projectService
+      .deleteProjectDocument(projectUid, documentUid, type)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.deletedDocumentUids.update((uids) => new Set(uids).add(documentUid));
+          this.refreshTrigger.update((v) => v + 1);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: getHttpErrorDetail(err, `Failed to delete "${doc.name}". Please try again.`),
+          });
+        },
+      });
   }
 
   protected openUploadFileDialog(): void {
@@ -189,18 +280,15 @@ export class DocumentsDashboardComponent {
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
     return toSignal(
-      this.filterForm.controls.search.valueChanges.pipe(
-        debounceTime(300),
-        distinctUntilChanged(),
-        map((v) => v ?? ''),
-        startWith('')
-      ),
+      merge(
+        this.filterForm.controls.search.valueChanges.pipe(
+          debounceTime(300),
+          map((v) => v ?? '')
+        ),
+        this.clearSearch$
+      ).pipe(distinctUntilChanged(), startWith('')),
       { initialValue: '' }
     );
-  }
-
-  private initProjectSourceFilter(): Signal<MyDocumentSource | null> {
-    return toSignal(this.filterForm.controls.projectSource.valueChanges.pipe(startWith<MyDocumentSource | null>(null)), { initialValue: null });
   }
 
   private initFoundationFilter(): Signal<string | null> {
@@ -220,11 +308,23 @@ export class DocumentsDashboardComponent {
   }
 
   /**
+   * The fetched list without the rows deleted in this session. The list is read through an index that updates after
+   * the delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone
+   * (and the folder's child count right) until the index catches up.
+   */
+  private initRawProjectDocuments(): Signal<ProjectDocument[]> {
+    return computed(() => {
+      const deleted = this.deletedDocumentUids();
+      return deleted.size === 0 ? this.fetchedProjectDocuments() : this.fetchedProjectDocuments().filter((doc) => !deleted.has(doc.uid));
+    });
+  }
+
+  /**
    * Fetches raw project documents (folders + links + files) from the project-service backend.
    * Only fires when in project mode — keeps the aggregator path free of unnecessary requests.
    * Reacts to refreshTrigger so create/upload/delete flows re-render without manual navigation.
    */
-  private initRawProjectDocuments(): Signal<ProjectDocument[]> {
+  private initFetchedProjectDocuments(): Signal<ProjectDocument[]> {
     return toSignal(
       combineLatest([toObservable(this.project), toObservable(this.useProjectSource), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([project, useProjectSource]) => {
@@ -243,7 +343,7 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * Aggregator-fed documents (Me / Org lens, or no project context). Existing behavior —
+   * Aggregator-fed documents, used only when no project context is selected. Existing behavior —
    * queries legacy committee_link, mailing-list, meeting-attachment indexed sources.
    * Skipped entirely when in project mode (returns []).
    */
@@ -289,10 +389,7 @@ export class DocumentsDashboardComponent {
     // project/foundation context (or the folder was deleted), fall through to the root
     // view instead of rendering an empty table that requires a manual breadcrumb click.
     if (currentFolderUid && folderUids.has(currentFolderUid)) {
-      return nonFolders
-        .filter((d) => d.parent_uid === currentFolderUid)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((d) => this.toMyDocumentItem(d, project, false));
+      return nonFolders.filter((d) => d.parent_uid === currentFolderUid).map((d) => this.toMyDocumentItem(d, project, false));
     }
 
     // Root view — folders (with child counts) followed by orphan items.
@@ -304,8 +401,7 @@ export class DocumentsDashboardComponent {
     }
 
     const ordered: MyDocumentItem[] = [];
-    const sortedFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
-    for (const folder of sortedFolders) {
+    for (const folder of folders) {
       ordered.push({
         ...this.toMyDocumentItem(folder, project, false),
         isFolder: true,
@@ -314,7 +410,7 @@ export class DocumentsDashboardComponent {
     }
 
     // Orphans appear after folders so newly uploaded files don't disappear into a missing parent.
-    const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid)).sort((a, b) => a.name.localeCompare(b.name));
+    const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid));
     for (const orphan of orphans) {
       ordered.push(this.toMyDocumentItem(orphan, project, false));
     }
@@ -323,31 +419,78 @@ export class DocumentsDashboardComponent {
   }
 
   /**
-   * Maps a ProjectDocument (folder | link | file) to the MyDocumentItem shape the
-   * shared lfx-documents-table renders. Folders carry source 'link' as a placeholder
-   * (the table renders folders specially via `isFolder`). Files get a `downloadUrl`
-   * pointing at the BFF streaming endpoint.
+   * Maps a ProjectDocument to the MyDocumentItem shape the shared lfx-documents-table
+   * renders. Source is derived from document_source (project, committee, meeting, etc.)
+   * and mapped to the MyDocumentSource tag the table uses. Download URLs are only built
+   * for native project files (document_source === 'project'); committee and meeting
+   * documents open via their own URLs.
    */
   private toMyDocumentItem(doc: ProjectDocument, project: ProjectContext | null, isChild: boolean): MyDocumentItem {
     const isFile = doc.type === 'file';
+    const docSource = doc.document_source ?? 'project';
     const ownerProjectUid = project?.uid ?? doc.project_uid ?? '';
-    const groupName = project?.name ?? '';
+
+    let mySource: MyDocumentSource;
+    if (docSource === 'committee') {
+      mySource = 'committee';
+    } else if (docSource === 'mailing_list') {
+      mySource = 'mailing_list';
+    } else if (docSource === 'meeting') {
+      mySource = 'meeting';
+    } else if (docSource === 'recording') {
+      mySource = 'recording';
+    } else if (docSource === 'transcript') {
+      mySource = 'transcript';
+    } else if (docSource === 'summary') {
+      mySource = 'summary';
+    } else {
+      mySource = 'project';
+    }
+
+    // Show entity name (committee name, meeting title) when available, otherwise project name.
+    const groupName = doc.document_source_name || project?.name || '';
+
+    // Download endpoint is valid for native project files and committee files.
+    const isProjectFile = isFile && docSource === 'project';
+    const isCommitteeFile = isFile && docSource === 'committee' && !!doc.committee_uid;
+
+    // Build download URL: project files use the project BFF endpoint; committee files use the
+    // committee BFF endpoint. Committee doc UIDs carry a "committee_document:" prefix for row
+    // deduplication — strip it before forwarding to the upstream download endpoint.
+    let downloadUrl: string | undefined;
+    if (isProjectFile && ownerProjectUid) {
+      downloadUrl = `/api/projects/${encodeURIComponent(ownerProjectUid)}/documents/${encodeURIComponent(doc.uid)}/download`;
+    } else if (isCommitteeFile && doc.committee_uid) {
+      const rawDocUid = doc.uid.replace(/^committee_document:/, '');
+      downloadUrl = `/api/committees/${encodeURIComponent(doc.committee_uid)}/documents/${encodeURIComponent(rawDocUid)}/download`;
+    }
+
     return {
       id: `project_${doc.type}:${doc.uid}`,
       name: doc.name,
-      source: (isFile ? 'file' : 'link') as MyDocumentSource,
+      source: mySource,
       foundationName: '',
       foundationUid: undefined,
       groupOrMeetingName: groupName,
-      groupOrMeetingUid: ownerProjectUid,
+      // The id of the entity the name refers to, which is what the name's link opens: a committee's uid, or a past meeting's id.
+      // Native project rows and meeting attachments (whose name falls back to the project's) have none, so their name stays plain text.
+      groupOrMeetingUid: (docSource === 'committee' ? doc.committee_uid : doc.past_meeting_id) ?? '',
       date: doc.created_at ?? doc.updated_at ?? '',
       url: doc.url,
-      attachmentUid: isFile ? doc.uid : undefined,
+      attachmentUid: isProjectFile ? doc.uid : undefined,
       fileType: doc.mime_type,
       parentUid: doc.parent_uid,
       isChild,
-      downloadUrl: isFile && ownerProjectUid ? `/api/projects/${ownerProjectUid}/documents/${doc.uid}/download` : undefined,
+      downloadUrl,
       uploadedBy: doc.uploaded_by,
+      mailingListUid: doc.mailing_list_uid,
+      pastMeetingId: doc.past_meeting_id,
+      summaryUid: doc.summary_uid,
+      summaryContent: doc.summary_content,
+      projectDocumentSource: docSource,
+      documentKind: resolveProjectDocumentKind(doc, docSource),
+      // Only the project's own folders, links and files are managed through the project API; committee, meeting and mailing list rows are not.
+      manageableType: docSource === 'project' ? doc.type : undefined,
     };
   }
 
@@ -367,35 +510,92 @@ export class DocumentsDashboardComponent {
     });
   }
 
-  private initFilteredDocuments(): Signal<MyDocumentItem[]> {
+  private initViewDocuments(): Signal<MyDocumentItem[]> {
     return computed(() => {
-      const docs = this.documents();
       const query = this.searchQuery().toLowerCase().trim();
       const projectMode = this.useProjectSource();
-      const projectSource = this.projectSourceFilter();
+
+      // When in project mode with an active search query at root (no folder drilled into),
+      // search across ALL nested documents so users can find a document without knowing
+      // which folder it lives in. Inside a folder, the folder-scoped view is used instead.
+      if (projectMode && query && !this.currentFolderUid()) {
+        const raw = this.rawProjectDocuments();
+        const project = this.project();
+        const folderUids = new Set(raw.filter((d) => d.type === 'folder').map((f) => f.uid));
+        const childCountByFolder = new Map<string, number>();
+        for (const item of raw) {
+          if (item.type !== 'folder' && item.parent_uid && folderUids.has(item.parent_uid)) {
+            childCountByFolder.set(item.parent_uid, (childCountByFolder.get(item.parent_uid) ?? 0) + 1);
+          }
+        }
+        return raw.map((d) => ({
+          ...this.toMyDocumentItem(d, project, false),
+          isFolder: d.type === 'folder',
+          ...(d.type === 'folder' ? { childCount: childCountByFolder.get(d.uid) ?? 0 } : {}),
+        }));
+      }
+      return this.documents();
+    });
+  }
+
+  /** Counts reflect the search and current folder, not the selected pill, so each pill shows what it would list. */
+  private initProjectSourceTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const query = this.searchQuery().toLowerCase().trim();
+      const rows = this.viewDocuments().filter((doc) => this.matchesSearch(doc, query));
+      const counts = new Map<string, number>();
+      for (const doc of rows) {
+        const bucket = this.projectSourceBucket(doc);
+        counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+      }
+      // Don't show counts while the list is still loading; zero counts keep the plain label.
+      if (this.loading()) return this.baseProjectSourceTabOptions;
+      return this.baseProjectSourceTabOptions.map((option) => {
+        const count = option.id === 'all' ? rows.length : (counts.get(option.id) ?? 0);
+        return count > 0 ? { ...option, label: `${option.label} (${count})` } : option;
+      });
+    });
+  }
+
+  /** "Meetings" bucket covers attachments, recordings, transcripts, and summaries. */
+  private projectSourceBucket(doc: MyDocumentItem): string {
+    const docSource = doc.projectDocumentSource ?? 'project';
+    return ['meeting', 'recording', 'transcript', 'summary'].includes(docSource) ? 'meeting' : docSource;
+  }
+
+  private matchesSearch(doc: MyDocumentItem, query: string): boolean {
+    return (
+      !query ||
+      doc.name.toLowerCase().includes(query) ||
+      doc.foundationName.toLowerCase().includes(query) ||
+      doc.groupOrMeetingName.toLowerCase().includes(query)
+    );
+  }
+
+  private initDocumentRows(): Signal<MyDocumentTableRow[]> {
+    return computed(() => this.filteredDocuments().map((doc) => ({ ...doc, sourceLink: getDocumentSourceLink(doc) })));
+  }
+
+  private initFilteredDocuments(): Signal<MyDocumentItem[]> {
+    return computed(() => {
+      const query = this.searchQuery().toLowerCase().trim();
+      const projectMode = this.useProjectSource();
+      const projectSourceTab = this.projectSourceTab();
+      const docs = this.viewDocuments();
       const foundation = this.foundationFilter();
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
       const mailingList = this.mailingListFilter();
       const sourceTab = this.sourceTab();
 
-      return docs.filter((doc) => {
-        if (
-          query &&
-          !doc.name.toLowerCase().includes(query) &&
-          !doc.foundationName.toLowerCase().includes(query) &&
-          !doc.groupOrMeetingName.toLowerCase().includes(query)
-        ) {
-          return false;
-        }
+      const filtered = docs.filter((doc) => {
+        if (!this.matchesSearch(doc, query)) return false;
 
         if (projectMode) {
-          // Folders are structural navigation — never filtered by source.
-          if (projectSource && !doc.isFolder && doc.source !== projectSource) return false;
-          return true;
+          return projectSourceTab === 'all' || this.projectSourceBucket(doc) === projectSourceTab;
         }
 
-        // Legacy aggregator filters (Me / Org lens)
+        // Legacy aggregator filters (no project context)
         if (foundation && doc.foundationUid !== foundation) return false;
         if (group && doc.groupOrMeetingUid !== group) return false;
         if (meeting && doc.meetingId !== meeting && doc.pastMeetingId !== meeting) return false;
@@ -405,6 +605,8 @@ export class DocumentsDashboardComponent {
         }
         return true;
       });
+      // Apply the same order to root, folder, search, and legacy results before pagination.
+      return filtered.sort(compareDocumentsByRecency);
     });
   }
 

@@ -37,12 +37,17 @@ describe('campaigns email preview template', () => {
    * browser-issued request for a value the component computed, which is the thing that must not
    * happen; a static `src` (a bundled asset) is fine and is not matched.
    */
-  it('never binds any computed value into an img src', () => {
-    const bound = template.match(/<img\b[^>]*\[src\]=/g) ?? [];
-    expect(bound).toEqual([]);
+  it('binds an img src only to the allowlisted hero preview URL', () => {
+    // ONE exception, and only one: `heroSrc`, which the template takes from
+    // `emailHeroPreviewUrl()`. That value is '' unless the URL is https, on an exact host in
+    // EMAIL_HERO_PREVIEW_HOSTS, with an image path and no query -- so the browser never fetches a
+    // scraped value off that list. Every other bound src is still the vector this guards.
+    const bound = template.match(/<img\b[^>]*\[src\]="[^"]*"/g) ?? [];
+    expect(bound.map((tag) => tag.match(/\[src\]="([^"]*)"/)?.[1])).toEqual(['heroSrc']);
+    expect(template).toMatch(/@if \(emailHeroPreviewUrl\(\); as heroSrc\)/);
   });
 
-  it('has no img element anywhere in the template', () => {
+  it('has no img element anywhere in the template but the allowlisted hero preview', () => {
     // WHOLE template, not a region. The region-scoped version covered the first preview block
     // and missed the two A/B variant blocks, which render the same placeholder -- so a
     // reintroduced `<img>` in either was invisible to it. There is no `<img>` anywhere in this
@@ -57,7 +62,10 @@ describe('campaigns email preview template', () => {
       .map((part, index) => (index === 0 ? part : part.slice(part.indexOf('-->') + 3)))
       .join('');
 
-    expect(outsideComments).not.toMatch(/<img\b/);
+    // The hero preview is the single `<img>`, and it must stay the one bound to `heroSrc`.
+    const images = outsideComments.match(/<img\b[^>]*>/g) ?? [];
+    expect(images).toHaveLength(1);
+    expect(images[0]).toContain('[src]="heroSrc"');
   });
 
   it('names the hero host instead, so the operator still knows a banner is coming', () => {

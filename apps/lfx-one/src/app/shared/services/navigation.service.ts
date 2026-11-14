@@ -11,6 +11,7 @@ import { lensItemToProjectContext, shouldSkipNavDefaultSelection } from '@lfx-on
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
+import { FavoriteProjectsService } from './favorite-projects.service';
 import { LensService } from './lens.service';
 import { PersonaService } from './persona.service';
 import { ProjectContextService } from './project-context.service';
@@ -25,6 +26,7 @@ export class NavigationService {
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
   private readonly messageService = inject(MessageService);
+  private readonly favoriteProjectsService = inject(FavoriteProjectsService);
 
   private readonly foundationState: LensState = this.createLensState('foundation');
   private readonly projectState: LensState = this.createLensState('project');
@@ -44,6 +46,23 @@ export class NavigationService {
         if (this.lensService.isHybridPersona()) {
           const sibling: NavLens = lens === 'foundation' ? 'project' : 'foundation';
           this.preloadSibling(sibling);
+        }
+      })
+    ),
+    { initialValue: null }
+  );
+
+  // A lens the mobile drawer previews (#4208) needs its list for the selector, but must not pick a default context or
+  // write the URL — the page underneath keeps its own lens and context. preloadSibling() loads without either, and is a
+  // no-op once the list is loaded or in flight; a pick from the preview commits the lens, and the preloader above runs.
+  private readonly menuLensPreloader = toSignal(
+    toObservable(this.lensService.menuLens).pipe(
+      filter((lens): lens is NavLens => (lens === 'foundation' || lens === 'project') && this.lensService.previewingMenuLens()),
+      tap((lens) => {
+        this.preloadSibling(lens);
+        // A hybrid's merged selector reads both lists, and off a nav lens neither preloader above has loaded the other.
+        if (this.lensService.isHybridPersona()) {
+          this.preloadSibling(lens === 'foundation' ? 'project' : 'foundation');
         }
       })
     ),
@@ -71,10 +90,12 @@ export class NavigationService {
       skip(1),
       filter((isHybrid) => isHybrid),
       tap(() => {
-        const active = this.lensService.activeLens();
-        if (active === 'foundation' || active === 'project') {
-          const sibling: NavLens = active === 'foundation' ? 'project' : 'foundation';
-          this.preloadSibling(sibling);
+        // The page's nav lens and the one the mobile drawer previews (#4208) both need their sibling: either can be
+        // the merged selector the viewer sees. preloadSibling() skips a list already loaded or in flight.
+        for (const lens of new Set([this.lensService.activeLens(), this.lensService.menuLens()])) {
+          if (lens === 'foundation' || lens === 'project') {
+            this.preloadSibling(lens === 'foundation' ? 'project' : 'foundation');
+          }
         }
       })
     ),
@@ -283,26 +304,60 @@ export class NavigationService {
     reload$: Subject<void>
   ): Signal<LensItem[]> {
     // skip(1) drops toObservable's initial replay so fetches only fire on user search input.
+    // Clearing the search box (term becomes blank) is itself a transition back to browsing, so
+    // favorites must be re-injected then too — not just on an explicit reload$ (GH-3453).
     const searchTriggered$ = toObservable(searchTerm).pipe(
       skip(1),
       debounceTime(NAV_SEARCH_DEBOUNCE_MS),
       distinctUntilChanged(),
-      map((term) => ({ term, selectedUid: null as string | null }))
-    );
-
-    // Only inject the selected uid when no search is active — during search the user's intent is
-    // "filter this list", not "keep my selection pinned", so injection would surface a non-matching row.
-    const reloadTriggered$ = reload$.pipe(
-      map(() => {
-        const term = searchTerm();
-        return { term, selectedUid: term.trim() ? null : this.getSelectedUidForLens(lens) };
+      map((term) => {
+        const browsing = !term.trim();
+        return {
+          term,
+          selectedUid: null as string | null,
+          favoritedUids: browsing ? [...this.favoriteProjectsService.state().data] : (null as string[] | null),
+        };
       })
     );
 
-    const firstPage$ = merge(searchTriggered$, reloadTriggered$).pipe(
-      switchMap(({ term, selectedUid }) => {
+    // Only inject the selected uid/favorites when no search is active — during search the user's
+    // intent is "filter this list", not "keep my selection/favorites pinned", so injection would
+    // surface non-matching rows (GH-2995, GH-3453).
+    const reloadTriggered$ = reload$.pipe(
+      map(() => {
+        const term = searchTerm();
+        const browsing = !term.trim();
+        return {
+          term,
+          selectedUid: browsing ? this.getSelectedUidForLens(lens) : null,
+          favoritedUids: browsing ? [...this.favoriteProjectsService.state().data] : null,
+        };
+      })
+    );
+
+    // Favorites load asynchronously (a preference GET) and can resolve after the initial browse
+    // fetch already ran with an empty set — or while that fetch is still in flight — so re-fire
+    // once loading finishes (GH-3453). Gated on `generation() > 0` rather than `loaded()`: a browse
+    // request increments `generation` the moment it starts (see firstPage$ below), so this also
+    // catches favorites resolving mid-flight, where `switchMap` cancels the stale in-flight request
+    // and restarts it with favorites included. `generation() === 0` only before any browse has
+    // started at all, so this still never fires a spurious fetch pre-browse.
+    const favoritesLoaded$ = toObservable(this.favoriteProjectsService.state).pipe(
+      map((state) => state.loading),
+      distinctUntilChanged(),
+      skip(1),
+      filter((isLoading) => !isLoading && generation() > 0 && !searchTerm().trim()),
+      map(() => ({
+        term: searchTerm(),
+        selectedUid: this.getSelectedUidForLens(lens),
+        favoritedUids: [...this.favoriteProjectsService.state().data],
+      }))
+    );
+
+    const firstPage$ = merge(searchTriggered$, reloadTriggered$, favoritesLoaded$).pipe(
+      switchMap(({ term, selectedUid, favoritedUids }) => {
         generation.update((g) => g + 1);
-        return this.fetchSinglePage(lens, term, null, loading, true, generation(), generation, selectedUid);
+        return this.fetchSinglePage(lens, term, null, loading, true, generation(), generation, selectedUid, favoritedUids);
       })
     );
 
@@ -310,7 +365,9 @@ export class NavigationService {
     // set by the page that also set `resultsTerm`, so the two always describe the same query;
     // pairing the cursor with a newer `searchTerm` would append results from one query onto
     // another. The newer term gets its own reset fetch once the debounce fires.
-    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, resultsTerm(), token, loading, false, generation(), generation, null)));
+    const nextPage$ = loadMore$.pipe(
+      switchMap((token) => this.fetchSinglePage(lens, resultsTerm(), token, loading, false, generation(), generation, null, null))
+    );
 
     return toSignal(
       merge(firstPage$, nextPage$).pipe(
@@ -347,7 +404,8 @@ export class NavigationService {
     reset: boolean,
     generation: number,
     activeGeneration: Signal<number>,
-    selectedUid: string | null
+    selectedUid: string | null,
+    favoritedUids: string[] | null
   ): Observable<TaggedLensPage> {
     loading.set(true);
     // Only this request's generation may clear the loading flag — otherwise a superseded fetch
@@ -355,7 +413,7 @@ export class NavigationService {
     const clearLoadingIfActive = (): void => {
       if (activeGeneration() === generation) loading.set(false);
     };
-    return this.fetchPage(lens, term, pageToken, selectedUid).pipe(
+    return this.fetchPage(lens, term, pageToken, selectedUid, favoritedUids).pipe(
       map((response) => ({ page: this.toLensPage(response, reset), generation, term })),
       tap(clearLoadingIfActive),
       catchError(() => {
@@ -373,7 +431,13 @@ export class NavigationService {
     );
   }
 
-  private fetchPage(lens: NavLens, term: string, pageToken: string | null, selectedUid: string | null): Observable<LensItemsResponse> {
+  private fetchPage(
+    lens: NavLens,
+    term: string,
+    pageToken: string | null,
+    selectedUid: string | null,
+    favoritedUids: string[] | null
+  ): Observable<LensItemsResponse> {
     let params = new HttpParams().set('lens', lens);
     if (pageToken) {
       params = params.set('page_token', pageToken);
@@ -383,6 +447,9 @@ export class NavigationService {
     }
     if (selectedUid && !pageToken) {
       params = params.set('selected_uid', selectedUid);
+    }
+    if (favoritedUids?.length && !pageToken) {
+      params = params.set('favorited_uids', favoritedUids.join(','));
     }
     return this.http.get<LensItemsResponse>('/api/nav/lens-items', { params });
   }

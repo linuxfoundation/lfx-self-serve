@@ -12,8 +12,8 @@ const snowflakeMocks = vi.hoisted(() => ({
 }));
 
 const pdfMocks = vi.hoisted(() => ({
-  images: [] as { path: string; options: Record<string, unknown> | undefined }[],
-  texts: [] as { text: string; options: Record<string, unknown> | undefined }[],
+  images: [] as { path: string; y: number; options: Record<string, unknown> | undefined }[],
+  texts: [] as { text: string; y: number; options: Record<string, unknown> | undefined }[],
 }));
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
@@ -36,6 +36,7 @@ vi.mock('./logger.service', () => ({
 // `end()` synchronously fires the 'end' handler the service awaits.
 vi.mock('pdfkit', () => {
   class FakePDFDocument {
+    public y = 0;
     private handlers: Record<string, ((arg?: unknown) => void)[]> = {};
 
     public on(event: string, handler: (arg?: unknown) => void): this {
@@ -45,7 +46,7 @@ vi.mock('pdfkit', () => {
 
     public image(path: string, ...rest: unknown[]): this {
       const options = rest.find((arg) => typeof arg === 'object' && arg !== null) as Record<string, unknown> | undefined;
-      pdfMocks.images.push({ path, options });
+      pdfMocks.images.push({ path, y: this.y, options });
       return this;
     }
 
@@ -67,11 +68,13 @@ vi.mock('pdfkit', () => {
     public text(text: unknown, ...rest: unknown[]): this {
       if (typeof text === 'string') {
         const options = rest.find((arg) => typeof arg === 'object' && arg !== null) as Record<string, unknown> | undefined;
-        pdfMocks.texts.push({ text, options });
+        pdfMocks.texts.push({ text, y: this.y, options });
       }
       return this;
     }
-    public moveDown(): this {
+    // Advances by a nominal line height so flow positions differ from the page origin.
+    public moveDown(lines = 1): this {
+      this.y += 12 * lines;
       return this;
     }
 
@@ -84,8 +87,18 @@ vi.mock('pdfkit', () => {
   return { default: FakePDFDocument };
 });
 
+// Signature placement reads the PNG's IHDR size; image1.png is 261x80.
+function pngHeader(width: number, height: number): Buffer {
+  const header = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header);
+  header.write('IHDR', 12, 'ascii');
+  header.writeUInt32BE(width, 16);
+  header.writeUInt32BE(height, 20);
+  return header;
+}
+
 vi.mock('fs', () => {
-  const readFileSync = vi.fn(() => Buffer.from('font'));
+  const readFileSync = vi.fn((path: string) => (String(path).endsWith('.png') ? pngHeader(261, 80) : Buffer.from('font')));
   const existsSync = vi.fn(() => true);
   return { default: { readFileSync, existsSync }, readFileSync, existsSync };
 });
@@ -109,6 +122,8 @@ interface RowOverrides {
   EVENT_SOURCE?: string | null;
   PROJECT_ID?: string;
   USER_ATTENDED?: number | boolean | null;
+  EVENT_START_DATE?: string;
+  EVENT_END_DATE?: string | null;
 }
 
 function mockRow(overrides: RowOverrides = {}): void {
@@ -131,11 +146,11 @@ function mockRow(overrides: RowOverrides = {}): void {
 }
 
 /** The letterhead logo is the first image drawn; the signature is the second. */
-function drawnLogo(): { path: string; options: Record<string, unknown> | undefined } {
+function drawnLogo(): { path: string; y: number; options: Record<string, unknown> | undefined } {
   return pdfMocks.images[0];
 }
 
-function drawnSignature(): { path: string; options: Record<string, unknown> | undefined } {
+function drawnSignature(): { path: string; y: number; options: Record<string, unknown> | undefined } {
   return pdfMocks.images[1];
 }
 
@@ -249,6 +264,37 @@ describe('CertificateService', () => {
       expect(drawnLogo().path).toContain(CNCF_LOGO);
       expect(drawnTexts()).toContain('https://www.cncf.io/');
       expect(drawnTexts().some((t) => t.startsWith('Cloud Native Computing Foundation (CNCF) is pleased'))).toBe(true);
+    });
+  });
+
+  describe('event date range', () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it.each([
+      ['a single day', '2026-03-10T00:00:00.000Z', null, 'took place 10 March 2026 at'],
+      ['days in one month', '2026-03-05T00:00:00.000Z', '2026-03-07T00:00:00.000Z', 'took place 05 - 07 March 2026 at'],
+      ['months in one year', '2026-03-30T00:00:00.000Z', '2026-04-02T00:00:00.000Z', 'took place 30 March - 02 April 2026 at'],
+      ['two years', '2026-12-30T00:00:00.000Z', '2027-01-02T00:00:00.000Z', 'took place 30 December 2026 - 02 January 2027 at'],
+    ])('formats %s like the legacy My Profile certificate', async (_, start, end, expected) => {
+      vi.stubEnv('TZ', 'UTC');
+      mockRow({ EVENT_START_DATE: start, EVENT_END_DATE: end });
+
+      await service.generateCertificate(req, { eventId: '-1', userEmail: 'attendee@example.com', userName: 'Test Attendee' });
+
+      expect(drawnTexts().some((t) => t.includes(expected))).toBe(true);
+    });
+  });
+
+  describe('signature placement', () => {
+    it('starts the signatory text below the signature image', async () => {
+      mockRow({ EVENT_SOURCE: 'cvent', EVENT_COUNTRY: 'United States' });
+
+      await service.generateCertificate(req, { eventId: 'evt-1', userEmail: 'user@example.com', userName: 'Jane Doe' });
+
+      const signature = drawnSignature();
+      const signatory = pdfMocks.texts.find((t) => t.text === 'Jim Zemlin\nExecutive Director');
+      expect(signature.path).toMatch(/image1\.png$/);
+      expect(signatory?.y).toBeGreaterThanOrEqual(signature.y + (110 * 80) / 261);
     });
   });
 

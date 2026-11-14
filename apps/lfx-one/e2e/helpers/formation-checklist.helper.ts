@@ -196,7 +196,7 @@ export function buildBaseProject(slug: string, overrides: Partial<Project> = {})
   };
 }
 
-export type FormationChecklistApiState = 'ready' | 'no-template' | 'no-items' | 'error';
+export type FormationChecklistApiState = 'ready' | 'no-checklist' | 'no-template' | 'no-items' | 'error';
 
 /**
  * The date the mocked **project-settings** read serves, deliberately different from the checklist
@@ -238,6 +238,11 @@ export async function mockFormationChecklistApis(
   const state = opts.checklistState ?? 'ready';
   if (state === 'error') {
     await page.route('**/api/projects/*/formation', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }));
+  } else if (state === 'no-checklist') {
+    // The BFF masks an upstream 403/404 as a 404 (#5541), so this is what a project with no formation record returns.
+    await page.route('**/api/projects/*/formation', (route) =>
+      route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"Formation not found","code":"NOT_FOUND"}' })
+    );
   } else if (state === 'no-template' || state === 'no-items') {
     await page.route('**/api/projects/*/formation', (route) =>
       route.fulfill({
@@ -270,6 +275,7 @@ export async function mockFormationChecklistApis(
           items: [],
           can_write: opts.canWrite ?? true,
           can_set_status: true,
+          can_edit_record: true,
         }),
       })
     );

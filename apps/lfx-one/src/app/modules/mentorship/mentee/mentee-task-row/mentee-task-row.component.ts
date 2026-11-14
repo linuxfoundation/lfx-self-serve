@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
+import { MENTORSHIP_MENTEE_TASK_FILE_ACCEPT, MENTORSHIP_TASK_FILE_VIEW_LABEL, NODE_MAX_TIMER_DELAY_MS } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusChange,
@@ -15,11 +17,14 @@ import {
 import {
   getMentorshipMenteeTaskStatusOptions,
   isMentorshipMenteeUpdatableTaskStatus,
+  isMentorshipTaskPastDue,
   mentorshipMenteeTaskStatusFields,
+  mentorshipTaskDueCutoffMs,
   normalizeMentorshipMenteeTaskStatus,
 } from '@lfx-one/shared/utils';
 import { MenteeTaskStatusService } from '@modules/mentorship/services/mentee-task-status.service';
-import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
+import { MentorshipTaskFileService } from '@modules/mentorship/services/mentorship-task-file.service';
+import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
 
 /**
  * One task row on the mentee tasks tab, shared by the applicant and accepted
@@ -27,13 +32,19 @@ import { MentorshipComingSoonService } from '@modules/mentorship/services/mentor
  *
  * The status dropdown saves through `MenteeTaskStatusService`. While a change is saving the select
  * is read-only and a spinner shows beside it; on any failure the control returns to the last saved
- * status. Which options are enabled, and the hint that explains a disabled one, come from the shared
+ * status. A status change and a file change never run at once, since both move the task's status upstream. Which options are enabled, and the hint that explains a disabled one, come from the shared
  * `getMentorshipMenteeTaskStatusOptions` util. The hint is wired to the combobox through
  * `ariaLabelledBy`, because PrimeNG marks neither disabled options nor a read-only select for
  * assistive technology.
  *
- * File upload, view and download are not implemented yet, so those actions only fire the Coming Soon
- * toast. The BFF never sends a file, so a task that requires one cannot be submitted from here.
+ * File actions go through `MentorshipTaskFileService`. A task that needs a file shows Upload until one is
+ * stored, and Submitted stays disabled until then. Upstream marks the task submitted with every upload, so the
+ * row holds Submitted until the refresh that follows carries it. A submitted task can go back to In Progress until the
+ * reviewer completes it. A stored file can be viewed or downloaded; it can be replaced until the reviewer completes
+ * the task, and removed only while the task is not submitted, as upstream allows.
+ * Once a task is past due (the end of its due date's UTC day), Submitted and every file change are closed.
+ * The row re-reads the clock whenever the due date changes and again at its cutoff, so a page left open
+ * across it locks without a reload.
  */
 @Component({
   selector: 'lfx-mentee-task-row',
@@ -44,8 +55,9 @@ import { MentorshipComingSoonService } from '@modules/mentorship/services/mentor
 })
 export class MenteeTaskRowComponent {
   // ---- 1. DI ----------------------------------------------------------------
-  private readonly comingSoonService = inject(MentorshipComingSoonService);
+  private readonly taskFileService = inject(MentorshipTaskFileService);
   private readonly taskStatusService = inject(MenteeTaskStatusService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // ---- 2. Inputs ------------------------------------------------------------
   public readonly task = input.required<MentorshipMenteeTaskView>();
@@ -57,8 +69,17 @@ export class MenteeTaskRowComponent {
   // ---- 3. Simple writable signals -------------------------------------------
   /** True while a status change is in flight; blocks the select and shows the spinner. */
   protected readonly saving = signal(false);
+  /** True while a file upload or removal is in flight; blocks the file actions and shows a spinner. */
+  protected readonly fileSaving = signal(false);
+  protected readonly fileAccept = MENTORSHIP_MENTEE_TASK_FILE_ACCEPT;
+  protected readonly viewActionLabel = MENTORSHIP_TASK_FILE_VIEW_LABEL;
 
   // ---- 4. Computed signals --------------------------------------------------
+  /**
+   * The clock `pastDue` is judged against. In the browser it is re-read whenever the due date changes and
+   * again at its cutoff; on the server it is the render time.
+   */
+  private readonly now: Signal<number> = this.initNow();
   /**
    * The change just saved, held until the refreshed task arrives so the options never lag behind the write.
    * Reset whenever the task's status moves off the one it was saved from, so a later reset back to that
@@ -70,6 +91,23 @@ export class MenteeTaskRowComponent {
   protected readonly statusState: Signal<MentorshipMenteeTaskStatusOptionsState> = computed(() => getMentorshipMenteeTaskStatusOptions(this.effectiveTask()));
   protected readonly statusLabelId: Signal<string> = computed(() => `mentee-task-status-label-${this.task().id}`);
   protected readonly statusHintId: Signal<string> = computed(() => `mentee-task-status-hint-${this.task().id}`);
+  /**
+   * True while either a status change or a file change is in flight. Both move the task's status upstream, so they run one
+   * at a time: responses settling out of order could otherwise leave the row holding a status upstream no longer has.
+   */
+  protected readonly busy: Signal<boolean> = computed(() => this.saving() || this.fileSaving());
+  /** Upload is closed once the task is past due; the status hint, which then shows, says why. */
+  protected readonly uploadBlocked: Signal<boolean> = computed(() => this.effectiveTask().pastDue);
+  /** A stored file can be replaced until the reviewer completes the task or it is past due. */
+  protected readonly canReplaceFile: Signal<boolean> = computed(() => {
+    const task = this.effectiveTask();
+    return task.hasUploadedFile && !task.fileLocked && !task.pastDue;
+  });
+  /** A stored file can be removed only before the task is submitted; after that upstream takes only a replacement. */
+  protected readonly canRemoveFile: Signal<boolean> = computed(() => {
+    const task = this.effectiveTask();
+    return task.hasUploadedFile && !task.submitted && !task.pastDue;
+  });
   /** Ids the combobox is labelled by: the sr-only name, plus the hint when there is one. */
   protected readonly statusLabelledBy: Signal<string> = computed(() =>
     this.statusState().hint === null ? this.statusLabelId() : `${this.statusLabelId()} ${this.statusHintId()}`
@@ -85,7 +123,8 @@ export class MenteeTaskRowComponent {
     const current = this.effectiveTask();
     const saved = normalizeMentorshipMenteeTaskStatus(current.status);
     const requested = this.form().controls[current.id]?.value;
-    if (!isMentorshipMenteeUpdatableTaskStatus(requested) || requested === saved) {
+    // A file change in flight will move the status itself, so a change picked meanwhile is reverted rather than raced.
+    if (this.fileSaving() || !isMentorshipMenteeUpdatableTaskStatus(requested) || requested === saved) {
       this.setControl(current.id, saved);
       return;
     }
@@ -95,18 +134,41 @@ export class MenteeTaskRowComponent {
     this.taskStatusService.changeStatus(current.id, requested).subscribe((changed) => this.onStatusSettled(current.id, requested, changed));
   }
 
-  protected onUpload(): void {
-    this.comingSoonService.notify(`Upload submission for ${this.task().title}`);
+  /**
+   * Uploads the picked file, which replaces any stored one and marks the task submitted upstream. The input is cleared so
+   * the same file can be picked again.
+   */
+  protected onFileSelected(input: HTMLInputElement): void {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || this.busy()) return;
+    const taskId = this.task().id;
+    this.fileSaving.set(true);
+    // No takeUntilDestroyed: the toast and cache invalidation must run even if the row is destroyed mid-flight.
+    this.taskFileService.upload(taskId, file).subscribe((saved) => {
+      if (saved) {
+        // Upstream marked the task submitted, so hold that until the refresh lands, as a status change does. Holding
+        // nothing would show the stale status meanwhile; keeping a held reopen would outlive a refresh that brings back
+        // the very `submitted` status it started from.
+        this.confirmed.set({ from: normalizeMentorshipMenteeTaskStatus(this.task().status), to: 'submitted' });
+        this.setControl(taskId, 'submitted');
+      }
+      this.fileSaving.set(false);
+    });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- fileUrl reserved for the real view endpoint
-  protected onViewFile(_fileUrl: string): void {
-    this.comingSoonService.notify(`View submission for ${this.task().title}`);
+  protected onRemoveFile(): void {
+    if (this.busy()) return;
+    this.fileSaving.set(true);
+    this.taskFileService.remove(this.task().id).subscribe(() => this.fileSaving.set(false));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- fileUrl reserved for the real download endpoint
-  protected onDownloadFile(_fileUrl: string): void {
-    this.comingSoonService.notify(`Download submission for ${this.task().title}`);
+  protected onDownloadFile(): void {
+    this.taskFileService.download(this.task().id);
+  }
+
+  protected onViewFile(): void {
+    this.taskFileService.view(this.task().id);
   }
 
   // ---- 6. Private initializers ----------------------------------------------
@@ -120,7 +182,8 @@ export class MenteeTaskRowComponent {
 
   private initEffectiveTask(): Signal<MentorshipMenteeTaskView> {
     return computed(() => {
-      const task = this.task();
+      // The view's `pastDue` is fixed when it is built, and the applications are cached, so judge it against the live clock.
+      const task = { ...this.task(), pastDue: isMentorshipTaskPastDue(this.task().dueDate, this.now()) };
       const confirmed = this.confirmed();
       // Ignored once the refreshed task no longer carries the status it was saved from (it also moved while the save was in flight).
       if (confirmed !== null && normalizeMentorshipMenteeTaskStatus(task.status) === confirmed.from) {
@@ -130,7 +193,27 @@ export class MenteeTaskRowComponent {
     });
   }
 
+  private initNow(): Signal<number> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal(Date.now()).asReadonly();
+    }
+    const cutoff = computed(() => mentorshipTaskDueCutoffMs(this.task().dueDate));
+    // A new cutoff re-reads the clock and re-arms the timer from it, never from the time the row was built.
+    return toSignal(toObservable(cutoff).pipe(switchMap((ms) => this.clockUntil(ms))), { initialValue: Date.now() });
+  }
+
   // ---- 7. Private helpers ---------------------------------------------------
+
+  /** Emits the time now, then again at `cutoff`. A cutoff beyond the longest timer delay is reached in steps. */
+  private clockUntil(cutoff: number | null): Observable<number> {
+    return defer(() => {
+      const now = Date.now();
+      if (cutoff === null || now >= cutoff) {
+        return of(now);
+      }
+      return concat(of(now), timer(Math.min(cutoff - now, NODE_MAX_TIMER_DELAY_MS)).pipe(switchMap(() => this.clockUntil(cutoff))));
+    });
+  }
 
   private onStatusSettled(taskId: string, to: MentorshipMenteeUpdatableTaskStatus, changed: boolean): void {
     if (changed) {

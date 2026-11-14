@@ -13,7 +13,16 @@ import '@angular/compiler';
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const { userPreferenceSvc, socialListeningSvc, logger } = vi.hoisted(() => ({
   userPreferenceSvc: { getPreference: vi.fn(), upsertPreference: vi.fn(), deletePreference: vi.fn() },
-  socialListeningSvc: { getMentionsFeed: vi.fn(), getMentionsTags: vi.fn() },
+  socialListeningSvc: {
+    getMentionsFeed: vi.fn(),
+    getMentionsCount: vi.fn(),
+    getMentionsTags: vi.fn(),
+    getAnalyticsOverview: vi.fn(),
+    getAnalyticsOverTime: vi.fn(),
+    getAnalyticsPlatformDistribution: vi.fn(),
+    getAnalyticsSentimentDistribution: vi.fn(),
+    getAnalyticsTopProjects: vi.fn(),
+  },
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), etag: vi.fn() },
 }));
 
@@ -176,32 +185,26 @@ describe('SocialListeningController', () => {
     });
   });
 
-  describe('getMentionsFeed — endpoint wiring', () => {
-    it('forwards the parsed scope and pagination to the service', async () => {
-      socialListeningSvc.getMentionsFeed.mockResolvedValue({ mentions: [], computedAt: '2026-08-24T00:00:00Z' });
-      const res = buildRes();
-
-      await controller.getMentionsFeed(buildReq({ query: { foundationSlug: 'linuxfoundation' } }), res, next);
-
-      expect(socialListeningSvc.getMentionsFeed).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ foundationSlug: 'linuxfoundation' }));
-      expect(res.json).toHaveBeenCalled();
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('400s via the real param helper when foundationSlug is missing', async () => {
-      await controller.getMentionsFeed(buildReq({ query: {} }), buildRes(), next);
-
+  describe.each(['getMentionsFeed', 'getMentionsCount'] as const)('%s JSON boundary', (method) => {
+    it.each([{}, { foundationSlug: 'invalid_slug' }, { foundationSlug: 42 }])('rejects invalid body scope before data access', async (body) => {
+      await controller[method](buildReq({ body, query: { foundationSlug: 'synthetic-owned' } }), buildRes(), next);
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
-      expect(socialListeningSvc.getMentionsFeed).not.toHaveBeenCalled();
+      expect(socialListeningSvc[method]).not.toHaveBeenCalled();
     });
 
-    it('forwards service errors to next', async () => {
+    it('rejects a missing body even when query scope is valid', async () => {
+      await controller[method](buildReq({ query: { foundationSlug: 'synthetic-owned' } }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(socialListeningSvc[method]).not.toHaveBeenCalled();
+    });
+
+    it('forwards service failures to central error handling', async () => {
       const failure = new Error('snowflake down');
-      socialListeningSvc.getMentionsFeed.mockRejectedValue(failure);
-
-      await controller.getMentionsFeed(buildReq({ query: { foundationSlug: 'linuxfoundation' } }), buildRes(), next);
-
+      socialListeningSvc[method].mockRejectedValue(failure);
+      const res = buildRes();
+      await controller[method](buildReq({ body: { foundationSlug: 'synthetic-owned' } }), res, next);
       expect(next).toHaveBeenCalledWith(failure);
+      expect(res.json).not.toHaveBeenCalled();
     });
   });
 
@@ -235,5 +238,96 @@ describe('SocialListeningController', () => {
       expect(params).not.toHaveProperty('readBeforeTs');
       expect(next).not.toHaveBeenCalled();
     });
+  });
+
+  describe.each([
+    'getAnalyticsOverview',
+    'getAnalyticsOverTime',
+    'getAnalyticsPlatformDistribution',
+    'getAnalyticsSentimentDistribution',
+    'getAnalyticsTopProjects',
+  ] as const)('%s — request boundary', (method) => {
+    beforeEach(() => {
+      socialListeningSvc[method].mockReset();
+      socialListeningSvc[method].mockResolvedValue(method === 'getAnalyticsOverview' ? { TOTAL_MENTIONS: 0 } : []);
+    });
+
+    it('serves analytics despite malformed stale content filters instead of sending a validation error', async () => {
+      const res = buildRes();
+
+      await controller[method](
+        buildReq({
+          query: {
+            foundationSlug: 'cncf',
+            period: 'ytd',
+            sentiment: 'bogus',
+            relevance: 'bogus',
+            hasTitle: 'bogus',
+            language: 'x'.repeat(201),
+            search: 'x'.repeat(501),
+            authors: Array.from({ length: 201 }, () => 'alice'),
+            keywords: ['x'.repeat(201)],
+            tags: ['x'.repeat(201)],
+            readBeforeTs: 'not-a-timestamp',
+          },
+        }),
+        res,
+        next
+      );
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      { query: { foundationSlug: 'cncf', period: 'not-a-period' }, field: 'period' },
+      { query: { period: 'ytd' }, field: 'foundationSlug' },
+      { query: { foundationSlug: 'bad_slug' }, field: 'foundationSlug' },
+      { query: { foundationSlug: 'cncf', sourceProjectId: 'x'.repeat(201) }, field: 'sourceProjectId' },
+      { query: { foundationSlug: 'cncf', platform: 'x'.repeat(201) }, field: 'platform' },
+    ])('routes invalid $field to the 400 error path without serving analytics', async ({ query, field }) => {
+      const res = buildRes();
+
+      await controller[method](buildReq({ query }), res, next);
+
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ statusCode: 400, code: 'VALIDATION_ERROR', validationErrors: [expect.objectContaining({ field })] })
+      );
+      expect(socialListeningSvc[method]).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('routes a governed-read failure to the error handler without a partial success response', async () => {
+      const failure = new Error('governed relation unavailable');
+      socialListeningSvc[method].mockRejectedValueOnce(failure);
+      const res = buildRes();
+
+      await controller[method](buildReq({ query: { foundationSlug: 'cncf' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(res.json).not.toHaveBeenCalled();
+      expect(logger.success).not.toHaveBeenCalled();
+    });
+  });
+
+  it('rejects a non-integer top-project limit even when content filters are ignored', async () => {
+    const res = buildRes();
+
+    await controller.getAnalyticsTopProjects(buildReq({ query: { foundationSlug: 'cncf', limit: '1.5', sentiment: 'bogus' } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'limit' })] }));
+    expect(socialListeningSvc.getAnalyticsTopProjects).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('continues rejecting invalid content filters on the tags endpoint', async () => {
+    const res = buildRes();
+
+    await controller.getMentionsTags(buildReq({ query: { foundationSlug: 'cncf', sentiment: 'bogus' } }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'sentiment' })] }));
+    expect(socialListeningSvc.getMentionsTags).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

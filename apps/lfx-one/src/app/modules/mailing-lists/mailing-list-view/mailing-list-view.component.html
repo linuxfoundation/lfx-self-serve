@@ -28,6 +28,30 @@
   @if (mailingList()?.uid && !loading() && !error()) {
     @let ml = mailingList()!;
     <div class="flex flex-col gap-6">
+      <!-- Context-transition notice — shown when the user arrived from Me Lens My Mailing Lists.
+           Explains the lens switch so the sidebar/context change isn't surprising. -->
+      @if (fromMeLens && ml.project_name) {
+        @let scopeLabel = ml.is_foundation ? 'foundation' : 'project';
+        <div
+          class="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-600"
+          role="note"
+          data-testid="mailing-list-view-context-notice">
+          <i class="fa-light fa-circle-info text-gray-400 shrink-0" aria-hidden="true"></i>
+          <span>
+            You're viewing this {{ mailingListLabel.singular | lowercase }} in its {{ scopeLabel }} context:
+            <span class="font-medium text-gray-800">{{ ml.project_name }}</span
+            >. Some options may differ from your personal {{ mailingListLabel.plural }} view.
+          </span>
+          <button
+            type="button"
+            class="ml-auto shrink-0 flex items-center gap-1 text-blue-600 hover:text-blue-800 transition-colors font-medium whitespace-nowrap"
+            (click)="goBack()"
+            data-testid="mailing-list-view-context-notice-back">
+            <i class="fa-light fa-angle-left text-xs" aria-hidden="true"></i>
+            Back to {{ mailingListLabel.plural }}
+          </button>
+        </div>
+      }
       <!-- Header Section -->
       <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="mailing-list-view-header">
         <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
@@ -129,10 +153,22 @@
             </div>
 
             @if (linkedCommittees().length > 0) {
-              <div class="flex flex-wrap gap-2" data-testid="mailing-list-view-committees-list">
-                @for (committee of linkedCommittees(); track committee.uid) {
-                  <lfx-tag [value]="committee.name || committee.uid" severity="info" [attr.data-testid]="'mailing-list-view-committee-' + committee.uid">
-                  </lfx-tag>
+              <div class="flex flex-wrap gap-x-4 gap-y-2" data-testid="mailing-list-view-committees-list">
+                @for (group of groupLinks(); track $index) {
+                  @if (group.commands) {
+                    <a
+                      [routerLink]="group.commands"
+                      [queryParams]="editQueryParams()"
+                      [state]="groupLinkState"
+                      class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                      [attr.data-testid]="'mailing-list-view-committee-' + group.uid">
+                      {{ group.name || group.uid }}
+                    </a>
+                  } @else {
+                    <span class="text-sm font-medium text-gray-700" [attr.data-testid]="'mailing-list-view-committee-text-' + $index">{{
+                      group.name || '-'
+                    }}</span>
+                  }
                 }
               </div>
             } @else {
@@ -181,6 +217,12 @@
           </lfx-card>
         </div>
       </div>
+
+      <!-- Sync Settings (dark-launched, #4024) -->
+      <lfx-mailing-list-sync-settings
+        [mailingList]="ml"
+        (updated)="applySyncSettingsUpdate($event)"
+        data-testid="mailing-list-view-sync-settings"></lfx-mailing-list-sync-settings>
 
       <!-- Members Section -->
       <lfx-mailing-list-members [mailingList]="mailingList()" data-testid="mailing-list-view-members"> </lfx-mailing-list-members>

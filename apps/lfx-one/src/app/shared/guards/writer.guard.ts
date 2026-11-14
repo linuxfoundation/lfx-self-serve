@@ -16,7 +16,7 @@ import { ProjectService } from '../services/project.service';
 import { SurveyService } from '../services/survey.service';
 import { VoteService } from '../services/vote.service';
 import { isTransientHttpError, retryTransientHttpError } from '../utils/http-error.utils';
-import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-access.util';
+import { hasMeetingWriteAccess, probeCommitteeWriters, resolveEntityWriteSlug, resolveSurveyCommitteeCandidates } from '../utils/write-access.util';
 
 /**
  * Protects create/edit/admin routes that require project write permission.
@@ -27,13 +27,11 @@ import { hasMeetingWriteAccess, resolveEntityWriteSlug } from '../utils/write-ac
  * 1. `project.writer` — project owner, writer, or inherited parent-project writer.
  * 2. `project.meetingCoordinator` — meeting_coordinator role on the project; accepted
  *    only for routes with `data.writeFeature === 'meetings'`.
- * 3. `committee.writer` — committee writer; accepted only when `writeFeature` is one of
- *    `'meetings'`, `'surveys'`, or `'votes'` and a committee uid is available — from the probed
- *    entity itself when its probe surfaces one (the votes and surveys probes carry
- *    `committee_uid`; the meetings probe falls through to the URL param), else from the
- *    `committee_uid` query param (create routes; attacker-controlled, which is why the entity
- *    value wins when present). The backend ruleset allows committee:uid#writer to create
- *    resources associated with their committee.
+ * 3. `committee.writer` — accepted only for `'meetings'`, `'surveys'`, or `'votes'`.
+ *    Survey edit probes every associated committee, prioritizing a matching URL hint;
+ *    an unrelated URL uid never becomes a candidate. Votes use their own `committee_uid`.
+ *    Meetings, create routes, and committee-less entities fall back to the URL param.
+ *    The backend ruleset allows committee:uid#writer to create associated resources.
  *
  * Slug resolution: on routes flagged `data.entityScopedSlug` (meeting/group/mailing-list/vote/survey edit), resolves
  * the slug from the entity itself first — the active context can belong to a different project
@@ -91,7 +89,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   // Probes must be tap-free so a guard probe can't leak stale state; a short-TTL detail cache, when present, is shared with the manage page.
   const entityProbes: Record<
     string,
-    (id: string) => Observable<(Pick<EntityWithProject, 'project_slug' | 'project_uid'> & { committee_uid?: string }) | null>
+    (id: string) => Observable<(Pick<EntityWithProject, 'project_slug' | 'project_uid'> & { committee_uid?: string; committee_uids?: string[] }) | null>
   > = {
     meetings: (id) => meetingService.getMeetingDetail(id),
     committees: (id) => committeeService.fetchCommittee(id),
@@ -99,52 +97,49 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
     'mailing-lists': (id) => mailingListService.getMailingList(id),
     // Survey.project_uid is typed optional — map absent to '' so the probe satisfies the
     // registry's Pick<EntityWithProject> shape; resolveEntityWriteSlug treats '' as absent.
-    // Honor the URL ?committee_uid= only when the survey's own committee list contains it (the
-    // committee tab stamps the viewed committee, so from that path a writer of any associated
-    // committee is admitted); otherwise fall back to the primary committee so an attacker-controlled param naming
-    // an unrelated committee can't win — a committee-less project survey falls back to the URL param.
-    // Known gap: the global surveys list stamps only committees[0] on edit links, so a writer of a
-    // non-primary committee is fail-closed denied from the list and must edit via their committee
-    // tab (iterating committees[] per row is follow-up work — GH-2190).
+    // Probe every associated committee in candidate order: a matching URL uid goes first,
+    // but an unrelated uid is never a candidate. Committee-less surveys keep the URL fallback.
     surveys: (id) =>
       surveyService.getSurvey(id).pipe(
         map((survey) => ({
           project_slug: survey.project_slug,
           project_uid: survey.project_uid || '',
-          committee_uid:
-            committeeUid && survey.committees?.some((c) => c.committee_uid === committeeUid) ? committeeUid : survey.committees?.[0]?.committee_uid,
+          committee_uids: resolveSurveyCommitteeCandidates(survey.committees, committeeUid),
         }))
       ),
   };
-  const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUid: string | null; failure?: 'transient' | 'denied' }> => {
+  const resolveSlug = (): Observable<{ slug: string | null; entityCommitteeUids: string[]; failure?: 'transient' | 'denied' }> => {
     const fromContext = route.queryParamMap.get('project') ?? projectContextService.activeContext()?.slug ?? null;
     if (route.data?.['entityScopedSlug'] !== true) {
-      return of({ slug: fromContext, entityCommitteeUid: null });
+      return of({ slug: fromContext, entityCommitteeUids: [] });
     }
     const probe = writeFeature ? entityProbes[writeFeature] : undefined;
     const entityId = route.paramMap.get('id');
     // A flagged route without a usable probe is misconfigured — fail closed rather than
     // authorize against a possibly stale context.
     if (!probe || !entityId) {
-      return of({ slug: null, entityCommitteeUid: null });
+      return of({ slug: null, entityCommitteeUids: [] });
     }
     // Resolve from the entity payload, never the active context — a readable entity with a stale
     // context would authorize against the wrong project; only a 404 falls back, else fail closed.
     // One transient retry; a persistent failure is classified so the redirect can say why.
     return probe(entityId).pipe(
       retryTransientHttpError(),
-      map((entity) => ({ slug: resolveEntityWriteSlug(entity, fromContext), entityCommitteeUid: entity?.committee_uid ?? null })),
+      map((entity) => ({
+        slug: resolveEntityWriteSlug(entity, fromContext),
+        entityCommitteeUids: entity?.committee_uids ?? (entity?.committee_uid ? [entity.committee_uid] : []),
+      })),
       catchError((error) => {
         if (error instanceof HttpErrorResponse && error.status === 404) {
-          return of({ slug: fromContext, entityCommitteeUid: null });
+          return of({ slug: fromContext, entityCommitteeUids: [] });
         }
-        return of({ slug: null, entityCommitteeUid: null, failure: isTransientHttpError(error) ? ('transient' as const) : ('denied' as const) });
+        return of({ slug: null, entityCommitteeUids: [], failure: isTransientHttpError(error) ? ('transient' as const) : ('denied' as const) });
       })
     );
   };
 
   return resolveSlug().pipe(
-    switchMap(({ slug, entityCommitteeUid, failure }) => {
+    switchMap(({ slug, entityCommitteeUids, failure }) => {
       // `project: null` would serialize as the literal string "null", so the param is spread
       // in only when a slug resolved — probe-leg failures redirect param-free, as before.
       const withNotice = (notice: string) => router.createUrlTree([overviewPath], { queryParams: { ...(slug ? { project: slug } : {}), _notice: notice } });
@@ -163,18 +158,26 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
 
       const supportsCommitteeWriter = writeFeature != null && COMMITTEE_WRITE_FEATURES.includes(writeFeature);
 
-      // Committee writers can create entities for their committee via ?committee_uid=. On
-      // entity-scoped edit routes the probed entity's own committee wins when the probe carries
-      // one (the votes and surveys probes return committee_uid today) — a URL param naming an
-      // unrelated committee must not admit its writer, and an absent param must not deny the
-      // entity's real committee writer.
-      const effectiveCommitteeUid = entityCommitteeUid ?? committeeUid;
-      // getCommittee's tap() side effect is safe here: deny blocks navigation; allow overwrites.
+      // Entity-owned candidates take precedence over the URL so an unrelated committee
+      // cannot admit its writer. Votes keep one candidate; surveys can carry several.
+      const urlCommitteeUids = committeeUid ? [committeeUid] : [];
+      // Survey edit candidates already contain any deliberate committee-less URL fallback.
+      // An empty result for malformed associated committees must remain authoritative.
+      const useEntityCommitteeUids = (writeFeature === 'surveys' && route.data?.['entityScopedSlug'] === true) || entityCommitteeUids.length > 0;
+      const effectiveCommitteeUids = useEntityCommitteeUids ? entityCommitteeUids : urlCommitteeUids;
+      // getCommittee's tap() stays safe during iteration: deny blocks navigation; allow
+      // leaves the granting committee in the shared signal, overwriting earlier non-writers.
       const checkCommittee = (): Observable<true | ReturnType<typeof deny>> =>
-        committeeService.getCommittee(effectiveCommitteeUid!).pipe(
-          retryTransientHttpError(),
-          map((committee) => (committee?.writer === true ? (true as const) : deny())),
-          catchError((error) => of(isTransientHttpError(error) ? transientErrorUrl() : deny()))
+        probeCommitteeWriters(effectiveCommitteeUids, (uid) => committeeService.getCommittee(uid).pipe(retryTransientHttpError())).pipe(
+          map((result) => {
+            if (result.writer) {
+              return true as const;
+            }
+            if (result.transientFailure) {
+              return transientErrorUrl();
+            }
+            return deny();
+          })
         );
 
       // getProjectStrict (not getProject): it propagates the HttpErrorResponse so a transient
@@ -192,7 +195,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
           // The BFF omits meetingCoordinator (HTTP 200, field undefined) when its FGA check fails —
           // on the deny paths undefined means "unknown", so classify transient, not denial.
           const coordinatorUnknown = writeFeature === 'meetings' && project.meetingCoordinator === undefined;
-          if (effectiveCommitteeUid && supportsCommitteeWriter) {
+          if (effectiveCommitteeUids.length > 0 && supportsCommitteeWriter) {
             return checkCommittee().pipe(map((result) => (result !== true && coordinatorUnknown ? transientErrorUrl() : result)));
           }
           return of(coordinatorUnknown ? transientErrorUrl() : deny());
@@ -200,7 +203,7 @@ export const writerGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
         catchError((error) => {
           // A fetch failure is not a denial — still try the committee check so a committee
           // writer isn't denied on a BFF error; only then classify transient vs denial.
-          if (effectiveCommitteeUid && supportsCommitteeWriter) {
+          if (effectiveCommitteeUids.length > 0 && supportsCommitteeWriter) {
             // The project leg went unverified — a committee "not a writer" verdict must not
             // surface as Access Denied when the project failure was transient.
             return checkCommittee().pipe(map((result) => (result !== true && isTransientHttpError(error) ? transientErrorUrl() : result)));

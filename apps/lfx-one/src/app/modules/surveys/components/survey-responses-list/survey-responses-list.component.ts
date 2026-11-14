@@ -2,34 +2,67 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
-import { SURVEY_RESPONSES_PAGE_SIZE } from '@lfx-one/shared/constants';
-import { NpsBand, Survey, SurveyResponseItem } from '@lfx-one/shared/interfaces';
-import { getNpsBand, getResponseComment, getResponseDeliveryTimestamp } from '@lfx-one/shared/utils';
-import { SurveyService } from '@services/survey.service';
+import { NpsBand, Survey, SurveyReminderDialogData, SurveyResponseItem, SurveySentEmailDialogData } from '@lfx-one/shared/interfaces';
+import {
+  buildSurveyFollowUpMailto,
+  buildSurveyResponsesCsvRows,
+  downloadCsv,
+  getNpsBand,
+  getResponseComment,
+  getResponseDeliveryTimestamp,
+  hasSurveyResponse,
+  isSurveyOpenForFollowUp,
+  localDateStamp,
+} from '@lfx-one/shared/utils';
+import { ClipboardShareService } from '@services/clipboard-share.service';
+import { MenuItem } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, scan, startWith, Subject, switchMap, tap } from 'rxjs';
+import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
+import { SurveyReminderDialogComponent } from '../survey-reminder-dialog/survey-reminder-dialog.component';
+import { SurveySentEmailDialogComponent } from '../survey-sent-email-dialog/survey-sent-email-dialog.component';
+
+/**
+ * Per-recipient responses for the PMO results drawer. The drawer loads every page and passes
+ * the rows in, so search, filters, sort and the CSV always cover all recipients.
+ */
 @Component({
   selector: 'lfx-survey-responses-list',
-  imports: [DatePipe, ReactiveFormsModule, InputTextComponent, SelectComponent, TooltipModule],
+  imports: [DatePipe, ReactiveFormsModule, ButtonComponent, InputTextComponent, MenuComponent, SelectComponent, TooltipModule],
+  providers: [DialogService],
   templateUrl: './survey-responses-list.component.html',
   styleUrl: './survey-responses-list.component.scss',
 })
 export class SurveyResponsesListComponent {
   // === Services ===
-  private readonly surveyService = inject(SurveyService);
+  private readonly clipboardShareService = inject(ClipboardShareService);
+  private readonly dialogService = inject(DialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // === Inputs ===
-  public readonly surveyId = input<string | null>(null);
   /** Parent survey — supplies header counts and committee/project labels for grouping. */
   public readonly survey = input<Survey | null>(null);
-  /** Optional project scope for multi-project surveys. */
+  /** Every per-recipient response row (all pages). */
+  public readonly responses = input<SurveyResponseItem[]>([]);
+  public readonly loading = input<boolean>(false);
+  /** True when the rows could not all be loaded; the list is then incomplete. */
+  public readonly loadError = input<boolean>(false);
+  /** Active project: reminders are offered only for its committees (the server refuses any other). */
   public readonly projectUid = input<string | null>(null);
+  /** Project write access: reminders are refused by the server for anyone else (e.g. group-only writers). */
+  public readonly canSendFollowUp = input<boolean>(false);
+
+  // === Outputs ===
+  /** Emitted after reminders were sent, so the parent can reload the rows. */
+  public readonly remindersSent = output<void>();
 
   // === Constants ===
   protected readonly npsOptions = [
@@ -61,44 +94,111 @@ export class SurveyResponsesListComponent {
     delivery: new FormControl<string>('all', { nonNullable: true }),
   });
 
-  // === Refresh / pagination triggers ===
-  private readonly loadMore$ = new Subject<void>();
-
   // === Writable Signals ===
-  protected readonly loading = signal<boolean>(false);
-  protected readonly loadingMore = signal<boolean>(false);
-  private readonly pageToken = signal<string | undefined>(undefined);
+  protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
+  protected readonly rowActionMenuOpen = signal<boolean>(false);
+  protected readonly rowActionMenuResponseId = signal<string | null>(null);
   private readonly sortField = signal<string>('');
   private readonly sortDir = signal<number>(1);
   private readonly collapsedGroups = signal<Set<string>>(new Set<string>());
 
-  // === Derived Signals (from API) ===
-  protected readonly responses: Signal<SurveyResponseItem[]> = this.initResponses();
-
-  // === Filter Signals (client-side over loaded rows) ===
+  // === Filter Signals ===
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   private readonly npsFilter: Signal<string> = this.toControlSignal('nps');
   private readonly commentFilter: Signal<string> = this.toControlSignal('comment');
   private readonly deliveryFilter: Signal<string> = this.toControlSignal('delivery');
 
   // === Computed Signals ===
-  protected readonly hasMore: Signal<boolean> = computed(() => !!this.pageToken());
   protected readonly filteredResponses: Signal<SurveyResponseItem[]> = this.initFilteredResponses();
   protected readonly groups: Signal<{ key: string; label: string; count: number; items: SurveyResponseItem[] }[]> = this.initGroups();
   protected readonly respondedCount: Signal<number> = this.initRespondedCount();
   protected readonly totalRecipients: Signal<number> = this.initTotalRecipients();
+  /** Prefilled follow-up email per recipient, built once per data change rather than per change-detection pass. */
+  protected readonly mailtoById: Signal<Map<string, string>> = computed(() => {
+    const survey = this.survey();
+    return new Map(this.responses().map((r) => [r.id, (survey && buildSurveyFollowUpMailto(survey, r)) || `mailto:${encodeURIComponent(r.email ?? '')}`]));
+  });
+  /** Reminders only go out while the survey accepts responses. */
+  protected readonly canRemind: Signal<boolean> = computed(() => {
+    const survey = this.survey();
+    return this.canSendFollowUp() && !!survey && isSurveyOpenForFollowUp(survey);
+  });
+  /** Committees of the active project on this survey. */
+  private readonly projectCommitteeUids: Signal<Set<string>> = computed(() => {
+    const projectUid = this.projectUid();
+    return new Set((this.survey()?.committees ?? []).filter((c) => !!projectUid && c.project_uid === projectUid).map((c) => c.committee_uid));
+  });
+  protected readonly nonRespondents: Signal<SurveyResponseItem[]> = computed(() =>
+    this.responses().filter((r) => !hasSurveyResponse(r) && this.projectCommitteeUids().has(r.committee_uid ?? ''))
+  );
   protected readonly isFiltered: Signal<boolean> = computed(
     () => this.searchTerm() !== '' || this.npsFilter() !== 'all' || this.commentFilter() !== 'all' || this.deliveryFilter() !== 'all'
   );
 
-  // === Public Methods ===
-  public loadMore(): void {
-    if (this.hasMore() && !this.loadingMore()) {
-      this.loadMore$.next();
+  // === Protected Methods ===
+  /** Opens the row "More" menu, rebuilt for the clicked recipient. */
+  protected toggleRowActionMenu(event: Event, item: SurveyResponseItem, menu: MenuComponent): void {
+    event.stopPropagation();
+    this.rowActionMenuResponseId.set(item.id);
+    const survey = this.survey();
+    const items: MenuItem[] = [];
+    if (this.canRemind() && !hasSurveyResponse(item) && this.projectCommitteeUids().has(item.committee_uid ?? '')) {
+      items.push({ label: 'Send reminder', icon: 'fa-light fa-paper-plane', command: () => this.openReminderDialog([item]) });
     }
+    if (item.survey_link) {
+      items.push({
+        label: 'Copy personal link',
+        icon: 'fa-light fa-link',
+        command: () => this.clipboardShareService.copyLink(item.survey_link ?? '', 'Personal survey link copied.'),
+      });
+    }
+    const mailto = item.email ? this.mailtoById().get(item.id) : undefined;
+    if (mailto) {
+      items.push({
+        label: 'Email recipient',
+        icon: 'fa-light fa-envelope',
+        url: mailto,
+        tooltipOptions: { tooltipLabel: 'Opens your mail app with a reminder that includes their personal link', tooltipPosition: 'left' },
+      });
+    }
+    if (survey?.email_body) {
+      items.push({ label: 'View sent email', icon: 'fa-light fa-eye', command: () => this.openSentEmail(survey, item) });
+    }
+    this.rowActionMenuItems.set(items);
+    menu.toggle(event);
   }
 
-  // === Protected Methods ===
+  /** Opens the reminder dialog for the given non-respondents (all of them from the header button). */
+  protected openReminderDialog(recipients: SurveyResponseItem[] = this.nonRespondents()): void {
+    const survey = this.survey();
+    if (!survey || recipients.length === 0) return;
+    const data: SurveyReminderDialogData = { survey, recipients };
+    this.dialogService
+      .open(SurveyReminderDialogComponent, {
+        header: 'Send survey reminder',
+        width: 'min(960px, 96vw)',
+        modal: true,
+        closable: true,
+        draggable: false,
+        data,
+      })
+      ?.onClose.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((sent) => {
+        if (sent === true) this.remindersSent.emit();
+      });
+  }
+
+  protected exportCsv(): void {
+    const survey = this.survey();
+    if (!survey) return;
+    const slug =
+      survey.survey_title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '') || 'survey';
+    downloadCsv(`${slug}-responses-${localDateStamp()}.csv`, buildSurveyResponsesCsvRows(survey, this.responses()));
+  }
+
   protected isGroupCollapsed(key: string): boolean {
     return this.collapsedGroups().has(key);
   }
@@ -153,46 +253,6 @@ export class SurveyResponsesListComponent {
   }
 
   // === Private Initializers ===
-  private initResponses(): Signal<SurveyResponseItem[]> {
-    const firstPage$ = combineLatest([toObservable(this.surveyId), toObservable(this.projectUid)]).pipe(
-      switchMap(([id, projectUid]) => {
-        this.pageToken.set(undefined);
-        if (!id) {
-          this.loading.set(false);
-          return of({ data: [] as SurveyResponseItem[], token: undefined, reset: true });
-        }
-        this.loading.set(true);
-        return this.surveyService.getSurveyResponses(id, SURVEY_RESPONSES_PAGE_SIZE, undefined, projectUid ?? undefined).pipe(
-          map((page) => ({ data: page.data, token: this.normalizeToken(page.meta.page_token), reset: true })),
-          finalize(() => this.loading.set(false))
-        );
-      })
-    );
-
-    const nextPage$ = this.loadMore$.pipe(
-      switchMap(() => {
-        const id = this.surveyId();
-        const token = this.pageToken();
-        if (!id || !token) {
-          return of({ data: [] as SurveyResponseItem[], token: undefined, reset: false });
-        }
-        this.loadingMore.set(true);
-        return this.surveyService.getSurveyResponses(id, SURVEY_RESPONSES_PAGE_SIZE, token, this.projectUid() ?? undefined).pipe(
-          map((page) => ({ data: page.data, token: this.normalizeToken(page.meta.page_token), reset: false })),
-          finalize(() => this.loadingMore.set(false))
-        );
-      })
-    );
-
-    return toSignal(
-      merge(firstPage$, nextPage$).pipe(
-        tap((result) => this.pageToken.set(result.token)),
-        scan((acc, result) => (result.reset ? result.data : [...acc, ...result.data]), [] as SurveyResponseItem[])
-      ),
-      { initialValue: [] as SurveyResponseItem[] }
-    );
-  }
-
   private initSearchTerm(): Signal<string> {
     const control = this.filterForm.controls.search;
     return toSignal(
@@ -266,11 +326,7 @@ export class SurveyResponsesListComponent {
         const projectName = committee?.project_name || items[0]?.project?.name || '';
         const committeeName = committee?.committee_name || '';
         const label = [projectName, committeeName].filter(Boolean).join(' | ') || 'Responses';
-        // When filters/search are active, show the count of visible rows so the
-        // header matches what's rendered. When unfiltered, prefer the authoritative
-        // total from the survey aggregate (covers recipients not yet loaded).
-        const count = this.isFiltered() ? items.length : (committee?.total_recipients ?? items.length);
-        return { key, label, count, items };
+        return { key, label, count: items.length, items };
       });
     });
   }
@@ -337,8 +393,15 @@ export class SurveyResponsesListComponent {
     }
   }
 
-  /** Upstream returns an empty page_token on the last page; normalize that to undefined. */
-  private normalizeToken(token: string | undefined): string | undefined {
-    return token && token.trim() !== '' ? token : undefined;
+  private openSentEmail(survey: Survey, response: SurveyResponseItem): void {
+    const data: SurveySentEmailDialogData = { survey, response };
+    this.dialogService.open(SurveySentEmailDialogComponent, {
+      header: 'Sent email',
+      width: 'min(760px, 96vw)',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data,
+    });
   }
 }

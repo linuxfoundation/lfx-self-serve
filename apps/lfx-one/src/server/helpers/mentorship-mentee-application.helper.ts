@@ -7,11 +7,10 @@ import {
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyTarget,
   MentorshipUpstreamApplication,
-  MentorshipUpstreamProgram,
-  MentorshipUpstreamProgramTerm,
+  MentorshipUpstreamProgramTermApplyTarget,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 import { MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER } from '../constants/mentorship.constants';
 
@@ -19,20 +18,23 @@ import { MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER } from '../constants/mentorship.
 const isSubmittedTask = (task: MentorshipUpstreamTask): boolean => task.status === 'submitted' || task.status === 'complete';
 
 /**
- * A task's own due date, else the term's application close for a prerequisite task, as its UTC
- * midnight instant. Upstream stores both as bare dates, which `DatePipe` would read as local
- * midnight and show a day early east of UTC.
+ * A task's own due date as its UTC midnight instant, else, for a prerequisite task, the term's
+ * application close as the end of its UTC day. A bare date would be read by `DatePipe` as local
+ * midnight and shown a day early east of UTC. The task view and the submit check both resolve it
+ * here, so the page and the BFF lock a task on the same day.
  */
-const resolveTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
+export const resolveMentorshipMenteeTaskDueDate = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): string | undefined => {
   if (task.due_date) return toMentorshipUtcInstant(task.due_date);
-  if (task.category === 'prerequisite' && applicationEndDate) return toMentorshipUtcInstant(applicationEndDate);
+  if (task.category === 'prerequisite' && applicationEndDate) return toMentorshipUtcEndOfDayInstant(applicationEndDate);
   return undefined;
 };
 
 /**
  * Maps one `tasks` row to the mentee task shape. The service stores `category` as nullable, and a
  * task without one counts as non-prerequisite. Upstream records no separate submission time, so a
- * submitted task's `updated_on` stands in for it.
+ * submitted task's `updated_on` stands in for it. Upstream treats any `submit_file` value as required,
+ * and sends `file` as its own download route, which needs the caller's token, so only whether a file
+ * is stored reaches the browser.
  */
 export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask, applicationEndDate: string | undefined): MentorshipMenteeApplicationTask => ({
   id: task.id,
@@ -40,9 +42,9 @@ export const mapMentorshipMenteeApplicationTask = (task: MentorshipUpstreamTask,
   description: task.description ?? '',
   category: task.category ?? 'non_prerequisite',
   status: task.status,
-  submitFile: task.submit_file || null,
-  fileUrl: task.file || undefined,
-  dueDate: resolveTaskDueDate(task, applicationEndDate),
+  submitFile: task.submit_file ? 'required' : null,
+  hasFile: !!task.file,
+  dueDate: resolveMentorshipMenteeTaskDueDate(task, applicationEndDate),
   submittedOn: isSubmittedTask(task) ? task.updated_on : undefined,
   updatedOn: task.updated_on,
 });
@@ -69,34 +71,15 @@ export const mapMentorshipMenteeApplication = (
   upstreamStatus: application.status,
   createdOn: application.created_on,
   updatedOn: application.updated_on,
-  decisionExpectedDate: application.term?.application_end_date ? toMentorshipUtcInstant(application.term.application_end_date) : undefined,
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 
-/**
- * Whether a term takes applications at `now`, by the check upstream runs on submit: the term is
- * `open`, `now` is not before its application start and not after its application end. Upstream
- * stores both as bare dates, read here as UTC midnight as upstream does, and a missing date leaves
- * that side of the window open.
- */
-const isAcceptingApplications = (term: MentorshipUpstreamProgramTerm, now: Date): boolean => {
-  if (term.status !== 'open') return false;
-  const time = now.getTime();
-  if (term.application_start_date && time < Date.parse(toMentorshipUtcInstant(term.application_start_date))) return false;
-  if (term.application_end_date && time > Date.parse(toMentorshipUtcInstant(term.application_end_date))) return false;
-  return true;
-};
-
-/** Maps a program and one of its terms to the mentee apply page header, with whether the term takes applications at `now`. */
-export const mapMentorshipMenteeApplyTarget = (
-  program: MentorshipUpstreamProgram,
-  term: MentorshipUpstreamProgramTerm,
-  now: Date
-): MentorshipMenteeApplyTarget => ({
-  programName: program.name,
-  projectName: program.project_name ?? '',
-  termName: term.name,
-  acceptingApplications: isAcceptingApplications(term, now),
+/** Maps upstream's apply target to the mentee apply page header. Upstream decides whether the term takes applications. */
+export const mapMentorshipMenteeApplyTarget = (target: MentorshipUpstreamProgramTermApplyTarget): MentorshipMenteeApplyTarget => ({
+  programName: target.program_name,
+  projectName: target.project_name ?? '',
+  termName: target.term_name,
+  acceptingApplications: target.accepting_applications,
 });
 
 /** Sort rank of an application on Application History; a status outside the order ranks last. */

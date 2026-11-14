@@ -1,0 +1,14 @@
+/* Type-check pass for the server-side specs. They run under Vitest (vitest.config.ts), which
+   is transpile-only, and tsconfig.app.json excludes every *.spec.ts to keep the Angular build
+   program small, so this config is what catches a type error in a server spec. App specs are
+   covered by tsconfig.spec.json; the two sets are disjoint. server.ts is listed so the ambient
+   augmentations it pulls in (e.g. express-openid-connect's `req.oidc`) apply here too. */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/server-spec",
+    "types": ["node"]
+  },
+  "files": ["src/server/server.ts"],
+  "include": ["src/server/**/*.spec.ts", "src/**/*.d.ts"]
+}

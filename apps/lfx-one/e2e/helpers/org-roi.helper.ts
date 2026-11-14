@@ -5,7 +5,6 @@ import { expect, Page, Route, test } from '@playwright/test';
 // Deep-imported, not from the `constants` barrel: the barrel pulls in modules that depend on
 // @angular/common and fail to load outside the app, the same trap the specs hit with `utils`.
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
 import type { OrgLensRoiAnnualRow, OrgLensRoiProjectAnnual } from '@lfx-one/shared/interfaces';
 
@@ -181,7 +180,6 @@ function projectRow(projectSlug: string, projectName: string, totalExpenditure: 
     profit,
     roi: totalExpenditure > 0 ? profit / totalExpenditure : null,
     bcr: totalExpenditure > 0 ? totalReturn / totalExpenditure : null,
-    breakevenMarkup: 0.331,
     categories: projectCategories(totalExpenditure),
   };
 }
@@ -258,7 +256,6 @@ export const NO_INVESTMENT_PROJECT = {
   profit: 0,
   roi: null,
   bcr: null,
-  breakevenMarkup: null,
   categories: [],
 };
 
@@ -309,6 +306,18 @@ export function mockProjectAnnual(slug: string, efficiencyConstant = true, appor
   return { method: 'logit', projectSlug: slug, rows, apportioned, efficiencyConstant };
 }
 
+export const MOCK_VALUE_DRIVERS = {
+  method: 'logit',
+  nProjects: 12,
+  rows: [
+    { category: 'Revenue Boosters', pctDeviation: 14.2 },
+    { category: 'Strategic', pctDeviation: 6.8 },
+    { category: 'Prosocial', pctDeviation: 1.9 },
+    { category: 'Risk Mitigation', pctDeviation: -5.3 },
+    { category: 'Direct Cost Savings', pctDeviation: -9.7 },
+  ],
+};
+
 interface StubOptions {
   hasAccess?: boolean;
   summary?: unknown;
@@ -316,6 +325,9 @@ interface StubOptions {
   annual?: unknown;
   investmentBreakdown?: unknown;
   projects?: unknown;
+  valueDrivers?: unknown;
+  /** Status to answer the value drivers route with; 200 uses the payload above. */
+  valueDriversStatus?: number;
   /** Status to answer both project-detail routes with; 200 uses the payloads below. */
   projectDetailStatus?: number;
   projectDetail?: unknown;
@@ -343,6 +355,11 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   await page.route('**/api/orgs/*/lens/roi/annual*', (route) => fulfillJson(route, options.annual ?? MOCK_ANNUAL));
   await page.route('**/api/orgs/*/lens/roi/investment-breakdown*', (route) => fulfillJson(route, options.investmentBreakdown ?? MOCK_INVESTMENT_BREAKDOWN));
   await page.route('**/api/orgs/*/lens/roi/projects*', (route) => fulfillJson(route, options.projects ?? MOCK_PROJECTS));
+  await page.route('**/api/orgs/*/lens/roi/value-drivers*', (route) => {
+    const status = options.valueDriversStatus ?? 200;
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
+    return fulfillJson(route, options.valueDrivers ?? MOCK_VALUE_DRIVERS);
+  });
 
   // These three globs cannot overlap: `*` does not cross a `/`, so the collection route above
   // cannot capture `/projects/{slug}`, and neither can capture `/projects/{slug}/annual`. That
@@ -365,6 +382,7 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       personaProjects: {},
       projects: [],
       organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_LEGAL_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
+      isLFStaff: true,
       isRootWriter: false,
     })
   );
@@ -406,21 +424,18 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
 }
 
 /**
- * Pin feature flags for this page, before any application code runs.
+ * Skips the case unless the real e2e session is LF staff. ROI Metrics is open to LF staff only, and the server-side guard and the
+ * API read the real persona, which a browser stub cannot change, so any other user is redirected away. Asking before navigating
+ * keeps a staff session that is redirected from skipping: that still fails the case.
  *
- * Without this the ROI specs cannot run at all. `/org/roi` sits behind a `canMatch` guard, and the
- * flag SDK evaluates twice — first against an anonymous context at bootstrap, then again once the
- * authenticated user context is applied. A flag targeted at named users is false in that first
- * window, so the guard can resolve against it and redirect before the real value arrives, leaving
- * every case skipped or asserting against a page that has already navigated away.
- *
- * The override is read only by non-production builds; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
+ * The personas lookup fails closed, so an outage of the access check answers `isLFStaff: false` too and skips the case; only a
+ * response that is not OK fails here.
  */
-export async function stubFeatureFlags(page: Page, flags: Record<string, boolean>): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify(flags),
-  ] as const);
+export async function skipUnlessLfStaff(page: Page): Promise<void> {
+  const response = await page.request.get('/api/user/personas?enriched=true');
+  expect(response.ok(), 'the personas lookup behind the ROI staff gate must answer').toBe(true);
+  const persona = (await response.json()) as { isLFStaff?: boolean };
+  test.skip(persona.isLFStaff !== true, 'ROI Metrics is LF-staff only and the personas lookup reports this e2e user as not LF staff');
 }
 
 export async function gotoOrgRoiPage(page: Page): Promise<void> {
@@ -428,18 +443,18 @@ export async function gotoOrgRoiPage(page: Page): Promise<void> {
 }
 
 /**
- * The project detail route. It is a child of `/org/roi`, so it is matched by the same fail-closed
- * dark-launch guard — the flag override below is what lets it resolve at all.
+ * The project detail route. It is a child of `/org/roi`, so it is matched by the same LF-staff-only
+ * guard; any other e2e user is redirected away and the case is skipped.
  */
 export async function gotoOrgRoiProjectDetail(page: Page, slug: string): Promise<void> {
   await gotoRoiRoute(page, orgRoiProjectDetailUrl(slug), 'org-roi-project-detail-page');
 }
 
 async function gotoRoiRoute(page: Page, url: string, testId: string): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
   await seedSelectedOrgCookie(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
+  await skipUnlessLfStaff(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);

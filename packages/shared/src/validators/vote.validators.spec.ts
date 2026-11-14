@@ -4,7 +4,7 @@
 import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { voteDeadlineValidator } from './vote.validators';
+import { voteDeadlineValidator, voteExtendDeadlineValidator } from './vote.validators';
 
 // The validator reads close_date/close_time/timezone off a FormGroup-shaped object via
 // `.get(name)?.value` — a minimal stub covers it (same pattern as newsletter.validators.spec.ts).
@@ -73,5 +73,39 @@ describe('voteDeadlineValidator', () => {
 
   it('skips validation for an unparseable time string', () => {
     expect(validate({ close_date: new Date(2026, 7, 11), close_time: '25:99 XM', timezone: 'UTC' })).toBeNull();
+  });
+});
+
+describe('voteExtendDeadlineValidator', () => {
+  const CURRENT_END_TIME = '2026-08-15T23:59:00.000Z';
+  const validateExtend = (value: { close_date?: Date | null; close_time?: string; timezone?: string }): ValidationErrors | null =>
+    voteExtendDeadlineValidator(CURRENT_END_TIME)(group(value));
+
+  it('rejects a deadline that is not later than the current end_time', () => {
+    expect(validateExtend({ close_date: new Date(2026, 7, 15), close_time: '11:59 PM', timezone: 'UTC' })).toEqual({
+      notAfterCurrentDeadline: true,
+    });
+  });
+
+  it('rejects a deadline earlier than the current end_time', () => {
+    expect(validateExtend({ close_date: new Date(2026, 7, 10), close_time: '11:59 PM', timezone: 'UTC' })).toEqual({
+      notAfterCurrentDeadline: true,
+    });
+  });
+
+  it('accepts a deadline later than the current end_time', () => {
+    expect(validateExtend({ close_date: new Date(2026, 7, 20), close_time: '11:59 PM', timezone: 'UTC' })).toBeNull();
+  });
+
+  it('rejects a spring-forward gap wall time that does not exist in the chosen timezone', () => {
+    expect(validateExtend({ close_date: new Date(2026, 2, 8), close_time: '2:30 AM', timezone: 'America/New_York' })).toEqual({
+      nonexistentWallTime: true,
+    });
+  });
+
+  it('skips validation when any of the three controls is unset', () => {
+    expect(validateExtend({ close_date: null, close_time: '11:59 PM', timezone: 'UTC' })).toBeNull();
+    expect(validateExtend({ close_date: new Date(2026, 7, 20), close_time: '', timezone: 'UTC' })).toBeNull();
+    expect(validateExtend({ close_date: new Date(2026, 7, 20), close_time: '11:59 PM', timezone: '' })).toBeNull();
   });
 });

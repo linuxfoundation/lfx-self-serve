@@ -1,0 +1,41 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (heading()) {
+  <span class="inline-flex items-center gap-[6px]" data-testid="ui-tooltip-title">
+    @if (icon()) {
+      <i class="ui-icon text-[11px] leading-none" [class]="icon()" aria-hidden="true" data-testid="ui-tooltip-icon"></i>
+    }
+    <span>{{ heading() }}</span>
+  </span>
+  <!-- shortcut: raw var() in a class, as colour utilities cannot take alpha on a CSS variable. revisit: when the library ships a background-alpha token. -->
+  <span class="font-normal text-[color:color-mix(in_srgb,var(--ui-background-100)_65%,transparent)]" data-testid="ui-tooltip-text">{{ text() }}</span>
+} @else if (items().length) {
+  <span class="inline-flex flex-wrap items-center gap-x-[8px] gap-y-[2px]" data-testid="ui-tooltip-items">
+    @for (item of items(); track $index) {
+      @if (!$first) {
+        <span class="opacity-50" aria-hidden="true">·</span>
+      }
+      <span class="inline-flex items-center gap-[5px] whitespace-nowrap">
+        @if (item.dotClass) {
+          <span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>
+        }
+        <span class="font-semibold">{{ item.label }}</span
+        ><span class="font-normal">{{ item.value }}</span>
+      </span>
+    }
+  </span>
+} @else {
+  <span data-testid="ui-tooltip-text">{{ text() }}</span>
+}
+@if (shortcut().length) {
+  <span class="inline-flex items-center gap-[4px]" data-testid="ui-tooltip-shortcut">
+    @for (key of shortcut(); track $index) {
+      <!-- shortcut: literal white at 25% for the key ring. revisit: when the library ships a white-alpha token. -->
+      <kbd
+        class="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded-ui-xs px-[4px] label-12 font-normal shadow-[0_0_0_1px_rgba(255,255,255,0.25)]"
+        >{{ key }}</kbd
+      >
+    }
+  </span>
+}

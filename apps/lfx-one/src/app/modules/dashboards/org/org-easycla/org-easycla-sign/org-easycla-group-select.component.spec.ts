@@ -91,6 +91,7 @@ describe('OrgEasyclaGroupSelectComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 1,
+      viewerIsClaManager: false,
     };
   }
 

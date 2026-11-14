@@ -64,10 +64,8 @@ export class MembersDirectoryComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Every member of the foundation, for the sub-nav badge; `null` while a read is pending or failed. */
-  public readonly countChange = output<number | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -124,6 +122,8 @@ export class MembersDirectoryComponent {
   protected readonly rowViews: Signal<HealthMetricsMembersDirectoryRowView[]> = computed(() => buildHealthMetricsMembersDirectoryRows(this.response().rows));
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
+  /** The foundation had no member in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.scopeTotal());
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly filtered = computed(() => this.tier() !== '' || this.nps() !== '' || this.search() !== '');
   protected readonly summary = computed(() => buildHealthMetricsMembersDirectorySummary(this.scopeTotal(), this.response().atRiskCount));
@@ -181,9 +181,6 @@ export class MembersDirectoryComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
-    // The badge counts the whole foundation, so only a new foundation or period blanks it; paging and filters keep it.
-    let countScope: string | null = null;
-
     return toSignal(
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -191,11 +188,6 @@ export class MembersDirectoryComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          const scope = `${query.foundationSlug}|${query.range}`;
-          if (scope !== countScope) {
-            countScope = scope;
-            this.countChange.emit(null);
-          }
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -207,13 +199,12 @@ export class MembersDirectoryComponent {
               return of(HEALTH_METRICS_MEMBERS_DIRECTORY_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles nor reports a count.
+              // A clamped page fires a follow-up read, so this one does not settle.
               if (this.clampPage(response.totalRecords)) return;
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.scopeTotal : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && !response.scopeTotal);
             })
           )
         )

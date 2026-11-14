@@ -36,6 +36,9 @@ export interface ProjectMembershipDoc {
   project_slug?: string;
   status?: string;
   start_date?: string;
+  /** Member company domain (single value) recorded on the membership. */
+  company_domain?: string;
+  company_name?: string;
 }
 
 /** Resolved org-membership context passed between key-contact BFF services. */

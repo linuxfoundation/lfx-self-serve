@@ -12,8 +12,6 @@ import type {
   MarketingImpactTabOption,
 } from '../interfaces/marketing-impact.interface';
 
-export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
-
 /**
  * Campaign Type filter options for the Campaign Impact dashboard, in display order. These are
  * DISPLAY labels; the underlying `id`s still map to Snowflake LF_SUB_DOMAIN_CLASSIFICATION values

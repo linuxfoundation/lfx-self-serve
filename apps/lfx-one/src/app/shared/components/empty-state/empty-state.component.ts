@@ -8,10 +8,11 @@ import { ButtonProps } from '@lfx-one/shared/interfaces';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 
 @Component({
   selector: 'lfx-empty-state',
-  imports: [NgTemplateOutlet, CardComponent, ButtonComponent, RouterLink],
+  imports: [NgTemplateOutlet, CardComponent, ButtonComponent, RouterLink, UiButtonComponent],
   templateUrl: './empty-state.component.html',
 })
 export class EmptyStateComponent {
@@ -31,9 +32,14 @@ export class EmptyStateComponent {
   public readonly ctaSize = input<ButtonProps['size']>('small');
   /** Set to false when the component is already inside a card-like container */
   public readonly withCard = input(true);
+  /** `compact` is the in-card state Health Metrics sections use: no card or CTA, smaller type and icon, and Reset filters when `resettable`. */
+  public readonly variant = input<'default' | 'compact'>('default');
+  /** On the compact variant, offers "Reset filters" for a filtered view with no rows; the page clears its search, filters and page. */
+  public readonly resettable = input(false);
 
   // === Outputs ===
   public readonly ctaClick = output<void>();
+  public readonly resetFilters = output<void>();
 
   /** Defaults rel to `noopener noreferrer` for `_blank` targets to prevent reverse-tabnabbing. Treats empty/whitespace ctaRel as not provided. */
   protected readonly resolvedRel = computed(() => {

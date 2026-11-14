@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-metric-card
+  title="Courses taken"
+  chartType="line"
+  [hideChart]="true"
+  value="400"
+  infoTooltip="How this is counted"
+  testId="card"
+  [clickable]="clickable()"
+  [loading]="loading()"
+  (cardClick)="clicks.set(clicks() + 1)" />

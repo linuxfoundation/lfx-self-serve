@@ -3,13 +3,8 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, output, PLATFORM_ID, viewChildren } from '@angular/core';
-import {
-  MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS,
-  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
-  MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS,
-} from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS, MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES, MENTORSHIP_PROGRAM_STATUS_LABELS } from '@lfx-one/shared/constants';
 import { MentorshipMentorProgram, MentorshipMentorProgramDetailTab, MentorshipMentorProgramTabCounts } from '@lfx-one/shared/interfaces';
-import { formatMentorshipDateRange } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-mentorship-mentor-program-detail-header',
@@ -23,13 +18,8 @@ export class MentorProgramDetailHeaderComponent {
   public readonly activeTab = input.required<MentorshipMentorProgramDetailTab>();
   public readonly tabChange = output<MentorshipMentorProgramDetailTab>();
 
-  protected readonly seasonLine = computed(() => {
-    const program = this.program();
-    const dateRange = program.termStartDate && program.termEndDate ? formatMentorshipDateRange(program.termStartDate, program.termEndDate) : undefined;
-    return dateRange ? `${program.projectName} · ${program.term} · ${dateRange}` : `${program.projectName} · ${program.term}`;
-  });
-  protected readonly statusLabel = computed(() => MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_LABELS[this.program().termStatus]);
-  protected readonly statusBadgeClass = computed(() => MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES[this.program().termStatus]);
+  protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
+  protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
 
   protected readonly tabItems = computed(() => {
     const counts = this.tabCounts();

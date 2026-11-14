@@ -83,7 +83,7 @@ case "$FILE_PATH" in
     warn "Turborepo config — changes affect monorepo build pipeline." ;;
   apps/lfx-one/angular.json)
     warn "Angular CLI config — changes affect build, serve, and test configuration." ;;
-  CLAUDE.md)
+  AGENTS.md)
     warn "Project instructions — changes affect AI assistant behavior for all users." ;;
   check-headers.sh)
     warn "License header check script — changes affect compliance validation." ;;

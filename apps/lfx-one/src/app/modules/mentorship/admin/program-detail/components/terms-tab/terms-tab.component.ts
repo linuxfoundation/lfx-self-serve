@@ -1,11 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import {
+  MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT,
+  MENTORSHIP_ADMIN_TERM_CLOSED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_CREATED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_REOPENED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_UPDATED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE,
+  MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE,
+  MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE,
+  MENTORSHIP_ADMIN_TERMS_MAX_PAGES,
   MENTORSHIP_ENROLL_DELETE_TERM_CONFIRM,
+  MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_CANNOT_CLOSE_MESSAGE,
@@ -15,7 +29,7 @@ import {
   MENTORSHIP_TERM_ROW_STATUS_LABELS,
   MENTORSHIP_TERM_SHOULD_CLOSE_WARNING,
 } from '@lfx-one/shared/constants';
-import { MentorshipProgramTerm, MentorshipProgramTermRow, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
+import { MentorshipAdminTermInput, MentorshipProgramTerm, MentorshipProgramTermRow, MentorshipTermFormDialogData } from '@lfx-one/shared/interfaces';
 import {
   formatIsoDateLabel,
   formatMentorshipShortMonthYear,
@@ -23,16 +37,19 @@ import {
   mentorshipOpenTermCount,
   mentorshipTermHasApplications,
 } from '@lfx-one/shared/utils';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { MentorshipAdminService } from '@services/mentorship-admin.service';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { catchError, EMPTY, expand, map, Observable, of, reduce, switchMap, take, tap } from 'rxjs';
 
 import { EnrollTermDialogComponent } from '../../../enroll-program/components/enroll-term-dialog/enroll-term-dialog.component';
 
 /**
- * Terms tab — lifecycle table plus the documented term actions
- * (edit / close / re-open / delete). Create and edit reuse the enroll dialog.
+ * Terms tab — the program's terms with their application counts, read live. Every page is read before the table
+ * shows, so the open-term limit counts every term. Create, edit, close, re-open and delete write through the BFF,
+ * then read the terms again and ask the program page to refresh its counts and term options. Create and edit reuse
+ * the enroll dialog.
  */
 @Component({
   selector: 'lfx-mentorship-terms-tab',
@@ -42,27 +59,37 @@ import { EnrollTermDialogComponent } from '../../../enroll-program/components/en
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TermsTabComponent {
-  public readonly terms = input.required<MentorshipProgramTermRow[]>();
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly mentorshipAdminService = inject(MentorshipAdminService);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  public readonly programId = input.required<string>();
+  /**
+   * Has the parent program page read its counts and term options again. A callback rather than an output, so a write
+   * that lands after a tab switch destroyed this tab still refreshes the parent.
+   */
+  public readonly countsRefresh = input<() => void>(() => undefined);
 
   protected readonly maxTermsMessage = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
   protected readonly shouldCloseWarning = MENTORSHIP_TERM_SHOULD_CLOSE_WARNING;
   protected readonly cannotCloseMessage = MENTORSHIP_TERM_CANNOT_CLOSE_MESSAGE;
+  protected readonly loadErrorMessage = MENTORSHIP_ADMIN_TERMS_LOAD_ERROR_MESSAGE;
 
-  /**
-   * Term actions are local until a write endpoint exists, so a re-emission of the same upstream
-   * terms must keep them. Only a genuinely different set of terms resets the local edits.
-   */
-  protected readonly draftTerms = linkedSignal<MentorshipProgramTermRow[], MentorshipProgramTermRow[]>({
-    source: this.terms,
-    computation: (terms, previous) => (previous && this.sameTermIds(previous.source, terms) ? previous.value : terms),
-  });
+  protected readonly loading = signal(true);
+  protected readonly loadFailed = signal(false);
+  private readonly termRows = signal<MentorshipProgramTermRow[]>([]);
+  private readonly reloadCount = signal(0);
+  protected readonly writeInFlight = signal(false);
 
-  protected readonly canAddTerm = computed(() => mentorshipOpenTermCount(this.draftTerms()) < MENTORSHIP_MAX_OPEN_TERMS);
+  /** The open-term count is only known once a read has landed, so neither flag holds while loading or after a failed read. */
+  private readonly termsLoaded = computed(() => !this.loading() && !this.loadFailed());
+  protected readonly atMaxOpenTerms = computed(() => this.termsLoaded() && mentorshipOpenTermCount(this.termRows()) >= MENTORSHIP_MAX_OPEN_TERMS);
+  protected readonly canAddTerm = computed(() => this.termsLoaded() && mentorshipOpenTermCount(this.termRows()) < MENTORSHIP_MAX_OPEN_TERMS);
 
   protected readonly rows = computed(() =>
-    this.draftTerms().map((term) => {
+    this.termRows().map((term) => {
       const ended = isMentorshipTermEnded(term.endDate);
       const shouldClose = term.status === 'open' && ended;
       const canEdit = this.canEditTerm(term, ended);
@@ -81,13 +108,25 @@ export class TermsTabComponent {
     })
   );
 
+  private destroyed = false;
+
+  public constructor() {
+    this.initTermReads();
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
+  }
+
+  protected onRetry(): void {
+    this.reloadCount.update((count) => count + 1);
+  }
+
   protected onCreateTerm(): void {
-    if (!this.canAddTerm()) return;
+    if (!this.canAddTerm() || this.isWriteBlocked()) return;
     this.openTermDialog({ mode: 'add' });
   }
 
   protected onEditTerm(id: string): void {
-    const term = this.draftTerms().find((item) => item.id === id);
+    if (this.isWriteBlocked()) return;
+    const term = this.termRows().find((item) => item.id === id);
     if (!term || !this.canEditTerm(term, isMentorshipTermEnded(term.endDate))) return;
     this.openTermDialog({ mode: 'edit', term: this.toFormTerm(term) });
   }
@@ -125,7 +164,7 @@ export class TermsTabComponent {
   }
 
   private onCloseTerm(id: string): void {
-    const term = this.draftTerms().find((item) => item.id === id);
+    const term = this.termRows().find((item) => item.id === id);
     if (!term || term.status !== 'open') return;
 
     if (term.accepted > 0) {
@@ -147,26 +186,13 @@ export class TermsTabComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => {
-        this.setTerms(
-          this.draftTerms().map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  status: 'closed',
-                  declined: item.declined + item.pending,
-                  pending: 0,
-                }
-              : item
-          )
-        );
-      },
+      accept: () => this.writeTerm(this.mentorshipAdminService.closeTerm(this.programId(), id), MENTORSHIP_ADMIN_TERM_CLOSED_MESSAGE),
     });
   }
 
   private onReopenTerm(id: string): void {
     if (!this.canAddTerm()) return;
-    const term = this.draftTerms().find((item) => item.id === id);
+    const term = this.termRows().find((item) => item.id === id);
     if (!term || term.status !== 'closed' || isMentorshipTermEnded(term.endDate)) return;
 
     this.confirmationService.confirm({
@@ -177,14 +203,12 @@ export class TermsTabComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => {
-        this.setTerms(this.draftTerms().map((item) => (item.id === id ? { ...item, status: 'open' } : item)));
-      },
+      accept: () => this.writeTerm(this.mentorshipAdminService.reopenTerm(this.programId(), id), MENTORSHIP_ADMIN_TERM_REOPENED_MESSAGE),
     });
   }
 
   private onDeleteTerm(id: string): void {
-    const term = this.draftTerms().find((item) => item.id === id);
+    const term = this.termRows().find((item) => item.id === id);
     if (!term || mentorshipTermHasApplications(term)) return;
 
     this.confirmationService.confirm({
@@ -195,9 +219,7 @@ export class TermsTabComponent {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm p-button-danger',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => {
-        this.setTerms(this.draftTerms().filter((item) => item.id !== id));
-      },
+      accept: () => this.writeTerm(this.mentorshipAdminService.deleteTerm(this.programId(), id), MENTORSHIP_ADMIN_TERM_DELETED_MESSAGE),
     });
   }
 
@@ -211,22 +233,120 @@ export class TermsTabComponent {
       data,
     }) as DynamicDialogRef;
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: MentorshipProgramTerm | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MentorshipProgramTerm | undefined) => {
       if (!result) return;
-      const next =
-        data.mode === 'edit'
-          ? this.draftTerms().map((term) => (term.id === result.id ? { ...term, ...result } : term))
-          : [...this.draftTerms(), this.toNewRow(result)];
-      this.setTerms(next);
+      const input = this.toTermInput(result);
+      const programId = this.programId();
+      if (data.mode === 'edit' && data.term) {
+        this.writeTerm(this.mentorshipAdminService.updateTerm(programId, data.term.id, input), MENTORSHIP_ADMIN_TERM_UPDATED_MESSAGE);
+        return;
+      }
+      this.writeTerm(this.mentorshipAdminService.createTerm(programId, input), MENTORSHIP_ADMIN_TERM_CREATED_MESSAGE);
     });
   }
 
-  private setTerms(next: MentorshipProgramTermRow[]): void {
-    this.draftTerms.set(next);
+  /**
+   * Sends one term write and is never cancelled by the tab going away: aborting it would leave the change unknown and
+   * untoasted. A write that lands after the tab is gone still toasts and refreshes the parent, but skips the table reload.
+   */
+  private writeTerm(write: Observable<unknown>, successMessage: string): void {
+    if (this.isWriteBlocked()) return;
+    this.writeInFlight.set(true);
+    write.pipe(take(1)).subscribe({
+      next: () => {
+        this.writeInFlight.set(false);
+        this.showToast('success', 'Success', successMessage);
+        this.countsRefresh()();
+        this.reloadTerms();
+      },
+      error: (err: unknown) => {
+        this.writeInFlight.set(false);
+        this.onWriteError(err);
+      },
+    });
   }
 
-  private sameTermIds(a: MentorshipProgramTermRow[], b: MentorshipProgramTermRow[]): boolean {
-    return a.length === b.length && a.every((term, index) => term.id === b[index].id);
+  /** While a term write runs, shows the wait toast and answers true, so no dialog opens to a save that would be dropped. */
+  private isWriteBlocked(): boolean {
+    if (!this.writeInFlight()) return false;
+    this.showToast('info', 'Please wait', MENTORSHIP_ADMIN_TERM_WRITE_IN_FLIGHT_MESSAGE);
+    return true;
+  }
+
+  /** A 400 or 409 shows upstream's reason and a 409 reads the terms again; an impersonation 403 shows the server's text. */
+  private onWriteError(err: unknown): void {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    const isImpersonation = status === 403 && (err as HttpErrorResponse).error?.code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE;
+    if (status === 409) {
+      this.reloadTerms();
+      this.countsRefresh()();
+    }
+    const showsServerText = status === 400 || status === 409 || isImpersonation;
+    this.showToast(
+      'error',
+      'Error',
+      showsServerText ? serverAuthoredMessage(err, MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE) : MENTORSHIP_ADMIN_TERM_WRITE_FAILED_MESSAGE
+    );
+  }
+
+  private reloadTerms(): void {
+    if (!this.destroyed) this.reloadCount.update((count) => count + 1);
+  }
+
+  private showToast(severity: 'success' | 'error' | 'info', summary: string, detail: string): void {
+    this.messageService.add({ severity, summary, detail, life: severity === 'error' ? 5000 : 3000 });
+  }
+
+  private toTermInput(term: MentorshipProgramTerm): MentorshipAdminTermInput {
+    return {
+      name: term.name.trim(),
+      startDate: term.startDate,
+      endDate: term.endDate,
+      applicationStartDate: term.applicationStartDate,
+      applicationEndDate: term.applicationEndDate,
+    };
+  }
+
+  /** Reads the terms for the program, again on a retry; a read still in flight is dropped. */
+  private initTermReads(): void {
+    const query = computed(() => ({ programId: this.programId(), reload: this.reloadCount() }));
+
+    toObservable(query)
+      .pipe(
+        tap(() => {
+          this.loading.set(true);
+          this.loadFailed.set(false);
+        }),
+        switchMap(({ programId }) =>
+          this.readAllTerms(programId).pipe(
+            map((terms) => ({ terms })),
+            catchError(() => of({ terms: null }))
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ terms }) => {
+        this.loading.set(false);
+        this.termRows.set(terms ?? []);
+        this.loadFailed.set(!terms);
+      });
+  }
+
+  /**
+   * Every term of the program, read a page at the upstream maximum until `total` is covered. The next page is decided
+   * from `total`, not the page's row count, because the BFF drops terms that are neither open nor closed.
+   */
+  private readAllTerms(programId: string): Observable<MentorshipProgramTermRow[]> {
+    const limit = MENTORSHIP_ADMIN_MANAGEMENT_MAX_LIMIT;
+    const readPage = (offset: number) => this.mentorshipAdminService.getProgramTerms(programId, { offset, limit });
+
+    return readPage(0).pipe(
+      expand((page, index) => {
+        const nextOffset = (index + 1) * limit;
+        return nextOffset < page.total && index + 1 < MENTORSHIP_ADMIN_TERMS_MAX_PAGES ? readPage(nextOffset) : EMPTY;
+      }),
+      reduce((rows, page) => [...rows, ...page.data], [] as MentorshipProgramTermRow[])
+    );
   }
 
   private toFormTerm(term: MentorshipProgramTermRow): MentorshipProgramTerm {
@@ -237,17 +357,6 @@ export class TermsTabComponent {
       endDate: term.endDate,
       applicationStartDate: term.applicationStartDate,
       applicationEndDate: term.applicationEndDate,
-    };
-  }
-
-  private toNewRow(term: MentorshipProgramTerm): MentorshipProgramTermRow {
-    return {
-      ...term,
-      status: 'open',
-      pending: 0,
-      declined: 0,
-      accepted: 0,
-      graduated: 0,
     };
   }
 }

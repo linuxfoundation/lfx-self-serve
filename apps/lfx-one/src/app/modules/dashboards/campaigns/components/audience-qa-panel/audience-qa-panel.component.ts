@@ -6,10 +6,17 @@ import { Component, computed, DestroyRef, inject, input, signal } from '@angular
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
-import { distinctUntilChanged, skip } from 'rxjs';
+import { distinctUntilChanged, pairwise, skip, startWith } from 'rxjs';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
-import type { AudienceQaCandidate, AudienceQaCheckRow, AudienceQaFinding, AudienceQaReport, AudienceQaResult } from '@lfx-one/shared/interfaces';
+import type {
+  AudienceQaCandidate,
+  AudienceQaCheckRow,
+  AudienceQaFinding,
+  AudienceQaReport,
+  AudienceQaResult,
+  CampaignEmailStage,
+} from '@lfx-one/shared/interfaces';
 import { rowsToCsv } from '@lfx-one/shared/utils';
 
 /**
@@ -33,6 +40,26 @@ export class AudienceQaPanelComponent {
   // === Inputs ===
   public readonly projectSlug = input.required<string>();
   public readonly disabled = input(false);
+  /**
+   * The list the operator just composed, offered as the QA target so the step after compose does
+   * not start with an empty field. Only fills the field when it is empty or still holds the
+   * previous suggestion — a ref the operator typed is never overwritten.
+   */
+  public readonly suggestedListRef = input('');
+  /**
+   * The discovered event's name. Sent with the run so upstream can check that THIS edition's own
+   * registrants are suppressed rather than included; blank skips that check (it is then absent
+   * from the report, never shown as a pass).
+   */
+  public readonly eventName = input('');
+  /**
+   * The send's email stage. Sent with the run so upstream sets the current-registrants check aside
+   * for a Post-Event send, whose intended audience IS this edition's attendees
+   * (lfx-v2-campaign-service#244). Blank sends none, and the check runs as before.
+   */
+  public readonly stage = input<CampaignEmailStage | ''>('');
+  /** Suppression lists this send applies at send time; counted with the list's own exclusions. */
+  public readonly sendSuppressionIds = input<readonly string[]>([]);
 
   // === Forms ===
   protected readonly listRefControl = new FormControl('', { nonNullable: true });
@@ -94,6 +121,7 @@ export class AudienceQaPanelComponent {
     return this.flattenChecks(report).map((check) => ({
       ...check,
       verdictCss: this.verdictClass(check.verdict),
+      notApplicable: check.verdict === 'NOT APPLICABLE',
       findings: check.findings.map((finding) => ({ ...finding, severityCss: this.severityClass(finding.severity) })),
     }));
   });
@@ -107,6 +135,9 @@ export class AudienceQaPanelComponent {
     return report === null ? '' : this.verdictClass(report.overall);
   });
 
+  /** What besides the list QA audits against: the event, the stage and the send-time suppressions, order-free. */
+  private readonly auditScopeKey = computed(() => `${this.eventName().trim()}|${this.stage()}|${[...this.sendSuppressionIds()].sort().join(',')}`);
+
   public constructor() {
     // A project change invalidates any in-flight QA request and clears the verdict, for the
     // same reason the parent resets its run state: the container stays mounted, so portal A's
@@ -119,6 +150,32 @@ export class AudienceQaPanelComponent {
         this.error.set(null);
         this.running.set(false);
         this.listRefControl.setValue('', { emitEvent: false });
+      });
+
+    // The event and the send-time suppressions are part of what QA audits. A change to either
+    // makes a shown verdict describe an audit that no longer matches, and a reply still in flight
+    // was asked about the old inputs -- so both are dropped, as on a project change.
+    toObservable(this.auditScopeKey)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.runGeneration += 1;
+        this.result.set(null);
+        this.error.set(null);
+        this.running.set(false);
+      });
+
+    toObservable(this.suggestedListRef)
+      .pipe(startWith(''), distinctUntilChanged(), pairwise(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(([previous, next]) => {
+        // Follows the suggestion while the field still MIRRORS it -- including when it clears. A
+        // new discovery clears the compose result, so the suggestion goes 601 -> '' -> 602; ignoring
+        // the empty step left 601 in the field, the next step then compared it against '' and
+        // refused 602, and Run QA audited the previous master. A value the operator typed differs
+        // from the previous suggestion and is never touched.
+        const current = this.listRefControl.value.trim();
+        if (current === '' || current === previous.trim()) {
+          this.listRefControl.setValue(next.trim());
+        }
       });
 
     // Disabling a reactive control goes through the CONTROL, not a `[disabled]` binding on the
@@ -156,8 +213,16 @@ export class AudienceQaPanelComponent {
     const targetsEu = this.targetsEuControl.value;
     const targetsCa = this.targetsCaControl.value;
     this.submitted.set({ listRef: ref, targetsEu, targetsCa });
+    const stage = this.stage();
     this.campaignService
-      .runAudienceQa(this.projectSlug(), { listRef: ref, targetsEu, targetsCa })
+      .runAudienceQa(this.projectSlug(), {
+        listRef: ref,
+        targetsEu,
+        targetsCa,
+        ...(this.eventName().trim() ? { eventName: this.eventName().trim() } : {}),
+        ...(stage ? { stage } : {}),
+        ...(this.sendSuppressionIds().length ? { sendSuppressionListIds: [...this.sendSuppressionIds()] } : {}),
+      })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
@@ -194,6 +259,10 @@ export class AudienceQaPanelComponent {
     if (verdict === 'FAIL') {
       return 'bg-red-50 text-red-700 ring-red-200';
     }
+    // Set aside for this send's stage: neither a pass nor something to verify.
+    if (verdict === 'NOT APPLICABLE') {
+      return 'bg-gray-50 text-gray-600 ring-gray-200';
+    }
     return 'bg-amber-50 text-amber-700 ring-amber-200';
   }
 
@@ -222,7 +291,9 @@ export class AudienceQaPanelComponent {
 
     for (const check of this.flattenChecks(result)) {
       if (check.findings.length === 0) {
-        rows.push([result.listId, result.name, result.overall, check.name, check.verdict, '', 'No findings', '']);
+        // A check set aside for the stage records WHY, not "No findings", which reads as a pass.
+        const detail = check.verdict === 'NOT APPLICABLE' ? (check.note ?? 'Not applicable to this send') : 'No findings';
+        rows.push([result.listId, result.name, result.overall, check.name, check.verdict, '', detail, '']);
         continue;
       }
       for (const finding of check.findings) {
@@ -266,8 +337,29 @@ export class AudienceQaPanelComponent {
         name: 'Exclusion completeness',
         verdict: report.checks.exclusionCompleteness.verdict,
         findings: report.checks.exclusionCompleteness.findings,
-        note: `${report.checks.exclusionCompleteness.exclusionCount} exclusion filter(s) on the list`,
+        note: this.exclusionNote(report.checks.exclusionCompleteness.exclusionCount, report.checks.exclusionCompleteness.sendTimeCount ?? 0),
       },
+      // Present only when upstream could run it; an absent check is "not run", never a row.
+      ...(report.checks.currentRegistrants
+        ? [
+            {
+              key: 'currentRegistrants' as const,
+              name: 'Current registrants',
+              verdict: report.checks.currentRegistrants.verdict,
+              findings: report.checks.currentRegistrants.findings,
+              // Upstream's note when it set the check aside (a Post-Event send), so the row says
+              // WHY it does not apply rather than repeating a rule this send is exempt from.
+              note: report.checks.currentRegistrants.note ?? "This edition's own registrants should be suppressed, not included",
+            },
+          ]
+        : []),
     ];
+  }
+
+  private exclusionNote(total: number, sendTime: number): string {
+    if (sendTime === 0) {
+      return `${total} exclusion filter(s) on the list`;
+    }
+    return `${total} exclusion(s): ${total - sendTime} on the list, ${sendTime} applied at send time`;
   }
 }

@@ -6,7 +6,6 @@ declare global {
     interface Request {
       bearerToken?: string;
       apiGatewayToken?: string;
-      crowdfundingToken?: string;
       impersonationActive?: boolean;
       appSession?:
         | {
@@ -25,11 +24,6 @@ declare global {
             socialConnectReturnTo?: string;
             apiGatewayToken?: string;
             apiGatewayTokenExpiresAt?: number;
-            crowdfundingToken?: string;
-            crowdfundingTokenExpiresAt?: number;
-            crowdfundingRefreshToken?: string;
-            crowdfundingAuthState?: string;
-            crowdfundingAuthReturnTo?: string;
             [key: string]: any;
           }
         // express-openid-connect's setter for req.appSession only accepts null/undefined (to clear the

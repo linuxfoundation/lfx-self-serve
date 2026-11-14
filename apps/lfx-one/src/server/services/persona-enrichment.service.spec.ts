@@ -153,5 +153,18 @@ describe('PersonaEnrichmentService.getEnrichedPersonas', () => {
     const result = await service.getEnrichedPersonas(req);
 
     expect(result.projects[0].isFoundation).toBe(false); // degraded, not correct
+    // ...but flagged as unresolved, so consumers don't read that `false` as a real tier.
+    expect(result.projects[0].tierResolved).toBeUndefined();
+  });
+
+  it('marks a merged project’s tier as resolved', async () => {
+    const project = makePersonaProject({ projectUid: 'uid-1', projectSlug: 'slug-1' });
+    getPersonas.mockResolvedValueOnce({ projects: [project], personaProjects: {}, error: null });
+    const backendProject = { uid: 'uid-1', name: 'Project A', logo_url: null, parent_uid: null, description: null, is_foundation: false };
+    getProjectsByIds.mockResolvedValueOnce(new Map([['uid-1', backendProject]]));
+
+    const result = await service.getEnrichedPersonas(req);
+
+    expect(result.projects[0].tierResolved).toBe(true);
   });
 });

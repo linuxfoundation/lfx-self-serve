@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
+import type { OrgLensAffiliationVerdict, OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
 
 import { NAV_SEARCH_DEBOUNCE_MS } from './lens.constants';
 
@@ -35,11 +35,40 @@ export const ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY = 8;
 /** Max concurrent committee-uid chunk queries against the Snowflake pool when computing the groups-engagement-stats `active_members` rollup — same pool-exhaustion concern as `ORG_LENS_ACCOUNT_CONTEXT_FETCH_CONCURRENCY`, lower because each chunk query is wider (up to 100 committees) rather than single-account. */
 export const GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY = 3;
 
+/**
+ * #4225 — overall budget for the employer-affiliation lookup that enriches `GET /api/orgs/me/role-grants`.
+ *
+ * That lookup is optional — it only chooses which empty-state wording a grant-less caller sees — but
+ * it rides a page-blocking request, so a slow CDP or Snowflake would hold the Org Lens page on its
+ * skeleton for callers who have nothing to render anyway, including CLA-only callers whose page does
+ * not use the verdict at all. On expiry the verdict is reported unknown, which is already the
+ * fail-safe: the client falls back to the copy it shows today.
+ *
+ * Sized against `CDP_LOOKUP_TIMEOUT_MS` (3s), which bounds ONE CDP call; this budget covers the whole
+ * chain — resolve, work-history, warehouse — so it is larger, while still well inside a page load.
+ */
+export const ORG_AFFILIATION_LOOKUP_TIMEOUT_MS = 5000;
+
+/** #4225 — logger operation name for the employer-affiliation enrichment; it rides the role-grants call, so it shares that operation. */
+export const ORG_AFFILIATION_OPERATION = 'get_org_role_grants';
+
+/** #4225 — nothing established and the question was not answerable; the client keeps the copy it shows today. */
+export const ORG_AFFILIATION_UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'failed' };
+
+/** #4225 — the caller has no ongoing employer on their work history. An answer, not an outage. */
+export const ORG_AFFILIATION_NO_EMPLOYER: OrgLensAffiliationVerdict = { hasEmployer: false, employerIsMember: false, lookup: 'ok' };
+
+/** #4225 — the employer is known but its membership is not; still `failed`, so the client keeps today's copy. */
+export const ORG_AFFILIATION_EMPLOYER_MEMBERSHIP_UNKNOWN: OrgLensAffiliationVerdict = { hasEmployer: true, employerIsMember: false, lookup: 'failed' };
+
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
 
 /** Spec 053 — TTL for a failed staff check (the transient result Retry targets): bounds Retry-driven recomputation during an authorizer outage without pinning recovery for the full `ORG_ACCESS_AWARE_CACHE_TTL_MS`. Degraded roll-ups keep the full TTL; Retry bypasses the cache read instead. */
 export const ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS = 5 * 1000;
+
+/** #4126 — the caller's organizations grouped by Salesforce family, which every family roll-up is built from. */
+export const ORG_ROLL_UP_SET_PATH = '/api/orgs/me/roll-up-set';
 
 /** Spec 053 — query flag the viewer's Retry sends on `GET /api/orgs/me/role-grants` so the BFF skips its cache read (still coalesced, still written). */
 export const ORG_ROLE_GRANTS_REFRESH_PARAM = 'refresh';

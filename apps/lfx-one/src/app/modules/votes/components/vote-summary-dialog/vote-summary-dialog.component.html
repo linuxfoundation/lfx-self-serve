@@ -1,0 +1,224 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact 12px/12.5px text matches the existing vote-reminder dialog design; rem sizes shrink at the 14px root. -->
+<div class="flex flex-col gap-4" data-testid="vote-summary-dialog">
+  @if (phase() === 'results') {
+    @if (resultNotice(); as notice) {
+      <div #resultSummary tabindex="-1" class="flex flex-col gap-1 outline-none" aria-live="polite" data-testid="vote-summary-dialog-result-summary">
+        <p class="text-sm font-semibold text-gray-900 break-words" data-testid="vote-summary-dialog-vote-name">{{ vote.name }}</p>
+        <h3 class="text-sm font-semibold text-gray-900" data-testid="vote-summary-dialog-result-heading">{{ notice.summary }}</h3>
+        <p class="text-[12.5px] text-gray-600" data-testid="vote-summary-dialog-result-detail">{{ notice.detail }}</p>
+      </div>
+    }
+
+    @for (group of resultGroups(); track group.outcome) {
+      <section
+        class="flex flex-col gap-2"
+        [attr.aria-labelledby]="'vote-summary-group-' + group.outcome"
+        [attr.data-testid]="'vote-summary-dialog-group-' + group.outcome">
+        <div class="flex flex-wrap items-center gap-2">
+          <h4 class="flex items-center gap-2 text-[12.5px] font-semibold text-gray-900" [id]="'vote-summary-group-' + group.outcome">
+            <lfx-tag [value]="group.display.label" [severity]="group.display.severity" />
+            <span>{{ group.recipients.length }}</span>
+          </h4>
+        </div>
+        <p class="text-[12.5px] text-gray-500">{{ group.display.description }}</p>
+        <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
+        <ul
+          tabindex="0"
+          [attr.aria-labelledby]="'vote-summary-group-' + group.outcome"
+          class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
+          @for (recipient of group.recipients; track recipient.uid) {
+            <li
+              class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
+              [attr.data-testid]="'vote-summary-dialog-result-' + recipient.uid">
+              <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{
+                recipient.user_name || recipient.username || recipient.user_email || '—'
+              }}</span>
+              @if (recipient.user_email) {
+                <span class="text-[12px] text-gray-500 break-all">{{ recipient.user_email }}</span>
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  } @else {
+    <div class="flex flex-col gap-1">
+      <h3 class="text-sm font-semibold text-gray-900 break-words" data-testid="vote-summary-dialog-vote-name">{{ vote.name }}</h3>
+      <p class="text-[12.5px] text-gray-500">The results summary goes to every invited voter with an email address.</p>
+    </div>
+
+    @if (loading()) {
+      <div class="flex flex-col gap-2" data-testid="vote-summary-dialog-loading">
+        @for (row of skeletonRows; track row) {
+          <p-skeleton width="100%" height="2.25rem"></p-skeleton>
+        }
+      </div>
+    } @else if (loadError()) {
+      <div class="flex flex-col items-center gap-3 py-8 text-center" role="alert" data-testid="vote-summary-dialog-error">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-[12.5px] text-gray-600">{{ loadError() }}</p>
+        <lfx-button
+          #retryButton
+          label="Retry"
+          icon="fa-light fa-rotate-right"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="retry()"
+          data-testid="vote-summary-dialog-retry"></lfx-button>
+      </div>
+    } @else if (preview(); as recipients) {
+      @if (voterCount() === 0) {
+        <div data-testid="vote-summary-dialog-empty">
+          <lfx-empty-state
+            [withCard]="false"
+            icon="fa-light fa-users-slash"
+            title="This vote has no invited voters."
+            subtitle="There is no one to send the summary to."></lfx-empty-state>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-1" role="status" data-testid="vote-summary-dialog-overview">
+          <p class="text-[12.5px] font-medium text-gray-700">
+            {{ voterCount() }} {{ voterCount() === 1 ? 'voter' : 'voters' }} · {{ recipients.unique_email_count }}
+            {{ recipients.unique_email_count === 1 ? 'email address' : 'email addresses' }}
+          </p>
+          @if (recipients.shared_email_voter_count > 0) {
+            <p class="text-[12.5px] text-gray-500" data-testid="vote-summary-dialog-shared-note">
+              Some voters share an email address. Each address receives one summary.
+            </p>
+          }
+          @if (recipients.ready.length === 0) {
+            <p class="text-[12.5px] text-amber-700" data-testid="vote-summary-dialog-nobody">Nobody can be emailed.</p>
+          }
+        </div>
+
+        @if (recipients.ready.length > 0) {
+          <section class="flex flex-col gap-2" aria-labelledby="vote-summary-ready-heading" data-testid="vote-summary-dialog-ready">
+            <h4 id="vote-summary-ready-heading" class="text-[12.5px] font-semibold text-gray-900">Ready to receive ({{ recipients.ready.length }})</h4>
+            <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
+            <ul
+              tabindex="0"
+              aria-labelledby="vote-summary-ready-heading"
+              class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
+              @for (recipient of recipients.ready; track recipient.uid) {
+                <li
+                  class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
+                  [attr.data-testid]="'vote-summary-dialog-ready-' + recipient.uid">
+                  <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{
+                    recipient.user_name || recipient.username || recipient.user_email
+                  }}</span>
+                  <span class="text-[12px] text-gray-500 break-all">{{ recipient.user_email }}</span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (recipients.missing_email.length > 0) {
+          <section class="flex flex-col gap-2" aria-labelledby="vote-summary-missing-heading" data-testid="vote-summary-dialog-missing">
+            <h4 id="vote-summary-missing-heading" class="text-[12.5px] font-semibold text-gray-900">
+              No email address ({{ recipients.missing_email.length }})
+            </h4>
+            <!-- Fit about 10 desktop rows while reserving viewport space for the dialog header and actions. -->
+            <ul
+              tabindex="0"
+              aria-labelledby="vote-summary-missing-heading"
+              class="flex max-h-[min(32rem,calc(90dvh-14rem))] flex-col overflow-auto rounded-lg border border-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
+              @for (recipient of recipients.missing_email; track recipient.uid) {
+                <li
+                  class="flex flex-col gap-0.5 border-t border-gray-100 px-4 py-2.5 first:border-t-0"
+                  [attr.data-testid]="'vote-summary-dialog-missing-' + recipient.uid">
+                  <span class="text-[12.5px] font-semibold text-gray-900 break-words">{{ recipient.user_name || recipient.username || '—' }}</span>
+                  <span class="text-[12px] text-gray-500">Can't receive the summary</span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+      }
+    }
+  }
+</div>
+
+<div class="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-3" data-testid="vote-summary-dialog-footer">
+  <p role="status" aria-atomic="true" class="sr-only" data-testid="vote-summary-dialog-send-status">
+    @if (sending()) {
+      Sending the summary. Hide while sending to use other actions; this does not cancel the send.
+    } @else if (loading()) {
+      Loading recipients. Send is unavailable until the review is ready.
+    }
+  </p>
+  @if (phase() === 'confirm' || phase() === 'sending') {
+    <p #confirmText id="vote-summary-confirm-text" tabindex="-1" class="text-[12.5px] text-gray-700" data-testid="vote-summary-dialog-confirm-text">
+      Emails can't be recalled once sent. Send the summary to {{ preview()?.unique_email_count }}
+      {{ preview()?.unique_email_count === 1 ? 'email address' : 'email addresses' }}?
+    </p>
+  }
+  <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+    @switch (phase()) {
+      @case ('results') {
+        <lfx-button label="Close" severity="info" size="small" (onClick)="close()" data-testid="vote-summary-dialog-close"></lfx-button>
+      }
+      @case ('review') {
+        <lfx-button
+          #reviewCancelButton
+          label="Cancel"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          (onClick)="cancel()"
+          data-testid="vote-summary-dialog-cancel"></lfx-button>
+        <lfx-button
+          #reviewSendButton
+          label="Send"
+          icon="fa-light fa-paper-plane"
+          severity="info"
+          size="small"
+          [disabled]="!canSend()"
+          (onClick)="onSend()"
+          data-testid="vote-summary-dialog-send"></lfx-button>
+      }
+      @default {
+        @if (sending()) {
+          <lfx-button
+            #hideButton
+            label="Hide while sending"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="hideWhileSending()"
+            data-testid="vote-summary-dialog-hide"></lfx-button>
+        }
+        <lfx-button
+          label="Cancel"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [disabled]="sending()"
+          (onClick)="cancel()"
+          data-testid="vote-summary-dialog-cancel"></lfx-button>
+        <lfx-button
+          label="Back"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [disabled]="sending()"
+          (onClick)="onBack()"
+          data-testid="vote-summary-dialog-back"></lfx-button>
+        <lfx-button
+          label="Send now"
+          icon="fa-light fa-paper-plane"
+          severity="info"
+          size="small"
+          ariaDescribedBy="vote-summary-confirm-text"
+          [loading]="sending()"
+          [disabled]="sending()"
+          (onClick)="onConfirmSend()"
+          data-testid="vote-summary-dialog-send-now"></lfx-button>
+      }
+    }
+  </div>
+</div>

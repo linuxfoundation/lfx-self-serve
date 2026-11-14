@@ -32,3 +32,12 @@ export const PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS = [
   'created_at',
   'updated_at',
 ] as const satisfies readonly (keyof MeetingRegistrant)[];
+
+/** Window for the per-user limit on resending one's own meeting invitation. */
+export const SELF_RESEND_INVITE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
+/**
+ * Own-invitation resends one user may request per window, per pod. Each one sends an email, so the ceiling is
+ * far above what anyone needs to recover a lost invite and far below what would flood an inbox.
+ */
+export const SELF_RESEND_INVITE_RATE_LIMIT_MAX = 10;

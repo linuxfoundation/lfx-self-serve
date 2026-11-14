@@ -852,7 +852,7 @@ export class WeeklyBriefService {
       {
         resource: 'project',
         id: committee.project_uid,
-        access: 'writer',
+        access: 'writer_guard',
       },
       { bearerToken: realToken }
     );
@@ -1070,7 +1070,7 @@ export class WeeklyBriefService {
     const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, {
       resource: 'project',
       id: committee.project_uid,
-      access: 'writer',
+      access: 'writer_guard',
     });
     if (!isProjectWriter) {
       throw new AuthorizationError('Only project writers can share the weekly brief to Slack', {

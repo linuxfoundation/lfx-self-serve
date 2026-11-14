@@ -2,21 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * My Newsletters (Me lens) — LFXV2-2912.
+ * My Newsletters (Me lens) — LFXV2-2912, reworked by #3483.
  *
  * Members see the sent newsletters whose recipient committees include a
  * committee they currently belong to. The BFF derives the feed from live
  * committee membership (leaving a group hides its newsletters; joining
- * reveals past ones), so the UI just renders the flat list: title, received
- * date, project/foundation, client-side search + filters, and a reader
- * drawer that fetches the rendered body on demand.
+ * reveals past ones). `/newsletters/my` shows one card per foundation;
+ * `/newsletters/my/:foundationSlug` lists that foundation's issues (title,
+ * sent date, project, client-side search + project filter); a newsletter opens
+ * on its reader permalink page (#4979, which retired the reader drawer). Both
+ * read the one GET /api/newsletters/my-foundations response.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD
  */
 
-import type { MyNewsletter, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
+import type { MyNewsletter, MyNewsletterFoundation, MyNewsletterFoundationsResponse, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -26,6 +28,8 @@ const ELEMENT_TIMEOUT = 10_000;
 
 const PROJECT_UID = 'p0000000-0000-0000-0000-000000000001';
 const FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000002';
+const FOUNDATION_SLUG = 'test-foundation';
+const OTHER_FOUNDATION_UID = 'f0000000-0000-0000-0000-000000000003';
 
 const MOCK_NEWSLETTERS: MyNewsletter[] = [
   {
@@ -37,6 +41,11 @@ const MOCK_NEWSLETTERS: MyNewsletter[] = [
     project_slug: 'test-project',
     is_foundation: false,
     parent_project_uid: FOUNDATION_UID,
+    parent_project_name: 'Test Foundation',
+    parent_is_foundation: true,
+    foundation_uid: FOUNDATION_UID,
+    foundation_slug: FOUNDATION_SLUG,
+    foundation_name: 'Test Foundation',
   },
   {
     id: 'b0000000-0000-0000-0000-000000000002',
@@ -47,10 +56,41 @@ const MOCK_NEWSLETTERS: MyNewsletter[] = [
     project_slug: 'test-foundation',
     is_foundation: true,
     parent_project_uid: '',
+    foundation_uid: FOUNDATION_UID,
+    foundation_slug: FOUNDATION_SLUG,
+    foundation_name: 'Test Foundation',
   },
 ];
 
-const MOCK_BODY_HTML = '<p data-e2e="newsletter-body-marker">Hello committee members, here is the July update.</p>';
+const MOCK_FOUNDATIONS: MyNewsletterFoundation[] = [
+  {
+    uid: FOUNDATION_UID,
+    slug: FOUNDATION_SLUG,
+    name: 'Test Foundation',
+    logo_url: null,
+    received_count: 2,
+    last_sent_at: '2026-07-15T12:00:00Z',
+    newsletter_group: { uid: 'g0000000-0000-0000-0000-000000000004', name: 'Test Foundation Newsletter' },
+    can_invite: true,
+    membership_name: 'The Linux Foundation',
+  },
+  {
+    uid: OTHER_FOUNDATION_UID,
+    slug: 'other-foundation',
+    name: 'Other Foundation',
+    logo_url: null,
+    received_count: 1,
+    last_sent_at: '2026-05-10T12:00:00Z',
+    newsletter_group: null,
+    can_invite: false,
+    membership_name: null,
+    invite_denied_reason: 'no_newsletter_group',
+  },
+];
+
+function foundationsResponse(newsletters: MyNewsletter[], foundations: MyNewsletterFoundation[] = MOCK_FOUNDATIONS): MyNewsletterFoundationsResponse {
+  return { foundations, newsletters, complete: true, inviter: { eligible: true, company_name: 'Acme Motors' } };
+}
 
 async function stubPersona(page: Page, personas: string[]): Promise<void> {
   await page.route('**/api/user/personas*', (route) =>
@@ -78,41 +118,10 @@ async function setPersonaCookie(page: Page, personas: string[]): Promise<void> {
   ]);
 }
 
-async function stubMyNewslettersApi(page: Page, newsletters: MyNewsletter[]): Promise<void> {
-  await page.route('**/api/newsletters/my-newsletters', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(newsletters) })
+async function stubMyNewsletterFoundationsApi(page: Page, response: MyNewsletterFoundationsResponse): Promise<void> {
+  await page.route(/\/api\/newsletters\/my-foundations(?:\?.*)?$/, (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) })
   );
-}
-
-// The preview drawer fetches the full newsletter (incl. body_html) via the
-// project-scoped get when a row is clicked.
-async function stubNewsletterDetailApi(page: Page, newsletters: MyNewsletter[] = MOCK_NEWSLETTERS): Promise<void> {
-  await page.route('**/api/projects/*/newsletters/*', (route) => {
-    if (route.request().method() !== 'GET') {
-      return route.fallback();
-    }
-    const pathname = new URL(route.request().url()).pathname;
-    const newsletterUid = pathname.split('/').pop() ?? '';
-    const match = newsletters.find((n) => n.id === newsletterUid);
-    if (!match) {
-      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'newsletter not found' }) });
-    }
-    return route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        ...match,
-        body_html: MOCK_BODY_HTML,
-        ed_reply_email: 'ed@example.com',
-        status: 'sent',
-        total_recipients: 12,
-        created_by: 'sender',
-        version: 1,
-        created_at: '2026-07-01T12:00:00Z',
-        updated_at: match.sent_at,
-      }),
-    });
-  });
 }
 
 const AUTH_CREDS_PRESENT = !!process.env.TEST_USERNAME && !!process.env.TEST_PASSWORD;
@@ -123,28 +132,119 @@ function skipWhenAuthMissing(): void {
   }
 }
 
-async function gotoMyNewsletters(page: Page): Promise<void> {
+async function gotoMyNewsletterFoundations(page: Page): Promise<void> {
   skipWhenAuthMissing();
   await page.goto('/newsletters/my', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
   await expect(page.getByTestId('my-newsletters-title')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
 }
 
-test.describe('My Newsletters — Me-lens feed', () => {
+async function gotoMyNewsletters(page: Page): Promise<void> {
+  skipWhenAuthMissing();
+  await page.goto(`/newsletters/my/${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('my-newsletters-title')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+}
+
+test.describe('My Newsletters — foundation cards', () => {
   test.beforeEach(async ({ page }) => {
     await setPersonaCookie(page, ['contributor']);
     await stubPersona(page, ['contributor']);
-    await stubMyNewslettersApi(page, MOCK_NEWSLETTERS);
-    await stubNewsletterDetailApi(page);
+    await stubMyNewsletterFoundationsApi(page, foundationsResponse(MOCK_NEWSLETTERS));
   });
 
-  test('lists sent newsletters with title, received date, and project name', async ({ page }) => {
+  test('shows one card per foundation with its received count and drill-down link', async ({ page }) => {
+    await gotoMyNewsletterFoundations(page);
+
+    const grid = page.getByTestId('my-newsletters-foundation-grid');
+    await expect(grid).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    const cards = grid.getByTestId('newsletter-foundation-card');
+    await expect(cards).toHaveCount(2);
+
+    const first = cards.nth(0);
+    await expect(first.getByTestId('newsletter-foundation-card-name')).toHaveText('Test Foundation');
+    await expect(first.getByTestId('newsletter-foundation-card-count')).toContainText('2 newsletters received');
+    await expect(first.getByTestId('newsletter-foundation-card-view-all')).toHaveAttribute('href', `/newsletters/my/${FOUNDATION_SLUG}`);
+    await expect(first.getByTestId('newsletter-foundation-card-invite').locator('button')).toBeEnabled();
+
+    const second = cards.nth(1);
+    await expect(second.getByTestId('newsletter-foundation-card-count')).toContainText('1 newsletter received');
+    await expect(second.getByTestId('newsletter-foundation-card-invite').locator('button')).toBeDisabled();
+  });
+
+  test("a card opens that foundation's newsletters", async ({ page }) => {
+    await gotoMyNewsletterFoundations(page);
+
+    await page.getByTestId('newsletter-foundation-card-body').first().click();
+
+    await expect(page).toHaveURL(new RegExp(`/newsletters/my/${FOUNDATION_SLUG}$`));
+    await expect(page.getByTestId('my-newsletters-title')).toHaveText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  test('Invite opens the invite dialog for that foundation', async ({ page }) => {
+    await gotoMyNewsletterFoundations(page);
+
+    await page.getByTestId('newsletter-foundation-card-invite').first().locator('button').click();
+
+    const dialog = page.getByTestId('newsletter-invite-dialog');
+    await expect(dialog).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(dialog).toContainText('Test Foundation newsletter');
+  });
+
+  test('shows the empty state when the user receives no newsletters', async ({ page }) => {
+    await stubMyNewsletterFoundationsApi(page, foundationsResponse([], []));
+    await gotoMyNewsletterFoundations(page);
+
+    await expect(page.getByTestId('my-newsletters-empty-state')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('my-newsletters-empty-state')).toContainText('No newsletters yet');
+    await expect(page.getByTestId('my-newsletters-foundation-grid')).toHaveCount(0);
+  });
+});
+
+test.describe('My Newsletters — foundation drill-down', () => {
+  test.beforeEach(async ({ page }) => {
+    await setPersonaCookie(page, ['contributor']);
+    await stubPersona(page, ['contributor']);
+    await stubMyNewsletterFoundationsApi(page, foundationsResponse(MOCK_NEWSLETTERS));
+  });
+
+  test('heads the page with the foundation, a breadcrumb back to the cards, and Invite', async ({ page }) => {
     await gotoMyNewsletters(page);
 
-    // Reader-framed column headers (not the sender-side Subject / Sent).
+    await expect(page.getByTestId('my-newsletters-title')).toHaveText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('my-newsletters-back')).toHaveAttribute('href', '/newsletters/my');
+    await expect(page.getByTestId('my-newsletters-breadcrumb-current')).toHaveText('Test Foundation');
+    await expect(page.getByTestId('my-newsletters-invite')).toBeVisible();
+  });
+
+  test("lists only the route foundation's newsletters", async ({ page }) => {
+    const otherNewsletter: MyNewsletter = {
+      id: 'd0000000-0000-0000-0000-000000000004',
+      project_uid: OTHER_FOUNDATION_UID,
+      subject: 'Other Foundation Digest',
+      sent_at: '2026-05-10T12:00:00Z',
+      project_name: 'Other Foundation',
+      project_slug: 'other-foundation',
+      is_foundation: true,
+      foundation_uid: OTHER_FOUNDATION_UID,
+      foundation_slug: 'other-foundation',
+      foundation_name: 'Other Foundation',
+    };
+    await stubMyNewsletterFoundationsApi(page, foundationsResponse([...MOCK_NEWSLETTERS, otherNewsletter]));
+    await gotoMyNewsletters(page);
+
+    await expect(page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId(`my-newsletters-row-${otherNewsletter.id}`)).toHaveCount(0);
+  });
+
+  test('lists sent newsletters with title, sent date, and project name', async ({ page }) => {
+    await gotoMyNewsletters(page);
+
+    // Reader-framed Title column and the issue's Sent date (sent_at).
     const table = page.getByTestId('my-newsletters-table');
     await expect(table.locator('th').nth(0)).toHaveText('Title');
-    await expect(table.locator('th').nth(1)).toHaveText('Received');
+    await expect(table.locator('th').nth(1)).toHaveText('Sent');
 
     const firstRow = page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`);
     await expect(firstRow).toBeVisible({ timeout: ELEMENT_TIMEOUT });
@@ -166,82 +266,32 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await expect(page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`)).toHaveCount(0);
   });
 
-  test('clicking a newsletter opens the reader drawer with the rendered body', async ({ page }) => {
+  test('clicking a newsletter opens its reader page, with no drawer (#4979)', async ({ page }) => {
     await gotoMyNewsletters(page);
 
     await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
 
-    const drawer = page.getByTestId('my-newsletters-preview-drawer');
-    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(drawer).toContainText('TAC July Update');
-
-    // Reader-framed drawer header: project + received date, no sender-side
-    // "Preview / As your recipients will see it" text.
-    const drawerHeader = page.getByTestId('newsletter-preview-drawer-header');
-    await expect(drawerHeader).toContainText('Test Project');
-    await expect(drawerHeader).toContainText('Received Jul 15, 2026');
-    await expect(drawerHeader).not.toContainText('Preview');
+    await expect(page).toHaveURL(new RegExp(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}$`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('my-newsletters-preview-drawer')).toHaveCount(0);
   });
 
-  test('shows the empty state when the user has no reachable newsletters', async ({ page }) => {
-    await stubMyNewslettersApi(page, []);
+  test('shows the empty state when the foundation has no reachable newsletters', async ({ page }) => {
+    await stubMyNewsletterFoundationsApi(page, foundationsResponse([]));
     await gotoMyNewsletters(page);
 
     await expect(page.getByTestId('my-newsletters-empty-state')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('my-newsletters-empty-state')).toContainText('No newsletters yet');
+    await expect(page.getByTestId('my-newsletters-empty-state')).toContainText('Issues you receive from this foundation will appear here.');
   });
 
-  test('opening newsletter updates URL with query params (?issue=...&project=...)', async ({ page }) => {
-    await gotoMyNewsletters(page);
-
-    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
-
-    // URL should include query params
-    await expect(page).toHaveURL(/\?issue=.*&project=.*/);
-    const url = page.url();
-    expect(url).toContain(`issue=${MOCK_NEWSLETTERS[0].id}`);
-  });
-
-  test('closing drawer clears query params', async ({ page }) => {
-    await gotoMyNewsletters(page);
-
-    // Open drawer
-    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
-    await expect(page).toHaveURL(/\?issue=.*&project=.*/);
-
-    // Close drawer
-    await page.getByTestId('newsletter-preview-drawer-close').click();
-
-    // URL should be clean (both drawer params removed)
-    const url = page.url();
-    expect(url).not.toContain('issue=');
-    expect(url).not.toContain('project=');
-  });
-
-  test('direct navigation with query params auto-opens the drawer', async ({ page }) => {
-    await gotoMyNewsletters(page);
-
+  test('a legacy ?issue=&project= drawer link redirects to the reader page', async ({ page }) => {
+    skipWhenAuthMissing();
     const issueId = MOCK_NEWSLETTERS[0].id;
-    const projectSlug = MOCK_NEWSLETTERS[0].project_slug || 'test-project';
+    const projectSlug = MOCK_NEWSLETTERS[0].project_slug ?? 'test-project';
 
-    // Navigate directly with query params
-    await page.goto(`/newsletters/my?issue=${issueId}&project=${projectSlug}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`/newsletters/my/${FOUNDATION_SLUG}?issue=${issueId}&project=${projectSlug}`, { waitUntil: 'domcontentloaded' });
 
-    // Drawer should be open with the newsletter content
-    const drawer = page.getByTestId('my-newsletters-preview-drawer');
-    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-  });
-
-  test('share button in drawer copies the canonical permalink URL', async ({ page }) => {
-    await gotoMyNewsletters(page);
-
-    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
-
-    // Click the copy-link button
-    await page.getByTestId('newsletter-preview-drawer-copy-link').click();
-
-    // Success toast appears
-    await expect(page.getByText('Link Copied')).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/newsletters/${projectSlug}/${issueId}$`), { timeout: ELEMENT_TIMEOUT });
   });
 
   test('subject renders as a real link to the canonical permalink', async ({ page }) => {
@@ -251,32 +301,9 @@ test.describe('My Newsletters — Me-lens feed', () => {
     await expect(subjectLink).toHaveAttribute('href', `/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`);
   });
 
-  test('new-tab button in drawer header opens the permalink in a new tab', async ({ page, context }) => {
-    await gotoMyNewsletters(page);
-
-    await page.getByTestId(`my-newsletters-row-${MOCK_NEWSLETTERS[0].id}`).click();
-    const drawer = page.getByTestId('my-newsletters-preview-drawer');
-    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-
-    const newTabButton = page.getByTestId('newsletter-preview-drawer-open-new-tab');
-    await expect(newTabButton).toHaveAttribute('target', '_blank');
-    await expect(newTabButton).toHaveAttribute('rel', /noopener/);
-    // The drawer's shareUrl is the absolute permalink (toAbsoluteUrl against the current origin),
-    // unlike the list's row anchor, which is relative.
-    const expectedUrl = new URL(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`, page.url()).toString();
-    await expect(newTabButton).toHaveAttribute('href', expectedUrl);
-
-    const [newPage] = await Promise.all([context.waitForEvent('page'), newTabButton.click()]);
-    await expect(newPage).toHaveURL(new RegExp(`/newsletters/${MOCK_NEWSLETTERS[0].project_slug}/${MOCK_NEWSLETTERS[0].id}`));
-
-    // Original tab's drawer stays open — the new tab is a separate context.
-    await expect(drawer).toBeVisible();
-  });
-
-  test('subject without a resolved project_slug degrades to a plain drawer opener', async ({ page }) => {
-    // project_slug is an enrichment field that can fail to resolve upstream —
-    // the subject anchor should omit its href (no dead/misleading permalink)
-    // while the click-to-open-drawer behavior keeps working.
+  test('subject without a resolved project_slug shows as plain text that opens nothing', async ({ page }) => {
+    // project_slug is an enrichment field that can fail to resolve upstream; with no permalink
+    // there is no reader page to open, so the subject is plain text and the row stays put.
     const newsletterWithoutSlug: MyNewsletter = {
       id: 'c0000000-0000-0000-0000-000000000003',
       project_uid: PROJECT_UID,
@@ -285,17 +312,17 @@ test.describe('My Newsletters — Me-lens feed', () => {
       project_name: 'Test Project',
       is_foundation: false,
       parent_project_uid: FOUNDATION_UID,
+      parent_project_name: 'Test Foundation',
+      parent_is_foundation: true,
+      foundation_uid: FOUNDATION_UID,
     };
-    await stubMyNewslettersApi(page, [newsletterWithoutSlug]);
-    await stubNewsletterDetailApi(page, [newsletterWithoutSlug]);
+    await stubMyNewsletterFoundationsApi(page, foundationsResponse([newsletterWithoutSlug]));
     await gotoMyNewsletters(page);
 
-    const subjectLink = page.getByTestId(`my-newsletters-open-${newsletterWithoutSlug.id}`);
-    await expect(subjectLink).not.toHaveAttribute('href');
-
-    // Clicking still opens the drawer via the fetch-then-open path.
-    await subjectLink.click();
-    const drawer = page.getByTestId('my-newsletters-preview-drawer');
-    await expect(drawer.locator('[data-e2e="newsletter-body-marker"]')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    const subject = page.getByTestId(`my-newsletters-open-${newsletterWithoutSlug.id}`);
+    await expect(subject).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+    await expect(subject).not.toHaveAttribute('href');
+    await page.getByTestId(`my-newsletters-row-${newsletterWithoutSlug.id}`).click();
+    await expect(page).toHaveURL(new RegExp(`/newsletters/my/${FOUNDATION_SLUG}$`));
   });
 });

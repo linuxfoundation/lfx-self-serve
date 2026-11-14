@@ -245,6 +245,8 @@ export const NEWSLETTER_COMMITTEE_CATEGORY = 'Newsletter';
  * @description Subset of categories for restricted selection (e.g., forms, dashboards)
  */
 export const FILTERED_COMMITTEE_CATEGORIES = [
+  // Newsletter writers can be Maintainers, and a newsletter's audience must be a Newsletter group.
+  { label: 'Newsletter', value: 'Newsletter' },
   { label: 'Special Interest Group', value: 'Special Interest Group' },
   { label: 'Technical Advisory Committee', value: 'Technical Advisory Committee' },
   { label: 'Technical Oversight Committee', value: 'Technical Oversight Committee' },
@@ -502,6 +504,12 @@ export const COMMITTEE_FORM_STEPS = {
 };
 
 /**
+ * Inline note shown on feature toggles that gate-keep the org-name/URL join requirement.
+ * Extracted to avoid the two copies drifting if the wording ever changes.
+ */
+const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide an organization name and URL.';
+
+/**
  * Committee settings features for Step 2 form
  * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
  */
@@ -511,6 +519,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-shield',
     title: 'Business Email Required',
     description: 'Require members to have a business email address',
+    note: ORG_REQUIRED_NOTE,
     color: lfxColors.blue[500],
   },
   {
@@ -518,6 +527,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-check-to-slot',
     title: 'Enable Voting',
     description: `Allow members to vote on ${COMMITTEE_LABEL.singular.toLowerCase()} matters`,
+    note: ORG_REQUIRED_NOTE,
     recommended: true,
     color: lfxColors.violet[500],
   },
@@ -548,7 +558,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      "Let guests see who else is invited, and who has accepted, in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
+      'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never share their guest list.',
     color: lfxColors.blue[500],
   },
 ];
@@ -581,6 +591,17 @@ export const JOIN_MODE_LABELS: Record<JoinMode, string> = {
   invite_only: 'Invite Only',
   application: 'Apply to Join',
   closed: 'Closed',
+};
+
+/**
+ * Plain-language tooltip descriptions for each join mode, shown on the join-mode tag in group list/card views.
+ * Tells the viewer what they can actually do, not just what the mode is called.
+ */
+export const JOIN_MODE_TOOLTIPS: Record<JoinMode, string> = {
+  open: 'Anyone can join this group directly',
+  invite_only: 'You need an invitation from a member or admin to join',
+  application: 'You can apply to join; an admin will review your request',
+  closed: 'Only admins can add members to this group',
 };
 
 /**
@@ -714,3 +735,12 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
   activeMembers: 'bg-violet-100 text-violet-600',
   meetingsThisMonth: 'bg-amber-100 text-amber-600',
 } as const;
+
+/**
+ * List routes a group details page can return to. The page reads `backPath` from navigation state,
+ * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
+ */
+export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];
+
+/** How often the Members tab re-evaluates which pending invitations have expired while it stays open. */
+export const COMMITTEE_INVITE_EXPIRY_TICK_MS = 60 * 1000;

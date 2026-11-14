@@ -1,22 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY, MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
-import type { EntityWithProject, Meeting, MeetingComposerSection, MeetingComposerToastData } from '@lfx-one/shared/interfaces';
+import { MessageComponent } from '@components/message/message.component';
+import { MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
+import type {
+  EntityWithProject,
+  Meeting,
+  MeetingComposerEditScope,
+  MeetingComposerSection,
+  MeetingComposerToastData,
+  UiToastRef,
+} from '@lfx-one/shared/interfaces';
+import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { ToastModule } from 'primeng/toast';
-import type { ToastPositionType } from 'primeng/types/toast';
 import { filter, pairwise, take } from 'rxjs';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -41,44 +49,37 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
 @Component({
   selector: 'lfx-meeting-composer-host',
   imports: [
-    NgClass,
     DrawerModule,
     MeetingComposerRailComponent,
     MeetingComposerPreviewComponent,
     ButtonComponent,
+    MessageComponent,
     ComposerDetailsAccessComponent,
     ComposerDateScheduleComponent,
     ComposerPlatformFeaturesComponent,
     ComposerGuestsComponent,
     ComposerAgendaResourcesComponent,
     QuickCreateDialogComponent,
-    ToastModule,
-    RouterLink,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],
 })
 export class MeetingComposerHostComponent {
   private readonly messageService = inject(MessageService);
+  private readonly toast = inject(UiToastService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly lensService = inject(LensService);
+  private readonly intercomService = inject(IntercomService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
 
-  protected readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
-  protected readonly toastKey = MEETING_COMPOSER_TOAST_KEY;
-  /**
-   * Annotated rather than inferred, so the shared literal is checked against PrimeNG's own union.
-   * @description The constant lives in `@lfx-one/shared`, which carries no PrimeNG dependency — not
-   * even a peer one — so the type has to be applied here, at the only place that feeds it to `<p-toast>`.
-   * A typo in the constant would otherwise reach the DOM as a silently ignored `position`.
-   */
-  protected readonly toastPosition: ToastPositionType = MEETING_COMPOSER_TOAST_POSITION;
+  /** Narrower for a single-occurrence edit, which drops the series-only sections. */
+  protected readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
 
   /**
    * Single mode source for the chrome, matching what the rail reads.
@@ -93,9 +94,30 @@ export class MeetingComposerHostComponent {
    * deriving `mode` from the context rather than writing it in `initialize()`.
    */
   protected readonly isEditMode: Signal<boolean> = this.formService.isEditMode;
+  protected readonly isOccurrenceEdit: Signal<boolean> = this.formService.isOccurrenceEdit;
+  /**
+   * What the edit-scope banner says this open changes, or `null` when there is no scope to state.
+   * @description Only a recurring meeting has two scopes, so a one-off edit and a create show no banner.
+   * `occurrence` names the occurrence by its *saved* start in the series timezone — the form's start is
+   * the thing being edited and would make the banner move as the organizer types.
+   */
+  protected readonly editScope: Signal<MeetingComposerEditScope | null> = computed(() => {
+    const meeting = this.formService.meeting();
 
-  protected readonly activeIndex: Signal<number> = computed(() => this.sections.findIndex((section) => section.id === this.composer.activeSection()));
-  protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections.length - 1);
+    if (!this.isEditMode() || !meeting) {
+      return null;
+    }
+
+    const occurrence = this.formService.occurrence();
+    if (this.isOccurrenceEdit() && occurrence) {
+      return { kind: 'occurrence', label: formatMeetingOccurrenceLabel(occurrence, meeting.timezone) };
+    }
+
+    return meeting.recurrence ? { kind: 'series' } : null;
+  });
+
+  protected readonly activeIndex: Signal<number> = computed(() => this.sections().findIndex((section) => section.id === this.composer.activeSection()));
+  protected readonly isLastSection: Signal<boolean> = computed(() => this.activeIndex() === this.sections().length - 1);
   /**
    * Whether the footer's Next may advance from the section on screen.
    * @description Two conditions, not one. The section in front of the organizer has to be valid,
@@ -132,24 +154,25 @@ export class MeetingComposerHostComponent {
     // until the saved guest list arrives, so the save would store the group and invite nobody. The
     // context gate covers the mirror case: a create opened from a group whose lookup has not landed,
     // where the committees control is empty for a reason no validator can see.
+    // `isSavable` is whole-form validity everywhere but an occurrence edit, which saves only its own fields.
     return (
       this.formService.isHydrated() &&
-      this.formService.form().valid &&
+      this.formService.isSavable() &&
       !this.formService.hasUnreconciledGroupSelection() &&
       !this.formService.committeeContextUnresolved()
     );
   });
-  protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections[this.activeIndex()]?.label ?? '');
+  protected readonly activeSectionLabel: Signal<string> = computed(() => this.sections()[this.activeIndex()]?.label ?? '');
   /** Whether any required section is flagged as blocking save, on the same rule as the rail's dots. */
   protected readonly hasAttention: Signal<boolean> = computed(() => {
     this.formService.revision();
 
     const visited = this.composer.visitedSections();
 
-    return this.sections.some((section) => this.formService.sectionNeedsAttention(section, visited));
+    return this.sections().some((section) => this.formService.sectionNeedsAttention(section, visited));
   });
   /**
-   * Why the toast's Edit action can't act, or `null` when it can.
+   * Why the toast's Edit action can't act, or `null` when it can. Defensive only: opening the composer retires the toast.
    * @description One question only: reopening while another meeting is part-way through the composer
    * would discard that draft. Permission is deliberately not asked here — see
    * {@link initEditFromToastBlockedReason}.
@@ -159,6 +182,8 @@ export class MeetingComposerHostComponent {
    * The open meeting reshaped for the project-context syncs, or `null` when nothing should drive them.
    */
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initMeetingEntityContext();
+  private createdToast: UiToastRef | null = null;
+  private createdToastPath = '';
 
   public constructor() {
     toObservable(this.composer.context)
@@ -238,6 +263,27 @@ export class MeetingComposerHostComponent {
       )
       .subscribe(() => this.lensService.clearContextLens());
 
+    // Intercom's launcher bubble floats over the drawer's footer and covers its actions, so it is hidden
+    // while the composer is open and restored when it closes or this host goes away.
+    toObservable(this.composer.isOpen)
+      .pipe(takeUntilDestroyed())
+      .subscribe((isOpen) => this.intercomService.setLauncherHidden(isOpen));
+    this.destroyRef.onDestroy(() => this.intercomService.setLauncherHidden(false));
+
+    // The create toast sits above the drawer, so opening the composer retires it; only the newest survives.
+    toObservable(this.composer.isOpen)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => this.createdToast?.dismiss());
+
+    // Leaving the route retires it too, so it never lingers over a later page's drawers and dialogs.
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        filter((event) => event.urlAfterRedirects.split(/[?#]/)[0] !== this.createdToastPath),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.createdToast?.dismiss());
+
     // Derive the project context from the meeting being edited so a context-less edit link
     // (/project/meetings/:id/edit) lands in the meeting's project, not the cookie-restored
     // last-visited project. The route component redirects to the meetings list and opens the
@@ -277,7 +323,7 @@ export class MeetingComposerHostComponent {
       return;
     }
 
-    const next = this.sections[this.activeIndex() + 1];
+    const next = this.sections()[this.activeIndex() + 1];
     if (next) {
       this.composer.setSection(next.id);
     }
@@ -291,10 +337,26 @@ export class MeetingComposerHostComponent {
       return;
     }
 
-    const previous = this.sections[this.activeIndex() - 1];
+    const previous = this.sections()[this.activeIndex() - 1];
     if (previous) {
       this.composer.setSection(previous.id);
     }
+  }
+
+  /**
+   * Swaps an occurrence edit for an edit of the whole series.
+   * @description Reopens rather than widening in place: the series edit hydrates guests, resources and
+   * every series setting the occurrence form never loaded, so an in-place switch would save defaults
+   * over them. Anything typed into the occurrence form is discarded, which the banner's copy says.
+   */
+  protected onEditSeriesInstead(): void {
+    const context = this.composer.context();
+
+    if (this.formService.submitting() || !context?.meetingUid) {
+      return;
+    }
+
+    this.composer.open({ mode: 'edit', meetingUid: context.meetingUid, projectUid: context.projectUid });
   }
 
   /** Jumps to the section that owns the title field. */
@@ -308,6 +370,7 @@ export class MeetingComposerHostComponent {
     }
 
     const wasEditMode = this.formService.isEditMode();
+    const wasOccurrenceEdit = this.formService.isOccurrenceEdit();
 
     // `submit()` completes without emitting when the save outlived its open, so reaching here always
     // means the current open is the one that was saved. `take(1)` because the stream is single-shot and
@@ -316,7 +379,13 @@ export class MeetingComposerHostComponent {
       .submit()
       .pipe(take(1))
       .subscribe((meeting) => {
-        if (wasEditMode) {
+        if (wasOccurrenceEdit) {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Occurrence updated',
+            detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
+          });
+        } else if (wasEditMode) {
           this.messageService.add({ severity: 'success', summary: 'Meeting updated', detail: 'Your changes have been saved.' });
         } else {
           this.announceCreatedMeeting(meeting);
@@ -329,20 +398,14 @@ export class MeetingComposerHostComponent {
 
   /**
    * Reopens the composer on the meeting the toast was raised for.
-   * @description Guarded by `editFromToastBlockedReason`, which the template also reflects as
-   * `aria-disabled` plus a tooltip naming the reason.
+   * @description Guarded by `editFromToastBlockedReason`; running the action dismisses the toast.
    */
   protected onEditCreatedMeeting(data: MeetingComposerToastData): void {
     if (this.editFromToastBlockedReason()) {
       return;
     }
 
-    this.messageService.clear(this.toastKey);
     this.composer.open({ mode: 'edit', meetingUid: data.meetingUid });
-  }
-
-  protected onDismissToast(): void {
-    this.messageService.clear(this.toastKey);
   }
 
   /**
@@ -382,8 +445,7 @@ export class MeetingComposerHostComponent {
    * has since switched context is judged against a project their meeting was never in. The
    * meeting-scoped check that is actually authoritative lives on the path this action opens — a
    * revoked reopen comes back 200 with `organizer: false`, which the composer's own load path treats
-   * as `denied` and lands on its "you don't have permission" panel, which says more than a disabled
-   * button with a tooltip ever did.
+   * as `denied` and lands on its "you don't have permission" panel.
    */
   private initEditFromToastBlockedReason(): Signal<string | null> {
     return computed(() => (this.composer.isOpen() ? 'Close the open composer first' : null));
@@ -446,25 +508,16 @@ export class MeetingComposerHostComponent {
       ...(meeting.password ? { meetingLinkState: { password: meeting.password } } : {}),
     };
 
-    // Only the newest sticky toast survives. Without a lifetime nothing retires these on its own, so
-    // creating several meetings in a row stacked permanent multi-line toasts up over the content the
-    // organizer is still working in. Scoped to this key, so unrelated toasts are untouched.
-    this.messageService.clear(this.toastKey);
-
-    this.messageService.add({
-      key: this.toastKey,
-      severity: 'success',
-      summary: 'Meeting created',
-      detail: data.meetingTitle,
-      // Sticky, not timed. The toast carries the only two routes back to the meeting now that creating
-      // doesn't navigate, and a fixed lifetime put them out of reach of anyone who needs longer than a
-      // few seconds to read and target them.
-      sticky: true,
-      // Explicit rather than relying on the PrimeNG default: with `sticky`, the close button is the only
-      // way out, and it renders outside the custom-template branch — so a template refactor upstream
-      // could strand an undismissable toast. Stating it keeps the intent checkable.
-      closable: true,
-      data,
+    this.createdToastPath = this.router.url.split(/[?#]/)[0];
+    this.createdToast = this.toast.show({
+      variant: 'success',
+      position: MEETING_COMPOSER_TOAST_POSITION,
+      message: 'Meeting created',
+      description: data.meetingTitle,
+      actions: [
+        { label: 'Edit meeting', run: () => this.onEditCreatedMeeting(data) },
+        { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },
+      ],
     });
   }
 }

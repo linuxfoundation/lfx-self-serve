@@ -46,6 +46,7 @@ describe('EventsSponsorshipComponent', () => {
   let getEventsSponsorship: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEventsSponsorship | Error = sponsorship()): Promise<void> {
     getEventsSponsorship = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -62,7 +63,10 @@ describe('EventsSponsorshipComponent', () => {
 
     fixture = TestBed.createComponent(EventsSponsorshipComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -89,6 +93,7 @@ describe('EventsSponsorshipComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation once and settles', async () => {
@@ -97,6 +102,7 @@ describe('EventsSponsorshipComponent', () => {
     expect(getEventsSponsorship).toHaveBeenCalledTimes(1);
     expect(getEventsSponsorship).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('events-sponsorship-loading')).toBeNull();
   });
 
@@ -104,6 +110,8 @@ describe('EventsSponsorshipComponent', () => {
     await render();
 
     expect(text('events-sponsorship-headline-value')).toBe('$750K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-sponsorship-hero')?.classList).not.toContain('border');
     expect(text('events-sponsorship-headline-delta')).toBe('+20%');
     expect(query('events-sponsorship-headline-delta')?.className).toContain('text-emerald-600');
     expect(text('events-sponsorship-side-goal-value')).toBe('$1M');
@@ -120,6 +128,30 @@ describe('EventsSponsorshipComponent', () => {
     expect(text('events-sponsorship-tier-0')).toContain('Gold Sponsor');
     expect(text('events-sponsorship-tier-0-value')).toBe('20');
     expect(text('events-sponsorship-tier-1-value')).toBe('10');
+  });
+
+  it('draws the progress as a short bar with the bold percent beside it, under a vtitle', async () => {
+    await render();
+    const progress = query('events-sponsorship-progress');
+    const bar = progress?.querySelector('[role="progressbar"]');
+
+    expect(progress?.querySelector('h4')?.textContent?.trim()).toBe('Progress to goal');
+    expect(bar?.classList).toContain('w-[62px]');
+    expect(bar?.classList).toContain('h-[6px]');
+    expect(bar?.getAttribute('aria-valuenow')).toBe('75');
+    expect((bar?.firstElementChild as HTMLElement | null)?.style.width).toBe('75%');
+    expect(bar?.firstElementChild?.classList).toContain('bg-blue-500');
+    expect(query('events-sponsorship-progress-value')?.tagName).toBe('B');
+  });
+
+  it('shows the missing goal as an amber low-confidence banner with a decorative glyph', async () => {
+    await render(sponsorship([period({ goalUsd: null, progressToGoal: null })]));
+    const banner = query('events-sponsorship-no-goal');
+
+    expect(banner?.classList).toContain('bg-amber-50');
+    expect(banner?.classList).toContain('text-amber-700');
+    expect(banner?.querySelector('[aria-hidden="true"]')?.textContent).toBe('◐');
+    expect(text('events-sponsorship-no-goal')).toBe('◐ No sponsorship goal is set for this period, so no progress bar is shown.');
   });
 
   it('re-projects a period change without re-reading, and shows the callout when no goal is set', async () => {
@@ -160,19 +192,21 @@ describe('EventsSponsorshipComponent', () => {
     expect(query('events-sponsorship-tiers-empty')).not.toBeNull();
   });
 
-  it('marks a period the read carries no figures for as unmeasured', async () => {
+  it('settles empty, with no body, for a period the read carries no figures for', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
 
-    expect(query('events-sponsorship-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-sponsorship-hero')).toBeNull();
   });
 
-  it('shows the foundation-level empty state when the read carries no period', async () => {
+  it('settles empty, with no body, when the read carries no period', async () => {
     await render(sponsorship([]));
 
-    expect(query('events-sponsorship-foundation-unmeasured')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
+    expect(query('events-sponsorship-hero')).toBeNull();
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -180,6 +214,7 @@ describe('EventsSponsorshipComponent', () => {
 
     expect(query('events-sponsorship-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton without reading or settling until a foundation is selected', async () => {

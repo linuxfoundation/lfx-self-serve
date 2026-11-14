@@ -6,20 +6,23 @@ import { MentorshipMenteeDemographics, MentorshipMenteeRegisterRequest, Mentorsh
 import { getMentorshipMenteeRegisterRequestErrors } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
+import { buildMentorshipUpstreamLfxProfileFields, buildMentorshipUpstreamProfileLinks, readMentorshipLfxProfileFields } from './mentorship-lfx-profile.helper';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
 
-/** Keeps the first of each case-insensitive repeat, as the skills picker and the profile update do, so a repeat is never stored. */
+/** Trims each skill, drops blanks, and keeps the first of each case-insensitive repeat, as the skills picker and the profile update do, so a blank or a repeat is never stored. */
 const withoutDuplicateSkills = (skills: string[]): string[] => {
   const seen = new Set<string>();
-  return skills.filter((skill) => {
-    const key = skill.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return skills
+    .map((skill) => skill.trim())
+    .filter((skill) => {
+      const key = skill.toLowerCase();
+      if (!skill || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 };
 
 /** Drops unset and blank answers; `undefined` when nothing is left, so the upstream column stays unset. */
@@ -55,7 +58,8 @@ const parseDemographics = (value: unknown): { demographics?: MentorshipMenteeDem
  * the register form applies (`getMentorshipMenteeRegisterRequestErrors`) run on the values, so the
  * browser and the BFF cannot drift. Repeated skills are dropped before those rules run, so the
  * skills cap counts what is stored. Only known keys are copied. The introduction HTML is stored as
- * sent, capped but not sanitised: every render path sanitises it.
+ * sent, capped but not sanitised: every render path sanitises it. The optional `lfxProfile` is read
+ * by `readMentorshipLfxProfileFields`, so a bad name or logo URL is a 400 too.
  */
 export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipMenteeRegisterRequest => {
   if (!isRecord(body)) {
@@ -63,7 +67,7 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
   }
 
   const typeErrors: Record<string, string> = {};
-  const { introduction, skillsHave, skillsWant, additionalNotes } = body;
+  const { introduction, skillsHave, skillsWant, additionalNotes, country } = body;
   if (typeof introduction !== 'string') typeErrors['introduction'] = 'Introduction must be a string.';
   if (!isStringArray(skillsHave)) typeErrors['skillsHave'] = 'Skills you currently have must be a list of strings.';
   if (!isStringArray(skillsWant)) typeErrors['skillsWant'] = 'Skills you would like to improve must be a list of strings.';
@@ -72,11 +76,14 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
   } else if (additionalNotes.trim().length > MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX) {
     typeErrors['additionalNotes'] = `Additional notes must be ${MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX} characters or fewer.`;
   }
+  if (typeof country !== 'string') typeErrors['country'] = 'Country must be a string.';
   for (const flag of ['ageEligible', 'workAuthorized', 'noDuplicateProfile', 'complianceAccepted', 'termsAccepted'] as const) {
     if (typeof body[flag] !== 'boolean') typeErrors[flag] = 'This confirmation must be true or false.';
   }
   const { demographics, error: demographicsError } = parseDemographics(body['demographics']);
   if (demographicsError) typeErrors['demographics'] = demographicsError;
+  const lfxProfile = body['lfxProfile'] === undefined ? undefined : readMentorshipLfxProfileFields(body['lfxProfile'], 'lfxProfile');
+  if (lfxProfile) Object.assign(typeErrors, lfxProfile.errors);
 
   if (Object.keys(typeErrors).length > 0) {
     throw ServiceValidationError.fromFieldErrors(typeErrors);
@@ -87,12 +94,14 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
     skillsHave: withoutDuplicateSkills(skillsHave as string[]),
     skillsWant: withoutDuplicateSkills(skillsWant as string[]),
     additionalNotes: (additionalNotes as string).trim(),
+    country: country as string,
     ...(demographics ? { demographics } : {}),
     ageEligible: body['ageEligible'] as boolean,
     workAuthorized: body['workAuthorized'] as boolean,
     noDuplicateProfile: body['noDuplicateProfile'] as boolean,
     complianceAccepted: body['complianceAccepted'] as boolean,
     termsAccepted: body['termsAccepted'] as boolean,
+    ...(lfxProfile && Object.keys(lfxProfile.fields).length > 0 ? { lfxProfile: lfxProfile.fields } : {}),
   };
 
   const fieldErrors = getMentorshipMenteeRegisterRequestErrors(request);
@@ -105,20 +114,31 @@ export const parseMentorshipMenteeRegisterRequest = (body: unknown): MentorshipM
 /**
  * The `PUT /mentorship/v1/me/profiles/mentee` body. The JSON columns mirror what
  * `mapMentorshipMenteeProfile` reads back: `skill_set` carries both skill lists and the notes,
- * `demographics` the age band, gender and race, `socioeconomics` the income and education.
- * Name, email, phone, slug and logo are not sent: upstream reads display names from the user row,
- * and an unset slug cannot collide with another profile's.
+ * `address` the country code, `demographics` the age band, gender and race, `socioeconomics` the
+ * income and education.
+ * The name and logo are the LFX profile's, each sent only when the card had it; `email` is the
+ * resolved primary email and `profile_links` the resolved GitHub link, each sent only when there is
+ * one. The profile is new, so there are no stored links to keep. Phone and slug are not sent: an
+ * unset slug cannot collide with another profile's.
  */
-export const buildMentorshipUpstreamMenteeProfile = (request: MentorshipMenteeRegisterRequest): MentorshipUpstreamMenteeProfileInput => {
+export const buildMentorshipUpstreamMenteeProfile = (
+  request: MentorshipMenteeRegisterRequest,
+  email?: string,
+  githubProfileLink?: string
+): MentorshipUpstreamMenteeProfileInput => {
+  const profileLinks = buildMentorshipUpstreamProfileLinks(undefined, githubProfileLink);
   const demographics = withoutBlanks({ age: request.demographics?.age, gender: request.demographics?.gender, race: request.demographics?.raceEthnicity });
   const socioeconomics = withoutBlanks({ income: request.demographics?.income, educationLevel: request.demographics?.education });
 
   return {
+    ...buildMentorshipUpstreamLfxProfileFields(request.lfxProfile, email),
+    ...(profileLinks ? { profile_links: profileLinks } : {}),
     introduction: request.introduction,
     terms_and_conditions: request.termsAccepted,
     age_eligible: request.ageEligible,
     work_eligible: request.workAuthorized,
     skill_set: { skills: request.skillsHave, improvementSkills: request.skillsWant, comments: request.additionalNotes },
+    address: { country: request.country },
     ...(demographics ? { demographics } : {}),
     ...(socioeconomics ? { socioeconomics } : {}),
   };

@@ -1,0 +1,99 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (rows().length) {
+  <lfx-ui-button
+    variant="secondary"
+    icon="fa-light fa-clock"
+    [ariaLabel]="buttonLabel()"
+    [ariaExpanded]="drawerOpen()"
+    (click)="openDrawer()"
+    data-testid="meetings-home-pending-rsvps-button">
+    Pending RSVPs
+    <lfx-ui-badge tone="warning" size="sm" data-testid="meetings-home-pending-rsvps-count">{{ rows().length }}</lfx-ui-badge>
+  </lfx-ui-button>
+}
+
+<ng-template #drawer>
+  <lfx-ui-drawer heading="Pending RSVPs" [subtitle]="subtitle()">
+    <!-- Rows split by a 1px inset line, not a border; the row buttons move under the text below a 480px row. -->
+    <div
+      #panelList
+      class="@container -my-[20px] flex flex-col pb-[8px] pt-[4px] [&>*+*]:shadow-[inset_0_1px_0_0] [&>*+*]:shadow-gray-100"
+      data-testid="meetings-home-pending-rsvps-panel">
+      @for (item of items(); track item.row.key) {
+        <div
+          #rowElement
+          class="flex flex-wrap items-start gap-x-[24px] gap-y-[12px] py-[16px] @[480px]:flex-nowrap"
+          data-testid="meetings-home-pending-rsvps-row">
+          <!-- The tile's -10px margin puts the text 14px after it. -->
+          <lfx-meeting-date-tile
+            class="-mr-[10px]"
+            testIdPrefix="meetings-home-pending-rsvps-row"
+            [date]="item.row.startTime"
+            [badges]="item.visibilityBadges" />
+          <div class="flex min-w-0 flex-1 flex-col gap-[4px]">
+            @if (item.project; as project) {
+              <span
+                class="flex min-w-0 items-center gap-[6px] whitespace-nowrap text-[12px] text-gray-900"
+                data-testid="meetings-home-pending-rsvps-row-project">
+                <lfx-meeting-project-logo [src]="project.logo" />
+                <span
+                  #projectName
+                  class="min-w-0 truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [attr.tabindex]="truncated().has(projectName) ? 0 : null"
+                  [lfxUiTooltip]="project.name"
+                  [lfxUiTooltipDisabled]="!truncated().has(projectName)"
+                  >{{ project.name }}</span
+                >
+              </span>
+            }
+            <!-- Masked in Session Replay: the href carries the meeting password. -->
+            <a
+              #rowTitle
+              data-dd-privacy="mask"
+              class="min-w-0 truncate text-[14px] font-medium text-gray-900 hover:text-blue-500 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              [href]="item.link.url"
+              [attr.target]="item.link.newTab ? '_blank' : null"
+              [attr.rel]="item.link.newTab ? 'noopener noreferrer' : null"
+              [lfxUiTooltip]="item.row.title"
+              [lfxUiTooltipDisabled]="!truncated().has(rowTitle)"
+              (click)="openDetails($event, item.row)"
+              data-testid="meetings-home-pending-rsvps-row-title"
+              >{{ item.row.title }}</a
+            >
+            <!-- One line in the drawer; wraps between items rather than clip on a phone. -->
+            <span
+              class="flex min-w-0 flex-wrap items-center gap-x-[6px] gap-y-[2px] whitespace-nowrap text-[12px] text-gray-500"
+              data-testid="meetings-home-pending-rsvps-row-meta">
+              <span data-testid="meetings-home-pending-rsvps-row-when">{{ item.when }}</span>
+              @if (item.type; as type) {
+                <span aria-hidden="true">·</span>
+                <span class="inline-flex flex-none items-center gap-[5px]"
+                  ><i class="text-[11px]" [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</span
+                >
+              }
+              @if (item.recurrenceTooltip; as tooltip) {
+                <span aria-hidden="true">·</span>
+                <span
+                  role="img"
+                  tabindex="0"
+                  aria-label="Recurring"
+                  class="inline-flex flex-none cursor-default items-center gap-[5px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [lfxUiTooltip]="tooltip"
+                  lfxUiTooltipTitle="Recurring"
+                  data-testid="meetings-home-pending-rsvps-row-recurring">
+                  <i class="fa-light fa-arrows-repeat text-[11px]" aria-hidden="true"></i>Recurring
+                </span>
+              }
+            </span>
+          </div>
+          <div class="flex basis-full justify-end @[480px]:basis-auto" data-testid="meetings-home-pending-rsvps-row-rsvp">
+            <lfx-meeting-rsvp-controls size="small" [row]="item.row" />
+          </div>
+        </div>
+      }
+    </div>
+  </lfx-ui-drawer>
+</ng-template>

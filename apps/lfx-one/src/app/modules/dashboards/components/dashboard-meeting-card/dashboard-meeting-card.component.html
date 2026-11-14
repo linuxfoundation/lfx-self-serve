@@ -15,18 +15,45 @@
         [class.text-blue-800]="cardVariant() === 'accent'">
         {{ cardLabel() }}
       </span>
-      @if (viewAllRouterLink()) {
+      @if (viewAllRouterLink() || showPager()) {
         <div class="flex items-center gap-2">
           @if (overlappingCount() > 0) {
             <span class="text-[11px] text-gray-600" data-testid="dashboard-meeting-card-overlap-hint"> +{{ overlappingCount() }} overlapping · </span>
           }
-          <a
-            [routerLink]="viewAllRouterLink()"
-            [queryParams]="viewAllQueryParams()"
-            class="text-xs text-[#009aff] hover:underline"
-            data-testid="dashboard-meeting-card-view-all">
-            View all
-          </a>
+          @if (showPager()) {
+            <div class="flex items-center gap-1" role="group" aria-label="Upcoming meetings" data-testid="dashboard-meeting-card-pager">
+              <button
+                type="button"
+                class="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-blue-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+                aria-label="Previous upcoming meeting"
+                [attr.aria-disabled]="pagerIndex() <= 0"
+                (click)="onPagerPrevious()"
+                data-testid="dashboard-meeting-card-pager-previous">
+                <i class="fa-light fa-chevron-left text-[10px]" aria-hidden="true"></i>
+              </button>
+              <span class="min-w-8 text-center text-[11px] text-gray-600" aria-live="polite" data-testid="dashboard-meeting-card-pager-position">
+                {{ pagerIndex() + 1 }} of {{ pagerTotal() }}
+              </span>
+              <button
+                type="button"
+                class="flex h-5 w-5 items-center justify-center rounded text-gray-600 hover:bg-blue-100 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+                aria-label="Next upcoming meeting"
+                [attr.aria-disabled]="pagerIndex() >= pagerTotal() - 1"
+                (click)="onPagerNext()"
+                data-testid="dashboard-meeting-card-pager-next">
+                <i class="fa-light fa-chevron-right text-[10px]" aria-hidden="true"></i>
+              </button>
+            </div>
+          }
+          @if (viewAllRouterLink()) {
+            <a
+              [routerLink]="viewAllRouterLink()"
+              [queryParams]="viewAllQueryParams()"
+              class="text-xs text-[#009aff] hover:underline"
+              data-testid="dashboard-meeting-card-view-all">
+              View all
+            </a>
+          }
         </div>
       }
     </div>
@@ -141,12 +168,14 @@
             {{ projectChipLabel() }}
           </span>
         }
-        <span
-          class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
-          data-testid="dashboard-meeting-card-type-chip">
-          <i class="fa-light fa-calendar text-[10px]"></i>
-          {{ meetingTypeInfo().label }}
-        </span>
+        @if (meetingTypeInfo(); as typeInfo) {
+          <span
+            class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
+            data-testid="dashboard-meeting-card-type-chip">
+            <i class="fa-light fa-calendar text-[10px]"></i>
+            {{ typeInfo.label }}
+          </span>
+        }
         @if (isRecurring()) {
           <span
             class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
@@ -167,21 +196,38 @@
       }
     </div>
 
-    <!-- Copy link button -->
-    @defer (on idle) {
-      <button
-        type="button"
-        [cdkCopyToClipboard]="meetingDetailClipboardUrl()"
-        class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
-        pTooltip="Copy meeting link"
-        tooltipPosition="top"
-        aria-label="Copy meeting link"
-        data-testid="dashboard-meeting-card-copy-button">
-        <i class="fa-light fa-clone text-xs"></i>
-      </button>
-    } @placeholder {
-      <div class="shrink-0 w-7 h-7 mt-1" aria-hidden="true"></div>
-    }
+    <!-- Icon actions: resend my invite (registered viewers only), copy link -->
+    <div class="shrink-0 flex flex-col gap-1 mt-1">
+      @if (canResendInvite()) {
+        <button
+          type="button"
+          class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          pTooltip="Resend my invitation"
+          tooltipPosition="top"
+          aria-label="Resend my invitation"
+          [disabled]="resendingInvite()"
+          (click)="resendInvite()"
+          data-testid="dashboard-meeting-card-resend-button">
+          <i class="fa-light fa-paper-plane text-xs" aria-hidden="true"></i>
+        </button>
+      }
+
+      <!-- Copy link button -->
+      @defer (on idle) {
+        <button
+          type="button"
+          [cdkCopyToClipboard]="meetingDetailClipboardUrl()"
+          class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500"
+          pTooltip="Copy meeting link"
+          tooltipPosition="top"
+          aria-label="Copy meeting link"
+          data-testid="dashboard-meeting-card-copy-button">
+          <i class="fa-light fa-clone text-xs"></i>
+        </button>
+      } @placeholder {
+        <div class="shrink-0 w-7 h-7" aria-hidden="true"></div>
+      }
+    </div>
   </div>
 
   <!-- Card footer buttons -->

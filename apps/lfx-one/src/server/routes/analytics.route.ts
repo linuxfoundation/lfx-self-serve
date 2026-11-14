@@ -162,10 +162,6 @@ router.get('/org-involvement-maintainers-monthly', requireOrgAnalyticsAccess, (r
 router.get('/org-involvement-event-attendance-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
   analyticsController.orgEventAttendanceMonthly(req, res, next)
 );
-router.get('/org-involvement-certified-employees-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
-  analyticsController.orgCertifiedEmployeesMonthly(req, res, next)
-);
-router.get('/org-involvement-training-enrollments', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): returns web activity summary metrics. Shared with LF Staff
 // Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.
@@ -218,15 +214,6 @@ router.get('/board-meeting-participation-summary', requireDashboardAccess, (req,
   analyticsController.getBoardMeetingParticipationSummary(req, res, next)
 );
 
-// Health Metrics Overview "Foundation Revenue" rail endpoint (LFXV2-3365)
-router.get('/health-overview-revenue', requireDashboardAccess, (req, res, next) => analyticsController.getHealthOverviewRevenue(req, res, next));
-
-// Health Metrics Overview KPI tile-strip endpoint (LFXV2-3365)
-router.get('/health-overview-kpis', requireDashboardAccess, (req, res, next) => analyticsController.getHealthOverviewKpis(req, res, next));
-
-// Health Metrics Overview "Foundation" rail endpoint (LFXV2-3365)
-router.get('/foundation-profile-summary', requireDashboardAccess, (req, res, next) => analyticsController.getFoundationProfileSummary(req, res, next));
-
 // Health Metrics Engagement "Group attendance" section (#2802)
 router.get('/engagement-group-attendance', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementGroupAttendance(req, res, next));
 
@@ -235,12 +222,25 @@ router.get('/engagement-meeting-participation', requireDashboardAccess, (req, re
   analyticsController.getEngagementMeetingParticipation(req, res, next)
 );
 
+// Health Metrics Engagement "Attendance trend" section (#3963)
+router.get('/engagement-attendance-trend', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementAttendanceTrend(req, res, next));
+
 // Health Metrics Engagement "Organization participation" section (#2802)
 router.get('/engagement-org-participation', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementOrgParticipation(req, res, next));
 
 // Health Metrics Engagement "Non-member participation" section (#2802)
 router.get('/engagement-non-member-participation', requireDashboardAccess, (req, res, next) =>
   analyticsController.getEngagementNonMemberParticipation(req, res, next)
+);
+
+// Health Metrics Engagement "Newsletter performance" section (#4714)
+router.get('/engagement-newsletter-performance', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementNewsletterPerformance(req, res, next)
+);
+
+// Health Metrics Engagement "Newsletter recipient engagement" section (#4715)
+router.get('/engagement-newsletter-recipients', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementNewsletterRecipients(req, res, next)
 );
 
 // Health Metrics Engagement "Representatives" section (#2802)
@@ -251,6 +251,12 @@ router.get('/events-registration-forecast', requireDashboardAccess, (req, res, n
 router.get('/events-registration-forecast-curve', requireDashboardAccess, (req, res, next) =>
   analyticsController.getEventsRegistrationForecastCurve(req, res, next)
 );
+
+// Health Metrics Overview past event registration trend (#4321)
+router.get('/events-registration-history', requireDashboardAccess, (req, res, next) => analyticsController.getEventsRegistrationHistory(req, res, next));
+
+// Health Metrics Overview event dialog Snapshot tab (#5195)
+router.get('/events-snapshot', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSnapshot(req, res, next));
 
 // Health Metrics Events "Past events" section (#2965)
 router.get('/events-past', requireDashboardAccess, (req, res, next) => analyticsController.getEventsPast(req, res, next));
@@ -270,17 +276,40 @@ router.get('/events-organizations', requireDashboardAccess, (req, res, next) => 
 router.get('/events-sponsorship', requireDashboardAccess, (req, res, next) => analyticsController.getEventsSponsorship(req, res, next));
 router.get('/events-geography', requireDashboardAccess, (req, res, next) => analyticsController.getEventsGeography(req, res, next));
 
-// Health Metrics Members "Membership & revenue by tier" section (#3100)
-router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
+// Health Metrics Members "Member growth by year" section (#5197)
+router.get('/members-growth', requireDashboardAccess, (req, res, next) => analyticsController.getMembersGrowth(req, res, next));
 
-// Health Metrics Members "Membership bridge" and its movement lists (#3101)
-router.get('/members-bridge', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBridge(req, res, next));
-router.get('/members-movements', requireDashboardAccess, (req, res, next) => analyticsController.getMembersMovements(req, res, next));
+// Health Metrics Members "Membership breakdown by tier" section (#3100, #5196)
+router.get('/members-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersTiers(req, res, next));
 
 // Health Metrics Members "All members" (#3102)
 router.get('/members-directory', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectory(req, res, next));
 router.get('/members-directory-tiers', requireDashboardAccess, (req, res, next) => analyticsController.getMembersDirectoryTiers(req, res, next));
 router.get('/members-at-risk', requireDashboardAccess, (req, res, next) => analyticsController.getMembersAtRisk(req, res, next));
+router.get('/members-renewals', requireDashboardAccess, (req, res, next) => analyticsController.getMembersRenewals(req, res, next));
+router.get('/members-board-attendance', requireDashboardAccess, (req, res, next) => analyticsController.getMembersBoardAttendance(req, res, next));
+router.get('/members-nps', requireDashboardAccess, (req, res, next) => analyticsController.getMembersNps(req, res, next));
+router.get('/members-churn', requireDashboardAccess, (req, res, next) => analyticsController.getMembersChurn(req, res, next));
+router.get('/members-churn-departures', requireDashboardAccess, (req, res, next) => analyticsController.getMembersChurnDepartures(req, res, next));
+
+// Health Metrics Non-Members sections: company participation (#3180), people (#3181) and conversion (#3182)
+router.get('/non-members-orgs', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersOrgs(req, res, next));
+router.get('/non-members-people', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersPeople(req, res, next));
+router.get('/non-members-conversion', requireDashboardAccess, (req, res, next) => analyticsController.getNonMembersConversion(req, res, next));
+
+// Health Metrics Training tab's enrollment (#3199) and courses (#3200) sections
+router.get('/training-enrollment', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingEnrollment(req, res, next));
+router.get('/training-courses', requireDashboardAccess, (req, res, next) => analyticsController.getTrainingCourses(req, res, next));
+
+// Health Metrics Overview cards (#4199); each carries every period, so the period picker never re-reads
+router.get('/overview-participating-orgs', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewParticipatingOrgs(req, res, next));
+router.get('/overview-nps', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewNps(req, res, next));
+router.get('/overview-churn', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewChurn(req, res, next));
+router.get('/overview-outstanding-balance', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewOutstandingBalance(req, res, next));
+router.get('/overview-events', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewEvents(req, res, next));
+router.get('/overview-board', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewBoard(req, res, next));
+router.get('/overview-code', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewCode(req, res, next));
+router.get('/overview-newsletters', requireDashboardAccess, (req, res, next) => analyticsController.getOverviewNewsletters(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

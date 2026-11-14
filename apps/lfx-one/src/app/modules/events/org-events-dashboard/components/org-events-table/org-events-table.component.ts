@@ -21,6 +21,8 @@ export class OrgEventsTableComponent {
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
   // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
   public readonly showAction = input<boolean>(true);
+  // What the Event Attendees number counts and who it is credited to (the shared caption phrases), as the column's tooltip.
+  public readonly attendeesCaption = input<string>('');
   public readonly emptyStateTitle = input<string>('No upcoming events');
   public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your organization.');
   public readonly emptyStateIcon = input<string>('fa-light fa-calendar-plus');
@@ -34,6 +36,16 @@ export class OrgEventsTableComponent {
 
   // Single source of truth for the empty-row colspan: 8 columns with the Action column, 7 without.
   protected readonly columnCount = computed<number>(() => (this.showAction() ? 8 : 7));
+
+  /**
+   * Whether to name the goal in the column header. Driven by the data, not by a role input: the
+   * server omits `eventRegistrationsGoal` entirely for an external admin (#4432), so its presence
+   * on any row is exactly the signal that this viewer is allowed to see it. Keeps the component
+   * free of any notion of staff, and keeps the header honest when every goal happens to be null.
+   */
+  protected readonly showGoal = computed<boolean>(() =>
+    this.rows().some((row) => row.eventRegistrationsGoal !== null && row.eventRegistrationsGoal !== undefined)
+  );
 
   // Pre-bake the formatted date range per row so the template reads a property instead of calling a method each CD cycle.
   protected readonly rows = computed<OrgEventRowVm[]>(() =>

@@ -3,6 +3,13 @@
 
 import sanitizeHtml from 'sanitize-html';
 
+import {
+  EMAIL_BODY_ALLOWED_STYLE_PROPERTIES,
+  EMAIL_BODY_MARGIN_VALUE_PATTERN,
+  EMAIL_BODY_STYLE_VALUE_PATTERN,
+  EMAIL_SECONDARY_LINK_LIMIT,
+  LF_OWNED_EMAIL_LINK_DOMAINS,
+} from '../constants/campaign.constants';
 import { canonicalHttpUrl } from './url.utils';
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -227,6 +234,45 @@ export function escapeHtml(text: string | null | undefined): string {
 }
 
 /**
+ * Turns a plain-text body into paragraph HTML, leaving a value that already holds markup as is.
+ *
+ * Rich-text fields can still carry values written before they were rich: plain text whose line
+ * breaks a browser would collapse once rendered as HTML. Blank lines become `<p>` boundaries and
+ * single newlines become `<br>`, after escaping, so the text renders (and loads into the editor)
+ * the way it was written. Mirrors the public crowdfunding site's `renderDescription`. The output is
+ * NOT sanitized: pass it to a sink that sanitizes, such as Angular's `[innerHTML]`.
+ * Pure string ops — SSR-safe.
+ *
+ * @param value - Plain text or an HTML fragment
+ * @returns The value unchanged when it contains a tag, otherwise escaped paragraph HTML
+ *
+ * @example
+ * ```typescript
+ * plainTextToHtml('One\ntwo\n\nThree')
+ * // Returns: "<p>One<br>two</p><p>Three</p>"
+ *
+ * plainTextToHtml('<p>Already <strong>HTML</strong></p>')
+ * // Returns: "<p>Already <strong>HTML</strong></p>"
+ * ```
+ */
+export function plainTextToHtml(value: string | null | undefined): string {
+  if (!value) return '';
+  // `[^<>]*` keeps the tag test linear on inputs like `<a<a<a...`.
+  if (/<[a-z][^<>]*>/i.test(value)) return value;
+  return (
+    value
+      .replace(/\r\n?/g, '\n')
+      // Trimmed first so leading / trailing newlines do not become stray <br>s.
+      .trim()
+      // A run of blank lines (whitespace only) ends a paragraph, consumed whole.
+      .split(/\n(?:[^\S\n]*\n)+/)
+      .filter((paragraph) => paragraph.trim())
+      .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+      .join('')
+  );
+}
+
+/**
  * Strips HTML-like tag sequences until the string is stable. The inner
  * `[^<>]*` class is load-bearing: it disallows nested `<` inside a tag body,
  * which prevents the engine from trying every `<` position on adversarial
@@ -264,6 +310,49 @@ function stripTagsToStable(s: string): string {
 export function stripHtml(html: string | null | undefined): string {
   if (!html) return '';
   return decodeHtmlEntities(stripTagsToStable(html)).trim();
+}
+
+/**
+ * A plain-text opening of an HTML document (e.g. a sent newsletter body), at most `maxLength`
+ * characters, cut at a word boundary with a trailing ellipsis when shortened. `<style>`, `<script>`
+ * and other non-text elements are dropped with their contents, block boundaries become spaces, and
+ * whitespace collapses — so the result is safe to show as text, never as HTML.
+ */
+export function htmlTextExcerpt(html: string | null | undefined, maxLength: number): string {
+  if (!html || maxLength <= 0) return '';
+  const text = sanitizeHtml(html.replace(/<(\/?)(p|div|br|h[1-6]|li|tr|td|th|table|section|article|blockquote)\b/gi, ' <$1$2'), {
+    allowedTags: [],
+    allowedAttributes: {},
+    nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript', 'title', 'head'],
+  });
+  const collapsed = decodeHtmlEntities(text).replace(/\s+/g, ' ').trim();
+  if (collapsed.length <= maxLength) return collapsed;
+
+  const cut = collapsed.slice(0, maxLength - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > maxLength / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+/**
+ * The `src` of the first image in an HTML document that is a public `https:` URL, skipping
+ * tracking-pixel-sized images (an explicit width or height of 2px or less), or null when there is none.
+ */
+export function firstHtmlImageUrl(html: string | null | undefined): string | null {
+  if (!html) return null;
+  let found: string | null = null;
+  sanitizeHtml(html, {
+    allowedTags: ['img'],
+    allowedAttributes: { img: ['src', 'width', 'height'] },
+    exclusiveFilter: (frame) => {
+      if (found || frame.tag !== 'img') return false;
+      const { src, width, height } = frame.attribs;
+      const tiny = [width, height].some((size) => size !== undefined && Number.parseInt(size, 10) <= 2);
+      const url = canonicalHttpUrl(src);
+      if (!tiny && url.startsWith('https:')) found = url;
+      return false;
+    },
+  });
+  return found;
 }
 
 /**
@@ -342,22 +431,28 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * survives here survives into the recipient's inbox.
  */
 function normalizeHrefForJudgement(href: string): string {
-  return (
-    href
-      .replace(/[\t\n\r]/g, '')
-      // BOTH C0/space AND Unicode whitespace at the ends. `trim()` alone misses C0 controls;
-      // a C0-only strip misses NBSP, U+3000 and U+2028 -- and a later `trim()` (canonicalHttpUrl
-      // runs one) removes those, turning a value judged as relative into a live destination.
-      // `\s` covers the Unicode set, `\x00-\x20` the controls; both ends, both classes.
-      .replace(/^[\s\x00-\x20\uFEFF]+/u, '')
-      .replace(/[\s\x00-\x20\uFEFF]+$/u, '')
-      .replace(/\\/g, '/')
-  );
+  // BOTH C0/space AND Unicode whitespace at the ends. `trim()` alone misses C0 controls;
+  // a C0-only strip misses NBSP, U+3000 and U+2028 -- and a later `trim()` (canonicalHttpUrl
+  // runs one) removes those, turning a value judged as relative into a live destination.
+  // `\s` covers the Unicode set, `\x00-\x20` the controls; both ends, both classes.
+  const stripped = href.replace(/[\t\n\r]/g, '');
+  // The leading run is anchored at the start, so the regex is linear. The TRAILING run is trimmed
+  // by INDEX rather than `/[...]+$/`, which CodeQL flags as a polynomial regex on caller-controlled
+  // input. Every character in the class is a single UTF-16 code unit, so testing one code unit at a
+  // time is the same set the regex matched.
+  const leadingTrimmed = stripped.replace(/^[\s\x00-\x20\uFEFF]+/u, '');
+  const edgeWhitespace = /^[\s\x00-\x20\uFEFF]$/u;
+  let end = leadingTrimmed.length;
+  while (end > 0 && edgeWhitespace.test(leadingTrimmed[end - 1])) end--;
+  return leadingTrimmed.slice(0, end).replace(/\\/g, '/');
 }
 
 /** `attribs` without its `href`, so an anchor keeps its words and loses only the promise. */
 function omitHref(attribs: Record<string, string>): Record<string, string> {
-  const { href: _dropped, ...rest } = attribs;
+  // `style` goes with the href (#3306): campaign-service colours, bolds and underlines its links, and a
+  // refused link that kept that styling would look clickable while doing nothing. Plain text is the
+  // honest rendering of a link we cannot back.
+  const { href: _dropped, style: _linkStyle, ...rest } = attribs;
   return rest;
 }
 
@@ -396,8 +491,9 @@ function buildAllowedHosts(destinations: readonly string[] | undefined): Set<str
   // `undefined` means "no opinion" -- the legacy behaviour, every http(s) anchor kept. An EMPTY
   // ARRAY is the opposite and is the case that matters: the caller looked for a destination and
   // found none, so nothing is vouched for and every link is dropped. The stages that withhold a
-  // button (CFP Launch, Post-Event, Final Countdown) arrive exactly this way, and they are the
-  // ones a model is most likely to invent an address for.
+  // button (CFP Launch, Post-Event, Final Countdown) are the ones a model is most likely to invent
+  // an address for; for them `emailLinkDestinations` now vouches only for LF-owned links (#3306),
+  // and a relative href is never resolved, since there is no call-to-action to resolve it against.
   if (destinations === undefined) return null;
 
   const hosts = new Set<string>();
@@ -486,20 +582,21 @@ function allowedDestinationHref(href: string, allowedHosts: Set<string>): string
  * Omitting `allowedDestinations` keeps every `http(s)` anchor -- the prior behaviour, for callers
  * that have no destination to vouch against. Pass it wherever one is known.
  */
-export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[]): string {
+export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[], relativeBase?: string): string {
   if (!html) return '';
 
   const allowedHosts = buildAllowedHosts(allowedDestinations);
-  // The base a relative href resolves against: the first destination the caller vouched for.
-  // '' when none was, which is the same "nothing is vouched for" state an empty list expresses.
+  // The base a relative href resolves against. '' resolves nothing: a relative href then loses its
+  // href, which is the same "nothing is vouched for" answer an empty list gives.
   //
-  // FIRST, not "all": a relative href has exactly one base, so a list with two hosts would have
-  // to guess which the author meant. Every caller today passes at most ONE destination -- the
-  // generator's CTA url (service), `buttonUrl` (controller), `emailCtaDestination()` (client) --
-  // so the ambiguity is not reachable. The parameter stays a list because the HOST allow-list
-  // genuinely takes several; if a caller ever vouches for two, relative resolution needs an
-  // explicit base rather than this fallback.
-  const firstAllowedBase = (allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '';
+  // `relativeBase` names it EXPLICITLY, and every email-body caller passes its call-to-action (or '')
+  // (#3306). Those callers vouch for several destinations now -- the CTA plus the event page's own
+  // links -- and a relative href has exactly one base, so falling back to "the first destination"
+  // would resolve `/register` against a CFP or venue page nobody meant, or against an LF root when
+  // there is no button. Omitted, the first vouched destination is the base, as before, for callers
+  // that vouch for at most one.
+  const firstAllowedBase =
+    relativeBase !== undefined ? canonicalHttpUrl(relativeBase) : ((allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '');
 
   return sanitizeHtml(html, {
     // Formatting only. Every resource-loading element is absent by omission rather than by
@@ -534,8 +631,31 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
       'td',
       'th',
     ],
-    // `src`, `srcset`, `background`, `style` and `poster` are all absent for the same reason.
-    allowedAttributes: { a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // `src`, `srcset`, `background` and `poster` are all absent for the same reason.
+    //
+    // `style` is KEPT, on every allowed tag, but only through `allowedStyles` below (#3306).
+    // campaign-service writes the email's palette and type scale as inline styles, because mail
+    // clients drop most other CSS, so stripping the attribute previewed and staged every generated
+    // email unstyled.
+    allowedAttributes: { '*': ['style'], a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // Only the declarations on `EMAIL_BODY_ALLOWED_STYLE_PROPERTIES` survive, and only with a value
+    // free of the forms `EMAIL_BODY_STYLE_VALUE_PATTERN` refuses, and a margin must not be negative.
+    // The property list is the control (none takes a url or positions anything); the value checks are
+    // defence in depth. A `style` left with no declarations is removed whole.
+    // sanitize-html keeps a declaration when ANY of its patterns matches, so the margins get one
+    // combined pattern (both conditions) rather than two alternatives.
+    allowedStyles: {
+      '*': Object.fromEntries(
+        EMAIL_BODY_ALLOWED_STYLE_PROPERTIES.map((property) => [
+          property,
+          [
+            property.startsWith('margin')
+              ? new RegExp(`(?=${EMAIL_BODY_MARGIN_VALUE_PATTERN.source})${EMAIL_BODY_STYLE_VALUE_PATTERN.source}`, 'i')
+              : EMAIL_BODY_STYLE_VALUE_PATTERN,
+          ],
+        ])
+      ),
+    },
     transformTags: {
       // Runs BEFORE `allowedSchemes` / `allowProtocolRelative`, which sanitize-html applies in
       // the attribute loop after `transformTags` has been dispatched. So `href` arrives RAW here
@@ -601,4 +721,38 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
     //                              left to explain where it came from
     nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
+}
+
+/**
+ * The destinations a generated email body may link to: the call-to-action, plus the links the event
+ * page itself published (`eventDetails.cfpUrl`, `agendaUrl`, `venueUrl`, `sponsorshipUrl`) whose host is
+ * the call-to-action's host or an LF-owned domain (`LF_OWNED_EMAIL_LINK_DOMAINS`), or a subdomain of
+ * either (#3306).
+ *
+ * Feed the result to `stripResourceLoadingHtml`. A secondary link on any other host is not vouched for,
+ * so the sanitizer keeps its text and drops its `href`, exactly as it does for an invented address. The
+ * host rule is the boundary, not where the list came from: a caller that passed an off-host url here
+ * would still have it refused.
+ *
+ * With no call-to-action (the stages that withhold a button), only LF-owned links can be vouched for.
+ */
+export function emailLinkDestinations(ctaDestination: string, extractedLinks: readonly (string | null | undefined)[]): string[] {
+  const cta = canonicalHttpUrl(ctaDestination);
+  const hostOf = (url: string): string => {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+  const trustedRoots = [...(cta === '' ? [] : [hostOf(cta)]), ...LF_OWNED_EMAIL_LINK_DOMAINS].filter((root) => root !== '');
+  const isTrusted = (host: string): boolean => trustedRoots.some((root) => host === root || host.endsWith(`.${root}`));
+  // Bounded BEFORE the per-entry parsing, so a long list (the controller's comes from the client)
+  // costs at most a few parses; then bounded again after filtering.
+  const secondary = extractedLinks
+    .slice(0, EMAIL_SECONDARY_LINK_LIMIT * 2)
+    .map((link) => canonicalHttpUrl(link))
+    .filter((link) => link !== '' && isTrusted(hostOf(link)))
+    .slice(0, EMAIL_SECONDARY_LINK_LIMIT);
+  return [...new Set([...(cta === '' ? [] : [cta]), ...secondary])];
 }

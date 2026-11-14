@@ -7,13 +7,18 @@ import {
   COMING_SOON_SENTINEL,
   DEFAULT_EVENT_SORT_FIELD,
   DEFAULT_VISA_REQUEST_SORT_FIELD,
+  EVENT_REQUEST_SOURCE_TABLES,
   EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
+  TRAVEL_FUND_LATEST_DEADLINE_AGG,
+  TRAVEL_FUND_OFFERED_AGG,
+  TRAVEL_FUND_OPEN_ENDED_AGG,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
   WHOLE_NUMBER_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
+  EventRequestSourceTable,
   EventRow,
   EventSortOrder,
   EventsResponse,
@@ -22,6 +27,7 @@ import {
   GetEventRequestsOptions,
   GetEventsOptions,
   GetMyEventsOptions,
+  GetTravelFundEventsOptions,
   GetUpcomingCountriesResponse,
   MyEvent,
   MyEventOrganizationsResponse,
@@ -32,6 +38,7 @@ import {
   TravelFundApplicationResponse,
   TravelFundRequestsResponse,
   OrgSearchResponse,
+  RequestType,
   VisaRequest,
   VisaRequestApplication,
   VisaRequestApplicationResponse,
@@ -73,8 +80,6 @@ export class EventsService {
       country,
       affiliatedProjectSlugs,
       isVisaRequestAccepted,
-      isTravelFundRequestAccepted,
-      excludePastTravelFundDeadline,
     } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
@@ -108,12 +113,8 @@ export class EventsService {
       const startDateFromFilter = startDateFrom ? 'AND e.EVENT_START_DATE >= ?' : '';
       const startDateToFilter = startDateTo ? 'AND e.EVENT_START_DATE <= ?' : '';
       const countryFilter = country ? 'AND e.EVENT_COUNTRY = ?' : '';
-      const registeredOnlyFilter = registeredOnly ? "AND r.EVENT_ID IS NOT NULL AND r.REGISTRATION_STATUS = 'Accepted'" : '';
+      const registeredOnlyFilter = registeredOnly ? 'AND r.EVENT_ID IS NOT NULL' : '';
       const visaRequestAcceptedFilter = isVisaRequestAccepted ? 'AND r.IS_VISA_REQUEST_ACCEPTED = TRUE' : '';
-      const travelFundRequestAcceptedFilter = isTravelFundRequestAccepted ? 'AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE' : '';
-      const excludePastTravelFundDeadlineFilter = excludePastTravelFundDeadline
-        ? 'AND (r.TRAVEL_FUND_END_TS IS NULL OR r.TRAVEL_FUND_END_TS >= CURRENT_TIMESTAMP())'
-        : '';
 
       const slugs = affiliatedProjectSlugs ?? [];
       const hasAffiliatedSlugs = slugs.length > 0;
@@ -141,6 +142,8 @@ export class EventsService {
           WHERE NOT (${this.isPastEventSql()})
             ${eventIdFilter}
             ${affiliatedFilter}
+            -- Hide co-located events from discovery rows only; registered_events keeps them.
+            AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
         ),
         registered_events AS (
@@ -161,7 +164,7 @@ export class EventsService {
             EVENT_URL,
             EVENT_REGISTRATION_URL
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE USER_EMAIL = ?
+          WHERE LOWER(USER_EMAIL) = ?
             AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
             ${eventIdFilter}
@@ -179,12 +182,13 @@ export class EventsService {
             NET_REVENUE,
             USER_ATTENDED,
             IS_VISA_REQUEST_ACCEPTED,
-            IS_TRAVEL_FUND_ACCEPTED,
             TRAVEL_FUND_END_TS
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-          WHERE USER_EMAIL = ?
+          WHERE LOWER(USER_EMAIL) = ?
             AND NOT (${this.isPastEventSql()})
             AND REGISTRATION_STATUS = 'Accepted'
+          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
         ),
         combined AS (
           -- The subquery is load-bearing: QUALIFY written directly after UNION ALL binds to
@@ -239,8 +243,6 @@ export class EventsService {
           ${countryFilter}
           ${registeredOnlyFilter}
           ${visaRequestAcceptedFilter}
-          ${travelFundRequestAcceptedFilter}
-          ${excludePastTravelFundDeadlineFilter}
         ORDER BY ${sortField} ${normalizedSortOrder}
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
@@ -303,8 +305,14 @@ export class EventsService {
           TRUE AS IS_REGISTERED,
           TRAVEL_FUND_END_TS,
           COUNT(*) OVER() AS TOTAL_RECORDS
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE USER_EMAIL = ?
+        FROM (
+          -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep one, preferring Accepted.
+          SELECT *
+          FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+          WHERE LOWER(USER_EMAIL) = ?
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY IFF(REGISTRATION_STATUS = 'Accepted', 0, 1)) = 1
+        )
+        WHERE TRUE
           ${isPastFilter}
           ${eventIdFilter}
           ${projectNameFilter}
@@ -329,6 +337,10 @@ export class EventsService {
     try {
       result = await this.snowflakeService.execute<MyEventRow>(sql, binds);
     } catch (error) {
+      // Registered-only counts must distinguish an unavailable query from a confirmed zero.
+      if (isPast === false && registeredOnly) {
+        throw error;
+      }
       logger.warning(req, 'get_my_events', 'Snowflake query failed, returning empty events', {
         error: error instanceof Error ? error.message : String(error),
         page_size: normalizedPageSize,
@@ -341,6 +353,121 @@ export class EventsService {
     const data = result.rows.map((row) => this.mapRowToEvent(row));
 
     logger.debug(req, 'get_my_events', 'Fetched events', { count: data.length, total });
+
+    return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
+  }
+
+  /**
+   * Upcoming events that currently accept travel fund applications. Event-level and user-independent:
+   * any registration row flagged IS_TRAVEL_FUND_ACCEPTED qualifies the event, and the deadline must still be open.
+   */
+  public async getTravelFundEvents(req: Request, options: GetTravelFundEventsOptions): Promise<MyEventsResponse> {
+    const { eventId, searchQuery, startDateFrom, startDateTo, country, pageSize, offset } = options;
+    const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
+    const normalizedOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+
+    logger.debug(req, 'get_travel_fund_events', 'Building travel fund events query', {
+      has_event_id: !!eventId,
+      has_search_query: !!searchQuery,
+      page_size: normalizedPageSize,
+      offset: normalizedOffset,
+    });
+
+    const eventIdFilter = eventId ? 'AND EVENT_ID = ?' : '';
+    const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
+    const startDateFromFilter = startDateFrom ? 'AND EVENT_START_DATE >= ?' : '';
+    const startDateToFilter = startDateTo ? 'AND EVENT_START_DATE <= ?' : '';
+    const countryFilter = country ? 'AND EVENT_COUNTRY = ?' : '';
+
+    // Window aggregates see every registrant's row for the event; QUALIFY then keeps one row per event.
+    const sql = `
+      WITH tf_events AS (
+        SELECT
+          EVENT_ID,
+          EVENT_NAME,
+          EVENT_START_DATE,
+          EVENT_END_DATE,
+          EVENT_LOCATION,
+          EVENT_CITY,
+          EVENT_COUNTRY,
+          PROJECT_ID,
+          PROJECT_NAME,
+          PROJECT_SLUG,
+          ACCOUNT_NAME,
+          ACCOUNT_LOGO_URL,
+          EVENT_SOURCE,
+          EVENT_URL,
+          EVENT_REGISTRATION_URL,
+          ${TRAVEL_FUND_OFFERED_AGG} OVER (PARTITION BY EVENT_ID) AS EVENT_OFFERS_TRAVEL_FUND,
+          ${this.travelFundDeadlineSql(' OVER (PARTITION BY EVENT_ID)')} AS EVENT_TRAVEL_FUND_END_TS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE NOT (${this.isPastEventSql()})
+          ${eventIdFilter}
+          ${searchQueryFilter}
+          ${startDateFromFilter}
+          ${startDateToFilter}
+          ${countryFilter}
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
+      )
+      SELECT
+        EVENT_ID,
+        EVENT_NAME,
+        EVENT_START_DATE,
+        EVENT_END_DATE,
+        EVENT_LOCATION,
+        EVENT_CITY,
+        EVENT_COUNTRY,
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        ACCOUNT_NAME,
+        ACCOUNT_LOGO_URL,
+        EVENT_SOURCE,
+        EVENT_URL,
+        EVENT_REGISTRATION_URL,
+        NULL AS USER_ROLE,
+        NULL AS REGISTRATION_STATUS,
+        NULL AS TF_REQUEST_STATUS,
+        NULL AS VL_REQUEST_STATUS,
+        NULL AS GROSS_REVENUE,
+        NULL AS TAX_AMOUNT,
+        NULL AS NET_REVENUE,
+        NULL AS USER_ATTENDED,
+        FALSE AS IS_REGISTERED,
+        FALSE AS IS_PAST_EVENT,
+        EVENT_TRAVEL_FUND_END_TS AS TRAVEL_FUND_END_TS,
+        COUNT(*) OVER() AS TOTAL_RECORDS
+      FROM tf_events
+      WHERE ${this.travelFundOpenSql('EVENT_OFFERS_TRAVEL_FUND', 'EVENT_TRAVEL_FUND_END_TS')}
+      ORDER BY EVENT_START_DATE ASC, EVENT_ID ASC
+      LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
+    `;
+
+    const binds: string[] = [
+      ...(eventId ? [eventId] : []),
+      ...(searchQuery ? [`%${searchQuery}%`] : []),
+      ...(startDateFrom ? [startDateFrom] : []),
+      ...(startDateTo ? [startDateTo] : []),
+      ...(country ? [country] : []),
+    ];
+
+    let result;
+    try {
+      result = await this.snowflakeService.execute<MyEventRow>(sql, binds);
+    } catch (error) {
+      // Propagate so the picker shows its load-error state instead of "no events accepting applications".
+      logger.warning(req, 'get_travel_fund_events', 'Snowflake query failed', {
+        error: error instanceof Error ? error.message : String(error),
+        page_size: normalizedPageSize,
+        offset: normalizedOffset,
+      });
+      throw error;
+    }
+
+    const total = result.rows.length > 0 ? result.rows[0].TOTAL_RECORDS : 0;
+    const data = result.rows.map((row) => this.mapRowToEvent(row));
+
+    logger.debug(req, 'get_travel_fund_events', 'Fetched travel fund events', { count: data.length, total });
 
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
@@ -444,7 +571,7 @@ export class EventsService {
   }
 
   public async getEventOrganizations(req: Request, userEmail: string, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
-    const { projectName, isPast, affiliatedProjectSlugs } = options;
+    const { projectName, isPast, affiliatedProjectSlugs, registeredOnly } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {
       has_project_name: !!projectName,
@@ -461,7 +588,7 @@ export class EventsService {
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-        WHERE USER_EMAIL = ?
+        WHERE LOWER(USER_EMAIL) = ?
           AND (${this.isPastEventSql()})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
@@ -469,18 +596,19 @@ export class EventsService {
       binds.push(userEmail);
       if (projectName) binds.push(projectName);
     } else {
-      // Upcoming tab: return foundations from events the user has registered for OR that belong
-      // to affiliated projects. When affiliatedProjectSlugs is empty, show only registered foundations.
+      // Registered co-located events remain eligible; only affiliated discovery excludes them.
       const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
-      const slugs = affiliatedProjectSlugs ?? [];
+      const slugs = registeredOnly ? [] : (affiliatedProjectSlugs ?? []);
       const hasAffiliatedSlugs = slugs.length > 0;
-      const affiliatedFilter = hasAffiliatedSlugs ? `OR LOWER(PROJECT_SLUG) IN (${slugs.map(() => '?').join(', ')})` : '';
+      const affiliatedFilter = hasAffiliatedSlugs
+        ? `OR (LOWER(PROJECT_SLUG) IN (${slugs.map(() => '?').join(', ')}) AND COALESCE(IS_COLOCATED_EVENT, FALSE) = FALSE)`
+        : '';
 
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE NOT (${this.isPastEventSql()})
-          AND ((USER_EMAIL = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
+          AND ((LOWER(USER_EMAIL) = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
@@ -537,11 +665,64 @@ export class EventsService {
   }
 
   public async getVisaRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
-    return this.executeEventRequestsQuery(req, userEmail, options, 'VL_REQUEST_STATUS', 'VL_APPLICATION_DATE', 'get_visa_requests');
+    return this.executeEventRequestsQuery(
+      req,
+      userEmail,
+      options,
+      EVENT_REQUEST_SOURCE_TABLES.VISA_LETTERS,
+      'VL_REQUEST_STATUS',
+      'VL_APPLICATION_DATE',
+      'get_visa_requests'
+    );
   }
 
   public async getTravelFundRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
-    return this.executeEventRequestsQuery(req, userEmail, options, 'TF_REQUEST_STATUS', 'TF_APPLICATION_DATE', 'get_travel_fund_requests');
+    // Travel funding does not require a registration, so requests are read from their own table rather than EVENT_REGISTRATIONS.
+    return this.executeEventRequestsQuery(
+      req,
+      userEmail,
+      options,
+      EVENT_REQUEST_SOURCE_TABLES.TRAVEL_FUNDING,
+      'TF_REQUEST_STATUS',
+      'TF_APPLICATION_DATE',
+      'get_travel_fund_requests'
+    );
+  }
+
+  /**
+   * Whether the user may apply for a visa letter / travel funding for an event, using the same rules as the step 1 event picker.
+   * Travel funding is event-level (no registration needed); visa letters need the user's accepted registration.
+   * Unlike the list queries, a Snowflake failure throws so a submit is never accepted or rejected on missing data.
+   */
+  public async isEligibleForEventRequest(req: Request, userEmail: string, eventId: string, requestType: RequestType): Promise<boolean> {
+    const isTravelFund = requestType === 'travel-fund';
+
+    const sql = isTravelFund
+      ? `
+      SELECT 1 AS ELIGIBLE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE EVENT_ID = ?
+        AND NOT (${this.isPastEventSql()})
+      GROUP BY EVENT_ID
+      HAVING ${this.travelFundOpenSql(TRAVEL_FUND_OFFERED_AGG, this.travelFundDeadlineSql())}
+      LIMIT 1
+    `
+      : `
+      SELECT 1 AS ELIGIBLE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE LOWER(USER_EMAIL) = ?
+        AND EVENT_ID = ?
+        AND NOT (${this.isPastEventSql()})
+        AND REGISTRATION_STATUS = 'Accepted' AND IS_VISA_REQUEST_ACCEPTED = TRUE
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<{ ELIGIBLE: number }>(sql, isTravelFund ? [eventId] : [userEmail, eventId]);
+    const eligible = result.rows.length > 0;
+
+    logger.debug(req, 'check_event_request_eligibility', 'Checked event request eligibility', { event_id: eventId, request_type: requestType, eligible });
+
+    return eligible;
   }
 
   /**
@@ -869,6 +1050,7 @@ export class EventsService {
     req: Request,
     userEmail: string,
     options: GetEventRequestsOptions,
+    sourceTable: EventRequestSourceTable,
     statusColumn: string,
     applicationDateColumn: string,
     operationName: string
@@ -905,10 +1087,17 @@ export class EventsService {
         ${applicationDateColumn} AS APPLICATION_DATE,
         ${statusColumn} AS REQUEST_STATUS,
         TRAVEL_FUND_END_TS,
+        COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED,
         COUNT(*) OVER() AS TOTAL_RECORDS
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE ${statusColumn} IS NOT NULL
-        AND USER_EMAIL = ?
+      FROM (
+        -- Both source tables are keyed by case-sensitive email upstream, so LOWER() can match several rows per event; keep the latest request.
+        SELECT *
+        FROM ${sourceTable}
+        WHERE ${statusColumn} IS NOT NULL
+          AND LOWER(USER_EMAIL) = ?
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${applicationDateColumn} DESC NULLS LAST) = 1
+      )
+      WHERE TRUE
         ${eventIdFilter}
         ${projectNameFilter}
         ${searchQueryFilter}
@@ -972,6 +1161,16 @@ export class EventsService {
     return `CASE WHEN LOWER(TRIM(EVENT_SOURCE, ' \\t\\n\\r')) = '${EVENT_SOURCE_BACKFILL}'
                  THEN COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE()
                  ELSE IS_PAST_EVENT END`;
+  }
+
+  /** Latest deadline across flagged rows; NULL (open-ended) when any flagged row has no deadline. `over` makes it a window aggregate. */
+  private travelFundDeadlineSql(over = ''): string {
+    return `IFF(${TRAVEL_FUND_OPEN_ENDED_AGG}${over}, NULL, ${TRAVEL_FUND_LATEST_DEADLINE_AGG}${over})`;
+  }
+
+  /** Event offers travel funding and its deadline (among the flagged rows) is unset or still ahead. */
+  private travelFundOpenSql(offered: string, deadline: string): string {
+    return `${offered} AND (${deadline} IS NULL OR ${deadline} >= CURRENT_TIMESTAMP())`;
   }
 
   /** Status filter for the past events query (unqualified column names, no IS NULL support). */
@@ -1050,6 +1249,7 @@ export class EventsService {
         : '—',
       status: row.REQUEST_STATUS,
       travelFundEnd: row.TRAVEL_FUND_END_TS ? new Date(row.TRAVEL_FUND_END_TS).toISOString() : null,
+      eventEnded: !!row.EVENT_ENDED,
     };
   }
 

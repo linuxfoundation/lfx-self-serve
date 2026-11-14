@@ -11,6 +11,7 @@ const {
   listClaGroups,
   getPdfUrl,
   getCclaPreview,
+  getClaGroupCatalogue,
   getSignOptions,
   requestCorporateSignature,
   getApprovalList,
@@ -31,6 +32,7 @@ const {
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getCclaPreview: vi.fn(),
+  getClaGroupCatalogue: vi.fn(),
   getSignOptions: vi.fn(),
   requestCorporateSignature: vi.fn(),
   getApprovalList: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
     public getCclaPreview = getCclaPreview;
+    public getClaGroupCatalogue = getClaGroupCatalogue;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
@@ -80,6 +83,14 @@ vi.mock('../services/access-check.service', () => ({
 vi.mock('../services/org-role-grants.service', () => ({
   OrgRoleGrantsService: class {
     public getAccessAwareOrgs = getAccessAwareOrgs;
+  },
+}));
+// The CLA gate's second question: the caller's own `cla-manager` companies. Default "manages
+// nothing", so every pre-existing ungranted case still answers 403.
+const getClaManagerCompanySfids = vi.fn();
+vi.mock('../services/org-cla-manager-scopes.service', () => ({
+  OrgClaManagerScopesService: class {
+    public getCompanySfids = getClaManagerCompanySfids;
   },
 }));
 // `isImpersonating` is a spy rather than a literal so the write route's guard can be driven from
@@ -145,6 +156,9 @@ beforeEach(() => {
   getCclaPreview.mockImplementation((_req: express.Request, res: express.Response) => {
     res.type('application/pdf').send(Buffer.from('%PDF-1.4'));
   });
+  getClaGroupCatalogue.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ claGroupId: '7c1a9000-0000-4000-8000-000000000001', matchTypes: [], organizations: [] });
+  });
   getApprovalList.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
   });
@@ -195,6 +209,63 @@ beforeEach(() => {
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
+  getClaManagerCompanySfids.mockResolvedValue(new Set());
+});
+
+describe('org-clas router — CLA Manager without an Org Lens grant', () => {
+  beforeEach(() => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    getClaManagerCompanySfids.mockResolvedValue(new Set([UNGRANTED]));
+  });
+
+  it('admits the list for the company their cla-manager scope names', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups`);
+
+    expect(res.status).toBe(200);
+    expect(listClaGroups).toHaveBeenCalled();
+  });
+
+  it('admits an approval-list write, leaving the action to EasyCLA', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ add: [{ kind: 'domain', value: 'example.com' }], remove: [] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(updateApprovalList).toHaveBeenCalled();
+  });
+
+  it('refuses that write while impersonating, before the scopes are asked', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ add: [{ kind: 'domain', value: 'example.com' }], remove: [] }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    expect(updateApprovalList).not.toHaveBeenCalled();
+    expect(getClaManagerCompanySfids).not.toHaveBeenCalled();
+  });
+
+  it('refuses a company their scopes do not name', async () => {
+    getClaManagerCompanySfids.mockResolvedValue(new Set(['0014100000GammaAAA']));
+
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups`);
+
+    expect(res.status).toBe(403);
+    expect(listClaGroups).not.toHaveBeenCalled();
+  });
+
+  it('does not widen the lens routes this router does not own', async () => {
+    await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/memberships`);
+
+    expect(genericLensGuard).toHaveBeenCalled();
+    expect(getClaManagerCompanySfids).not.toHaveBeenCalled();
+  });
 });
 
 describe('org-clas router', () => {
@@ -252,6 +323,20 @@ describe('org-clas router', () => {
     expect(getCclaPreview).toHaveBeenCalled();
   });
 
+  it('refuses the CLA Group catalogue read for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/catalogue`);
+
+    expect(res.status).toBe(403);
+    expect(getClaGroupCatalogue).not.toHaveBeenCalled();
+  });
+
+  it('admits the CLA Group catalogue read for a granted org', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/catalogue`);
+
+    expect(res.status).toBe(200);
+    expect(getClaGroupCatalogue).toHaveBeenCalled();
+  });
+
   it('refuses the approval list for an org the caller holds no grant on', async () => {
     const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`);
 
@@ -272,12 +357,9 @@ describe('org-clas router', () => {
    * everything the router put in front of it, so a guard deleted from a route line would leave
    * every controller test green.
    *
-   * There is no environment gate to assert. The module's server-side flag was removed on the
-   * parent branch, leaving the LaunchDarkly `org-lens-cla-m3-enabled` flag as the only one — and
-   * that hides the route and the nav without closing the BFF. So what stands in front of these
-   * two routes is exactly what is asserted below: the Org Lens grant on both, the impersonation
-   * guard on the write, and the CLA service's own signing-authority check past them. A shorter
-   * list than it was, which makes each of these cases more load-bearing rather than less.
+   * There is no environment gate to assert. What stands in front of these two routes is exactly
+   * what is asserted below: the Org Lens grant on both, the impersonation guard on the write, and
+   * the CLA service's own signing-authority check past them.
    */
 
   /**

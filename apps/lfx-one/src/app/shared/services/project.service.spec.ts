@@ -171,6 +171,43 @@ describe('ProjectService.getProject', () => {
 
     expect(httpGet).toHaveBeenCalledTimes(2);
   });
+
+  it('isolates a strict writer lookup from an ordinary cached denial', () => {
+    httpGet.mockReturnValueOnce(of({ ...projectA, writer: false })).mockReturnValueOnce(of({ ...projectA, writer: true }));
+    service.getProject('slug-a', false).subscribe();
+    let result: Project | null | undefined;
+
+    service.getProject('slug-a', false, { strictWriter: true }).subscribe((project) => (result = project));
+
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(result?.writer).toBe(true);
+    const params = httpGet.mock.calls[1][1].params as HttpParams;
+    expect(params.get('strict_writer')).toBe('true');
+  });
+
+  it('evicts a strict writer failure even after cancellation, so Retry can recover', () => {
+    const source = new Subject<Project>();
+    httpGet.mockReturnValueOnce(source).mockReturnValueOnce(of({ ...projectA, writer: true }));
+    service.getProject('slug-a', false, { strictWriter: true }).subscribe().unsubscribe();
+    source.error(new Error('writer check unavailable'));
+
+    let result: Project | null | undefined;
+    service.getProject('slug-a', false, { strictWriter: true }).subscribe((project) => (result = project));
+
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(result?.writer).toBe(true);
+  });
+
+  it.each([true, false])('caches a confirmed strict writer=%s response, rather than retrying a real denial', (writer) => {
+    httpGet.mockReturnValue(of({ ...projectA, writer }));
+    const results: (Project | null)[] = [];
+
+    service.getProject('slug-a', false, { strictWriter: true }).subscribe((project) => results.push(project));
+    service.getProject('slug-a', false, { strictWriter: true }).subscribe((project) => results.push(project));
+
+    expect(httpGet).toHaveBeenCalledTimes(1);
+    expect(results.map((project) => project?.writer)).toEqual([writer, writer]);
+  });
 });
 
 describe('ProjectService.getProjectStrict', () => {
@@ -306,5 +343,17 @@ describe('ProjectService.getProjectStrict', () => {
     service.getProjectStrict('uid-a', { meetingCoordinator: false }).subscribe();
 
     expect(httpGet).toHaveBeenCalledTimes(1);
+  });
+
+  it('also isolates strict writer checks in the error-propagating lookup cache', () => {
+    httpGet.mockReturnValueOnce(of({ ...projectA, writer: false })).mockReturnValueOnce(of({ ...projectA, writer: true }));
+    service.getProjectStrict('uid-a').subscribe();
+    let result: Project | undefined;
+
+    service.getProjectStrict('uid-a', { strictWriter: true }).subscribe((project) => (result = project));
+
+    expect(httpGet).toHaveBeenCalledTimes(2);
+    expect(result?.writer).toBe(true);
+    expect((httpGet.mock.calls[1][1].params as HttpParams).get('strict_writer')).toBe('true');
   });
 });

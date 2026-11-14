@@ -1,0 +1,123 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if (hostKey(); as key) {
+  <lfx-meeting-details-host-key [hostKey]="key" />
+}
+
+@if (showRsvp()) {
+  <lfx-meeting-details-rsvp />
+}
+
+@if (ended() && context.fullAccess()) {
+  @if (attendance() === undefined) {
+    <div class="flex flex-col gap-[6px]" aria-busy="true" data-testid="meeting-details-attendance-loading">
+      <lfx-ui-skeleton width="60%" height="16px" />
+      <lfx-ui-skeleton height="5px" />
+    </div>
+  } @else if (attendance(); as attendance) {
+    <div class="flex flex-col gap-[16px]">
+      <lfx-meeting-home-attendance [attendance]="attendance" data-testid="meeting-details-attendance" />
+      @if (participants()?.length && context.canViewGuests()) {
+        <lfx-meeting-attendee-grid
+          [people]="participants() ?? []"
+          past
+          [columns]="8"
+          fluid
+          [showStats]="false"
+          viewAllVariant="tertiary-accent"
+          viewAllSize="large"
+          (viewAll)="context.tab.set('guests')"
+          data-testid="meeting-details-attendance-grid" />
+      }
+    </div>
+  }
+
+  @if (context.organizer()) {
+    <lfx-ui-button
+      variant="tertiary-accent"
+      size="large"
+      icon="fa-light fa-user-check"
+      fullWidth
+      (click)="openReconcile()"
+      data-testid="meeting-details-reconcile"
+      >Reconcile Attendance</lfx-ui-button
+    >
+  }
+
+  <!-- Bleeds over the card's 20px padding. -->
+  <div class="-mx-[20px] h-px bg-gray-200" aria-hidden="true"></div>
+  <section class="flex flex-col gap-[8px]" aria-labelledby="meeting-details-tools-heading" data-testid="meeting-details-tools-card">
+    <div class="flex flex-col gap-[2px]">
+      <h3 id="meeting-details-tools-heading" class="m-0 text-[13px] font-semibold text-gray-900">Meeting Tools</h3>
+      <p class="m-0 text-[12px] leading-[16px] text-gray-500">Tools are provided for accessibility and reference.</p>
+    </div>
+    @if (artifactsService.artifacts(); as artifacts) {
+      @if (artifacts.recordingUrl; as recordingUrl) {
+        <!-- Full width: the main half grows and the copy half stays square. -->
+        <lfx-ui-split-button
+          class="w-full [&>lfx-ui-button>button]:w-full [&>lfx-ui-button]:flex-auto"
+          label="Recording"
+          variant="recording"
+          size="large"
+          icon="fa-light fa-play"
+          secondaryIcon="fa-light fa-link"
+          secondaryTooltip="Copy recording link"
+          (triggered)="openRecording(recordingUrl)"
+          (secondaryTriggered)="copyRecordingLink(recordingUrl)"
+          data-testid="meeting-details-recording" />
+      } @else {
+        <!-- A disabled button takes no pointer events, so the wrapper carries the tooltip. -->
+        <span class="flex w-full" tabindex="0" lfxUiTooltip="Recording unavailable" data-testid="meeting-details-recording-unavailable">
+          <lfx-ui-button class="w-full" variant="secondary" size="large" icon="fa-light fa-play" fullWidth disabled>Recording</lfx-ui-button>
+        </span>
+      }
+
+      @if (artifactsService.summaryContent() && artifactsService.summary(); as summary) {
+        <lfx-ui-button
+          variant="secondary"
+          size="large"
+          icon="fa-light fa-sparkles"
+          fullWidth
+          (click)="openSummary(summary)"
+          data-testid="meeting-details-summary"
+          >AI Summary</lfx-ui-button
+        >
+      } @else {
+        <span class="flex w-full" tabindex="0" lfxUiTooltip="AI Summary unavailable" data-testid="meeting-details-summary-unavailable">
+          <lfx-ui-button class="w-full" variant="secondary" size="large" icon="fa-light fa-sparkles" fullWidth disabled>AI Summary</lfx-ui-button>
+        </span>
+      }
+
+      @if (artifacts.transcriptUrl) {
+        <lfx-ui-button
+          variant="secondary"
+          size="large"
+          icon="fa-light fa-file-lines"
+          fullWidth
+          (click)="openTranscript()"
+          data-testid="meeting-details-transcript"
+          >View Transcript</lfx-ui-button
+        >
+      } @else {
+        <span class="flex w-full" tabindex="0" lfxUiTooltip="Transcript unavailable" data-testid="meeting-details-transcript-unavailable">
+          <lfx-ui-button class="w-full" variant="secondary" size="large" icon="fa-light fa-file-lines" fullWidth disabled>Transcript</lfx-ui-button>
+        </span>
+      }
+    } @else {
+      <div class="flex flex-col gap-[8px]" aria-busy="true" data-testid="meeting-details-tools-loading">
+        <lfx-ui-skeleton height="40px" />
+        <lfx-ui-skeleton height="40px" />
+        <lfx-ui-skeleton height="40px" />
+      </div>
+    }
+  </section>
+}
+
+@if (!context.fullAccess()) {
+  <lfx-ui-note variant="secondary" size="small" icon="fa-light fa-lock" label="This is a private meeting" data-testid="meeting-details-private"
+    >Meeting details, recordings, and summaries are only available to meeting participants and committee members. If you believe you should have access, please
+    contact the meeting organizer.</lfx-ui-note
+  >
+}

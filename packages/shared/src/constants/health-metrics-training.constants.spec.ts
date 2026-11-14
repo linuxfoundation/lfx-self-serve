@@ -1,0 +1,27 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it } from 'vitest';
+
+import { HEALTH_METRICS_TABS } from './health-metrics-engagement.constants';
+import { HEALTH_METRICS_TRAINING_DATA_SECTIONS, HEALTH_METRICS_TRAINING_SECTIONS } from './health-metrics-training.constants';
+
+describe('HEALTH_METRICS_TRAINING_SECTIONS', () => {
+  it('keys the two sections uniquely, in the design order', () => {
+    expect(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.key)).toEqual(['enroll', 'courses']);
+  });
+
+  it('marks the sections that read data', () => {
+    expect(HEALTH_METRICS_TRAINING_DATA_SECTIONS).toEqual(['enroll', 'courses']);
+  });
+
+  it('badges both sections provisional until LF Education signs the figures off', () => {
+    expect(HEALTH_METRICS_TRAINING_SECTIONS.map((section) => section.provisional)).toEqual([true, true]);
+  });
+});
+
+describe('HEALTH_METRICS_TABS', () => {
+  it('routes the Training tab', () => {
+    expect(HEALTH_METRICS_TABS.find((tab) => tab.key === 'training')?.route).toBe('training');
+  });
+});

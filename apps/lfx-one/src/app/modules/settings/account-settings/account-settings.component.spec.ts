@@ -2,16 +2,32 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { PLATFORM_ID, signal } from '@angular/core';
+import { PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute } from '@angular/router';
-import { ERROR_CODES, MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
-import { EmailManagementData, MeetingInviteEmail, UserEmail } from '@lfx-one/shared/interfaces';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
+import {
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CODE_NOT_RECEIVED_HINT,
+  EMAIL_CODE_NOT_RECEIVED_TITLE,
+  EMAIL_LINKED_SUPPORT_TITLE,
+  EMAIL_RESEND_FAILED_MESSAGE,
+  EMAIL_RESEND_SUPPORT_MESSAGE,
+  EMAIL_RESEND_SUPPORT_TITLE,
+  EMAIL_VERIFICATION_SENT_MESSAGE,
+  ERROR_CODES,
+} from '@lfx-one/shared/constants';
+import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail, VerifyAndLinkEmailResponse } from '@lfx-one/shared/interfaces';
+import { buildLinkedEmailSupportMessage } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountSettingsComponent } from './account-settings.component';
 
@@ -186,7 +202,7 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
 
 /**
  * Guards the client-side meeting-invite selection and delete-guard invariants (Copilot review,
- * PR #1073): the primary row sends the reset sentinel, a write-in-flight blocks a second
+ * PR #1073): the primary row pins its literal address (#3983), a write-in-flight blocks a second
  * selection, both error paths surface to the right UI element, and delete stays blocked whenever
  * the target is (or might be, on a failed lookup) the current meeting-invite address.
  */
@@ -238,13 +254,13 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     return fixture;
   }
 
-  it('sends the reset sentinel when the primary row is selected while an override is active', async () => {
+  it('pins the literal primary address, not the sentinel, when the primary row is selected (#3983)', async () => {
     const userServiceMock = makeUserServiceMock({ invite: { email_id: 'id-1', email: ALT_EMAIL.email } });
     const fixture = await setup(userServiceMock);
 
     fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
 
-    expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(MEETING_INVITE_PRIMARY_SENTINEL);
+    expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(PRIMARY_EMAIL.email);
   });
 
   it('sends the literal address when a non-primary row is selected', async () => {
@@ -254,6 +270,76 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     fixture.componentInstance.setMeetingInvite(ALT_EMAIL);
 
     expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(ALT_EMAIL.email);
+  });
+
+  describe('badge and primary-row action (#3559)', () => {
+    function rowFor(fixture: ComponentFixture<AccountSettingsComponent>, address: string) {
+      return fixture.componentInstance.emailsWithMetadata().find((e) => e.email === address)!;
+    }
+
+    function menuLabelsFor(fixture: ComponentFixture<AccountSettingsComponent>, address: string): (string | undefined)[] {
+      return (fixture.componentInstance.menuItemsMap().get(address) ?? []).map((item) => item.label);
+    }
+
+    it('badges the primary row and offers it no invite action while no override is set', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: null, email: null } }));
+
+      expect(rowFor(fixture, PRIMARY_EMAIL.email).isMeetingInvite).toBe(true);
+      expect(rowFor(fixture, ALT_EMAIL.email).isMeetingInvite).toBe(false);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).not.toContain('Use for Meeting Invitations');
+      expect(menuLabelsFor(fixture, ALT_EMAIL.email)).toContain('Use for Meeting Invitations');
+    });
+
+    it('badges the primary row when the override is pinned to the primary address', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: ' PRIMARY@example.com ' } }));
+
+      expect(rowFor(fixture, PRIMARY_EMAIL.email).isMeetingInvite).toBe(true);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).not.toContain('Use for Meeting Invitations');
+      expect(fixture.componentInstance.orphanedInviteEmail()).toBeNull();
+    });
+
+    it('moves the badge to the overriding row and offers the primary the same invite action', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: ALT_EMAIL.email } }));
+
+      expect(rowFor(fixture, PRIMARY_EMAIL.email).isMeetingInvite).toBe(false);
+      expect(rowFor(fixture, ALT_EMAIL.email).isMeetingInvite).toBe(true);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).not.toContain('Reset to Default (Primary Email)');
+    });
+
+    it('treats re-picking the primary as a no-op while it already receives invitations', async () => {
+      const userServiceMock = makeUserServiceMock({ invite: { email_id: 'id-1', email: PRIMARY_EMAIL.email } });
+      const fixture = await setup(userServiceMock);
+
+      fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
+
+      expect(userServiceMock['setMeetingInviteEmail']).not.toHaveBeenCalled();
+    });
+
+    it('badges no row and flags the load failure when the invite lookup failed', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: 'error' }));
+
+      expect(fixture.componentInstance.meetingInviteLoadFailed()).toBe(true);
+      expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
+    });
+
+    it('lets the primary row pin itself after a failed lookup instead of silently no-oping', async () => {
+      const userServiceMock = makeUserServiceMock({ invite: 'error' });
+      const fixture = await setup(userServiceMock);
+
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
+      fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
+
+      expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(PRIMARY_EMAIL.email);
+    });
+
+    it('surfaces an override that matches none of the listed addresses', async () => {
+      const fixture = await setup(makeUserServiceMock({ invite: { email_id: 'id-1', email: 'unlisted@example.com' } }));
+
+      expect(fixture.componentInstance.orphanedInviteEmail()).toBe('unlisted@example.com');
+      expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
+      expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
+    });
   });
 
   it('blocks a second selection while the first write is still in flight', async () => {
@@ -365,6 +451,31 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
   });
 
+  // A primary change is blocked when the invite email couldn't be pinned first (#3983); the reason
+  // must reach the user rather than a generic failure, for both the retryable and the rejected case.
+  it.each([
+    ['a retryable 503 advisory', 503, ERROR_CODES.SERVICE_ADVISORY, "Your primary email wasn't changed. Please try again in a few minutes."],
+    [
+      'a rejected-pin 400',
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      "Your primary email wasn't changed. Choose a different address for meeting invitations in Settings.",
+    ],
+  ])('shows why a primary change was blocked by %s', async (_label, status, code, guidance) => {
+    const userServiceMock = makeUserServiceMock();
+    userServiceMock['setPrimaryEmail'] = vi.fn(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({ status, error: { error: guidance, code, errors: [{ field: 'email', message: guidance, code: 'FIELD_VALIDATION_ERROR' }] } })
+      )
+    );
+    const fixture = await setup(userServiceMock);
+
+    fixture.componentInstance.setPrimary(ALT_EMAIL);
+
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
+  });
+
   it('fails closed and skips the delete flow entirely when the invite lookup itself failed', async () => {
     const rejectIdentity = vi.fn(() => of({ success: true }));
     const userServiceMock = makeUserServiceMock({ invite: 'error', rejectIdentity });
@@ -430,5 +541,486 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     await fixture.whenStable();
 
     expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Failed to delete email address' }));
+  });
+});
+
+describe('AccountSettingsComponent — email verification support', () => {
+  it('makes support reachable in the OTP step after a generic successful send', async () => {
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(() => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        // Skip unrelated browser scroll observers while rendering the real form and template.
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).toBeNull();
+
+    const emailInput = root.querySelector<HTMLInputElement>('[data-testid="add-email-input"] input')!;
+    emailInput.value = 'new-address@example.test';
+    emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+    fixture.detectChanges();
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="send-code-button"] button')?.disabled).toBe(false);
+
+    root.querySelector<HTMLFormElement>('[data-testid="add-email-form"]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const otpStep = root.querySelector('[data-testid="otp-step"]')!;
+    expect(otpStep.querySelector('[data-testid="otp-input"] input')).not.toBeNull();
+    const supportButton = otpStep.querySelector<HTMLButtonElement>('[data-testid="otp-support-hint"] [data-testid="otp-support-button"]');
+    expect(supportButton?.disabled).toBe(false);
+    expect(root.querySelector('[data-testid="add-email-form"]')).toBeNull();
+  });
+});
+
+describe('AccountSettingsComponent — resend escalation (#4695)', () => {
+  const normalizedText = (element: Element | null): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  async function setup(
+    send: () => Observable<SendEmailVerificationResponse> = () => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })
+  ) {
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(send),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    component.addEmailForm.setValue({ email: 'new-address@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    return { component, userServiceMock, fixture, root: fixture.nativeElement as HTMLElement };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('words the complete email flow conditionally before and after a generic successful send', async () => {
+    const response$ = new Subject<SendEmailVerificationResponse>();
+    const { component, fixture, root } = await setup(() => response$);
+
+    expect(component.otpStep()).toBe(false);
+    expect(normalizedText(root)).toContain("If this address can be added to your account, we'll send a 6-digit verification code to it.");
+    expect(normalizedText(root)).not.toContain('A 6-digit verification code will be sent to the new address');
+
+    response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
+    response$.complete();
+    fixture.detectChanges();
+
+    expect(component.otpStep()).toBe(true);
+    const otpStep = root.querySelector('[data-testid="otp-step"]');
+    expect(normalizedText(otpStep)).toContain('If this address can be added to your account, a 6-digit code has been sent to new-address@example.test');
+    expect(normalizedText(otpStep)).not.toContain("we'll send a 6-digit code");
+    expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
+    expect(normalizedText(root.querySelector('[data-testid="otp-support-hint"]'))).toContain(EMAIL_CODE_NOT_RECEIVED_TITLE);
+    expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
+  });
+
+  it('replaces Resend with Contact support after the first successful resend', async () => {
+    vi.useFakeTimers();
+    const { component, fixture, root } = await setup();
+    expect(component.showResendSupport()).toBe(false);
+
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    expect(component.resendCount()).toBe(1);
+    expect(component.showResendSupport()).toBe(true);
+    const callout = root.querySelector('[data-testid="resend-support-callout"]');
+    expect(callout).not.toBeNull();
+    expect(callout?.querySelector('[data-testid="resend-support-button"]')?.hasAttribute('lfxOpenIntercom')).toBe(true);
+    expect(root.querySelector('button[data-testid="resend-code-link"]')).toBeNull();
+    expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_TITLE);
+    expect(normalizedText(callout)).toContain(EMAIL_RESEND_SUPPORT_MESSAGE);
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).toBeNull();
+    expect(root.querySelector('[data-testid="otp-input"]')).not.toBeNull();
+    expect(normalizedText(root)).not.toContain('a few minutes');
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    expect(component.resendCount()).toBe(1);
+  });
+
+  it.each([false, true])('shows a retryable error for a failed resend (HTTP error: %s)', async (httpError) => {
+    vi.useFakeTimers();
+    const { component, fixture, root, userServiceMock } = await setup();
+    const add = vi.spyOn(fixture.debugElement.injector.get(MessageService), 'add');
+    const response$ = new Subject<SendEmailVerificationResponse>();
+    userServiceMock.sendEmailVerificationCode.mockReturnValue(response$);
+
+    const button = root.querySelector('[data-testid="resend-code-link"]') as HTMLButtonElement;
+    expect(normalizedText(button)).toBe('Resend code in 60s');
+    expect(button.disabled).toBe(true);
+    component.sendVerificationCode();
+    expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(60_000);
+    fixture.detectChanges();
+    button.click();
+    component.sendVerificationCode();
+    fixture.detectChanges();
+
+    expect(normalizedText(button)).toBe('Requesting code…');
+    expect(button.disabled).toBe(true);
+    expect(userServiceMock.sendEmailVerificationCode).toHaveBeenCalledTimes(2);
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="change-email-button"] button')?.disabled).toBe(true);
+    component.changeEmail();
+    expect(component.otpStep()).toBe(true);
+
+    if (httpError) {
+      response$.error(new HttpErrorResponse({ status: 500, error: { message: 'Internal error' } }));
+    } else {
+      response$.next({ success: false, message: 'Internal error' });
+      response$.complete();
+    }
+    fixture.detectChanges();
+
+    expect(add).toHaveBeenLastCalledWith({ severity: 'error', summary: 'Error', detail: EMAIL_RESEND_FAILED_MESSAGE });
+    expect(component.resendCount()).toBe(0);
+    expect(button.disabled).toBe(false);
+    expect(normalizedText(button)).toBe('Resend code');
+    userServiceMock.sendEmailVerificationCode.mockReturnValue(of<SendEmailVerificationResponse>({ success: true }));
+    button.click();
+    fixture.detectChanges();
+    expect(component.showResendSupport()).toBe(true);
+  });
+
+  it('lets users change the address after escalation and starts the new address fresh', async () => {
+    vi.useFakeTimers();
+    const { component, fixture, root, userServiceMock } = await setup();
+    vi.advanceTimersByTime(60_000);
+    component.sendVerificationCode();
+    component.otpForm.setValue({ otp: '123456' });
+    fixture.detectChanges();
+    expect(component.resendCount()).toBe(1);
+
+    (root.querySelector('[data-testid="change-email-button"] button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.otpStep()).toBe(false);
+    expect(component.pendingEmail()).toBe('');
+    expect(component.otpForm.controls.otp.value).toBeNull();
+    expect(component.resendCount()).toBe(0);
+    expect(root.querySelector('[data-testid="otp-step"]')).toBeNull();
+    expect(root.querySelector('[data-testid="add-email-form"]')).not.toBeNull();
+
+    component.addEmailForm.setValue({ email: 'another@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+    expect(userServiceMock.sendEmailVerificationCode).toHaveBeenLastCalledWith('another@example.test');
+    expect(component.pendingEmail()).toBe('another@example.test');
+    expect(component.resendCount()).toBe(0);
+    expect(component.resendCooldown()).toBe(60);
+  });
+
+  it('keeps the pending address while verification is in progress', async () => {
+    const { component, fixture, root } = await setup();
+    component.verifyingOtp.set(true);
+    fixture.detectChanges();
+    expect(root.querySelector<HTMLButtonElement>('[data-testid="change-email-button"] button')?.disabled).toBe(true);
+    component.changeEmail();
+    expect(component.pendingEmail()).toBe('new-address@example.test');
+    expect(component.otpStep()).toBe(true);
+    component.verifyingOtp.set(false);
+  });
+});
+
+/**
+ * Guards #4253: auth-service reports an address already connected to the caller as a token-free
+ * success, which the BFF returns as `status: 'already_connected'`. The settings form must say so
+ * instead of claiming a new address was added, while keeping its reset/refresh sequence.
+ */
+describe('AccountSettingsComponent — verify and link outcome (#4253)', () => {
+  async function setup(verify: () => Observable<VerifyAndLinkEmailResponse>) {
+    const add = vi.fn();
+    const userServiceMock = {
+      impersonating: signal(true), // skips the developer-token fetch — irrelevant to this suite
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      verifyAndLinkEmail: vi.fn(verify),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        // Server platform: the authorization redirect is a no-op, so the 403 branch can be observed.
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: ConfirmationService, useValue: {} },
+        { provide: MessageService, useValue: { add } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    // providers: [] — see the note in the first suite.
+    TestBed.overrideComponent(AccountSettingsComponent, { set: { template: '', imports: [], providers: [] } });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const component = fixture.componentInstance;
+    component.otpStep.set(true);
+    component.pendingEmail.set('owned@example.test');
+    component.otpForm.setValue({ otp: '123456' });
+
+    return { component, add, userServiceMock };
+  }
+
+  it('confirms an already-connected address without claiming it was added, then resets and refreshes', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      of<VerifyAndLinkEmailResponse>({ success: true, status: 'already_connected', message: EMAIL_ALREADY_CONNECTED_MESSAGE })
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(userServiceMock.verifyAndLinkEmail).toHaveBeenCalledExactlyOnceWith('owned@example.test', '123456');
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Success', detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+    expect(component.otpStep()).toBe(false);
+    expect(component.pendingEmail()).toBe('');
+    expect(component.otpForm.value.otp).toBeNull();
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore + 1);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+
+  it('keeps the new-address copy for an ordinary link', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      of<VerifyAndLinkEmailResponse>({ success: true, message: 'Email identity verified and linked successfully' })
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Success', detail: 'Email address added successfully' });
+    expect(component.otpStep()).toBe(false);
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore + 1);
+  });
+
+  it('hands off to authorization without a toast or reset when the management token is missing', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 403,
+            error: { success: false, error: 'management_token_required', authorize_url: '/api/profile/auth/start?returnTo=%2Fprofile%2Femails' },
+          })
+      )
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).not.toHaveBeenCalled();
+    expect(component.otpStep()).toBe(true);
+    expect(component.pendingEmail()).toBe('owned@example.test');
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+
+  it('keeps the OTP step open with the server message on a failed verification so the user can retry', async () => {
+    const { component, add } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again or request a new code.' },
+          })
+      )
+    );
+
+    component.verifyAndLink();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Verification failed. Please try again or request a new code.',
+    });
+    expect(component.otpStep()).toBe(true);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+
+  // #5459: a correct code for an address linked to an LFX account returns a fixed 409 — it must read as
+  // already-linked guidance, never as success, and leave the pending address in place. #5511 moves that
+  // guidance from an error toast to the code-step support callout.
+  it('shows the already-linked guidance on a proven conflict without claiming success, resetting or refreshing', async () => {
+    const { component, add, userServiceMock } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 409,
+            error: { success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE },
+          })
+      )
+    );
+    const loadsBefore = userServiceMock.getUserEmails.mock.calls.length;
+
+    component.verifyAndLink();
+
+    expect(add).not.toHaveBeenCalled();
+    expect(component.linkedConflict()).toBe(true);
+    expect(component.otpStep()).toBe(true);
+    expect(component.pendingEmail()).toBe('owned@example.test');
+    expect(userServiceMock.getUserEmails.mock.calls.length).toBe(loadsBefore);
+    expect(component.verifyingOtp()).toBe(false);
+  });
+});
+
+/**
+ * Guards #5511: a proven already-linked conflict replaces the code step's support hints with an
+ * "Email already linked" callout whose Contact support button opens a chat pre-filled with the
+ * pending address. Wrong or expired codes keep the generic error toast and get no callout.
+ */
+describe('AccountSettingsComponent — linked email support callout (#5511)', () => {
+  const pendingAddress = 'new-address@example.test';
+  const normalizedText = (element: Element | null): string => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+  async function setup(verify: () => Observable<VerifyAndLinkEmailResponse>) {
+    const openMessenger = vi.fn();
+    const userServiceMock = {
+      impersonating: signal(false),
+      getUserEmails: vi.fn(() => of<EmailManagementData>({ primary_email: 'primary@example.test', alternate_emails: [] })),
+      getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+      getDeveloperTokenInfo: vi.fn(() => of({ token: '' })),
+      sendEmailVerificationCode: vi.fn(() => of<SendEmailVerificationResponse>({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE })),
+      verifyAndLinkEmail: vi.fn(verify),
+    };
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AccountSettingsComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: 'server' },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} }, fragment: of(null) } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: IntercomService, useValue: { openMessenger } },
+      ],
+    });
+    TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+
+    const fixture = TestBed.createComponent(AccountSettingsComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const component = fixture.componentInstance;
+    // The component provides its own MessageService; spy on that instance.
+    const add = vi.spyOn(fixture.debugElement.injector.get(MessageService), 'add');
+
+    component.addEmailForm.setValue({ email: pendingAddress });
+    component.sendVerificationCode();
+    component.otpForm.setValue({ otp: '123456' });
+    fixture.detectChanges();
+
+    return { component, fixture, add, openMessenger, userServiceMock, root: fixture.nativeElement as HTMLElement };
+  }
+
+  const linkedConflict = () =>
+    throwError(() => new HttpErrorResponse({ status: 409, error: { success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE } }));
+
+  it('shows the callout instead of a toast and opens a support chat pre-filled with the pending address', async () => {
+    const { component, fixture, add, openMessenger, root } = await setup(linkedConflict);
+
+    component.verifyAndLink();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const callout = root.querySelector('[data-testid="linked-email-support-callout"]');
+    expect(callout?.getAttribute('role')).toBe('alert');
+    expect(normalizedText(callout)).toContain(EMAIL_LINKED_SUPPORT_TITLE);
+    expect(normalizedText(callout)).toContain(EMAIL_ALREADY_LINKED_MESSAGE);
+    expect(add).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).toBeNull();
+    expect(root.querySelector('[data-testid="resend-support-callout"]')).toBeNull();
+
+    root.querySelector<HTMLButtonElement>('[data-testid="linked-email-support-button"] button')!.click();
+
+    expect(openMessenger).toHaveBeenCalledExactlyOnceWith('test-app-id', expect.any(Function), buildLinkedEmailSupportMessage(pendingAddress));
+  });
+
+  it('keeps the error toast and shows no callout for a wrong or expired code', async () => {
+    const { component, fixture, add, root } = await setup(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 400,
+            error: { success: false, error: 'verification_failed', message: 'Verification failed. Please try again or request a new code.' },
+          })
+      )
+    );
+
+    component.verifyAndLink();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'error',
+      summary: 'Error',
+      detail: 'Verification failed. Please try again or request a new code.',
+    });
+    expect(component.linkedConflict()).toBe(false);
+    expect(root.querySelector('[data-testid="linked-email-support-callout"]')).toBeNull();
+    expect(root.querySelector('[data-testid="otp-support-hint"]')).not.toBeNull();
+  });
+
+  it('clears the callout when the code step is cancelled or a new code is sent', async () => {
+    const { component, fixture, root } = await setup(linkedConflict);
+
+    component.verifyAndLink();
+    expect(component.linkedConflict()).toBe(true);
+    component.cancelOtpStep();
+    expect(component.linkedConflict()).toBe(false);
+
+    component.addEmailForm.setValue({ email: pendingAddress });
+    component.sendVerificationCode();
+    component.otpForm.setValue({ otp: '123456' });
+    component.verifyAndLink();
+    expect(component.linkedConflict()).toBe(true);
+    // A fresh send for another address (the initial send path) clears the conflict.
+    component.otpStep.set(false);
+    component.addEmailForm.setValue({ email: 'other-address@example.test' });
+    component.sendVerificationCode();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.linkedConflict()).toBe(false);
+    expect(root.querySelector('[data-testid="linked-email-support-callout"]')).toBeNull();
   });
 });

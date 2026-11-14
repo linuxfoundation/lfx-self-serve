@@ -9,9 +9,7 @@ import {
   ALLOWED_ORG_LOGO_MIME_TYPES,
   INDUSTRY_OPTIONS,
   LOGO_REJECTION_STATUSES,
-  MAX_ORG_LOGO_DIMENSION_PX,
   MAX_ORG_LOGO_SIZE_BYTES,
-  MIN_ORG_LOGO_DIMENSION_PX,
   ORG_DESCRIPTION_MAX_LENGTH,
   SECTOR_OPTIONS,
 } from '@lfx-one/shared/constants';
@@ -28,7 +26,6 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { finalize } from 'rxjs';
 
-import { InitialsPipe } from '@pipes/initials.pipe';
 import { OrgProfileService } from '@services/org-profile.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
@@ -45,7 +42,6 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
     TextareaModule,
     ToastModule,
     TooltipModule,
-    InitialsPipe,
     OpenIntercomDirective,
   ],
   providers: [MessageService],
@@ -91,7 +87,7 @@ export class OrgProfileEditComponent implements OnInit {
   /** Overrides `record().logoUrl` after a successful upload so the preview updates without waiting on the parent's own record refresh. */
   protected readonly logoUrl = signal<string | null>(null);
 
-  /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (CLAUDE.md "No functions in HTML templates"). */
+  /** Per-field touched-and-invalid flags — keep `form.get(...)` out of the template (docs/reviews/frontend-checklist.md "No template functions"). */
   protected readonly descriptionInvalid = signal(false);
   protected readonly employeesInvalid = signal(false);
   protected readonly crunchbaseInvalid = signal(false);
@@ -248,7 +244,7 @@ export class OrgProfileEditComponent implements OnInit {
 
   private handleLogoFile(file: File): void {
     if (!(ALLOWED_ORG_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
-      this.messageService.add({ severity: 'error', summary: 'Logo rejected', detail: 'Please choose a PNG, JPEG, or SVG image.' });
+      this.messageService.add({ severity: 'error', summary: 'Logo rejected', detail: 'Please choose an SVG image.' });
       return;
     }
     if (file.size > MAX_ORG_LOGO_SIZE_BYTES) {
@@ -256,40 +252,7 @@ export class OrgProfileEditComponent implements OnInit {
       return;
     }
 
-    // Fire concurrently, not sequentially: the dimension check is advisory-only, so the upload
-    // must not wait on it — chaining it in front would turn a "non-blocking" warning into a
-    // delay on every upload. A decode failure here is swallowed; it's just a missed warning.
-    this.warnIfDimensionsOutOfRange(file).catch(() => undefined);
     this.uploadLogoFile(file);
-  }
-
-  /** Non-blocking dimension warnings (LFXV2-3288): under MIN, may look blurry; over MAX, member-service
-   * will downscale it server-side (`MaxLogoDimensionPx`, `pkg/constants/logo.go`) — told upfront so the
-   * shrink isn't a surprise. SVG is vector (no fixed pixel dimensions), so it's skipped entirely. */
-  private async warnIfDimensionsOutOfRange(file: File): Promise<void> {
-    if (file.type === 'image/svg+xml') return;
-
-    const bitmap = await createImageBitmap(file);
-    const { width, height } = bitmap;
-    bitmap.close();
-
-    if (width < MIN_ORG_LOGO_DIMENSION_PX || height < MIN_ORG_LOGO_DIMENSION_PX) {
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Small image',
-        detail: `This logo is ${width}×${height}px. Images under ${MIN_ORG_LOGO_DIMENSION_PX}px may look blurry.`,
-        life: 6000,
-      });
-      return;
-    }
-    if (width > MAX_ORG_LOGO_DIMENSION_PX || height > MAX_ORG_LOGO_DIMENSION_PX) {
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Large image',
-        detail: `This logo is ${width}×${height}px and will be resized down to fit within ${MAX_ORG_LOGO_DIMENSION_PX}px.`,
-        life: 6000,
-      });
-    }
   }
 
   private uploadLogoFile(file: File): void {

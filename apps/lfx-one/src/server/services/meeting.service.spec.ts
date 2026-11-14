@@ -1,22 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
 import type {
   CreateMeetingRegistrantRequest,
   Meeting,
+  MeetingAttachment,
   MeetingRegistrant,
   MeetingRsvp,
   MeetingUserInfo,
+  PastMeetingParticipant,
   QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
 } from '@lfx-one/shared/interfaces';
+import type * as RsvpCalculator from '@lfx-one/shared/utils/rsvp-calculator.util';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // This app's vitest config resolves plain Node modules only — the `@lfx-one/shared/*` tsconfig
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc, getUserVerifiedEmails } = vi.hoisted(() => ({
+  getUserVerifiedEmails: vi.fn(),
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
@@ -42,14 +47,14 @@ vi.mock('@lfx-one/shared/utils', async () => ({
     const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
     return meaningful.length === 0;
   }),
-  mapITXResponseToMeetingRsvp: vi.fn(),
+  mapITXResponseToMeetingRsvp: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
   selectPrimaryPastMeetingSummary: vi.fn(),
-  // getMeetingRsvps / getMeetingRegistrants(includeRsvp) delegate occurrence selection to the real
-  // resolver — stubbed here to the "most recent rsvp" since these tests cover roster/page-walk
-  // dedup, not the LFXV2-2864 occurrence-scoping logic (covered in meeting-rsvp.helper.spec.ts).
-  selectApplicableRsvp: vi.fn((_occurrenceId: string | undefined, rsvps: unknown[]) => rsvps[rsvps.length - 1] ?? null),
+  // Exercise the actual occurrence resolver with the real roster/page-walk path.
+  selectApplicableRsvp: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).selectApplicableRsvp,
+  // The real unit-normalising comparison: a registrant row and the client can hold the same occurrence in seconds vs milliseconds.
+  isSameOccurrenceId: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 vi.mock('../helpers/poll-endpoint.helper', () => ({
   pollEndpoint: vi.fn(async ({ pollFn }: { pollFn: () => Promise<boolean> }) => {
@@ -74,12 +79,18 @@ vi.mock('./committee.service', () => ({
   }),
 }));
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
+vi.mock('./user-verified-emails.service', () => ({
+  UserVerifiedEmailsService: vi.fn(function () {
+    return { getUserVerifiedEmails };
+  }),
+}));
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: vi.fn(),
   getEffectiveUsername: vi.fn(),
   getUsernameFromAuth: vi.fn(),
   stripAuthPrefix: (v: string) => v,
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn(async () => 'm2m-token') }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -88,7 +99,9 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
-import { getUsernameFromAuth } from '../utils/auth-helper';
+import { ResourceNotFoundError } from '../errors';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getPastMeetingTranscriptUrl } from '@lfx-one/shared/utils';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -198,6 +211,43 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     // First chunk resolved; second chunk failed and was skipped rather than throwing.
     expect(result.size).toBe(50);
     expect(result.has('m50')).toBe(false);
+  });
+
+  it('stops a chunk on a repeated page_token and keeps the rows already mapped (#4964)', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ ...pageOf([{ id: 'a', created_by: human('a') }]), page_token: 'same' })
+      .mockResolvedValue({ ...pageOf([{ id: 'b', created_by: human('b') }]), page_token: 'same' });
+
+    const result = await service.resolveCreatedByForMeetings(req, ['a', 'b']);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(result.get('a')).toEqual({ created_by: human('a') });
+    expect(result.get('b')).toEqual({ created_by: human('b') });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'resolve_created_by_for_meetings',
+      'Pagination stopped early for a chunk',
+      expect.objectContaining({ page: 2, reason: 'repeated_page_token' })
+    );
+  });
+
+  it('stops a chunk after QUERY_SERVICE_MAX_PAGES proxy calls of always-fresh tokens (#4964)', async () => {
+    let calls = 0;
+    proxyRequest.mockImplementation(async () => {
+      calls++;
+      return { ...pageOf([{ id: 'a', created_by: human('a') }]), page_token: `token-${calls}` };
+    });
+
+    const result = await service.resolveCreatedByForMeetings(req, ['a']);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(QUERY_SERVICE_MAX_PAGES);
+    expect(result.get('a')).toEqual({ created_by: human('a') });
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'resolve_created_by_for_meetings',
+      'Pagination stopped early for a chunk',
+      expect.objectContaining({ page: QUERY_SERVICE_MAX_PAGES, reason: 'max_pages' })
+    );
   });
 });
 
@@ -422,6 +472,340 @@ describe('MeetingService.addMeetingRegistrantSelf', () => {
   });
 });
 
+describe('MeetingService.removeMeetingRegistrantSelf', () => {
+  let service: MeetingService;
+
+  const registrantRow = (uid: string, type: 'direct' | 'committee'): MeetingRegistrant => ({ uid, type }) as MeetingRegistrant;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('deletes the caller registrant through the self endpoint with the registrant_id query param', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const removed = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(removed).toEqual({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method, query] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/meetings/mtg-1/registrants/self');
+    expect(method).toBe('DELETE');
+    expect(query).toEqual({ registrant_id: 'reg-1' });
+  });
+
+  it('looks the registrants up under the supplied M2M token and requires a complete result', async () => {
+    const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true);
+  });
+
+  it('removes a committee row together with a direct one', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee'), registrantRow('reg-d', 'direct')]);
+    proxyRequest.mockResolvedValue(undefined);
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-c', 'reg-d'], remaining_registrant_ids: [] });
+    expect(proxyRequest.mock.calls.map((call) => call[4])).toEqual([{ registrant_id: 'reg-c' }, { registrant_id: 'reg-d' }]);
+  });
+
+  it.each([true, false])('returns exact removed and remaining IDs when the first delete succeeds: %s', async (firstSucceeds) => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    if (firstSucceeds) {
+      proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('upstream down'));
+    } else {
+      proxyRequest.mockRejectedValueOnce(new Error('upstream down')).mockResolvedValueOnce(undefined);
+    }
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({
+      removed_registrant_ids: [firstSucceeds ? 'reg-1' : 'reg-2'],
+      remaining_registrant_ids: [firstSucceeds ? 'reg-2' : 'reg-1'],
+      remaining_rsvps: [],
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('recovers only the surviving registration raw history using the user-token query path', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    const survivor = {
+      id: 'survivor-all',
+      meeting_id: 'mtg-1',
+      registrant_id: 'reg-2',
+      username: 'alice',
+      email: 'alice@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+      modified_at: '2026-01-02T00:00:00Z',
+    } as MeetingRsvp;
+    const scoped = {
+      ...survivor,
+      id: 'survivor-single',
+      response_type: 'declined',
+      scope: 'single',
+      occurrence_id: '1791930600',
+      created_at: '2026-02-01T00:00:00Z',
+      modified_at: '2026-02-02T00:00:00Z',
+    } as MeetingRsvp;
+    const staleDeleted = { ...survivor, id: 'deleted-newest', registrant_id: 'reg-1', modified_at: '2026-03-01T00:00:00Z' };
+    const otherPerson = { ...survivor, id: 'other-person', registrant_id: 'reg-other', username: 'bob', email: 'bob@example.com' };
+    const otherMeeting = { ...survivor, id: 'other-meeting', meeting_id: 'mtg-other' };
+    proxyRequest
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('delete failed'))
+      .mockResolvedValueOnce({ resources: [staleDeleted, survivor, scoped, otherPerson, otherMeeting].map((rsvp) => ({ id: rsvp.id, data: rsvp })) });
+    const history = vi.spyOn(service, 'getRawMeetingRsvps');
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: ['reg-2'], remaining_rsvps: [survivor, scoped] });
+    expect(history).toHaveBeenCalledWith(req, 'mtg-1', undefined, true);
+    expect(proxyRequest.mock.calls[2]).toEqual([
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { tags: 'meeting_id:mtg-1', type: 'v1_meeting_rsvp', page_size: 1000 },
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('preserves partial deletion outcomes and omits history when the history query fails', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    const historyError = new Error('history unavailable');
+    proxyRequest.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('delete failed')).mockRejectedValueOnce(historyError);
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: ['reg-2'] });
+    expect(result).not.toHaveProperty('remaining_rsvps');
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'remove_meeting_registrant_self',
+      'Failed to fetch remaining registration RSVP history after partial removal',
+      { meeting_id: 'mtg-1', err: historyError }
+    );
+  });
+
+  it('returns all successful registrant IDs when multiple registrations are removed', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    proxyRequest.mockResolvedValue(undefined);
+    const history = vi.spyOn(service, 'getRawMeetingRsvps');
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-1', 'reg-2'], remaining_registrant_ids: [] });
+    expect(history).not.toHaveBeenCalled();
+  });
+
+  it('fails when none of the rows could be removed', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct'), registrantRow('reg-2', 'direct')]);
+    proxyRequest.mockRejectedValue(new Error('upstream down'));
+    const history = vi.spyOn(service, 'getRawMeetingRsvps');
+
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream down');
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(history).not.toHaveBeenCalled();
+  });
+
+  it('removes a registration that came only from a committee', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-c'], remaining_registrant_ids: [] });
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ registrant_id: 'reg-c' });
+  });
+
+  it('throws not found when the caller is not a registrant, without calling upstream', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([]);
+
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token')).rejects.toMatchObject({ statusCode: 404 });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockRejectedValueOnce(new Error('upstream down'));
+
+    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream down');
+  });
+});
+
+describe('MeetingService.resendMeetingInvitationSelf', () => {
+  let service: MeetingService;
+
+  // Real occurrence ids are epoch timestamps (Unix seconds from Zoom/ITX), a week apart; the comparison parses them as such.
+  const OCC_A = '1893456000';
+  const OCC_B = '1894060800';
+  const OCC_C = '1894665600';
+
+  const registrantRow = (uid: string, type: 'direct' | 'committee', occurrenceId: string | null = null): MeetingRegistrant =>
+    ({ uid, type, occurrence_id: occurrenceId }) as MeetingRegistrant;
+
+  const resendTarget = (rows: MeetingRegistrant[], occurrenceId?: string): Promise<string> => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce(rows);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    return service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', occurrenceId);
+  };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  describe('choosing the registration for the viewed occurrence', () => {
+    it('sends a series-wide committee row when the direct row is scoped to a different occurrence', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', OCC_A), registrantRow('reg-committee-series', 'committee')], OCC_B);
+
+      expect(registrantId).toBe('reg-committee-series');
+      expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/reg-committee-series/self_resend');
+    });
+
+    it.each([
+      ['a registrant row in milliseconds, viewed in seconds', '1893456000000', '1893456000'],
+      ['a registrant row in seconds, viewed in milliseconds', '1893456000', '1893456000000'],
+      ['the same unit on both sides', '1893456000', '1893456000'],
+    ])('matches the scoped row across occurrence id units: %s', async (_label, rowOccurrenceId, viewedOccurrenceId) => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-direct-series', 'direct'), registrantRow('reg-committee-scoped', 'committee', rowOccurrenceId)],
+        viewedOccurrenceId
+      );
+
+      expect(registrantId).toBe('reg-committee-scoped');
+    });
+
+    it('does not match a row scoped to a different instant, whatever the units', async () => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-direct-series', 'direct'), registrantRow('reg-committee-other', 'committee', '1894060800000')],
+        '1893456000'
+      );
+
+      expect(registrantId).toBe('reg-direct-series');
+    });
+
+    it('prefers the row scoped to the viewed occurrence over a series-wide row', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-series', 'direct'), registrantRow('reg-scoped-b', 'committee', OCC_B)], OCC_B);
+
+      expect(registrantId).toBe('reg-scoped-b');
+    });
+
+    it('prefers a direct row over a committee row within the rows that fit', async () => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-committee-b', 'committee', OCC_B), registrantRow('reg-direct-b', 'direct', OCC_B), registrantRow('reg-direct-series', 'direct')],
+        OCC_B
+      );
+
+      expect(registrantId).toBe('reg-direct-b');
+    });
+
+    it('prefers a series-wide row when no occurrence is given', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', OCC_A), registrantRow('reg-committee-series', 'committee')]);
+
+      expect(registrantId).toBe('reg-committee-series');
+    });
+
+    it.each([undefined, ''])('treats an occurrence of %j as none', async (occurrenceId) => {
+      const registrantId = await resendTarget([registrantRow('reg-scoped-a', 'direct', OCC_A), registrantRow('reg-series', 'direct')], occurrenceId);
+
+      expect(registrantId).toBe('reg-series');
+    });
+
+    it('still resends, to the direct row, when no row fits the viewed occurrence', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-committee-a', 'committee', OCC_A), registrantRow('reg-direct-c', 'direct', OCC_C)], OCC_B);
+
+      expect(registrantId).toBe('reg-direct-c');
+    });
+
+    it('falls back to the first row when none fits and none is direct', async () => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-committee-a', 'committee', OCC_A), registrantRow('reg-committee-c', 'committee', OCC_C)],
+        OCC_B
+      );
+
+      expect(registrantId).toBe('reg-committee-a');
+    });
+  });
+
+  it('posts to the self_resend endpoint for the caller registrant and returns its id', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const registrantId = await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(registrantId).toBe('reg-1');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/meetings/mtg-1/registrants/reg-1/self_resend');
+    expect(method).toBe('POST');
+  });
+
+  it('looks the registrant up under the M2M token but sends the resend without a token override', async () => {
+    const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+    // [req, service, path, method, query, body, headers]: nothing past the method, so upstream sees the user's own token
+    expect(proxyRequest.mock.calls[0].slice(4)).toEqual([]);
+  });
+
+  it('resends once, to the direct row, when the caller also has a committee row', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee'), registrantRow('reg-d', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const registrantId = await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(registrantId).toBe('reg-d');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/reg-d/self_resend');
+  });
+
+  it('falls back to the first row when the caller only has a committee row', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token')).resolves.toBe('reg-c');
+  });
+
+  it('throws not found without calling upstream when the caller has no registration', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([]);
+
+    await expect(service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toBeInstanceOf(ResourceNotFoundError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockRejectedValueOnce(new Error('upstream 403'));
+
+    await expect(service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream 403');
+  });
+
+  it('encodes a hostile registrant id rather than letting it alter the path', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('../x?y', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/..%2Fx%3Fy/self_resend');
+  });
+});
+
 describe('MeetingService.getMeetingRegistrantsByEmail', () => {
   let service: MeetingService;
 
@@ -437,6 +821,159 @@ describe('MeetingService.getMeetingRegistrantsByEmail', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
+  });
+
+  it('matches the stored casing or the lowercased copy', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [] });
+
+    await service.getMeetingRegistrantsByEmail(req, 'meeting-1', 'User@Example.com');
+
+    const [, , , , query] = proxyRequest.mock.calls[0];
+    expect(query.filters).toEqual(['meeting_id:meeting-1']);
+    expect(query.filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
+  });
+});
+
+describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
+  let service: MeetingService;
+  const registrantPage = (rows: Partial<MeetingRegistrant>[]) => ({
+    resources: rows.map((row) => ({ id: `v1_meeting_registrant:${row.uid}`, data: row })),
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    getUserVerifiedEmails.mockReset();
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: false });
+    service = new MeetingService();
+  });
+
+  it('matches the current user case-insensitively without resolving other emails', async () => {
+    proxyRequest.mockResolvedValueOnce(registrantPage([]));
+
+    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', 'User@Example.com', undefined, 'm2m');
+
+    expect(rows).toEqual([]);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
+    expect(getUserVerifiedEmails).not.toHaveBeenCalled();
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns nothing without querying when there is no email or username', async () => {
+    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', undefined, undefined);
+
+    expect(rows).toEqual([]);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('queries the other verified emails in one call', async () => {
+    getUserVerifiedEmails.mockResolvedValue({
+      emails: ['user@example.com', 'user+meetings@example.com', 'alt@example.org'],
+      preferenceEmail: null,
+      incomplete: false,
+    });
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'User@Example.com');
+
+    expect(result.registrants.map((row) => row.uid)).toEqual(['reg-2']);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , , , params] = proxyRequest.mock.calls[0];
+    expect(params).toMatchObject({
+      filters: ['meeting_id:m-1'],
+      filters_or: [
+        'email:user+meetings@example.com',
+        'case_insensitive_email:user+meetings@example.com',
+        'email:alt@example.org',
+        'case_insensitive_email:alt@example.org',
+      ],
+    });
+  });
+
+  it('skips the query when there are no other verified emails', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, incomplete: false });
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result).toEqual({ registrants: [], lookupFailed: false });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('orders matches by email priority', async () => {
+    getUserVerifiedEmails.mockResolvedValue({
+      emails: ['pref@example.com', 'alt@example.org'],
+      preferenceEmail: 'pref@example.com',
+      incomplete: false,
+    });
+    proxyRequest.mockResolvedValueOnce(
+      registrantPage([
+        { uid: 'reg-alt', email: 'alt@example.org' },
+        { uid: 'reg-pref', email: 'Pref@Example.com' },
+      ])
+    );
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', undefined);
+
+    expect(result.registrants.map((row) => row.uid)).toEqual(['reg-pref', 'reg-alt']);
+    expect(logger.info).toHaveBeenCalledWith(
+      req,
+      'get_meeting_registrants_by_verified_emails',
+      expect.any(String),
+      expect.objectContaining({ matched_source: 'meeting_invite_preference' })
+    );
+    expect(result.lookupFailed).toBe(false);
+  });
+
+  it('reports a failed lookup only when nothing matched', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: [], preferenceEmail: null, incomplete: true });
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result).toEqual({ registrants: [], lookupFailed: true });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not report a failed lookup when a partial lookup still matched', async () => {
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: true });
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
+
+    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
+
+    expect(result.lookupFailed).toBe(false);
+    expect(result.registrants).toHaveLength(1);
+  });
+
+  it('propagates a query-service failure', async () => {
+    proxyRequest.mockRejectedValue(Object.assign(new Error('boom'), { statusCode: 400 }));
+
+    await expect(service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', undefined)).rejects.toThrow('boom');
+  });
+});
+
+describe('MeetingService.getMeetingAttachments', () => {
+  let service: MeetingService;
+
+  const attachmentRecord = (id: string) => ({ id: `v1_meeting_attachment:${id}`, data: { uid: id, meeting_id: 'meeting-1' } as MeetingAttachment });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it("follows page_token so an occurrence's attachments on a later page are not lost", async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [attachmentRecord('other-date')], page_token: 'next' })
+      .mockResolvedValueOnce({ resources: [attachmentRecord('this-date')] });
+
+    const result = await service.getMeetingAttachments(req, 'meeting-1');
+
+    expect(result.map((a) => a.uid)).toEqual(['other-date', 'this-date']);
+    expect(proxyRequest.mock.calls[1][4]).toEqual({ type: 'v1_meeting_attachment', parent: 'meeting:meeting-1', page_token: 'next' });
+  });
+
+  it('rejects instead of returning a truncated list when a later page fails', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [attachmentRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
+
+    await expect(service.getMeetingAttachments(req, 'meeting-1')).rejects.toThrow('query service down');
   });
 });
 
@@ -513,6 +1050,43 @@ describe('MeetingService.getMeetingRegistrants', () => {
     const [, , , , , , , options] = proxyRequest.mock.calls[0];
     expect(options).toEqual({ bearerToken: 'm2m-token' });
   });
+
+  it.each(['single', 'this_and_following'] as const)(
+    'retains older all attendance and preview ahead of newer %s responses in an unresolved roster',
+    async (scope) => {
+      const { countRegistrantAttendance, buildAttendeePreviewFromRegistrants } = await import('@lfx-one/shared/utils/rsvp-calculator.util');
+      const all = { id: 'all-a', registrant_id: 'a', response_type: 'accepted', scope: 'all', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+      const scoped = {
+        ...all,
+        id: 'scoped-a',
+        scope,
+        response_type: 'declined',
+        occurrence_id: '4071031200000',
+        modified_at: '2026-02-01T00:00:00Z',
+      } as MeetingRsvp;
+      const scopedOnly = { ...scoped, id: 'scoped-b', registrant_id: 'b' };
+      proxyRequest.mockImplementation(async (_req, _service, _path, _method, params) => ({
+        resources:
+          params.type === 'v1_meeting_registrant'
+            ? [registrantRecord('b'), registrantRecord('a')]
+            : [all, scoped, scopedOnly].map((row) => ({ id: `v1_meeting_rsvp:${row.id}`, data: row })),
+      }));
+
+      const roster = await service.getMeetingRegistrants(req, 'meeting-1', true, undefined, false, undefined, { bearerToken: 'm2m-token' }, true);
+      expect(roster.map((row) => row.rsvp)).toEqual([null, all]);
+      expect(countRegistrantAttendance(roster, { inviteResponsesEnabled: true })).toEqual({ accepted: 1, declined: 0, maybe: 0, total: 2 });
+      expect(buildAttendeePreviewFromRegistrants(roster).map((person) => person.key)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls.every((call) => call[7]?.bearerToken === 'm2m-token')).toBe(true);
+
+      const resolved = await service.getMeetingRegistrants(req, 'meeting-1', true, '4071031200');
+      expect(resolved.map((row) => row.rsvp)).toEqual([scopedOnly, scoped]);
+      const unrelated = await service.getMeetingRegistrants(req, 'meeting-1', true, '4070944800');
+      expect(unrelated.map((row) => row.rsvp)).toEqual([null, all]);
+      const aggregate = await service.getMeetingRegistrants(req, 'meeting-1', true);
+      expect(aggregate.map((row) => row.rsvp)).toEqual([scopedOnly, scoped]);
+    }
+  );
 
   it('fetches the registrant roster exactly once when includeRsvp is true, not twice via getMeetingRsvps', async () => {
     const rsvpRecord = (registrantId: string) => ({
@@ -638,6 +1212,38 @@ describe('MeetingService.getMeetingRsvps', () => {
   });
 });
 
+describe('MeetingService.getMeetingRsvpForCurrentUser — unresolved recurring history', () => {
+  it.each(['single', 'this_and_following'] as const)("selects only the viewer's all-date answer before a newer %s response", async (scope) => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('synthetic@example.com');
+    const service = new MeetingService();
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    const all = {
+      id: 'synthetic-all',
+      meeting_id: 'synthetic-series',
+      registrant_id: 'synthetic-registrant',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-01-01T00:00:00Z',
+    } as MeetingRsvp;
+    const scoped = {
+      ...all,
+      id: 'synthetic-scoped',
+      response_type: 'declined',
+      scope,
+      occurrence_id: '4071031200',
+      created_at: '2026-02-01T00:00:00Z',
+    } as MeetingRsvp;
+    const other = { ...all, id: 'synthetic-other', registrant_id: 'another-registrant', created_at: '2026-03-01T00:00:00Z' };
+    const history = vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([all, scoped, other]);
+
+    expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', undefined, true))?.id).toBe(all.id);
+    expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', '4071031200', true))?.id).toBe(scoped.id);
+    expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series'))?.id).toBe(scoped.id);
+    history.mockResolvedValue([scoped, other]);
+    expect(await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', undefined, true)).toBeNull();
+  });
+});
+
 describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
   let service: MeetingService;
 
@@ -653,7 +1259,29 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     proxyRequest.mockReset();
     committeeSvc.getCommitteeById.mockReset();
     accessCheckSvc.checkSingleAccess.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
     service = new MeetingService();
+  });
+
+  it('rejects a committee writer who does not organize the meeting, before reading the roster', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+    proxyRequest.mockResolvedValueOnce(meetingResponse('project-1'));
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toThrow('access-check unreachable');
   });
 
   it('rejects when the caller lacks writer access and the committee is not invite_only', async () => {
@@ -771,6 +1399,18 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
   });
 
+  it('preserves an older all response through the authorized complete-roster path', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    const all = { id: 'all-a', registrant_id: 'a', scope: 'all', response_type: 'accepted', modified_at: '2026-01-01T00:00:00Z' } as MeetingRsvp;
+    const single = { ...all, id: 'single-a', scope: 'single', response_type: 'declined', modified_at: '2026-02-01T00:00:00Z' } as MeetingRsvp;
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [registrantRecord('a')] })
+      .mockResolvedValueOnce({ resources: [all, single].map((row) => ({ id: row.id, data: row })) });
+    const [result] = await service.getAuthorizedCompleteRegistrants(req, MEETING_UID, true, undefined, true);
+    expect(result.rsvp).toEqual(all);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
   // The authorizer gets asked strictly for the same reason the roster is fetched strictly: the
   // lenient `checkSingleAccess` turns an unreachable authorizer into a false, which this method
   // would then report as a 403 — a permanent "you are not an organizer" for a transient fault, on
@@ -791,6 +1431,153 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
     proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
 
     await expect(service.getAuthorizedCompleteRegistrants(req, MEETING_UID)).rejects.toThrow();
+  });
+});
+
+describe('MeetingService.canViewMeetingRoster', () => {
+  let service: MeetingService;
+  const MEETING_UID = 'meeting-1';
+
+  beforeEach(() => {
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    vi.mocked(getEffectiveEmail).mockReturnValue('ada@example.com');
+    vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+    service = new MeetingService();
+  });
+
+  const stubInvitee = (showMeetingAttendees: boolean, ownRows: Partial<MeetingRegistrant>[]) => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, show_meeting_attendees: showMeetingAttendees } as unknown as Meeting);
+    return vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue(ownRows as MeetingRegistrant[]);
+  };
+
+  it('lets an organizer see the guests without looking the meeting up', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    const getMeetingById = vi.spyOn(service, 'getMeetingById');
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(getMeetingById).not.toHaveBeenCalled();
+  });
+
+  it('lets an invitee see the guests when the organizer shares them', async () => {
+    const byEmail = stubInvitee(true, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(byEmail).toHaveBeenCalledWith(req, MEETING_UID, 'ada@example.com', undefined, 'm2m-token');
+  });
+
+  it('hides the guests from an invitee when the organizer does not share them', async () => {
+    const byEmail = stubInvitee(false, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+    expect(byEmail).not.toHaveBeenCalled();
+  });
+
+  it('hides the guests of a legacy Board meeting still stored as shared', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, meeting_type: 'Board', show_meeting_attendees: true } as unknown as Meeting);
+    const byEmail = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+    expect(byEmail).not.toHaveBeenCalled();
+  });
+
+  it('matches an invitee by username when they have no email, the rule the invited flag uses', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('ada');
+    const forUser = stubInvitee(true, [{ uid: 'reg-self' }]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(true);
+    expect(forUser).toHaveBeenCalledWith(req, MEETING_UID, undefined, 'ada', 'm2m-token');
+  });
+
+  // Sharing is with the guests, not with everyone who can view the meeting.
+  it('hides the guests from a viewer who is not invited, even when they are shared', async () => {
+    stubInvitee(true, []);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(false);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).rejects.toThrow('access-check unreachable');
+  });
+});
+
+describe('MeetingService.canViewPastMeetingParticipants', () => {
+  let service: MeetingService;
+  const PAST_UID = 'past-1';
+  const rows = [
+    { uid: 'p1', email: 'Ada@Example.com', is_invited: true, is_attended: false },
+    { uid: 'p2', email: '', username: 'grace', is_invited: false, is_attended: true },
+  ] as PastMeetingParticipant[];
+
+  beforeEach(() => {
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
+    vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+    service = new MeetingService();
+  });
+
+  it('lets an organizer see the participants', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, [])).resolves.toBe(true);
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_past_meeting', id: PAST_UID, access: 'organizer' });
+  });
+
+  it('lets an invitee who did not attend see the participants, matched by email', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('ada@example.com');
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(true);
+  });
+
+  it('lets an attendee who was not invited see the participants, matched by username', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('grace');
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(true);
+  });
+
+  it('hides the participants from a viewer who is not on them', async () => {
+    vi.mocked(getEffectiveEmail).mockReturnValue('mallory@example.com');
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('mallory');
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(false);
+  });
+
+  // A blank email on a row must not match a caller who also has no email.
+  it('hides the participants from a caller with no identity', async () => {
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).resolves.toBe(false);
+  });
+
+  it('propagates an unresolvable organizer check instead of reporting it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    await expect(service.canViewPastMeetingParticipants(req, PAST_UID, rows)).rejects.toThrow('access-check unreachable');
+  });
+});
+
+describe('MeetingService.getMeetingRegistrantCount', () => {
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  it('counts the registrants under the given M2M token without reading rows', async () => {
+    proxyRequest.mockResolvedValue({ count: 12, has_more: false });
+
+    await expect(new MeetingService().getMeetingRegistrantCount(req, 'meeting-1', 'm2m-token')).resolves.toBe(12);
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources/count',
+      'GET',
+      { type: 'v1_meeting_registrant', parent: 'meeting:meeting-1' },
+      undefined,
+      undefined,
+      { bearerToken: 'm2m-token' }
+    );
   });
 });
 
@@ -1179,6 +1966,35 @@ describe('MeetingService registrant write payloads', () => {
 
     expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-1/registrants/reg-1');
     expect(bodyOf()).toMatchObject({ org: 'Acme', profile_picture: 'https://example.com/a.png', occurrence: '1666848600' });
+  });
+
+  // Upstream treats `user_id` as immutable: an update that leaves it out reads as a change and fails with
+  // "user_id cannot be changed". It has to reach the wire as the caller sent it.
+  it('forwards user_id on update so a linked registrant keeps the user it has', async () => {
+    await service.updateMeetingRegistrant(req, 'meeting-1', 'reg-1', {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      user_id: 'user-123',
+    });
+
+    expect(bodyOf()).toMatchObject({ user_id: 'user-123' });
+  });
+
+  // A create has no stored `user_id` for upstream to compare against, so a client-named one would pick
+  // the LF account a guest is linked to. Update-only.
+  it('does not forward a client-supplied user_id on create', async () => {
+    await service.addMeetingRegistrant(req, {
+      meeting_id: 'meeting-1',
+      email: 'a@example.com',
+      first_name: 'A',
+      last_name: 'B',
+      user_id: 'someone-else',
+    } as CreateMeetingRegistrantRequest & { user_id: string });
+
+    expect(bodyOf()).toMatchObject({ email: 'a@example.com' });
+    expect(bodyOf()).not.toHaveProperty('user_id');
   });
 
   // `getChangedFields` nulls all three whenever they're blank — always, for the two with no form
@@ -1592,6 +2408,73 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
   });
 });
 
+describe('MeetingService.cancelOccurrence', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue(undefined);
+    service = new MeetingService();
+  });
+
+  it('sends the note as the DELETE body', async () => {
+    await service.cancelOccurrence(req, 'mtg 1', '1893456000', 'Holiday week');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg%201/occurrences/1893456000', 'DELETE', undefined, {
+      note: 'Holiday week',
+    });
+  });
+
+  it('sends no body without a note', async () => {
+    await service.cancelOccurrence(req, 'mtg-1', '1893456000');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/occurrences/1893456000', 'DELETE', undefined, undefined);
+  });
+});
+
+describe('MeetingService.updateOccurrence', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequest.mockResolvedValue(undefined);
+    service = new MeetingService();
+  });
+
+  it('PUTs start_time and duration but never a recurrence to the occurrence endpoint', async () => {
+    const payload = { start_time: '2030-01-08T15:00:00.000Z', duration: 45, recurrence: { type: 2 } } as never;
+
+    await service.updateOccurrence(req, 'mtg 1', '1893456000', payload);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg%201/occurrences/1893456000', 'PUT', undefined, {
+      start_time: '2030-01-08T15:00:00.000Z',
+      duration: 45,
+    });
+  });
+
+  it('sends a title and agenda as upstream topic and agenda', async () => {
+    await service.updateOccurrence(req, 'mtg-1', '1893456000', {
+      start_time: '2030-01-08T15:00:00.000Z',
+      duration: 45,
+      title: 'Special session',
+      description: 'Demo day',
+    });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/itx/meetings/mtg-1/occurrences/1893456000', 'PUT', undefined, {
+      start_time: '2030-01-08T15:00:00.000Z',
+      duration: 45,
+      topic: 'Special session',
+      agenda: 'Demo day',
+    });
+  });
+
+  it('refuses a dot-only occurrence id before any request goes out', async () => {
+    await expect(service.updateOccurrence(req, 'mtg-1', '..', { start_time: '2030-01-08T15:00:00.000Z', duration: 45 })).rejects.toThrow();
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('MeetingService.updateMeeting attendee visibility lock', () => {
   let service: MeetingService;
 
@@ -1625,11 +2508,21 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(false);
   });
 
-  it('forces show_meeting_attendees off when the stored meeting is restricted', async () => {
+  it('keeps an explicit opt-in on a restricted meeting (only the meeting v2 composer sends one)', async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
     await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(true);
+  });
+
+  it('still forces show_meeting_attendees off on a restricted meeting saved without an explicit opt-in', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);
@@ -1744,11 +2637,152 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 
-  it('forces show_meeting_attendees off when restricted', async () => {
+  it('keeps an explicit opt-in on a restricted meeting (only the meeting v2 composer sends one)', async () => {
     proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
 
     await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true });
 
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(true);
+  });
+
+  it('forces show_meeting_attendees off on a restricted meeting created without an explicit opt-in', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
+
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true, show_meeting_attendees: false });
+
     expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
+  });
+});
+
+describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
+  it.each(['accepted', 'declined', 'maybe'] as const)('returns the successful %s answer when ITX omits its response value', async (answer) => {
+    vi.clearAllMocks();
+    const service = new MeetingService();
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([]);
+    proxyRequest.mockResolvedValueOnce({
+      id: 'synthetic-rsvp',
+      meeting_id: 'synthetic-meeting',
+      registrant_id: 'synthetic-registrant',
+      response: '',
+      scope: 'single',
+      occurrence_id: '1791930600',
+    });
+    const saved = await service.createMeetingRsvp(req, 'synthetic-meeting', { response: answer, scope: 'single', occurrence_id: '1791930600' });
+    expect(saved.response_type).toBe(answer);
+    expect(saved.scope).toBe('single');
+    expect(saved.occurrence_id).toBe('1791930600');
+  });
+
+  it('keeps a nonempty response supplied by ITX authoritative', async () => {
+    vi.clearAllMocks();
+    const service = new MeetingService();
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([]);
+    proxyRequest.mockResolvedValueOnce({ id: 'synthetic-rsvp', meeting_id: 'synthetic-meeting', response: 'declined', scope: 'all' });
+    const saved = await service.createMeetingRsvp(req, 'synthetic-meeting', { response: 'accepted', scope: 'all' });
+    expect(saved.response_type).toBe('declined');
+  });
+});
+
+describe('MeetingService.dedupePastMeetingParticipants', () => {
+  const service = new MeetingService();
+  const record = (extra: Partial<PastMeetingParticipant>): PastMeetingParticipant =>
+    ({ is_invited: false, is_attended: false, ...extra }) as PastMeetingParticipant;
+
+  it('merges an invitee and an attendee record of the same person into one invited, attended row', () => {
+    const result = service.dedupePastMeetingParticipants([
+      record({ email: 'ada@acme-motors.example', is_invited: true }),
+      record({ email: 'ADA@acme-motors.example', is_attended: true }),
+      record({ email: 'grace@acme-motors.example', is_invited: true }),
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result.filter((person) => person.is_attended)).toHaveLength(1);
+    expect(result.every((person) => person.is_invited)).toBe(true);
+  });
+
+  it('keeps people with different usernames apart even when they share an email', () => {
+    const result = service.dedupePastMeetingParticipants([
+      record({ username: 'ada', email: 'team@acme-motors.example' }),
+      record({ username: 'grace', email: 'team@acme-motors.example' }),
+    ]);
+
+    expect(result).toHaveLength(2);
+  });
+});
+
+describe('MeetingService.getCommitteeNameMap', () => {
+  const service = new MeetingService();
+  const committeePage = (committees: { uid: string; name: string }[]) => ({
+    resources: committees.map((c) => ({ id: `committee:${c.uid}`, data: c })),
+    page_token: undefined,
+  });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  it('looks up each committee uid once, however many meetings share it', async () => {
+    proxyRequest.mockResolvedValueOnce(
+      committeePage([
+        { uid: 'c1', name: 'Board' },
+        { uid: 'c2', name: 'TSC' },
+      ])
+    );
+
+    const names = await service.getCommitteeNameMap(req, [
+      { id: 'm1', committees: [{ uid: 'c1' }] },
+      { id: 'm2', committees: [{ uid: 'c1' }, { uid: 'c2' }] },
+    ] as Meeting[]);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'committee', filters_or: ['uid:c1', 'uid:c2'] });
+    expect([...names]).toEqual([
+      ['c1', 'Board'],
+      ['c2', 'TSC'],
+    ]);
+  });
+
+  it('returns an empty map without querying when no meeting has committees', async () => {
+    const names = await service.getCommitteeNameMap(req, [{ id: 'm1', committees: [] }] as unknown as Meeting[]);
+
+    expect(names.size).toBe(0);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty map instead of throwing when the lookup fails', async () => {
+    proxyRequest.mockRejectedValueOnce(new Error('query service down'));
+
+    const names = await service.getCommitteeNameMap(req, [{ id: 'm1', committees: [{ uid: 'c1' }] }] as Meeting[]);
+
+    expect(names.size).toBe(0);
+  });
+});
+
+describe('MeetingService.getPastMeetingTranscriptContent', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset().mockResolvedValue({ resources: [{ data: { recording_files: [] } }] });
+    vi.mocked(getPastMeetingTranscriptUrl).mockReturnValue('https://files.example.com/transcript');
+    service = new MeetingService();
+  });
+
+  const respond = (body: string, contentType = 'text/vtt'): void => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(body, { headers: { 'content-type': contentType } }));
+  };
+
+  it('returns WebVTT content, including one with a leading byte order mark', async () => {
+    respond('WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\nAda: Hi');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toEqual({ content: expect.stringContaining('Ada: Hi') });
+
+    respond('\uFEFFWEBVTT\n');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toEqual({ content: '\uFEFFWEBVTT\n' });
+  });
+
+  it('returns null for an HTML page served in place of the file', async () => {
+    respond('<!doctype html><html><body>Sign in</body></html>', 'text/html');
+    await expect(service.getPastMeetingTranscriptContent(req, 'past-1')).resolves.toBeNull();
   });
 });

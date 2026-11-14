@@ -14,9 +14,11 @@ import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
 /**
- * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
- * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
- * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
+ * `expectMissingObject` still rejects. It records *neither* a success nor a failure against the shared
+ * circuit breaker — the count and state are left alone and only the HALF_OPEN probe slot is freed — so a
+ * missing view or absent GRANT here can neither open the breaker every other Snowflake dashboard depends
+ * on, nor clear failures those dashboards have already accumulated. The 500 reaches `apiErrorHandler`
+ * either way.
  *
  * The SDK names the fully-qualified view in its message, so a generic sentence is put in
  * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider

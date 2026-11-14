@@ -17,8 +17,11 @@ import { CardComponent } from '@components/card/card.component';
 })
 export class InitiativesListComponent {
   public readonly initiatives = input.required<InitiativeBase[]>();
+  public readonly createUrl = input.required<string>();
   public readonly hasMore = input<boolean>(false);
   public readonly loadingMore = input<boolean>(false);
+  /** Show who created each initiative; the lens pages set it (lfx-crowdfunding#452). */
+  public readonly showCreator = input<boolean>(false);
   public readonly initiativeClick = output<string>();
   public readonly loadMore = output<void>();
 

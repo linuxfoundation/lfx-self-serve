@@ -30,6 +30,8 @@ export interface OrgItem {
    * `uid` for the `/org/{segment}/…` address (spec 050, DR-001). Never generated client-side.
    */
   slug?: string | null;
+  /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
+  claOnly?: boolean;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -51,6 +53,12 @@ export interface OrgItemsResponse {
   upstream_failed: boolean;
   /** Optional total when upstream returns it cheaply; clients tolerate null. */
   total?: number | null;
+  /**
+   * M3 — the caller's CLA-only organizations are not on this page and should be fetched with
+   * `cla_only=1`, then listed after the held rows. Set on a first page for a non-staff caller who
+   * holds at least one grant and whose roster answered; absent otherwise.
+   */
+  cla_only_deferred?: boolean;
 }
 
 /** BFF → query-service shape built by `OrgNavigationService.buildQuery`. */
@@ -74,6 +82,8 @@ export interface GetOrgItemsParams {
   name?: string;
   /** Pin a uid at the top of the first page when it falls outside the natural results. Mutually exclusive with `pageToken`. */
   selectedUid?: string;
+  /** M3 — answer only the caller's CLA-only organizations, unfiltered and alphabetical. Mutually exclusive with `pageToken`. */
+  claOnly?: boolean;
 }
 
 /** A switcher row plus the section heading it introduces, if any. A heading is carried by the first row of its group so an empty group cannot leave a stray heading behind. */
@@ -85,6 +95,61 @@ export interface OrgSelectorRow {
   membershipLabel: string | null;
   /** Finer membership status behind the chip's tooltip, repeated as screen-reader text because a tooltip on a non-focusable span is never announced. Null when upstream omits it. */
   membershipStatus: string | null;
+}
+
+/** One Salesforce family the caller holds organizations in — the unit a roll-up combines (#4125). */
+export interface OrgRollUpFamily {
+  /** The family's top Salesforce account id; the roll-up's address and request key are built from it. */
+  rootUid: string;
+  /** Display name of the family's top account, or null when it is not known yet. */
+  name: string | null;
+  /** The caller's organizations in this family, de-duplicated. */
+  orgUids: string[];
+}
+
+/** One of the caller's organizations within a family, as `GET /api/orgs/me/roll-up-set` returns it (#4126). */
+export interface OrgRollUpSetOrg {
+  uid: string;
+  accountId: string;
+  name: string;
+  logoUrl: string | null;
+}
+
+/** One Salesforce family in the roll-up set (#4126). `orgs` are flat peers; the family's top account id appears once, as `rootUid`. */
+export interface OrgRollUpSetFamily {
+  /** The family's top Salesforce account id. */
+  rootUid: string;
+  rootName: string | null;
+  rootLogoUrl: string | null;
+  /** Only the organizations in this family the caller can access, alphabetical by name. */
+  orgs: OrgRollUpSetOrg[];
+}
+
+/** Wire shape of `GET /api/orgs/me/roll-up-set` (#4126) — the caller's organizations grouped by Salesforce family, families alphabetical by `rootName`. */
+export interface OrgRollUpSetResponse {
+  families: OrgRollUpSetFamily[];
+  /** True when the family walk was truncated or failed, so the families are a lower bound rather than the complete set. */
+  degraded: boolean;
+  lookupOutcome: OrgLensLookupOutcome;
+}
+
+export interface OrgLensRollUpScope {
+  rollUpKey: string;
+  rootUid: string;
+  members: OrgRollUpSetOrg[];
+  complete: boolean;
+}
+
+/** Where the caller's families stand: `pending` until the roll-up set first answers, `server` once it has (successfully or not). */
+export type OrgRollUpFamiliesSource = 'pending' | 'server';
+
+/** A family roll-up entry in the switcher, precomputed so the template reads prepared values rather than calling a method per change-detection pass. */
+export interface OrgRollUpSelectorRow {
+  rootUid: string;
+  name: string;
+  subtitle: string;
+  organizationCount: number;
+  isSelected: boolean;
 }
 
 /** Spec 022 — cascading-grant entry; each item carries the direct-granted parent it inherits from. */
@@ -99,7 +164,7 @@ export interface CascadingRoleGrant {
 
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate — edit capability is `writers` ∪ `cascadingWriters`, read through `editorSet` on the client and `OrgRoleGrantsService.hasEditorAccess` on the server. */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate. `writers` ∪ `cascadingWriters` is the caller's roster-editor set (`editorSet` / `hasEditorAccess`); Org Lens edit gates follow `writer` on the org (#3136) via `OrgEditAccessService` on the client and `resolveOrgLensEdit` on the server. */
   writers: string[];
   /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
@@ -138,6 +203,48 @@ export interface RoleGrantsResponse {
    * that may be an earlier request's, which is why it is not this request's `X-Request-Id`.
    */
   correlationId?: string;
+  /**
+   * Organizations (18-char SFIDs) the caller reaches only as a CLA Manager, from their own
+   * `cla-manager` scopes. Filled only when every grant array above is empty and `isStaff` is false;
+   * empty when the scopes could not be read. Grants the EasyCLA tab of these orgs and nothing else.
+   * Optional for rolling deploys: absent ⇒ empty.
+   */
+  claManagerOrgs?: string[];
+  /**
+   * M3 — `failed` when the caller's `cla-manager` scopes were asked for and could not be read, so an
+   * empty `claManagerOrgs` is unknown rather than "manages nothing" and the client renders the outage
+   * state with Retry. Absent ⇒ `ok`.
+   */
+  claManagerLookup?: 'ok' | 'failed';
+  /**
+   * #4225 — the caller's own employment affiliation, used only to pick between `no-organization` and
+   * `affiliated-no-grant` when the caller holds nothing. Resolved server-side because the client
+   * cannot read it: the employer comes from CDP work history, and its membership from the warehouse
+   * row that carries both the LF account and the crowd.dev organization behind it. Deliberately not
+   * the `b2b_org` index, whose per-row read filter is the `auditor` grant this caller does not hold.
+   * Computed only when every grant array is empty and the caller is neither staff nor a contractor —
+   * it costs nothing for a caller who holds something. Grants nothing: it only chooses wording.
+   * Optional for rolling deploys: absent ⇒ treat as `lookup: 'failed'`, i.e. keep today's copy.
+   */
+  affiliation?: OrgLensAffiliationVerdict;
+}
+
+/**
+ * #4225 — what the BFF could establish about the caller's own employer. `lookup: 'failed'` means the
+ * question was asked and not answered (CDP or the warehouse unreachable, no asserted username, the
+ * employer carries no crowd.dev organization id to resolve it by, or that id is absent from the
+ * account-grain `ORG_LENS_ACCOUNT_CONTEXT` view — the known gap in `lens-system.md`, which is why
+ * `failed` appears even when CDP and the warehouse are healthy), which the client must treat as
+ * "unknown" and fall back to `no-organization` rather than assert something new and wrong
+ * (spec 053 FR-011, never fall through).
+ */
+export interface OrgLensAffiliationVerdict {
+  /** The caller has an *ongoing* employer on their CDP work history; a job they have left does not count. */
+  hasEmployer: boolean;
+  /** That employer's crowd.dev organization matched an LF account flagged `IS_MEMBER`. Only meaningful when `lookup === 'ok'`. */
+  employerIsMember: boolean;
+  /** Whether the determination completed. */
+  lookup: 'ok' | 'failed';
 }
 
 /** Spec 053 — completeness of the caller's organization-list lookup. */
@@ -157,8 +264,10 @@ export interface OrgResolveResponse {
   uid: string;
   /** Lowercase URL-identity slug; null when the org has none (address uses `uid`). */
   slug: string | null;
-  /** Display name — only ever returned for an org the caller has just proven `auditor` on. */
+  /** Display name — only ever returned for an org the caller has just proven `auditor` on, or holds a `cla-manager` scope on (`claOnly`). */
   name: string;
+  /** True when the caller reaches this org only as its CLA Manager: no Org Lens read, so only its EasyCLA tab opens. Absent means false. */
+  claOnly?: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -251,6 +360,10 @@ export interface OrgListPage {
   nextPageToken: string | null;
   upstreamFailed: boolean;
   reset: boolean;
+  /** The search term the page was fetched with. */
+  term?: string;
+  /** The response's `cla_only_deferred`: the caller's CLA-only rows arrive from a separate request. */
+  claOnlyDeferred?: boolean;
 }
 
 /** Carries dispatch generation so stale responses can be filtered out of the merged stream (FR-011 race-guard). */
@@ -278,10 +391,14 @@ export interface OrgListState {
 
 /** Shape of `b2b_org.data` from the query-service indexed document — only fields the selector reads. */
 export interface B2bOrgIndexedDoc {
+  /** Canonical 18-char Salesforce Account id (same value as `project_membership.b2b_org_uid`). */
+  uid?: string;
   sfid?: string | null;
   name?: string;
   logo_url?: string | null;
   primary_domain?: string | null;
+  /** Additional normalized domains of the company (Salesforce `Domain_Alias__c`). */
+  domain_aliases?: string[] | null;
   is_member?: boolean;
   /** Spec 022 — true when this org has child orgs in the b2b_org index. Drives cascading-children lookup per D-004. */
   is_parent?: boolean;
@@ -395,8 +512,15 @@ export interface AccessAwareOrgsResult {
   degraded: boolean;
   /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
   staffCheck: OrgLensStaffCheck;
+  familyRoots: Map<string, OrgFamilyRoot>;
   /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
   correlationId?: string;
+}
+
+export interface OrgFamilyRoot {
+  rootUid: string;
+  rootName: string | null;
+  rootLogoUrl: string | null;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -414,6 +538,7 @@ export interface AccessAwareOrgsCacheEntry {
   degraded: boolean;
   /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
   staffCheck: OrgLensStaffCheck;
+  familyRoots: [string, OrgFamilyRoot][];
   /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true` or `isContractor: true`) fails the shape guard. */
   correlationId?: string;
 }

@@ -1,0 +1,457 @@
+# Project Marketing kit
+
+The UI sections below land with layers 2–4 of the kit stack; layer 1 provides the shared contract and source-reader adapter.
+
+The project opens its kit. `MKTG_KIT_FAMILIES` owns the Main board's family order,
+asset membership and lead copy. Agent names, routing and availability come from
+`MKTG_AGENTS`; declared ids without a catalog entry create no tile or enabled Run action.
+The Kit tab keeps all nine families; the Agents tab groups only catalog-backed agents.
+All five tabs (Kit, Agents, Requests, Access and Documents) share `lfx-mktg-kit-header`
+(the project h1), the `max-w-screen-2xl` page width and `lfx-mktg-kit-tabs`.
+Requests and Access are placeholders. Documents lists all stored assets by default;
+`?type=<agentKey>` filters to a document type, and an absent or unknown type shows All documents.
+The `/documents` route remains a deep-link target. Its Documents title/description sit below the tab strip.
+The listing refreshes on entry and type changes; below the page container's 800px content-box breakpoint,
+a type change brings the selected panel into view once its content renders. A successful restore cancels
+any pre-write listing refetch and reads the committed current pointer before accepting new list data.
+The five Kit tabs stay in one horizontally scrollable row on narrow screens.
+
+## Plan-of-record conformance
+
+ICPs are the framework's `icp` section within its `{ mf, icp, mh, nums }` bundle,
+not a separate kit asset or agent. The explicit document exclusion list contains only
+legacy `icp`; those documents stay accessible in Documents, not the kit. The agent
+exclusions are `icp` and `website-builder`, which is not a kit agent.
+Contract tests assert the exact exclusions, pending ids and complete catalog/store coverage.
+FAQ and Boilerplates are live store-backed assets in Positioning & brand, in the board's run order.
+Assets without a registered store type show Coming soon. Agent availability always
+comes from the catalog; the kit never invents entries.
+Unbuilt families show their description and lead on Kit, never placeholder asset rows.
+
+## Reads, states and Current
+
+Kit and Agents use `GET /api/mktg-agents/documents?project=<uid>` through the existing
+client. There is no kit storage or BFF. Browser-only reads keep SSR stable and cancel
+on scope changes. Failed reads never assert an empty kit or invented zero counts.
+
+Without approval metadata a populated living document is **Draft**; a registered type
+without a document is **Missing**; an unbuilt asset is **Coming soon**. **Approved · vN**
+reads only the store's valid `approvedCurrent` (non-empty revision id, positive revision number).
+The service passes listing items unchanged, never inventing approval. **Needs rebuild**
+comes from the server's `needsRebuild` projection: each downstream asset's current-revision
+provenance is compared by revision identity and content hash against the approved-current
+framework. Unknown provenance and one-off outputs never mark; a timestamp or revision
+count alone is never approval or staleness. See [downstream rebuild](../backend/mktg-rebuild.md).
+
+Current prefers the store's valid `currentRevisionNumber`; older listings fall back to the
+sequence in the selected `latestRevisionId`, **never `revisionCount`**. Its date is `updatedAt`. Non-sequence legacy ids show no invented
+version. A valid approved-current seam supplies the approved revision number; the only
+listing date remains `updatedAt` until an approved-current date is exposed. One-off assets use
+`createdAt`: never run means **Not run yet** (`missing`); a run in the current UTC calendar month
+shows **N this month**; an earlier run shows **Last run d MMM**. The newest run is selected by
+`createdAt` without mutating listing order. Counts, the en-GB last-run label and the Family
+Current cell all use UTC, including month boundaries; Current shows the run date, never a
+revision version. Unknown historical dates remain unknown (**Last run —**). A registered
+type with an unavailable agent reads **Coming soon**, not Not run yet.
+
+State filters read `?state=` (All by default), retaining all family cards. A user filter click
+pushes a history entry, so browser Back restores the previous filter. Never-run one-offs join
+Not run yet. Already-run one-offs appear under All only (decided by the operator, 23 Oct:
+they have no approval workflow), never Approved/Draft/Needs rebuild. Kit cards consume the shared Family rule's
+row states and labels without adding buttons or changing the board's card layout. `summarizeMktgKit` centralizes provisional
+formulas: In the kit counts **Approved only**, Core floor counts families with at least one
+approved asset out of the catalog length, and Kit level is Core only once every store-backed
+Positioning asset is approved; otherwise an em dash. With no approvals the tiles show 0 assets,
+0 of 9 and an em dash captioned No approved assets yet (provisional empty-state copy).
+Drafts and individual runs do not enter these counts. Open requests is unknown (em dash plus
+Coming soon), never zero. Live-family Core tags do not imply approval.
+
+### The brand kit's Sources tab
+
+The Sources tab of a stored brand kit shows the agent's report in the agent's own words, never
+rewritten by the view. A v2 report (`report.version: 2`, brand-kit ≥ 2.2.0) fills four groups
+from its findings: Failed sources (`findings.sources_failed`, with the machine `detail` as small
+grey text), Missing assets (`findings.missing_assets`, labelled by `BRAND_KIT_REPORT_ASSET_LABELS`,
+with a "Fix: …" line when the agent names one), Warnings (`findings.warnings`, the `source` as a
+link only when it is an http(s) address) and Colour conflicts (`report.color_conflicts`: each value
+as a palette-style swatch with its hex and where it was seen, then "kept <hex>"). The legacy
+`sources_failed` list shows only when `findings` is absent (a v1 report); the other groups then
+carry their empty lines (`BRAND_KIT_SOURCES_EMPTY_LINES`). Everything comes from one pure builder,
+`brandKitSourcesView` in `@lfx-one/shared/utils`; the rules (`report.rules`) are not rendered yet.
+
+Approving a revision snapshots what its report showed at that moment into the approval annotation
+(`accepted`: failed sources by `source`, missing assets by `asset`, warnings by `code|text`, gaps by
+their exact text, conflicts by `name`; see [revisions](../backend/mktg-document-revisions.md)). Under
+an approval that carries the snapshot, each listed item reads "Accepted when vN was approved" (a
+later run is a new revision, with its own approval). An approval made before the snapshot existed marks
+nothing and keeps the derived line under the gaps ("Accepted when vN was approved; still open.").
+
+At the Family header's shared 800px content-query threshold, the title stays left of the tiles;
+tiles use two columns at laptop width and four at 980px content width. Below 800px they sit
+under the title. These thresholds reserve headroom for the navigation and page gutters.
+
+## Agents board
+
+There is one catalog-driven card template, with no search or Documents button. State lines
+are Live (plus Last run date from the listing when known), Needs an approved framework for
+a framework-gated tile, Needs <document> for other missing dependencies, or Coming soon.
+There are no category tags or generated-version badges. Dependency resolution stays generic;
+while a new project's initial state resolves, all tiles stay disabled with a neutral state line.
+Same-project refreshes retain the current snapshot without relocking tiles. No project shows
+an explicit selection message. Only Positioning & brand has board-provided run-order guidance.
+A failed listing read omits last-run dates; known catalog availability remains unchanged.
+Unregistered agent ids create no tile or Run action. Catalog Coming soon entries remain
+disabled; design examples never override the catalog.
+
+## Family and exports
+
+The Family page links the real asset view `documents/:agentKey/:documentId`, preserving
+lens/project context. `resolveMktgFamilyActions` is the pure shared policy for Family header,
+row actions and Kit card row data. Availability requires an active, non-excluded catalog
+agent with a registered intake; unavailable rows read Coming soon and offer no Run action.
+`mktgFamilyRowAction(row, ctx)` is the **one place to flip** the row rule. Available,
+not-built rows offer a quiet **Create X** link in the same place; copy comes from `runName`
+or the asset label. Required non-optional approved JSON dependencies and missing write
+access disable that row action with its reason in plain inline text, not tooltip-only.
+Optional dependencies never block. Existing living and one-off assets have no row action:
+open the document, where Run again or Draft another remains the natural entry.
+
+One solid, never-disabled header names the next step: **Update <n> assets** (singular
+**Update <runName>**) for stale Positioning assets; otherwise the first available not-built
+asset gives **Review and approve the <document>** linking to its missing approval, or
+**Create <asset>** linking to its run page. With nothing to create, **Review <n> drafts**
+(singular **Review the draft**) links to the first draft in family order. One-off families
+always offer **Create LinkedIn post** / **Create Member 360** on the plain run route.
+Fresh, fully approved living families with an exporter offer **Export the kit**: scroll to the export card and focus Download PDF (waiting for its approval read if necessary), never export automatically. Unsupported families keep no primary. Only the blocked header has a caption naming the remaining unbuilt assets (catalogue sentence names, English conjunction): **Review and approve the framework** / **Then: boilerplates, FAQ and the brand kit**; other kinds have no caption.
+No header renders while loading, after a failed read, without write access (including
+403), or for an unavailable agent. The service still distinguishes access denial from
+read failure; loading status remains mounted. Accessible names equal the primary label.
+
+All enabled header and row Create/review actions are real anchors; rebuild and Export the kit are local buttons. Native Cmd/Ctrl-click opens a new
+tab without navigating the original family. Replacement query params preserve the selected
+project and drop stale questions/generation/revision/run selectors. Living actions use
+`?mode=new` to restore last inputs; Sources still waits for explicit Start. Member 360 stays
+null: its run page's window/compare/tracker inputs are not registered as a last-intake
+allowlist. Its page and BFF belong to the Member 360 items; restoring those inputs is a
+follow-up. Document Run again retains `mode=new` through the shared
+`MKTG_FAMILY_ONE_OFF_RUN_MODES`/`mktgRunModeFor` policy. LinkedIn's Document's
+**Draft another post** unconditionally chooses that fresh mode to restore previous source
+inputs; it never inherits entry intent from the current URL. The dedicated source form restores
+writer-gated last text/URL and share-link scalars before any run navigation, preserving
+explicit blanks; files require reattachment and oversized pasted text requires re-entry.
+The source form does not resume a run on load: the Document receiver owns accepted-run
+progress and cross-browser recovery. Immediately before accepted-start navigation pushes
+the Document, entry-only `mode=new` is consumed with a replacement URL update so Back
+does not restore fresh mode; Document completion/redraft navigations also explicitly clear mode. New generation still requires explicit Draft.
+Denied history disables Draft; unavailable history is a warning, not invented absence. Profile/LFX prefill remains independent and
+scope changes cancel the prior source read. Breadcrumbs and row headings are unchanged.
+Made by shows the agent only; approved-by/comment attribution stays absent until its producer
+supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
+`lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and
+questions answered in place on the same session. Other families do not mount a rebuild panel.
+The framework Asset view's Downstream action enters that flow through one-shot router
+navigation state, never a URL write command. See [the API and sequencing contract](../backend/mktg-rebuild.md).
+
+`lfx-mktg-family-export-actions` uses the required `familyId` and stable
+`family-export-pdf` / `family-export-slides` IDs for the live Family-only export actions.
+PDF composes all four approved-current assets — framework, brand kit, boilerplates
+and FAQ — in exporter order, with one family cover and contents. All share one
+portrait layout. Family and standalone kit PDFs share `lfx-mktg-brand-kit-print`,
+the kit's portrait book (below), not scaled landscape plates. The on-screen kit
+view stays unchanged.
+Slides exports the supported approved family assets and branding, offers Update or
+Create for an existing deck, shows progress and a dated revision-linked last export,
+and marks changed approved member sets stale. Families without an export target render only
+the export title and one unsupported line: no PDF/Slides buttons, Positioning PDF note or
+Drive note. Supported families keep both export buttons outlined, with reasons in words rather than repeated hover tooltips: **Available once the framework is approved: PDF and Slides use the approved current.**
+Readers see disabled supported actions and the write-access note. A failed last-export lookup blocks creation until retried rather
+than guessing that no deck exists. Lookup starts independently of document-list loading;
+the slot stays available after a listing error/403. Browser family and document clients
+share one polling deadline/attempt/error policy. The family BFF and record model are
+documented in [Family exports](../backend/mktg-document-revisions.md#family-exports).
+
+`lfx-mktg-family-details` collapses Where it comes from to its validated source-read count and inline singular/plural failure count; Show/Hide uses native button aria-expanded/controls. Sign-off collapses to **Sign-off · roadmap: two-role sign-off arrives in November**, with Show/Hide preserving the full existing explainer. The only required framework row reason is **· after the framework is approved** (write-access wording is unchanged). Family-only source
+read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
+then renders the validated `sidecar.report.sources_read` / `sources_failed`
+(name/reason) as the board's sentences. Missing documents/reports omit the source block;
+loading and failure/retry are explicit, never a fabricated list. Project/family switches
+cancel old reads. Kit and Agents never make these detail reads.
+
+## The brand kit's portrait book (Download PDF)
+
+The brand kit's Download PDF prints the kit as a book of fixed Letter-portrait pages,
+ported one to one from the product owner's portrait mock (its `principles.md` is the
+measurements' source of record). The book is the
+**portrait print grammar**, which the framework and family prints build on, plus the
+kit's own pages.
+
+**The grammar** (`components/mktg-portrait/`, selectors `lfx-mktg-portrait-*`, one shared
+stylesheet `_mktg-portrait.scss` with the `pp-` class prefix; tokens and types in
+`@lfx-one/shared`, `MKTG_PORTRAIT_*` constants and `mktg-portrait-print.interface.ts`):
+
+- **One frame per page.** `lfx-mktg-portrait-page` is a fixed 816 × 1056 px frame
+  (`MKTG_PORTRAIT_PAGE`: 8.5 × 11 in at 96 dpi, 56 px margins, a 704 px content column,
+  covers inset 72 px), `position: relative; overflow: hidden`, a block in normal flow;
+  nothing fragments inside a frame and no wrapper between the body and a frame is padded
+  or positioned. Content is placed absolutely with the `[lfxPpRect]="[x, y, w, h?]"`
+  directive (the mock's `R(x, y, w, h)`), whose host carries `data-pp-rect`: the e2e
+  specs' handle on every placed box (the bounded-page check reads their bottoms).
+- **One break per sheet, owned by the frame that starts it.** Every frame carries
+  `break-before: page` and no frame carries a `break-after`. The engine suppresses a
+  forced break at the very start of the print and merges two forced breaks at one boundary
+  (a document host's `break-before` in the family and its first frame's) into one, so a
+  leading, doubled or trailing blank sheet is impossible by construction; `break-after:
+page` on every frame printed a blank sheet 18 after a 17-page book in Chrome's Save as
+  PDF. The print root's children (the page components' hosts) are blocks, and in print the
+  root element and body of a frame document carry no height, margin or padding beyond the
+  frames: the root is exactly N × 1056 px tall (the pdf e2e asserts the model, the last
+  frame's `break-after: auto`, no box after it and the root's height). **One named page
+  per print:** `mktg-portrait` is set by `.pp-page` alone; no print body, root or
+  document host names a page (a change of page name forces a break in Chromium, which is
+  how a blank sheet appears around a frame), and the grammar resets `page: auto` on
+  everything but a frame in a frame document. The flowing documents print on the print
+  frame's unnamed `@page` rule. **Every host is a block.** Angular leaves a component's
+  host element `display: inline`; Google Chrome 156 (the editor's engine; the bundled
+  Chromium does not reproduce it) breaks a sheet at the anonymous-block boundary an inline
+  host puts around a block frame, which is where the blank sheets came from. Every grammar
+  and book component (`lfx-mktg-portrait-page`, cover, opener, back cover, the kit print
+  host and each kit page host) sets `:host { display: block }` in its own styles
+  (`MKTG_PORTRAIT_BLOCK_HOST`, `components/mktg-portrait/mktg-portrait-host.ts`); the
+  framework, FAQ and boilerplates print hosts take the same constant through `styles:
+  [MKTG_PORTRAIT_BLOCK_HOST]`, so it holds in any document the component is cloned into.
+  The e2e asserts the computed display: the framework's on every host between the body and
+  a frame (`mktg-os-asset-views.spec.ts`, the page-break test), the FAQ's on its host inside
+  the family document (`mktg-os-faq-answers.spec.ts`); the pdf e2e's Chrome proof (`printMktgFrameWithChrome`: Playwright's `channel:
+  'chrome'`, `Page.printToPDF` on the frame document as the service built it, headers on
+  and off, Letter and A4) asserts exactly the planned page count with no blank page.
+- **Head, title, foot, band.** Every content page carries the running head at y 36
+  (section label left, document name right, over a 1 px rule), the title at y 84, the
+  footer 28 px from the bottom (`<Project> · a Linux Foundation project` | the page
+  number) and, on a chapter's first page standalone, a 4 px accent band at y 24. `dark`
+  paints the frame in the kit's dark; `bare` drops head, title and foot (covers).
+- **The page setup in both engines: the paper is the page box.** The frame names its own
+  page (`page: mktg-portrait`, `MKTG_PORTRAIT_PAGE_NAME`) and `MktgPrintService` writes the
+  setup `MKTG_PRINT_PAGE_SETUPS['mktg-portrait']` (`size: auto; margin: 0`) twice: unnamed
+  `@page { … }`, which WebKit honours (it ignores page names), and `@page mktg-portrait { … }`,
+  the print's one named page. `size: auto` makes the dialog's paper the page box; the
+  margin of 0 is what keeps the browser's headers and footers off the sheet. A fixed
+  `size: 8.5in 11in` let Chrome scale the page box onto A4 (0.974) and print "date · title"
+  and "1/17" into the bands that left. The grammar scales the frame itself instead
+  (`_mktg-portrait.scss`, `MKTG_PORTRAIT_PAPERS`): on a paper narrower than the Letter frame
+  (`@media print and (max-width: 815px)`, A4 = 793.7 px) every `.pp-page` zooms by
+  210 mm / 8.5 in (≈ 0.9727; `zoom`, not `transform`, so the laid-out box shrinks and the
+  breaks fall one per sheet; layout and type scale together, nothing reflows) and its
+  ground grows to the paper's height (the footer stays 28 px above the sheet's edge), and
+  the root narrows with it (an 816 px root would overflow A4 and Chrome shrinks an
+  overflowing print to fit, scaling the frames twice). Letter prints untouched; WebKit,
+  which ignores `@page size`, prints its dialog's default as before. The pdf e2e's Chrome
+  proof prints the eight dialog variants (Letter and A4 × headers × background) and asserts
+  the paper box, the plan's page count, no blank page and headers-on text = headers-off
+  text. A print root holding `.lfx-mktg-portrait` (`MKTG_PORTRAIT_PRINT_CLASS`) gets no
+  page margins in any engine. No table head or foot groups give per-page room:
+  Chromium adds an empty page per `tfoot` and WebKit repeats neither.
+- **Inks and look.** The kit's dark, accent, spark, the ink on the accent and the font
+  come from the kit (`MktgPortraitLook`, `mktgPortraitLook(brand, spark)`); the page writes
+  them as `--pp-dark`, `--pp-accent`, `--pp-spark`, `--pp-on-accent`, `--pp-on-dark` (the
+  better-contrast ink `mktgPrintBrand` picks for the dark: every text on a dark page reads it,
+  translucent variants through `color-mix`), `--pp-font`, `--pp-accent-text` and
+  `--pp-accent-on-dark`. `--pp-accent-text` is the accent darkened
+  in OKLab until it reads on the page white at WCAG AA for ordinary text
+  (`mktgPortraitAccentText(accent, paper)`, ≥ 4.5:1; an accent that already does is
+  itself): every TEXT set in the accent on a light page reads it (the section label under
+  the band, the Logo system page's rule numbers, numerals in the framework and family
+  books). `--pp-accent-on-dark` is the accent where it reads on the kit's dark at AA, else
+  the ink on the dark (`mktgPortraitAccentOnDark(look)`): every TEXT set in the accent on
+  a dark page reads it (the back cover's brand line). Fills, bands and rules keep
+  `--pp-accent` on either ground. The
+  design's neutral inks (`MKTG_PORTRAIT_INKS`: ink, muted, hairline, mist, white, fail) are
+  written once, as `--pp-ink` …, and the print stylesheets read only those custom
+  properties (see [the styling system's print-ink exception](styling-system.md#print-inks)).
+- **Cover, opener, back cover.** `lfx-mktg-portrait-cover` (the grid ground: the kit's
+  dark, a radial accent glow and a 32 px accent grid), `lfx-mktg-portrait-opener` (the
+  family's chapter opener) and `lfx-mktg-portrait-back-cover` (the reversed lockup, brand
+  line, url, version line and the trademark notice).
+- **Artwork on a dark ground: supplied, derived, or on the plate.** A dark ground draws
+  the kit's reversed file when one is supplied; else, when the slot's own SVG is one
+  resolvable ink with no background (`brandKitDerivable`, per slot: lockup and symbol), the
+  full-colour file reversed by filter; else the full-colour artwork on the white plate
+  (`.pp-plate`, `MktgPrintLogo.plate`, set at the source by `mktgPrintBrand` on `logoOnDark`,
+  so the kit's covers and the landscape framework cover read one rule): one shared span, the `lfxPpPlate` directive given
+  the plate's outer height, whose padding is half the artwork's drawn height
+  (`mktgPortraitPlatePadding(height)`, `MKTG_PORTRAIT_PLATE.paddingOfHeight`) and whose
+  corner radius is a sixth of its shorter side (`mktgPortraitPlateRadius(width, height)`,
+  `MKTG_PORTRAIT_PLATE.radiusOfShortSide`, a slide's rounded rectangle; the width is read
+  from the loaded image, and reads as wide until then), drawn by the kit's artwork
+  component and the covers, never per page. The plate's outer box is laid out, not the bare artwork's: a
+  tile, sample circle or stage fits the plate inside its own box (`mktgPortraitPlateFit`:
+  the mark drawn at half the box, the padding a quarter), and the covers start the plated
+  block one padding higher so the lockup stays where the design draws it and the plate
+  ends clear of the text below. A kit with a reversed file or a derivable slot draws no
+  plate. **A wide mark fits by width too**: the artwork's aspect is read once from its
+  SVG's viewBox into the logo image (`BrandKitLogoImage.aspect`, `brandKitSvgAspect`; the
+  crop's for a cropped symbol, unknown for a PNG), and the plate's fit
+  (`mktgPortraitPlateFitIn`) or the bare mark's (`mktgPortraitMarkFitIn`) is bounded by
+  the width the shape offers inside (`mktgPortraitShapeInnerWidth`: a circle's inscribed
+  square, a rounded square's side less `MKTG_PORTRAIT_PLATE.shapeInsetOfSide` each side,
+  a tile's clear width), so a wide symbol never runs out of its shape; a square-ish or
+  unknown-aspect mark is drawn exactly as before. The Symbol page shows a wide symbol
+  (`brandKitPortraitSymbolIsWide`, over `BRAND_KIT_PORTRAIT_WIDE_SYMBOL_ASPECT`) in its
+  rounded squares only, the circle skipped, and says so under the row
+  (`BRAND_KIT_PORTRAIT_WIDE_SYMBOL_NOTE`).
+- **The fit model.** `mktgPortraitFitBlock`, `brandKitPortraitShortenLine` and
+  `brandKitPortraitShortenParagraph` (shared utils) fit variable text to its box. A
+  one-line sample (the Type page's specimen and scale steps, the H1) prints at the kit's
+  own size always and is **shortened**, never shrunk, when its measured line
+  (`mktgPortraitTextWidth`: glyph widths in the kit's face, `MKTG_PORTRAIT_GLYPH_WIDTHS`
+  widened by `MKTG_PORTRAIT_FAMILY_WIDTH` and the weight) does not fit: fewer words of the
+  same line, cut at a word, no ellipsis (the editor: "shorten the sample instead of
+  shrinking"); the body step is the umbrella shortened to what fits three lines at 18/30.
+  A paragraph block wraps by the flat average (`MKTG_PORTRAIT_FIT.charEm`), shrinks in the
+  grammar's steps and then cuts at a sentence; the Voice attributes are measured cell by
+  cell and what the room cannot hold even cut is counted in a "+N more on the Voice tab in
+  LFX One" line, never dropped in silence. **Every page is bounded the same way**: a
+  chapter intro keeps the whole sentences that fit its three lines
+  (`brandKitPortraitIntro`); the Voice messages shrink together above the attributes
+  (`brandKitPortraitVoiceMessagesFit`); the usage cards' brand line is shortened to the
+  lines the card holds (`BRAND_KIT_PORTRAIT_USAGE_LINES`); the rule lists under the
+  pictures (Partnership, Iconography, Imagery's avoid list, the Type page's rules) shrink,
+  cut at a sentence, then give up their last rules to a "+N more rules, in LFX One" line
+  (`brandKitPortraitRulesFit`, `BRAND_KIT_PORTRAIT_RULE_LISTS`); the contrast page's pairs
+  follow a taller matrix in flow and the pairs the footer cannot hold are counted
+  (`brandKitPortraitContrastLayout`); the Sources columns count the sources read, gaps and
+  conflicts they cannot hold even cut (`moreRead`, `moreGaps`, `moreConflicts`). Nothing
+  may leave its frame and nothing is dropped in silence. Where a block's height depends
+  on the record (the Type page's scale and the two blocks under it, the contrast matrix
+  and the pairs), the blocks are laid in normal flow inside one placed block, with a
+  `min-height` for the mock's drawn position, so the engine's own layout places them and a
+  line the model misjudges can move them, never be drawn on.
+- **The kit's face everywhere.** The frame hands `font-family`, `font-size` and
+  `line-height` back to itself on every element the app's layers set by tag (`p`,
+  headings, `label`, `button`, `input`, `table`), and drops the browser's element margins:
+  two `.pp-page :where(…)` rules in `_mktg-portrait.scss`. They compile to one class's
+  specificity (0,1,0), **unlayered**, so they beat every layered Tailwind text, leading and
+  margin utility on those elements inside a frame (`mt-[8px]` on a `p` does nothing there)
+  and the single-class font rules the family print sheet sets earlier in `styles.scss`
+  (the order is a dependency: the portrait grammar is `@use`d after it). Inside a frame,
+  space and type go through `pp-`/`kp-` grammar classes (`.pp-body-gap`, say) or an inline
+  style, never a Tailwind utility.
+
+**The book** (`mktg-brand-kit-print/`, pages under `pages/`, classes `kp-` in
+`_mktg-brand-kit-pages.scss`) is plan-driven: `brandKitPortraitPlan(view, { inFamily })`
+(`mktg-portrait-plan.utils.ts`) returns the ordered pages with stable ids — `cover`,
+`contents`, `logo-system`, `logo-colorways`, `logo-clear-space`, `logo-symbol`,
+`logo-partnership`, `logo-watchouts`, `color-palette`, `color-contrast`, `type`,
+`visual-iconography`, `visual-imagery`, `usage`, `voice`, `sources`, `back-cover` — and
+drops what the kit cannot draw, page by page on the artwork its tiles consume
+(`brandKitPortraitHasColorwayTiles` for Colorways, `brandKitPortraitHasPrimaryLogo` for
+Clear space, Partnership and Watchouts, `brandKitPortraitHasSymbol` for the symbol page):
+a kit without a logo file, or with a stacked lockup only, keeps the Logo chapter's first
+page alone, which says no files were uploaded; the cover, contents and back cover go
+inside the family. `brandKitLogolessFixture()` (shared fixtures) is that kit, for the
+plan spec and the print-QA harness; `brandKitPngOnlyFixture()` is a kit with raster
+uploads only (listed in the files table, not drawn); `brandKitOverfullFixture()` and
+`brandKitMinimalFixture()` are the envelope's two edges (five colours and 300-character
+lines, twenty sources and six conflicts; four colours, one logo, no pairs and an empty
+run record), both valid records the plan and page specs print bounded and the harness
+prints for the design check. The template iterates that plan (`@for` over `mktgPortraitPlacePlan`, `@switch` on
+the id), so the count, the contents page's numbers and every footer number come from one
+list, never hand-numbered. Every slot holds the kit's live data (`BrandKitBookView`,
+`MktgPrintBrand`, the logo files, icon samples, palette, type, voice, the run record for
+Sources); a fact the store lacks is left out, never a placeholder, and logo file names are
+never printed. The version prints on the cover and the back cover only. Text on the accent
+follows the shared ink rule (`brandKitInkOnAccent`), never white on a failing accent.
+
+**The family's contract.** One `book: MktgPortraitBook | null` input (`{ inFamily,
+headRight, footLeft, firstPage }`) on the kit print: `null` is standalone (the component
+derives the head `<Project> brand kit`, the footer, first page 1, the band on); inside the
+family the section label reads `Brand kit · <section>`, the head right is the family's
+document name, no band, no cover, contents or back cover, and the footer numbers run from
+`firstPage`. The frame's e2e contract: `data-testid="lfx-mktg-portrait-page"`,
+`data-page-id`, `data-page`, `data-section`; inside a page the specs read the
+`brand-kit-*` test ids (a row, a cell, a card, a sample, a `+N more` line), never a
+grammar class. The hidden print frame builds its title as
+before (#5224).
+
+## Routing and verification
+
+Static Kit/Agents/Requests/Access/Documents/Family routes precede `:agentId`; Documents routes remain
+unchanged, and the deleted standalone brand-kit-form route stays deleted. The empty Kit tab uses
+exact matching so it is not active everywhere; named tabs use subset matching with query params ignored.
+Family titles follow the family name.
+
+Up is a fixed-parent `lfx-mktg-breadcrumb`, independent of the entry route. The pure shared
+`buildMktgBreadcrumbs(page, kitRootPath, projectName)` takes a typed kit/tab/family/asset/run page
+and derives labels and fixed parents from the shared catalog/family registries. Pages pass only
+that identity to the component, which reads name and slug from `ProjectContextService` and tracks
+`NavigationEnd` URLs for the absolute lens root (matched on a full path segment). Until the project
+resolves, every page uses the neutral `Marketing kit` label. The shared Node unit suite guards
+against breadcrumb nav markup outside `components/mktg-breadcrumb/mktg-breadcrumb.component.html`. Every crumb except the last is a link;
+the last has `aria-current="page"`. Kit home is the root and has no breadcrumb. Tab pages show
+`<Project> kit › <Tab>`; a family shows `<Project> kit › <Family>`; generic run and shared document
+views show `<Project> kit › <Family> › <Agent or asset>`. Unmapped legacy documents use Documents
+as their middle parent. Parent links use the active project slug and do not inherit asset-only query state;
+an absent project is omitted, not serialized as `?project=`. Separate run/document/Marketing OS back
+arrows are removed. The Member 360 and LinkedIn run pages use the same component and fixed family parents.
+Living run pages use the built asset's item label; one-off run pages retain the catalog agent name.
+Run again, including Member 360's New run,
+targets the catalog run route via `mktgRunRouteFor` and drops document-only state.
+Stored AEO/GEO report crumbs add the revision's UTC date and never carry the list's `type` filter.
+Downstream and Rebuild links derive their lens root with `mktgKitRootPath` and use the active
+project slug. Export actions stay on the asset or Family page; external deck links still open in a new tab.
+
+Back is the browser's history. A user tab or filter click **pushes** one history entry:
+Kit uses `state=`, Documents uses `type=`, and Framework/Brand Kit/Boilerplates/FAQ views use `tab=`
+through `createMktgAssetTab`. Asset tab switches merge unrelated query parameters so project,
+revision and `profile=edit` survive. Missing or unknown tab ids render the view's default panel;
+selecting that default clears `tab=`. Back then restores the preceding tab/filter rather than
+skipping it. Member 360 ranking filters use `tier=`, `owner=`, `search=` and its ordering uses
+`sort=` / `direction=`. Tier/owner selections and sort clicks push once per change. Free-text search
+filters locally as typed but pushes only once per settled term, after a 300 ms debounce and a current-URL
+equality check; Back restores the previous settled term, not individual keystrokes. URL echoes do not
+rewrite the search input while typing.
+
+### LinkedIn entry observation
+
+Before choosing intake or an existing run, the LinkedIn entry reads the creator-scoped
+`GET /api/mktg-agents/documents?project=<uid>&poll=1&ownRuns=1` projection (the #4591 contract),
+then the personal profile. The BFF filters by its authenticated effective subject and
+advertises `creatorScoped: true` when that filter was applied (#4591 push 2); the safe DTO
+gains no identity, private session or capability fields. Auto-landing requires that marker
+or a matching local scoped private attempt for the exact run/document pair. An older,
+unadvertised server cannot redirect the viewer to another writer's run: inputs remain
+available with an inline unavailable note. The client never infers ownership from activity
+or a display name. Private questions remain creator-only.
+
+The header and body share the first-observation loading boundary. Fixed identity and note
+slots keep profile resolution and input-provenance messages from shifting layout. A seeded
+visibility-aware observer rechecks idle entry on timers and focus without repeating profile
+reads or resetting unsent inputs; the document observer owns an already selected run.
+Transport failures expose retry actions rather than claiming no run exists. An initially
+unavailable progress response settles to available inputs with an inline notice and keeps
+checking; it never claims that no run exists. Background failures retain the last observed
+state, question DOM and unsent edits while pausing submission until verification recovers. AEO/GEO discovery needs backend run
+recording before this mechanism applies to it.
+
+LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
+Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document'`.
+Cancel and persisted saves return through history only for a marked entry. Cold entries strip `profile`
+in place, including after Family → Back. Setup-only Continue keeps its answers and returns through
+history only for run origin; document origin stays on intake with `replaceUrl: true` to avoid losing
+unpersisted answers. Legacy boolean markers conservatively retain document-origin behavior.
+Browser Back/Forward restores these query-backed views without starting a run or repeating a write.
+Automatic run-to-document, post-research, questions and selected-revision landings replace history,
+including navigation retries; the exact receipt revision is preserved. Unknown-agent redirects replace.
+Run again/New run push with the active project and the owned `mode=new` entry intent for living assets.
+Draft another and dependency-agent links push with active-project-only params. Automatic landings clear entry-only mode.
+Manual Open intake remains a user push and may carry its owned questions continuation token.
+
+No-project branches are defensive and unit-covered, not stable route-level e2e states:
+`projectQueryParamGuard` permits an absent slug, but `NavigationService.applyDefaultSelection`
+selects an available project or sends an empty lens to Me through `handleEmptyLensResponse`.
+A no-cookie/empty-nav e2e therefore reaches the Me lens Dashboard, not an unselected kit.
+
+Content/robust Playwright pairs stub synthetic listing and revision data, including a
+Boilerplates document and framework source report. They pin the local flag and project grants,
+suppress the cookie banner, wait for hydration, and cover 1440/1280/390px plus each filter.
+No live generation is part of these specs. Unit tests cover exact order/exclusions/labels,
+latest-sequence versus revision count, scope cancellation, SSR and the framework-only source read.

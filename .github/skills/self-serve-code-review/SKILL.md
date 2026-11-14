@@ -35,7 +35,7 @@ documented source in any standards finding. Read the parts relevant to the diff
 before judging, every run, because the standards belong to the repo and move with
 it. They live in:
 
-- **`CLAUDE.md`** — the source-of-truth order, the domain language (PCC, ED,
+- **`AGENTS.md`** — the source-of-truth order, the domain language (PCC, ED,
   Admin Mode, personas, L2), commit/PR conventions, and the global "what NOT to
   do" list.
 - **`.claude/rules/`** — `component-organization.md` (Angular signal structure,
@@ -132,7 +132,7 @@ Run these on the changed code, scaled to the size of the change:
   change does not account for, not the absence of a sentence explaining it — a
   correct new value needs no rationale to be correct.
 - **Protected files.** Changes to `server.ts`, the singleton services, build/format
-  config, or `CLAUDE.md` carry repo-owner weight and warrant closer scrutiny —
+  config, or `AGENTS.md` carry repo-owner weight and warrant closer scrutiny —
   raise one when its risk or intent is unclear, not merely because a sensitive
   file was touched (a clean, well-understood edit to one is not itself a
   finding).

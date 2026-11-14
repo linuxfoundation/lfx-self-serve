@@ -28,15 +28,7 @@
             data-testid="newsletter-preview-drawer-open-new-tab">
             <i class="fa-light fa-arrow-up-right-from-square text-xl"></i>
           </a>
-          <button
-            type="button"
-            (click)="onCopyLink()"
-            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
-            title="Copy link"
-            aria-label="Copy link"
-            data-testid="newsletter-preview-drawer-copy-link">
-            <i class="fa-light fa-link text-xl"></i>
-          </button>
+          <lfx-newsletter-share-button [count]="shareCount()" (share)="onShare()" testId="newsletter-preview-drawer-share" />
         }
         <button
           type="button"
@@ -50,8 +42,15 @@
     </div>
   </ng-template>
 
-  <div class="bg-slate-100 py-6 px-2 min-h-full" data-testid="newsletter-preview-drawer-body">
-    <lfx-newsletter-preview [subject]="subject()" [bodyHtml]="bodyHtml()" [logoUrl]="logoUrl()" [displayName]="displayName()"> </lfx-newsletter-preview>
+  <div class="bg-slate-100 py-6 px-4 sm:px-8 min-h-full" data-testid="newsletter-preview-drawer-body">
+    <lfx-newsletter-preview
+      [subject]="subject()"
+      [bodyHtml]="bodyHtml()"
+      [logoUrl]="logoUrl()"
+      [displayName]="displayName()"
+      [fullDocument]="fullDocument()"
+      [sendDate]="sendDate()">
+    </lfx-newsletter-preview>
   </div>
 
   <ng-template #footer>

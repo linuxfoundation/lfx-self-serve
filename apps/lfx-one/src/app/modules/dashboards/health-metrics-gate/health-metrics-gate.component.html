@@ -2,95 +2,115 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (overviewEnabled()) {
-  <div class="flex flex-col p-6" data-testid="health-metrics-page">
-    <!-- Stays pinned above the scrolling content at the wide layout, matching the design's `.stickyhead`
-         (its own `margin-top:-32px;padding-top:32px` trick, mirrored below) — the sticky offset of every
-         tab's own rail or sub-nav is measured from this element's rendered height, tab bar included.
-         -mt-12/pt-12 cancel out the two ancestor top paddings above this element (main-layout's
-         router-outlet wrapper `py-6` + this shell's own `p-6` = 3rem total) so the header has zero
-         distance to travel before it locks — otherwise it would visibly shift up by that 3rem on the
-         first bit of scroll before sticking. Page-colored, not white — the design's `.stickyhead`/`.phead`
-         match the page surface; opaque so content scrolls under. Pinned below the fixed impersonation
-         banner while impersonating, so the banner doesn't cover it. -->
-    <header
+  <!-- The design's page column: 1440px wide with 40px sides, 20px on phones. From `md` main-layout pads 28px (`md:px-8`),
+       so the column adds 12px; below it the column cancels the layout's 17.5px (`px-5`) and pads itself. The 14px root
+       makes the rem scale undershoot, hence the pixel values. `hmpage` is the container the section nav collapses against. -->
+  <div
+    class="@container/hmpage mx-auto flex w-full max-w-[1384px] flex-col max-md:-mx-5 max-md:w-auto max-md:px-[40px] max-[640px]:px-[20px] md:px-[12px]"
+    lfxHealthMetricsTruncationTip
+    data-testid="health-metrics-page">
+    <!-- The design's `.hm-head`, pinned above the scrolling content at every width. -mt-6 cancels main-layout's `py-6`
+         so it has no distance to travel before it locks, and its own top padding restores the design's 28px. Page-coloured
+         and opaque so content scrolls under it, and bled to the page edges so a card's edge never shows past it. It pins
+         below the impersonation banner and the mobile top bar; the section nav's offset is measured from its height. -->
+    <div
       #pageHeader
-      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12"
-      [ngClass]="{ 'lg:top-12': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-col gap-1">
-          <h1 class="text-xl font-semibold text-gray-900">Health Metrics</h1>
-          <p class="text-sm text-gray-500">A snapshot of foundation health across engagement, events, members, non-members, training, and code.</p>
+      data-testid="health-metrics-sticky-header"
+      class="@container/hmhead sticky z-10 -mx-[40px] -mt-6 mb-[32px] flex flex-col gap-[14px] bg-gray-50 px-[40px] pt-[28px] max-[640px]:-mx-[20px] max-[640px]:px-[20px]"
+      [style.top.px]="chrome.headerTopPx()">
+      <!-- The fade content scrolls into under the pinned header; the header has no rule of its own. -->
+      <span
+        class="pointer-events-none absolute inset-x-0 top-full h-[32px] bg-gradient-to-b from-gray-50 via-gray-50/85 via-35% to-gray-50/0"
+        aria-hidden="true"
+        data-testid="health-metrics-header-fade"></span>
+
+      <!-- The design's own title type replaces the shared page header's: Roboto Slab light at 24px. -->
+      <div class="flex items-start justify-between gap-[16px]">
+        <div class="flex min-w-0 flex-col gap-[6px]">
+          <h1 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="health-metrics-title">Health Metrics</h1>
+          <p class="m-0 text-[12px] font-normal leading-normal text-gray-500" data-testid="health-metrics-subtitle">
+            Operational health across your foundation. Data updated every 24-48 hours.
+          </p>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
-          <!-- Visual only for now — mirrors the design's project drill-down pill (`.projsel`/`.pstrig`);
-               no per-project data exists yet to scope by (LFXV2-3364 stand-in fixture is foundation-wide).
-               Font sizes stay arbitrary: the design's 14/12px carry no line-height, `text-sm` does. -->
-          <button
-            type="button"
-            aria-disabled="true"
-            class="flex h-9 cursor-default items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
-            data-testid="health-metrics-overview-project-selector">
-            <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
-            All projects
-            <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
-          </button>
-          <div class="flex items-center gap-1 rounded-full bg-gray-100 p-1" data-testid="health-metrics-overview-period-selector">
-            @for (period of chrome.periods; track period.range) {
-              <button
-                type="button"
-                [attr.aria-pressed]="period.range === chrome.selectedRange()"
-                [attr.data-testid]="'health-metrics-overview-period-' + period.label"
-                class="rounded-full px-3 py-1 text-[12px] font-medium"
-                [ngClass]="period.range === chrome.selectedRange() ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'"
-                (click)="setPeriod(period)">
-                {{ period.label }}
-              </button>
-            }
+        <div class="flex shrink-0 items-center gap-[10px]">
+          @if (chrome.selectedRange() === 'YTD') {
+            <span class="hidden whitespace-nowrap text-[12px] text-gray-500 @[1000px]/hmhead:inline" data-testid="health-metrics-period-range">{{
+              ytdRangeLabel
+            }}</span>
+          }
+          <div class="hidden @[820px]/hmhead:block">
+            <lfx-ui-switch
+              size="small"
+              ariaLabel="Period"
+              [value]="chrome.selectedRange()"
+              (valueChange)="setPeriod($event)"
+              data-testid="health-metrics-period-switch">
+              @for (period of chrome.periods; track period.range) {
+                <lfx-ui-switch-option [value]="period.range" [label]="period.label" [attr.data-testid]="'health-metrics-period-' + period.label" />
+              }
+            </lfx-ui-switch>
           </div>
-          <!-- Visual only for now — no export wired up yet. The design's one page-level export
-               replaces the per-card download icons. -->
-          <button
-            type="button"
-            aria-disabled="true"
-            class="flex cursor-default items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-semibold text-gray-900"
-            data-testid="health-metrics-overview-export">
-            <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
-            Export
-          </button>
+          <!-- Narrow headers trade the switch for a dropdown. -->
+          <div class="@[820px]/hmhead:hidden">
+            <lfx-ui-select
+              size="small"
+              ariaLabel="Period"
+              [value]="chrome.selectedRange()"
+              (valueChange)="setPeriod($event)"
+              data-testid="health-metrics-period-select">
+              @for (period of chrome.periods; track period.range) {
+                <lfx-ui-option [value]="period.range" [label]="period.label" />
+              }
+            </lfx-ui-select>
+          </div>
         </div>
       </div>
 
-      <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
-           measured offset a tab's sub-nav pins below already accounts for the bar. Tabs whose Level 2
-           story hasn't landed render disabled rather than being omitted, so the bar doesn't reshuffle. -->
-      <nav class="-mb-px flex gap-6 overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
-        @for (tab of tabs; track tab.key) {
-          @if (tab.route === null) {
-            <span
-              class="cursor-default border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-300"
-              aria-disabled="true"
-              [attr.data-testid]="'health-metrics-tab-' + tab.key">
-              {{ tab.label }}
-            </span>
-          } @else {
-            <a
-              [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
-              queryParamsHandling="preserve"
-              routerLinkActive="!border-blue-600 !text-blue-700"
-              [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
-              #rla="routerLinkActive"
-              [attr.aria-current]="rla.isActive ? 'page' : null"
-              class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
-              [attr.data-testid]="'health-metrics-tab-' + tab.key">
-              {{ tab.label }}
-            </a>
+      <!-- The narrowest headers trade the tab bar for a full-width dropdown, the medium select at the design's 38px
+           with a gray-200 rule at rest and a medium-weight value. -->
+      <div class="@[640px]/hmhead:hidden">
+        <lfx-ui-select
+          class="[&_[role=combobox]:not(:hover):not(:focus-visible):not([aria-expanded=true])]:shadow-[0_0_0_1px_theme(colors.gray.200)] [&_[role=combobox]]:h-[38px] [&_[role=combobox]]:font-medium"
+          ariaLabel="Health Metrics view"
+          [(value)]="selectedTab"
+          (valueChange)="openTab($event)"
+          data-testid="health-metrics-tabs-select">
+          @for (tab of tabs; track tab.key) {
+            <lfx-ui-option [value]="tab.key" [label]="tab.label" />
           }
+        </lfx-ui-select>
+      </div>
+      <!-- Inside the sticky header on purpose, so the measured offset a tab's sub-nav pins below already
+           accounts for the bar. A hidden medium-weight copy reserves each label's width, so the active
+           weight never shifts its neighbours. -->
+      <nav
+        class="hidden flex-wrap gap-x-[24px] border-b border-gray-200 @[640px]/hmhead:flex"
+        aria-label="Health Metrics sections"
+        data-testid="health-metrics-tabs">
+        @for (tab of tabs; track tab.key) {
+          <a
+            [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
+            queryParamsHandling="preserve"
+            routerLinkActive="!border-blue-500 !text-gray-900 font-medium"
+            [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
+            #rla="routerLinkActive"
+            [attr.aria-current]="rla.isActive ? 'page' : null"
+            class="-mb-px inline-flex h-[40px] shrink-0 items-center whitespace-nowrap border-b-2 border-transparent text-[13px] font-normal text-gray-500 hover:text-gray-900"
+            [attr.data-testid]="'health-metrics-tab-' + tab.key">
+            <span class="inline-grid">
+              <span class="[grid-area:1/1]">{{ tab.label }}</span>
+              <span class="invisible font-medium [grid-area:1/1]" aria-hidden="true">{{ tab.label }}</span>
+            </span>
+          </a>
         }
       </nav>
-    </header>
+    </div>
 
     <router-outlet />
+
+    <!-- The page renders the app footer itself, so it takes the design's 32px sides (20px on phones) and 56px above. -->
+    <lfx-app-footer class="-mx-[40px] -mb-6 mt-[56px] block px-[32px] max-[640px]:-mx-[20px] max-[640px]:px-[20px]" data-testid="health-metrics-footer" />
   </div>
 } @else {
   <lfx-health-metrics />

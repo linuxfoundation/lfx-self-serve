@@ -108,17 +108,42 @@
                   <th class="border-b border-gray-200 px-3 py-2">Project</th>
                   <th class="border-b border-gray-200 px-3 py-2">Foundation</th>
                   <th class="border-b border-gray-200 px-3 py-2">Role</th>
-                  <th class="border-b border-gray-200 px-3 py-2">Commits</th>
+                  <th class="border-b border-gray-200 px-3 py-2">
+                    <span class="inline-flex items-center gap-1" data-testid="org-people-all-employees-detail-commits-header">
+                      {{ codeCount().label }}
+                      <button
+                        type="button"
+                        class="inline-flex items-center rounded bg-transparent p-0 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        [attr.aria-label]="codeCount().ariaLabel"
+                        [pTooltip]="codeCount().definition"
+                        tooltipPosition="top"
+                        tooltipEvent="both"
+                        data-testid="org-people-all-employees-detail-commits-info">
+                        <i class="fa-light fa-circle-info" aria-hidden="true"></i>
+                      </button>
+                    </span>
+                  </th>
                   <th class="border-b border-gray-200 px-3 py-2">Last Active</th>
                 </tr>
               </thead>
               <tbody>
                 @for (row of code(); track row.projectId + '-' + $index) {
-                  <tr class="border-b border-gray-100 last:border-b-0">
+                  <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-people-all-employees-detail-code-' + row.projectId">
                     <td class="px-3 py-2 font-medium text-gray-800">{{ row.projectName }}</td>
                     <td class="px-3 py-2 text-gray-500">{{ row.foundationName }}</td>
                     <td class="px-3 py-2">
-                      @if (row.isMaintainer) {
+                      @if (detail()?.maintainerRolesUnavailable) {
+                        <button
+                          type="button"
+                          class="inline-flex items-center rounded bg-transparent p-0 text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          [attr.aria-label]="maintainerRolesUnavailableHint"
+                          [pTooltip]="maintainerRolesUnavailableHint"
+                          tooltipPosition="top"
+                          tooltipEvent="both"
+                          data-testid="org-people-all-employees-detail-role-unavailable">
+                          —
+                        </button>
+                      } @else if (row.isMaintainer) {
                         <span
                           class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                           Maintainer
@@ -130,7 +155,7 @@
                         </span>
                       }
                     </td>
-                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.totalCommits | number }}</td>
+                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.commits | number }}</td>
                     <td class="px-3 py-2 text-gray-500">{{ row.lastActivityDate ?? '—' }}</td>
                   </tr>
                 }
@@ -185,43 +210,48 @@
         </section>
       }
 
-      @if (training().length > 0) {
+      @if (showTraining()) {
         <section data-testid="org-people-all-employees-detail-training">
           <header class="mb-2 flex items-center gap-2">
             <i class="fa-light fa-graduation-cap text-xs text-violet-700" aria-hidden="true"></i>
             <h3 class="text-[11px] font-bold uppercase tracking-wide text-gray-700">Training &amp; Certifications</h3>
           </header>
-          <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
-            <table class="w-full text-sm">
-              <thead class="bg-gray-50">
-                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                  <th class="border-b border-gray-200 px-3 py-2">Course</th>
-                  <th class="border-b border-gray-200 px-3 py-2">Status</th>
-                  <th class="border-b border-gray-200 px-3 py-2">Certifications</th>
-                  <th class="border-b border-gray-200 px-3 py-2">Courses Taken</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of training(); track row.courseId + '-' + $index) {
-                  <tr class="border-b border-gray-100 last:border-b-0">
-                    <td class="px-3 py-2 font-medium text-gray-800">{{ row.courseName }}</td>
-                    <td class="px-3 py-2">
-                      @if (row.status === 'Certified') {
-                        <span
-                          class="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
-                          Certified
-                        </span>
-                      } @else {
-                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">Enrolled</span>
-                      }
-                    </td>
-                    <td class="px-3 py-2 font-semibold text-gray-700">{{ row.certificationsCount }}</td>
-                    <td class="px-3 py-2 text-gray-500">{{ row.coursesCount }}</td>
+          <p class="mb-2 text-xs text-gray-500" data-testid="org-people-all-employees-detail-training-window">{{ trainingWindowNote }}</p>
+          @if (training().length === 0) {
+            <p class="text-sm italic text-gray-500" data-testid="org-people-all-employees-detail-training-empty">{{ trainingEmptyNote }}</p>
+          } @else {
+            <div class="overflow-hidden rounded-md border border-gray-200 bg-white">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <th class="border-b border-gray-200 px-3 py-2">Course</th>
+                    <th class="border-b border-gray-200 px-3 py-2">Status</th>
+                    <th class="border-b border-gray-200 px-3 py-2">Certifications</th>
+                    <th class="border-b border-gray-200 px-3 py-2">Courses Taken</th>
                   </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  @for (row of training(); track row.courseId + '-' + $index) {
+                    <tr class="border-b border-gray-100 last:border-b-0">
+                      <td class="px-3 py-2 font-medium text-gray-800">{{ row.courseName }}</td>
+                      <td class="px-3 py-2">
+                        @if (row.status === 'Certified') {
+                          <span
+                            class="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                            Certified
+                          </span>
+                        } @else {
+                          <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600">Enrolled</span>
+                        }
+                      </td>
+                      <td class="px-3 py-2 font-semibold text-gray-700">{{ row.certificationsCount }}</td>
+                      <td class="px-3 py-2 text-gray-500">{{ row.coursesCount }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
         </section>
       }
     </div>

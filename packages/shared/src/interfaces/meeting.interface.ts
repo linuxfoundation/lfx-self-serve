@@ -3,7 +3,9 @@
 
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
-import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { MEETING_COMPOSER_SECTIONS, MEETING_REMOVAL_SOURCES, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS } from '../constants/public-live-meeting.constants';
+import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
@@ -126,6 +128,14 @@ export interface ImportantLinkFormValue {
 /** Voting-status values accepted by the meeting API for committee associations */
 export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
 
+/** One group a meeting belongs to, with its canonical group-details link for the meeting card. */
+export interface MeetingGroupLink {
+  uid: string;
+  name: string;
+  /** Group-details link commands from the meeting's own project tier; null when the group has no uid to open, or the card is already on that group's page. */
+  commands: string[] | null;
+}
+
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
@@ -210,6 +220,12 @@ export interface MeetingOrganizerChipModel {
   /** Additional organizers listed in the "+N" popover. */
   overflow: MeetingOrganizerLink[];
 }
+
+/** Visible status wording for a guest row. `Invite declined` is a calendar/Zoom invite decline, not an RSVP. */
+export type RegistrantStatusLabel = 'Accepted' | 'Declined' | 'Invite declined' | 'Maybe' | 'Pending';
+
+/** Role label a guest carries in the guest panel: a listed organizer, a Meeting Host who isn't one, or neither. */
+export type MeetingGuestRole = 'organizer' | 'host' | null;
 
 /**
  * Minimal host-candidate shape for the organizer host-fallback derivation.
@@ -296,11 +312,19 @@ export interface Meeting {
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
   /**
-   * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
-   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
-   * forces the field off on write. This does not currently change what the LFX meeting page or
-   * the BFF roster endpoints return; that gating is tracked separately.
+   * Share the guest list with guests in LFX. Calendar invites never list other guests, whatever
+   * this is set to — each guest's invite names only the recipient. Board meetings can never
+   * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
+   * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
+   * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
+   * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
+   * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
+   * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
+   * restricted meeting opted in, so that opt-in currently has no effect a guest can see — and the meeting card and
+   * meeting page hide their guest lists to match.
+   * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
+   * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
+   * them instead, so meetings already held keep their attendance (#2827).
    */
   show_meeting_attendees?: boolean | null;
   /**
@@ -348,7 +372,17 @@ export interface Meeting {
   // Fields NOT in API - likely response-only
   /** Invited to meeting (response only) */
   invited: boolean;
-  /** Total registrant count from API */
+  /**
+   * The viewer is invited to the meeting through a committee (response only).
+   * @description True when any of the viewer's registrations for this meeting was added from a committee. It only
+   * words the Remove Yourself confirmation, which tells the viewer the committee will not invite them again.
+   * Unset when the viewer is not invited.
+   */
+  invited_via_committee?: boolean;
+  /**
+   * Total registrant count. `GET /public/api/meetings/:id` sets it for an invitee who is not an
+   * organizer, so they see how many are invited even when the guest list is hidden from them.
+   */
   registrant_count?: number;
   /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
   individual_registrants_count?: number;
@@ -364,6 +398,8 @@ export interface Meeting {
   participant_count?: number;
   /** Attended count for past meetings (response only) */
   attended_count?: number;
+  /** Guest responses for the date a row without an occurrence shows; organizers only, with `include=attendance`. */
+  rsvp_summary?: MeetingRsvpSummary;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
   /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
@@ -384,9 +420,15 @@ export interface Meeting {
    * see `getActiveOccurrences` (LFXV2-2057).
    */
   cancelled_occurrences?: string[];
-  /** Current user's RSVP for this meeting (null when the user hasn't responded).
-   * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
+  /** Effective viewer's RSVP, enriched by /api/user/meetings only.
+   * Null confirms no response; undefined means enrichment was unavailable (or another endpoint).
+   * A date-scoped response may not apply to the meeting's current/next occurrence. */
   my_rsvp?: MeetingRsvp | null;
+  /** Effective viewer's active registration UIDs, enriched by /api/user/meetings only.
+   * An empty array confirms no active registration; undefined means enrichment was unavailable. */
+  my_registrant_ids?: string[];
+  /** Viewer's RSVPs from active registrations (/api/user/meetings only); [] confirms none, undefined means unavailable. */
+  my_rsvps?: MeetingRsvp[];
   /** Project name — populated on query-service list payloads; on the authenticated detail
    * response (`GET /api/meetings/:uid`) it is populated via BFF enrichment and is
    * absent when that enrichment fails (and from the raw ITX detail payload). */
@@ -399,6 +441,8 @@ export interface Meeting {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
+  /** Project logo URL from BFF project enrichment; else the payload's own value, else empty */
+  project_logo_url?: string;
 }
 
 /**
@@ -420,6 +464,10 @@ export interface MeetingOccurrence {
   status?: string;
   /** Total registrant count for this occurrence */
   registrant_count?: number;
+  /** "Yes" responses for this occurrence; set by the v1_meeting index only */
+  response_count_yes?: number;
+  /** "No" responses for this occurrence; set by the v1_meeting index only */
+  response_count_no?: number;
   /**
    * Per-occurrence recurrence override. When a recurring meeting's cadence changes from a
    * specific occurrence onwards, Zoom records it as an `all_following` update and the
@@ -431,6 +479,8 @@ export interface MeetingOccurrence {
    * not compute the effective recurrence.
    */
   recurrence?: MeetingRecurrence | null;
+  /** Guest responses for this date; organizers only, with `include=attendance`. */
+  rsvp_summary?: MeetingRsvpSummary;
 }
 
 /**
@@ -467,7 +517,7 @@ export interface CreateMeetingRequest {
   recording_enabled?: boolean; // Enable meeting recording
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
-  show_meeting_attendees?: boolean; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
+  show_meeting_attendees?: boolean; // Share the guest list with guests in LFX; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -498,7 +548,7 @@ export interface UpdateMeetingRequest {
   recording_enabled?: boolean | null; // Enable meeting recording
   transcript_enabled?: boolean | null; // Enable transcription
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
-  show_meeting_attendees?: boolean | null; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
+  show_meeting_attendees?: boolean | null; // Share the guest list with guests in LFX; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -606,6 +656,11 @@ export interface MeetingRegistrant {
   avatar_url: string | null;
   /** Registrant's LFID username */
   username: string | null;
+  /**
+   * The LF user the registrant is linked to, as the index stores it. Upstream treats it as immutable, so an
+   * update has to send it back as it is; leaving it out reads as a change and fails with "user_id cannot be changed".
+   */
+  user_id?: string | null;
   /** Registrant's LinkedIn profile URL */
   linkedin_profile: string | null;
   /** Creation timestamp */
@@ -619,8 +674,9 @@ export interface MeetingRegistrant {
   /**
    * Committee this registrant was added from (present when `type` is `committee`).
    * Upstream returns the v1 committee SFID; the BFF normalizes it back to the **v2** UID on enriched
-   * reads (`include_committee=true`, and every `/my` registrant response) so the field means the same
-   * thing in both directions. Treat the normalization as best-effort rather than guaranteed — an
+   * reads (`include_committee=true`, and every `/my` registrant response except `preview=true`, which
+   * skips enrichment and always returns the raw SFID) so the field means the same thing in both
+   * directions. Treat the normalization as best-effort rather than guaranteed — an
    * enriched response still returns the raw SFID when the meeting has no committees, when the whole
    * v1↔v2 mapping comes back empty, when this particular SFID has no v2 counterpart, or when
    * enrichment throws (the BFF logs a warning and serves the unenriched rows with a 200 rather than
@@ -647,6 +703,32 @@ export interface MeetingRegistrant {
 }
 
 /**
+ * UI surface a viewer removed themselves from a meeting on.
+ * Derived from the {@link MEETING_REMOVAL_SOURCES} constant so the union stays in sync with it.
+ */
+export type MeetingRemovalSource = (typeof MEETING_REMOVAL_SOURCES)[number];
+
+/** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
+export interface MeetingRegistrationRemovalResult {
+  /** Registrant IDs whose upstream deletes succeeded. */
+  removed_registrant_ids: string[];
+  /** Registrant IDs whose upstream deletes failed and remain invited. */
+  remaining_registrant_ids: string[];
+  /** Raw RSVP history for server-confirmed remaining IDs after partial removal. Omitted when unavailable; [] means no history. */
+  remaining_rsvps?: MeetingRsvp[];
+}
+
+/**
+ * Registrants matched by the signed-in user's other verified emails.
+ */
+export interface MeetingRegistrantsByVerifiedEmails {
+  /** Matches ordered by email priority (meeting-invite preference first). */
+  registrants: MeetingRegistrant[];
+  /** True when nothing matched and an email source was unavailable. */
+  lookupFailed: boolean;
+}
+
+/**
  * What a public self-registration (`POST /public/api/meetings/register`) actually returns.
  * @description Narrower than `MeetingRegistrant`. The route is mounted on the optional-auth `/public/api`
  * surface, but the handler itself requires a session and a bearer token, so the caller is an authenticated
@@ -658,6 +740,9 @@ export interface MeetingRegistrant {
  * "upstream stored nothing" are different answers, and only omission preserves the distinction.
  */
 export type PublicMeetingRegistrationResponse = Partial<Pick<MeetingRegistrant, (typeof PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS)[number]>>;
+
+/** Which dates a guest added from a recurring meeting's guest list is invited to */
+export type GuestInviteScope = 'all' | 'occurrence';
 
 /**
  * Request payload for creating a meeting registrant
@@ -722,9 +807,9 @@ export interface UpdateMeetingRegistrantRequest {
    * Three known gaps, all pre-dating that rename:
    *
    * - `null` does not erase. Every field upstream declares is declared non-nullable, and
-   *   `MeetingService.getChangedFields` nulls each of these whenever it's blank, so the BFF omits a
-   *   `null` rather than sending one — for `job_title` and `username` under their own name, for the
-   *   three renamed fields by skipping the rename. Clearing a stored organization or job title
+   *   `MeetingService.getChangedFields` nulls `job_title` and the three renamed fields whenever they are
+   *   blank, so the BFF omits a `null` rather than sending one — for `job_title` under its own name, for
+   *   the renamed fields by skipping the rename. `username` is never nulled: it goes back as stored or is left out. Clearing a stored organization or job title
    *   therefore doesn't take effect. Fixing it needs upstream to say how these fields are erased —
    *   don't guess between `null` and `''`; `occurrence` already gives blank its own meaning
    *   ("blank = all occurrences").
@@ -760,6 +845,8 @@ export interface UpdateMeetingRegistrantRequest {
   avatar_url?: string | null;
   /** User's LFID */
   username?: string | null;
+  /** The LF user the registrant is linked to; sent back unchanged, because upstream rejects an update that changes it. */
+  user_id?: string;
   /** User's LinkedIn profile URL */
   linkedin_profile?: string | null;
 }
@@ -808,6 +895,40 @@ export interface ComposerGuestRow {
    * the literal `guest` when a registrant arrives carrying neither.
    */
   removeLabel: string;
+  /** The host toggle's accessible name, built from the same name as `removeLabel` and flipping with the guest's host flag. */
+  hostLabel: string;
+  /** The host toggle's tooltip: `Make host`, or `Remove host` when the guest already is one. */
+  hostTooltip: string;
+  /**
+   * Single-occurrence edit only: which occurrences the guest is invited to — `All occurrences` or
+   * `This occurrence`. `null` everywhere else, where every guest shares the same scope.
+   */
+  scopeLabel: string | null;
+  /**
+   * Whether the row offers a remove button. While editing one occurrence, only guests invited to it alone
+   * can be removed: upstream cannot exclude a series guest from a single occurrence, so those are read-only.
+   */
+  removable: boolean;
+}
+
+/**
+ * Guest removals since the last add or dismiss, kept so they can be undone together
+ * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
+ * list as it was before the first removal, so it is only offered while nothing but these removals has
+ * changed it: `signature` is the list right after the latest one, and `committeeKey` the selected groups.
+ */
+export interface ComposerGuestRemovalBatch {
+  /** The guest list, and the suppressed group emails, before the first removal. */
+  before: MeetingRegistrantWithState[];
+  suppressedBefore: Set<string>;
+  /** Row identities and states, in order, right after the latest removal. */
+  signature: string;
+  /** The selected group uids and voting filters at the first removal. */
+  committeeKey: string;
+  /** Names read back in the notice, oldest first. */
+  labels: string[];
+  /** Track id of the first removed guest, which gets focus back after Undo; `null` for a keyless row. */
+  focusTrackId: string | null;
 }
 
 /**
@@ -961,12 +1082,24 @@ export interface PastMeeting extends Meeting {
   occurrence_id: string;
   /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000"); used as the canonical id downstream */
   meeting_and_occurrence_id?: string;
+  /** Attendance tally; organizers only, with `include=attendance`. */
+  attendance_summary?: PastMeetingAttendanceSummary;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
   sessions: MeetingSession[];
-  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
+  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
+  /** Whether a recording with a share URL is viewable by the user — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
+  has_recording?: boolean;
+  /** Share URL of the largest recording session when `has_recording` is true — /api/user/past-meetings?include=artifacts only */
+  recording_share_url?: string;
+  /** Whether an AI summary with content is visible to the viewer (organizers include awaiting approval) — /api/user/past-meetings?include=artifacts only; undefined when the lookup failed */
+  has_ai_summary?: boolean;
+  /** Whether that summary still awaits the viewing organizer's approval — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_awaiting_approval?: boolean;
+  /** Uid of the summary those flags describe — /api/user/past-meetings?include=artifacts only, set with `has_ai_summary` */
+  ai_summary_uid?: string;
 }
 
 /** Angular router target for navigating to a specific meeting occurrence. */
@@ -1377,6 +1510,77 @@ export interface MeetingCancelOccurrenceResult {
   error?: string;
 }
 
+/** Request body for canceling a single occurrence of a recurring meeting */
+export interface CancelMeetingOccurrenceRequest {
+  /** Note included in the cancellation emails sent to guests */
+  note?: string;
+}
+
+/**
+ * Request body for editing a single occurrence of a recurring meeting
+ * @description Carries no `recurrence`: upstream rejects one unless `all_following_occurrences` is set,
+ * which would widen the change from this occurrence to every later one. `title` and `description`
+ * are sent only when changed, so an untouched field keeps following the series.
+ */
+export interface UpdateMeetingOccurrenceRequest {
+  /** New start time of the occurrence in RFC3339 format */
+  start_time: string;
+  /** New duration of the occurrence in minutes */
+  duration: number;
+  /** Title for this occurrence only (upstream `topic`) */
+  title?: string;
+  /** Agenda for this occurrence only (upstream `agenda`). Upstream drops an empty value, so it can't be cleared. */
+  description?: string;
+}
+
+/**
+ * Result of rescheduling a meeting occurrence
+ * @description `start_time` is the occurrence's new start, which is also its new occurrence id
+ */
+export interface MeetingRescheduleOccurrenceResult {
+  confirmed: boolean;
+  start_time?: string;
+  error?: string;
+}
+
+/**
+ * Which part of a recurring meeting an edit applies to
+ */
+export type RecurringMeetingEditScope = 'occurrence' | 'series';
+
+/**
+ * Result of the recurring meeting edit scope dialog
+ */
+export interface RecurringMeetingEditScopeResult {
+  proceed: boolean;
+  scope: RecurringMeetingEditScope;
+  /** The occurrence picked in the dialog — set whenever `scope` is `'occurrence'` and `proceed` is true. */
+  occurrenceId?: string;
+}
+
+/** Which part of a recurring meeting a delete applies to. */
+export type MeetingDeleteType = 'occurrence' | 'series';
+
+/** Result of the recurring meeting delete scope dialog. */
+export interface MeetingDeleteTypeResult {
+  deleteType: MeetingDeleteType;
+  /**
+   * The occurrence picked in the dialog's picker.
+   * @description Set for `'occurrence'` while `meeting-v2-enabled` is on. The pre-v2 dialog has no picker and
+   * omits it, so the caller cancels the occurrence it opened the dialog on — never assume it is populated.
+   */
+  occurrenceId?: string;
+}
+
+/**
+ * One row of the occurrence picker shared by the edit and delete scope dialogs.
+ * @description `value` is the occurrence id; `label` is its start in the series' own timezone.
+ */
+export interface MeetingOccurrenceOption {
+  label: string;
+  value: string;
+}
+
 /**
  * Recording session information
  * @description Individual session within a past meeting recording
@@ -1579,6 +1783,52 @@ export type RsvpResponse = 'accepted' | 'maybe' | 'declined';
 export type RsvpScope = 'single' | 'all' | 'this_and_following';
 
 /**
+ * Guest responses for one upcoming meeting date, as the meeting page counts them
+ * @description `invited` = `yes` + `maybe` + `no` + `no_response`.
+ */
+export interface MeetingRsvpSummary {
+  /** Registrants invited to the meeting */
+  invited: number;
+  /** Guests who answered Yes */
+  yes: number;
+  /** Guests who answered Maybe */
+  maybe: number;
+  /** Guests who answered No */
+  no: number;
+  /** Guests with no answer for this date */
+  no_response: number;
+}
+
+/** A meeting's RSVP summaries keyed by the home row's occurrence id, `''` for a row without one */
+export type MeetingRsvpSummaries = Record<string, MeetingRsvpSummary>;
+
+/**
+ * One meetings-home row of a meeting the viewer organizes, as the BFF tallies it
+ */
+export interface MeetingRsvpSummaryRow {
+  /** The row's occurrence id, `''` for a row without one */
+  key: string;
+  /** Whether the row shows an entry of `occurrences` (else the summary goes on the meeting) */
+  onOccurrence: boolean;
+}
+
+/**
+ * Per-viewer cache of attendance summaries keyed by meeting id
+ * @description Each entry keeps its own write time so entries expire independently.
+ */
+export type CachedMeetingAttendance<T> = Record<string, { at: number; value: T }>;
+
+/**
+ * Attendance of one past meeting, as the meeting page counts it
+ */
+export interface PastMeetingAttendanceSummary {
+  /** Participant records: invited guests plus anyone who joined uninvited */
+  invited: number;
+  /** Participants who joined */
+  attended: number;
+}
+
+/**
  * RSVP counts by response type
  * @description Aggregated counts of RSVPs grouped by response
  */
@@ -1645,6 +1895,17 @@ export interface CreateMeetingRsvpRequest {
   scope: RsvpScope;
   /** User's RSVP response */
   response: RsvpResponse;
+}
+
+/**
+ * Failed RSVP submission
+ * @description Error emitted by the frontend RSVP submit flow; `message` is ready to show to the user
+ */
+export interface MeetingRsvpSubmitError {
+  /** User-facing reason the RSVP was not saved */
+  message: string;
+  /** HTTP status of the failed request, absent when the request was never sent */
+  status?: number;
 }
 
 // ============================================================================
@@ -1744,15 +2005,56 @@ export type PublicMeetingProject = {
 };
 
 /**
+ * Anonymous full-access past-meeting detail, projected through `PUBLIC_ANONYMOUS_PAST_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousPastMeeting = Partial<Pick<PastMeeting, (typeof PUBLIC_ANONYMOUS_PAST_MEETING_KEYS)[number]>>;
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
  * via the existing authenticated endpoints
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting;
+  meeting: PastMeeting | PublicAnonymousPastMeeting;
   project: PublicMeetingProject;
   full_access: boolean;
+}
+
+/**
+ * Anonymous/guest-access live meeting detail, projected through `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousLiveMeeting = Partial<Pick<Meeting, (typeof PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS)[number]>>;
+
+/**
+ * Response from the public live/upcoming meeting endpoint.
+ * @description Returns meeting details with tiered access — `full_access` indicates whether the
+ * caller has an authenticated session with real access to the meeting (organizer, invitee, or
+ * member), as opposed to an anonymous visitor or a guest who only has the shared password. A
+ * private meeting reached without `full_access` returns only the fields in
+ * `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS` (title + enough context to join as a guest) — no agenda,
+ * materials, or date/time. `can_join` is a server-computed substitute for the join-window check the
+ * client can no longer run itself once `start_time`/`early_join_time_minutes` are stripped from a
+ * non-full-access response — it reuses the same window the controller already enforces before
+ * issuing a join URL, so the client's Join button state matches what the server will actually allow.
+ */
+export interface PublicMeetingResponse {
+  meeting: Meeting | PublicAnonymousLiveMeeting;
+  project: PublicMeetingProject;
+  full_access: boolean;
+  can_join: boolean;
+}
+
+/** What the redesigned `/meetings/:id` page shows: a state of its own, the details, or a hand-off to the legacy page. */
+export type MeetingPageView = 'loading' | 'error' | 'details' | 'fallback';
+
+/** Which `/meetings/:id` page the server rendered, handed to the browser so hydration picks the same one. */
+export interface MeetingPageRedesignDecision {
+  /** The `:id` route param the decision was made for. */
+  id: string;
+  enabled: boolean;
 }
 
 /**
@@ -1760,9 +2062,10 @@ export interface PublicPastMeetingResponse {
  * pattern as {@link PublicProfilePageState}: seeds the client's first paint from the server's
  * resolved branch so hydration keeps the SSR-rendered meeting on screen while the client
  * confirms it with its own fetch, instead of tearing it down for a blank/skeleton state until
- * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` are carried alongside `meeting`
- * because `MeetingJoinComponent.initializeMeeting()` sets them as side effects of the same
- * fetch — seeding the meeting alone would lose the past-meeting branch on hydration.
+ * that refetch resolves. `loadedViaPastMeetingId` / `pastMeetingFullAccess` / `liveMeetingFullAccess`
+ * are carried alongside `meeting` because `MeetingJoinComponent.initializeMeeting()` sets them as
+ * side effects of the same fetch — seeding the meeting alone would lose the past-meeting/full-access
+ * branch on hydration.
  * `meeting` is `null` and `meetingLoadFailed` is `true` for the terminal, non-navigating error
  * branch (a 5xx/network failure) — without seeding that branch too, the client would hydrate
  * `meetingLoadFailed` back to `false` and tear down the SSR-rendered error view.
@@ -1771,6 +2074,8 @@ export interface MeetingJoinPageState {
   meeting: (Meeting & { project: PublicMeetingProject }) | null;
   loadedViaPastMeetingId: boolean;
   pastMeetingFullAccess: boolean;
+  liveMeetingFullAccess: boolean;
+  liveMeetingCanJoin: boolean;
   meetingLoadFailed: boolean;
 }
 
@@ -1833,6 +2138,12 @@ export interface MeetingTypeBadge {
  */
 export type PastMeetingSort = (typeof PAST_MEETING_SORT)[keyof typeof PAST_MEETING_SORT];
 
+/** Time period shown by the meeting dashboard. */
+export type MeetingDashboardView = 'upcoming' | 'past';
+
+/** Personal response filter, independent of time and organizer selection. */
+export type MeetingResponseFilter = 'all' | 'pending' | 'accepted' | 'maybe' | 'declined';
+
 /**
  * Client-side filter criteria applied to the Me lens meeting lists (My Meetings), which are
  * fetched once and filtered in the browser rather than re-queried per filter change.
@@ -1846,12 +2157,27 @@ export interface MeLensMeetingFilters {
   foundation: string | null;
   /** Project UID; takes precedence over `foundation` when both are set. */
   project: string | null;
-  /** Keep only meetings with no RSVP recorded (upcoming only). */
-  pendingRsvpOnly: boolean;
-  /** Keep only meetings the viewer organized (created), matching the "Organized by you" chip. */
-  organizerOnly: boolean;
-  /** Viewer username/LFID used by the `organizerOnly` predicate; null disables matching. */
+  /** Time period; response filters apply only to upcoming meetings. */
+  view: MeetingDashboardView;
+  responseFilter: MeetingResponseFilter;
+  organizedByMe: boolean;
+  /** Canonical viewer username/LFID for owner-first organizer matching; null never matches. */
   viewerUsername: string | null;
+  /** Explicitly hide all-date declines, except meetings organized by the viewer. */
+  hideDeclined: boolean;
+}
+
+/**
+ * One face in the fixed-height attendee preview on a meeting card.
+ * @description Built from either a registrant or an RSVP row, so only display fields are carried.
+ */
+export interface MeetingAttendeePreviewPerson {
+  /** Stable key for `@for` tracking (registrant uid, RSVP id, or email). */
+  key: string;
+  /** Display name shown in the tooltip; falls back to the email. */
+  name: string;
+  /** Profile picture URL; the avatar falls back to the first initial when absent. */
+  avatarUrl: string | null;
 }
 
 /**
@@ -1908,7 +2234,7 @@ export interface PublicProjectMeetingsResponse {
   meetings: PublicCalendarMeeting[];
   /** Number of entries in `meetings` */
   total: number;
-  /** Slim project envelope for the page header; `name` is empty when project lookup fails */
+  /** Slim project envelope; `name` is empty for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
   project: { uid: string; name: string };
 }
 
@@ -2017,6 +2343,33 @@ export interface MeetingComposerContext {
   variant?: MeetingComposerVariant;
   /** Meeting type the quick create dialog opens pre-selected with, so its template prefill runs immediately. */
   meetingType?: MeetingType;
+  /**
+   * Edit mode only: the single occurrence of a recurring meeting to edit, instead of the whole series.
+   * @description Narrows the drawer to what upstream's occurrence update accepts — title, date and time,
+   * duration and agenda — and saves through `PUT /meetings/:uid/occurrences/:occurrenceId`.
+   */
+  occurrenceId?: string;
+}
+
+/**
+ * Which part of a recurring meeting an open composer edit changes, as its header banner states it.
+ * @description `label` is the occurrence's saved start in the series timezone. Absent for a create and
+ * for a one-off meeting, which have no scope to state.
+ */
+export interface MeetingComposerEditScope {
+  kind: RecurringMeetingEditScope;
+  /** Set for `occurrence` only. */
+  label?: string;
+}
+
+/** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */
+export interface ShowMeetingAttendeesLockOptions {
+  /**
+   * Let restricted (invite-only) meetings opt in — only board meetings lock.
+   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
+   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
+   */
+  allowRestricted?: boolean;
 }
 
 /** Composer surface: the full sectioned drawer, or the condensed quick create dialog. */
@@ -2034,14 +2387,14 @@ export type MeetingComposerVariant = 'drawer' | 'quick';
 export type MeetingComposerLoadFailure = 'retryable' | 'denied';
 
 /**
- * What the post-create toast needs to render its actions.
- * @description Carried on the PrimeNG message's `data`, since creating no longer navigates anywhere —
- * the toast is the only route back to the meeting that was just created.
+ * What the post-create toast needs to run its actions.
+ * @description Creating no longer navigates anywhere, so the toast is the only route back to the meeting
+ * that was just created.
  */
 export interface MeetingComposerToastData {
   meetingUid: string;
   meetingTitle: string;
-  /** Router link to the meeting's public join page. */
+  /** Router URL of the meeting's public join page. */
   meetingUrl: string;
   /**
    * Router navigation state that page needs — the access password, for a private or restricted meeting.
@@ -2098,3 +2451,58 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/**
+ * Options for a project-scoped meetings query.
+ * @description With `includeSubProjects`, a foundation or parent project's meetings also include
+ * those of every project beneath it (GH-5566); the server resolves the tree under the caller's own
+ * access. Off by default, so callers that need one project's meetings only are unaffected.
+ * `pageSize` asks for larger pages, for feeds that walk every page (the dashboard calendar and stat
+ * tiles), so a rolled-up foundation does not hit their page cap.
+ */
+export interface MeetingProjectQueryOptions {
+  includeSubProjects?: boolean;
+  pageSize?: number;
+  /** With `includeSubProjects`: limit the roll-up to these project UIDs (each must be in the tree). */
+  projectUids?: string[];
+  /** With `includeSubProjects`: only meetings of this group (committee UID). */
+  committeeUid?: string | null;
+  /** With `includeSubProjects`: only meetings of groups with this category. */
+  groupType?: string | null;
+}
+
+/**
+ * Filters a roll-up meetings query narrows its project tree by (GH-5566).
+ * @description Parsed server-side from `project_uids`, `committee_uid` and `group_type`; all combine.
+ */
+export interface MeetingRollupFilters {
+  projectUids?: string[];
+  committeeUid?: string;
+  groupType?: string;
+}
+
+/** A project offered by the roll-up Project filter. */
+export interface MeetingRollupProjectOption {
+  uid: string;
+  name: string;
+  slug: string;
+}
+
+/** A group offered by the roll-up Group filter; `category` also feeds the Group type filter. */
+export interface MeetingRollupGroupOption {
+  uid: string;
+  name: string;
+  category: string | null;
+  project_uid: string;
+}
+
+/** Options for the roll-up filters of a foundation or parent project's meetings list. */
+export interface MeetingRollupFilterOptions {
+  projects: MeetingRollupProjectOption[];
+  groups: MeetingRollupGroupOption[];
+  /**
+   * Whether `projects` lists the whole tree: the walk missed no branch and every resolved project's details
+   * loaded. Only then does checking every listed project mean "all projects"; otherwise it stays a subset.
+   */
+  complete: boolean;
+}

@@ -39,6 +39,14 @@
             } @else {
               <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500"> Paused </span>
             }
+            @if (entry.donation.anonymous) {
+              <lfx-tag
+                value="Anonymous"
+                severity="secondary"
+                icon="fa-light fa-eye-slash"
+                [rounded]="true"
+                [attr.data-testid]="'recurring-anonymous-tag-' + entry.donation.id" />
+            }
           </div>
 
           <p class="text-xs text-gray-400">
@@ -58,7 +66,7 @@
           }
         </div>
 
-        <!-- Ellipsis menu (hidden for canceled subscriptions) -->
+        <!-- Ellipsis menu: name visibility for every subscription, plus Cancel unless already canceled -->
         @if (entry.menuItems.length > 0) {
           <div class="flex-shrink-0" (click)="$event.stopPropagation()">
             <lfx-button

@@ -9,12 +9,18 @@
   [attr.data-no-access]="hasPageState()"
   [attr.data-page-state]="pageState()">
   @if (loaded() && !hasPageState()) {
-    <header class="flex flex-col gap-1 md:flex-row md:items-center md:gap-3" data-testid="org-overview-header">
-      <h1 class="font-display font-light text-2xl" data-testid="org-overview-title">{{ companyName() }} Overview</h1>
+    <lfx-page-header [title]="companyName() + ' Overview'" titleTestId="org-overview-title" data-testid="org-overview-header">
       @if (tierLabel(); as tier) {
-        <lfx-tag [value]="tier" severity="secondary" icon="fa-light fa-star" [rounded]="true" styleClass="text-xs" data-testid="org-overview-tier-badge" />
+        <lfx-tag
+          pageHeaderTitleSuffix
+          [value]="tier"
+          severity="secondary"
+          icon="fa-light fa-star"
+          [rounded]="true"
+          styleClass="text-xs"
+          data-testid="org-overview-tier-badge" />
       }
-    </header>
+    </lfx-page-header>
   }
 
   @if (pageState(); as state) {

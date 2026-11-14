@@ -1,20 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal, signal, viewChild, WritableSignal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
-import { DEFAULT_EVENTS_PAGE_SIZE, EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
-import { EventTabId, MyEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
+import { DEFAULT_EVENTS_PAGE_SIZE, EMPTY_MY_EVENTS_RESPONSE, MY_EVENTS_UPCOMING_VIEWS } from '@lfx-one/shared/constants';
+import { EventTabId, MyEventsResponse, MyEventsUpcomingView, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, debounceTime, finalize, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, filter, finalize, of, skip, switchMap, tap } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { EventRequestListComponent } from '../event-request-list/event-request-list.component';
 import { EventsTableComponent } from '../events-table/events-table.component';
 
 @Component({
   selector: 'lfx-events-list',
-  imports: [EventsTableComponent, EventRequestListComponent, EmptyStateComponent],
+  imports: [EventsTableComponent, EventRequestListComponent, EmptyStateComponent, FilterPillsComponent],
   templateUrl: './events-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -51,19 +52,25 @@ export class EventsListComponent {
 
   // Unfiltered stats signals — fetched once with pageSize=1, used only for totals and next-event name
   private readonly statsUpcomingAll: Signal<MyEventsResponse> = this.initializeStatsUpcomingAll();
-  private readonly statsUpcomingRegistered: Signal<MyEventsResponse> = this.initializeStatsUpcomingRegistered();
+  private readonly statsUpcomingRegistered: Signal<MyEventsResponse | null> = this.initializeStatsUpcomingRegistered();
   private readonly statsPast: Signal<MyEventsResponse> = this.initializeStatsPast();
 
   // Me lens stat cards — derived from server-reported totals so counts stay accurate regardless of page size
   public readonly eventsStatsLoading = computed(() => this.statsUpcomingAllLoading() || this.statsUpcomingRegisteredLoading() || this.statsPastLoading());
-  public readonly registeredCount = computed(() => this.statsUpcomingRegistered().total);
+  public readonly registeredCount = computed(() => this.statsUpcomingRegistered()?.total ?? 0);
   public readonly attendedCount = computed(() => this.statsPast().total);
-  public readonly nextEventName = computed(() => this.statsUpcomingRegistered().data[0]?.name ?? '');
-  public readonly availableToJoinCount = computed(() => Math.max(0, this.statsUpcomingAll().total - this.statsUpcomingRegistered().total));
+  public readonly nextEventName = computed(() => this.statsUpcomingRegistered()?.data[0]?.name ?? '');
+  public readonly availableToJoinCount = computed(() => Math.max(0, this.statsUpcomingAll().total - this.registeredCount()));
   public readonly tabCounts = computed(() => ({
     upcoming: this.statsUpcomingAll().total,
     past: this.statsPast().total,
   }));
+
+  // Upcoming-tab registration view — declared after registeredCount, which seeds its default
+  protected readonly upcomingViewOptions = MY_EVENTS_UPCOMING_VIEWS;
+  protected readonly upcomingView: WritableSignal<MyEventsUpcomingView> = this.initUpcomingView();
+  public readonly upcomingRegisteredOnly = computed(() => (this.statsUpcomingRegisteredLoading() ? null : this.upcomingView() === 'registered'));
+  protected readonly showUpcomingViewPills = this.initShowUpcomingViewPills();
 
   /**
    * True when the filter/search bar should be visible:
@@ -91,6 +98,15 @@ export class EventsListComponent {
         this.upcomingEventsPage.set({ offset: 0, pageSize: this.upcomingEventsPage().pageSize });
         this.pastEventsPage.set({ offset: 0, pageSize: this.pastEventsPage().pageSize });
       });
+
+    // Back to page 1 whenever the upcoming view changes — by a pill click or by the default resetting on a tab switch
+    toObservable(this.upcomingView)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        if (this.upcomingEventsPage().offset !== 0) {
+          this.upcomingEventsPage.set({ offset: 0, pageSize: this.upcomingEventsPage().pageSize });
+        }
+      });
   }
 
   /** Delegates to the currently rendered EventRequestListComponent (visa-letters / travel-funding tabs). False if it isn't rendered yet. */
@@ -105,6 +121,13 @@ export class EventsListComponent {
   protected onUpcomingPageChange(event: PageChangeEvent): void {
     this.upcomingEventsLoading.set(true);
     this.upcomingEventsPage.set(event);
+  }
+
+  protected onUpcomingViewChange(view: string): void {
+    const match = MY_EVENTS_UPCOMING_VIEWS.find((option) => option.id === view);
+    if (match) {
+      this.upcomingView.set(match.id);
+    }
   }
 
   protected onPastPageChange(event: PageChangeEvent): void {
@@ -140,6 +163,18 @@ export class EventsListComponent {
     return this.initializeEvents(true, this.pastEventsPage, this.pastEventsLoading, this.pastSortField, this.pastSortOrder);
   }
 
+  // Only a confirmed zero defaults to discovery; count failures retain registrations.
+  private initUpcomingView(): WritableSignal<MyEventsUpcomingView> {
+    return linkedSignal<{ tab: EventTabId; registeredCount: number | null }, MyEventsUpcomingView>({
+      source: () => ({ tab: this.activeTab(), registeredCount: this.statsUpcomingRegistered()?.total ?? null }),
+      computation: ({ registeredCount }) => (registeredCount === 0 ? 'all' : 'registered'),
+    });
+  }
+
+  private initShowUpcomingViewPills(): Signal<boolean> {
+    return computed(() => !this.eventsStatsLoading() && (this.statsUpcomingAll().total > 0 || this.registeredCount() > 0 || this.upcomingEvents().total > 0));
+  }
+
   private initializeStatsUpcomingAll(): Signal<MyEventsResponse> {
     return toSignal(
       this.eventsService.getMyEvents({ isPast: false, offset: 0, pageSize: 1 }).pipe(
@@ -150,10 +185,17 @@ export class EventsListComponent {
     );
   }
 
-  private initializeStatsUpcomingRegistered(): Signal<MyEventsResponse> {
+  private initializeStatsUpcomingRegistered(): Signal<MyEventsResponse | null> {
     return toSignal(
       this.eventsService.getMyEvents({ isPast: false, offset: 0, pageSize: 1, registeredOnly: true, sortField: 'EVENT_START_DATE', sortOrder: 'ASC' }).pipe(
-        catchError(() => of(EMPTY_MY_EVENTS_RESPONSE)),
+        catchError(() => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load registration totals. Upcoming defaults to My Registrations.',
+          });
+          return of(null);
+        }),
         finalize(() => this.statsUpcomingRegisteredLoading.set(false))
       ),
       { initialValue: EMPTY_MY_EVENTS_RESPONSE }
@@ -187,12 +229,16 @@ export class EventsListComponent {
           status: this.status() ?? undefined,
           sortField: sortFieldSignal(),
           sortOrder: sortOrderSignal(),
+          registeredOnly: (!isPast && this.upcomingRegisteredOnly()) || undefined,
+          // Upcoming waits for the registered-count stats, so its first request already carries the default view
+          ready: isPast || this.upcomingRegisteredOnly() !== null,
         }))
       ).pipe(
+        filter(({ ready }) => ready),
         debounceTime(0),
         tap(() => loadingSignal.set(true)),
-        switchMap(({ offset, pageSize, projectName, searchQuery, role, status, sortField, sortOrder }) =>
-          this.eventsService.getMyEvents({ isPast, offset, pageSize, projectName, searchQuery, role, status, sortField, sortOrder }).pipe(
+        switchMap(({ offset, pageSize, projectName, searchQuery, role, status, sortField, sortOrder, registeredOnly }) =>
+          this.eventsService.getMyEvents({ isPast, offset, pageSize, projectName, searchQuery, role, status, sortField, sortOrder, registeredOnly }).pipe(
             catchError(() => {
               this.messageService.add({
                 severity: 'error',

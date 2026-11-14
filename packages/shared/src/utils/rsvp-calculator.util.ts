@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
+import {
+  ITXMeetingResponseResult,
+  MeetingAttendeePreviewPerson,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRsvp,
+  RegistrantStatusLabel,
+  RsvpCounts,
+} from '../interfaces/meeting.interface';
 
 /**
  * Convert an `occurrence_id` string into a millisecond epoch, regardless of the
@@ -28,6 +36,15 @@ export function occurrenceIdToMs(occurrenceId: string | null | undefined): numbe
   // Magnitude cutoff is unit-correct regardless of string formatting (padded zeros,
   // scientific notation) and avoids reading .length on a potentially-tainted value.
   return n < 1e12 ? n * 1000 : n;
+}
+
+/**
+ * Normalize an `occurrence_id` to the Unix-seconds form Zoom/ITX expect, accepting seconds or milliseconds.
+ * Returns `null` for anything {@link occurrenceIdToMs} can't parse.
+ */
+export function occurrenceIdToSeconds(occurrenceId: string | null | undefined): string | null {
+  const ms = occurrenceIdToMs(occurrenceId);
+  return ms === null ? null : String(Math.floor(ms / 1000));
 }
 
 /**
@@ -59,7 +76,7 @@ export function isSameOccurrenceId(a: string | null | undefined, b: string | nul
  * silently dropping and degrading the chip to the `invite_accepted` fallback
  * (LFXV2-2864).
  */
-function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_and_occurrence_id'>): string | null {
+export function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_and_occurrence_id'>): string | null {
   const direct = rsvp.occurrence_id;
   if (typeof direct === 'string' && direct.length > 0) return direct;
   const composite = rsvp.meeting_and_occurrence_id;
@@ -68,6 +85,11 @@ function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_
   if (idx < 0 || idx === composite.length - 1) return null;
   const suffix = composite.slice(idx + 1);
   return suffix.length > 0 ? suffix : null;
+}
+
+/** Effective write time of an RSVP: API sends `modified_at`; older payloads fall back through `updated_at` then `created_at`. */
+export function getRsvpTimestampMs(rsvp: Pick<MeetingRsvp, 'modified_at' | 'updated_at' | 'created_at'>): number {
+  return new Date(rsvp.modified_at || rsvp.updated_at || rsvp.created_at).getTime();
 }
 
 /**
@@ -101,12 +123,7 @@ function getRsvpOccurrenceId(rsvp: Pick<MeetingRsvp, 'occurrence_id' | 'meeting_
 export function selectApplicableRsvp(occurrenceId: string | null | undefined, userRsvps: MeetingRsvp[]): MeetingRsvp | null {
   if (userRsvps.length === 0) return null;
 
-  // API sends `modified_at`; older payloads fall back through `updated_at` then `created_at`.
-  const sortedRsvps = [...userRsvps].sort((a, b) => {
-    const dateA = new Date(a.modified_at || a.updated_at || a.created_at).getTime();
-    const dateB = new Date(b.modified_at || b.updated_at || b.created_at).getTime();
-    return dateB - dateA;
-  });
+  const sortedRsvps = [...userRsvps].sort((a, b) => getRsvpTimestampMs(b) - getRsvpTimestampMs(a));
 
   if (!occurrenceId) {
     return sortedRsvps[0] || null;
@@ -144,6 +161,52 @@ export function selectApplicableRsvp(occurrenceId: string | null | undefined, us
   }
 
   return null;
+}
+
+/**
+ * True when `newer` was written strictly after `older` and covers every date `older` answers,
+ * so newest-applicable selection ({@link selectApplicableRsvp}) can never pick `older` again.
+ * Coverage includes a rewrite of the same row or an `all` answer. On the same registration,
+ * a `single` answer covers only that date; a `this_and_following` answer covers a single date
+ * or following range anchored at or after its normalized anchor. Partial overlaps and scoped
+ * answers from other registrations are not treated as superseding.
+ */
+export function isRsvpSupersededBy(older: MeetingRsvp, newer: MeetingRsvp): boolean {
+  if (!(getRsvpTimestampMs(newer) > getRsvpTimestampMs(older))) return false;
+  if (newer.id === older.id || newer.scope === 'all') return true;
+  if (older.registrant_id !== newer.registrant_id) return false;
+  if (newer.scope === 'single') {
+    return older.scope === 'single' && isSameOccurrenceId(getRsvpOccurrenceId(newer), getRsvpOccurrenceId(older));
+  }
+  if (newer.scope !== 'this_and_following' || older.scope === 'all') return false;
+  const newerAnchorMs = occurrenceIdToMs(getRsvpOccurrenceId(newer));
+  const olderAnchorMs = occurrenceIdToMs(getRsvpOccurrenceId(older));
+  return newerAnchorMs !== null && olderAnchorMs !== null && newerAnchorMs <= olderAnchorMs;
+}
+
+/**
+ * Add a newly confirmed RSVP to one viewer's retained answers for a meeting, newest first.
+ *
+ * A viewer can hold several live registrations for one meeting, so answers saved through
+ * another registration stay retained: an older all-dates answer keeps covering the dates a
+ * newer single-date answer does not. An answer whose stored timestamp is not later than every
+ * retained answer is stamped just after the newest one, so {@link selectApplicableRsvp} keeps
+ * confirmation order against those answers wherever they resurface (the card's `my_rsvp`, the
+ * roster index). A new `all` answer covers every date, so after stamping it supersedes every
+ * retained answer. Ended registrations are filtered by callers, not here.
+ *
+ * @param retained Previously confirmed answers for the same viewer and meeting.
+ * @param rsvp The newly confirmed answer; read the stored copy from the head of the result.
+ */
+export function retainConfirmedRsvp(retained: MeetingRsvp[], rsvp: MeetingRsvp): MeetingRsvp[] {
+  const others = retained.filter((saved) => saved.id !== rsvp.id);
+  // Include the copy being replaced: an update acknowledgement can reuse its id without a newer timestamp.
+  const newestMs = retained.reduce((newest, saved) => {
+    const savedMs = getRsvpTimestampMs(saved);
+    return Number.isFinite(savedMs) && savedMs > newest ? savedMs : newest;
+  }, -Infinity);
+  const confirmed = newestMs === -Infinity || getRsvpTimestampMs(rsvp) > newestMs ? rsvp : { ...rsvp, modified_at: new Date(newestMs + 1).toISOString() };
+  return confirmed.scope === 'all' ? [confirmed] : [confirmed, ...others];
 }
 
 /**
@@ -240,6 +303,33 @@ export function getRegistrantAttendanceStatus(
 }
 
 /**
+ * Text label for the status returned by {@link getRegistrantAttendanceStatus}.
+ * The status collapses an RSVP decline and an invite decline into `declined`;
+ * the label separates them: a `declined` status with no RSVP response and
+ * `invite_accepted === false` is an invite decline.
+ */
+export function getRegistrantStatusLabel(
+  registrant: {
+    rsvp?: { response_type?: string | null } | null;
+    invite_accepted?: boolean | null;
+  },
+  options?: { inviteResponsesEnabled?: boolean }
+): RegistrantStatusLabel {
+  const status = getRegistrantAttendanceStatus(registrant, options);
+  const rsvpResponse = registrant.rsvp?.response_type;
+  const hasRsvpResponse = rsvpResponse === 'accepted' || rsvpResponse === 'declined' || rsvpResponse === 'maybe';
+  const labels: Record<Exclude<RegistrantAttendanceStatus, 'declined'>, RegistrantStatusLabel> = {
+    accepted: 'Accepted',
+    maybe: 'Maybe',
+    pending: 'Pending',
+  };
+  if (status !== 'declined') {
+    return labels[status];
+  }
+  return !hasRsvpResponse && registrant.invite_accepted === false ? 'Invite declined' : 'Declined';
+}
+
+/**
  * Tally attendance across a list of registrants using the same combined
  * semantics as {@link getRegistrantAttendanceStatus} (RSVP + `invite_accepted`
  * fallback). Use this instead of {@link calculateRsvpCounts} when the caller
@@ -287,4 +377,53 @@ export function mapITXResponseToMeetingRsvp(result: ITXMeetingResponseResult): M
     created_at: result.created_at,
     updated_at: result.updated_at,
   };
+}
+
+/** Preview order: people coming first, then undecided, then no reply, then declined. */
+const ATTENDEE_PREVIEW_STATUS_ORDER: Record<RegistrantAttendanceStatus, number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
+
+/**
+ * Orders registrants for a meeting card's attendee preview and maps them to display-only faces.
+ * @description Uses the same combined RSVP / `invite_accepted` status as the guest drawer chips
+ * ({@link getRegistrantAttendanceStatus}), so the first faces shown are the people attending.
+ * The sort is stable, so ties keep the caller's (host-then-name) order.
+ */
+export function buildAttendeePreviewFromRegistrants(
+  registrants: ReadonlyArray<Pick<MeetingRegistrant, 'uid' | 'email' | 'first_name' | 'last_name' | 'avatar_url' | 'rsvp' | 'invite_accepted'>>,
+  options?: { inviteResponsesEnabled?: boolean }
+): MeetingAttendeePreviewPerson[] {
+  return registrants
+    .map((registrant) => ({ registrant, rank: ATTENDEE_PREVIEW_STATUS_ORDER[getRegistrantAttendanceStatus(registrant, options)] }))
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ registrant }) => ({
+      key: registrant.uid || registrant.email,
+      name: `${registrant.first_name ?? ''} ${registrant.last_name ?? ''}`.trim() || registrant.email,
+      avatarUrl: registrant.avatar_url ?? null,
+    }));
+}
+
+/**
+ * RSVP-only fallback for surfaces that have responses but no registrant roster (the project and
+ * foundation lens cards, whose counts come from the meeting record). Same ordering as
+ * {@link buildAttendeePreviewFromRegistrants}; RSVP rows carry no profile picture.
+ *
+ * A recurring series returns several rows per registrant (`all`, `single`, `this_and_following`),
+ * so rows are grouped by registrant and each person shows once, with the response that applies to
+ * `occurrenceId` — the same resolution {@link calculateRsvpCounts} uses for the counts beside it.
+ */
+export function buildAttendeePreviewFromRsvps(rsvps: ReadonlyArray<MeetingRsvp>, occurrenceId?: string | null): MeetingAttendeePreviewPerson[] {
+  const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
+  for (const rsvp of rsvps) {
+    const key = rsvp.registrant_id || rsvp.email;
+    if (!rsvpsByRegistrant.has(key)) {
+      rsvpsByRegistrant.set(key, []);
+    }
+    rsvpsByRegistrant.get(key)!.push(rsvp);
+  }
+
+  return [...rsvpsByRegistrant.entries()]
+    .map(([key, rows]) => ({ key, rsvp: selectApplicableRsvp(occurrenceId, rows) }))
+    .filter((entry): entry is { key: string; rsvp: MeetingRsvp } => entry.rsvp !== null)
+    .sort((a, b) => ATTENDEE_PREVIEW_STATUS_ORDER[a.rsvp.response_type] - ATTENDEE_PREVIEW_STATUS_ORDER[b.rsvp.response_type])
+    .map(({ key, rsvp }) => ({ key, name: rsvp.name?.trim() || rsvp.email, avatarUrl: null }));
 }

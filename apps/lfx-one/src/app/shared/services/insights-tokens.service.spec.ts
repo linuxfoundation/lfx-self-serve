@@ -40,7 +40,7 @@ describe('InsightsTokensService', () => {
   });
 
   it('returns eligibility from the BFF', async () => {
-    const eligibility = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme' }], checkFailed: false };
+    const eligibility = { canCreate: true, checkFailed: false };
     http.get.mockReturnValue(of(eligibility));
 
     expect(await firstValueFrom(service.getEligibility())).toEqual(eligibility);
@@ -50,15 +50,15 @@ describe('InsightsTokensService', () => {
   it('fails closed with checkFailed when the eligibility call errors', async () => {
     http.get.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
 
-    expect(await firstValueFrom(service.getEligibility())).toEqual({ canCreate: false, orgs: [], checkFailed: true });
+    expect(await firstValueFrom(service.getEligibility())).toEqual({ canCreate: false, checkFailed: true });
     expect(console.error).toHaveBeenCalled();
   });
 
-  it('creates a token by name only', async () => {
+  it('creates a token with its name and expiration', async () => {
     http.post.mockReturnValue(of({ token: { uid: 't-1' }, secret: 'lfi_x' }));
 
-    await firstValueFrom(service.createToken('ci-pipeline'));
-    expect(http.post).toHaveBeenCalledWith('/api/profile/insights-tokens', { name: 'ci-pipeline' });
+    await firstValueFrom(service.createToken('ci-pipeline', '30d'));
+    expect(http.post).toHaveBeenCalledWith('/api/profile/insights-tokens', { name: 'ci-pipeline', expiration: '30d' });
   });
 
   it('revokes with an encoded uid', async () => {

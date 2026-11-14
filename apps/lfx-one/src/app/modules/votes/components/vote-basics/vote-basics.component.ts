@@ -13,7 +13,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COMMITTEE_LABEL, VOTE_ALLOW_ABSTAIN_OPTIONS, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, VOTE_ALLOW_ABSTAIN_OPTIONS, VOTE_ALLOW_VOTE_CHANGE_OPTIONS, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL } from '@lfx-one/shared/constants';
 import { buildTimezoneOptions, getTimezoneUtcOffsetString, parseTime12Hour, startOfTodayInTimezone } from '@lfx-one/shared/utils';
 
 @Component({
@@ -50,6 +50,7 @@ export class VoteBasicsComponent {
   public readonly voteLabel = VOTE_LABEL;
   public readonly eligibleParticipantsOptions = [...VOTE_ELIGIBLE_PARTICIPANTS];
   public readonly allowAbstainOptions = [...VOTE_ALLOW_ABSTAIN_OPTIONS];
+  public readonly allowVoteChangeOptions = [...VOTE_ALLOW_VOTE_CHANGE_OPTIONS];
   // Cosmetic floor only — the group-level voteDeadlineValidator does the real zone-aware future check.
   // Derived from the selected zone so a zone behind the browser (e.g. Honolulu vs Sydney) keeps its valid "today" selectable.
   public readonly minDate: Signal<Date> = this.initMinDate();

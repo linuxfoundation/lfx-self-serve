@@ -1,7 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CHAT_WEBHOOK_URL_MAX_LENGTH, SLACK_INCOMING_WEBHOOK_URL_PATTERN, UUID_REGEX } from '@lfx-one/shared/constants';
+import {
+  ACCESS_CHECK_BATCH_SIZE,
+  CHAT_WEBHOOK_URL_MAX_LENGTH,
+  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+  MEMBER_IMPORT_BULK_TIMEOUT_MS,
+  PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
+  SLACK_INCOMING_WEBHOOK_URL_PATTERN,
+  UUID_REGEX,
+} from '@lfx-one/shared/constants';
 import { CommitteeMemberRole } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
@@ -12,11 +22,14 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
   CommitteeUser,
   AuditUserProfile,
+  CommitteeDocumentQueryResult,
+  CommitteeMailingListRef,
   CreateCommitteeDocumentRequest,
   CreateCommitteeInviteRequest,
   CreateCommitteeJoinApplicationRequest,
@@ -24,10 +37,13 @@ import {
   RejectCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   GroupsIOMailingList,
+  ManagedPendingApplication,
   MyCommittee,
+  MyPendingApplication,
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
+  ProjectDocumentType,
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -41,8 +57,10 @@ import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundE
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { logger } from '../services/logger.service';
-import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
+import { resolveAuditUserDisplayName, getUsernameFromAuth, isImpersonating, getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -92,38 +110,6 @@ interface CommitteeDocumentUpstreamResponse {
 }
 
 /**
- * Query-service shape for an indexed `committee_document` resource. Files are not exposed
- * via a list endpoint upstream; they're discovered via the indexer (subject
- * `lfx.index.committee_document`).
- *
- * Per `CommitteeDocument.Tags()` in lfx-v2-committee-service, every committee_document
- * resource is indexed with the following tags:
- *   - the bare uid                          → `{uid}`
- *   - `committee_document_uid:{uid}`        — single-document lookup (returns at most 1)
- *   - `committee_uid:{committeeUID}`        — list all documents for a committee
- *   - `content_type:{contentType}`          — filter by MIME type
- *   - `uploaded_by:{uploadedByUsername}`    — filter by uploader
- *
- * Use `committee_uid:` for listing and `committee_document_uid:` for single-document lookups
- * to avoid scanning every file in the committee.
- */
-interface CommitteeDocumentQueryResult {
-  uid: string;
-  name: string;
-  file_name?: string;
-  file_size?: number;
-  content_type?: string;
-  description?: string;
-  committee_uid?: string;
-  folder_uid?: string;
-  created_at?: string;
-  updated_at?: string;
-  created_by?: AuditUserProfile;
-  /** Legacy flat username field; retained for transitional indexer records. */
-  uploaded_by_username?: string;
-}
-
-/**
  * Service for handling committee business logic
  */
 export class CommitteeService {
@@ -153,9 +139,14 @@ export class CommitteeService {
    * batched `groupsio_mailing_list` lookup below for callers (e.g. the create picker's lazy
    * children fan-out) that only need identity/project/writer fields and never render
    * `has_mailing_list` — every such call otherwise paid for a query-service round trip whose
-   * result was immediately discarded.
+   * result was immediately discarded. `requireComplete` enables failOnPartial: a later-page failure
+   * throws instead of returning a truncated list when absence/uniqueness must be authoritative.
    */
-  public async getCommittees(req: Request, query: Record<string, any> = {}, options: { skipMailingListEnrichment?: boolean } = {}): Promise<Committee[]> {
+  public async getCommittees(
+    req: Request,
+    query: Record<string, any> = {},
+    options: { skipMailingListEnrichment?: boolean; requireComplete?: boolean } = {}
+  ): Promise<Committee[]> {
     const queryFilters = { ...query };
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
@@ -184,11 +175,14 @@ export class CommitteeService {
       is_scoped_listing: isScopedListing,
     });
 
-    let committees = await fetchAllQueryResources<Committee>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    let committees = await fetchAllQueryResources<Committee>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      options.requireComplete ? { failOnPartial: true } : undefined
     );
 
     // Enrich with mailing-list presence via batched queries (OR-tag semantics, chunked at 100 UIDs).
@@ -196,13 +190,18 @@ export class CommitteeService {
     // CommitteeBaseWithReadonlyAttributes — no separate per-committee count call needed.
     const committeeUids = committees.map((c) => c.uid).filter(Boolean);
     const committeesWithMailingList =
-      options.skipMailingListEnrichment || committeeUids.length === 0 ? new Set<string>() : await this.getCommitteesWithMailingList(req, committeeUids);
+      options.skipMailingListEnrichment || committeeUids.length === 0
+        ? new Map<string, CommitteeMailingListRef[]>()
+        : await this.getCommitteesWithMailingList(req, committeeUids);
 
     committees = committees.map((committee) => ({
       ...committee,
       total_members: committee.total_members ?? 0,
       // Omit rather than default to false when the lookup was skipped — false means a confirmed
       // absence, and no lookup ran to confirm one.
+      // Flag only — never the list refs. This response also feeds the project/foundation All Groups
+      // tables that non-members can view, and a ref would expose a private list's uid/name/title.
+      // `getMyCommittees` attaches the refs because its rows are the caller's own memberships.
       ...(options.skipMailingListEnrichment ? {} : { has_mailing_list: committeesWithMailingList.has(committee.uid) }),
     }));
 
@@ -477,6 +476,9 @@ export class CommitteeService {
     const merged = {
       ...withAccess,
       ...settingsForResponse,
+      // Upstream omits `total_members` when it is 0; default it as the list endpoints do, so a
+      // caller who cannot read the roster sees 0 rather than an unknown count.
+      total_members: committee.total_members ?? 0,
       ...(membership && { my_role: membership.role, my_member_uid: membership.member_uid }),
       ...(inheritedPermissions && { inherited_writers: inheritedPermissions.writers, inherited_auditors: inheritedPermissions.auditors }),
       ...(mlCount !== null && { has_mailing_list: mlCount > 0 }),
@@ -906,7 +908,8 @@ export class CommitteeService {
     fetchOptions: FetchAllQueryResourcesOptions = {},
     requestOptions?: ApiRequestOptions
   ): Promise<CommitteeMember[]> {
-    const queryFilters = { ...query };
+    // CSV previews need every page; consume this BFF-only flag rather than forwarding it upstream.
+    const { require_complete, ...queryFilters } = query;
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
 
@@ -914,6 +917,7 @@ export class CommitteeService {
       ...queryFilters,
       type: 'committee_member',
       tags: `committee_uid:${committeeId}`,
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     return fetchAllQueryResources<CommitteeMember>(
@@ -932,7 +936,7 @@ export class CommitteeService {
           undefined,
           requestOptions
         ),
-      fetchOptions
+      { ...fetchOptions, ...(require_complete === 'true' && { failOnPartial: true }) }
     );
   }
 
@@ -960,7 +964,8 @@ export class CommitteeService {
     req: Request,
     committeeId: string,
     data: CreateCommitteeMemberRequest,
-    skipNotification: boolean = false
+    skipNotification: boolean = false,
+    requestOptions?: ApiRequestOptions
   ): Promise<CommitteeMember> {
     // The upstream committee-service takes the suppression intent as the
     // X-Skip-Notification header (not a body attribute), defaulting to false.
@@ -972,7 +977,8 @@ export class CommitteeService {
       'POST',
       {},
       data,
-      customHeaders
+      customHeaders,
+      requestOptions
     );
 
     logger.debug(req, 'create_committee_member', 'Committee member created successfully', {
@@ -982,6 +988,42 @@ export class CommitteeService {
     });
 
     return newMember;
+  }
+
+  /**
+   * Adds up to 100 members in one upstream request and returns one result per row (GH-5111).
+   * Uses the caller's own token, so the gateway applies the same writer check as a single add.
+   */
+  public async bulkCreateCommitteeMembers(
+    req: Request,
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    skipNotification: boolean = false
+  ): Promise<CommitteeMemberBulkCreateResult> {
+    // X-Skip-Notification applies to every row, matching the single-member create.
+    const customHeaders = skipNotification ? { 'X-Skip-Notification': 'true' } : undefined;
+    const result = await this.microserviceProxy.proxyRequest<CommitteeMemberBulkCreateResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/bulk`,
+      'POST',
+      {},
+      { members },
+      customHeaders,
+      { timeoutMs: MEMBER_IMPORT_BULK_TIMEOUT_MS }
+    );
+
+    // Counts only: the rows carry imported personal data.
+    logger.debug(req, 'bulk_create_committee_members', 'Committee members bulk create completed', {
+      committee_uid: committeeId,
+      row_count: members.length,
+      added: result.added,
+      skipped: result.skipped,
+      failed: result.failed,
+      skip_notification: skipNotification,
+    });
+
+    return result;
   }
 
   /**
@@ -1071,7 +1113,7 @@ export class CommitteeService {
    * status (e.g. pending) client-side; the roster only surfaces pending ones.
    */
   public async getCommitteeInvites(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeInvite[]> {
-    const queryFilters = { ...query };
+    const { require_complete, ...queryFilters } = query;
     delete queryFilters['page_token'];
     delete queryFilters['page_size'];
 
@@ -1081,11 +1123,14 @@ export class CommitteeService {
       tags: `committee_uid:${committeeId}`,
     };
 
-    return fetchAllQueryResources<CommitteeInvite>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...params,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    return fetchAllQueryResources<CommitteeInvite>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeInvite>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: require_complete === 'true' }
     );
   }
 
@@ -1415,7 +1460,7 @@ export class CommitteeService {
    * membership UIDs (e.g. cross-project access filtering). Skips the per-committee
    * count and project enrichment fan-out performed by the full method.
    */
-  public async getMyCommitteeUids(req: Request, projectUid?: string): Promise<Set<string>> {
+  public async getMyCommitteeUids(req: Request, projectUid?: string, fetchOptions: FetchAllQueryResourcesOptions = {}): Promise<Set<string>> {
     const username = await getUsernameFromAuth(req);
     if (!username) {
       return new Set();
@@ -1426,12 +1471,15 @@ export class CommitteeService {
       tagsAll.push(`project_uid:${projectUid}`);
     }
 
-    const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'committee_member',
-        tags_all: tagsAll,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    const memberships = await fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_member',
+          tags_all: tagsAll,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      fetchOptions
     );
 
     return new Set(memberships.map((m) => m.committee_uid).filter((uid): uid is string => Boolean(uid)));
@@ -1505,7 +1553,8 @@ export class CommitteeService {
 
     // Batch check mailing-list presence for all committee UIDs in one query instead of N
     // per-committee count calls. total_members is already indexed by the committee-service.
-    const committeesWithMailingList = committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Set<string>();
+    const committeesWithMailingList =
+      committeeUids.length > 0 ? await this.getCommitteesWithMailingList(req, committeeUids) : new Map<string, CommitteeMailingListRef[]>();
 
     // Enrich each committee with membership metadata; counts come from the indexed resource
     const enriched = committeeUids.map((uid) => {
@@ -1522,6 +1571,7 @@ export class CommitteeService {
         category: committee.category || membership.committee_category || '',
         total_members: committee.total_members ?? 0,
         has_mailing_list: committeesWithMailingList.has(uid),
+        mailing_lists: committeesWithMailingList.get(uid) ?? [],
         my_role: membership.role,
         my_member_uid: membership.member_uid,
       } as MyCommittee;
@@ -1559,6 +1609,249 @@ export class CommitteeService {
   public async submitApplication(req: Request, committeeId: string, body: CreateCommitteeJoinApplicationRequest): Promise<CommitteeJoinApplication> {
     logger.debug(req, 'submit_committee_application', 'Submitting join application', { committee_uid: committeeId });
     return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/applications`, 'POST', {}, body);
+  }
+
+  /**
+   * Returns the caller's own pending join application for a committee, or null if none exists.
+   *
+   * No writer guard — callers can only see their own application. Uses a `tags_all` query so
+   * the result is scoped to the (committee_uid, applicant_email) pair; the full writer-gated list
+   * endpoint ({@link getCommitteeApplications}) is separate and intentionally unrelated.
+   */
+  public async getMyApplication(req: Request, committeeId: string): Promise<CommitteeJoinApplication | null> {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    // See CommitteeApplication.Tags() in lfx-v2-committee-service — no username tag is emitted.
+    const email = getEffectiveEmail(req);
+    if (!email) {
+      return null;
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`committee_uid:${committeeId}`, `applicant_email:${email}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    // Return the most recent pending application, if any.
+    const pending = applications.filter((a) => a.status === 'pending').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return pending[0] ?? null;
+  }
+
+  /**
+   * Returns all of the caller's own pending join applications across all committees, enriched with
+   * committee display fields (name, is_foundation, project_slug) for the My Groups page.
+   *
+   * No writer guard — callers can only see their own applications. Committee names are resolved via
+   * parallel `getCommitteeById` calls (one per unique committee_uid) — `getCommitteeBase` lacks the
+   * enriched project metadata fields needed here. Failures to resolve a name are logged at warning
+   * level and fall back to the committee_uid string so the row is still renderable.
+   */
+  public async getMyApplications(req: Request): Promise<MyPendingApplication[]> {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    // See CommitteeApplication.Tags() in lfx-v2-committee-service — no username tag is emitted.
+    const email = getEffectiveEmail(req);
+    if (!email) {
+      return [];
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_application',
+          tags_all: [`applicant_email:${email}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    const pending = applications.filter((a) => a.status === 'pending');
+    if (pending.length === 0) {
+      return [];
+    }
+
+    // Fetch committee names in parallel for each unique committee_uid.
+    // Use getCommitteeById with includeProjectMetadata so project_slug and is_foundation are
+    // populated — getCommitteeBase returns the raw upstream object which lacks these enriched fields.
+    const uniqueUids = [...new Set(pending.map((a) => a.committee_uid))];
+    const committeeMap = new Map<string, { name: string; is_foundation?: boolean; project_slug?: string }>();
+
+    await Promise.allSettled(
+      uniqueUids.map(async (uid) => {
+        try {
+          const committee = await this.getCommitteeById(req, uid, { includeProjectMetadata: true });
+          committeeMap.set(uid, {
+            name: committee?.name ?? uid,
+            is_foundation: committee?.is_foundation ?? undefined,
+            project_slug: committee?.project_slug ?? undefined,
+          });
+        } catch (error) {
+          // Committee not accessible or not found — fall back to the UID as display name,
+          // mirroring the getMyPendingInvitations fallback pattern.
+          logger.warning(req, 'get_my_applications', 'Committee enrichment failed, using UID as fallback display name', {
+            committee_uid: uid,
+            err: error,
+          });
+          committeeMap.set(uid, { name: uid });
+        }
+      })
+    );
+
+    return pending.map((app) => ({
+      ...app,
+      committee_name: committeeMap.get(app.committee_uid)?.name ?? app.committee_uid,
+      is_foundation: committeeMap.get(app.committee_uid)?.is_foundation,
+      project_slug: committeeMap.get(app.committee_uid)?.project_slug,
+    }));
+  }
+
+  /** Returns pending applications the caller can review, reconciling index lag with live status. */
+  public async getManagedPendingApplications(req: Request): Promise<ManagedPendingApplication[]> {
+    const deadlineAt = Date.now() + PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS;
+    const requestOptions: ApiRequestOptions = { deadlineAt };
+    const indexed = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'committee_application',
+            tags_all: ['status:pending'],
+            page_size: 100,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          requestOptions
+        ),
+      { failOnPartial: true }
+    );
+    const candidates = [...new Map(indexed.map((application) => [`${application.committee_uid}/${application.uid}`, application])).values()];
+    if (candidates.length === 0) return [];
+
+    // Effective writer checks include inherited grants, unlike direct-grant or membership filters.
+    const committeeUids = [...new Set(candidates.map((application) => application.committee_uid))];
+    // The upstream query already filters viewer access, but cannot enumerate effective writers.
+    // Contain that source's cost without replacing inherited grants with an incomplete direct-grant filter.
+    const managedCommitteeUids = new Set<string>();
+    for (let start = 0; start < committeeUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+      const batch = committeeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE);
+      const access = await this.accessCheckService.checkAccessStrict(
+        req,
+        batch.map((id) => ({ resource: 'committee', id, access: 'writer' })),
+        requestOptions
+      );
+      for (const id of batch) {
+        if (access.get(`${id}#writer`) === true) managedCommitteeUids.add(id);
+      }
+    }
+    // Effective writer access also covers project/foundation admins who inherit it. Reviewing a join request is the
+    // group managers' job, so only callers on the group's own writer roster get it in their pending actions.
+    const directWriterCommitteeUids = await this.getDirectWriterCommitteeUids(req, [...managedCommitteeUids], deadlineAt, requestOptions);
+    const authorized = candidates.filter((application) => directWriterCommitteeUids.has(application.committee_uid));
+    if (authorized.length === 0) return [];
+
+    const liveResults = await settleInBatches(
+      authorized,
+      10,
+      (application) =>
+        this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(
+          req,
+          'LFX_V2_SERVICE',
+          `/committees/${application.committee_uid}/applications/${application.uid}`,
+          'GET',
+          {},
+          undefined,
+          undefined,
+          requestOptions
+        ),
+      { deadlineAt }
+    );
+    const pending: CommitteeJoinApplication[] = [];
+    for (const [index, result] of liveResults.entries()) {
+      if (result.status === 'rejected') {
+        // Revoked access or removed applications are no longer actionable; other outages fail the source.
+        const error = result.reason;
+        if (error?.statusCode === 403 || error?.status === 403 || error?.statusCode === 404 || error?.status === 404) continue;
+        throw error;
+      }
+      const candidate = authorized[index];
+      const live = result.value;
+      if (live?.uid === candidate.uid && live.committee_uid === candidate.committee_uid && live.status === 'pending') {
+        pending.push(live);
+      }
+    }
+    if (pending.length === 0) return [];
+
+    const pendingCommitteeUids = [...new Set(pending.map((application) => application.committee_uid))];
+    const committees = new Map<string, Committee>();
+    for (let start = 0; start < pendingCommitteeUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+      const batch = await this.getCommitteesByIds(req, pendingCommitteeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE), requestOptions);
+      for (const [uid, committee] of batch) committees.set(uid, committee);
+    }
+
+    // Project context is best-effort: a failed or slow lookup must not hide a request the caller can still review, nor push
+    // the dashboard past the discovery budget the live reads above already honour.
+    let projects = new Map<string, { name: string; slug?: string; isFoundation?: boolean }>();
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const enriched = await Promise.race([
+          this.projectService.enrichWithProjectData(req, Array.from(committees.values()), requestOptions),
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), remainingMs);
+          }),
+        ]);
+        if (enriched) {
+          projects = new Map(
+            enriched
+              .filter((committee) => committee.project_name)
+              .map((committee) => [
+                committee.uid,
+                { name: committee.project_name, slug: committee.project_slug || undefined, isFoundation: committee.is_foundation },
+              ])
+          );
+        } else {
+          logger.warning(
+            req,
+            'get_managed_pending_applications',
+            'Project enrichment exceeded the discovery budget, returning applications without project names',
+            {
+              committee_count: committees.size,
+            }
+          );
+        }
+      } catch (error) {
+        logger.warning(req, 'get_managed_pending_applications', 'Project enrichment failed, returning applications without project names', {
+          committee_count: committees.size,
+          err: error,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    return pending.map((application) => {
+      const committee = committees.get(application.committee_uid);
+      return {
+        ...application,
+        committee_name: committee?.name ?? application.committee_uid,
+        project_name: projects.get(application.committee_uid)?.name,
+        project_slug: projects.get(application.committee_uid)?.slug,
+        is_foundation: projects.get(application.committee_uid)?.isFoundation,
+        committee_category: committee?.category || undefined,
+      };
+    });
   }
 
   /**
@@ -1924,11 +2217,24 @@ export class CommitteeService {
   }
 
   /**
-   * Deletes a committee folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: string): Promise<void> {
-    const resourcePath = documentType === 'folder' ? `/committees/${committeeId}/folders/${documentId}` : `/committees/${committeeId}/links/${documentId}`;
+  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
+    if (!COMMITTEE_DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField(
+        'type',
+        `Unsupported document type: ${documentType}. Must be one of: ${COMMITTEE_DOCUMENT_DELETE_TYPES.join(', ')}.`,
+        {
+          operation: 'delete_committee_document',
+          service: 'committee_service',
+        }
+      );
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<CommitteeDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_committee_document');
@@ -1973,7 +2279,7 @@ export class CommitteeService {
    * that can tolerate a partial/degraded result (e.g. `OrgLensGroupsService`) must catch this
    * themselves and decide their own fallback.
    */
-  public async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+  public async getCommitteesByIds(req: Request, uids: string[], options?: ApiRequestOptions): Promise<Map<string, Committee>> {
     const unique = Array.from(new Set(uids)).filter(Boolean);
     if (unique.length === 0) return new Map();
 
@@ -1991,11 +2297,20 @@ export class CommitteeService {
           return await fetchAllQueryResources<Committee>(
             req,
             (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'committee',
-                filters_or: batch.map((uid) => `uid:${uid}`),
-                ...(pageToken && { page_token: pageToken }),
-              }),
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+                req,
+                'LFX_V2_SERVICE',
+                '/query/resources',
+                'GET',
+                {
+                  type: 'committee',
+                  filters_or: batch.map((uid) => `uid:${uid}`),
+                  ...(pageToken && { page_token: pageToken }),
+                },
+                undefined,
+                undefined,
+                options
+              ),
             { failOnPartial: true }
           );
         } catch (error) {
@@ -2037,7 +2352,7 @@ export class CommitteeService {
     // resolves projectUid came back empty) — same posture as every other branch here: absence of
     // proof is not proof of authorization.
     const isProjectWriter = projectUid
-      ? await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: projectUid, access: 'writer' })
+      ? await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: projectUid, access: 'writer_guard' })
       : false;
     if (!isProjectWriter) {
       throw new AuthorizationError('Only project writers can configure the Slack webhook', {
@@ -2218,6 +2533,40 @@ export class CommitteeService {
   }
 
   /**
+   * Narrows effective-writer committees to those whose own `settings.writers` roster lists the caller. The roster holds
+   * only direct grants, so a writer who inherits access from a project or foundation is excluded. Matching mirrors the
+   * roster and inherited lists: LF username first, then email, case-insensitive. A 403/404 settings read means the caller
+   * is not on the roster; any other failure propagates so a group is never shown on a guess.
+   */
+  private async getDirectWriterCommitteeUids(
+    req: Request,
+    committeeUids: string[],
+    deadlineAt: number,
+    requestOptions: ApiRequestOptions
+  ): Promise<Set<string>> {
+    const username = getEffectiveUsername(req)?.toLowerCase();
+    const email = getEffectiveEmail(req)?.toLowerCase();
+    const direct = new Set<string>();
+    if ((!username && !email) || committeeUids.length === 0) return direct;
+
+    const results = await settleInBatches(committeeUids, 10, (uid) => this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions }), {
+      deadlineAt,
+    });
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'rejected') {
+        const error = result.reason;
+        if (error?.statusCode === 403 || error?.status === 403 || error?.statusCode === 404 || error?.status === 404) continue;
+        throw error;
+      }
+      const onRoster = (result.value.writers ?? []).some(
+        (writer) => (!!username && writer.username?.toLowerCase() === username) || (!!email && writer.email?.toLowerCase() === email)
+      );
+      if (onRoster) direct.add(committeeUids[index]);
+    }
+    return direct;
+  }
+
+  /**
    * Fetches committee settings by ID.
    * By default returns {} on error so callers that display settings can degrade gracefully.
    * Pass { throwOnError: true } on write paths where an unknown setting must not silently
@@ -2245,6 +2594,37 @@ export class CommitteeService {
       if (options.throwOnError) {
         throw error;
       }
+
+      // The upstream settings endpoint requires committee#writer; viewers get 403.
+      // member_visibility is a public-facing property of the committee (controls whether
+      // the Members tab is visible to non-members) that must be readable by viewers.
+      // Use M2M as a privileged upstream fallback — the committee#viewer FGA check on the
+      // base resource has already been passed, so this read does not widen authorization.
+      // Only member_visibility is surfaced from the M2M result; write-sensitive settings
+      // (writers, auditors) are never forwarded to non-writer callers.
+      if ((error as MicroserviceError).statusCode === 403) {
+        try {
+          const m2mToken = await generateM2MToken(req);
+          const m2mSettings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
+            req,
+            'LFX_V2_SERVICE',
+            `/committees/${committeeId}/settings`,
+            'GET',
+            undefined,
+            undefined,
+            undefined,
+            { bearerToken: m2mToken }
+          );
+          // Return only the display-relevant field — write-sensitive settings must not be
+          // forwarded to viewers even if the M2M response includes them.
+          return m2mSettings?.member_visibility !== undefined ? { member_visibility: m2mSettings.member_visibility } : {};
+        } catch {
+          logger.warning(req, 'get_committee_settings', 'M2M fallback for member_visibility also failed', {
+            committee_uid: committeeId,
+          });
+        }
+      }
+
       logger.warning(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
         committee_uid: committeeId,
       });
@@ -2401,15 +2781,15 @@ export class CommitteeService {
   }
 
   /**
-   * Returns the subset of the provided committee UIDs that have at least one associated
-   * `groupsio_mailing_list` resource. Uses OR-tag semantics (the query service `tags`
+   * Returns a map from committee UID to its associated `groupsio_mailing_list` refs (uid, name,
+   * title) — only committees with at least one list appear. Uses OR-tag semantics (the query service `tags`
    * parameter is ArrayOf(String) with OR logic) instead of one count call per committee.
    * UIDs are chunked at 100 per request for URL-length safety; batches run concurrently
    * via Promise.allSettled so a single chunk failure does not suppress the others.
    */
-  private async getCommitteesWithMailingList(req: Request, committeeUids: string[]): Promise<Set<string>> {
+  private async getCommitteesWithMailingList(req: Request, committeeUids: string[]): Promise<Map<string, CommitteeMailingListRef[]>> {
     const unique = [...new Set(committeeUids)].filter(Boolean);
-    if (unique.length === 0) return new Set();
+    if (unique.length === 0) return new Map();
 
     const BATCH_SIZE = 100;
     const batches: string[][] = [];
@@ -2435,12 +2815,17 @@ export class CommitteeService {
       )
     );
 
-    const found = new Set<string>();
+    const found = new Map<string, CommitteeMailingListRef[]>();
     for (const [i, result] of results.entries()) {
       if (result.status === 'fulfilled') {
         for (const ml of result.value) {
           for (const ref of ml.committees ?? []) {
-            if (ref.uid) found.add(ref.uid);
+            if (!ref.uid) continue;
+            const lists = found.get(ref.uid) ?? [];
+            if (!lists.some((l) => l.uid === ml.uid)) {
+              lists.push({ uid: ml.uid, group_name: ml.group_name, title: ml.title });
+            }
+            found.set(ref.uid, lists);
           }
         }
       } else {
@@ -2459,7 +2844,7 @@ export class CommitteeService {
   /**
    * Single-committee count wrapper around {@link getCommitteesWithMailingList} — used by
    * `getCommitteeById`'s `includeMailingListStatus` option, which needs a boolean-ish
-   * result rather than the batch method's `Set`. `/committees/{uid}` does not reliably
+   * result rather than the batch method's `Map`. `/committees/{uid}` does not reliably
    * populate `has_mailing_list` itself (verified false against real, populated
    * committees — LFXV2-2914), so this recomputes it the same way the list endpoints do.
    *

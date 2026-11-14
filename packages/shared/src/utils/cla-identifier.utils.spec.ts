@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { canonicalClaGroupId, isSameClaGroup } from './cla-identifier.utils';
+import { canonicalClaGroupId, hyphenatedClaGroupId, isSameClaGroup } from './cla-identifier.utils';
 
 const HYPHENATED = '01234567-89ab-cdef-0123-456789abcdef';
 const BARE = '0123456789abcdef0123456789abcdef';
@@ -22,6 +22,19 @@ describe('canonicalClaGroupId', () => {
   // not CLA-Group-shaped has to reach it rather than pass through as itself.
   it.each([[''], ['   '], ['not-a-uuid'], ['0123456789abcdef0123456789abcde'], [null], [undefined], [42], [{}]])('rejects %p', (input) => {
     expect(canonicalClaGroupId(input)).toBe('');
+  });
+});
+
+describe('hyphenatedClaGroupId', () => {
+  it.each([[HYPHENATED], [HYPHENATED.toUpperCase()], [BARE], [BARE.toUpperCase()], [`  ${HYPHENATED}  `]])(
+    'spells %p the way the producer stores it',
+    (input) => {
+      expect(hyphenatedClaGroupId(input)).toBe(HYPHENATED);
+    }
+  );
+
+  it.each([[''], ['not-a-uuid'], [null], [42]])('rejects %p', (input) => {
+    expect(hyphenatedClaGroupId(input)).toBe('');
   });
 });
 

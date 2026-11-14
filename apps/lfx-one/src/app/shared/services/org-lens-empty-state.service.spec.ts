@@ -4,14 +4,19 @@
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Account, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, orgRollUpSegment } from '@lfx-one/shared/utils';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensEmptyStateService } from './org-lens-empty-state.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
+
+const ROLLUP_ROOT = '0014100000RootAAAA';
+const ROLLUP_SEGMENT = orgRollUpSegment(ROLLUP_ROOT);
 
 const HELD = 'held-org';
 const OTHER = 'other-org';
@@ -31,9 +36,20 @@ interface Harness {
   inheritedAuditorSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
+  canSelectRollUp: WritableSignal<boolean>;
+  /** `AccountContextService.rollUpFamiliesUnsettled` — the families answer is pending, partial, failed or stale. */
+  rollUpFamiliesUnsettled: WritableSignal<boolean>;
+  /** Organizations `OrgClaOnlyAccessService.isClaOnly` answers true for. */
+  claOnlyUids: WritableSignal<Set<string>>;
+  /** `OrgClaOnlyAccessService.lookupFailed` — the CLA-manager scopes outage. */
+  claLookupFailed: WritableSignal<boolean>;
+  /** #4225 — the server established the caller works for an LF member org and holds no grant on it. */
+  affiliatedToMember: WritableSignal<boolean>;
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
+  listUpstreamFailed: WritableSignal<boolean>;
+  selectionUndecided: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
@@ -63,10 +79,17 @@ function setup(): Harness {
   const inheritedAuditorSet = signal(new Set<string>());
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
+  const canSelectRollUp = signal(true);
+  const rollUpFamiliesUnsettled = signal(false);
+  const claOnlyUids = signal(new Set<string>());
+  const claLookupFailed = signal(false);
+  const affiliatedToMember = signal(false);
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
   const listLoading = signal(false);
+  const listUpstreamFailed = signal(false);
+  const selectionUndecided = signal(false);
   const listGeneration = signal(0);
   const startListFetch = (): number => {
     listGeneration.update((g) => g + 1);
@@ -96,14 +119,41 @@ function setup(): Harness {
           auditorSet: signal(new Set<string>()),
           inheritedWriterSet: signal(new Set<string>()),
           inheritedAuditorSet,
+          affiliatedToMember,
           refresh,
         },
       },
       { provide: PersonaService, useValue: { personaLoaded } },
-      { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
+      {
+        provide: OrgClaOnlyAccessService,
+        useValue: { isClaOnly: (uid: string | null | undefined) => !!uid && claOnlyUids().has(uid), lookupFailed: claLookupFailed },
+      },
+      {
+        provide: AccountContextService,
+        useValue: {
+          selectedAccount,
+          hasOrgSelectorAccess,
+          canSelectRollUpFor: (rootUid: string | null) => rootUid === ROLLUP_ROOT && canSelectRollUp(),
+          rollUpFamiliesUnsettled,
+          getStoredUid: () => 'cookie-uid',
+          // Mirrors the real accessor: the selection, else the cookie, and never the roll-up sentinel.
+          orgListPinUid: () => {
+            const uid = selectedAccount().uid || 'cookie-uid';
+            return isOrgRollUpSegment(uid) ? null : uid;
+          },
+        },
+      },
       {
         provide: OrgNavigationService,
-        useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
+        useValue: {
+          loaded: listLoaded,
+          loading: listLoading,
+          upstreamFailed: listUpstreamFailed,
+          selectionUndecided,
+          generation: listGeneration,
+          firstPageLandedGeneration: firstPageLanded,
+          refreshList,
+        },
       },
     ],
   });
@@ -122,9 +172,16 @@ function setup(): Harness {
     inheritedAuditorSet,
     selectedAccount,
     hasOrgSelectorAccess,
+    canSelectRollUp,
+    rollUpFamiliesUnsettled,
+    claOnlyUids,
+    claLookupFailed,
+    affiliatedToMember,
     refresh,
     listLoaded,
     listLoading,
+    listUpstreamFailed,
+    selectionUndecided,
     grantsLoading,
     refreshList,
     startListFetch,
@@ -165,6 +222,171 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.listIncomplete()).toBe(true);
   });
 
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice for a held selection when %s', (_label, fail) => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('leaves a staff search outage to the switcher’s own search copy', () => {
+    h.selectedAccount.set(account(HELD));
+    h.writerSet.set(new Set([HELD]));
+    h.isStaff.set(true);
+    h.listUpstreamFailed.set(true);
+
+    expect(h.service.listIncomplete()).toBe(false);
+  });
+
+  // A grant holder who switched to a CLA-only company can still be missing another one, so the notice and its Retry stay.
+  it.each([
+    ['the CLA-manager scopes read failed', (h: Harness) => h.claLookupFailed.set(true)],
+    ['a CLA-only company lookup failed', (h: Harness) => h.listUpstreamFailed.set(true)],
+  ])('raises the switcher notice on a CLA-only selection when %s', (_label, fail) => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    h.claOnlyUids.set(new Set([OTHER]));
+    expect(h.service.listIncomplete()).toBe(false);
+
+    fail(h);
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('raises no switcher notice on a selection that is neither held nor CLA-only', () => {
+    h.selectedAccount.set(account(OTHER));
+    h.writerSet.set(new Set([HELD]));
+    h.hasOrgSelectorAccess.set(true);
+    h.claLookupFailed.set(true);
+
+    expect(h.service.listIncomplete()).toBe(false);
+  });
+
+  /**
+   * Copilot on PR #4415. The roll-up names no `b2b_org` row, so a uid lookup finds it in no grant
+   * set and called it unheld — withdrawing the FR-010 notice and its Retry exactly when the roster
+   * was short, and, for a contractor, sending them to the probe instead of their page.
+   */
+  it('treats the roll-up as held while the caller may select it', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(true);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  it('does not treat the roll-up as held once the caller may no longer select it', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.canSelectRollUp.set(false);
+
+    expect(h.service.selectedHeld()).toBe(false);
+  });
+
+  /**
+   * Cursor on PR #4415. Keying only on `canSelectRollUp` reopened the hole for the case the
+   * admission path exists for: a conglomerate's siblings arrive as *inherited* grants, so the count
+   * sits below two for the whole partial window while the selection legitimately stands. The notice
+   * and its Retry vanished there, and a contractor was probed with the reserved sentinel.
+   */
+  it('keeps the roll-up held through the partial window the admission path rides out', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.service.listIncomplete()).toBe(true);
+  });
+
+  // The grants answered `ok`, but the families have not settled — always briefly, right after the
+  // grants load, and for as long as the families request keeps failing. Admission rides that out, so
+  // held-ness must: no not-held page, and no contractor probe on the roll-up key.
+  it('keeps the roll-up held while the families are unsettled', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.rollUpFamiliesUnsettled.set(true);
+    h.isContractor.set(true);
+
+    expect(h.service.selectedHeld()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+    expect(h.readCheck).not.toHaveBeenCalled();
+
+    h.rollUpFamiliesUnsettled.set(false);
+    expect(h.service.selectedHeld()).toBe(false);
+  });
+
+  /**
+   * Copilot on PR #4415. Writing the failure check as one disjunct among others let optimism
+   * short-circuit it: two persona seeds keep `canSelectRollUp` true after the roster fails, so the
+   * page-level outage and its shared Retry disappeared behind a roll-up that could still be picked.
+   */
+  it('lets the outage win even when the seeds still make the roll-up selectable', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  // Rule 3 — a lower bound with nothing held at all is the same outage, not a window to ride out.
+  it('lets the outage win for a partial lookup that leaves the caller holding nothing', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(false);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  // A failed lookup is not a lower bound: rule 2 owns that render, rather than a page over an outage.
+  it('lets the outage win over an admitted roll-up when the lookup failed outright', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.hasOrgSelectorAccess.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.selectedHeld()).toBe(false);
+    expect(h.service.pageState()).toBe('could-not-load');
+  });
+
+  /**
+   * Cursor on PR #4415. `selectedHeld` returns false for the roll-up in the outage branches by
+   * design, and `contractorProbeUid` keyed on exactly that — so a contractor in roll-up mode during
+   * an outage probed the reserved sentinel. The server refuses it and `settled` waits on the
+   * verdict, parking them on the skeleton until the doomed request finished.
+   */
+  it('never probes the roll-up sentinel for a contractor, even during an outage', () => {
+    h.selectedAccount.set(account(ROLLUP_SEGMENT));
+    h.isContractor.set(true);
+    h.canSelectRollUp.set(false);
+    h.lookupOutcome.set('failed');
+
+    // `settled` is what forces the probe: it waits on the verdict whenever a uid is owed, whatever
+    // `pageState` decides first. Reading it is the whole point of the test — the probe signal is
+    // lazy, so asserting on `readCheck` without driving `settled` proves nothing.
+    expect(h.service.settled()).toBe(true);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.selectedHeld()).toBe(false);
+  });
+
   it('counts an inherited grant as holding the selection', () => {
     h.selectedAccount.set(account(HELD));
     h.inheritedAuditorSet.set(new Set([HELD]));
@@ -201,6 +423,15 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
   });
 
+  // M3 — a failed CLA-manager scopes read is not "manages nothing": it reads like a partial roster.
+  it('renders could-not-load when the CLA-manager lookup failed and the caller holds nothing loaded', () => {
+    h.claLookupFailed.set(true);
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+
+    h.hasOrgSelectorAccess.set(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
   // Rule 4 before 5 — FR-011: a failed team check never reads as the employee no-access copy.
   it('renders staff-check-failed ahead of no-organization', () => {
     h.staffCheck.set('failed');
@@ -211,6 +442,55 @@ describe('OrgLensEmptyStateService.pageState', () => {
   it('renders no-organization for a clean lookup that holds nothing', () => {
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
     expect(h.service.hasPageState()).toBe(true);
+  });
+
+  // #4225 — rule 6: an employee of a member org was never granted access, so the affiliation CTA of
+  // `no-organization` is the one action that cannot help them.
+  it('renders affiliated-no-grant for an employee of a member org who holds nothing', () => {
+    h.affiliatedToMember.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-no-grant');
+    expect(h.service.hasPageState()).toBe(true);
+  });
+
+  // The server reports an unestablished employer as false, so an outage or an older BFF keeps today's copy.
+  it('keeps no-organization when the employer verdict was not established', () => {
+    h.affiliatedToMember.set(false);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
+  });
+
+  // FR-011 again: an outage outranks the employer verdict, which says nothing about the roster.
+  it('renders could-not-load ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.lookupOutcome.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('could-not-load');
+  });
+
+  it('renders staff-check-failed ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.staffCheck.set('failed');
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('staff-check-failed');
+  });
+
+  // Rule 5 before 6: a contractor gets the reason that applies to them, whatever their work history says.
+  it('renders contractor-no-grant ahead of affiliated-no-grant', () => {
+    h.affiliatedToMember.set(true);
+    h.isContractor.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('contractor-no-grant');
+  });
+
+  // Rule 1 still wins: holding the selected organization renders the page, employer or not.
+  it('renders the page for a holder even when the employer verdict is set', () => {
+    h.affiliatedToMember.set(true);
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageState()).toBeNull();
   });
 
   it('renders the page while a selection among loaded holdings is pending', () => {
@@ -441,6 +721,18 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     expect(h.service.pageState()).toBe('contractor-no-grant');
   });
 
+  // M3 — the read gate refuses a CLA-only organization by design; the CLA routes admit it.
+  it('renders the page for an organization the contractor reaches as its CLA Manager, without asking the read gate', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
   it('renders the page when the read gate admits the organization (for example a key-contact auditor)', () => {
     h.hasOrgSelectorAccess.set(true);
     h.selectedAccount.set(account(OTHER));
@@ -546,5 +838,83 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     h.lookupOutcome.set('ok');
     h.staffCheck.set('failed');
     expect(h.service.pageState()).toBe('staff-check-failed');
+  });
+});
+
+describe('OrgLensEmptyStateService — a selection the CLA-only rows have not classified yet', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = setup();
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.listLoaded.set(true);
+    h.selectionUndecided.set(true);
+    h.selectedAccount.set(account(OTHER));
+  });
+
+  it('holds the page until the rows mark the selection CLA-only, then renders it', () => {
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageReady()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('holds the page until the rows answer when the selection turns out not to be CLA-only', () => {
+    expect(h.service.pageReady()).toBe(false);
+
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('never holds a selection the caller already holds', () => {
+    h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('shows a contractor no refusal, and asks the read gate nothing, for a company the rows then mark CLA-only', () => {
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectionUndecided.set(false);
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('asks the read gate only once the rows have answered without the selection', () => {
+    h.isContractor.set(true);
+    TestBed.tick();
+    expect(h.readCheck).not.toHaveBeenCalled();
+
+    h.selectionUndecided.set(false);
+    TestBed.tick();
+
+    expect(h.readCheck).toHaveBeenCalledWith(OTHER);
+    h.readAnswers[0].next(false);
+    expect(h.service.pageState()).toBe('contractor-no-grant');
+  });
+
+  it('holds a contractor on the skeleton before the first list page lands, and asks the read gate nothing', () => {
+    h.listLoaded.set(false);
+    h.isContractor.set(true);
+    TestBed.tick();
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
   });
 });

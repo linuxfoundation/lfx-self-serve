@@ -11,11 +11,14 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { stubMeetingsRedesignFlag } from './helpers/meetings-v2-flag.helper';
+
 const MEETINGS_URL = '/meetings';
 const LENS_COOKIE = 'lfx-active-lens';
 const FUTURE_START = '2099-03-04T15:00:00Z';
 
 test.setTimeout(120_000);
+test.beforeEach(async ({ page }) => stubMeetingsRedesignFlag(page));
 
 const GUEST = {
   uid: 'guest-rsvp-1',
@@ -145,7 +148,6 @@ test.describe('Meeting RSVP UI — pre-feature vs invite-response enabled (GH-19
     await expect(organizerCard.getByTestId('rsvp-details-invitee-count')).toBeVisible();
     await expect(organizerCard.getByTestId('rsvp-details-breakdown')).toHaveCount(0);
     await expect(organizerCard.getByTestId('meeting-rsvp-button-yes')).toHaveCount(0);
-    await expect(organizerCard.getByTestId('toggle-rsvp-view-button')).toHaveCount(0);
 
     await expect(invitedCard.getByTestId('meeting-rsvp-button-yes')).toHaveCount(0);
 
@@ -172,7 +174,7 @@ test.describe('Meeting RSVP UI — pre-feature vs invite-response enabled (GH-19
     await expect(organizerCard.getByTestId('rsvp-details-card')).toBeVisible();
     await expect(organizerCard.getByTestId('rsvp-details-breakdown')).toBeVisible();
     await expect(organizerCard.getByTestId('rsvp-details-invitee-count')).toHaveCount(0);
-    await expect(organizerCard.getByTestId('toggle-rsvp-view-button')).toBeVisible();
+    await expect(organizerCard.getByTestId('meeting-rsvp-button-yes')).toBeVisible();
 
     await invitedCard.getByTestId('meeting-rsvp-button-yes').scrollIntoViewIfNeeded();
     await expect(invitedCard.getByTestId('meeting-rsvp-button-yes')).toBeVisible();

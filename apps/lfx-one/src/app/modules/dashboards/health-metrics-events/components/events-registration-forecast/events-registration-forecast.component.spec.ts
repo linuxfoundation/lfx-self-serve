@@ -73,6 +73,7 @@ describe('EventsRegistrationForecastComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let notes: string[];
   let lifecycle: string[];
+  let verdicts: (boolean | null)[];
 
   async function render(
     payload: HealthMetricsEventsForecast | Error = { events: [event()] },
@@ -99,7 +100,10 @@ describe('EventsRegistrationForecastComponent', () => {
     fixture = TestBed.createComponent(EventsRegistrationForecastComponent);
     fixture.componentInstance.countsChange.subscribe((note) => notes.push(note));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -128,6 +132,7 @@ describe('EventsRegistrationForecastComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     notes = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation, then the soonest event curve, and renders its headline and stats', async () => {
@@ -143,11 +148,22 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-days-left')?.textContent?.trim()).toBe('40');
   });
 
+  it('lays the forecast out flat, with its range inline and the stats as columns', async () => {
+    await render();
+
+    expect(query('events-registration-forecast-card')?.classList).not.toContain('border');
+    // Range sits on the value's line; the caption comes after it.
+    expect(query('events-registration-forecast-range')?.parentElement).toBe(query('events-registration-forecast-value')?.parentElement);
+    expect(query('events-registration-forecast-headline')?.lastElementChild?.textContent?.trim()).toBe('Forecast final registrations');
+    expect(query('events-registration-forecast-stats')?.classList).toContain('flex-wrap');
+  });
+
   it('reports the miss count for the sub-nav note and settles once the list lands', async () => {
     await render({ events: [event(), event({ eventId: 'evt-2', goal: 700 })] });
 
     expect(notes).toEqual(['', '1 will miss goal']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('shows an error rather than an empty list when the read fails, and still settles', async () => {
@@ -155,24 +171,23 @@ describe('EventsRegistrationForecastComponent', () => {
     await render(new Error('boom'));
 
     expect(query('events-registration-forecast-error')).not.toBeNull();
-    expect(query('events-registration-forecast-empty')).toBeNull();
     expect(notes).toEqual(['', '']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
-  it('says there are no upcoming events when the foundation has none', async () => {
+  it('settles empty, with no body, when the foundation has no upcoming events', async () => {
     await render({ events: [] });
 
-    expect(query('events-registration-forecast-empty')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'There are no upcoming events to forecast. Once an event is scheduled, its projection appears here.'
-    );
+    expect(verdicts).toEqual([true]);
+    expect(query('events-registration-forecast-card')).toBeNull();
     expect(query('events-registration-forecast-pace')).toBeNull();
   });
 
   it('keeps the pace table when upcoming events exist but none has a forecast', async () => {
     await render({ events: [event({ forecastAvg: null })] });
 
-    expect(query('events-registration-forecast-empty')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(query('events-registration-forecast-card')).toBeNull();
     expect(query('events-registration-forecast-no-forecast')).not.toBeNull();
     expect(query('events-registration-forecast-row-evt-1')).not.toBeNull();
@@ -189,18 +204,55 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
     expect(notes.at(-1)).toBe('');
     expect(lifecycle.at(-1)).toBe('settled');
-
-    const picked: string[] = [];
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
-    fixture.componentInstance['onViewPastEvents']();
-    fixture.componentInstance['onViewPastEvents']();
-    expect(picked).toEqual(['past', 'past']);
+    // A closed period keeps its own note, so it gives the shell no verdict.
+    expect(verdicts.at(-1)).toBeNull();
   });
 
-  it('names each event pill with its date, so same-named editions stay distinct', async () => {
+  it('points a closed period at Past events with a hint, not a button', async () => {
     await render({ events: [event()] });
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    await settle();
 
-    expect(fixture.componentInstance['eventOptions']()[0].fullLabel).toMatch(/^Open Source Summit · \S/);
+    const closed = query('events-registration-forecast-closed');
+    expect(query('events-registration-forecast-closed-hint')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'See how events actually finished in the Past events section below.'
+    );
+    expect(closed?.querySelector('button')).toBeNull();
+  });
+
+  it('shows the event name on each pill and the selected event date at the row end, keeping the date in the full label', async () => {
+    await render({ events: [event(), event({ eventId: 'evt-2', eventName: 'An Event Name Well Past The Pill Limit', eventStartDate: '2026-12-01' })] });
+
+    const [first, second] = fixture.componentInstance['eventOptions']();
+    expect(first.label).toBe('Open Source Summit');
+    expect(first.fullLabel).toMatch(/^Open Source Summit · \S/);
+    expect(second.label).toBe('An Event Name Well Past The Pill…');
+    expect(second.fullLabel).toMatch(/^An Event Name Well Past The Pill Limit · \S/);
+    expect(query('events-registration-forecast-event-date')?.textContent?.trim()).toBe(first.fullLabel?.split(' · ')[1]);
+  });
+
+  it('marks only the events with a forecast as forecast available', async () => {
+    await render({ events: [event(), event({ eventId: 'evt-2', forecastAvg: null })] });
+
+    expect(query('events-registration-forecast-available-evt-1')?.textContent?.trim()).toBe('forecast available');
+    expect(query('events-registration-forecast-available-evt-2')).toBeNull();
+  });
+
+  it.each([
+    [{ goal: 450 }, 'ok', 'Healthy', 'fa-circle-check', 'border-l-emerald-500'],
+    [{ goal: 150 }, 'watch', 'Needs attention', 'fa-triangle-exclamation', 'border-l-amber-500'],
+    [{ goal: 620 }, 'act', 'Needs action', 'fa-circle-exclamation', 'border-l-red-500'],
+    [{ goal: null }, 'none', 'Summary', 'fa-circle-info', 'border-l-gray-400'],
+  ])('tags the %o verdict banner with the %s tone', async (overrides, tone, label, icon, accent) => {
+    await render({ events: [event(overrides)] });
+    const banner = query('events-registration-forecast-verdict');
+    const tag = query('events-registration-forecast-verdict-tag');
+
+    expect(banner?.getAttribute('data-tone')).toBe(tone);
+    expect(banner?.classList).toContain('border-l-2');
+    expect(banner?.classList).toContain(accent);
+    expect(tag?.textContent?.trim()).toBe(label);
+    expect(tag?.querySelector('i')?.classList).toContain(icon);
   });
 
   it('opens the event a deep link names, and writes a picked event back to the URL', async () => {
@@ -327,5 +379,17 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-status-behind')?.textContent?.trim()).toBe('Action required');
     expect(query('events-registration-forecast-status-none')?.textContent?.trim()).toBe('No goal');
     expect(rows[1].textContent).toContain('400 / 450');
+  });
+
+  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
+    await render({ events: [event({ eventId: 'set', registrationsNow: 400 }), event({ eventId: 'none', registrationsNow: 120, goal: null })] });
+    const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text('events-registration-forecast-goal-set')).toBe('400 / 450');
+    expect(query('events-registration-forecast-goal-set')?.querySelector('b')?.textContent).toBe('400');
+    expect(query('events-registration-forecast-goal-none')?.querySelector('b')?.textContent).toBe('120');
+    expect(text('events-registration-forecast-goal-none')).toContain('no goal set');
+    expect(text('events-registration-forecast-goal-none')).not.toContain('/');
+    expect(query('events-registration-forecast-row-set')?.querySelector('[style*="width"]')).toBeNull();
   });
 });

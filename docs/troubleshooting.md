@@ -430,7 +430,7 @@ ping your-microservice-host
 ### Documentation Links
 
 - **[Architecture Guide](./architecture.md)** - System overview
-- **[Development Setup](../CLAUDE.md)** - Development environment
+- **[Development Setup](../AGENTS.md)** - Development environment
 - **[E2E Testing Guide](./architecture/testing/e2e-testing.md)** - Testing procedures
 
 ### Support Channels

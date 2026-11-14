@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REFUSALS, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { buildMeetingOrganizerMailto, orgClaPairFoundationSfid, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -16,7 +16,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-import { UserService } from '@services/user.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 
 import {
   orgClaAddManagerDialogConfig,
@@ -35,7 +35,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
-  private readonly userService = inject(UserService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly orgUid = input.required<string>();
@@ -44,6 +44,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public readonly claGroup = input.required<OrgClaGroup>();
 
   public readonly managerCountChanged = output<number>();
+  public readonly rosterChanged = output<void>();
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
 
@@ -56,8 +57,6 @@ export class OrgEasyclaManagersComponent implements OnInit {
 
   private readonly contextChanged$ = combineLatest([toObservable(this.orgUid), toObservable(this.signatureId), toObservable(this.signed)]).pipe(skip(1));
 
-  protected readonly viewerUsername = computed(() => this.userService.viewerUsername()?.trim().toLowerCase() ?? '');
-
   protected readonly empty = computed(() => this.managers()?.length === 0);
 
   protected readonly lastManager = computed(() => this.managers()?.length === 1);
@@ -67,25 +66,23 @@ export class OrgEasyclaManagersComponent implements OnInit {
   /**
    * ACS grants for the two manager writes (#1984). Separate strings: Add is the same
    * `signature_approval_list:update` Corporate Console uses for that button; Remove is
-   * `cla_manager_delete:remove`. Null while the hop has not arrived — hide, do not guess.
+   * `cla_manager_delete:remove`.
    */
   private readonly addGrant = signal<boolean | null>(null);
   private readonly removeGrant = signal<boolean | null>(null);
 
-  protected readonly canAdd = computed(() => this.addGrant() === true && !this.loadFailed());
-  protected readonly canRemove = computed(() => this.removeGrant() === true);
+  private readonly onRoster = computed(() => this.claGroup().viewerIsClaManager === true);
+
+  protected readonly canAdd = computed(() => this.onRoster() && this.addGrant() === true && !this.loadFailed());
+  protected readonly canRemove = computed(() => this.onRoster() && this.removeGrant() === true);
+
+  protected readonly addBlockedReason = computed(() => (this.onRoster() ? undefined : this.copy.offRosterReason));
+  protected readonly addAriaLabel = computed(() => this.initAddAriaLabel());
 
   public constructor() {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onContextChanged());
 
-    toObservable(
-      computed(() => {
-        if (!this.signed()) return '';
-        const orgUid = this.orgUid();
-        const projectSfid = orgClaPairProjectSfid(this.claGroup());
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initWriteGrantPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -94,10 +91,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
         }),
         switchMap((pair) => {
           if (!pair) return of({ add: false, remove: false });
-          const [orgUid, projectSfid] = pair.split('::');
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          const foundation = foundationSfid || undefined;
           return forkJoin({
-            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
-            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid),
+            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid, foundation),
+            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid, foundation),
           });
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -175,8 +173,21 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected isSelf(manager: OrgClaManager): boolean {
-    const viewer = this.viewerUsername();
-    return !!viewer && manager.lfUsername.trim().toLowerCase() === viewer;
+    return manager.isViewer === true;
+  }
+
+  private initWriteGrantPair(): string {
+    if (!this.signed()) return '';
+    const orgUid = this.orgUid();
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
+  }
+
+  private initAddAriaLabel(): string {
+    const reason = this.addBlockedReason();
+    return reason ? `${this.copy.addAction}. ${reason}` : this.copy.addAction;
   }
 
   private initRows(): OrgClaManagerRow[] | null {
@@ -251,6 +262,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} has been added as a CLA Manager for this CLA and can act immediately.`,
           });
           this.fetchManagers();
+          this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;
@@ -272,6 +284,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
       )
       .subscribe({
         next: () => {
+          if (this.isSelf(manager)) this.selfRemovals.record(target.orgUid, target.signatureId);
           if (this.destroyed || !this.stillOn(target)) return;
           if (this.isSelf(manager)) {
             this.addGrant.set(false);
@@ -283,6 +296,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
             detail: `${this.displayName(manager)} is no longer a CLA Manager for this CLA.`,
           });
           this.fetchManagers();
+          if (this.isSelf(manager)) this.rosterChanged.emit();
         },
         error: (error: unknown) => {
           if (this.destroyed || !this.stillOn(target)) return;

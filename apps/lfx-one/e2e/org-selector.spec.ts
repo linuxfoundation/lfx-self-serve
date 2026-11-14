@@ -31,7 +31,6 @@
  *   with FGA access to at least one b2b_org in the dev sandbox
  */
 
-import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
 import {
@@ -42,7 +41,7 @@ import {
   SYNTHETIC_SECOND_ORG_DOMAIN,
   SYNTHETIC_SECOND_ORG_LEGAL_NAME,
 } from './fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './helpers/org-roi.helper';
+import { skipUnlessLfStaff } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
 const SIDEBAR_TIMEOUT = 30_000;
@@ -71,7 +70,7 @@ function skipWhenAuthMissing(page: Page): void {
 // unconditionally; an administrator's panel legitimately has none.
 async function openSelector(page: Page, options: { expectSearch?: boolean } = {}) {
   // Sidebar may be tucked behind a mobile hamburger on mobile-chrome — the trigger lives
-  // inside <lfx-sidebar>; the test ID is identical across desktop and mobile.
+  // inside <lfx-navbar>; the test ID is identical across desktop and mobile.
   const trigger = page.getByTestId('org-selector');
   await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
   await trigger.click();
@@ -385,15 +384,20 @@ const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp; root: st
 test.describe('Org and foundation pages — single main landmark (GH-2220)', () => {
   for (const route of SINGLE_MAIN_ROUTES) {
     test(`exactly one main landmark on ${route.name}`, async ({ page }) => {
-      await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
       await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
+
+      // The ROI routes are LF-staff only: skip a session the personas report as non-staff, but let a redirected staff session fail.
+      const staffOnly = route.name.startsWith('org-roi');
+      if (staffOnly) {
+        await skipUnlessLfStaff(page);
+      }
 
       await page.goto(route.path, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
-      if (!route.stayOn.test(new URL(page.url()).pathname)) {
-        test.skip(true, `${route.path} redirected away — flag or access gate`);
+      if (!staffOnly && !route.stayOn.test(new URL(page.url()).pathname)) {
+        test.skip(true, `${route.path} redirected away — access gate`);
       }
 
       await expect(page.getByTestId(route.root)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -453,7 +457,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
     await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
-    await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-overview-no-access-secondary')).toContainText('How affiliations and access work');
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
     await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
@@ -589,7 +593,7 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
 });
 
 // LF-team scenarios (S17–S20). These drive /org/overview rather than APP_HOME because the
-// org-selector slot is ANDed with the me-lens parent input (`sidebar.component.ts`
+// org-selector slot is ANDed with the me-lens parent input (`nav-menu-base.directive.ts`
 // initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
 const ORG_LENS_HOME = '/org/overview';
 
@@ -842,8 +846,8 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
 // Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
-// flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
-// hydrating one against the other used to leave "My Engagement" / "Education" sections
+// flags (Donations), so the server menu can differ from the client-resolved one;
+// hydrating one against the other used to leave "Engagement" / "Education" sections
 // interleaved with org items. The sidebar now withholds the concrete menu until
 // afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.
 test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
@@ -858,7 +862,7 @@ test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)
     });
 
     // The org lens tab and the resolved menu must be consistent: no Me-lens sections remain on screen.
-    await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "My Engagement" must not leak into the org sidebar').toHaveCount(0);
+    await expect(page.getByTestId('sidebar-item-my-engagement'), 'Me-lens "Engagement" must not leak into the org sidebar').toHaveCount(0);
     await expect(page.getByTestId('sidebar-item-education'), 'Me-lens "Education" must not leak into the org sidebar').toHaveCount(0);
   });
 });

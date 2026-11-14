@@ -1,0 +1,30 @@
+{
+  "source": "https://github.com/linuxfoundation/lfx-self-serve/actions/runs/39634580429",
+  "adjustments": {
+    "src/app/modules/votes/components/votes-table/votes-table.component.spec.ts": {
+      "method": "Historical CI weight scaled by the same-machine focused execution ratio after removing real debounce waits; an estimate, not a new CI observation.",
+      "beforeSeconds": 59.632,
+      "afterSeconds": 11.015
+    }
+  },
+  "files": {
+    "src/app/modules/dashboards/campaigns/campaigns.component.spec.ts": 43.2,
+    "src/app/modules/dashboards/campaigns/components/audience-builder-tab/audience-builder-tab.component.spec.ts": 6.1,
+    "src/app/modules/dashboards/campaigns/components/implementation-tab/implementation-tab.component.spec.ts": 25.3,
+    "src/app/modules/dashboards/campaigns/components/optimization-tab/optimization-tab.component.spec.ts": 9.8,
+    "src/app/modules/dashboards/campaigns/components/planning-tab/planning-tab.component.spec.ts": 26.8,
+    "src/app/modules/dashboards/components/pending-actions/pending-actions.component.spec.ts": 7.2,
+    "src/app/modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component.spec.ts": 13.3,
+    "src/app/modules/dashboards/org/org-groups/org-groups.component.spec.ts": 6.7,
+    "src/app/modules/dashboards/social-listening/social-listening.component.spec.ts": 7.5,
+    "src/app/modules/meetings/meeting-join/meeting-join.component.spec.ts": 5.5,
+    "src/app/modules/mentorship/admin/program-detail/components/current-mentees-tab/current-mentees-tab.component.spec.ts": 9.2,
+    "src/app/modules/mentorship/mentee/mentee-register/mentee-register.component.spec.ts": 5.9,
+    "src/app/modules/mentorship/mentor/mentor-register/mentor-register.component.spec.ts": 5.3,
+    "src/app/modules/mktg-os-agents/mktg-agent-run/mktg-agent-run.component.spec.ts": 7.6,
+    "src/app/modules/profile/clas/cla-group-select.component.spec.ts": 20.8,
+    "src/app/modules/unavailable/unavailable.component.spec.ts": 9.7,
+    "src/app/modules/votes/components/votes-table/votes-table.component.spec.ts": 11.7,
+    "src/app/modules/votes/votes-dashboard/votes-dashboard.component.spec.ts": 12.8
+  }
+}

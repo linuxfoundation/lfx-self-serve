@@ -1,65 +1,97 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The design's `l2Shell`: a fixed sub-nav beside a single stacked column of anchored sections. -->
+<!-- The design's `.hm-row`: a single stacked column of anchored sections with the section nav on its right, reversed
+     in the row so the nav still comes first in reading order. Pixel sizes follow the design; the 14px root makes the
+     rem scale undershoot them. -->
+@if (blankView(); as blank) {
+  <!-- Every section settled with nothing for the period, so one card stands in for the sub-nav and all of them. -->
+  <lfx-health-metrics-blank-card [tiles]="[blank.tile]" [copy]="blank.copy" [testId]="testIdPrefix() + '-blank'" />
+}
+<!-- Kept mounted under the blank card, so the sections keep reporting and a period with data brings them back. -->
 <div
-  class="flex flex-col gap-6 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8"
+  class="flex-row-reverse items-start gap-[32px]"
+  [class.flex]="!blankView()"
+  [class.hidden]="!!blankView()"
   [attr.data-testid]="'health-metrics-' + testIdPrefix() + '-page'">
   <lfx-health-metrics-l2-sub-nav
-    [items]="subNavItems()"
+    [items]="visibleSubNavItems()"
     [activeKey]="activeSection()"
-    [topPx]="chrome.stickyTopPx()"
+    [topPx]="subNavTopPx()"
     [ariaLabel]="navLabel()"
     [testIdPrefix]="testIdPrefix()"
-    [crossReference]="crossReference()"
     (sectionPicked)="scrollToSection($event)" />
 
-  <!-- The design's `.panes`: the only thing that scrolls. Its height is measured off the viewport so
-       the sections scroll inside it and the sub-nav beside it never travels. Below `lg` the height
-       variable goes unused and the page scrolls normally. Set imperatively by measurePanesHeight()
-       rather than bound, because that method makes two sequential writes with a layout read between
-       them — not expressible as a single declarative binding. `relative` makes this pane the
-       containing block for any absolutely-positioned descendant rendered inline rather than through
-       PrimeNG's `appendTo: 'body'` (e.g. the table paginator's rows-per-page dropdown). Without it,
-       such a descendant resolves to an ancestor outside the pane, escapes this element's
-       `overflow-y-auto` clipping, and extends `document.documentElement.scrollHeight` past the
-       viewport — which is what made the whole page scrollable before this was added. -->
-  <div #panes class="relative flex min-w-0 flex-col gap-6 lg:h-[var(--l2-panes-height)] lg:overflow-y-auto lg:pr-2">
+  <!-- The page scrolls the sections, beside the sticky nav. `relative` anchors absolutely-positioned descendants
+       rendered inline (e.g. icon-field decorations) to the column. -->
+  <!-- The header sticks at every width, so a section always scrolls to just under it. -->
+  <div class="relative flex min-w-0 flex-1 flex-col gap-[24px]" [style.--l2-sticky-top]="chrome.stickyTopPx() + 'px'">
+    <!-- Lights the first section when the reader lands back at the top, which a jump there never crosses the band for. -->
+    <div #startSentinel class="absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
     @for (section of sectionViews(); track section.key) {
       @let body = bodyByKey().get(section.key);
+      @let empty = emptySections().get(section.key);
       <section
         [id]="section.id"
-        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5"
+        class="flex flex-col gap-[16px] rounded-[12px] border border-gray-200 bg-white p-[20px] scroll-mt-[var(--l2-sticky-top)]"
         [attr.data-testid]="testIdPrefix() + '-section-' + section.key">
-        <div class="flex flex-col gap-1" [id]="section.headingId">
-          <div class="flex flex-wrap items-center gap-2">
-            <h2 class="text-base font-semibold text-gray-900">{{ section.heading }}</h2>
-            @if (section.headingBadge) {
-              <!-- Pixel size follows the design; the 14px root makes the rem scale undershoot it. -->
-              <span
-                class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700"
-                [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
-                >{{ section.headingBadge }}</span
-              >
-            }
+        <!-- The design's card header: the title block takes 1 1 260px, the controls wrap on its right, and the header wraps
+             with a 12px gap. On phones, a header holding a select gives the controls the full width and the select fills it. -->
+        <div class="flex flex-wrap items-start justify-between gap-[12px]" [attr.data-testid]="testIdPrefix() + '-header-' + section.key">
+          <div class="flex min-w-0 flex-[1_1_260px] flex-col gap-[2px]" [id]="section.headingId">
+            <div class="flex flex-wrap items-center gap-[6px]">
+              <h2 class="m-0 text-[18px] font-semibold text-gray-900">{{ section.heading }}</h2>
+              @if (section.provisional) {
+                <!-- Focusable for its tooltip, so it carries a role; its name is the label and the tooltip describes it, once. -->
+                <lfx-ui-badge
+                  tone="warning"
+                  variant="subtle"
+                  size="sm"
+                  role="img"
+                  tabindex="0"
+                  class="cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                  [lfxUiTooltip]="provisionalBadge.tip"
+                  [attr.aria-label]="provisionalBadge.label"
+                  [attr.data-testid]="testIdPrefix() + '-heading-badge-' + section.key"
+                  >{{ provisionalBadge.label }}</lfx-ui-badge
+                >
+              }
+            </div>
+            <p class="m-0 text-[12px] leading-[16px] text-gray-500">{{ section.description }}</p>
           </div>
-          <p class="text-[13px] text-gray-500">{{ section.description }}</p>
+          @if (controlsByKey().get(section.key); as controls) {
+            <!-- Hidden, not dropped, with an empty section's body, so the controls keep their state. -->
+            <div
+              class="flex-wrap items-center gap-[10px] max-[640px]:has-[lfx-ui-select]:w-full max-[640px]:[&>lfx-ui-select]:flex-[1_1_100%]"
+              [class.flex]="!empty"
+              [class.hidden]="!!empty"
+              [attr.data-testid]="testIdPrefix() + '-controls-' + section.key">
+              <ng-container [ngTemplateOutlet]="controls" />
+            </div>
+          }
         </div>
 
+        @if (empty) {
+          <lfx-empty-state
+            variant="compact"
+            [icon]="empty.icon"
+            [title]="empty.title"
+            [subtitle]="empty.text"
+            [attr.data-testid]="testIdPrefix() + '-section-empty-' + section.key" />
+        }
         @if (body) {
-          <ng-container [ngTemplateOutlet]="body" />
+          <!-- An empty section's body stays mounted, hidden with its controls, so it can report again. -->
+          <div class="flex-col gap-[16px]" [class.flex]="!empty" [class.hidden]="!!empty">
+            <ng-container [ngTemplateOutlet]="body" />
+          </div>
         } @else {
           <!-- A section the tab projects no body for is still anchored, so its link resolves. -->
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }
 
-        @if (section.footnote) {
-          <p class="border-t border-gray-100 pt-3 text-[12px] text-gray-400">
-            @if (section.footnoteCaution) {
-              <i class="fa-light fa-triangle-exclamation mr-1 text-amber-500" aria-hidden="true"></i>
-            }
-            {{ section.footnote }}
-          </p>
+        <!-- A note explains a body, so it waits until there is one. -->
+        @if (body && !empty && section.note; as note) {
+          <lfx-health-metrics-footnote [tone]="note.tone" [parts]="note.parts" [attr.data-testid]="testIdPrefix() + '-note-' + section.key" />
         }
       </section>
     }

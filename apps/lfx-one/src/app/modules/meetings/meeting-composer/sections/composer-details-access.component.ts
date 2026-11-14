@@ -39,8 +39,6 @@ export class ComposerDetailsAccessComponent {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
-  public readonly showHeading = input(true);
   /** Quick create renders the type as its own chip row above these fields, so the select would duplicate it. */
   public readonly showTypeSelect = input(true);
   /**
@@ -49,6 +47,12 @@ export class ComposerDetailsAccessComponent {
    * answer for the fast path, and the drawer covers the rarer case of scheduling on someone else's behalf.
    */
   public readonly showOrganizer = input(true);
+  /**
+   * Whether to offer the visibility and join restriction cards.
+   * @description Off for a single-occurrence edit: both are series settings, and upstream's occurrence
+   * update has no field for either.
+   */
+  public readonly showAccess = input(true);
   /**
    * Hint text for a title that was written by something other than the organizer.
    * @description Passed in rather than derived here because only quick create prefills from the meeting
@@ -75,6 +79,26 @@ export class ComposerDetailsAccessComponent {
    */
   protected readonly iconChipClass = 'bg-gray-100 text-gray-400';
   protected readonly iconChipSelectedClass = 'text-white';
+
+  /**
+   * Option card styling for the visibility / join-restriction groups.
+   * @description The selected card takes a light blue fill and a blue border so the answer reads at a glance;
+   * the rest stay neutral with a hover cue. Whole class strings, for the same Tailwind reason as above.
+   */
+  protected readonly accessOptionClass = 'z-0 border-gray-200 bg-white hover:z-[1] hover:border-gray-300 hover:bg-gray-50';
+  protected readonly accessOptionSelectedClass = 'z-[2] border-blue-500 bg-blue-50';
+  /**
+   * Layout of the visibility / join-restriction groups.
+   * @description Each group's two options sit side by side from `sm` up and stack on phones. The groups get
+   * equal-height rows, so the shorter join-restriction cards match visibility's. The options join into one
+   * card: the first takes the leading corners and the other the trailing ones, pulled back 1px so the two
+   * borders collapse into one — which corners and which edge depend on the breakpoint, so both are spelled
+   * out. Whole class strings, for the same Tailwind reason as above.
+   */
+  protected readonly accessGroupsLayoutClass = 'grid auto-rows-fr gap-4';
+  protected readonly accessOptionsLayoutClass = 'grid flex-1 grid-cols-1 sm:grid-cols-2';
+  protected readonly accessOptionFirstClass = 'rounded-t-lg sm:rounded-tr-none sm:rounded-l-lg';
+  protected readonly accessOptionNextClass = '-mt-px rounded-b-lg sm:-ml-px sm:mt-0 sm:rounded-bl-none sm:rounded-r-lg';
 
   /**
    * Form state the template and the a11y attributes read, one named signal per control.

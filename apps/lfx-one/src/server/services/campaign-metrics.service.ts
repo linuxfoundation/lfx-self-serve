@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GADS_STATUS_ENUM, parseCampaignName, VALID_CAMPAIGN_STATUSES } from '@lfx-one/shared/constants';
+import { GADS_STATUS_ENUM, GOOGLE_ADS_CHANNEL_TYPE_ENUMS, parseCampaignName, VALID_CAMPAIGN_STATUSES } from '@lfx-one/shared/constants';
 import type {
   AudienceBucket,
   AudienceDemographics,
@@ -15,9 +15,11 @@ import type {
   PacingLabel,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
+import { googleAdsCampaignUrl } from '@lfx-one/shared/utils/campaign.utils';
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
+import { toGoogleAdsReadError } from './google-ads-read-error';
 import { getLinkedInAnalytics } from './linkedin-ads.service';
 import { getMetaAnalytics } from './meta-ads.service';
 import { getRedditAnalytics } from './reddit-ads.service';
@@ -26,6 +28,28 @@ import { logger } from './logger.service';
 // ---------------------------------------------------------------------------
 // CampaignMetricsService — monitoring, keywords, audience demographics
 // ---------------------------------------------------------------------------
+
+/**
+ * The `campaign.advertising_channel_type` values the monitoring query accepts, as a GAQL literal
+ * list.
+ *
+ * Every channel this application knows about, not a hand-kept subset. The filter used to name
+ * SEARCH and DEMAND_GEN alone, which was the whole set of channels that could be created at the
+ * time; now that Performance Max and Display can be created here, a campaign this application
+ * created would otherwise have been invisible in Monitoring and Optimization — created
+ * successfully, then absent from the screen that reports on it.
+ *
+ * VIDEO is included even though no Video campaign can be created here (the Google Ads API has no
+ * call for it). A Video campaign built by hand in Google Ads sits in the same account, and there
+ * is no reason for this query to be the thing that hides it.
+ *
+ * Built from {@link GOOGLE_ADS_CHANNEL_TYPE_ENUMS} rather than written inline so adding a channel
+ * widens the read side with the create side. The values are source constants, never user input,
+ * so the interpolation carries nothing a caller can influence.
+ */
+const MONITORED_CHANNEL_TYPES = Object.values(GOOGLE_ADS_CHANNEL_TYPE_ENUMS)
+  .map((type) => `'${type}'`)
+  .join(', ');
 
 export class CampaignMetricsService {
   // === Monitoring data ===
@@ -42,12 +66,19 @@ export class CampaignMetricsService {
              metrics.conversions
       FROM campaign
       WHERE segments.date DURING ${gaqlRange}
-        AND campaign.advertising_channel_type IN ('SEARCH', 'DEMAND_GEN')
+        AND campaign.advertising_channel_type IN (${MONITORED_CHANNEL_TYPES})
         AND campaign.status IN ('ENABLED', 'PAUSED')
         AND metrics.impressions > 0
       ORDER BY metrics.cost_micros DESC`;
 
-    const rows = await gaqlSearch(query);
+    let rows: unknown[];
+    try {
+      rows = await gaqlSearch(query);
+    } catch (error) {
+      // A plain Google Ads failure would otherwise become a bare 500 the Monitor tab can only show
+      // as "Failed to load campaign data" (#4526).
+      throw toGoogleAdsReadError(error, 'campaign_monitor');
+    }
     const rangeStart = queryRangeStart(effectiveDays);
     const rangeEnd = todayIso();
     const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays, rangeStart, rangeEnd)).filter((c) => !c.name.toLowerCase().startsWith('zz'));
@@ -148,10 +179,6 @@ function normalizeCampaignStatus(raw: unknown): CampaignMetrics['status'] {
   return VALID_CAMPAIGN_STATUSES.has(status) ? status : 'unknown';
 }
 
-function buildGoogleAdsUrl(campaignId: string): string {
-  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${campaignId}` : '';
-}
-
 function computeTotalBudget(budgetDay: number, days: number): number {
   return budgetDay * days;
 }
@@ -206,7 +233,7 @@ function parseCampaignMetrics(row: unknown, days: number, rangeStart: string, ra
     pacingPct,
     pacingLabel,
     campaignId,
-    googleAdsUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: googleAdsCampaignUrl(campaignId),
   };
 }
 
@@ -377,7 +404,7 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
     criterionId: String(extractNested(r, 'ad_group_criterion.criterion_id') || ''),
     campaign: (extractNested(r, 'campaign.name') as string) || '',
     campaignId,
-    googleAdsUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: googleAdsCampaignUrl(campaignId),
     impressions: Number(extractNested(r, 'metrics.impressions') || 0),
     clicks,
     ctr: Number(extractNested(r, 'metrics.ctr') || 0) * 100,

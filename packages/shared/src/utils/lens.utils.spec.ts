@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { FAVORITE_PROJECTS_MAX_VALUES } from '../constants/lens.constants';
 import type { LensGrantInputs } from '../interfaces/lens.interface';
-import { deriveAllowedLenses, isHybridLensUser } from './lens.utils';
+import { deriveAllowedLenses, isHybridLensUser, parseFavoriteProjectUids } from './lens.utils';
 
 const NO_GRANTS: LensGrantInputs = {
   hasBoardRole: false,
@@ -141,5 +142,41 @@ describe('isHybridLensUser', () => {
     ['foundation only, from a root auditor grant', { isRootAuditor: true }],
   ])('is false for %s', (_label, overrides: Partial<LensGrantInputs>) => {
     expect(isHybridLensUser(inputs(overrides))).toBe(false);
+  });
+});
+
+describe('parseFavoriteProjectUids', () => {
+  it('parses a JSON-stringified array of uids', () => {
+    expect(parseFavoriteProjectUids('["a","b","c"]')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('passes through an already-parsed array', () => {
+    expect(parseFavoriteProjectUids(['a', 'b'])).toEqual(['a', 'b']);
+  });
+
+  it('returns an empty array for invalid JSON', () => {
+    expect(parseFavoriteProjectUids('not json')).toEqual([]);
+  });
+
+  it('returns an empty array for non-array JSON', () => {
+    expect(parseFavoriteProjectUids('{"a":1}')).toEqual([]);
+    expect(parseFavoriteProjectUids('"a string"')).toEqual([]);
+    expect(parseFavoriteProjectUids('42')).toEqual([]);
+  });
+
+  it('returns an empty array for null/undefined input', () => {
+    expect(parseFavoriteProjectUids(null)).toEqual([]);
+    expect(parseFavoriteProjectUids(undefined)).toEqual([]);
+  });
+
+  it('filters out non-string and empty-string elements', () => {
+    expect(parseFavoriteProjectUids(['a', '', 1, null, undefined, {}, 'b'])).toEqual(['a', 'b']);
+  });
+
+  it('truncates to FAVORITE_PROJECTS_MAX_VALUES', () => {
+    const uids = Array.from({ length: FAVORITE_PROJECTS_MAX_VALUES + 10 }, (_, i) => `uid-${i}`);
+    const result = parseFavoriteProjectUids(uids);
+    expect(result).toHaveLength(FAVORITE_PROJECTS_MAX_VALUES);
+    expect(result).toEqual(uids.slice(0, FAVORITE_PROJECTS_MAX_VALUES));
   });
 });

@@ -12,6 +12,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, merge, of, switchMap, take, tap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { AccountSettingsComponent } from '../account-settings/account-settings.component';
 import { PermissionsMatrixComponent } from '../components/permissions-matrix/permissions-matrix.component';
@@ -21,7 +22,7 @@ import { UserPermissionsTableComponent } from '../components/user-permissions-ta
 @Component({
   selector: 'lfx-settings-dashboard',
   host: { class: 'block' },
-  imports: [CardComponent, PermissionsMatrixComponent, UserPermissionsTableComponent, MenuComponent, AccountSettingsComponent],
+  imports: [CardComponent, PermissionsMatrixComponent, UserPermissionsTableComponent, MenuComponent, AccountSettingsComponent, PageHeaderComponent],
   templateUrl: './settings-dashboard.component.html',
 })
 export class SettingsDashboardComponent {

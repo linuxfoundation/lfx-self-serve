@@ -14,7 +14,7 @@
     @if (showAddButton() && !disabled()) {
       <lfx-button
         icon="fa-light fa-user-plus text-xs"
-        label="Add"
+        label="Invite people"
         size="small"
         severity="secondary"
         [attr.data-testid]="'add-participant-button'"
@@ -115,5 +115,9 @@
     <div class="flex items-center justify-between" data-testid="rsvp-details-invitee-count">
       <span class="text-[12.25px] leading-tight tracking-tight text-gray-900">{{ meetingRegistrantCount() }} invited</span>
     </div>
+  }
+
+  @if (showAttendeePreview() && !pastMeeting() && !disabled() && !loading()) {
+    <lfx-meeting-attendee-preview [people]="previewPeople()" [total]="meetingRegistrantCount()" (viewAll)="viewAllClicked.emit()" />
   }
 </div>

@@ -1,0 +1,429 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { CdkMenuTrigger } from '@angular/cdk/menu';
+import { FlexibleConnectedPositionStrategy, OverlayContainer } from '@angular/cdk/overlay';
+import { Component, signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { UiTooltipDirective } from '../tooltip/tooltip.directive';
+import { UiMenuGroupComponent } from './menu-group.component';
+import { UiMenuItemComponent } from './menu-item.component';
+import { UiMenuSeparatorComponent } from './menu-separator.component';
+import { UiMenuComponent } from './menu.component';
+
+const HOST_TEMPLATE = `
+  <button id="trigger" [cdkMenuTriggerFor]="menu">Actions</button>
+  <ng-template #menu>
+    <lfx-ui-menu ariaLabel="Project actions">
+      <lfx-ui-menu-item id="edit" icon="fa-light fa-pen-to-square" shortcut="⌘E" [disabled]="editLocked()" disabledReason="Editing is paused" (triggered)="log('edit')">Edit</lfx-ui-menu-item>
+      <lfx-ui-menu-item id="duplicate" (triggered)="log('duplicate')">Duplicate</lfx-ui-menu-item>
+      <lfx-ui-menu-separator />
+      <lfx-ui-menu-group label="Share">
+        <lfx-ui-menu-item id="invite" (triggered)="log('invite')">Invite Members</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="transfer" [disabled]="true" disabledReason="Only owners can transfer" (triggered)="log('transfer')">Transfer Ownership</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="hidden-label" typeaheadLabel="zzz">Rename</lfx-ui-menu-item>
+        <lfx-ui-menu-item id="archive" [disabled]="archiveLocked()" disabledReason="Archived projects are read-only">Archive</lfx-ui-menu-item>
+      </lfx-ui-menu-group>
+      <lfx-ui-menu-separator />
+      <lfx-ui-menu-item id="delete" variant="danger" trailingIcon="fa-light fa-trash-can" [disabled]="deleteLocked()" disabledReason="Deleting is paused" (triggered)="log('delete')">Delete Project</lfx-ui-menu-item>
+    </lfx-ui-menu>
+  </ng-template>
+`;
+
+@Component({ selector: 'lfx-ui-test-host', template: '' })
+class TestHostComponent {
+  public readonly archiveLocked = signal(false);
+  public readonly editLocked = signal(false);
+  public readonly deleteLocked = signal(false);
+  public readonly events = signal<string[]>([]);
+
+  public log(name: string): void {
+    this.events.update((e) => [...e, name]);
+  }
+}
+
+describe('UiMenuComponent', () => {
+  let fixture: ComponentFixture<TestHostComponent>;
+  let trigger: HTMLButtonElement;
+  let container: HTMLElement;
+
+  const menu = () => container.querySelector('[data-testid="ui-menu"]') as HTMLElement | null;
+  const item = (id: string) => container.querySelector(`#${id}`) as HTMLElement;
+  // CDK Menu reads `keyCode`, so the synthetic events carry it.
+  const keyCodes: Record<string, number> = { ArrowDown: 40, ArrowUp: 38, Home: 36, End: 35, Escape: 27, Enter: 13, ' ': 32, i: 73 };
+  const key = (target: Element, k: string) =>
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: k, keyCode: keyCodes[k], bubbles: true, cancelable: true }));
+  const settle = async () => {
+    await fixture.whenStable();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  };
+  const open = async () => {
+    trigger.click();
+    await settle();
+  };
+
+  beforeEach(async () => {
+    TestBed.configureTestingModule({ imports: [TestHostComponent] });
+    // Set here because an inline template this long trips component-max-inline-declarations.
+    TestBed.overrideComponent(TestHostComponent, {
+      set: { imports: [CdkMenuTrigger, UiMenuComponent, UiMenuItemComponent, UiMenuGroupComponent, UiMenuSeparatorComponent], template: HOST_TEMPLATE },
+    });
+    fixture = TestBed.createComponent(TestHostComponent);
+    document.body.appendChild(fixture.nativeElement);
+    container = TestBed.inject(OverlayContainer).getContainerElement();
+    trigger = fixture.nativeElement.querySelector('#trigger');
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('opens from the trigger as a named menu with menuitem rows', async () => {
+    expect(menu()).toBeNull();
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+
+    await open();
+
+    expect(menu()?.getAttribute('role')).toBe('menu');
+    expect(menu()?.getAttribute('aria-label')).toBe('Project actions');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelectorAll('[role="menuitem"]').length).toBe(7);
+  });
+
+  it('renders icon, shortcut, trailing icon and the danger variant', async () => {
+    await open();
+
+    expect(item('edit').querySelector('[data-testid="ui-menu-item-icon"] i')?.className).toContain('fa-pen-to-square');
+    const keys = Array.from(item('edit').querySelectorAll('[data-testid="ui-menu-item-shortcut"] kbd'));
+    expect(keys.map((key) => key.querySelector('[aria-hidden="true"]')?.textContent ?? key.textContent?.trim())).toEqual(['⌘', 'E']);
+    expect(item('delete').querySelector('[data-testid="ui-menu-item-trailing-icon"]')).not.toBeNull();
+    expect(item('delete').className).toContain('text-ui-danger-700');
+    expect(item('edit').className).toContain('text-ui-neutral-900');
+    expect(item('edit').className).toContain('h-ui-menu-item');
+    // Keyboard focus keeps the library's focus ring on top of the highlight.
+    expect(item('edit').className).toContain('focus-visible:shadow-focus');
+  });
+
+  it('dims the shortcut keycaps in a disabled row', async () => {
+    fixture.componentInstance.editLocked.set(true);
+    await open();
+
+    const shortcut = item('edit').querySelector('[data-testid="ui-menu-item-shortcut"]') as HTMLElement;
+    expect(item('edit').getAttribute('aria-disabled')).toBe('true');
+    expect(shortcut.className).toContain('group-aria-disabled:[&_kbd]:text-ui-neutral-500');
+  });
+
+  it('draws separators and a labelled group', async () => {
+    await open();
+
+    expect(container.querySelectorAll('[role="separator"]').length).toBe(2);
+    const group = container.querySelector('[role="group"]') as HTMLElement;
+    const label = group.querySelector('[data-testid="ui-menu-group-label"]') as HTMLElement;
+    expect(label.textContent).toBe('Share');
+    expect(group.getAttribute('aria-labelledby')).toBe(label.id);
+  });
+
+  it('moves with the arrow keys and wraps; a disabled item stays reachable so its reason can be read', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    expect(document.activeElement).toBe(item('edit'));
+
+    key(item('edit'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('duplicate'));
+    key(item('duplicate'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('invite'));
+    key(item('invite'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('transfer'));
+    key(item('transfer'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('hidden-label'));
+    key(item('hidden-label'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('archive'));
+    key(item('archive'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('delete'));
+    key(item('delete'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('edit'));
+    key(item('edit'), 'ArrowUp');
+    expect(document.activeElement).toBe(item('delete'));
+  });
+
+  it('jumps to the first and last items with Home and End', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+
+    key(item('edit'), 'End');
+    expect(document.activeElement).toBe(item('delete'));
+    key(item('delete'), 'Home');
+    expect(document.activeElement).toBe(item('edit'));
+  });
+
+  it('opens on ArrowUp with the last item focused', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowUp');
+    await settle();
+
+    expect(document.activeElement).toBe(item('delete'));
+  });
+
+  it('jumps to the matching item with type-ahead', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+
+    // Virtual time: the CDK debounces type-ahead.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Date'] });
+    key(item('edit'), 'i');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(document.activeElement).toBe(item('invite'));
+  });
+
+  it('type-ahead matches the typeaheadLabel instead of the projected label', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Date'] });
+    key(item('edit'), 'z');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(document.activeElement).toBe(item('hidden-label'));
+  });
+
+  it('type-ahead reaches a disabled item by its label, not by its reason', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'Date'] });
+    key(item('edit'), 't');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(document.activeElement).toBe(item('transfer'));
+  });
+
+  it('closes on Escape and returns focus to the trigger', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    expect(menu()).not.toBeNull();
+
+    key(item('edit'), 'Escape');
+    await settle();
+
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('emits triggered and closes when an item is clicked', async () => {
+    await open();
+    item('duplicate').click();
+    await settle();
+
+    expect(fixture.componentInstance.events()).toEqual(['duplicate']);
+    expect(menu()).toBeNull();
+  });
+
+  it('chooses the focused item with Enter and with Space', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    key(item('edit'), 'Enter');
+    await settle();
+    expect(fixture.componentInstance.events()).toEqual(['edit']);
+
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    key(item('edit'), ' ');
+    await settle();
+    expect(fixture.componentInstance.events()).toEqual(['edit', 'edit']);
+  });
+
+  it('a disabled item is aria-disabled and does nothing when clicked', async () => {
+    await open();
+
+    expect(item('transfer').getAttribute('aria-disabled')).toBe('true');
+    expect(item('transfer').className).toContain('aria-disabled:cursor-not-allowed');
+    item('transfer').click();
+    await settle();
+
+    expect(fixture.componentInstance.events()).toEqual([]);
+    expect(menu()).not.toBeNull();
+  });
+
+  const descriptionOf = (el: HTMLElement) =>
+    (el.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .map((id) => document.getElementById(id)?.textContent)
+      .join(' ');
+  const tooltip = () => container.querySelector('[data-testid="ui-tooltip"]') as HTMLElement | null;
+
+  it('describes a disabled item with its reason and keeps the reason out of the item name', async () => {
+    await open();
+
+    expect(descriptionOf(item('transfer'))).toBe('Only owners can transfer');
+    expect(item('transfer').textContent?.trim()).toBe('Transfer Ownership');
+    expect(item('edit').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('only describes the item with the reason while it is disabled', async () => {
+    await open();
+    expect(item('archive').getAttribute('aria-describedby')).toBeNull();
+
+    fixture.componentInstance.archiveLocked.set(true);
+    await settle();
+    expect(descriptionOf(item('archive'))).toBe('Archived projects are read-only');
+
+    fixture.componentInstance.archiveLocked.set(false);
+    await settle();
+    expect(item('archive').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('shows the reason in a tooltip when keyboard focus reaches a locked item, and not on an unlocked one', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    expect(document.activeElement).toBe(item('transfer'));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    expect(tooltip()?.textContent?.trim()).toBe('Only owners can transfer');
+
+    key(item('transfer'), 'ArrowDown');
+    key(item('hidden-label'), 'ArrowDown');
+    expect(document.activeElement).toBe(item('archive'));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    expect(tooltip()).toBeNull();
+  });
+
+  it('opens the reason beside the locked row first, so it does not cover the neighbours', async () => {
+    trigger.focus();
+    key(trigger, 'ArrowDown');
+    await settle();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const spy = vi.spyOn(FlexibleConnectedPositionStrategy.prototype, 'withPositions');
+
+    ['edit', 'duplicate', 'invite'].forEach((id) => key(item(id), 'ArrowDown'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const positions = spy.mock.calls[spy.mock.calls.length - 1][0];
+    expect(positions[0]).toMatchObject({ originX: 'end', overlayX: 'start', offsetX: 6 });
+    expect(positions[1]).toMatchObject({ originX: 'start', overlayX: 'end', offsetX: -6 });
+  });
+
+  it.each([
+    ['first', 'ArrowDown', 'editLocked', 'edit', 'Editing is paused'],
+    ['last', 'ArrowUp', 'deleteLocked', 'delete', 'Deleting is paused'],
+  ] as const)('shows the reason when the menu opens from the keyboard onto a locked %s item', async (_position, arrow, lock, id, reason) => {
+    fixture.componentInstance[lock].set(true);
+    await settle();
+    trigger.focus();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+
+    key(trigger, arrow);
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(item(id));
+    expect(tooltip()?.textContent?.trim()).toBe(reason);
+  });
+
+  it('closes when the user clicks outside', async () => {
+    await open();
+    document.body.click();
+    await settle();
+
+    expect(menu()).toBeNull();
+  });
+});
+
+@Component({
+  selector: 'lfx-ui-tooltip-test-host',
+  imports: [UiMenuComponent, UiMenuItemComponent, UiTooltipDirective],
+  template: `<lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item lfxUiTooltip="x" [disabled]="true" disabledReason="y">Locked</lfx-ui-menu-item></lfx-ui-menu>`,
+})
+class TooltipDirectiveHostComponent {}
+
+describe('UiMenuItemComponent with UiTooltipDirective imported', () => {
+  const hosts: ComponentFixture<TooltipDirectiveHostComponent>[] = [];
+
+  afterEach(() => {
+    hosts.splice(0).forEach((created) => created.destroy());
+    TestBed.inject(OverlayContainer).ngOnDestroy();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it('attaches exactly one tooltip, the disabledReason, and not the lfxUiTooltip text', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const host = TestBed.createComponent(TooltipDirectiveHostComponent);
+    hosts.push(host);
+    document.body.appendChild(host.nativeElement);
+    await host.whenStable();
+    const item = host.nativeElement.querySelector('lfx-ui-menu-item') as HTMLElement;
+
+    item.dispatchEvent(Object.assign(new Event('pointerenter'), { pointerType: 'mouse' }));
+    await vi.advanceTimersByTimeAsync(300);
+    host.detectChanges();
+
+    const tooltips = TestBed.inject(OverlayContainer).getContainerElement().querySelectorAll('[data-testid="ui-tooltip"]');
+    expect(tooltips.length).toBe(1);
+    expect(tooltips[0].textContent?.trim()).toBe('y');
+  });
+});
+
+@Component({
+  selector: 'lfx-ui-shortcut-test-host',
+  imports: [UiMenuComponent, UiMenuItemComponent],
+  template: `<lfx-ui-menu ariaLabel="Actions"><lfx-ui-menu-item [shortcut]="shortcut()">Go</lfx-ui-menu-item></lfx-ui-menu>`,
+})
+class ShortcutHostComponent {
+  public readonly shortcut = signal('');
+}
+
+describe('UiMenuItemComponent shortcut keycaps', () => {
+  const cases: [string, string[]][] = [
+    ['+', ['+']],
+    ['Ctrl++', ['Ctrl', '+']],
+    ['Ctrl+', ['Ctrl', '+']],
+    ['+K', ['+', 'K']],
+    ['Ctrl++K', ['Ctrl', '+', 'K']],
+    ['⌘+', ['⌘', '+']],
+    ['⌘ K', ['⌘', 'K']],
+    ['Ctrl+Shift+K', ['Ctrl', 'Shift', 'K']],
+    ['⇧⌘P', ['⇧', '⌘', 'P']],
+    ['⌘E', ['⌘', 'E']],
+    ['', []],
+  ];
+
+  it.each(cases)('splits %j into %j', async (shortcut, expected) => {
+    const host = TestBed.createComponent(ShortcutHostComponent);
+    host.componentInstance.shortcut.set(shortcut);
+    await host.whenStable();
+
+    const keys = Array.from(host.nativeElement.querySelectorAll('[data-testid="ui-menu-item-shortcut"] kbd')) as HTMLElement[];
+    expect(keys.map((key) => key.querySelector('[aria-hidden="true"]')?.textContent ?? key.textContent?.trim())).toEqual(expected);
+    host.destroy();
+  });
+
+  it('speaks the modifier symbols by name in the row text', async () => {
+    const host = TestBed.createComponent(ShortcutHostComponent);
+    host.componentInstance.shortcut.set('⌘+');
+    await host.whenStable();
+
+    expect(host.nativeElement.querySelector('lfx-ui-menu-item')?.textContent).toContain('Command');
+    host.destroy();
+  });
+});

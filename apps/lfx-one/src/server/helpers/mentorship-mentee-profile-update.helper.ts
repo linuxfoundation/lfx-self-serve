@@ -5,10 +5,9 @@ import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX,
-  MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_SKILL_SET_KEYS,
   MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS,
@@ -21,8 +20,7 @@ import {
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
 // Deep imports, not the `@lfx-one/shared/utils` barrel: the barrel transitively pulls in Angular, which does not load in plain Node.
-import { isMentorshipRichTextOverRawMax, mentorshipPlainTextToHtml } from '@lfx-one/shared/utils/mentorship.utils';
-import { codePointLength } from '@lfx-one/shared/utils/string.utils';
+import { getMentorshipMenteeCountryError, getMentorshipMenteeIntroductionError } from '@lfx-one/shared/utils/mentorship.utils';
 
 import { ServiceValidationError } from '../errors';
 
@@ -44,24 +42,31 @@ const requireObject = (value: unknown, field: string, allowed: readonly string[]
   return value;
 };
 
+/**
+ * The introduction HTML, held to the register rule (`getMentorshipMenteeIntroductionError`) so the drawer, the
+ * register form and the BFF cannot drift. Stored as sent, capped but not sanitised: every render path sanitises it.
+ */
 const parseIntroduction = (value: unknown, operation: string): string => {
   if (typeof value !== 'string') return fail('introduction', 'introduction must be a string', operation);
-  const text = value.trim();
-  if (codePointLength(text) > MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX) {
-    return fail('introduction', `introduction must be at most ${MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX} characters`, operation);
-  }
-  if (isMentorshipRichTextOverRawMax(mentorshipPlainTextToHtml(text))) {
-    return fail('introduction', MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE, operation);
-  }
-  return text;
+  const error = getMentorshipMenteeIntroductionError(value);
+  if (error) return fail('introduction', error, operation);
+  return value;
+};
+
+/** The country code, held to the register rule (`getMentorshipMenteeCountryError`): an assigned ISO 3166-1 alpha-2 code. */
+const parseCountry = (value: unknown, operation: string): string => {
+  if (typeof value !== 'string') return fail('country', 'country must be a string', operation);
+  const error = getMentorshipMenteeCountryError(value);
+  if (error) return fail('country', error, operation);
+  return value;
 };
 
 /** Trimmed, case-insensitively de-duplicated skills. A list needs at least one item, and items must be non-blank strings. */
 const parseSkillList = (value: unknown, field: string, operation: string): string[] => {
   if (!Array.isArray(value)) return fail(field, `${field} must be an array`, operation);
   if (value.length === 0) return fail(field, `${field} must contain at least one skill`, operation);
-  if (value.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) {
-    return fail(field, `${field} must contain at most ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills`, operation);
+  if (value.length > MENTORSHIP_SKILLS_MAX_ITEMS) {
+    return fail(field, MENTORSHIP_SKILLS_LIMIT_MESSAGE, operation);
   }
 
   const seen = new Set<string>();
@@ -70,8 +75,8 @@ const parseSkillList = (value: unknown, field: string, operation: string): strin
     if (typeof item !== 'string') return fail(field, `${field} must only contain strings`, operation);
     const skill = item.trim();
     if (skill === '') return fail(field, `${field} must not contain blank skills`, operation);
-    if (skill.length > MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH) {
-      return fail(field, `Each skill in ${field} must be at most ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters`, operation);
+    if (skill.length > MENTORSHIP_SKILL_MAX_LENGTH) {
+      return fail(field, MENTORSHIP_SKILLS_LIMIT_MESSAGE, operation);
     }
     const key = skill.toLowerCase();
     if (seen.has(key)) continue;
@@ -138,19 +143,20 @@ export const parseMentorshipMenteeProfileUpdate = (body: unknown, operation: str
   if ('skillSet' in source) request.skillSet = parseSkillSet(source['skillSet'], operation);
   if ('demographics' in source) request.demographics = parseAnswerGroup(source['demographics'], 'demographics', operation);
   if ('socioeconomics' in source) request.socioeconomics = parseAnswerGroup(source['socioeconomics'], 'socioeconomics', operation);
+  if ('country' in source) request.country = parseCountry(source['country'], operation);
   return request;
 };
 
 /**
  * Maps a validated update to the upstream `PATCH /mentorship/v1/me/profiles/mentee` body. Only the present groups
- * are emitted (an omitted column is kept upstream), the introduction becomes escaped HTML, blank notes leave
+ * are emitted (an omitted column is kept upstream), the introduction HTML is sent as is, blank notes leave
  * `comments` out, and `profile_links` is never sent.
  *
  * Upstream replaces a present JSON column whole, so each emitted column is layered over `stored`, the row as it
  * was read before the save: keys the BFF does not model (and values it cannot map, such as a numeric `age`)
  * survive the edit. In `demographics` and `socioeconomics` a key the update leaves out means "unchanged", so the
  * whole stored column is kept underneath; in `skill_set` a left-out `comments` means "cleared", so only its
- * unmodelled keys are.
+ * unmodelled keys are. `country` is written into `address` over its stored legacy keys (`city`, `address1`, `zipCode`).
  */
 export const buildMentorshipUpstreamMenteeProfileUpdate = (
   request: MentorshipMenteeProfileUpdateRequest,
@@ -159,7 +165,7 @@ export const buildMentorshipUpstreamMenteeProfileUpdate = (
   const upstream: MentorshipUpstreamMenteeProfileUpdate = {};
 
   if (request.introduction !== undefined) {
-    upstream.introduction = mentorshipPlainTextToHtml(request.introduction);
+    upstream.introduction = request.introduction;
   }
 
   if (request.skillSet) {
@@ -189,6 +195,10 @@ export const buildMentorshipUpstreamMenteeProfileUpdate = (
       ...(income !== undefined ? { income } : {}),
       ...(education !== undefined ? { educationLevel: education } : {}),
     };
+  }
+
+  if (request.country !== undefined) {
+    upstream.address = { ...storedColumn(stored?.address), country: request.country };
   }
 
   return upstream;

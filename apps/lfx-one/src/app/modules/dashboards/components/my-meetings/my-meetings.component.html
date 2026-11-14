@@ -6,15 +6,71 @@
   <div class="flex items-center gap-3 mb-6">
     <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
       <i class="fa-light fa-calendar text-lg"></i>
-      <span>{{ sectionTitle() }}</span>
+      <span>{{ sectionTitle }}</span>
     </h2>
     <div class="flex-1 border-t border-gray-200 self-center"></div>
   </div>
 
-  <!-- Meeting Cards: Last Meeting + Next Meeting -->
+  <!-- Meeting Cards: Next Meeting + Last Meeting -->
   <div class="flex flex-col xl:flex-row gap-4 xl:gap-0 items-stretch">
-    <!-- Left Column: Last Meeting (2/5 fixed) -->
-    <div class="order-2 xl:order-1 xl:w-2/5 xl:shrink-0 xl:pr-4 xl:border-r xl:border-dashed xl:border-gray-300 flex flex-col min-w-0">
+    <!-- Left Column: Next Meeting (fills the remaining 3/5) -->
+    <div class="xl:flex-1 xl:pr-4 flex flex-col min-w-0" data-testid="dashboard-next-meeting-column">
+      @if (upcomingLoading()) {
+        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1">
+          <div class="px-4 py-2.5" style="background: linear-gradient(to bottom, #eff6ff, #ffffff)">
+            <p-skeleton width="7rem" height="0.75rem" />
+          </div>
+          <div class="px-4 py-3 flex gap-3 items-start">
+            <p-skeleton width="4rem" height="4rem" borderRadius="12px" />
+            <div class="flex-1 flex flex-col gap-2 py-1">
+              <p-skeleton width="60%" height="0.625rem" />
+              <p-skeleton width="75%" height="0.875rem" />
+              <p-skeleton width="90%" height="0.625rem" />
+            </div>
+          </div>
+          <div class="flex gap-3 px-4 pb-4 pt-1">
+            <p-skeleton width="100%" height="1.75rem" borderRadius="8px" />
+            <p-skeleton width="100%" height="1.75rem" borderRadius="8px" />
+          </div>
+        </div>
+      } @else if (shownUpcoming(); as item) {
+        <lfx-dashboard-meeting-card
+          class="block flex-1"
+          [meeting]="item.meeting"
+          [occurrence]="item.occurrence"
+          [cardLabel]="upcomingLabel()"
+          cardVariant="accent"
+          viewAllRouterLink="/meetings"
+          [overlappingCount]="overlappingNextCount()"
+          [pagerIndex]="upcomingPosition()"
+          [pagerTotal]="upcomingWindow().length"
+          (pagerPrevious)="showPreviousUpcoming()"
+          (pagerNext)="showNextUpcoming()" />
+      } @else if (upcomingError()) {
+        <div
+          class="bg-gradient-to-b from-blue-50 to-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"
+          data-testid="dashboard-next-meeting-error">
+          <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400 shrink-0"></i>
+          <p class="text-sm font-medium text-gray-700">{{ upcomingErrorText() }}</p>
+          <button type="button" class="text-xs text-blue-600 hover:underline" data-testid="dashboard-next-meeting-retry" (click)="retryUpcoming()">
+            Retry
+          </button>
+        </div>
+      } @else {
+        <div
+          class="bg-gradient-to-b from-blue-50 to-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
+          data-testid="dashboard-next-meeting-empty">
+          <i class="fa-light fa-calendar-check text-4xl text-gray-400 shrink-0"></i>
+          <div>
+            <p class="text-sm font-medium text-gray-700">Your calendar is clear</p>
+            <p class="text-xs text-gray-400 mt-0.5">{{ emptyUpcomingText() }}</p>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Right Column: Last Meeting (2/5 fixed). Last in the DOM so the next meeting leads in both the stacked and side-by-side layouts. -->
+    <div class="xl:w-2/5 xl:shrink-0 xl:pl-4 xl:border-l xl:border-dashed xl:border-gray-300 flex flex-col min-w-0" data-testid="dashboard-last-meeting-column">
       @if (pastLoading()) {
         <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1">
           <div class="px-4 py-2.5" style="background: linear-gradient(to bottom, #f9fafb, #ffffff)">
@@ -43,58 +99,22 @@
           viewAllRouterLink="/meetings"
           [viewAllQueryParams]="{ time: 'past' }"
           [pastMeeting]="true" />
+      } @else if (pastError()) {
+        <div
+          class="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex flex-col items-center justify-center gap-2 px-5 py-10"
+          data-testid="dashboard-last-meeting-error">
+          <i class="fa-light fa-triangle-exclamation text-4xl text-gray-400 shrink-0"></i>
+          <p class="text-sm font-medium text-gray-700">{{ pastErrorText() }}</p>
+          <button type="button" class="text-xs text-blue-600 hover:underline" data-testid="dashboard-last-meeting-retry" (click)="retryPast()">Retry</button>
+        </div>
       } @else {
         <div
-          class="rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
-          style="background: linear-gradient(to bottom, #f3f4f6, #ffffff)"
+          class="bg-gradient-to-b from-gray-100 to-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
           data-testid="dashboard-last-meeting-empty">
           <i class="fa-light fa-clock-rotate-left text-4xl text-gray-400 shrink-0"></i>
           <div>
             <p class="text-sm font-medium text-gray-700">You haven't joined a meeting yet</p>
             <p class="text-xs text-gray-400 mt-0.5">{{ emptyPastText() }}</p>
-          </div>
-        </div>
-      }
-    </div>
-
-    <!-- Right Column: Next Meeting (2/3) -->
-    <div class="order-1 xl:order-2 xl:flex-1 xl:pl-4 flex flex-col min-w-0">
-      @if (upcomingLoading()) {
-        <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex-1">
-          <div class="px-4 py-2.5" style="background: linear-gradient(to bottom, #eff6ff, #ffffff)">
-            <p-skeleton width="7rem" height="0.75rem" />
-          </div>
-          <div class="px-4 py-3 flex gap-3 items-start">
-            <p-skeleton width="4rem" height="4rem" borderRadius="12px" />
-            <div class="flex-1 flex flex-col gap-2 py-1">
-              <p-skeleton width="60%" height="0.625rem" />
-              <p-skeleton width="75%" height="0.875rem" />
-              <p-skeleton width="90%" height="0.625rem" />
-            </div>
-          </div>
-          <div class="flex gap-3 px-4 pb-4 pt-1">
-            <p-skeleton width="100%" height="1.75rem" borderRadius="8px" />
-            <p-skeleton width="100%" height="1.75rem" borderRadius="8px" />
-          </div>
-        </div>
-      } @else if (nextMeeting(); as item) {
-        <lfx-dashboard-meeting-card
-          class="block flex-1"
-          [meeting]="item.meeting"
-          [occurrence]="item.occurrence"
-          cardLabel="NEXT MEETING"
-          cardVariant="accent"
-          viewAllRouterLink="/meetings"
-          [overlappingCount]="overlappingNextCount()" />
-      } @else {
-        <div
-          class="rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"
-          style="background: linear-gradient(to bottom, #eff6ff, #ffffff)"
-          data-testid="dashboard-next-meeting-empty">
-          <i class="fa-light fa-calendar-check text-4xl text-gray-400 shrink-0"></i>
-          <div>
-            <p class="text-sm font-medium text-gray-700">Your calendar is clear</p>
-            <p class="text-xs text-gray-400 mt-0.5">{{ emptyUpcomingText() }}</p>
           </div>
         </div>
       }

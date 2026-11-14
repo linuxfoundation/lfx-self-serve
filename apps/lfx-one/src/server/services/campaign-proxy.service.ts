@@ -1,7 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
+  CAMPAIGN_DELIVERY_TYPES,
+  COMPETITOR_KEYWORD_PATTERN,
+  GENERATED_GOOGLE_COPY_WIDTHS,
+  GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_SHARED_CALLS_TO_ACTION,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  isGoogleAdsServableUrl,
+  JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  META_CHAR_LIMITS,
+} from '@lfx-one/shared/constants';
+import {
+  campaignSurveySourceTextTooLong,
+  deriveSurveySlug,
+  googleAdsCampaignUrl,
+  parseNegativeKeywordInput,
+  surveySourceTitle,
+} from '@lfx-one/shared/utils/campaign.utils';
+import { fitAdCopyToWidth } from '@lfx-one/shared/utils/campaign-ad-copy.utils';
+import { googleAdsTextWeight } from '@lfx-one/shared/utils/campaign-google-search-ads.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -18,6 +47,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignProgramType,
+  CampaignSitelink,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
@@ -33,8 +63,12 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { AiProxyError, aiErrorDetail, aiErrorSummary, readAiJson } from '../helpers/ai-error.helper';
+import { getAiModel, getAiSamplingParams } from '../helpers/ai-model.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
+import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
+import { GoogleAdsNotConfiguredError } from './google-ads-read-error';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
 import { executeMetaCampaignCreation, updateMetaCampaignStatus } from './meta-ads.service';
@@ -83,7 +117,7 @@ function getGadsClient(): GoogleAdsApi {
     const clientSecret = getEnv('GADS_CLIENT_SECRET');
     const developerToken = getEnv('GADS_DEVELOPER_TOKEN');
     if (!clientId || !clientSecret || !developerToken) {
-      throw new Error('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
+      throw new GoogleAdsNotConfiguredError('Google Ads credentials not configured (GADS_CLIENT_ID, GADS_CLIENT_SECRET, GADS_DEVELOPER_TOKEN)');
     }
     gadsClient = new GoogleAdsApi({
       client_id: clientId,
@@ -96,9 +130,16 @@ function getGadsClient(): GoogleAdsApi {
 
 export function getCustomer(): Customer {
   if (!gadsCustomer) {
+    const customerId = getEnv('GADS_CUSTOMER_ID');
+    const refreshToken = getEnv('GADS_REFRESH_TOKEN');
+    // Checked here, not left to the SDK: an empty customer id or refresh token fails as a Google Ads
+    // call, which would read as a Google failure rather than a server setting to fix (#4526).
+    if (!customerId || !refreshToken) {
+      throw new GoogleAdsNotConfiguredError('Google Ads customer not configured (GADS_CUSTOMER_ID, GADS_REFRESH_TOKEN)');
+    }
     gadsCustomer = getGadsClient().Customer({
-      customer_id: getEnv('GADS_CUSTOMER_ID'),
-      refresh_token: getEnv('GADS_REFRESH_TOKEN'),
+      customer_id: customerId,
+      refresh_token: refreshToken,
       login_customer_id: getEnv('GADS_LOGIN_CUSTOMER_ID') || undefined,
     });
   }
@@ -423,6 +464,10 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 
 // ---------------------------------------------------------------------------
 // AI service helpers (LiteLLM proxy — same pattern as ai.service.ts)
+//
+// `AiProxyError`, `aiErrorSummary` and `aiErrorDetail` live in
+// `../helpers/ai-error.helper`, shared with `ai.service.ts`'s `makeAiRequest`, which posts to the
+// same proxy and needs the same body capture, length bound and key redaction.
 // ---------------------------------------------------------------------------
 
 /**
@@ -442,23 +487,23 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
       Authorization: `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: getAiModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      ...getAiSamplingParams(),
     }),
     signal,
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`AI request failed (${response.status}): ${text}`);
+    throw new AiProxyError(`AI request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
   }
 
-  const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  // Not a bare `response.json()`: a 2xx that is not a JSON object fails as a redacted `AiProxyError` (#4500).
+  const data = await readAiJson<{ choices?: { message?: { content?: string } }[] }>(response, aiApiKey);
   const content = data.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error('AI proxy returned an empty or malformed response');
@@ -478,20 +523,26 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
       Authorization: `Bearer ${aiApiKey}`,
     },
     body: JSON.stringify({
-      model: AI_MODEL,
+      model: getAiModel(),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      ...getAiSamplingParams(),
       stream: true,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
   });
 
-  if (!response.ok || !response.body) {
-    throw new Error(`AI streaming request failed (${response.status})`);
+  // Split from the null-body case below rather than left as one condition. Collapsed, a 200 with
+  // no body threw `AI streaming request failed (200)` — a sentence that contradicts itself and
+  // sends the next reader hunting for a 200-level error that does not exist.
+  if (!response.ok) {
+    throw new AiProxyError(`AI streaming request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
+  }
+  if (!response.body) {
+    throw new AiProxyError(`AI streaming request returned no response body (${response.status})`, '');
   }
 
   const reader = response.body.getReader();
@@ -538,15 +589,19 @@ function getCopySystemPromptBase(programType?: CampaignProgramType): string {
 
 const COPY_GOOGLE_SECTION = `
 GOOGLE SEARCH (RSA):
-- Headlines: 15 total, each ≤ 30 characters (STRICT — Google rejects longer)
-- Descriptions: 4 total, each ≤ 90 characters (STRICT)
+- Headlines: 15 total, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.searchHeadline} characters (STRICT — Google rejects longer)
+- Descriptions: 4 total, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.searchDescription} characters (STRICT). At least ONE description must be ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.shortDescription} characters: Performance Max needs one for its short slot.
 - Tone: direct, benefit-led, include CTA (e.g. "Register Now", "Enroll Now", "Learn More")
 
 GOOGLE DEMAND GEN (key: "google_display" — runs on YouTube, Discover, Gmail, Display):
-- headlines: 5 variations, each ≤ 40 characters (STRICT — Demand Gen limit is 40, not 30)
-- descriptions: 5 variations, each ≤ 90 characters (STRICT)
-- business_name: ≤ 25 chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
-- call_to_action: one of "Learn More", "Register", "Sign Up", "Book Now", "Apply Now"`;
+- headlines: 5 variations, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline} characters (STRICT — the Demand Gen image ad takes ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline})
+- descriptions: 5 variations, each ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenDescription} characters (STRICT)
+- business_name: ≤ ${GENERATED_GOOGLE_COPY_WIDTHS.businessName} chars — use the event's parent organization (e.g. "CNCF" for KubeCon). Default to "Linux Foundation" only if no specific foundation is identifiable.
+- call_to_action: one of ${GOOGLE_SHARED_CALLS_TO_ACTION.map((option) => `"${option.value}"`).join(', ')} (exactly as written; Google Ads refuses any other text, "Register" included; used on the Demand Gen image ad and the Display ad)
+
+GOOGLE COPY RULES:
+- Write every headline and description as a complete phrase or sentence that ends inside its limit. Copy over the limit is cut at the last whole word that fits, so never write past it.
+- Google counts Chinese, Japanese, Korean and full-width characters as 2 toward every limit.`;
 
 const COPY_LINKEDIN_SECTION = `
 LINKEDIN SPONSORED CONTENT (key: "linkedin_sponsored"):
@@ -601,7 +656,7 @@ IMPORTANT RULES:
 2. CHARACTER LIMITS ARE HARD — platforms REJECT copy that exceeds them. Verify EVERY line.
 3. NEVER abbreviate month names, city names, or proper nouns unless required to fit character limits.
 4. NEVER use em-dashes (—) or en-dashes (–) in ad copy. Use commas, periods, or colons instead.
-5. Demand Gen headlines are 40 chars max (not 30) — use the extra space for better copy.`;
+5. Demand Gen headlines are ${GENERATED_GOOGLE_COPY_WIDTHS.demandGenHeadline} chars max: the Demand Gen image ad takes no more.`;
 
 function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgramType): string {
   const includeGoogle = platforms.includes('google-ads');
@@ -640,6 +695,23 @@ function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgra
 // across the two platforms, so neutral wording loses nothing.
 const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array. No markdown fences, no explanation.`;
 
+/**
+ * Names Google Ads ALONE, unlike {@link KEYWORD_SYSTEM_PROMPT}, because the gate below is narrower
+ * than the keyword gate: callouts are a Google extension asset, dispatched only on `googleCallouts`
+ * and validated only by `googleads/assets.go`. A Microsoft-only brief reaches the keyword block and
+ * does not reach this one, so naming both platforms here would describe a caller that cannot exist.
+ */
+const CALLOUT_SYSTEM_PROMPT = `You are a Google Ads extensions strategist. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
+
+/**
+ * Names both search platforms, as {@link KEYWORD_SYSTEM_PROMPT} does and unlike
+ * {@link CALLOUT_SYSTEM_PROMPT}, because the gate below is the keyword gate: a negative keyword is
+ * an exclusion on the same search query a keyword matches, and campaign-service adds it at campaign
+ * level on Google Ads and on Microsoft Advertising alike (`add-negative-keywords`). Nothing in the
+ * list is platform-specific, so a Microsoft-only brief gets the same one.
+ */
+const NEGATIVE_KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
+
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
 Return only valid JSON. No markdown fences, no explanation.`;
@@ -652,6 +724,28 @@ function getLinkedInStrategySystemPrompt(programType?: CampaignProgramType): str
   return programType === 'education' ? LINKEDIN_STRATEGY_SYSTEM_PROMPT_EDUCATION : LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS;
 }
 
+/**
+ * What the URL rule in both extraction prompts is defending against.
+ *
+ * Asked for "the agenda URL", a model reads the site's URL shape and composes a plausible one —
+ * `/schedule/`, `/agenda-2026/` — when the page states none. These values are printed as
+ * hyperlinks into a marketing email sent under a real foundation's name, so a confident wrong URL
+ * is worse than an absent one. The instruction is belt; `verifyPageLink` is braces, and it is the
+ * part that actually holds: anything not present as an `href` in the fetched HTML is dropped
+ * server-side no matter how the model justifies it.
+ *
+ * `registration_url` gets its OWN sentence, because it is the one URL that is not verified that
+ * way (see `resolveRegistrationUrl`): event pages commonly drive registration from a scripted
+ * button rather than an `<a href>`. Under the shared anchor-only rule the model was told to return
+ * null for exactly those pages, and the brief lost its primary call to action.
+ */
+const LINK_EXTRACTION_RULE = `For agenda_url, cfp_url, venue_url and sponsorship_url: copy the URL exactly as it appears in
+an href attribute in the HTML above. Never construct, complete, guess or "correct" a URL, and never
+derive one from the site's URL pattern. If the page does not link to it, use null.
+For registration_url: give the page's primary registration or enrollment destination, copied exactly
+as it appears in the HTML above -- an href, or a JSON-LD offers.url. Never construct, complete, guess or "correct" it, and never derive it from the site's
+URL pattern. If none of those carries one, use null.`;
+
 const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML. Return valid JSON:
 {
   "name": "event name",
@@ -662,8 +756,16 @@ const EVENT_EXTRACTION_PROMPT = `Extract structured event details from this HTML
   "themes": ["theme1", "theme2"],
   "registration_url": "URL",
   "slug": "url-friendly-slug",
-  "format_notes": "in-person/virtual/hybrid"
+  "format_notes": "in-person/virtual/hybrid",
+  "description": "how the event describes itself, 1-3 sentences, in its own words",
+  "speakers": ["speaker name, or 'Name, Title, Company' when the page states them"],
+  "agenda_url": "URL of the agenda/schedule/program page",
+  "cfp_url": "URL of the call-for-proposals or speaker-submission page",
+  "venue_url": "URL of the venue/travel/hotel page",
+  "sponsorship_url": "URL of the sponsorship or become-a-sponsor page"
 }
+
+${LINK_EXTRACTION_RULE}
 
 If a field cannot be determined, use null.`;
 
@@ -680,8 +782,16 @@ const EDUCATION_EXTRACTION_PROMPT = `Extract structured course/certification det
   "format_notes": "self-paced/instructor-led/hybrid",
   "price": "price or price range if found",
   "certification_code": "e.g. CKA, LFCS, CKAD if applicable",
-  "prerequisites": "prerequisites if listed"
+  "prerequisites": "prerequisites if listed",
+  "description": "how the course describes itself, 1-3 sentences, in its own words",
+  "speakers": ["instructor name, or 'Name, Title, Company' when the page states them"],
+  "agenda_url": "URL of the syllabus/curriculum/course-outline page",
+  "cfp_url": null,
+  "venue_url": "URL of the training-location or delivery-details page, if any",
+  "sponsorship_url": null
 }
+
+${LINK_EXTRACTION_RULE}
 
 If a field cannot be determined, use null.`;
 
@@ -938,7 +1048,15 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
       continue;
     }
 
-    const blockEnd = tag === 'svg' ? svgBlockEnd(scan, openEnd) : rawTextBlockEnd(scan, tag, openEnd);
+    let blockEnd: number;
+    let closeStart = -1;
+    if (tag === 'svg') {
+      blockEnd = svgBlockEnd(scan, openEnd);
+    } else {
+      const close = rawTextBlockEnd(scan, tag, openEnd);
+      blockEnd = close === -1 ? -1 : close.blockEnd;
+      closeStart = close === -1 ? -1 : close.closeStart;
+    }
 
     if (blockEnd === -1) {
       // Unclosed -- genuinely, or because its close lies past `MAX_SCAN_CHARS`. Either way what
@@ -949,9 +1067,13 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
 
     // JSON-LD is preserved, and only from a real `<script>` block: a commented one never reaches
     // this line. This is where the extraction gets `startDate`, `endDate` and `location` on pages
-    // that publish them as schema.org data rather than as prose.
+    // that publish them as schema.org data rather than as prose. The body is sliced up to
+    // `closeStart` -- the closing tag's own position, already computed by `rawTextBlockEnd` --
+    // rather than stripped out with a trailing regex: an unanchored `[^>]*>$` over an attacker-sized
+    // body is quadratic, since every non-matching `</script`-like token inside it is a fresh
+    // backtracking candidate (GH-549).
     if (tag === 'script' && ldBlocks < MAX_JSON_LD_BLOCKS && isJsonLdTag(scan, lt, openEnd)) {
-      const body = scan.slice(openEnd + 1, blockEnd).replace(/<\/script[^>]*>$/i, '');
+      const body = scan.slice(openEnd + 1, closeStart);
       jsonLd += (jsonLd === '' ? '' : ' ') + body;
       ldBlocks++;
     }
@@ -964,12 +1086,19 @@ function scanExtractable(html: string): { prose: string; jsonLd: string } {
 }
 
 /**
- * The end of a `<script>` or `<style>` element, or -1 if it does not close within the scan.
+ * Where a `<script>` or `<style>` element's closing tag starts (`closeStart`) and ends
+ * (`blockEnd`, one past its `>`), or -1 if it does not close within the scan.
  *
  * Raw text: the first correctly-formed close wins, and a `<` inside the body is not a tag. The
  * `(?=[\s>])` boundary is what stops `</scriptx>` -- a different tag name -- from closing it.
+ *
+ * `closeStart` is exposed, not just `blockEnd`, so a caller that needs the element's body (e.g. a
+ * JSON-LD `<script>`) can slice up to it directly instead of stripping the closing tag back out
+ * with a regex -- a trailing-anchored `[^>]*>$` strip over an attacker-sized body is quadratic,
+ * since every non-matching `</tag`-like token inside the body is a fresh backtracking candidate
+ * (GH-549).
  */
-function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
+function rawTextBlockEnd(scan: string, tag: string, openEnd: number): { blockEnd: number; closeStart: number } | -1 {
   const closeRe = new RegExp(`</${tag}(?=[\\s>])`, 'gi');
   closeRe.lastIndex = openEnd;
   const close = closeRe.exec(scan);
@@ -977,7 +1106,7 @@ function rawTextBlockEnd(scan: string, tag: string, openEnd: number): number {
     return -1;
   }
   const closeEnd = startTagEnd(scan, close.index);
-  return closeEnd === -1 ? -1 : closeEnd + 1;
+  return closeEnd === -1 ? -1 : { blockEnd: closeEnd + 1, closeStart: close.index };
 }
 
 /**
@@ -1122,11 +1251,11 @@ function advanceInert(html: string, from: number, at: number): number {
       }
       continue;
     }
-    const end = rawTextBlockEnd(html, (rawMatch as RegExpExecArray)[1].toLowerCase(), openEnd);
-    if (end === -1) {
+    const close = rawTextBlockEnd(html, (rawMatch as RegExpExecArray)[1].toLowerCase(), openEnd);
+    if (close === -1) {
       return -1;
     }
-    cursor = end;
+    cursor = close.blockEnd;
     if (cursor > at) {
       return cursor;
     }
@@ -1265,14 +1394,20 @@ function getExtractionPrompt(programType?: CampaignProgramType): string {
  * brief-derived input it consumes is the KEYWORD list, which is generated for every paid brief
  * regardless of platform. So it is a legitimate member of this set that adds nothing to the prompt.
  *
- * Kept as a hand-written list rather than derived from `CAMPAIGN_PLATFORMS`, unlike the two
- * `!p.disabled` sets: this one answers "can the brief generator serve it", which is a property of
- * THIS service, not of whether the channel is offered. `twitter-ads` is absent for that reason and
- * would stay absent even if it were enabled.
+ * `twitter-ads` is here on the same terms as Microsoft, with no copy key and no keywords: the tweet
+ * is typed on the Implement tab. It joined when X create landed behind
+ * `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE`, because the Plan tab sends the selection here and a
+ * refusal would fail the first step of an X campaign. An X-only brief therefore skips the copy and
+ * keyword stages rather than falling back to the Google default.
+ *
+ * Kept as a hand-written list rather than derived from `CAMPAIGN_PLATFORMS`' create flag or from
+ * the pause/resume set (`TOGGLEABLE_CAMPAIGN_PLATFORMS`): this one answers "can the brief generator
+ * serve it", which is a property of THIS service, not of whether the channel is offered or its
+ * campaigns can be paused.
  */
-const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads']);
+const SUPPORTED_PLATFORMS: ReadonlySet<string> = new Set(['google-ads', 'microsoft-ads', 'linkedin-ads', 'reddit-ads', 'meta-ads', 'twitter-ads']);
 const SUPPORTED_PROGRAM_TYPES: ReadonlySet<CampaignProgramType> = new Set<CampaignProgramType>(['events', 'education']);
-// DERIVED from the shared constant, not a second hand-written list. CLAUDE.md requires shared
+// DERIVED from the shared constant, not a second hand-written list. AGENTS.md requires shared
 // constants to live in `@lfx-one/shared`, and the controller already validates against this one —
 // a duplicate here would let a newly-added delivery type be accepted by the controller and
 // rejected by this service, which is the worst version of the drift: it type-checks, and the two
@@ -1311,43 +1446,6 @@ function failJob(jobId: string, error: string): void {
   jobs.set(jobId, { status: 'error', error });
   setTimeout(() => jobs.delete(jobId), JOB_TTL_MS);
 }
-
-// ---------------------------------------------------------------------------
-// Country code to Google Ads geo target constant ID
-// ---------------------------------------------------------------------------
-
-const GEO_TARGET_MAP: Record<string, string> = {
-  US: '2840',
-  CA: '2124',
-  GB: '2826',
-  DE: '2276',
-  FR: '2250',
-  JP: '2392',
-  AU: '2036',
-  IN: '2356',
-  BR: '2076',
-  CN: '2156',
-  KR: '2410',
-  NL: '2528',
-  SE: '2752',
-  CH: '2756',
-  IL: '2376',
-  SG: '2702',
-  IE: '2372',
-  ES: '2724',
-  IT: '2380',
-  AT: '2040',
-  FI: '2246',
-  NO: '2578',
-  DK: '2208',
-  BE: '2056',
-  PL: '2616',
-  CZ: '2203',
-  NZ: '2554',
-  TW: '2158',
-  HK: '2344',
-  MX: '2484',
-};
 
 // ---------------------------------------------------------------------------
 // CampaignProxyService — brief generation + campaign creation
@@ -1431,18 +1529,94 @@ export class CampaignProxyService {
     // message further down promises "generating copy from URL" — which is false for email, where
     // no copy is generated at all. A status line that names work the stream will not do is the
     // same class of falsehood as a silent skip.
-    const isEmail = body.deliveryType === 'email';
+    // Every SEND surface. Email and survey both skip ad-copy, keyword and targeting generation --
+    // upstream writes their copy from the brief instead -- so the gate asks "is this not paid?".
+    const isEmailLike = body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing';
 
     // `/brief/generate` has its OWN refinement mode — `refineFeedback` + `previousCopy` — and it is
     // a second door onto the same refusal. Left open, an email refinement here skipped the scrape
-    // and extraction (because `isRefinement`) AND every generator (because `isEmail`), then
+    // and extraction (because `isRefinement`) AND every generator (because `isEmailLike`), then
     // emitted `done`: a successful no-op, which is worse than the error it should be, because the
     // caller is told the work happened.
     //
     // Same message as `streamRefinedBrief`, deliberately — one refusal reached two ways should not
     // read as two different problems.
-    if (isEmail && isRefinement) {
+    if (isEmailLike && isRefinement) {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
+      return;
+    }
+
+    // The SURVEY surface takes its facts from the pasted document, so it neither fetches nor
+    // extracts. Placed before the scrape block rather than threaded through it: every step below
+    // -- validate the URL, fetch it, run the extraction model over the HTML, verify links against
+    // the page's anchors -- asks a question about a page that is not the source of truth here. A
+    // survey's call-to-action often opens a bare form with nothing to read.
+    //
+    // Deterministic, with no model call: the operator supplied the facts, so inventing a second
+    // interpretation of them would be the thing the generator's own prompt forbids.
+    if (body.deliveryType === 'survey') {
+      const rawSourceText = typeof body.sourceText === 'string' ? body.sourceText : '';
+      // Refused here, not cut: campaign-service refuses a longer document at save and at copy
+      // generation, because the copy would otherwise be written from a truncated source. Checked
+      // on the RAW value before it is trimmed, so an oversized body is never copied.
+      if (campaignSurveySourceTextTooLong(rawSourceText)) {
+        yield {
+          type: 'error',
+          data: `The pasted text is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit. Shorten it so no finding, date or incentive is cut from the email.`,
+        };
+        return;
+      }
+      const sourceText = rawSourceText.trim();
+      if (sourceText === '') {
+        yield { type: 'error', data: 'Paste the survey or report text to write the email from.' };
+        return;
+      }
+      yield { type: 'status', data: 'Reading the source document...' };
+
+      // The first non-empty line names the asset. The brief needs an identity -- upstream keys it
+      // on `(project, slug, delivery, stage)` and the Implement tab titles campaigns from it --
+      // and a document's own opening line is what its author called it. Bounded because this
+      // becomes a campaign name, and a pasted document can open with a paragraph.
+      const name = surveySourceTitle(sourceText);
+
+      // The SAME derivation the planner looks the brief up with (`deriveSurveySlug`), so a saved
+      // survey -- a Google Form named after its title rather than `viewform` -- is found again.
+      const slug = deriveSurveySlug(body.url, sourceText);
+      // campaign-service keys the brief on the slug and refuses an empty one, so say so here.
+      if (slug === '') {
+        yield { type: 'error', data: 'Could not name this campaign: start the pasted text with the survey or report title.' };
+        return;
+      }
+
+      yield {
+        type: 'event',
+        data: {
+          // The whole factual basis of the copy. campaign-service reads it back as `sourceText`
+          // and renders it into the prompt as "Source document".
+          sourceText,
+          name,
+          slug,
+          // The call-to-action destination. Named `registrationUrl` because that is the field the
+          // generator already resolves a button's href from; on this surface it is the survey or
+          // report being promoted.
+          registrationUrl: body.url,
+          dates: '',
+          city: '',
+          countryCode: '',
+          audience: typeof body.targetAudience === 'string' ? body.targetAudience.trim() : '',
+          themes: [],
+          speakers: [],
+          formatNotes: '',
+          description: '',
+          agendaUrl: '',
+          cfpUrl: '',
+          venueUrl: '',
+          sponsorshipUrl: '',
+          heroImageUrl: '',
+          sponsors: [],
+        },
+      };
+      yield { type: 'done', data: null };
       return;
     }
 
@@ -1462,6 +1636,11 @@ export class CampaignProxyService {
     let pageUrl = '';
     let heroImageUrl = '';
     let sponsors: CampaignEventSponsor[] = [];
+    // Both are needed by the extraction block below, which is a SEPARATE `if (!isRefinement)` --
+    // `finalUrl` is scoped to the fetch block and the extraction cannot reach it. An empty map
+    // fails every link check, which is the right default for a refinement that never scraped.
+    let pageLinks = new Map<string, string>();
+    let pageBaseUrl = '';
 
     if (!isRefinement) {
       yield { type: 'status', data: `Scraping ${body.url}...` };
@@ -1485,6 +1664,15 @@ export class CampaignProxyService {
         // Resolved against the FINAL url, not the requested one: fetchSafeUrl follows up to 5
         // redirects, and a relative `og:image` belongs to the page that served it.
         ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, finalUrl));
+        // Same final-url reasoning as the hero above: a relative `href` on a redirected page
+        // resolves against the URL that SERVED it, so verifying against the requested one would
+        // reject links the page really does carry.
+        // And against the page's `<base href>` when it declares one, which is what its own relative
+        // links -- and so a model quoting them -- resolve against in a browser.
+        // Collected from the FULL page, not `extractableHtml(html)`: the extraction model sees a
+        // 60k-char excerpt, but a link it reports is legitimate if the page carries it anywhere.
+        // One tokenizer pass yields both the links and the base.
+        ({ links: pageLinks, baseUrl: pageBaseUrl } = scanPageLinks(html, finalUrl));
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
@@ -1500,6 +1688,13 @@ export class CampaignProxyService {
         const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${pageUrl || body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
+        //
+        // `registration_url` is passed through UNVERIFIED while the four below go through
+        // `verifyPageLink`. That asymmetry is deliberate and documented at the helper: it is the
+        // primary CTA's href, event pages commonly drive registration from a scripted button
+        // rather than an `<a href>`, and verifying it would strip working CTAs from briefs that
+        // work today. A RELATIVE one is verified against the page's anchors and made absolute: it
+        // can only have come from an href, and `coerceCampaignEventDetails` blanks relative URLs.
         yield {
           type: 'event',
           data: {
@@ -1509,10 +1704,15 @@ export class CampaignProxyService {
             countryCode: eventDetails['country_code'] ?? '',
             audience: eventDetails['audience'] ?? '',
             themes: Array.isArray(eventDetails['themes']) ? eventDetails['themes'] : [],
-            registrationUrl: eventDetails['registration_url'] ?? '',
+            registrationUrl: resolveRegistrationUrl(eventDetails['registration_url'], pageLinks, pageBaseUrl),
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',
+            description: eventDetails['description'] ?? '',
+            agendaUrl: verifyPageLink(eventDetails['agenda_url'], pageLinks, pageBaseUrl),
+            cfpUrl: verifyPageLink(eventDetails['cfp_url'], pageLinks, pageBaseUrl),
+            venueUrl: verifyPageLink(eventDetails['venue_url'], pageLinks, pageBaseUrl),
+            sponsorshipUrl: verifyPageLink(eventDetails['sponsorship_url'], pageLinks, pageBaseUrl),
             heroImageUrl,
             sponsors,
           },
@@ -1521,7 +1721,7 @@ export class CampaignProxyService {
         logger.warning(req, 'campaign_brief_extract', `${isEducation ? 'Course' : 'Event'} extraction failed, continuing with URL only`, { err: error });
         yield {
           type: 'status',
-          data: isEmail
+          data: isEmailLike
             ? `Could not extract structured ${extractLabel}; continuing with the URL only.`
             : `Could not extract structured ${extractLabel}, generating copy from URL...`,
         };
@@ -1572,7 +1772,7 @@ export class CampaignProxyService {
     // cheap one. The scrape, event details and HubSpot UTM above are what an email brief needs
     // from this stream today; generated subject/preview/sender copy arrives with the `email-copy`
     // endpoint (LFXV2-3198), which this path deliberately does not try to stand in for.
-    // `someContributesCopy` and not merely `!isEmail`: a Microsoft-ONLY selection reaches here with
+    // `someContributesCopy` and not merely `!isEmailLike`: a Microsoft-ONLY selection reaches here with
     // no copy keys to request. See `contributesAdCopy` for why skipping beats calling with an empty
     // schema — the failure mode is not a wasted call but a dead-ended brief.
     const someContributesCopy = selectedPlatforms.some(contributesAdCopy);
@@ -1584,10 +1784,10 @@ export class CampaignProxyService {
     // the honest value: this brief genuinely has no ad copy, and it is distinguishable from
     // `null`, which means "no brief was generated". Email deliberately keeps `null`, because its
     // copy comes from a different endpoint entirely.
-    if (!isEmail && !someContributesCopy) {
+    if (!isEmailLike && !someContributesCopy) {
       yield { type: 'copy_structured', data: {} };
     }
-    if (!isEmail && someContributesCopy) {
+    if (!isEmailLike && someContributesCopy) {
       const platformList = selectedPlatforms.filter(contributesAdCopy).join(', ');
       yield { type: 'status', data: `Generating copy for ${platformList}...` };
 
@@ -1642,7 +1842,11 @@ export class CampaignProxyService {
         }
       } catch (error) {
         if (signal.aborted) return;
-        yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        // This stage logged nothing before #3996, so a proxy 401 reached the operator only as
+        // whatever the browser chose to show. `{ err: error }` is what puts the proxy's own body —
+        // the thing that took days to attribute — into the log. The browser gets `summary` only.
+        logger.warning(req, 'campaign_brief_copy', 'Ad copy generation failed', { err: error });
+        yield { type: 'error', data: `Ad copy generation failed: ${aiErrorSummary(error)}` };
         return;
       }
     }
@@ -1658,7 +1862,7 @@ export class CampaignProxyService {
     // no platform still gets the google-ads default above, so it still wants keywords. Email is the
     // one case where absence does not mean the default, and it is excluded first rather than by
     // adding another arm to that condition.
-    if (!isEmail && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
+    if (!isEmailLike && (body.platforms?.some((p) => p === 'google-ads' || p === 'microsoft-ads') || !body.platforms || body.platforms.length === 0)) {
       yield { type: 'status', data: 'Generating keyword list...' };
 
       try {
@@ -1674,19 +1878,96 @@ export class CampaignProxyService {
           intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
           notes: k['notes'] || '',
         }));
-        yield { type: 'keywords', data: keywords };
+        yield {
+          type: 'keywords',
+          data: filterGeneratedKeywords(keywords, eventYearFromDates(eventDetails?.['dates']), body.programType === 'education'),
+        };
       } catch (error) {
         logger.warning(req, 'campaign_brief_keywords', 'Keyword generation failed', { err: error });
         yield { type: 'status', data: 'Keyword generation failed, skipping...' };
       }
+
+      // The SAME gate as the keywords above, deliberately: a negative keyword is the exclusion side
+      // of the keyword list, derived from the same event details, and campaign-service adds it at
+      // campaign level on Google Ads and Microsoft Advertising both. It is NOT gated on
+      // `!isRefinement` the way callouts and sitelinks are, and the difference is not an oversight:
+      // this list is a SUGGESTION the Optimize tab's editor opens pre-filled with, never a stored
+      // decision, and nothing the operator typed lives in the field a regeneration would overwrite
+      // — what they type lives in the editor's own text until they send it. Sitelinks' silent-wipe
+      // problem has no analogue here either: nothing in this block reads `pageLinks`.
+      //
+      // Nested in the keyword gate rather than repeated beside it so the two conditions cannot
+      // drift apart; a brief that gets keywords gets negatives, and the pairing is the point.
+      yield { type: 'status', data: 'Generating negative keywords...' };
+      try {
+        const negativePrompt = buildNegativeKeywordsPrompt(body, eventDetails);
+        const negativeText = stripJsonFences(await aiChat(NEGATIVE_KEYWORD_SYSTEM_PROMPT, negativePrompt, signal));
+        const negativeKeywords = shapeNegativeKeywords(JSON.parse(negativeText));
+        // Guarded for the reason the callout yield is: an empty array is a value the client
+        // assigns, so a response that shaped away to nothing would clear a list already held.
+        if (negativeKeywords.length > 0) {
+          yield { type: 'negativeKeywords', data: negativeKeywords };
+        }
+      } catch (error) {
+        // An operator closing the tab aborts this signal, which arrives here as an AbortError —
+        // a cancellation, not a degradation. Checked first, as the callout catch does.
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_brief_negative_keywords', 'Negative keyword generation failed', { err: error });
+        yield { type: 'status', data: 'Negative keyword generation failed, skipping...' };
+      }
     }
 
-    // `!isEmail` is not redundant with the platform check. Today's client never sends
+    // Narrower than the keyword gate above, and not by oversight. Callouts and sitelinks are
+    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts` (Search and
+    // Performance Max) and `sitelinks` (those two and Demand Gen), the Implementation tab renders their editors behind
+    // `googleCalloutsAvailable` and `googleSitelinksAvailable`, and only `googleads/assets.go`
+    // validates them. A Microsoft-only brief takes the keyword
+    // block and skips this one, which is right — seeding extensions it has no way to dispatch
+    // would fill an editor the operator never sees with text nothing reads.
+    //
+    // `!isRefinement` covers both halves for one reason each. Sitelinks are derived from
+    // `pageLinks`, which a refinement never populated (it does not scrape), so every URL would
+    // fail verification and the block would yield an empty list OVER the operator's edited one —
+    // a silent wipe, not a no-op, since absent and empty are the same value on this wire.
+    // Callouts are excluded on the matching rule rather than a different one: a refinement that
+    // regenerated them would discard the operator's edits the same way.
+    if (!isEmailLike && !isRefinement && selectedPlatforms.includes('google-ads')) {
+      // Deterministic and free — no model call, so no try/catch and no status line of its own.
+      // An empty result is the honest answer for a page that carries none of the four links.
+      const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl, body.programType);
+      if (sitelinks.length > 0) {
+        yield { type: 'sitelinks', data: sitelinks };
+      }
+
+      yield { type: 'status', data: 'Generating callout extensions...' };
+      try {
+        const calloutPrompt = buildCalloutPrompt(body, eventDetails);
+        const calloutText = stripJsonFences(await aiChat(CALLOUT_SYSTEM_PROMPT, calloutPrompt, signal));
+        const callouts = shapeCallouts(JSON.parse(calloutText));
+        // Guarded rather than yielded unconditionally, for the reason the sitelink yield is: an
+        // empty array is a value the client assigns, so a response that shaped away to nothing
+        // would clear a list the operator may already be holding.
+        if (callouts.length > 0) {
+          yield { type: 'callouts', data: callouts };
+        }
+      } catch (error) {
+        // The controller aborts this signal on `res.on('close')`, so an operator closing the tab
+        // mid-call lands here as an AbortError — a cancellation, not a degradation. Checked first
+        // the way every sibling catch in this file that carries the same signal does, because WARN
+        // is for on-call-relevant failure and a caller-triggered cancel is neither relevant nor
+        // rate-limited: one per closed tab.
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_brief_callouts', 'Callout generation failed', { err: error });
+        yield { type: 'status', data: 'Callout generation failed, skipping...' };
+      }
+    }
+
+    // `!isEmailLike` is not redundant with the platform check. Today's client never sends
     // `linkedin-ads` alongside `deliveryType: 'email'`, but that is a CLIENT guarantee and this is
     // a server the client does not own — `{deliveryType:'email', platforms:['linkedin-ads']}` is
     // accepted by the type and would otherwise spend an AI call on a LinkedIn targeting strategy
     // for a brief that has no ad channels.
-    if (!isEmail && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
+    if (!isEmailLike && selectedPlatforms.includes('linkedin-ads') && !isRefinement) {
       yield { type: 'status', data: 'Generating LinkedIn targeting strategy...' };
       try {
         const strategyPrompt = buildLinkedInStrategyPrompt(body, eventDetails);
@@ -1734,7 +2015,8 @@ export class CampaignProxyService {
     // no platforms `buildCopySystemPrompt` asks for a JSON object with no keys. There is nothing
     // for it to refine on an email brief either — the copy it would rewrite was never generated —
     // so the request is refused rather than answered with a broken call.
-    if (body.deliveryType === 'email') {
+    // Every send surface, as on the generate path: survey generates no ad copy either.
+    if (body.deliveryType !== undefined && body.deliveryType !== 'paid-marketing') {
       yield { type: 'error', data: 'Refining email copy is not supported yet.' };
       return;
     }
@@ -1766,7 +2048,10 @@ export class CampaignProxyService {
         }
       } catch (error) {
         if (signal.aborted) return;
-        yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        // Same as the copy stage above — the other `aiChatStream` caller, and the other stage that
+        // logged nothing at all before #3996.
+        logger.warning(req, 'campaign_refine_copy', 'Brief refinement failed', { err: error });
+        yield { type: 'error', data: `Brief refinement failed: ${aiErrorSummary(error)}` };
         return;
       }
     }
@@ -1789,7 +2074,10 @@ export class CampaignProxyService {
           intentLevel: k['intent_level'] || k['intentLevel'] || 'Medium',
           notes: k['notes'] || '',
         }));
-        yield { type: 'keywords', data: keywords };
+        yield {
+          type: 'keywords',
+          data: filterGeneratedKeywords(keywords, eventYearFromDates(body.eventDetails?.dates), body.programType === 'education'),
+        };
       } catch (error) {
         if (signal.aborted) return;
         logger.warning(req, 'campaign_refine_keywords', 'Keyword regeneration failed', { err: error });
@@ -2196,7 +2484,7 @@ export class CampaignProxyService {
     // 3. Geo targeting
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { campaign: campaignResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);
@@ -2264,7 +2552,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: keywordOps.length,
       adCount: 1,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }
@@ -2319,7 +2607,7 @@ export class CampaignProxyService {
     // Geo targeting at ad group level (Demand Gen doesn't support campaign-level location criteria)
     const geoOps = body.geoTargets
       .map((geo) => {
-        const geoConstantId = GEO_TARGET_MAP[geo.toUpperCase()];
+        const geoConstantId = GOOGLE_ADS_GEO_TARGET_MAP[geo.toUpperCase()];
         return geoConstantId ? { ad_group: adGroupResource, location: { geo_target_constant: `geoTargetConstants/${geoConstantId}` } } : null;
       })
       .filter((op): op is NonNullable<typeof op> => op !== null);
@@ -2343,7 +2631,7 @@ export class CampaignProxyService {
       adGroupCount: 1,
       keywordCount: 0,
       adCount: 0,
-      campaignUrl: `https://ads.google.com/aw/campaigns?campaignId=${campaignId}`,
+      campaignUrl: googleAdsCampaignUrl(campaignId),
       steps,
     };
   }
@@ -2383,73 +2671,112 @@ function normalizeBudgetSplit(searchBudgetPct: number, campaignTypes: string[]):
   return { searchPct: raw, displayPct: 1 - raw };
 }
 
-function truncateAdCopy(obj: Record<string, unknown>): void {
-  const truncateStrings = (arr: unknown[], max: number): string[] => (arr as string[]).filter((s) => typeof s === 'string').map((s) => s.slice(0, max));
+/**
+ * Hold the model's ad copy to each platform's limits, in place, on the generate and refine paths.
+ *
+ * Every line over its limit is cut at the last whole word that fits, never mid-word, and loses any
+ * dangling "&", comma or connective word ({@link fitAdCopyToWidth}, #5378); a line left empty is
+ * dropped. Google lines are measured by Google's display width ({@link googleAdsTextWeight}, CJK and
+ * full-width characters count double), the width the Implement tab and campaign-service judge them
+ * by, so a Japanese line is not passed through at twice its allowance only to be dropped by the seed.
+ * LinkedIn, Reddit and Meta keep the UTF-16 count `slice` used before.
+ *
+ * The Google copy then gets one description short enough for Performance Max
+ * ({@link ensureShortGoogleDescription}, #5494). The older nesting under `platforms`, and the older
+ * `demand_gen` key, are held to the same limits.
+ */
+export function truncateAdCopy(obj: Record<string, unknown>): void {
+  const googleWidth = (char: string): number => googleAdsTextWeight(char);
+  const fitLines = (arr: unknown[], max: number, charWidth?: (char: string) => number): string[] =>
+    arr
+      .filter((line): line is string => typeof line === 'string')
+      .map((line) => fitAdCopyToWidth(line, max, charWidth))
+      .filter((line) => line !== '');
+  const fitField = (rec: Record<string, unknown>, key: string, max: number, charWidth?: (char: string) => number): void => {
+    if (typeof rec[key] === 'string') rec[key] = fitAdCopyToWidth(rec[key] as string, max, charWidth);
+  };
+  const variantsOf = (copy: Record<string, unknown> | undefined): Record<string, unknown>[] =>
+    Array.isArray(copy?.['variants']) ? (copy['variants'] as unknown[]).filter((v): v is Record<string, unknown> => v !== null && typeof v === 'object') : [];
 
-  const gs = obj['google_search'] as Record<string, unknown> | undefined;
-  if (gs) {
-    if (Array.isArray(gs['headlines'])) gs['headlines'] = truncateStrings(gs['headlines'], 30);
-    if (Array.isArray(gs['descriptions'])) gs['descriptions'] = truncateStrings(gs['descriptions'], 90);
-  }
-
-  const gd = obj['google_display'] as Record<string, unknown> | undefined;
-  if (gd) {
-    if (Array.isArray(gd['headlines'])) gd['headlines'] = truncateStrings(gd['headlines'], 40);
-    if (Array.isArray(gd['descriptions'])) gd['descriptions'] = truncateStrings(gd['descriptions'], 90);
-    if (typeof gd['business_name'] === 'string') gd['business_name'] = (gd['business_name'] as string).slice(0, 25);
-  }
-
-  const li = obj['linkedin_sponsored'] as Record<string, unknown> | undefined;
-  if (li) {
-    const variants = li['variants'] as unknown[] | undefined;
-    if (Array.isArray(variants)) {
-      for (const v of variants) {
-        if (v == null || typeof v !== 'object') continue;
-        const rec = v as Record<string, unknown>;
-        if (typeof rec['intro_text'] === 'string') rec['intro_text'] = (rec['intro_text'] as string).slice(0, 600);
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 200);
+  const nested = obj['platforms'] as Record<string, unknown> | undefined;
+  const pick = (...keys: string[]): Record<string, unknown> | undefined => {
+    for (const source of [obj, nested]) {
+      for (const key of keys) {
+        const found = source?.[key];
+        if (found !== null && typeof found === 'object' && !Array.isArray(found)) return found as Record<string, unknown>;
       }
     }
-  }
+    return undefined;
+  };
+  // Every copy object the brief can hold, top-level and nested alike; a brief holds one shape, and
+  // the seed reads the same keys in the same order (`generatedCopy` in the Implement tab).
+  const all = (...keys: string[]): Record<string, unknown>[] =>
+    [obj, nested].flatMap((source) =>
+      keys.map((key) => source?.[key]).filter((found): found is Record<string, unknown> => found !== null && typeof found === 'object' && !Array.isArray(found))
+    );
 
-  const rd = obj['reddit_promoted'] as Record<string, unknown> | undefined;
-  if (rd) {
-    const variants = rd['variants'] as unknown[] | undefined;
-    if (Array.isArray(variants)) {
-      for (const v of variants) {
-        if (v == null || typeof v !== 'object') continue;
-        const rec = v as Record<string, unknown>;
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, 300);
-        if (typeof rec['body'] === 'string') rec['body'] = (rec['body'] as string).slice(0, 500);
-      }
+  const widths = GENERATED_GOOGLE_COPY_WIDTHS;
+  for (const gs of all('google_search')) {
+    if (Array.isArray(gs['headlines'])) gs['headlines'] = fitLines(gs['headlines'], widths.searchHeadline, googleWidth);
+    if (Array.isArray(gs['descriptions'])) gs['descriptions'] = fitLines(gs['descriptions'], widths.searchDescription, googleWidth);
+  }
+  for (const gd of all('google_display', 'demand_gen')) {
+    if (Array.isArray(gd['headlines'])) gd['headlines'] = fitLines(gd['headlines'], widths.demandGenHeadline, googleWidth);
+    if (Array.isArray(gd['descriptions'])) gd['descriptions'] = fitLines(gd['descriptions'], widths.demandGenDescription, googleWidth);
+    fitField(gd, 'business_name', widths.businessName, googleWidth);
+  }
+  ensureShortGoogleDescription(pick('google_search'), pick('google_display', 'demand_gen'));
+
+  for (const li of all('linkedin_sponsored')) {
+    for (const rec of variantsOf(li)) {
+      fitField(rec, 'intro_text', 600);
+      fitField(rec, 'headline', 200);
     }
   }
-
-  const ma = obj['meta_ads'] as Record<string, unknown> | undefined;
-  if (ma) {
-    const variants = ma['variants'] as unknown[] | undefined;
-    if (Array.isArray(variants)) {
-      for (const v of variants) {
-        if (v == null || typeof v !== 'object') continue;
-        const rec = v as Record<string, unknown>;
-        if (typeof rec['primary_text'] === 'string') rec['primary_text'] = (rec['primary_text'] as string).slice(0, META_CHAR_LIMITS.primaryText);
-        if (typeof rec['headline'] === 'string') rec['headline'] = (rec['headline'] as string).slice(0, META_CHAR_LIMITS.headline);
-        if (typeof rec['description'] === 'string') rec['description'] = (rec['description'] as string).slice(0, META_CHAR_LIMITS.description);
-      }
+  for (const rd of all('reddit_promoted')) {
+    for (const rec of variantsOf(rd)) {
+      fitField(rec, 'headline', 300);
+      fitField(rec, 'body', 500);
     }
   }
-
-  const platforms = obj['platforms'] as Record<string, unknown> | undefined;
-  if (platforms) {
-    if (platforms['google_search']) truncateAdCopy({ google_search: platforms['google_search'] } as Record<string, unknown>);
-    if (platforms['google_display'] || platforms['demand_gen']) {
-      const key = platforms['google_display'] ? 'google_display' : 'demand_gen';
-      truncateAdCopy({ google_display: platforms[key] } as Record<string, unknown>);
+  for (const ma of all('meta_ads')) {
+    for (const rec of variantsOf(ma)) {
+      fitField(rec, 'primary_text', META_CHAR_LIMITS.primaryText);
+      fitField(rec, 'headline', META_CHAR_LIMITS.headline);
+      fitField(rec, 'description', META_CHAR_LIMITS.description);
     }
-    if (platforms['linkedin_sponsored']) truncateAdCopy({ linkedin_sponsored: platforms['linkedin_sponsored'] } as Record<string, unknown>);
-    if (platforms['reddit_promoted']) truncateAdCopy({ reddit_promoted: platforms['reddit_promoted'] } as Record<string, unknown>);
-    if (platforms['meta_ads']) truncateAdCopy({ meta_ads: platforms['meta_ads'] } as Record<string, unknown>);
   }
+}
+
+/**
+ * Make sure the brief's Google copy holds at least one description of
+ * `GOOGLE_PERFORMANCE_MAX_SHORT_DESCRIPTION_WIDTH` or fewer by Google's display width (#5494),
+ * so the Performance Max seed has one to pick for Google's short slot and an untouched brief creates.
+ *
+ * The prompt asks for one; this is the net for when the model does not write it. When neither the
+ * Search nor the Demand Gen descriptions hold a short line, the SHORTEST Search description (or,
+ * with no Search descriptions, the shortest Demand Gen one) is cut to the short width on a word
+ * boundary, in place, so neither list grows past the count its ad accepts. The cut line cannot repeat
+ * another line, since every other line is wider than it; a line that would lose everything to the cut
+ * is left as it was.
+ */
+export function ensureShortGoogleDescription(search: Record<string, unknown> | undefined, demandGen: Record<string, unknown> | undefined): void {
+  const max = GENERATED_GOOGLE_COPY_WIDTHS.shortDescription;
+  const written = (line: unknown): line is string => typeof line === 'string' && googleAdsTrimSpace(line) !== '';
+  const isShort = (line: unknown): boolean => written(line) && googleAdsTextWeight(googleAdsTrimSpace(line)) <= max;
+  const lists = [search, demandGen].map((copy) => copy?.['descriptions']).filter((list): list is unknown[] => Array.isArray(list));
+  if (lists.some((list) => list.some(isShort))) return;
+
+  const target = [search, demandGen].find((copy) => Array.isArray(copy?.['descriptions']) && (copy['descriptions'] as unknown[]).some(written));
+  if (!target) return;
+  const descriptions = target['descriptions'] as unknown[];
+  const width = (index: number): number => googleAdsTextWeight(googleAdsTrimSpace(descriptions[index] as string));
+  let shortest = -1;
+  descriptions.forEach((line, index) => {
+    if (written(line) && (shortest === -1 || width(index) < width(shortest))) shortest = index;
+  });
+  const shortened = fitAdCopyToWidth(googleAdsTrimSpace(descriptions[shortest] as string), max, (char) => googleAdsTextWeight(char));
+  if (shortened !== '') descriptions[shortest] = shortened;
 }
 
 function extractEventNameFromUrl(url: string): string {
@@ -2475,13 +2802,16 @@ function extractEventNameFromUrl(url: string): string {
  * schema — and, worse, a failure of that pointless call `return`s from the stream BEFORE keyword
  * generation, so the one stage Microsoft actually needs never ran.
  *
+ * `twitter-ads` contributes none either: the authored tweet is typed on the Implement tab, so an
+ * X-only brief skips the stage exactly as a Microsoft-only one does.
+ *
  * Deliberately a predicate rather than a second list of keys: `buildCopyPrompt` and
  * `buildRefinePrompt` each build their own key list, and a third copy here could disagree with
- * both. Anything that is not Microsoft contributes copy today, so the rule is stated that way and
- * a new copy-less platform is a one-line change here.
+ * both. Anything that is not Microsoft or X contributes copy today, so the rule is stated that way
+ * and a new copy-less platform is a one-line change here.
  */
 function contributesAdCopy(platform: string): boolean {
-  return platform !== 'microsoft-ads';
+  return platform !== 'microsoft-ads' && platform !== 'twitter-ads';
 }
 
 function buildCopyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
@@ -2545,6 +2875,302 @@ ${platformInstruction}`;
 ${platformInstruction}`;
 }
 
+/** Hoisted out of {@link buildSitelinksFromPage}'s loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
+/**
+ * The page links that become sitelinks, each with the label it is given, keyed by program type.
+ *
+ * `registration_url` is deliberately NOT here on either program. It is the ad's own final URL, so a
+ * sitelink built from it would offer the operator a second control pointing where the headline
+ * already points — paying for the same destination twice in the same ad and crowding out a link
+ * that goes somewhere new. The entries below are the ones that add a destination.
+ *
+ * The two tables exist because the extraction prompts fill the SAME keys with different pages.
+ * {@link EDUCATION_EXTRACTION_PROMPT} defines `agenda_url` as the syllabus/course-outline page and
+ * `venue_url` as the training-location/delivery-details page, so an event's wording — "View the
+ * Agenda", "Venue & Travel" — would label an online course's delivery page as a place to travel to.
+ * That is the failure this table's own guarantee below rules out, and it would reach public ad copy
+ * through an Implementation editor the operator opens pre-filled. {@link buildCalloutPrompt}
+ * already branches on the same program type; this table was the half that did not.
+ *
+ * Education carries only the two keys its prompt can answer — it pins `cfp_url` and
+ * `sponsorship_url` to null, and a course has neither. A key added to that prompt later needs its
+ * label added here too, or the link is silently dropped rather than mislabelled, which is the safer
+ * way round.
+ *
+ * Labels are fixed strings rather than model output, so no sitelink can be labelled something the
+ * page does not support. Each is well inside {@link GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES}; the
+ * builder bounds them anyway rather than trusting this table to stay that way.
+ */
+const SITELINK_SOURCES_EVENTS: readonly { key: string; text: string }[] = [
+  { key: 'agenda_url', text: 'View the Agenda' },
+  { key: 'cfp_url', text: 'Submit a Talk' },
+  { key: 'venue_url', text: 'Venue & Travel' },
+  { key: 'sponsorship_url', text: 'Become a Sponsor' },
+];
+
+const SITELINK_SOURCES_EDUCATION: readonly { key: string; text: string }[] = [
+  { key: 'agenda_url', text: 'Course Outline' },
+  { key: 'venue_url', text: 'Training Details' },
+];
+
+/**
+ * Build sitelinks from the scraped page's own verified links.
+ *
+ * Labels come from {@link SITELINK_SOURCES_EVENTS} or {@link SITELINK_SOURCES_EDUCATION} according
+ * to `programType`, because the two extraction prompts fill the same keys with different pages.
+ *
+ * Destinations are emitted UNTAGGED, unlike the ad's own final URL from {@link buildFinalUrl} in
+ * this same file. campaign-service tags every sitelink itself at dispatch, and a URL that arrived
+ * pre-tagged would keep its own `utm_campaign` through that step — attributing the click to
+ * whichever campaign first seeded the link rather than the one that served it. The reasoning is
+ * recorded on `CampaignBriefOutput.googleSitelinks` as well; it is repeated here because this is
+ * the function that makes the choice, two screens from the one that does the opposite.
+ *
+ * Deterministic and model-free on purpose. The destinations come from {@link verifyPageLink}, which
+ * refuses any URL the scraped page does not actually carry, so this cannot produce a sitelink
+ * pointing at a composed `/schedule/` that 404s — the failure the extraction prompt's URL rule
+ * already exists to prevent, reproduced here rather than re-earned.
+ *
+ * No descriptions. The pair is all-or-nothing upstream and both lines would have to be WRITTEN —
+ * nothing on the page supplies them — so every sitelink would carry two sentences asserting what
+ * is behind a link this code has not read. An operator who wants them has the editor.
+ *
+ * Over-cap entries are dropped silently, matching the Implementation tab's own editor: it refuses
+ * an add past {@link GOOGLE_ADS_MAX_SITELINKS} rather than growing. Four candidates against a cap
+ * of twenty means the slice is inert today; it is here so the cap is enforced by the code that
+ * produces the list rather than by the table's current length.
+ *
+ * An entry whose destination is past {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, or that
+ * {@link isGoogleAdsServableUrl} refuses, is dropped on the same terms, for the reason the editor's
+ * add-guard and the controller's dispatch check exist: a chip the operator can neither have typed
+ * nor submit is a dead end whose only exit is deleting a row they did not add.
+ */
+function buildSitelinksFromPage(
+  eventDetails: Record<string, unknown> | null,
+  pageLinks: Map<string, string>,
+  pageBaseUrl: string,
+  programType?: CampaignProgramType
+): CampaignSitelink[] {
+  if (!eventDetails) return [];
+  const sources = programType === 'education' ? SITELINK_SOURCES_EDUCATION : SITELINK_SOURCES_EVENTS;
+  const sitelinks: CampaignSitelink[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    const finalUrl = verifyPageLink(eventDetails[source.key], pageLinks, pageBaseUrl);
+    if (!finalUrl) continue;
+    // Being a real href on the event's own page is not the same as being a destination Google will
+    // serve. `verifyPageLink` answers provenance and nothing more.
+    //
+    // It does settle part of this already — `normalizeForCompare` admits only http(s), and
+    // `pageHref` rebuilds the href from `host`, which drops any userinfo — so scheme, hostname and
+    // credentials cannot be wrong on THIS path. What survives it is everything `new URL()` accepts
+    // and Go's parser does not: a `;` separating query parameters, which older registration and
+    // tracking links really do use, and a stray `%` that is not an escape. Either is refused by
+    // `googleSitelinkUrlRefusal` at create, so seeding one would open the editor holding a chip the
+    // operator cannot have typed and cannot submit.
+    //
+    // The whole predicate is applied rather than the flaw test alone, because which parts are
+    // already guaranteed is a fact about `verifyPageLink`'s internals, and a guard that silently
+    // depends on them breaks the day they change.
+    if (!isGoogleAdsServableUrl(finalUrl)) continue;
+    // One page can legitimately answer two of these keys with the same href — a combined
+    // "attend" page serving as both venue and agenda is common. Google refuses duplicate
+    // sitelink TEXT, not duplicate destinations, so this is about the operator's list rather
+    // than upstream: two rows they must read twice to tell apart, one of them mislabelled.
+    if (seen.has(finalUrl)) continue;
+    seen.add(finalUrl);
+    // The same byte cap the other four places enforce, applied here because this is the one path
+    // into the editor that bypasses the editor. `addGoogleSitelink` refuses an over-long URL the
+    // operator types, the controller refuses the create, and the brief-restore path drops a stored
+    // row; a seeded row that skipped it would open the editor holding a chip the operator cannot
+    // have typed and cannot submit. A page href really can run past it — a registration link
+    // carrying a long tracking query is the realistic shape. Bytes, not runes: the limit is
+    // Google's and it counts the encoded URL.
+    if (SITELINK_URL_ENCODER.encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) continue;
+    const text = googleAdsBoundExtensionText(source.text, GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+    if (!text) continue;
+    sitelinks.push({ text, finalUrl });
+  }
+  return sitelinks.slice(0, GOOGLE_ADS_MAX_SITELINKS);
+}
+
+/**
+ * Shape a model's callout response into the bounded, de-duplicated list the editor opens on.
+ *
+ * Accepts the wrapped object form (`{ "callouts": [...] }`) alongside the bare array the prompt
+ * asks for, exactly as the keyword block accepts `{ "keywords": [...] }` — the same model answers
+ * both, and it wraps intermittently.
+ *
+ * De-duplication is case-insensitive because the editor's own add-guard is
+ * (`googleAdsToLower(c) === key`): a list seeded with both "Free To Attend" and "free to attend"
+ * would show the operator two rows they then cannot re-add after deleting either.
+ *
+ * An over-long answer is DROPPED, not shortened — see the comment on the rune check below.
+ */
+function shapeCallouts(parsed: unknown): string[] {
+  const raw = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>)['callouts'] : parsed;
+  if (!Array.isArray(raw)) return [];
+  const callouts: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    const text = googleAdsTrimSpace(entry);
+    if (!text) continue;
+    // Dropped rather than bounded to the cap, which is where this path parts company with the
+    // restore path's {@link googleAdsBoundExtensionText}. Every other guard in this feature REFUSES
+    // over-long text instead of rewriting it — `addGoogleCallout` returns false, and upstream's
+    // `validateCallouts` refuses the whole create — so shortening here would make the generator the
+    // one place in the system that invents wording nobody wrote: a 28-rune answer would seed the
+    // editor as a phrase cut mid-word and ship that way if the operator did not catch it. Bounding
+    // is defensible on the restore path, where the alternative is losing an entry the operator
+    // typed; the generator has no such excuse, and the prompt asks for 8-12 candidates already
+    // under the cap, so losing the odd over-runner costs nothing.
+    if ([...text].length > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) continue;
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    callouts.push(text);
+    if (callouts.length === GOOGLE_ADS_MAX_CALLOUTS) break;
+  }
+  return callouts;
+}
+
+function buildCalloutPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const isEducation = body.programType === 'education';
+  const subject = (e['name'] as string) || body.url;
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+  const extraParts: string[] = [];
+  if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
+  if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
+  if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
+  const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+  const detailBlock = isEducation
+    ? `COURSE: ${subject}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`
+    : `EVENT: ${subject}\nDates: ${e['dates'] || ''}\nLocation: ${e['city'] || ''}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`;
+
+  return `Generate 8-12 Google Ads callout extensions for this ${isEducation ? 'training/certification program' : 'event'}.
+
+${detailBlock}${extraBlock}
+
+A callout is a short, standalone benefit phrase shown under a search ad. It is not a link and not a sentence.
+
+Return a JSON array of plain strings. No objects, no keys.
+
+CRITICAL RULES:
+- Each callout must be ${GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} characters or fewer. Shorter is better.
+- Use Title Case. No ending punctuation.
+- State only what the details above support. Do NOT invent prices, discounts, deadlines, attendee counts, speaker names, or claims like "Award Winning" that nothing here establishes.
+- No superlatives you cannot back ("Best", "#1", "World's Largest").
+- No calls to action ("Register Now", "Sign Up Today") — those belong in the ad copy, not a callout.
+- No phone numbers, URLs, or special characters beyond & and -.
+- Each callout must say something DIFFERENT from the others.`;
+}
+
+/**
+ * Shape a model's negative-keyword response into the bounded list the Implement tab's Search
+ * negatives (#4991) and the Optimize tab's editor open pre-filled with.
+ *
+ * Accepts the wrapped object form (`{ "negativeKeywords": [...] }`, and the snake_case spelling
+ * the prompt's own key could be echoed as) alongside the bare array the prompt asks for, as
+ * {@link shapeCallouts} accepts `{ "callouts": [...] }` — the same model answers both and wraps
+ * intermittently.
+ *
+ * The filtering is NOT hand-written here: the entries are joined into the editor's own input format
+ * and run through {@link parseNegativeKeywordInput}, which is what normalises and refuses a line the
+ * operator types. That is the whole point — every keyword seeded this way is one the editor would
+ * have accepted, so the list can never open already failing its own validator. It drops rather than
+ * rewrites, for the reason `shapeCallouts` drops an over-long callout, and it collapses whitespace
+ * and refuses a repeat case-insensitively, exactly as a typed line is treated.
+ *
+ * The cap passed is Google Ads' 80, the NARROWEST of the four platforms that take negatives, not
+ * the shared 100 the BFF enforces: the brief does not know which campaign the operator will send
+ * these to, so one generated list has to be sendable on all of them. The count is capped at
+ * `MAX_NEGATIVE_KEYWORDS_PER_REQUEST`, the most one request may carry.
+ */
+function shapeNegativeKeywords(parsed: unknown): string[] {
+  const wrapper = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  const raw = wrapper ? (wrapper['negativeKeywords'] ?? wrapper['negative_keywords']) : parsed;
+  if (!Array.isArray(raw)) return [];
+  const lines = raw.filter((entry): entry is string => typeof entry === 'string');
+  const { keywords } = parseNegativeKeywordInput(lines.join('\n'), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+  return keywords.slice(0, MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+}
+
+function buildNegativeKeywordsPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const isEducation = body.programType === 'education';
+  const subject = (e['name'] as string) || body.url;
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+  const extraParts: string[] = [];
+  if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
+  if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
+  if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
+  const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+  const detailBlock = isEducation
+    ? `COURSE: ${subject}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`
+    : `EVENT: ${subject}\nDates: ${e['dates'] || ''}\nLocation: ${e['city'] || ''}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`;
+
+  return `Generate 20-${MAX_NEGATIVE_KEYWORDS_PER_REQUEST} negative keywords for a paid search campaign promoting this ${isEducation ? 'training/certification program' : 'event'}.
+
+${detailBlock}${extraBlock}
+
+A negative keyword stops the ad showing for searches that contain it. Pick the terms that would waste budget on people who will never ${isEducation ? 'enrol' : 'attend'}.
+
+Negative keyword categories to cover:
+1. Free/cheap intent: searches looking for something at no cost.
+2. Jobs and careers: people searching for employment, not ${isEducation ? 'training' : 'a ticket'}.
+3. Research and study: definitions, tutorials, "what is", academic papers.
+4. Wrong format: ${isEducation ? 'conferences, meetups and events, when this is a course' : 'courses, certifications and exams, when this is an event'}.
+5. Past editions and wrong years, where the details above name a year.
+6. Adjacent but irrelevant topics the themes above make likely.
+
+Return a JSON array of plain strings. No objects, no keys.
+
+CRITICAL RULES:
+- Each negative keyword must be ${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters or fewer.
+- Use only letters, digits, spaces and the characters & ' - . Never two of those punctuation characters next to each other.
+- Lower case. No quotation marks, no brackets, no match-type syntax.
+- Never exclude a term the campaign needs: nothing from the event or course name, its themes, or its audience above.
+- Each negative keyword must be DIFFERENT from the others, not a case variant or a repeat.`;
+}
+
+/**
+ * What an event's keywords must never target (#5383). A Linux Foundation event is often co-located
+ * with a larger host event (ArgoCon at KubeCon) and shares a calendar with sibling project events;
+ * keywords naming them as "alternatives" bid against the foundation's own events. Shared by the
+ * generate and refine prompts so the two cannot drift. Education prompts do not carry it: their
+ * "alternative certifications" category names other vendors' certifications on purpose.
+ */
+const KEYWORD_EVENT_TARGETING_RULES = `- Never target another event. Do not name the host event this event is co-located with (e.g. KubeCon for a co-located event), its other co-located events, or any other Linux Foundation, CNCF or open source foundation event, and never pair an open source project's name with "conference", "summit" or "con" unless this event is about that project.
+- Never write competitor or comparison terms: no "alternative", "vs", "versus", "competitor" or "instead of".`;
+
+/** The event's year as the keyword prompt states it, or `null` when its dates name none. */
+function eventYearFromDates(dates: unknown): string | null {
+  return typeof dates === 'string' ? (dates.match(/20\d{2}/)?.[0] ?? null) : null;
+}
+
+/**
+ * Drop the generated EVENT keywords the prompt forbids but the model can still write (#5383): a
+ * competitor or comparison term (`COMPETITOR_KEYWORD_PATTERN`) and, when the event's dates name
+ * its year, a term naming any other year. Education keywords pass through, since
+ * their prompt asks for alternative certifications and states no year rule.
+ *
+ * Sibling events named without such a marker ("Flux conference") are left to the prompt: telling a
+ * sibling project from this event's own topic needs a list of every foundation's events, which the
+ * brief does not have, and guessing would drop legitimate topic keywords.
+ */
+export function filterGeneratedKeywords<T extends { term: string }>(keywords: T[], eventYear: string | null, isEducation: boolean): T[] {
+  return keywords.filter((keyword) => {
+    const term = typeof keyword.term === 'string' ? keyword.term : '';
+    if (isEducation) return true;
+    if (COMPETITOR_KEYWORD_PATTERN.test(term)) return false;
+    return eventYear === null || [...term.matchAll(/\b20\d{2}\b/gu)].every(([year]) => year === eventYear);
+  });
+}
+
 function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
   const extraParts: string[] = [];
   if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
@@ -2599,9 +3225,9 @@ Audience: ${audience}${extraBlock}
 
 Keyword categories to cover:
 1. Brand/event name exact: e.g. "${name}", "${name} ${eventYear}"
-2. Topic exact/phrase: conference names, protocol/tech names + "conference"/"summit"/"event"
+2. Topic exact/phrase: the technologies THIS event is about + "conference"/"summit"/"event"
 3. Role-based: "[role] conference", "[role] summit" for relevant job titles
-4. Competitor/adjacent: alternative events, "open source [topic] conference [city]"
+4. Adjacent: "open source [topic] conference [city]" for this event's own topics
 
 Return a JSON array where each object has EXACTLY these keys:
 - "term": the keyword string
@@ -2612,7 +3238,8 @@ Return a JSON array where each object has EXACTLY these keys:
 CRITICAL RULES:
 - The event year is ${eventYear}. NEVER use any other year in keywords.
 - Prefer HIGH INTENT — keywords that indicate someone actively searching for this event.
-- Avoid generic broad terms that waste budget (e.g. "conference" alone).`;
+- Avoid generic broad terms that waste budget (e.g. "conference" alone).
+${KEYWORD_EVENT_TARGETING_RULES}`;
 }
 
 function buildRefinePrompt(body: CampaignBriefRefineRequest): string {
@@ -2671,7 +3298,7 @@ Return a JSON array where each object has EXACTLY these keys:
 - "intent_level": "High" (${intentLabel}), "Medium" (related topic), "Low" (broad)
 - "notes": any flag (e.g. "added per user feedback")
 
-Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.`;
+Prefer HIGH INTENT keywords. Incorporate the user's feedback to improve the keyword list.${isEducation ? '' : `\n\n${KEYWORD_EVENT_TARGETING_RULES}`}`;
 }
 
 function buildLinkedInStrategyPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {

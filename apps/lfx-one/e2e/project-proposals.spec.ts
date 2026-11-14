@@ -165,12 +165,19 @@ test.describe('Project proposals — empty and no-results states (#3037)', () =>
   });
 });
 
+const TLF_UID = 'f0000000-0000-0000-0000-0000000000aa';
+
 test.describe('Project proposals — formation team queue (#3037)', () => {
-  async function gotoLfFormations(page: Page, isFormationTeam: boolean): Promise<Awaited<ReturnType<typeof mockProjectApplicationApis>>> {
+  async function gotoLfFormations(
+    page: Page,
+    isFormationTeam: boolean,
+    proposal = buildProposal({ revision: 5 }),
+    search = 'tab=proposals'
+  ): Promise<Awaited<ReturnType<typeof mockProjectApplicationApis>>> {
     await stubFormationFlag(page, true);
     await stubPersona(page, true);
     await setPersonaCookie(page);
-    const tlf = { uid: 'f0000000-0000-0000-0000-0000000000aa', slug: 'tlf', name: 'The Linux Foundation', logoUrl: null, isFoundation: true };
+    const tlf = { uid: TLF_UID, slug: 'tlf', name: 'The Linux Foundation', logoUrl: null, isFoundation: true };
     await page.route('**/api/nav/lens-items*', (route) => {
       const lens = new URL(route.request().url()).searchParams.get('lens') ?? 'foundation';
       return route.fulfill({
@@ -188,6 +195,22 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
           })
         : route.fallback()
     );
+    // The propose page and the review surfaces read the foundation by uid; a funded, active membership project counts as one.
+    await page.route(`**/api/projects/${TLF_UID}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          uid: TLF_UID,
+          slug: 'tlf',
+          name: tlf.name,
+          stage: 'Active',
+          funding: 'Funded',
+          funding_model: ['Membership'],
+          legal_entity_type: 'Corporation',
+        }),
+      })
+    );
     await page.route('**/api/formations?*', (route) =>
       route.fulfill({
         status: 200,
@@ -195,10 +218,10 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
         body: JSON.stringify({ rows: [], tiles: { total: 0, foundations: 0, projects: 0, ready: 0, blocked: 0, blocked_items: 0, on_hold: 0, unmapped: 0 } }),
       })
     );
-    const state = await mockProjectApplicationApis(page, [buildProposal({ revision: 5 })], isFormationTeam);
+    const state = await mockProjectApplicationApis(page, [proposal], isFormationTeam);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    await page.goto('/foundation/formations?project=tlf&tab=proposals', { waitUntil: 'domcontentloaded' });
+    await page.goto(`/foundation/formations?project=tlf&${search}`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
     await waitForHydration(page);
     return state;
@@ -234,6 +257,24 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     await expect(page.getByTestId(`project-applications-state-${PROPOSAL_UID}`)).toContainText('Denied', { timeout: DATA_LOAD_TIMEOUT });
   });
 
+  test('shows the pending count on the tab, and drops it after a deny (#5229)', async ({ page }) => {
+    await gotoLfFormations(page, true);
+    const tab = page.getByTestId('formations-queue-page-tabs-proposals');
+    await expect(tab).toHaveAttribute('aria-label', 'Project proposals, 1 awaiting review', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formations-queue-page-tabs-proposals-count')).toHaveText('1');
+
+    await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click();
+    await page.getByTestId('project-application-drawer-deny').click();
+    await confirmDialog(page, 'Deny');
+    await expect(page.getByTestId('formations-queue-page-tabs-proposals-count')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('?application=<uid> opens that proposal once and leaves the URL clean (#5229)', async ({ page }) => {
+    await gotoLfFormations(page, true, buildProposal({ revision: 5 }), `tab=proposals&application=${PROPOSAL_UID}`);
+    await expect(page.getByTestId('project-application-drawer-submitter')).toContainText('Casey Example', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).not.toHaveURL(/application=/);
+  });
+
   test('an empty queue shows the staff empty state', async ({ page }) => {
     const state = await gotoLfFormations(page, true);
     state.applications = [];
@@ -247,5 +288,65 @@ test.describe('Project proposals — formation team queue (#3037)', () => {
     await expect(page.getByTestId('formations-queue-container')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('formations-queue-page-tabs')).toHaveCount(0);
     await expect(page.getByTestId('formations-queue-proposals')).toHaveCount(0);
+  });
+
+  test('offers "Propose a project" on the foundation queue and carries the foundation into the form and the create body (#5187)', async ({ page }) => {
+    const state = await gotoLfFormations(page, false, buildProposal({ revision: 5 }));
+    state.applications = [];
+
+    await page.getByTestId('formations-queue-propose-project').click({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/formations/propose\\?parent=${TLF_UID}$`), { timeout: DATA_LOAD_TIMEOUT });
+    await waitForHydration(page);
+    await expect(page.getByTestId('propose-project-parent-line')).toContainText('Proposing under The Linux Foundation', { timeout: DATA_LOAD_TIMEOUT });
+
+    await page.locator('#pa-project-name').fill('Harbor Signals');
+    await page.locator('#pa-repository').fill('https://github.com/harbor-signals/core');
+    await page.locator('#pa-website').fill('https://harbor-signals.example');
+    await page.getByTestId('project-application-form-trademark').getByText('Not sure').click();
+    await page.locator('#pa-organization').fill('Harbor Labs');
+    await page.locator('#pa-legal').fill('legal@harbor-labs.example');
+    await page.locator('[data-test="project-application-form-license"]').click();
+    await page.getByRole('option', { name: 'MIT', exact: true }).click();
+    await page.getByTestId('project-application-form-chat').getByText('Discord').click();
+    await page.locator('#pa-mission').fill('The Mission of the Project is to share signals.');
+    await page.getByTestId('project-application-form-agreement').getByText('DCO only').click();
+    await page.getByTestId('project-application-form-spec').getByText('Yes').click();
+    await page.locator('#pa-description').fill('A shared signals exchange.');
+    await page.getByTestId('project-application-form-submit').click();
+
+    await expect.poll(() => state.requests.some((request) => request.method === 'POST')).toBe(true);
+    expect(state.requests.find((request) => request.method === 'POST')?.body).toMatchObject({ target_parent_uid: TLF_UID });
+  });
+
+  test('"Change" drops the foundation, and a malformed parent is ignored without a message (#5187)', async ({ page }) => {
+    await gotoLfFormations(page, false);
+    await page.goto(`/formations/propose?parent=${TLF_UID}`, { waitUntil: 'domcontentloaded' });
+    await waitForHydration(page);
+    await expect(page.getByTestId('propose-project-parent-line')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await page.getByTestId('propose-project-parent-change').click();
+    await expect(page.getByTestId('propose-project-parent')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/formations\/propose$/);
+
+    await page.goto('/formations/propose?parent=not-a-uuid', { waitUntil: 'domcontentloaded' });
+    await waitForHydration(page);
+    await expect(page.getByTestId('propose-project-title')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('propose-project-parent')).toHaveCount(0);
+  });
+
+  test('shows "Started from" to the formation team and prefills the parent when accepting (#5187)', async ({ page }) => {
+    const state = await gotoLfFormations(page, true, buildProposal({ revision: 5, target_parent_uid: TLF_UID }));
+
+    await expect(page.getByTestId(`project-applications-started-from-${PROPOSAL_UID}`)).toContainText('Started from: The Linux Foundation', {
+      timeout: DATA_LOAD_TIMEOUT,
+    });
+    await page.getByTestId(`project-applications-open-${PROPOSAL_UID}`).click();
+    await expect(page.getByTestId('project-application-drawer-started-from')).toContainText('Started from: The Linux Foundation');
+
+    await page.getByTestId('project-application-drawer-accept').click();
+    await expect(page.locator('#project-application-accept-parent')).toHaveValue('The Linux Foundation');
+    await page.getByTestId('project-application-accept-confirm').click();
+
+    await expect(page.getByTestId('project-application-drawer-state')).toContainText('Accepted', { timeout: DATA_LOAD_TIMEOUT });
+    expect(state.requests.find((request) => request.path.endsWith('/accept'))?.body).toMatchObject({ parent_project_uid: TLF_UID });
   });
 });

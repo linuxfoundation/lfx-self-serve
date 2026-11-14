@@ -7,21 +7,30 @@
 
 import {
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
+  SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
+  isHttpsUrl,
+  hyphenatedClaGroupId,
   isOrgClaDesigneeLfLoginRequired,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
   orgClaPairProjectSfid,
   orgEasyclaReturnPath,
   sortOrgClaApprovalEntries,
+  validateOrgClaApprovalValue,
 } from '@lfx-one/shared/utils';
 import type {
+  ApiGatewayUserEmail,
+  ApiGatewayUserProfile,
+  ApiGatewayUserSearchPage,
   ClaGroupOption,
   ClaGroupSearchResponse,
   OrgClaApprovalCriteriaKind,
@@ -69,20 +78,23 @@ import type {
   EasyClaEvent,
   EasyClaEventList,
   EasyClaSearchList,
+  EasyClaSearchResult,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
   EasyClaSignatureApprovalLists,
   EasyClaSignedDocument,
 } from '../types/cla.types';
+import { ORG_CLA_INVALIDATOR_LOOKUP_BATCH, ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS, ORG_CLA_INVALIDATOR_LOOKUP_PAGE_SIZE } from '../constants';
 import { MicroserviceError } from '../errors';
+import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
+import { urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
-import { getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
+import { getEffectiveLfUsername, isImpersonating } from '../utils/auth-helper';
 
 const SERVICE = 'org_cla_service';
 
@@ -208,7 +220,7 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  * document exists to fetch, since `sanctioned` describes the entity and not the agreement, and
  * that is the one question `signed` is here for.
  */
-function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
+function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string, viewerUsername: string): OrgClaGroup {
   const projects: OrgClaGroupProject[] = (entry.projects ?? []).map((project) => ({
     projectName: project.projectName?.trim() ?? '',
     ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
@@ -261,7 +273,20 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     // only there, so an unsigned or preview row does not need to carry the flag. Missing on the
     // upstream row maps to false, matching the producer's own default when the column is unset.
     ...(entry.signed === true ? { autoCreateEcla: entry.autoCreateECLA === true } : {}),
+    viewerIsClaManager: Array.isArray(entry.claManagers) && rosterNamesUsername(entry.claManagers, viewerUsername),
   };
+}
+
+/**
+ * The one comparison for "this CLA manager entry is the viewer": exact, like EasyCLA's
+ * `CurrentUserInACL`, and never true without a username.
+ */
+function isViewerUsername(lfUsername: unknown, viewerUsername: string): boolean {
+  return !!viewerUsername && lfUsername === viewerUsername;
+}
+
+function rosterNamesUsername(claManagers: NonNullable<EasyClaCompanyClaGroup['claManagers']>, username: string): boolean {
+  return claManagers.some((manager) => isViewerUsername(manager?.lfUsername, username));
 }
 
 /**
@@ -405,6 +430,21 @@ function asDesigneeRefusal(error: unknown, operation: string, errorMessage: stri
   });
 }
 
+function asEasyClaRoleMissing(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || error.statusCode !== 403 || error.transportFailure) return error;
+
+  return new MicroserviceError(
+    'Failed to fetch organization CLA groups: the viewer holds no EasyCLA role at this organization',
+    403,
+    ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
+    {
+      operation: 'org_cla_list_cla_groups',
+      service: SERVICE,
+      clientMessage: ORG_CLA_EASYCLA_ROLE_MISSING_COPY.reason,
+    }
+  );
+}
+
 export class OrgClaService {
   /**
    * Lists the organization's corporate CLAs.
@@ -423,25 +463,30 @@ export class OrgClaService {
    * only one of them is a claim about a company's legal position.
    */
   public async listClaGroups(req: Request, orgUid: string): Promise<OrgClaGroupList> {
-    const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
-      {
-        operation: 'org_cla_list_cla_groups',
-        service: SERVICE,
-        errorMessage: 'Failed to fetch organization CLA groups',
-        errorCode: 'UPSTREAM_ERROR',
-        // This response carries CLA managers by id and LF username. The mapper drops them, but
-        // that boundary only covers the browser: on a non-OK status or unparseable body the
-        // fetch helper logs the raw payload, which would put manager identities in application
-        // logs. Redaction closes the second path (same reason as rewards.service.ts).
-        redactResponseBody: true,
-        // The route authorizes the impersonated user, so the upstream call must run as that
-        // user too. Without this it runs as the impersonator, which is audited as the wrong
-        // identity and fails outright where only the target holds the organization scope.
-        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
-      }
-    );
+    let upstream: EasyClaCompanyClaGroupList | null;
+    try {
+      upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
+        {
+          operation: 'org_cla_list_cla_groups',
+          service: SERVICE,
+          errorMessage: 'Failed to fetch organization CLA groups',
+          errorCode: 'UPSTREAM_ERROR',
+          // This response carries CLA managers by id and LF username. The mapper drops them, but
+          // that boundary only covers the browser: on a non-OK status or unparseable body the
+          // fetch helper logs the raw payload, which would put manager identities in application
+          // logs. Redaction closes the second path (same reason as rewards.service.ts).
+          redactResponseBody: true,
+          // The route authorizes the impersonated user, so the upstream call must run as that
+          // user too. Without this it runs as the impersonator, which is audited as the wrong
+          // identity and fails outright where only the target holds the organization scope.
+          bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+        }
+      );
+    } catch (error) {
+      throw asEasyClaRoleMissing(error);
+    }
 
     // A malformed response is a failure, not an answer. `gatewayFetch` returns null on a 204,
     // and a 200 can arrive without the list the contract guarantees; both would otherwise fall
@@ -467,12 +512,13 @@ export class OrgClaService {
 
     const entries = upstream.list;
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
+    const viewerUsername = getEffectiveLfUsername(req);
 
     return {
       orgUid,
       // Upstream order (signing entity, then CLA group name) is preserved, so what a support
       // engineer sees probing the endpoint directly matches what the page shows.
-      claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName)),
+      claGroups: entries.map((entry) => toOrgClaGroup(entry, companyName, viewerUsername)),
     };
   }
 
@@ -570,6 +616,55 @@ export class OrgClaService {
   }
 
   /**
+   * One CLA Group from the same unscoped catalogue as sign-options (#2293).
+   *
+   * Returns null on upstream 404, including a gateway 404 when the producer route is not
+   * deployed yet, so the page can show its not-found empty state instead of a load error.
+   * Any other upstream failure is rethrown.
+   *
+   * The id is sent in the lower-case hyphenated spelling, because the producer matches it
+   * literally and the controller accepts every spelling `CLA_GROUP_ID_PATTERN` does. A 200 must
+   * echo the requested group: an omitted or different `claGroupID` is a 502, the same rule the
+   * corporate signing hand-off applies, so the page never names a group the address did not.
+   *
+   * `projectSfid` is appended the same way `getSignOptions` appends it, from the field the
+   * catalogue already resolved. Absence means the group cannot be signed from here.
+   */
+  public async getClaGroupCatalogue(req: Request, claGroupId: string): Promise<ClaGroupOption | null> {
+    const requestedId = hyphenatedClaGroupId(claGroupId);
+    let result: EasyClaSearchResult | null;
+    try {
+      result = await gatewayFetch<EasyClaSearchResult>(req, `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(requestedId)}/catalogue`, {
+        operation: 'org_cla_group_catalogue',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch CLA group',
+        errorCode: 'UPSTREAM_ERROR',
+      });
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
+
+    const echoed = result?.claGroupID?.trim();
+    if (!result || !echoed || !isSameClaGroup(echoed, requestedId)) {
+      logger.warning(req, 'org_cla_group_catalogue', 'upstream answered for a different or unnamed CLA Group', {
+        requested_cla_group_id: requestedId,
+        returned_cla_group_id: echoed || null,
+      });
+      throw new MicroserviceError('Upstream answered the catalogue read for a different CLA Group', 502, 'CLA_GROUP_CATALOGUE_MISMATCH', {
+        operation: 'org_cla_group_catalogue',
+        service: SERVICE,
+      });
+    }
+
+    const option = toClaGroupOption(result);
+    const projectSfid = result.projectSFID?.trim();
+    return projectSfid ? { ...option, projectSfid } : option;
+  }
+
+  /**
    * Streams the CLA Group's current corporate template, watermarked not for execution (#2317).
    *
    * Not the signed-document path: that list-checks the organization's signed rows, and an
@@ -609,8 +704,7 @@ export class OrgClaService {
    * Runs on the default gateway token with no impersonation branch, same as the Me-lens search:
    * the CLA Group catalogue is not organization-scoped upstream, so there is no ownership check
    * for a token swap to satisfy. The gate on this route is `requireOrgLensAccess` alone; nothing
-   * about the caller's company reaches the query. The dark-launch flag is not part of it — that
-   * flag is an Angular route guard, so it hides the page without closing this endpoint.
+   * about the caller's company reaches the query.
    */
   public async getSignOptions(req: Request, searchTerm: string): Promise<ClaGroupSearchResponse> {
     // No `startOperation` here, for the reason `getPdfUrl` above gives: the HTTP lifecycle is the
@@ -1010,6 +1104,11 @@ export class OrgClaService {
    * agreements accept the write, because the flag lives on the corporate signature record —
    * an unsigned row has no record for the producer to update.
    *
+   * A caller not named on the agreement's CLA Manager list gets `forbidden` before the producer is
+   * called, the same early refusal `updateApprovalList` makes. EasyCLA would refuse that write on
+   * its ACL check anyway, with a bare "Forbidden"; refusing here names the requirement. A row
+   * with no CLA Manager list is passed through, because EasyCLA re-checks the list on this write.
+   *
    * The write path runs with the caller's own token (no impersonation forwarding). The route
    * has `blockDuringImpersonation` in front of it; the direction is the same as the peer
    * approval-list write, because a support engineer flipping this flag against an ordinary
@@ -1021,8 +1120,9 @@ export class OrgClaService {
    * plus `withoutUpstreamBody` composition is the same one the corporate hand-off uses, and it
    * is the whole of the difference between a sanctioned outcome and a 403 that just says
    * "Forbidden". The producer answers 403 for a viewer without the ACS grant too, and both
-   * refusals travel this branch — the client hides the toggle when ACS says the grant is not
-   * held, so the runtime 403 the client actually sees is nearly always the sanctions one.
+   * refusals travel this branch — the toggle still renders on every signed row, but the client
+   * disables it when ACS says the grant is not held, so the runtime 403 the client actually sees
+   * is nearly always the sanctions one.
    */
   public async updateEclaAutoCreate(req: Request, orgUid: string, signatureId: string, enable: boolean): Promise<OrgClaEclaAutoCreateUpdateOutcome> {
     const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_update_ecla_auto_create');
@@ -1036,6 +1136,14 @@ export class OrgClaService {
       return { outcome: 'not-signed' };
     }
 
+    if (!context.canEdit) {
+      logger.warning(req, 'org_cla_update_ecla_auto_create', 'caller is not a CLA manager on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'forbidden' };
+    }
+
     try {
       await gatewayFetch<unknown>(
         req,
@@ -1047,7 +1155,7 @@ export class OrgClaService {
           body: { auto_create_ecla: enable },
           operation: 'org_cla_update_ecla_auto_create',
           service: SERVICE,
-          errorMessage: 'Failed to update the Auto ECLA setting',
+          errorMessage: 'Failed to update the Auto Acknowledge setting',
           errorCode: 'UPSTREAM_ERROR',
           // The refusal body is the copy the CLA manager needs to see (sanctions reason and
           // support route). Kept out of application logs; the `withoutUpstreamBody` at the throw
@@ -1141,11 +1249,12 @@ export class OrgClaService {
       });
     }
 
+    const viewerUsername = getEffectiveLfUsername(req);
     return {
       signatureId,
       managers: upstream.list
         .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
-        .map((entry) => toOrgClaManager(entry)),
+        .map((entry) => ({ ...toOrgClaManager(entry), ...(isViewerUsername(entry.lf_username, viewerUsername) ? { isViewer: true as const } : {}) })),
     };
   }
 
@@ -1328,7 +1437,7 @@ export class OrgClaService {
     signatureId: string,
     query: ContributorAcknowledgmentQuery
   ): Promise<OrgClaContributorAcknowledgmentList | null> {
-    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments', { rosterRequired: true });
     if (!context) return null;
 
     if (!context.signed) {
@@ -1359,6 +1468,8 @@ export class OrgClaService {
       });
     }
 
+    await attachInvalidatorDisplays(req, mapped);
+
     return {
       signatureId,
       list: mapped,
@@ -1377,8 +1488,8 @@ export class OrgClaService {
    *   1. `blockDuringImpersonation`, declared *before* `requireOrgLensAccess` — a write, and the
    *      producer stamps the acting user on the signature as `invalidatedBy`.
    *   2. `requireOrgLensAccess` — the Org Lens grant on the organization.
-   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Fails open only
-   *      when the producer sent no roster, matching the sibling approval-list posture.
+   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Refused when the
+   *      producer sent no roster, because the producer does not check the roster on invalidate.
    *   4. The id verify below, which refuses an acknowledgment id that is not on this company's
    *      roster for this CLA Group.
    *
@@ -1396,7 +1507,7 @@ export class OrgClaService {
     acknowledgmentSignatureId: string,
     input: OrgClaInvalidateAcknowledgmentRequest
   ): Promise<OrgClaInvalidateAcknowledgmentOutcome> {
-    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment', { rosterRequired: true });
     if (!context) return { outcome: 'not-found' };
 
     if (!context.signed) {
@@ -1456,15 +1567,13 @@ export class OrgClaService {
         }
       );
     } catch (error) {
-      // The producer refuses any acknowledgment that is not approved with 409 — a Not Authorized
-      // row, or one invalidated since the list was read.
       if (error instanceof MicroserviceError && error.statusCode === 409) {
-        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment is not approved, so the producer refused the invalidate', {
+        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment was already invalidated or changed, so the producer refused the invalidate', {
           org_uid: orgUid,
           signature_id: signatureId,
           acknowledgment_signature_id: acknowledgmentSignatureId,
         });
-        return { outcome: 'not-approved' };
+        return { outcome: 'conflict' };
       }
       throw error;
     }
@@ -1724,7 +1833,13 @@ export class OrgClaService {
     throw new MicroserviceError(message, 409, code, { operation, service: SERVICE });
   }
 
-  private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
+  private async resolveClaGroupContext(
+    req: Request,
+    orgUid: string,
+    signatureId: string,
+    operation: string,
+    { rosterRequired = false }: { rosterRequired?: boolean } = {}
+  ): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
     const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
     if (!entry) {
@@ -1768,7 +1883,7 @@ export class OrgClaService {
         entries,
         entry,
         operation,
-        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+        'This CLA shares its company and CLA group with another agreement, so its Auto Acknowledge setting cannot be changed here yet.',
         'AMBIGUOUS_AGREEMENT_TARGET'
       );
     }
@@ -1781,7 +1896,7 @@ export class OrgClaService {
       companySfid: orgUid,
       projectSfid,
       signed: entry.signed === true,
-      canEdit: await this.callerCanEdit(req, entry, operation),
+      canEdit: await this.callerCanEdit(req, entry, operation, rosterRequired),
     };
   }
 
@@ -1797,21 +1912,25 @@ export class OrgClaService {
    * identities do not leave the server: the row mapper drops them, and what crosses to the
    * browser is this boolean.
    *
-   * Fails OPEN when the producer sent no roster at all. That is the deliberate direction: the
-   * producer is the authority and rejects the write regardless, so failing open costs a CLA
-   * manager one clear error message, where failing closed would hide the only approval-list
-   * controls Self Serve has from someone entitled to use them.
+   * On a row with no roster at all, the row's `viewerIsClaManager` is false, so the UI already
+   * hides the Approval List and Invalidate controls and renders the Auto ECLA toggle disabled,
+   * with the sentence naming CLA Manager. This check still passes the Approval List and Auto ECLA
+   * writes through: EasyCLA re-checks the roster on them and is the authority. `rosterRequired`
+   * callers — Invalidate and the acknowledgment read that offers it — fail closed instead, because
+   * EasyCLA checks only ACS scope on Invalidate, never the roster, so this is the one roster check
+   * it gets.
    */
-  private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string): Promise<boolean> {
+  private async callerCanEdit(req: Request, entry: EasyClaCompanyClaGroup, operation: string, rosterRequired: boolean): Promise<boolean> {
     if (!Array.isArray(entry.claManagers)) {
+      if (rosterRequired) {
+        logger.warning(req, operation, 'upstream sent no CLA manager roster, so invalidate access was refused', { signature_id: entry.signatureID });
+        return false;
+      }
       logger.warning(req, operation, 'upstream sent no CLA manager roster, so write access was not narrowed', { signature_id: entry.signatureID });
       return true;
     }
 
-    const username = (await getUsernameFromAuth(req))?.trim().toLowerCase() ?? '';
-    if (!username) return false;
-
-    return entry.claManagers.some((manager) => manager?.lfUsername?.trim().toLowerCase() === username);
+    return rosterNamesUsername(entry.claManagers, getEffectiveLfUsername(req));
   }
 
   private requireApprovalListProject(context: ApprovalContext, operation: string): void {
@@ -2072,7 +2191,7 @@ export type OrgClaInvalidateAcknowledgmentOutcome =
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
   | { outcome: 'forbidden' }
-  | { outcome: 'not-approved' };
+  | { outcome: 'conflict' };
 
 /**
  * Result of an approval-list write.
@@ -2091,17 +2210,22 @@ export type OrgClaApprovalUpdateOutcome =
 /**
  * Result of an Auto ECLA toggle write (#1988).
  *
- * A union rather than a bare boolean plus a thrown error, because the two ordinary outcomes map
- * to distinct HTTP answers: a signature the organization does not hold is a 404, and an unsigned
- * agreement is a 400 with its own copy. `updated` is the success shape and carries the state the
- * producer now records — the caller sends the target, the service echoes it back so the client
- * can trust the new value without a re-read.
+ * A union rather than a bare boolean plus a thrown error, because the ordinary outcomes map to
+ * distinct HTTP answers: a signature the organization does not hold is a 404, an unsigned
+ * agreement is a 400 with its own copy, and a caller not on the agreement's CLA Manager list is
+ * a 403 with this application's own sentence, refused before EasyCLA is called. `updated` is the
+ * success shape and carries the state the producer now records — the caller sends the target,
+ * the service echoes it back so the client can trust the new value without a re-read.
  *
  * Producer refusals (sanctions, ACL) travel as thrown 403s carrying the producer's own sentence
  * on `clientMessage`; they are not one of these outcomes. Splitting them out here would force the
  * BFF to translate copy the producer already wrote.
  */
-export type OrgClaEclaAutoCreateUpdateOutcome = { outcome: 'updated'; autoCreateEcla: boolean } | { outcome: 'not-found' } | { outcome: 'not-signed' };
+export type OrgClaEclaAutoCreateUpdateOutcome =
+  | { outcome: 'updated'; autoCreateEcla: boolean }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-signed' }
+  | { outcome: 'forbidden' };
 
 /** Query parameters accepted on the acknowledgments read. Every field is already validated. */
 export interface ContributorAcknowledgmentQuery {
@@ -2156,6 +2280,131 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
   };
 }
 
+async function attachInvalidatorDisplays(req: Request, rows: OrgClaContributorAcknowledgment[]): Promise<void> {
+  const usernames = [...new Set(rows.flatMap((row) => (row.invalidatedBy ? [row.invalidatedBy] : [])))];
+  if (usernames.length === 0) return;
+
+  let baseUrl: string;
+  try {
+    baseUrl = getUserServiceBaseUrl('org_cla_resolve_invalidator', SERVICE);
+  } catch {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup skipped', { count: usernames.length });
+    return;
+  }
+
+  const bearerToken = isImpersonating(req) ? req.bearerToken : undefined;
+  const displays = new Map<string, string>();
+  let failed = 0;
+  let budgetSpent = false;
+  const lookups = (async () => {
+    for (let index = 0; index < usernames.length && !budgetSpent; index += ORG_CLA_INVALIDATOR_LOOKUP_BATCH) {
+      const batch = usernames.slice(index, index + ORG_CLA_INVALIDATOR_LOOKUP_BATCH);
+      await Promise.all(
+        batch.map(async (username) => {
+          try {
+            const display = await lookupInvalidatorDisplay(req, baseUrl, username, bearerToken);
+            if (display) displays.set(username, display);
+          } catch {
+            failed += 1;
+          }
+        })
+      );
+    }
+  })();
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<void>((resolve) => {
+    budgetTimer = setTimeout(() => {
+      budgetSpent = true;
+      resolve();
+    }, ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS);
+  });
+  // gatewayFetch takes no caller abort signal, so a batch already in flight when the budget expires is
+  // left to settle on its own (at most one batch, each call capped by the gateway timeout). Late results
+  // are not used and late failures are not counted in the log below.
+  await Promise.race([lookups, budget]);
+  clearTimeout(budgetTimer);
+
+  if (budgetSpent) {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup ran out of time', {
+      budget_ms: ORG_CLA_INVALIDATOR_LOOKUP_BUDGET_MS,
+      resolved: displays.size,
+      looked_up: usernames.length,
+    });
+  }
+  if (failed > 0) {
+    logger.warning(req, 'org_cla_resolve_invalidator', 'invalidator display lookup failed', {
+      failed,
+      looked_up: usernames.length,
+    });
+  }
+
+  for (const row of rows) {
+    const username = row.invalidatedBy;
+    if (!username) continue;
+    const display = displays.get(username);
+    if (display) row.invalidatedByDisplay = display;
+  }
+}
+
+async function lookupInvalidatorDisplay(req: Request, baseUrl: string, username: string, bearerToken: string | undefined): Promise<string | undefined> {
+  const query = new URLSearchParams({ username, pageSize: ORG_CLA_INVALIDATOR_LOOKUP_PAGE_SIZE.toString(), offset: '0' });
+  const page = await gatewayFetch<ApiGatewayUserSearchPage>(req, `${baseUrl}/users?${query}`, {
+    operation: 'org_cla_resolve_invalidator',
+    service: SERVICE,
+    errorMessage: 'Invalidator lookup failed',
+    errorCode: 'UPSTREAM_ERROR',
+    redactResponseBody: true,
+    bearerToken,
+  });
+
+  const rows = page?.Data;
+  if (!Array.isArray(rows) || rows.length !== 1 || page?.Metadata?.TotalSize !== 1) return undefined;
+  const row = rows[0];
+  if (!row || directoryText(row.Username) !== username) return undefined;
+
+  const fromList = invalidatorDisplayFromPerson(row);
+  if (fromList) return fromList;
+
+  const id = directoryText(row.ID);
+  if (!SALESFORCE_ID_PATTERN.test(id)) return undefined;
+
+  const profile = await gatewayFetch<Partial<ApiGatewayUserProfile>>(req, `${baseUrl}/users/${encodeURIComponent(id)}`, {
+    operation: 'org_cla_resolve_invalidator',
+    service: SERVICE,
+    errorMessage: 'Invalidator profile lookup failed',
+    errorCode: 'UPSTREAM_ERROR',
+    redactResponseBody: true,
+    bearerToken,
+  });
+  const profileUsername = directoryText(profile?.Username);
+  if (profileUsername && profileUsername !== username) return undefined;
+  return invalidatorDisplayFromPerson(profile);
+}
+
+function invalidatorDisplayFromPerson(person: Partial<ApiGatewayUserProfile> | null | undefined): string | undefined {
+  const name = directoryText(person?.Name);
+  if (name) return name;
+  const combined = [directoryText(person?.FirstName), directoryText(person?.LastName)].filter((part) => part.length > 0).join(' ');
+  if (combined) return combined;
+  return primaryVerifiedEmail(person?.Emails);
+}
+
+function primaryVerifiedEmail(emails: unknown): string | undefined {
+  if (!Array.isArray(emails)) return undefined;
+  for (const entry of emails) {
+    if (!entry || typeof entry !== 'object') continue;
+    const email = entry as Partial<ApiGatewayUserEmail>;
+    if (email.IsPrimary !== true || email.IsVerified !== true || email.Active !== true || email.IsDeleted !== false) continue;
+    const address = directoryText(email.EmailAddress);
+    if (address) return address;
+  }
+  return undefined;
+}
+
+function directoryText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 /**
  * Maps one producer row onto the shared `OrgClaContributorAcknowledgment` shape.
  *
@@ -2186,13 +2435,19 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     const trimmed = value?.trim() ?? '';
     return trimmed.length > 0 ? trimmed : undefined;
   };
+  // Only an address the producer's own approval-list email validator accepts is relayed: anything
+  // else (a query string or extra recipient after the domain, percent escapes, separators) is
+  // dropped. Valid addresses whose local part holds `&`, `#` or `?` are kept so approval-list
+  // matching still finds their entries; the client builds a `mailto:` link only for the stricter
+  // `isMailtoSafeEmail` subset.
+  const email = nonEmpty(row?.email);
 
   return {
     signatureId,
     lfLogin: nonEmpty(row?.linux_foundation_id),
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
-    email: nonEmpty(row?.email),
+    email: email && validateOrgClaApprovalValue('email', email) === null ? email : undefined,
     name: nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),

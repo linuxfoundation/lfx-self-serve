@@ -1,7 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgCommitFilters, OrgCountUnit, OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgKeyContactRole, OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -15,10 +18,63 @@ export interface PeopleTabConfig {
   readonly noun: string;
 }
 
+/** The live People directory a page is showing: its range and project scope (the commit scope and metric do not change who is listed). */
+export interface OrgPeopleDirectoryView {
+  range: OrgLensTimeRange;
+  projectScope: OrgProjectScope;
+}
+
 // All Employees tab ----------------------------------------------------------
 
 /** Filter the All Employees table by activity dimension. */
 export type OrgAllEmployeeActivityFilter = 'all' | 'governance' | 'code' | 'events' | 'training';
+
+/** Which employees the All Employees table shows (lfx-self-serve#4311). `former` reads the former-employees roster; `all` shows both. */
+export type OrgAllEmployeeEmploymentFilter = 'current' | 'former' | 'all';
+
+/** Which employees a People tab shows — the All Employees employment filter, shared by every tab that offers it (Contributors: lfx-self-serve#4627). */
+export type OrgEmploymentFilter = OrgAllEmployeeEmploymentFilter;
+
+/** Whether a People tab or the Code Contributions page keeps people marked as CDP team members (lfx-self-serve#4685). */
+export type OrgTeamMembersFilter = 'include' | 'exclude';
+
+/** Dropdown option for the team members filter. */
+export interface OrgTeamMembersOption {
+  label: string;
+  value: OrgTeamMembersFilter;
+}
+
+/**
+ * Which crowd.dev organizations an Org Lens code count credits to the account (lfx-self-serve-ops#1219): `insights`, the
+ * organization behind the account's LFX Insights page and only repositories LFX Insights counts; `all`, every
+ * organization linked to the account in every repository.
+ */
+export type OrgScopeFilter = 'insights' | 'all';
+
+/** Dropdown option for the organization-scope filter. */
+export interface OrgScopeOption {
+  label: string;
+  value: OrgScopeFilter;
+}
+
+/** The account's organization scope (`GET /api/orgs/:orgUid/lens/org-scope`, from its `ORG_LENS_ACCOUNT_CONTEXT` row). */
+export interface OrgLensOrgScope {
+  accountId: string;
+  /** `false` when no Insights organization is mapped or it has no code activity in two years: only `all` is offered. */
+  hasInsightsOrg: boolean;
+  insightsOrgId: string | null;
+  insightsOrgName: string | null;
+  /** Distinct organizations with code activity on the account in two years. */
+  relatedOrgCount: number;
+}
+
+/** The account's CDP team members, as the server reads them for a Team members pick (lfx-self-serve#4685). */
+export interface OrgTeamMemberKeys {
+  /** Person keys left out of code-based numbers; `null` under `include`, or when the flag cannot be read. */
+  excluded: ReadonlySet<string> | null;
+  /** `true` when `exclude` was asked but the warehouse flag is missing (lf-dbt not built yet): team members are included. */
+  unavailable: boolean;
+}
 
 /** Voting status badge — upstream free-text values are narrowed at the BFF boundary. */
 export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
@@ -27,7 +83,7 @@ export type OrgAllEmployeeVotingStatus = 'Voting' | 'Non-voting' | 'Observer';
 export type OrgAllEmployeeTrainingStatus = 'Certified' | 'Enrolled';
 
 /** Sortable column on the All Employees table. */
-export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'commits' | 'events' | 'courses' | 'access';
+export type OrgAllEmployeeSortColumn = 'name' | 'seats' | 'keyContact' | 'commits' | 'events' | 'courses' | 'access';
 
 /** Sort direction — `1` ascending, `-1` descending. */
 export type OrgAllEmployeeSortDirection = 1 | -1;
@@ -46,6 +102,15 @@ export interface OrgAllEmployeeActivityOption {
   label: string;
   value: OrgAllEmployeeActivityFilter;
 }
+
+/** Dropdown option for the employment filter (typed value). */
+export interface OrgAllEmployeeEmploymentOption {
+  label: string;
+  value: OrgAllEmployeeEmploymentFilter;
+}
+
+/** Dropdown option for any People tab's employment filter. */
+export type OrgEmploymentOption = OrgAllEmployeeEmploymentOption;
 
 /** One row in the All Employees table. */
 export interface OrgAllEmployeeRow {
@@ -80,10 +145,61 @@ export interface OrgAllEmployeeRow {
   seatsCount: number;
   boardSeatsCount: number;
   committeeSeatsCount: number;
+  /** Distinct key-contact roles held on the org's active memberships, deduped across foundations and sorted. Empty when the person holds none. */
+  keyContactRoles: string[];
+  /** The count the request's commit filters pick: authored commits, commits merged to the main branch, or code-contribution activities. */
   commitsCount: number;
+  /**
+   * Code-contribution activities (commits, pull requests, reviews, comments), whatever the commit filters pick. The
+   * "Employees Active in Open Source" tile counts a person with any, so the tile does not move with the code-count option.
+   */
+  codeActivitiesCount: number;
   eventsCount: number;
   coursesCount: number;
   engagedFoundationIds: string[];
+  /**
+   * `true` on rows from the former-employees roster: every employment record at this account has ended. On a
+   * ranged live directory row, a former employee listed only through their Org Lens access: not current, kept so
+   * the former row can take their access badge. Absent on current rows.
+   */
+  isFormer?: boolean;
+  /**
+   * `true` on a former-employees read row for someone with code credited to this account but no employment row there
+   * (lfx-self-serve#4730): neither current nor former, so All Employees lists them only under "All employees". Absent
+   * on every other row.
+   */
+  isUnclassified?: boolean;
+  /**
+   * What the person drawer's company-email lookup answers for this row, from the account's company-email keys and, for
+   * live-only rows off the warehouse roster, their LF accounts or (without a username) the key-contact records at their
+   * address: `has` an address on file; `none` on file (a person key the warehouse knows, or a username naming exactly one
+   * roster person or one LF account, with no qualifying address); `unconfirmed` (a `cdp:` row, a live-only row whose
+   * username is unknown or names more than one person or account, or one without a username whose records carry no
+   * qualifying address — the lookup cannot confirm either way). Absent when the keys could not be read; such rows are
+   * listed only under the filter's `all`.
+   */
+  companyEmailStatus?: OrgAllEmployeeCompanyEmailStatus;
+}
+
+/** A row's company-email status (see {@link OrgAllEmployeeRow.companyEmailStatus}). */
+export type OrgAllEmployeeCompanyEmailStatus = 'has' | 'none' | 'unconfirmed';
+
+/** The All Employees Company email filter: every row, or the rows with one status. */
+export type OrgAllEmployeeCompanyEmailFilter = 'all' | OrgAllEmployeeCompanyEmailStatus;
+
+/** Dropdown option for the Company email filter. */
+export interface OrgAllEmployeeCompanyEmailOption {
+  label: string;
+  value: OrgAllEmployeeCompanyEmailFilter;
+}
+
+/** The All Employees Key Contact filter: every row, rows holding any role, rows holding none, or rows holding one canonical role. */
+export type OrgAllEmployeeKeyContactFilter = 'all' | 'any' | 'none' | OrgKeyContactRole;
+
+/** Dropdown option for the Key Contact filter. */
+export interface OrgAllEmployeeKeyContactOption {
+  label: string;
+  value: OrgAllEmployeeKeyContactFilter;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */
@@ -96,6 +212,10 @@ export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   access: OrgAccessBadgeState | null;
   /** `true` when this row was synthesised from the access roster (no detected activity, no detail to fetch). */
   isSynthetic: boolean;
+  /** Pre-decorated role pills for the Key Contact cell — only populated when the person holds exactly one role, since several collapse to a count chip. */
+  keyContactRolePills: OrgKeyContactRolePillVm[];
+  /** Tooltip text listing every key-contact role, shown on the multi-role count chip. Empty when fewer than two roles. */
+  keyContactRolesTooltip: string;
   /** Precomputed `<tr>` class list — keeps the template free of conditional class bindings on every cell. */
   rowClass: string;
 }
@@ -111,10 +231,27 @@ export interface OrgAllEmployeeStats {
 
 /** Bundled list payload — single UI subscription on tab load. */
 export interface OrgAllEmployeesResponse {
+  /** Set when Exclude team members was asked but the team-member flag could not be read: the counts include team members. */
+  teamMembersUnavailable?: true;
   accountId: string;
   rows: OrgAllEmployeeRow[];
   stats: OrgAllEmployeeStats;
+  /**
+   * People who registered or attended foundation events in the request's range, credited by company email or as employees
+   * (lfx-self-serve#4598, #5158): the warehouse participation summary row the People -> Event Attendees tab shows as Attendees at its
+   * defaults, so the Event Attendees tile equals that number. Absent (`undefined`) for the Non-LF project scope and for the
+   * unranged roster read: events are LF constructs, and the tile then counts the listed employees. `null` when the summary could
+   * not be read: the tile says it is unavailable instead of switching to a different number.
+   */
+  eventAttendeesTotal?: number | null;
   foundations: OrgAllEmployeeFoundationOption[];
+  /**
+   * Off-roster read only (lfx-self-serve#4730): lowercased LF usernames of the people with code credited to this account
+   * but no employment row in the range and scope, including those the Team members pick removed from `rows` and those
+   * listed as a former employee instead, so the page never lists their live Org Lens access row as a current employee.
+   * Absent when there are none.
+   */
+  unclassifiedUsernames?: string[];
 }
 
 // Detail (chevron expand) ----------------------------------------------------
@@ -130,14 +267,21 @@ export interface OrgAllEmployeeCommitteeMembership {
   isBoard: boolean;
 }
 
-/** One project the employee contributed code to. */
+/** One project the employee contributed code to: in the trailing 12 months, or in the detail's {@link OrgAllEmployeeDetail.codeView} when it has one. */
 export interface OrgAllEmployeeCodeContribution {
   projectId: string;
   projectName: string;
   foundationId: string;
   foundationName: string;
-  totalCommits: number;
+  /**
+   * Without a code view: distinct commits the person authored in this project; a commit mirrored in several projects
+   * counts in each, so the rows can sum to more than {@link OrgAllEmployeeDetail.totalCommits}. With one: the count the
+   * view's commit filters pick (commits, main-branch commits or code contributions), credited as the People →
+   * Contributors project rows credit it, so the rows sum to the total.
+   */
+  commits: number;
   lastActivityDate: string | null;
+  /** The person holds a maintainer role on this project overlapping the detail's range (the page range, else the Org Lens default range). */
   isMaintainer: boolean;
 }
 
@@ -161,48 +305,93 @@ export interface OrgAllEmployeeTraining {
   coursesCount: number;
 }
 
-/** Lazy detail payload returned when a row is expanded. Empty arrays are legitimate (HTTP 200). */
+/**
+ * The window, project scope and code count the opener's row shows (Code Contributions, People → Contributors,
+ * People → All Employees; lfx-self-serve#4404). A detail read with one counts its Code rows exactly as that row does.
+ */
+export interface OrgPersonCodeView extends OrgCommitFilters {
+  range: OrgLensTimeRange;
+}
+
+/** How a person's Code rows name their counts — in the drawer and the All Employees expanded row: the view's code count, else commits of the trailing 12 months. */
+export interface OrgPersonCodeCount {
+  /** Total / column label: "Commits" or "Code contributions". */
+  label: string;
+  /** Accessible name of the counting-rule info button ("How commits are counted"). */
+  ariaLabel: string;
+  /** Tooltip naming the counting rule. */
+  definition: string;
+  /** Unit of the per-project counts. */
+  unit: OrgCountUnit;
+  /** Range, project type and code count the counts follow ("Past 90 days · LF projects · Only main branch commits"); `null` without a view. */
+  viewLabel: string | null;
+}
+
+/**
+ * Lazy detail payload returned when a row is expanded. Empty arrays are legitimate (HTTP 200). Company
+ * addresses are not part of it: they are served by the separate company-emails routes.
+ */
 export interface OrgAllEmployeeDetail {
   personKey: string;
   boardSeats: OrgAllEmployeeCommitteeMembership[];
   committeeSeats: OrgAllEmployeeCommitteeMembership[];
   code: OrgAllEmployeeCodeContribution[];
+  /** Without a code view: distinct commits the person authored across all projects (trailing 12 months), each counted once. With one: the opener row's count. */
+  totalCommits: number;
+  /** Present when the request carried the opener's code filters: the view `code` and `totalCommits` were counted in. Absent: trailing 12 months, every commit. */
+  codeView?: OrgPersonCodeView;
   events: OrgAllEmployeeEvent[];
   training: OrgAllEmployeeTraining[];
-  /**
-   * Addresses on the org's domains, primary-first. Uncapped. Empty means "none on record" only when
-   * `companyEmailsStatus === 'resolved'`; failed and unavailable lookups also return empty arrays.
-   */
-  companyEmails: string[];
-  /**
-   * `resolved`: lookup succeeded, empty means none on record. `unavailable`: no usable
-   * identity. `failed`: lookup errored; never fails the whole detail response.
-   */
-  companyEmailsStatus: OrgCompanyEmailsStatus;
+  /** Set when the maintainer roles are unavailable (roles table missing): no `code[].isMaintainer` pill is set, which is not "holds no roles". */
+  maintainerRolesUnavailable?: true;
 }
 
 export type OrgCompanyEmailsStatus = 'resolved' | 'unavailable' | 'failed';
 
 /**
- * Response for the username-keyed company-emails lookup. Keyed on an identity, never on an address:
- * an address key would let a caller enumerate a person's other addresses from an arbitrary input.
+ * Why a company-email lookup answered `unavailable`. `no_identity`: the opener supplied nothing to look up (set
+ * client-side; no request is made). `unlinked_identity`: a `cdp:` person key, an identity not linked to an LF account in
+ * the warehouse, or a key contact whose records name no LF username — not a claim that the person has no LF account.
+ * `unconfirmed`: a username the warehouse does not know (or that names more than one LF account), a client-supplied
+ * username not proven to be in the org, or a key-contact lookup without an agreed username, finished without a
+ * qualifying address.
+ */
+export type OrgCompanyEmailsUnavailableReason = 'no_identity' | 'unlinked_identity' | 'unconfirmed';
+
+/**
+ * Response for the company-emails lookups, keyed on a person key, an LF username or key-contact record ids, and never
+ * on an address: an address key would let a caller enumerate a person's other addresses from an arbitrary input.
  */
 export interface OrgPersonCompanyEmailsResponse {
+  /** Addresses on the org's domains, primary-first then alphabetical. Uncapped; empty unless the status is `resolved`. */
   companyEmails: string[];
   /**
-   * A username-keyed response is `resolved` only with at least one address; `unavailable` otherwise
-   * (no username, no qualifying address, or ambiguous match). A missing status must be
+   * The address flagged primary in the warehouse, when there is one — always also present in
+   * `companyEmails`, and always its first entry. `null` when the person has no primary on record;
+   * absent on cache entries written before this field existed, so read it as optional.
+   */
+  primaryEmail?: string | null;
+  /**
+   * The subset of `companyEmails` known only from a corporate key-contact record (not from a verified LF-account
+   * address). Absent when there are none.
+   */
+  keyContactRecordEmails?: string[];
+  /**
+   * `resolved`: the lookup succeeded; for a person key (or a username that resolves to one person) an empty list means
+   * none on file. `unavailable`: see `companyEmailsReason`. `failed`: the lookup errored. A missing status must be
    * treated as `failed`, never as `unavailable` or an empty set.
    */
   companyEmailsStatus: OrgCompanyEmailsStatus;
+  /** Only with `unavailable`; a missing reason reads as `unconfirmed`. */
+  companyEmailsReason?: OrgCompanyEmailsUnavailableReason;
 }
 
 /**
- * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for openers that
- * carry only an identity and no `personKey`, so the drawer's "Detailed activity isn't available" state
- * stays truthful instead of implying verified-empty activity.
+ * Internal detail-fetch result for `PersonDetailDrawerService`. `detail` stays `null` when the opener has no
+ * `personKey` and its username resolves to no single roster person (or it has neither), so the drawer's
+ * "Detailed activity isn't available" state stays truthful instead of implying verified-empty activity.
  */
-export interface OrgDrawerFetchResult {
+export interface OrgDrawerDetailResult {
   detail: OrgAllEmployeeDetail | null;
-  companyEmails: string[];
+  error: boolean;
 }

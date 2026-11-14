@@ -4,7 +4,27 @@
 <div data-testid="meetups-list">
   <!-- Tab Content -->
   @if (activeTab() === 'upcoming') {
-    @if (!upcomingMeetupsLoading() && upcomingMeetups().data.length === 0) {
+    @if (showUpcomingViewPills()) {
+      <div class="my-4" data-testid="meetups-upcoming-view-pills">
+        <lfx-filter-pills [options]="upcomingViewOptions" [selectedFilter]="upcomingView()" (filterChange)="onUpcomingViewChange($event)" />
+      </div>
+    }
+    @if (upcomingRegisteredOnly() === false) {
+      <p class="text-xs text-gray-500 mb-3" data-testid="meetups-all-caption">
+        The next {{ discoverableLimit }} upcoming meetups across Open Community Groups, plus any you're registered for.
+      </p>
+    }
+    @if (!upcomingMeetupsLoading() && upcomingMeetupsError()) {
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-triangle-exclamation"
+        title="Failed to load meetup registrations"
+        subtitle="Please try again."
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-arrow-rotate-left"
+        (ctaClick)="retryUpcomingMeetups()"
+        data-testid="meetups-upcoming-error-state" />
+    } @else if (!upcomingMeetupsLoading() && upcomingMeetups().data.length === 0) {
       @if (isFiltered()) {
         <lfx-empty-state
           [withCard]="false"
@@ -15,6 +35,15 @@
           ctaIcon="fa-light fa-arrow-rotate-left"
           (ctaClick)="resetFilters.emit()"
           data-testid="meetups-upcoming-empty-state" />
+      } @else if (upcomingView() === 'registered') {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-ticket"
+          title="No upcoming registrations"
+          subtitle="Meetups you RSVP to on ocgroups.dev will appear here."
+          ctaLabel="Browse all upcoming meetups"
+          (ctaClick)="onUpcomingViewChange('all')"
+          data-testid="meetups-upcoming-registered-empty-state" />
       } @else {
         <lfx-empty-state
           [withCard]="false"

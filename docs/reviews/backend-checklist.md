@@ -283,7 +283,7 @@ Broad categories the hook protects (non-exhaustive, see the hook for the authori
 - **Git hooks / lint / format:** `.husky/*`, `eslint.config.*`, `.prettierrc*`, `check-headers.sh`
 - **Build config:** `turbo.json`, `angular.json`
 - **Package files:** `package.json`, `yarn.lock`
-- **AI guidance:** `CLAUDE.md`
+- **AI guidance:** `AGENTS.md`
 
 When a PR modifies any of these, flag as NIT with the hook's warning reason attached so the reviewer knows this file affects core infrastructure.
 
@@ -334,3 +334,9 @@ The AI service requires specific env vars for the LiteLLM proxy and M2M auth:
 - `M2M_AUTH_CLIENT_ID` / `M2M_AUTH_CLIENT_SECRET` — M2M credentials used for privileged upstream calls
 
 If a PR adds or modifies AI-related code, confirm these env vars are documented (e.g. in `.env.example`) and resolved through proper config rather than hardcoded.
+
+---
+
+## 14. User docs currency (SHOULD FIX)
+
+A server-side change can alter what a user sees or can do without touching a template: new or changed permission, persona or lens access checks, a new or removed endpoint behind a visible feature, changed validation messages, or a flag that gates a feature. For these, check that the PR also updates the matching `docs/user/<section>/` article(s), or says "No user docs impact" with a reason. Server-only changes with no visible effect are exempt. Rule: `.claude/rules/development-rules.md` § User Documentation Maintenance; same check as frontend checklist 14.17.

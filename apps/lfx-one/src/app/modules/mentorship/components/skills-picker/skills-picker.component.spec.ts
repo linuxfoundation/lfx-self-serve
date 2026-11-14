@@ -55,16 +55,34 @@ describe('SkillsPickerComponent', () => {
     expect(form.controls.skills.value).toEqual(['Go']);
   });
 
-  it('drops chosen skills from the options so they cannot be picked twice', () => {
-    const before = fixture.componentInstance['availableSkills']().length;
-    pick(MENTORSHIP_SKILL_OPTIONS[0]);
+  it('accepts a custom skill that is not in the catalog', () => {
+    pick('  My Custom Skill  ');
 
-    const after = fixture.componentInstance['availableSkills']();
-    expect(after.length).toBe(before - 1);
-    expect(after.map((option) => option.value)).not.toContain(MENTORSHIP_SKILL_OPTIONS[0]);
+    expect(form.controls.skills.value).toEqual(['My Custom Skill']);
   });
 
-  it('clears the draft select after adding, so the added skill does not look selected', () => {
+  it('ignores a blank draft', () => {
+    pick('   ');
+
+    expect(form.controls.skills.value).toEqual([]);
+  });
+
+  it('suggests catalog skills matching the query, without ones already chosen', () => {
+    const [first] = MENTORSHIP_SKILL_OPTIONS;
+    pick(first);
+
+    fixture.componentInstance['searchSkills']({ query: '', originalEvent: new Event('input') });
+    const all = fixture.componentInstance['suggestions']();
+    expect(all.length).toBe(MENTORSHIP_SKILL_OPTIONS.length - 1);
+    expect(all).not.toContain(first);
+
+    const [second] = all;
+    fixture.componentInstance['searchSkills']({ query: second.toUpperCase(), originalEvent: new Event('input') });
+    expect(fixture.componentInstance['suggestions']()).toContain(second);
+    expect(fixture.componentInstance['suggestions']().every((skill) => skill.toLowerCase().includes(second.toLowerCase()))).toBe(true);
+  });
+
+  it('clears the draft field after adding', () => {
     pick('Go');
 
     expect(fixture.componentInstance['draftForm'].controls.skill.value).toBe('');

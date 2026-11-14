@@ -4,10 +4,11 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   <!-- Page Header -->
   <div #pageTopAnchor class="mb-6">
-    <h1 class="font-display font-light text-2xl" data-testid="badges-dashboard-title">{{ badgeLabelPlural }}</h1>
-    <p class="mt-1 text-sm text-gray-500" data-testid="badges-dashboard-description">
-      Discover, recognize achievements in community engagement, event participation, and project contributions.
-    </p>
+    <lfx-page-header
+      [title]="badgeLabelPlural"
+      description="Discover, recognize achievements in community engagement, event participation, and project contributions."
+      titleTestId="badges-dashboard-title"
+      descriptionTestId="badges-dashboard-description" />
   </div>
 
   <!-- Filter Bar -->

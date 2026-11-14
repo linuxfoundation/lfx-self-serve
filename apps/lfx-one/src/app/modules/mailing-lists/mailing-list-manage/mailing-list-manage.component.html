@@ -109,9 +109,9 @@
                 <lfx-committee-selector
                   [form]="form()"
                   control="committees"
-                  [multiple]="true"
-                  [label]="committeeLabel.plural"
-                  [description]="committeeLabel.plural + ' will be automatically added to this mailing list.'"
+                  [multiple]="false"
+                  [label]="committeeLabel.singular"
+                  [description]="'Link a ' + committeeLabel.singular.toLowerCase() + ' to associate this mailing list with it.'"
                   [placeholder]="'Search ' + committeeLabel.plural + '...'"
                   testIdPrefix="mailing-list-committee-selector">
                 </lfx-committee-selector>

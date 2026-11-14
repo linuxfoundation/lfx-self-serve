@@ -5,6 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { computed, signal } from '@angular/core';
 import type { OrgCanonicalRecord, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgProfileService } from '@services/org-profile.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -52,10 +53,8 @@ describe('OrgProfileComponent', () => {
           useValue: { selectedAccount: signal({ uid: record.uid }), updateCanonicalRecord },
         },
         { provide: OrgProfileService, useValue: { getCanonicalRecord: () => of(record), getAddresses: () => of(null) } },
-        {
-          provide: OrgRoleGrantsService,
-          useValue: { writerSet: signal(new Set<string>()), editorSet: signal(new Set<string>()), correlationId: signal(null) },
-        },
+        { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set<string>()), correlationId: signal(null) } },
+        { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
         {
           provide: OrgLensEmptyStateService,
           useValue: {
@@ -95,5 +94,15 @@ describe('OrgProfileComponent', () => {
     expect(el.querySelector('[data-testid="org-profile-no-access-state"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="org-profile-summary-card"]')).toBeNull();
     expect(el.querySelector('[data-testid="org-profile-name"]')).toBeNull();
+  });
+
+  it('shows "No logo" instead of an initials avatar when the org has no logo', async () => {
+    fixture.componentInstance['record'].set({ ...record, logoUrl: null });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('[data-testid="org-profile-logo-empty"]')?.textContent?.trim()).toBe('No logo');
+    expect(el.querySelector('[data-testid="org-profile-logo-image"]')).toBeNull();
   });
 });

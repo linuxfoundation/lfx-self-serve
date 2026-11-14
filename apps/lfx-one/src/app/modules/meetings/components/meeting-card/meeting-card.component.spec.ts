@@ -1,12 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ApplicationRef, Component, input, output, signal } from '@angular/core';
+import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideRouter, Router, RouterLink } from '@angular/router';
+import {
+  Meeting,
+  MeetingAttachment,
+  MeetingAttachmentChangesByMeeting,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
+  MeetingRsvp,
+  PastMeeting,
+  PastMeetingSummary,
+  User,
+} from '@lfx-one/shared/interfaces';
+import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
+import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
+import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -32,6 +50,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   let composerOpen: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
   let getMeetingDetail: ReturnType<typeof vi.fn>;
+  let getMeeting: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   /**
    * `MEETING_V2_ENABLED_FLAG`, stated per test.
@@ -43,10 +62,25 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   const meetingsV2Enabled = signal(true);
 
   /** Mounts the card over `meeting` with an empty template — this suite exercises the handler, not the markup. */
-  async function mount(meeting: Meeting = MEETING): Promise<MeetingCardComponent> {
+  async function mount(meeting: Meeting = MEETING, pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
       providers: [
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
+            authenticated: signal(false),
+            viewerUsername: signal(null),
+            meetingFeedIdentity: signal(''),
+            refreshUserMeetings: vi.fn(),
+            clearConfirmedMeetingRsvps: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
+          },
+        },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
@@ -57,7 +91,14 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         {
           provide: MeetingService,
           useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
+            markRegistrationRemoved: vi.fn(),
+            rememberRemovedRegistrants: vi.fn(),
+            clearRemovedRegistration: vi.fn(),
             getMeetingDetail,
+            getMeeting,
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
@@ -73,6 +114,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('occurrenceInput', pinned);
     fixture.detectChanges();
 
     return fixture.componentInstance;
@@ -84,6 +126,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     toastAdd = vi.fn();
     navigate = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));
+    getMeeting = vi.fn().mockReturnValue(of(MEETING));
   });
 
   it('opens the composer once a fresh read still reports the viewer as organizer', async () => {
@@ -199,6 +242,160 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(navigate).toHaveBeenCalledWith(['/meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
   });
 
+  describe('recurring meetings', () => {
+    const OCCURRENCE = { occurrence_id: '1893456000', start_time: '2030-01-01T00:00:00.000Z', duration: 30 };
+    const RECURRING = { ...MEETING, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE] } as unknown as Meeting;
+
+    let dialogOpen: ReturnType<typeof vi.fn>;
+    let dialogResults: Subject<unknown>[];
+
+    /** Mounts over a recurring meeting and makes each `dialogService.open` hand back its own close stream. */
+    async function mountRecurring(pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true }));
+      dialogResults = [];
+      dialogOpen = vi.fn(() => {
+        const onClose = new Subject<unknown>();
+        dialogResults.push(onClose);
+        return { onClose };
+      });
+      TestBed.overrideProvider(DialogService, { useValue: { open: dialogOpen } });
+      return mount(RECURRING, pinned);
+    }
+
+    it('asks which scope to edit before opening any editor', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
+      expect(composerOpen).not.toHaveBeenCalled();
+    });
+
+    it('opens the series editor when the organizer picks the whole series', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'series' });
+
+      expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens the composer on the picked occurrence when the organizer picks a single one', async () => {
+      const later = { occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z', duration: 30 };
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [OCCURRENCE, later] }));
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence', occurrenceId: '1893542400' });
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: '1893542400' });
+    });
+
+    it('keeps the pre-v2 reschedule dialog for a single occurrence while the flag is off', async () => {
+      meetingsV2Enabled.set(false);
+      const component = await mountRecurring();
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence', occurrenceId: '1893456000' });
+
+      expect(composerOpen).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(2);
+      expect(dialogOpen.mock.calls[1][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
+
+      const moved = { ...OCCURRENCE, occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z' };
+      getMeeting.mockReturnValue(of({ ...RECURRING, occurrences: [moved] }));
+      dialogResults[1].next({ confirmed: true, start_time: '2030-01-02T00:00:00.000Z' });
+
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+      // A host that never binds `meetingDeleted` (the committee meetings list) still sees the new time.
+      expect(getMeeting).toHaveBeenCalledWith('meeting-1');
+      expect(component.currentOccurrence()?.occurrence_id).toBe('1893542400');
+    });
+
+    it('still finds a pinned occurrence whose id was written in milliseconds', async () => {
+      const component = await mountRecurring({ ...OCCURRENCE, occurrence_id: '1893456000000' } as MeetingOccurrence);
+
+      component.onEditMeeting();
+
+      expect(toastAdd).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(dialogOpen.mock.calls[0][1].data.occurrence.occurrence_id).toBe('1893456000');
+    });
+
+    it('takes the shown occurrence values from the fresh read, not the list payload the card rendered with', async () => {
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [{ ...OCCURRENCE, duration: 45 }] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen.mock.calls[0][1].data).toEqual(
+        expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000', duration: 45 }) })
+      );
+    });
+
+    it('refreshes instead of retargeting a later slot when the shown occurrence was cancelled in another tab', async () => {
+      const later = { occurrence_id: '1894060800', start_time: '2030-01-08T00:00:00.000Z', duration: 30 };
+      const component = await mountRecurring();
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [OCCURRENCE, later], cancelled_occurrences: ['1893456000'] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the occurrence duration rather than the series duration', async () => {
+      const component = await mount({ ...RECURRING, duration: 60, occurrences: [{ ...OCCURRENCE, duration: 30 }] } as unknown as Meeting);
+
+      expect(component.meetingDuration()).toBe(30);
+    });
+
+    it('hands both dialogs the fresh meeting, so a changed series timezone is the one the form uses', async () => {
+      meetingsV2Enabled.set(false);
+      const component = await mountRecurring();
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, timezone: 'America/New_York' }));
+
+      component.onEditMeeting();
+      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
+
+      expect(dialogOpen.mock.calls[0][1].data.meeting.timezone).toBe('America/New_York');
+      expect(dialogOpen.mock.calls[1][1].data.meeting.timezone).toBe('America/New_York');
+    });
+
+    it('refreshes instead of opening a ghost slot when the pinned occurrence is gone from the fresh read', async () => {
+      // Parent pinned this card to an occurrence another organizer has since moved.
+      const component = await mountRecurring(OCCURRENCE as MeetingOccurrence);
+      const refreshed = vi.fn();
+      component.meetingDeleted.subscribe(refreshed);
+      getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, occurrences: [{ ...OCCURRENCE, occurrence_id: '1893542400' }] }));
+
+      component.onEditMeeting();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+      expect(refreshed).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when the scope dialog is dismissed', async () => {
+      const component = await mountRecurring();
+
+      component.onEditMeeting();
+      dialogResults[0].next(undefined);
+
+      expect(composerOpen).not.toHaveBeenCalled();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('still re-checks access before the pre-v2 editor, and still refuses a revoked organizer', async () => {
     meetingsV2Enabled.set(false);
     getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));
@@ -211,5 +408,1255 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
     expect(navigate).not.toHaveBeenCalled();
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Editing unavailable' }));
+  });
+});
+
+@Component({ selector: 'lfx-rsvp-button-group', template: '' })
+class RsvpButtonGroupStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly occurrenceId = input<string | undefined>();
+  public readonly rsvpChanged = output<MeetingRsvp>();
+}
+
+@Component({ selector: 'lfx-meeting-invitee-attendees', template: '' })
+class MeetingInviteeAttendeesStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly occurrence = input<MeetingOccurrence | null>(null);
+}
+
+/**
+ * Covers which invitee panels the card renders, at the template boundary.
+ * @description The attendee preview is gated by `show_meeting_attendees` alone, so it must render even
+ * when the meeting collects no RSVPs. The outer condition once required RSVP collection too, which hid
+ * the preview; the attendee component's own spec cannot catch that because it mounts the child directly.
+ */
+describe('MeetingCardComponent — invitee panels', () => {
+  const INVITED = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    title: 'Weekly sync',
+    start_time: '2030-01-01T10:00:00.000Z',
+    duration: 30,
+    timezone: 'UTC',
+    invited: true,
+    organizer: false,
+  } as unknown as Meeting;
+
+  let renderedFixture: ComponentFixture<MeetingCardComponent>;
+
+  async function render(meeting: Meeting, inputs: Record<string, unknown> = {}): Promise<HTMLElement> {
+    // The card's animate-on-scroll directive needs IntersectionObserver, which jsdom lacks.
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
+    );
+    TestBed.configureTestingModule({
+      deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        provideRouter([]),
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
+            authenticated: signal(true),
+            viewerUsername: signal(null),
+            meetingFeedIdentity: signal(''),
+            refreshUserMeetings: vi.fn(),
+            clearConfirmedMeetingRsvps: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
+          },
+        },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
+            markRegistrationRemoved: vi.fn(),
+            rememberRemovedRegistrants: vi.fn(),
+            clearRemovedRegistration: vi.fn(),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, {
+      remove: { imports: [RsvpButtonGroupComponent, MeetingInviteeAttendeesComponent] },
+      add: { imports: [RsvpButtonGroupStubComponent, MeetingInviteeAttendeesStubComponent] },
+    });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
+    renderedFixture = fixture;
+    fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('shows attendees without RSVP buttons when the meeting collects no RSVPs', async () => {
+    const card = await render({ ...INVITED, is_invite_responses_enabled: false, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).not.toBeNull();
+    expect(card.querySelector('lfx-rsvp-button-group')).toBeNull();
+  });
+
+  it('shows RSVP buttons without attendees when Show Attendees is off', async () => {
+    const card = await render({ ...INVITED, is_invite_responses_enabled: true, show_meeting_attendees: false } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
+
+  it('hides attendees on a Board meeting that still carries a legacy opt-in', async () => {
+    const card = await render({ ...INVITED, meeting_type: 'Board', is_invite_responses_enabled: true, show_meeting_attendees: true } as Meeting);
+
+    expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
+    expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
+  });
+
+  describe('the sub-project line', () => {
+    const projectLine = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-project-name"]')?.textContent?.trim();
+
+    it('names the project of a meeting rolled up from a sub-project', async () => {
+      const card = await render({ ...INVITED, project_uid: 'child', project_name: 'TraderX' } as Meeting, { contextProjectUid: 'foundation' });
+
+      expect(projectLine(card)).toBe('TraderX');
+    });
+
+    it.each([
+      ['the list is the meeting own project', { contextProjectUid: 'child' }],
+      ['the list has no project context', {}],
+    ])('shows no project line when %s', async (_label, inputs) => {
+      const card = await render({ ...INVITED, project_uid: 'child', project_name: 'TraderX' } as Meeting, inputs);
+
+      expect(card.querySelector('[data-testid="meeting-project"]')).toBeNull();
+    });
+  });
+
+  describe('the associated group line', () => {
+    const groupNames = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-groups-names"]')?.textContent?.trim();
+
+    it('names the group the meeting belongs to, under the title', async () => {
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1', name: 'Technical Steering Committee' }] } as Meeting);
+
+      expect(groupNames(card)).toBe('Technical Steering Committee');
+      const title = card.querySelector('[data-testid="meeting-title-section"]');
+      const groups = card.querySelector('[data-testid="meeting-groups"]');
+      expect(title?.nextElementSibling).toBe(groups);
+    });
+
+    it('lists every group when a meeting belongs to several', async () => {
+      const card = await render({
+        ...INVITED,
+        committees: [
+          { uid: 'group-1', name: 'Technical Steering Committee' },
+          { uid: 'group-2', name: 'Security Working Group' },
+        ],
+      } as Meeting);
+
+      expect(groupNames(card)).toBe('Technical Steering Committee, Security Working Group');
+    });
+
+    it('links each group name to its group details page', async () => {
+      const card = await render({
+        ...INVITED,
+        project_slug: 'synthetic-project',
+        is_foundation: false,
+        committees: [
+          { uid: 'group-1', name: 'Technical Steering Committee' },
+          { uid: 'group-2', name: 'Security Working Group' },
+        ],
+      } as Meeting);
+
+      const first = card.querySelector('[data-testid="meeting-group-link-group-1"]') as HTMLAnchorElement;
+      const second = card.querySelector('[data-testid="meeting-group-link-group-2"]') as HTMLAnchorElement;
+      expect(first.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(first.getAttribute('href')).toContain('/group-1');
+      expect(first.getAttribute('href')).toContain('project=synthetic-project');
+      expect(second.getAttribute('href')).toContain('/group-2');
+    });
+
+    it('shows the group the card is already on as plain text, not a link to itself', async () => {
+      const card = await render(
+        {
+          ...INVITED,
+          committees: [
+            { uid: 'group-1', name: 'Technical Steering Committee' },
+            { uid: 'group-2', name: 'Security Working Group' },
+          ],
+        } as Meeting,
+        { currentGroupUid: 'group-1' }
+      );
+
+      expect(card.querySelector('[data-testid="meeting-group-link-group-1"]')).toBeNull();
+      expect(card.querySelector('[data-testid="meeting-group-text-group-1"]')?.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(card.querySelector('[data-testid="meeting-group-link-group-2"]')).not.toBeNull();
+    });
+
+    it('passes the back state it is given so the group page returns to the meetings list', async () => {
+      const state = { backLabel: 'Meetings', backPath: '/meetings', fromMeLens: true };
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1', name: 'Technical Steering Committee' }] } as Meeting, {
+        groupLinkState: state,
+      });
+
+      const link = renderedFixture.debugElement.query(By.css('[data-testid="meeting-group-link-group-1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual(state);
+      expect(card).toBeTruthy();
+    });
+
+    it('leaves a group with no resolved name out instead of showing a blank', async () => {
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1' }, { uid: 'group-2', name: 'Security Working Group' }] } as Meeting);
+
+      expect(groupNames(card)).toBe('Security Working Group');
+    });
+
+    it.each([
+      ['no committees field', {}],
+      ['an empty committees list', { committees: [] }],
+      ['only groups with no resolved name', { committees: [{ uid: 'group-1' }] }],
+    ])('shows no line for a meeting with %s', async (_label, overrides) => {
+      const card = await render({ ...INVITED, ...overrides } as Meeting);
+
+      expect(card.querySelector('[data-testid="meeting-groups"]')).toBeNull();
+    });
+  });
+
+  describe("the viewer's own invite actions", () => {
+    it('puts Resend Invite and Remove Myself side by side in one row, like Guests and See Meeting Details', async () => {
+      const card = await render(INVITED);
+
+      const row = card.querySelector('[data-testid="own-invite-actions"]');
+      expect(row).not.toBeNull();
+      expect(row?.querySelector('[data-testid="resend-invite-button"]')).not.toBeNull();
+      expect(row?.querySelector('[data-testid="leave-meeting-button"]')).not.toBeNull();
+      // Same parent, so they sit on one line instead of stacking.
+      expect(card.querySelector('[data-testid="resend-invite-button"]')?.parentElement).toBe(
+        card.querySelector('[data-testid="leave-meeting-button"]')?.parentElement
+      );
+    });
+
+    it('shows neither button, and no empty row, to someone who is not a registered attendee', async () => {
+      const card = await render({ ...INVITED, invited: false } as Meeting);
+
+      expect(card.querySelector('[data-testid="own-invite-actions"]')).toBeNull();
+      expect(card.querySelector('[data-testid="resend-invite-button"]')).toBeNull();
+      expect(card.querySelector('[data-testid="leave-meeting-button"]')).toBeNull();
+    });
+  });
+});
+
+/**
+ * Covers the "remove myself" action: when the card offers it, what the confirm leads to, and how it
+ * settles. Registration enrichment may reach the client, but removal still takes the meeting id
+ * alone — the BFF resolves and authorizes the viewer's registrations.
+ */
+describe('MeetingCardComponent — remove myself', () => {
+  const INVITEE = { id: 'meeting-1', project_uid: 'project-1', organizer: false, invited: true, title: 'TAC Sync' } as Meeting;
+
+  let toastAdd: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
+  let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
+  let registrationClose$: Subject<{ registered: boolean }>;
+  let rsvpButtons: RsvpButtonGroupComponent | undefined;
+  let mountedFixture: ComponentFixture<MeetingCardComponent> | undefined;
+
+  async function mount(
+    meeting: Meeting = INVITEE,
+    options: { authenticated?: boolean; past?: boolean; fetchedRsvp?: MeetingRsvp; pinned?: MeetingOccurrence } = {}
+  ): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: { get: vi.fn((url: string) => of(url === '/api/user/meetings' ? [meeting] : { profile: {} })) } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ConfirmationService, useValue: { confirm } },
+        { provide: DialogService, useValue: { open: vi.fn(() => ({ onClose: registrationClose$ })) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: removedIds,
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
+            markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
+            rememberRemovedRegistrants: vi.fn(),
+            clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
+            removeMyMeetingRegistration,
+            resendMyMeetingInvitation,
+            getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingSummary: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
+            getMeeting: vi.fn().mockReturnValue(of(meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+            getMeetingRsvpForCurrentUser: vi.fn(() => of(options.fetchedRsvp ?? null)),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, {
+      set: {
+        template: options.fetchedRsvp ? '<lfx-rsvp-button-group [meeting]="rsvpMeeting()" (rsvpChanged)="onRsvpChanged($event)" />' : '',
+        imports: options.fetchedRsvp ? [RsvpButtonGroupComponent] : [],
+        providers: [],
+      },
+    });
+    await TestBed.compileComponents();
+    const userService = TestBed.inject(UserService);
+    userService.user.set({ sub: 'synthetic-subject', username: 'synthetic-viewer', email: 'synthetic@example.com' } as User);
+    userService.authenticated.set(options.authenticated ?? true);
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('pastMeeting', options.past ?? false);
+    if (options.pinned) fixture.componentRef.setInput('occurrenceInput', options.pinned);
+    fixture.detectChanges();
+    await TestBed.inject(ApplicationRef).whenStable();
+    if (options.fetchedRsvp) rsvpButtons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance;
+    mountedFixture = fixture;
+
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    toastAdd = vi.fn();
+    confirm = vi.fn();
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
+    resendMyMeetingInvitation = vi.fn().mockReturnValue(of({ message: 'Invitation resent successfully' }));
+    removedIds = signal<ReadonlySet<string>>(new Set());
+    registrationClose$ = new Subject<{ registered: boolean }>();
+    rsvpButtons = undefined;
+  });
+
+  it.each([{ sub: 'synthetic-other', username: 'synthetic-viewer' }, null])(
+    "removes the previous viewer's card-local confirmations from an organizer overview after identity changes to %s",
+    async (nextUser) => {
+      const component = await mount({ ...INVITEE, organizer: true });
+      const users = TestBed.inject(UserService);
+      const rsvp: MeetingRsvp = {
+        id: 'synthetic-viewer-answer',
+        meeting_id: INVITEE.id,
+        registrant_id: 'synthetic-viewer-registration',
+        username: 'synthetic-viewer',
+        email: 'synthetic@example.com',
+        response_type: 'accepted',
+        scope: 'all',
+        created_at: '2026-10-12T10:00:00Z',
+      };
+      component.onRsvpChanged(rsvp);
+      users.recordConfirmedMeetingRsvp(rsvp);
+      expect(component.overviewConfirmedRsvps()).toContainEqual(rsvp);
+
+      users.user.set(nextUser as User | null);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.confirmedRsvps()).toEqual([]);
+      expect(component.overviewConfirmedRsvps()).toEqual([]);
+    }
+  );
+
+  it("resets local confirmations on LFID changes without discarding the same subject's service-owned response", async () => {
+    const component = await mount({ ...INVITEE, organizer: true });
+    const users = TestBed.inject(UserService);
+    const rsvp: MeetingRsvp = {
+      id: 'synthetic-lfid-answer',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-viewer-registration',
+      username: 'synthetic-viewer',
+      email: 'synthetic@example.com',
+      response_type: 'maybe',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    };
+    component.onRsvpChanged(rsvp);
+    users.recordConfirmedMeetingRsvp(rsvp);
+    users.user.set({ ...users.user(), username: 'canonical-viewer' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.confirmedRsvps()).toEqual([]);
+    expect(component.overviewConfirmedRsvps()).toEqual([rsvp]);
+
+    component.onRsvpChanged(rsvp);
+    users.user.set({ ...users.user(), name: 'Updated display name' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.confirmedRsvps()).toEqual([rsvp]);
+  });
+
+  it('offers the action to a signed-in invitee of an upcoming meeting', async () => {
+    const component = await mount();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+  });
+
+  it.each([
+    ['an organizer with no registration of their own', { ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting, {}],
+    ['someone who is not invited', { ...INVITEE, invited: false } as Meeting, {}],
+    ['a past meeting', INVITEE, { past: true }],
+    ['an anonymous viewer', INVITEE, { authenticated: false }],
+  ])('does not offer the action to %s', async (_label, meeting, options) => {
+    const component = await mount(meeting, options);
+
+    expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.isRegisteredAttendee()).toBe(false);
+  });
+
+  it.each([
+    ['their registrant IDs are listed', { my_registrant_ids: ['reg-1'] }],
+    ['the feed lists no IDs but the registrant lookup marked them invited', {}],
+  ])('offers the action to an organizer who is also registered when %s', async (_label, extra) => {
+    const component = await mount({ ...INVITEE, organizer: true, ...extra } as Meeting);
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.isRegisteredAttendee()).toBe(true);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('You will still be an organizer of this meeting.');
+  });
+
+  it('offers the action to someone invited through a committee and says the committee will not invite them again', async () => {
+    const component = await mount({ ...INVITEE, invited_via_committee: true } as Meeting);
+
+    expect(component.isRegisteredAttendee()).toBe(true);
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain("it won't invite you to this meeting again");
+  });
+
+  it.each([
+    ['a past meeting the viewer attended', { user_attended: true }, { past: true }, true],
+    ['a past meeting the viewer did not attend', { user_attended: false }, { past: true }, false],
+    ['a past meeting with unknown attendance', {}, { past: true }, false],
+    ['an upcoming meeting', { user_attended: true }, {}, false],
+  ])('reports the attended label for %s', async (_label, attendance, options, expected) => {
+    const component = await mount({ ...INVITEE, ...attendance } as Meeting, options);
+
+    expect(component.userAttended()).toBe(expected);
+  });
+
+  it('follows a refreshed input for the same card instead of keeping its first attendance value', async () => {
+    const component = await mount({ ...INVITEE, user_attended: false } as Meeting, { past: true });
+    expect(component.userAttended()).toBe(false);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, user_attended: true } as Meeting);
+    mountedFixture!.detectChanges();
+
+    expect(component.userAttended()).toBe(true);
+  });
+
+  it('follows a refreshed input when an organizer gains or loses a registration of their own', async () => {
+    const component = await mount({ ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting);
+    expect(component.canLeaveMeeting()).toBe(false);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, organizer: true, my_registrant_ids: ['reg-1'] } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canLeaveMeeting()).toBe(true);
+
+    mountedFixture!.componentRef.setInput('meetingInput', { ...INVITEE, organizer: true, my_registrant_ids: [] } as Meeting);
+    mountedFixture!.detectChanges();
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it('keeps the action hidden on a card rebuilt after the list refetched a stale invited flag', async () => {
+    removedIds.set(new Set(['meeting-1']));
+
+    const component = await mount();
+
+    expect(component.canLeaveMeeting()).toBe(false);
+  });
+
+  it('says the removal covers every occurrence', async () => {
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+
+    expect(confirm.mock.calls[0][0].message).toContain('any occurrence');
+  });
+
+  it('asks for confirmation first and removes only once it is accepted', async () => {
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+
+    expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+    confirm.mock.calls[0][0].accept();
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-card');
+  });
+
+  it('stops offering the action and tells the list to refresh once removed', async () => {
+    const component = await mount();
+    const deleted = vi.fn();
+    component.meetingDeleted.subscribe(deleted);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(false);
+    expect(deleted).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('shows the BFF message when it rejected the request itself, such as a validation failure', async () => {
+    removeMyMeetingRegistration.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'The registration could not be removed.' } }))
+    );
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: expect.stringContaining('The registration could not be removed.') })
+    );
+  });
+
+  it('shows generic copy for any other failure and keeps the action available', async () => {
+    removeMyMeetingRegistration.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: 'boom' })));
+    const component = await mount();
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to remove you from this meeting. Please try again.' }));
+  });
+
+  it('offers a resend only while the viewer is a registered attendee', async () => {
+    expect((await mount()).canResendInvite()).toBe(true);
+  });
+
+  it.each([
+    ['not invited', { ...INVITEE, invited: false }, {}],
+    ['a past meeting', INVITEE, { past: true }],
+    ['signed out', INVITEE, { authenticated: false }],
+    ['an organizer without a registration of their own', { ...INVITEE, organizer: true, my_registrant_ids: [] }, {}],
+  ] as const)('does not offer a resend when %s', async (_label, meeting, options) => {
+    const component = await mount(meeting as Meeting, options);
+
+    expect(component.canResendInvite()).toBe(false);
+  });
+
+  it('resends without asking for confirmation and tells the viewer it was sent', async () => {
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', undefined);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
+    const nextStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const component = await mount({ ...INVITEE, occurrences: [{ occurrence_id: 'occ-next', start_time: nextStart, duration: 60 }] } as Meeting);
+
+    expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
+  });
+
+  it('resends for an explicitly pinned occurrence rather than the series next one', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const nextStart = new Date(Date.now() + 7 * DAY).toISOString();
+    const pinnedStart = new Date(Date.now() + 14 * DAY).toISOString();
+    const pinned = { occurrence_id: 'occ-pinned', start_time: pinnedStart, duration: 60 } as MeetingOccurrence;
+    const component = await mount(
+      {
+        ...INVITEE,
+        occurrences: [
+          { occurrence_id: 'occ-next', start_time: nextStart, duration: 60 },
+          { occurrence_id: 'occ-pinned', start_time: pinnedStart, duration: 60 },
+        ],
+      } as Meeting,
+      { pinned }
+    );
+
+    // The series' own pick is the earlier occurrence; the card shows the pinned one, and that is what must be sent.
+    expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
+    expect(component.occurrence()?.occurrence_id).toBe('occ-pinned');
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-pinned');
+  });
+
+  it('does not offer a resend to a non-organizer whose feed shows no active registration, even though invited is true', async () => {
+    const component = await mount({ ...INVITEE, my_registrant_ids: [] } as Meeting);
+
+    expect(component.canResendInvite()).toBe(false);
+  });
+
+  it('offers a resend to a non-organizer whose feed lists an active registration', async () => {
+    const component = await mount({ ...INVITEE, my_registrant_ids: ['reg-1'] } as Meeting);
+
+    expect(component.canResendInvite()).toBe(true);
+  });
+
+  it('offers a resend right after registering here, before the feed lists the new registration', async () => {
+    const component = await mount({ ...INVITEE, visibility: 'public', my_registrant_ids: [] } as Meeting);
+    expect(component.canResendInvite()).toBe(false);
+
+    component.registerForMeeting();
+    registrationClose$.next({ registered: true });
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.canResendInvite()).toBe(true);
+  });
+
+  it('ignores a second click while a resend is in flight', async () => {
+    const pending$ = new Subject<{ message: string }>();
+    resendMyMeetingInvitation.mockReturnValue(pending$);
+    const component = await mount();
+
+    component.resendInvite();
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    expect(component.resendingInvite()).toBe(true);
+    pending$.next({ message: 'ok' });
+    pending$.complete();
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('shows the BFF message when it rejected the resend itself, such as a validation failure', async () => {
+    resendMyMeetingInvitation.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Unable to determine your identity' } }))
+    );
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Unable to determine your identity') }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it.each([403, 404, 500])('shows generic copy for a %s and lets the viewer retry', async (status) => {
+    resendMyMeetingInvitation.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'ERROR', error: 'upstream detail' } })));
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it.each([true, false])('preserves only live-registration confirmations after a leave/rejoin attempt (success=%s)', async (success) => {
+    const rsvp = {
+      id: 'synthetic-old-response',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-old-registration',
+      username: 'synthetic-viewer',
+      email: 'synthetic@example.com',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    const supplied = { ...INVITEE, visibility: 'public', my_rsvp: rsvp, my_registrant_ids: [rsvp.registrant_id] } as Meeting;
+    if (success) removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
+    if (!success) removeMyMeetingRegistration.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    const component = await mount(supplied);
+    const userService = TestBed.inject(UserService);
+    userService.recordConfirmedMeetingRsvp(rsvp);
+    component.onRsvpChanged(rsvp);
+    let rows: Meeting[] = [];
+    const subscription = userService.getUserMeetings().subscribe((meetings) => (rows = meetings));
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    if (success) {
+      expect(component.confirmedRsvps()).toEqual([]);
+      expect(component.rsvpMeeting().my_rsvp).toBeNull();
+      expect(component.overviewConfirmedRsvps()).toEqual([]);
+      expect(rows[0].my_rsvp).toBeNull();
+      component.registerForMeeting();
+      registrationClose$.next({ registered: true });
+      expect(component.isRegisteredAttendee()).toBe(true);
+      // The still-mounted card's list input and detail refetch both keep the old indexed answer.
+      expect(component.rsvpMeeting().my_rsvp).toBeNull();
+      component.onRsvpChanged({ ...rsvp, id: 'synthetic-late-old-acknowledgement' });
+      userService.recordConfirmedMeetingRsvp(rsvp);
+      expect(component.confirmedRsvps()).toEqual([]);
+      expect(rows[0].my_rsvp).toBeNull();
+    } else {
+      expect(component.confirmedRsvps()).toEqual([rsvp]);
+      expect(component.rsvpMeeting().my_rsvp).toEqual(rsvp);
+      expect(rows[0].my_rsvp).toEqual(rsvp);
+      expect(component.canLeaveMeeting()).toBe(true);
+    }
+    subscription.unsubscribe();
+  });
+
+  it('keeps the surviving registration and its response after partial removal without removing the card', async () => {
+    const removed = {
+      id: 'synthetic-removed-answer',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-removed-registration',
+      response_type: 'accepted',
+      scope: 'single',
+      occurrence_id: '4099766400',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    const survivor = { ...removed, id: 'synthetic-surviving-answer', registrant_id: 'synthetic-surviving-registration', response_type: 'maybe' } as MeetingRsvp;
+    removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id] }));
+    const component = await mount({ ...INVITEE, my_rsvp: removed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] });
+    const users = TestBed.inject(UserService);
+    users.recordConfirmedMeetingRsvp(removed);
+    const savedSurvivor = users.recordConfirmedMeetingRsvp(survivor)!;
+    component.onRsvpChanged(removed);
+    component.onRsvpChanged(savedSurvivor);
+    const deleted = vi.fn();
+    component.meetingDeleted.subscribe(deleted);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(removedIds()).toEqual(new Set());
+    expect(deleted).not.toHaveBeenCalled();
+    expect(component.confirmedRsvps()).toEqual([savedSurvivor]);
+    expect(users.confirmedMeetingRsvps(INVITEE.id)).toEqual([savedSurvivor]);
+    expect(component.overviewConfirmedRsvps()).toContainEqual(savedSurvivor);
+    expect(component.overviewConfirmedRsvps()).not.toContainEqual(removed);
+    expect(users.isMeetingRsvpCurrent(removed, component.meeting())).toBe(false);
+    expect(users.isMeetingRsvpCurrent(savedSurvivor, component.meeting())).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('restores a fresh-load survivor response in the card controls and active personal feed after partial removal', async () => {
+    const removed = {
+      id: 'synthetic-removed-answer',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-removed-registration',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T12:00:00Z',
+    } as MeetingRsvp;
+    const survivor = {
+      ...removed,
+      id: 'synthetic-survivor-answer',
+      registrant_id: 'synthetic-survivor-registration',
+      response_type: 'maybe',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    removeMyMeetingRegistration.mockReturnValue(
+      of({ removed_registrant_ids: [removed.registrant_id], remaining_registrant_ids: [survivor.registrant_id], remaining_rsvps: [survivor] })
+    );
+    const component = await mount(
+      { ...INVITEE, is_invite_responses_enabled: true, my_rsvp: removed, my_registrant_ids: [removed.registrant_id, survivor.registrant_id] },
+      { fetchedRsvp: removed }
+    );
+    const users = TestBed.inject(UserService);
+    let rows: Meeting[] = [];
+    const subscription = users.getUserMeetings().subscribe((meetings) => (rows = meetings));
+    expect(rsvpButtons?.selectedResponse()).toBe('accepted');
+    expect(users.confirmedMeetingRsvps(INVITEE.id)).toEqual([]);
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(rows[0].my_rsvp).toEqual(survivor);
+    expect(rsvpButtons?.selectedResponse()).toBe('maybe');
+    expect(component.overviewConfirmedRsvps()).toContainEqual(survivor);
+    expect(component.canLeaveMeeting()).toBe(true);
+    subscription.unsubscribe();
+  });
+
+  it('does not clear another effective subject when an earlier removal completes late', async () => {
+    const removal$ = new Subject<MeetingRegistrationRemovalResult>();
+    removeMyMeetingRegistration.mockReturnValue(removal$);
+    const component = await mount();
+    const userService = TestBed.inject(UserService);
+    const rsvp = {
+      id: 'synthetic-old-response',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-registration',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    userService.recordConfirmedMeetingRsvp(rsvp, 'synthetic-subject');
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    userService.user.set({ sub: 'synthetic-other', username: 'synthetic-viewer' } as User);
+    userService.recordConfirmedMeetingRsvp({ ...rsvp, id: 'synthetic-other-response', response_type: 'maybe' }, 'synthetic-other');
+    let rows: Meeting[] = [];
+    const subscription = userService.getUserMeetings().subscribe((meetings) => (rows = meetings));
+
+    removal$.next({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] });
+
+    expect(rows[0].my_rsvp?.response_type).toBe('maybe');
+    expect(component.canLeaveMeeting()).toBe(true);
+    expect(removedIds()).toEqual(new Set());
+    subscription.unsubscribe();
+  });
+
+  it('ends a fetched-only registration before rejoining even when the RSVP child stays mounted', async () => {
+    const rsvp = {
+      id: 'synthetic-fetched-response',
+      meeting_id: INVITEE.id,
+      registrant_id: 'synthetic-fetched-registration',
+      response_type: 'accepted',
+      scope: 'all',
+      created_at: '2026-10-12T10:00:00Z',
+    } as MeetingRsvp;
+    removeMyMeetingRegistration.mockReturnValue(of({ removed_registrant_ids: [rsvp.registrant_id], remaining_registrant_ids: [] }));
+    const component = await mount({ ...INVITEE, visibility: 'public', is_invite_responses_enabled: true } as Meeting, { fetchedRsvp: rsvp });
+    expect(rsvpButtons?.selectedResponse()).toBe('accepted');
+
+    component.confirmLeaveMeeting();
+    confirm.mock.calls[0][0].accept();
+    expect(rsvpButtons?.selectedResponse()).toBeNull();
+    component.registerForMeeting();
+    registrationClose$.next({ registered: true });
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(component.isRegisteredAttendee()).toBe(true);
+    expect(rsvpButtons?.selectedResponse()).toBeNull();
+    expect(component.confirmedRsvps()).toEqual([]);
+  });
+});
+
+describe('MeetingCardComponent — RSVP cache freshness', () => {
+  it.each([
+    [false, true, 'me'],
+    [true, true, 'me'],
+    [false, false, 'me'],
+    [true, false, 'me'],
+    [true, true, 'foundation'],
+    [true, true, 'project'],
+  ] as const)('keeps successful responses through stale reads and remounts (organizer=%s, success=%s, lens=%s)', async (organizer, success, sourceLens) => {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public unobserve = vi.fn();
+        public disconnect = vi.fn();
+      }
+    );
+    const toastAdd = vi.fn();
+    const activeLens = signal<string>(sourceLens);
+    TestBed.configureTestingModule({
+      deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: LensService, useValue: { activeLens } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: toastAdd } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { add: { providers: [] } });
+    await TestBed.compileComponents();
+    const meetingService = TestBed.inject(MeetingService);
+    vi.spyOn(meetingService, 'getMeetingAttachments').mockReturnValue(of([]));
+    vi.spyOn(meetingService, 'getMeetingRegistrants').mockReturnValue(
+      of([
+        {
+          uid: 'synthetic-registrant',
+          meeting_id: 'synthetic-rsvp',
+          email: 'synthetic@example.com',
+          first_name: 'Synthetic',
+          last_name: 'Guest',
+          rsvp: null,
+        } as MeetingRegistrant,
+      ])
+    );
+    const userService = TestBed.inject(UserService);
+    userService.user.set({ sub: 'synthetic-subject', username: 'viewer', email: 'synthetic@example.com' } as User);
+    userService.authenticated.set(true);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    const http = TestBed.inject(HttpTestingController);
+    for (const request of http.match('/api/profile')) {
+      request.flush({ profile: {} });
+    }
+    const meeting = {
+      id: 'synthetic-rsvp',
+      project_uid: 'synthetic-project',
+      title: 'Synthetic RSVP meeting',
+      start_time: '2099-01-01T10:00:00Z',
+      duration: 30,
+      timezone: 'UTC',
+      invited: true,
+      organizer,
+      is_invite_responses_enabled: true,
+      show_meeting_attendees: false,
+      my_rsvp: null,
+    } as Meeting;
+    let pendingIds: string[] = [];
+    const subscription = userService.getUserMeetings().subscribe((meetings) => {
+      pendingIds = meetings.filter((row) => row.is_invite_responses_enabled && !row.my_rsvp).map((row) => row.id);
+    });
+    http.expectOne('/api/user/meetings').flush([meeting]);
+    expect(pendingIds).toEqual(['synthetic-rsvp']);
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.detectChanges();
+    for (const block of await fixture.getDeferBlocks()) {
+      await block.render(DeferBlockState.Complete);
+    }
+    fixture.detectChanges();
+    for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+      request.flush(null);
+    }
+    const buttons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+    buttons.handleRsvpClick('accepted');
+    const write = http.expectOne('/api/meetings/synthetic-rsvp/rsvp');
+    const rsvp: MeetingRsvp = {
+      id: 'synthetic-response',
+      meeting_id: meeting.id,
+      registrant_id: 'synthetic-registrant',
+      username: 'viewer',
+      email: 'synthetic@example.com',
+      created_at: '2099-01-01T00:00:00Z',
+      response_type: 'accepted',
+      scope: 'all',
+    };
+    if (success) {
+      write.flush(rsvp);
+      if (sourceLens === 'me') {
+        http.expectOne('/api/user/meetings').flush([{ ...meeting, my_rsvp: rsvp }]);
+      } else {
+        http.expectNone('/api/user/meetings');
+      }
+      if (sourceLens === 'me') expect(pendingIds).toEqual([]);
+      expect(buttons.selectedResponse()).toBe('accepted');
+      expect(fixture.componentInstance.confirmedRsvps()).toEqual([expect.objectContaining({ response_type: 'accepted', scope: 'all' })]);
+    } else {
+      write.flush({ error: 'Synthetic write rejected' }, { status: 403, statusText: 'Forbidden' });
+      http.expectNone('/api/user/meetings');
+      expect(pendingIds).toEqual(['synthetic-rsvp']);
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'RSVP Failed' }));
+      expect(buttons.selectedResponse()).toBeNull();
+      expect(fixture.componentInstance.confirmedRsvps()).toEqual([]);
+    }
+    fixture.detectChanges();
+    for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+      request.flush(success ? rsvp : null);
+    }
+    if (organizer) {
+      const overview = fixture.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(overview.acceptedCount()).toBe(success ? 1 : 0);
+      expect(overview.registrants()[0].rsvp?.response_type ?? null).toBe(success ? 'accepted' : null);
+    }
+    if (organizer && success) {
+      fixture.destroy();
+      // Recreated in the same lens from a row without `my_rsvp` (as Foundation/Project rows are), while the index is still stale.
+      const sameLens = TestBed.createComponent(MeetingCardComponent);
+      sameLens.componentRef.setInput('meetingInput', meeting);
+      sameLens.detectChanges();
+      for (const block of await sameLens.getDeferBlocks()) {
+        await block.render(DeferBlockState.Complete);
+      }
+      sameLens.detectChanges();
+      for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+        request.flush(null);
+      }
+      const sameLensButtons = sameLens.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance as RsvpButtonGroupComponent;
+      const sameLensOverview = sameLens.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(sameLensButtons.selectedResponse()).toBe('accepted');
+      expect(sameLensOverview.acceptedCount()).toBe(1);
+      sameLens.destroy();
+      let returningMeeting: Meeting = { ...meeting, my_rsvp: rsvp };
+      if (sourceLens !== 'me') {
+        subscription.unsubscribe();
+        activeLens.set('me');
+        let returningRows: Meeting[] = [];
+        const returning = userService.getUserMeetings().subscribe((rows) => (returningRows = rows));
+        http.expectOne('/api/user/meetings').flush([meeting]);
+        returningMeeting = returningRows[0];
+        expect(returningMeeting.my_rsvp?.response_type).toBe('accepted');
+        returning.unsubscribe();
+      }
+      const recreated = TestBed.createComponent(MeetingCardComponent);
+      recreated.componentRef.setInput('meetingInput', returningMeeting);
+      recreated.detectChanges();
+      for (const block of await recreated.getDeferBlocks()) {
+        await block.render(DeferBlockState.Complete);
+      }
+      recreated.detectChanges();
+      for (const request of http.match('/api/meetings/synthetic-rsvp/rsvp/me')) {
+        request.flush(null);
+      }
+      const overview = recreated.debugElement.query(By.directive(MeetingRsvpDetailsComponent)).componentInstance as MeetingRsvpDetailsComponent;
+      expect(overview.acceptedCount()).toBe(1);
+      expect(overview.registrants()[0].rsvp?.response_type).toBe('accepted');
+      recreated.destroy();
+    }
+    for (const request of http.match('/api/profile')) {
+      request.flush({ profile: {} });
+    }
+    http.verify();
+    subscription.unsubscribe();
+  });
+});
+
+/**
+ * Covers the `readOnly` flag the card hands the summary modal.
+ * @description The "See AI Summary" button is shown to every viewer who may see the summary, but
+ * the modal's Edit and Approve actions only succeed for an organizer (the relation the upstream
+ * write checks) with a summary uid to write back to. The card decides that from the same
+ * `meeting().organizer` snapshot the review banner uses, so a non-organizer opens the modal
+ * view-only instead of seeing actions the write path would refuse.
+ */
+describe('MeetingCardComponent — summary modal read-only', () => {
+  const PAST_MEETING = { id: 'past-1', meeting_and_occurrence_id: 'meeting-1-0', project_uid: 'project-1', title: 'TAC Sync' } as PastMeeting;
+  const SUMMARY = { uid: 'sum-1', approved: true, requires_approval: false, summary_data: { content: 'Notes', edited_content: '' } } as PastMeetingSummary;
+
+  let dialogOpen: ReturnType<typeof vi.fn>;
+
+  /** Mounts a past-meeting card with an empty template and the given summary already fetched. */
+  async function mount(meeting: PastMeeting, summary: PastMeetingSummary): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
+            authenticated: signal(true),
+            viewerUsername: signal(null),
+            meetingFeedIdentity: signal(''),
+            refreshUserMeetings: vi.fn(),
+            clearConfirmedMeetingRsvps: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
+          },
+        },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ConfirmationService, useValue: {} },
+        { provide: DialogService, useValue: { open: dialogOpen } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
+            attachmentChanges: signal(new Map()),
+            markRegistrationRemoved: vi.fn(),
+            rememberRemovedRegistrants: vi.fn(),
+            clearRemovedRegistration: vi.fn(),
+            getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingSummary: vi.fn().mockReturnValue(of(summary)),
+            getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [], providers: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('pastMeeting', true);
+    fixture.detectChanges();
+
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    dialogOpen = vi.fn();
+  });
+
+  it.each([
+    ['organizer: false', { ...PAST_MEETING, organizer: false }],
+    ['organizer absent', PAST_MEETING],
+  ])('opens read-only for a viewer who is not an organizer (%s)', async (_label, meeting) => {
+    const component = await mount(meeting, SUMMARY);
+
+    component.openSummaryModal();
+
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: 'sum-1', readOnly: true });
+  });
+
+  it('offers the actions to an organizer when the summary has a uid to write back to', async () => {
+    const component = await mount({ ...PAST_MEETING, organizer: true }, SUMMARY);
+
+    component.openSummaryModal();
+
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: 'sum-1', readOnly: false });
+  });
+
+  it('still opens read-only for an organizer when the summary has no uid', async () => {
+    const component = await mount({ ...PAST_MEETING, organizer: true }, { ...SUMMARY, uid: '' });
+
+    component.openSummaryModal();
+
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: '', readOnly: true });
+  });
+});
+
+/**
+ * Covers materials scoped to one occurrence of a recurring meeting: the card shows the series-wide ones plus its own date's,
+ * and a scope change saved from the materials drawer must show on the card at once. The read behind the list is the query
+ * service, which indexes asynchronously, so a refetch right after a save can still return the old scope.
+ */
+describe('MeetingCardComponent — occurrence-scoped materials', () => {
+  const OCCURRENCE_ID = '1893456000';
+  const OTHER_OCCURRENCE_ID = '1894060800';
+  const MEETING = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    title: 'Weekly Sync',
+    organizer: true,
+    recurrence: { type: 2, repeat_interval: 1 },
+  } as Meeting;
+  const OCCURRENCE = { occurrence_id: OCCURRENCE_ID, start_time: '2030-01-01T00:00:00.000Z', duration: 60 } as MeetingOccurrence;
+
+  const attachment = (uid: string, occurrenceId?: string): MeetingAttachment => ({
+    uid,
+    meeting_id: MEETING.id,
+    type: 'link',
+    name: uid,
+    link: 'https://example.com',
+    created_at: '2030-01-01T00:00:00Z',
+    ...(occurrenceId && { occurrence_id: occurrenceId }),
+  });
+  const uids = (list: readonly { uid: string }[]): string[] => list.map((a) => a.uid);
+
+  let overrides: ReturnType<typeof signal<ReadonlyMap<string, string>>>;
+  let changes: ReturnType<typeof signal<MeetingAttachmentChangesByMeeting>>;
+
+  async function mount(attachments: MeetingAttachment[]): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null), meetingFeedIdentity: signal('') } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: ConfirmationService, useValue: { confirm: vi.fn() } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: overrides,
+            attachmentChanges: changes,
+            getMeetingAttachments: vi.fn().mockReturnValue(of(attachments)),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [], providers: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', MEETING);
+    fixture.componentRef.setInput('occurrenceInput', OCCURRENCE);
+    fixture.detectChanges();
+    await TestBed.inject(ApplicationRef).whenStable();
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    overrides = signal<ReadonlyMap<string, string>>(new Map());
+    changes = signal<MeetingAttachmentChangesByMeeting>(new Map());
+  });
+
+  it("groups the series-wide materials and this date's, and leaves other dates' out", async () => {
+    const card = await mount([attachment('series'), attachment('mine', OCCURRENCE_ID), attachment('other', OTHER_OCCURRENCE_ID)]);
+
+    expect(uids(card.seriesAttachments())).toEqual(['series']);
+    expect(uids(card.occurrenceAttachments())).toEqual(['mine']);
+  });
+
+  it('moves a series-wide attachment into this occurrence the moment it is saved as scoped to it', async () => {
+    const card = await mount([attachment('series')]);
+
+    overrides.set(new Map([['series', OCCURRENCE_ID]]));
+
+    expect(uids(card.occurrenceAttachments())).toEqual(['series']);
+    expect(card.seriesAttachments()).toEqual([]);
+  });
+
+  it('moves an occurrence-scoped attachment into the series the moment it is saved as applying to all', async () => {
+    const card = await mount([attachment('mine', OCCURRENCE_ID)]);
+
+    overrides.set(new Map([['mine', '']]));
+
+    expect(uids(card.seriesAttachments())).toEqual(['mine']);
+    expect(card.occurrenceAttachments()).toEqual([]);
+  });
+
+  it("drops an attachment saved as scoped to another date, since this card shows only its own date's", async () => {
+    const card = await mount([attachment('series')]);
+
+    overrides.set(new Map([['series', OTHER_OCCURRENCE_ID]]));
+
+    expect(card.attachments()).toEqual([]);
+  });
+
+  it('lists an attachment the moment it is added, before a read returns it', async () => {
+    const card = await mount([attachment('series')]);
+
+    changes.set(new Map([[MEETING.id, { added: [attachment('new')], deletedUids: new Set() }]]));
+
+    expect(uids(card.seriesAttachments())).toEqual(['new', 'series']);
+  });
+
+  it('drops an attachment the moment it is deleted, even though a read still returns it', async () => {
+    const card = await mount([attachment('series'), attachment('mine', OCCURRENCE_ID)]);
+
+    changes.set(new Map([[MEETING.id, { added: [], deletedUids: new Set(['mine']) }]]));
+
+    expect(card.occurrenceAttachments()).toEqual([]);
+    expect(uids(card.seriesAttachments())).toEqual(['series']);
+  });
+
+  it("does not show another meeting's changes", async () => {
+    const card = await mount([attachment('series')]);
+
+    changes.set(new Map([['other-meeting', { added: [attachment('new')], deletedUids: new Set(['series']) }]]));
+
+    expect(uids(card.seriesAttachments())).toEqual(['series']);
   });
 });

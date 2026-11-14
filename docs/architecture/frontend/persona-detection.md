@@ -94,7 +94,7 @@ Two server services own persona resolution, both exported as singletons from `ap
 
 `getPersonas(req)` derives the request payload from the **effective identity** (`apps/lfx-one/src/server/utils/auth-helper.ts`):
 
-- `getEffectiveUsername(req)` — impersonation target's username if impersonating, else the OIDC `nickname` / `username` / `preferred_username`.
+- `getEffectiveUsername(req)` — impersonation target's username if impersonating, else the OIDC LF username claim (`https://sso.linuxfoundation.org/claims/username`; Authelia local dev: `preferred_username`), or null when absent — never the `nickname` / `username` display claims.
 - `getEffectiveEmail(req)` — impersonation target's email if impersonating, else the OIDC `email`, **lowercased**.
 
 Because these are impersonation-aware, persona detection automatically reflects the impersonated user. See [Impersonation](../backend/impersonation.md).
@@ -133,10 +133,9 @@ The per-request persona list is then `collectUniquePersonas` — the union of ev
 
 ### 4. Request-scoped overrides
 
-Two overrides are applied **per request, after the cached detection result**, so they are never baked into the shared cache:
+An override is applied **per request, after the cached detection result**, so it is never baked into the shared cache:
 
 - **Root writer injection** — `checkRootWriter(req)` does an independent NATS lookup (`NatsSubjects.PROJECT_SLUG_TO_UID` for the `ROOT` slug + an access check). A writer on the tenant root project is force-promoted to `executive-director` (moved to the front of the list) and flagged `isRootWriter: true`. This is the only path that injects a persona the user doesn't natively hold.
-- **Impersonation persona context** — `req.appSession.impersonationPersonaContext` is honored **only if the target user actually holds that persona**, so impersonation can't escalate scope.
 
 ### 5. Organizations
 
@@ -144,12 +143,12 @@ Two overrides are applied **per request, after the cached detection result**, so
 
 ### 6. Caching
 
-| Cache                                      | TTL                                           | Key                         |
-| ------------------------------------------ | --------------------------------------------- | --------------------------- |
-| Persona detection result                   | 15 s (`PERSONAS_CACHE_TTL_MS`)                | `username \|\| email`       |
-| Affiliated project slugs                   | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email`       |
-| ROOT project UID                           | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`)         | global                      |
-| Writer summary (`/api/gw/*` authorization) | 15 s (`GW_WRITER_SUMMARY_CACHE_TTL_MS`)       | `u:username` \|\| `e:email` |
+| Cache                                    | TTL                                           | Key                         |
+| ---------------------------------------- | --------------------------------------------- | --------------------------- |
+| Persona detection result                 | 15 s (`PERSONAS_CACHE_TTL_MS`)                | `username \|\| email`       |
+| Affiliated project slugs                 | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email`       |
+| ROOT project UID                         | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`)         | global                      |
+| Writer summary (`/api/gatewaze/*` authz) | 15 s (`GW_WRITER_SUMMARY_CACHE_TTL_MS`)       | `u:username` \|\| `e:email` |
 
 Caches store the **in-flight Promise** so concurrent callers share one NATS round-trip. The **persona detection** cache evicts rejected Promises and resolved results carrying an `error` immediately so the next caller retries. The **affiliated project slugs** cache only evicts rejected Promises — on detection error it resolves to an empty list and the entry stays cached for the TTL. When there is no stable identifier (no username and no email), both caches are bypassed entirely to prevent cross-user leaks. A background sweep evicts expired entries every 60 s.
 
@@ -209,7 +208,7 @@ class PersonaService {
 
 **User pin behavior:** `setPersona()` records a `userSelected` flag persisted to the cookie. On refresh, an explicit choice is preserved as long as the persona is still in the detected set; if the role was revoked upstream the pin is dropped and detection's primary persona takes over.
 
-Typical consumers: `LensService` (lens gating), `sidebar.component.ts` (nav items), `persona-selector.component.ts` (the `role-selector`-flagged switcher), `multi-persona-dashboard.component.ts`, and the persona/ED route guards.
+Typical consumers: `LensService` (lens gating), `SidebarNavService` (nav items rendered by `NavbarComponent`), `persona-selector.component.ts` (the `role-selector`-flagged switcher), `multi-persona-dashboard.component.ts`, and the persona/ED route guards.
 
 ## End-to-end data flow
 

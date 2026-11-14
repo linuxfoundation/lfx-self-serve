@@ -8,10 +8,11 @@ import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenubarComponent } from '@components/menubar/menubar.component';
 import { CombinedProfile, Project } from '@lfx-one/shared/interfaces';
-import { AppService } from '@services/app.service';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MenuItem } from 'primeng/api';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { RippleModule } from 'primeng/ripple';
@@ -21,7 +22,7 @@ import { MenuComponent } from '../menu/menu.component';
 
 @Component({
   selector: 'lfx-header',
-  imports: [ReactiveFormsModule, MenubarComponent, RippleModule, RouterModule, AvatarComponent, MenuComponent],
+  imports: [ReactiveFormsModule, MenubarComponent, RippleModule, RouterModule, AvatarComponent, MenuComponent, OpenIntercomDirective],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
 })
@@ -29,7 +30,7 @@ export class HeaderComponent {
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly projectService = inject(ProjectService);
-  private readonly appService = inject(AppService);
+  private readonly intercomService = inject(IntercomService);
   public readonly userService = inject(UserService);
 
   public readonly showMyMeetings = input<boolean>(true);
@@ -73,6 +74,8 @@ export class HeaderComponent {
       icon: 'fa-light fa-sign-out',
       url: '/logout',
       target: '_self',
+      // PrimeNG runs the command and still follows `url`; see LogoutLinkDirective for why.
+      command: () => this.intercomService.shutdown(),
     },
   ];
 
@@ -139,10 +142,6 @@ export class HeaderComponent {
 
   protected closeMobileSearch(): void {
     this.showMobileSearch.set(false);
-  }
-
-  protected toggleMobileSidebar(): void {
-    this.appService.toggleMobileSidebar();
   }
 
   protected navigateToMyMeetings(): void {

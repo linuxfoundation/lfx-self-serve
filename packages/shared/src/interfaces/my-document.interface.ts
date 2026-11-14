@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AuditUserProfile, DocumentKind, ProjectDocumentSource, ProjectDocumentType } from './project.interface';
+
 /** Source type for My Documents page */
-export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list';
+export type MyDocumentSource = 'link' | 'meeting' | 'file' | 'recording' | 'transcript' | 'summary' | 'mailing_list' | 'committee' | 'project';
 
 // ─── Query Result Shapes ─────────────────────────────────────────────────────
 
@@ -13,6 +15,26 @@ export interface CommitteeLinkQueryResult {
   url?: string;
   created_at?: string;
   committee_uid?: string;
+}
+
+/**
+ * Raw shape returned by query service for `committee_document` resource type. It is tagged with `committee_uid` (there is
+ * no `project_uid` tag) and, when the file is in a folder, `folder_uid` — the tag the folder-empty check filters on.
+ */
+export interface CommitteeDocumentQueryResult {
+  uid: string;
+  name: string;
+  file_name?: string;
+  file_size?: number;
+  content_type?: string;
+  description?: string;
+  committee_uid?: string;
+  folder_uid?: string;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: AuditUserProfile;
+  /** Legacy flat username field; retained for transitional indexer records. */
+  uploaded_by_username?: string;
 }
 
 /** Raw shape returned by query service for `groupsio_artifact` resource type */
@@ -110,6 +132,8 @@ export interface MyDocumentItem {
   pastMeetingId?: string;
   /** Mailing list (groups.io) ID for mailing list attachments */
   mailingListId?: string;
+  /** Mailing list UID for mailing list attachments — the id the mailing list details page opens by, unlike the numeric groups.io `mailingListId`; absent when the list could not be resolved */
+  mailingListUid?: string;
   /** File extension or MIME type for icon display (e.g., 'pdf', 'pptx') */
   fileType?: string;
   /** Raw markdown content for summary-type documents — used by the preview dialog */
@@ -135,4 +159,31 @@ export interface MyDocumentItem {
   downloadUrl?: string;
   /** Display name of the user who shared/uploaded the document, when available. */
   uploadedBy?: string;
+  /**
+   * Source subsystem for project-lens documents — used by the project-source
+   * filter dropdown. Undefined for Me-lens documents.
+   */
+  projectDocumentSource?: ProjectDocumentSource;
+  /** What the document is (file, link, recording, ...) — drives the label next to the name. Unset for folders. */
+  documentKind?: DocumentKind;
+  /**
+   * Set by a page on the rows it can manage through its own group or project API, to the type to send
+   * (`folder`, `link` or `file`). Unset on rows it can't (meetings, mailing lists, another entity's
+   * documents), so the table offers no row actions for them.
+   */
+  manageableType?: ProjectDocumentType;
+}
+
+/** Where a document row's group, meeting or mailing list name opens. */
+export interface DocumentSourceLink {
+  /** What the name refers to — only a group page honours the documents page's back state. */
+  kind: 'group' | 'meeting' | 'past_meeting' | 'mailing_list';
+  /** Router commands for the details page; the flat path, which the lens redirect guard resolves to the entity's tier. */
+  commands: string[];
+}
+
+/** A documents-table row with its source link worked out once, so the template never calls a method per row. */
+export interface MyDocumentTableRow extends MyDocumentItem {
+  /** Null when the row has no named source to open, or the table is already on that group's page. */
+  sourceLink: DocumentSourceLink | null;
 }

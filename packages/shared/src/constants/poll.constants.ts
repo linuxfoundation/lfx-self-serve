@@ -5,6 +5,11 @@ import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { CreatePollQuestion, PollQuestion } from '../interfaces/poll.interface';
 
+import { PHONE_MEDIA_QUERY } from './viewport.constants';
+
+/** Coalesce a tab's adjacent visible/focus notifications without delaying its initial read. */
+export const VISIBILITY_POLL_WAKE_DEBOUNCE_MS = 50;
+
 /**
  * Configurable labels for votes displayed throughout the UI
  * @description This constant allows the user-facing labels to be changed
@@ -252,6 +257,16 @@ export const VOTE_ALLOW_ABSTAIN_OPTIONS = [
 ] as const;
 
 /**
+ * Allow vote change options for vote creation (#4723)
+ * @description Defines whether voters can change a submitted ballot until the vote ends
+ * Maps to the allow_vote_change field in the Vote interface; defaults to 'Yes' (true)
+ */
+export const VOTE_ALLOW_VOTE_CHANGE_OPTIONS = [
+  { label: 'Yes', value: true, description: 'Voters can change their vote until the vote ends' },
+  { label: 'No', value: false, description: 'Submitted votes are final' },
+] as const;
+
+/**
  * Vote response type options
  * @description Defines how participants can respond to the vote question
  */
@@ -289,9 +304,24 @@ export const VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS = 2;
 /** Default close window applied to draft votes when the user has not picked an end date. */
 export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;
 
+/** Default close window applied when cloning a vote whose source deadline has already passed. */
+export const CLONE_VOTE_DEFAULT_DURATION_DAYS = 7;
+
+/** Default close time (12-hour format) for a vote's deadline when none is set yet. */
+export const VOTE_DEFAULT_CLOSE_TIME = '11:59 PM';
+
+/** Prefix applied to a cloned vote's title so it's distinguishable from the source vote before the organizer edits it. */
+export const CLONE_VOTE_TITLE_PREFIX = 'Copy of ';
+
+/** Max length for a vote's title — matches the create/edit form's `title` control validator. */
+export const VOTE_TITLE_MAX_LENGTH = 200;
+
 /** Placeholder question shipped with a draft when the user has not filled in any question yet (upstream requires `poll_questions` to be non-empty). */
 export const DRAFT_VOTE_PLACEHOLDER_QUESTION: CreatePollQuestion = {
   prompt: 'Untitled question',
   type: 'single_choice',
   choices: [{ choice_text: 'Option 1' }, { choice_text: 'Option 2' }],
 };
+
+/** The phone breakpoint, under which voting surfaces switch to their phone layouts. */
+export const VOTES_MOBILE_MEDIA_QUERY = PHONE_MEDIA_QUERY;

@@ -14,6 +14,7 @@ import { PersonaService } from '@services/persona.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SegmentService } from '@services/segment.service';
+import { TranscendService } from '@services/transcend.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -85,7 +86,7 @@ describe('AppComponent — meetings v2 flag', () => {
   const hostMounted = (fixture: ComponentFixture<AppComponent>): boolean =>
     (fixture.componentInstance as unknown as { composerHostMounted: () => boolean }).composerHostMounted();
 
-  async function mount(options?: { auth?: AuthContext }): Promise<ComponentFixture<AppComponent>> {
+  async function mount(options?: { auth?: AuthContext; framed?: boolean }): Promise<ComponentFixture<AppComponent>> {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -110,6 +111,8 @@ describe('AppComponent — meetings v2 flag', () => {
         { provide: IntercomService, useValue: { boot: intercomBoot, setIdentity: intercomSetIdentity } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ...(options?.auth ? [{ provide: REQUEST_CONTEXT, useValue: { auth: options.auth } }] : []),
+        // A frame whose airgap.js suppresses Transcend's UI (lfx-self-serve-ops#1438).
+        ...(options?.framed ? [{ provide: TranscendService, useValue: { preferencesAvailable: false } }] : []),
       ],
     });
     // Empty template: see the suite comment — the root's markup is a toast, a router outlet and the
@@ -314,10 +317,33 @@ describe('AppComponent — meetings v2 flag', () => {
     }
   });
 
+  it('keeps URL-capturing analytics off the mentor-invite page, but still loads feature flags', async () => {
+    window.history.pushState({}, '', '/mentorship/mentor/invites?token=payload.sig');
+    try {
+      await mount({ auth: authedContext });
+      expect(segmentInitialize).not.toHaveBeenCalled();
+      expect(plausibleInitialize).not.toHaveBeenCalled();
+      expect(segmentIdentifyUser).not.toHaveBeenCalled();
+      expect(intercomBoot).not.toHaveBeenCalled();
+      // Only URL-capturing integrations are skipped on a credential URL; feature flags still load.
+      expect(featureFlagInitialize).toHaveBeenCalledWith(authedUser);
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('initializes Segment and Plausible on a product route', async () => {
     await mount();
     expect(segmentInitialize).toHaveBeenCalledTimes(1);
     expect(plausibleInitialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts no Segment or Plausible inside a frame without a consent notice, but still loads feature flags (lfx-self-serve-ops#1438)', async () => {
+    await mount({ auth: authedContext, framed: true });
+    expect(segmentInitialize).not.toHaveBeenCalled();
+    expect(plausibleInitialize).not.toHaveBeenCalled();
+    expect(segmentIdentifyUser).not.toHaveBeenCalled();
+    expect(featureFlagInitialize).toHaveBeenCalledWith(authedUser);
   });
 
   it('identifies Segment, initializes flags, and boots Intercom on an authenticated product route', async () => {

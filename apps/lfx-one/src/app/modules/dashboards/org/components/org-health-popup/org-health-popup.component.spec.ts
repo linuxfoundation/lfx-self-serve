@@ -3,7 +3,8 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { HEALTH_SCORE_BAR_FILL, HEALTH_SCORE_PARTIAL_SUFFIX } from '@lfx-one/shared/constants';
+import { HEALTH_SCORE_BAR_FILL } from '@lfx-one/shared/constants';
+import { formatHealthLabel, isPartialHealthScore } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { OrgHealthPopupComponent } from './org-health-popup.component';
@@ -81,8 +82,8 @@ describe('OrgHealthPopupComponent', () => {
           `*The Health score is partial because the ${category} category is missing data for this project.`
         );
         expect(byTestId(popup, 'org-health-popup-link')).toBeNull();
-        // The badge's " - Partial" suffix never appears in the popup.
-        expect(popup.textContent).not.toContain(HEALTH_SCORE_PARTIAL_SUFFIX);
+        // The retired suffix wording never appears in the popup.
+        expect(popup.textContent).not.toContain(' - Partial');
       }
     );
 
@@ -240,6 +241,20 @@ describe('OrgHealthPopupComponent', () => {
       setInputs({ label: 'healthy', score: 50, maxScore });
 
       expect(component['isPartial']()).toBe(partial);
+    });
+
+    // The badge decides partial from the covered count, the popup from the max score; on real rows they agree.
+    it.each([
+      { coveredCount: 3, maxScore: 100, label: 'Healthy' },
+      { coveredCount: 2, maxScore: 60, label: 'Healthy*' },
+      { coveredCount: 2, maxScore: 65, label: 'Healthy*' },
+      { coveredCount: 2, maxScore: 75, label: 'Healthy*' },
+    ])('labels the popup like the badge for a covered count of $coveredCount and a max of $maxScore', ({ coveredCount, maxScore, label }) => {
+      setInputs({ label: 'healthy', score: 50, maxScore });
+
+      expect(component['isPartial']()).toBe(isPartialHealthScore(coveredCount));
+      expect(formatHealthLabel('Healthy', isPartialHealthScore(coveredCount))).toBe(label);
+      expect(component['labelText']()).toBe(label);
     });
 
     // No max is set: the category depends on the scores alone, first null in popup order.

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router, UrlSegment } from '@angular/router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,13 +34,14 @@ describe('MeetingComposerRouteComponent', () => {
       pathFromRoot: segments.map((segment) => ({ snapshot: { url: [new UrlSegment(segment, {})] } })),
     }) as unknown as Pick<ActivatedRoute, 'snapshot' | 'pathFromRoot'>;
 
-  const mount = (segments: string[], params: Record<string, string> = {}, queryParams: Record<string, string> = {}): void => {
+  const mount = (segments: string[], params: Record<string, string> = {}, queryParams: Record<string, string> = {}, platformId = 'browser'): void => {
     TestBed.configureTestingModule({
       imports: [MeetingComposerRouteComponent],
       providers: [
         MeetingComposerService,
         { provide: ActivatedRoute, useValue: activatedRouteFor(segments, params, queryParams) },
         { provide: Router, useValue: { navigate } },
+        { provide: PLATFORM_ID, useValue: platformId },
       ],
     });
 
@@ -85,5 +87,12 @@ describe('MeetingComposerRouteComponent', () => {
     mount(['project', 'meetings', 'meeting-7', 'edit'], { id: 'meeting-7' }, { project: 'acme' });
 
     expect(navigate).toHaveBeenCalledWith(['/', 'project', 'meetings'], { queryParams: { project: 'acme' }, replaceUrl: true });
+  });
+
+  it('does nothing during SSR — no composer, and no redirect that would become an HTTP 302', () => {
+    mount(['project', 'meetings', 'create'], {}, { project: 'acme' }, 'server');
+
+    expect(composer.isOpen()).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

@@ -93,7 +93,7 @@
       <p class="text-sm text-amber-800">
         {{ conflictedCount() === 1 ? 'A campaign below was' : conflictedCount() + ' campaigns below were' }} changed by someone else while this page was open,
         so {{ conflictedCount() === 1 ? 'its status' : 'their statuses' }} may not match the ad platform.
-        {{ conflictedCount() === 1 ? 'Its toggle is' : 'Their toggles are' }} disabled until you refresh the list.
+        {{ conflictedCount() === 1 ? 'Its controls are' : 'Their controls are' }} disabled until you refresh the list.
         @if (hasActionableSiblings()) {
           Other campaigns are unaffected and can still be paused or resumed.
         }
@@ -107,6 +107,101 @@
           Refresh campaigns
         </button>
       </div>
+    </section>
+  }
+
+  <!--
+    Monitor findings, each linked to the ONE control that resolves it. The items are
+    campaign-service's brief rule engine (`action_items` on the brief metrics read), which carry a
+    stable rule token and the campaign's own id — what lets an item be tied to its row.
+
+    No amounts are shown here: each campaign spends in its own ad account's currency, so a figure
+    would need a currency this view does not know, and findings are never summed across campaigns.
+  -->
+  @if (briefMetricsState() !== 'idle') {
+    <section
+      class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
+      aria-labelledby="optimization-findings-heading"
+      data-testid="optimization-findings">
+      <div class="flex flex-col gap-0.5">
+        <h3 id="optimization-findings-heading" class="text-sm font-semibold text-gray-900">Monitor findings</h3>
+        <p class="text-xs text-gray-500">What Monitor flagged on this brief's campaigns, with the control that addresses each one.</p>
+      </div>
+      @switch (briefMetricsState()) {
+        @case ('loading') {
+          <p class="flex items-center gap-2 text-sm text-gray-500" data-testid="optimization-findings-loading">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Reading monitor findings...
+          </p>
+        }
+        @case ('error') {
+          <!-- A failed read, stated as one: never rendered as "nothing flagged". -->
+          <div class="flex flex-col items-start gap-2" data-testid="optimization-findings-error">
+            <p class="text-sm text-red-700">Monitor findings could not be loaded. The campaign controls below still work.</p>
+            <button
+              type="button"
+              (click)="reloadFindings()"
+              class="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+              data-testid="optimization-findings-retry">
+              Try again
+            </button>
+          </div>
+        }
+        @default {
+          @if (findings().length === 0) {
+            <p class="text-sm text-gray-500" data-testid="optimization-findings-empty">{{ findingsEmptyMessage() }}</p>
+          } @else {
+            <ul class="flex flex-col gap-2">
+              @for (finding of findings(); track finding.key) {
+                <li
+                  class="flex flex-col gap-2 rounded-md border border-gray-100 px-3 py-2 md:flex-row md:items-start md:justify-between"
+                  [attr.data-testid]="'optimization-finding-' + finding.key">
+                  <div class="flex min-w-0 items-start gap-3">
+                    <span class="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold" [class]="finding.item.priority | priorityClass">
+                      {{ finding.item.priority }}
+                    </span>
+                    <div class="flex min-w-0 flex-col gap-0.5">
+                      <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ finding.campaignName }}</span>
+                      <span class="text-xs text-gray-500">{{ finding.platformLabel }}</span>
+                      <span class="text-xs text-gray-700">{{ finding.item.issue }}</span>
+                      <span class="text-xs text-blue-600">→ {{ finding.item.action }}</span>
+                      @if (finding.leverBlockedReason) {
+                        <span
+                          class="text-xs text-gray-500"
+                          [id]="'optimization-finding-blocked-' + finding.key"
+                          [attr.data-testid]="'optimization-finding-blocked-' + finding.key"
+                          >{{ finding.leverBlockedReason }}</span
+                        >
+                      }
+                    </div>
+                  </div>
+                  @if (finding.lever !== 'none') {
+                    <!--
+                      A raw button like the row controls beside it: it needs `aria-describedby`,
+                      which the `lfx-button` wrapper does not forward. The accessible name contains
+                      the visible text and names the campaign it acts on.
+                    -->
+                    <button
+                      type="button"
+                      (click)="resolveFinding(finding)"
+                      [disabled]="finding.leverBlockedReason !== ''"
+                      [attr.aria-label]="finding.leverAriaLabel"
+                      [attr.aria-describedby]="finding.leverBlockedReason ? 'optimization-finding-blocked-' + finding.key : null"
+                      class="shrink-0 self-start rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-finding-lever-' + finding.key">
+                      {{ finding.leverLabel }}
+                    </button>
+                  } @else {
+                    <span class="shrink-0 self-start text-xs text-gray-400" [attr.data-testid]="'optimization-finding-no-lever-' + finding.key">
+                      No control for this in LFX One
+                    </span>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        }
+      }
     </section>
   }
 
@@ -153,78 +248,398 @@
         <div class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="optimization-toggle-announcement">{{ toggleAnnouncement() }}</div>
         <ul class="flex flex-col gap-2">
           @for (row of rows; track row.campaign.id) {
-            <li class="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="truncate text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
-                <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
-                <!--
-                  NOT `role="alert"`. The failure is already announced by the toast, which is
-                  itself a live region — a second live role here made one failure speak twice.
-                  This text stays as the button's `aria-describedby` target (see `describedByFor`),
-                  so it is read WITH the control on demand rather than fired at the user again.
-                -->
-                @if (toggleError()[row.campaign.id]; as message) {
-                  <span
-                    class="text-xs text-red-600"
-                    [id]="'campaign-error-' + row.campaign.id"
-                    [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
-                    >{{ message }}</span
-                  >
-                }
-                <!--
-                  Why the button is dead. A disabled control with no explanation reads as a broken
-                  page — the operator retries, then goes looking for a permissions problem. This
-                  names the actual state and, where it resolves itself, says so. Not `role="alert"`:
-                  it is a standing property of the row, not an event, and it is what
-                  `aria-describedby` points at so the button announces the reason with its name.
-                -->
-                @if (row.action === 'unavailable') {
-                  <span
-                    class="text-xs text-gray-500"
-                    [id]="'campaign-unavailable-' + row.campaign.id"
-                    [attr.data-testid]="'optimization-campaign-unavailable-' + row.campaign.id"
-                    >{{ row.unavailableReason }}</span
-                  >
-                }
+            <li class="flex flex-col gap-2 rounded-md border border-gray-100 px-3 py-2" [attr.data-testid]="'optimization-campaign-row-' + row.campaign.id">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
+                  <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  <!-- What tells this campaign apart from the brief's others on its platform; "—" when the index does not record it (#4983). -->
+                  <dl class="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-labels-' + row.campaign.id">
+                    <div class="flex gap-1">
+                      <dt>Channel:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-channel-' + row.campaign.id">{{ row.labels.channel }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Stage:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-stage-' + row.campaign.id">{{ row.labels.stage }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Tactic:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-tactic-' + row.campaign.id">{{ row.labels.tactic }}</dd>
+                    </div>
+                    <div class="flex gap-1">
+                      <dt>Created:</dt>
+                      <dd [attr.data-testid]="'optimization-campaign-created-' + row.campaign.id">{{ row.labels.created }}</dd>
+                    </div>
+                  </dl>
+                  @if (row.biddingSummary) {
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-bidding-' + row.campaign.id">{{ row.biddingSummary }}</span>
+                  }
+                  <!--
+                    NOT `role="alert"`. The failure is already announced by the toast, which is
+                    itself a live region — a second live role here made one failure speak twice.
+                    This text stays as the button's `aria-describedby` target (see `describedByFor`),
+                    so it is read WITH the control on demand rather than fired at the user again.
+                  -->
+                  @if (toggleError()[row.campaign.id]; as message) {
+                    <span
+                      class="text-xs text-red-600"
+                      [id]="'campaign-error-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-error-' + row.campaign.id"
+                      >{{ message }}</span
+                    >
+                  }
+                  <!--
+                    Why the button is dead. A disabled control with no explanation reads as a broken
+                    page — the operator retries, then goes looking for a permissions problem. This
+                    names the actual state and, where it resolves itself, says so. Not `role="alert"`:
+                    it is a standing property of the row, not an event, and it is what
+                    `aria-describedby` points at so the button announces the reason with its name.
+                  -->
+                  @if (row.action === 'unavailable') {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-unavailable-' + row.campaign.id"
+                      >{{ row.unavailableReason }}</span
+                    >
+                  }
+                  <!--
+                    Why an adopted campaign's Resume does nothing: campaign-service never resumes an
+                    adopted campaign. Like the reason above, a standing property of the row and the
+                    button's `aria-describedby` target, so it is not a live region.
+                  -->
+                  @if (row.resumeAdopted) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-resume-adopted-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-resume-adopted-' + row.campaign.id"
+                      >{{ row.resumeAdoptedReason }}</span
+                    >
+                  }
+                  <!--
+                    The budget this session confirmed. The index carries no budget, so nothing is shown
+                    until a change lands here. No currency symbol: the amount is in the ad account's own
+                    currency, which this app does not know, and it is shown exactly as accepted.
+                  -->
+                  @if (confirmedBudget()[row.campaign.id]; as budget) {
+                    <span class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-budget-current-' + row.campaign.id"
+                      >Budget set here: {{ budget.budget }} {{ budget.budgetType }} (ad account currency)</span
+                    >
+                  }
+                  <!--
+                    An unconfirmed budget change stays stated on the row after its editor is closed:
+                    it may already be live, and the sticky toast can be dismissed.
+                  -->
+                  @if (budgetOutcome()[row.campaign.id]?.state === 'unconfirmed' && !budgetEditorOpen()[row.campaign.id]) {
+                    <span class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-budget-unconfirmed-note-' + row.campaign.id"
+                      >Budget change not confirmed. It may already be applied; verify it in the ad platform before retrying.</span
+                    >
+                  }
+                  <!-- The bid this session confirmed. No currency symbol: it is in the ad account's own currency. -->
+                  @if (row.confirmedBidAmount !== null) {
+                    <span class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-bid-current-' + row.campaign.id"
+                      >Max CPC bid set here: {{ row.confirmedBidAmount }} (ad account currency)</span
+                    >
+                  }
+                  @if (bidOutcome()[row.campaign.id]?.state === 'unconfirmed' && !bidEditorOpen()[row.campaign.id]) {
+                    <span class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-bid-unconfirmed-note-' + row.campaign.id"
+                      >Bid change not confirmed. It may have applied; verify it in the ad platform before retrying.</span
+                    >
+                  }
+                  <!--
+                    Negative keywords the last request could not confirm stay stated on the row once
+                    the editor is closed: they may already be on the campaign. The editor lists which.
+                  -->
+                  @if (negativesUnconfirmed()[row.campaign.id] && !negativesEditorOpen()[row.campaign.id]) {
+                    <span class="flex flex-wrap items-baseline gap-x-2 text-xs text-amber-700">
+                      <span [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-note-' + row.campaign.id"
+                        >Negative keywords not confirmed. They may have been added; verify them in the ad platform before retrying. Open Negative keywords to
+                        see which.</span
+                      >
+                      <button
+                        type="button"
+                        (click)="dismissNegativesResult(row.campaign.id)"
+                        class="font-medium underline hover:text-amber-900"
+                        [attr.aria-label]="'Dismiss the negative keywords note for ' + row.campaign.campaign_name"
+                        [attr.data-testid]="'optimization-campaign-negatives-unconfirmed-dismiss-' + row.campaign.id">
+                        Dismiss
+                      </button>
+                    </span>
+                  }
+                  <!-- Why there is no budget editor for this row; the disabled button points here. -->
+                  @if (!row.budgetAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-budget-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-budget-unavailable-' + row.campaign.id"
+                      >{{ row.budgetUnavailableReason }}</span
+                    >
+                  }
+                  <!-- Why there is no bid editor for this row (platform support, or not created yet). -->
+                  @if (!row.bidAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-bid-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-bid-unavailable-' + row.campaign.id"
+                      >{{ row.bidUnavailableReason }}</span
+                    >
+                  }
+                  @if (row.keywordTargetingOffered && !row.keywordTargetingAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-targeting-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-targeting-unavailable-' + row.campaign.id"
+                      >{{ row.keywordTargetingUnavailableReason }}</span
+                    >
+                  }
+                  @if (row.negativeKeywordsOffered && !row.negativeKeywordsAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-negatives-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-negatives-unavailable-' + row.campaign.id"
+                      >{{ row.negativeKeywordsUnavailableReason }}</span
+                    >
+                  }
+                  <!-- Why a Meta row's ad-set panel cannot be opened (never created on Meta, or removed). -->
+                  @if (row.adSetsOffered && !row.adSetsAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-ad-sets-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-ad-sets-unavailable-' + row.campaign.id"
+                      >{{ row.adSetsUnavailableReason }}</span
+                    >
+                  }
+                </div>
+                <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <!-- Opens the live-settings drift drawer: a read, so it is offered for every row. -->
+                  <button
+                    type="button"
+                    (click)="openSettingsDrawer(row)"
+                    aria-haspopup="dialog"
+                    [attr.aria-label]="'Live settings for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    [attr.data-testid]="'optimization-campaign-settings-' + row.campaign.id">
+                    Live settings
+                  </button>
+                  <!--
+                    Discloses the row's budget editor. A raw button like the toggle beside it, because it
+                    needs `aria-controls` and `aria-describedby`, which the `lfx-button` wrapper does not
+                    forward to its inner button. `aria-disabled` (not `disabled`), with its reason described,
+                    for a platform or campaign that cannot take a budget change, so it stays focusable:
+                    an editor that is open when the row turns unavailable (an X campaign read as
+                    lifetime-budgeted) is closed by Cancel, which hands focus back here, and a `disabled`
+                    button would drop it. `toggleBudgetEditor()` refuses to open an unavailable row, and
+                    an open one can still be closed from here. Truly disabled only while a change is in
+                    flight, which holds the editor open.
+                  -->
+                  <button
+                    type="button"
+                    (click)="toggleBudgetEditor(row)"
+                    [id]="'campaign-budget-edit-' + row.campaign.id"
+                    [disabled]="budgetPending()[row.campaign.id]"
+                    [attr.aria-disabled]="!row.budgetAvailable && !budgetEditorOpen()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-expanded]="row.budgetAvailable || budgetEditorOpen()[row.campaign.id] ? !!budgetEditorOpen()[row.campaign.id] : null"
+                    [attr.aria-controls]="budgetEditorOpen()[row.campaign.id] ? 'campaign-budget-panel-' + row.campaign.id : null"
+                    [attr.aria-describedby]="row.budgetAvailable ? null : 'campaign-budget-unavailable-' + row.campaign.id"
+                    [attr.aria-label]="'Change budget for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                    [attr.data-testid]="'optimization-campaign-budget-edit-' + row.campaign.id">
+                    Change budget
+                  </button>
+                  <!-- The bid editor's disclosure, built like the budget one beside it. -->
+                  <button
+                    type="button"
+                    (click)="toggleBidEditor(row)"
+                    [id]="'campaign-bid-edit-' + row.campaign.id"
+                    [disabled]="!row.bidAvailable || bidPending()[row.campaign.id]"
+                    [attr.aria-expanded]="row.bidAvailable ? !!bidEditorOpen()[row.campaign.id] : null"
+                    [attr.aria-controls]="bidEditorOpen()[row.campaign.id] ? 'campaign-bid-panel-' + row.campaign.id : null"
+                    [attr.aria-describedby]="row.bidAvailable ? null : 'campaign-bid-unavailable-' + row.campaign.id"
+                    [attr.aria-label]="'Change bid for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    [attr.data-testid]="'optimization-campaign-bid-edit-' + row.campaign.id">
+                    Change bid
+                  </button>
+                  <!-- Reddit and X rows only: the keyword targeting, which can be read and removed from (not paused). -->
+                  @if (row.keywordTargetingOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleTargetingPanel(row)"
+                      [disabled]="!row.keywordTargetingAvailable || (!!targetingPending()[row.campaign.id] && !!targetingPanelOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.keywordTargetingAvailable ? !!targetingPanelOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="targetingPanelOpen()[row.campaign.id] ? 'campaign-targeting-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.keywordTargetingAvailable ? null : 'campaign-targeting-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Keyword targeting of ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-targeting-edit-' + row.campaign.id">
+                      Keyword targeting
+                    </button>
+                  }
+                  <!-- Google Ads, Microsoft Advertising, Reddit and X rows: negative keywords. -->
+                  @if (row.negativeKeywordsOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleNegativesEditor(row)"
+                      [disabled]="!row.negativeKeywordsAvailable || (!!negativesPending()[row.campaign.id] && !!negativesEditorOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.negativeKeywordsAvailable ? !!negativesEditorOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="negativesEditorOpen()[row.campaign.id] ? 'campaign-negatives-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.negativeKeywordsAvailable ? null : 'campaign-negatives-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Add negative keywords to ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-negatives-edit-' + row.campaign.id">
+                      Negative keywords
+                    </button>
+                  }
+                  <!-- Meta rows only: the campaign's ad sets, each with its own pause/resume. -->
+                  @if (row.adSetsOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleAdSetsPanel(row)"
+                      [id]="'campaign-ad-sets-edit-' + row.campaign.id"
+                      [disabled]="!row.adSetsAvailable || (!!adSetPending()[row.campaign.id] && !!adSetsPanelOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.adSetsAvailable ? !!adSetsPanelOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="adSetsPanelOpen()[row.campaign.id] ? 'campaign-ad-sets-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.adSetsAvailable ? null : 'campaign-ad-sets-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Ad sets of ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-ad-sets-' + row.campaign.id">
+                      Ad sets
+                    </button>
+                  }
+                  <!--
+                    The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
+                    unambiguous beside its row and useless out of context — a screen-reader user moving
+                    by button hears "Pause" N times with no way to tell the rows apart. The label
+                    CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
+                    still matches.
+
+                    `aria-describedby` points at the row's error only when one exists; a dangling
+                    reference to an element that renders conditionally is worse than none.
+
+                    An adopted campaign's Resume is `aria-disabled`, not `disabled`: it stays in the
+                    focus order so its reason (described) is reachable, and `toggleCampaign()` ignores
+                    the click.
+                  -->
+                  <button
+                    type="button"
+                    (click)="toggleCampaign(row)"
+                    [disabled]="
+                      togglePending()[row.campaign.id] ||
+                      budgetPending()[row.campaign.id] ||
+                      bidPending()[row.campaign.id] ||
+                      !!adSetPending()[row.campaign.id] ||
+                      row.action === 'unavailable' ||
+                      row.conflicted
+                    "
+                    [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
+                    [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-disabled]="row.resumeAdopted ? 'true' : null"
+                    [attr.aria-describedby]="row.describedBy"
+                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
+                    [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
+                    <!--
+                      The visible label stays the ACTION word while pending, rather than becoming
+                      "Working". The accessible name is `row.toggleLabel + campaign`, so swapping the
+                      visible text broke label-in-name: a speech-input user says what they see
+                      ("click Pause") and it no longer matched the name. Progress is carried by the
+                      spinner for sighted users, `aria-busy` on the button, and the live region above
+                      for assistive tech — none of which change what the control is CALLED.
+                    -->
+                    @if (togglePending()[row.campaign.id]) {
+                      <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                    }
+                    {{ row.toggleLabel }}
+                  </button>
+                </div>
               </div>
               <!--
-                The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
-                unambiguous beside its row and useless out of context — a screen-reader user moving
-                by button hears "Pause" N times with no way to tell the rows apart. The label
-                CONTAINS the visible word rather than replacing it, so speech input ("click Pause")
-                still matches.
-
-                `aria-describedby` points at the row's error only when one exists; a dangling
-                reference to an element that renders conditionally is worse than none.
+                The row's live counters. Shown from the brief-wide metrics read the tab already makes
+                when this campaign's row there is `ok`; the row reads campaign-service for itself only
+                on Refresh, or when clicked after the brief-wide read could not measure it.
               -->
-              <button
-                type="button"
-                (click)="toggleCampaign(row)"
-                [disabled]="togglePending()[row.campaign.id] || row.action === 'unavailable' || row.conflicted"
-                [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
-                [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
-                [attr.aria-describedby]="row.describedBy"
-                class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
-                <!--
-                  The visible label stays the ACTION word while pending, rather than becoming
-                  "Working". The accessible name is `row.toggleLabel + campaign`, so swapping the
-                  visible text broke label-in-name: a speech-input user says what they see
-                  ("click Pause") and it no longer matched the name. Progress is carried by the
-                  spinner for sighted users, `aria-busy` on the button, and the live region above
-                  for assistive tech — none of which change what the control is CALLED.
-                -->
-                @if (togglePending()[row.campaign.id]) {
-                  <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-                }
-                {{ row.toggleLabel }}
-              </button>
+              <lfx-campaign-live-metrics
+                [projectSlug]="projectSlug()"
+                [briefId]="briefId()"
+                [campaignId]="row.campaign.id"
+                [campaignName]="row.campaign.campaign_name"
+                [platform]="row.campaign.platform"
+                [briefRow]="briefMetricsRowsById()[row.campaign.id] ?? null" />
+              @if (budgetEditorOpen()[row.campaign.id]) {
+                <lfx-campaign-budget-form
+                  [id]="'campaign-budget-panel-' + row.campaign.id"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [knownBudgetType]="confirmedBudget()[row.campaign.id]?.budgetType ?? null"
+                  [initialBudget]="confirmedBudget()[row.campaign.id]?.budget ?? null"
+                  [dailyOnly]="row.budgetDailyOnly"
+                  [pending]="!!budgetPending()[row.campaign.id]"
+                  [blockedReason]="row.budgetAvailable ? row.budgetBlockedReason : row.budgetUnavailableReason"
+                  [outcome]="budgetOutcome()[row.campaign.id] ?? null"
+                  (submitBudget)="changeCampaignBudget(row, $event)"
+                  (cancelEdit)="cancelBudgetEditor(row.campaign.id)" />
+              }
+              @if (bidEditorOpen()[row.campaign.id]) {
+                <lfx-campaign-bid-form
+                  [id]="'campaign-bid-panel-' + row.campaign.id"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [initialBid]="row.confirmedBidAmount"
+                  [pending]="!!bidPending()[row.campaign.id]"
+                  [blockedReason]="row.bidBlockedReason"
+                  [outcome]="bidOutcome()[row.campaign.id] ?? null"
+                  (submitBid)="changeCampaignBid(row, $event)"
+                  (cancelEdit)="cancelBidEditor(row.campaign.id)" />
+              }
+              @if (negativesEditorOpen()[row.campaign.id] && row.negativeKeywordsPlatform; as negativesPlatform) {
+                <lfx-campaign-negative-keywords-form
+                  [id]="'campaign-negatives-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [platform]="negativesPlatform"
+                  [suggestedKeywords]="suggestedNegativeKeywords()"
+                  (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
+              }
+              @if (targetingPanelOpen()[row.campaign.id] && row.keywordTargetingPlatform; as targetingPlatform) {
+                <lfx-campaign-keyword-targeting-panel
+                  [id]="'campaign-targeting-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [platform]="targetingPlatform"
+                  (closePanel)="closeTargetingPanel(row.campaign.id)" />
+              }
+              @if (adSetsPanelOpen()[row.campaign.id]) {
+                <lfx-meta-ad-sets-panel
+                  [id]="'campaign-ad-sets-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [pending]="adSetPending()[row.campaign.id] ?? null"
+                  [blockedReason]="row.adSetsBlockedReason"
+                  [outcome]="adSetOutcome()[row.campaign.id] ?? null"
+                  [reloadToken]="adSetsReload()[row.campaign.id] ?? 0"
+                  [eligibility]="row.adSetEligibility"
+                  (toggleAdSet)="changeMetaAdSetStatus(row, $event)"
+                  (closePanel)="cancelAdSetsPanel(row.campaign.id)" />
+              }
             </li>
           }
         </ul>
       }
     </section>
   }
+
+  <lfx-campaign-settings-drawer
+    [(visible)]="settingsDrawerVisible"
+    [campaign]="settingsCampaign()"
+    [projectSlug]="projectSlug()"
+    [briefId]="briefId()"
+    data-testid="optimization-settings-drawer" />
 
   @if (loading() && !monitorData()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="optimization-loading">
@@ -233,18 +648,30 @@
         Loading optimization data...
       </div>
     </div>
+  } @else if (googleRestricted()) {
+    <!-- The Google Ads customer is shared by every foundation (lfx-self-serve-ops#54): a notice, not an error, with the project's own keywords below. -->
+    <div class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12" data-testid="optimization-restricted">
+      <i class="fa-light fa-lock text-3xl text-gray-400" aria-hidden="true"></i>
+      <p class="text-sm font-medium text-gray-700">Google Ads optimization is limited to LF administrators</p>
+      <p class="max-w-lg text-center text-xs text-gray-500">
+        This Google Ads account is shared by every foundation, so its action items and campaigns can't be shown for a single project.
+      </p>
+    </div>
+    <ng-container [ngTemplateOutlet]="googleKeywordSections" />
   } @else if (error()) {
     <div class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-red-300 bg-red-50 p-12" data-testid="optimization-error">
       <i class="fa-light fa-triangle-exclamation text-3xl text-red-400" aria-hidden="true"></i>
       <p class="text-sm font-medium text-red-700">Failed to load optimization data</p>
       <p class="max-w-md text-center text-xs text-red-500">{{ error() }}</p>
-      <button
-        type="button"
-        (click)="fetchData()"
-        class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-        data-testid="optimization-retry">
-        Retry
-      </button>
+      @if (!errorRefused()) {
+        <button
+          type="button"
+          (click)="fetchData()"
+          class="mt-2 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+          data-testid="optimization-retry">
+          Retry
+        </button>
+      }
     </div>
   } @else if (!hasCampaigns()) {
     <div
@@ -278,6 +705,11 @@
     @if (hasActionItems()) {
       <div class="flex flex-col gap-3" data-testid="optimization-action-items">
         <h4 class="text-sm font-semibold text-gray-900">Action Items</h4>
+        @if (googleAmountsInAccountCurrency()) {
+          <p class="text-xs text-gray-500" data-testid="optimization-google-currency-note-actions">
+            Spend, and the amounts in each issue, are in the Google Ads account's own currency.
+          </p>
+        }
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -304,13 +736,17 @@
                     </td>
                     <td class="px-4 py-3 text-gray-700">{{ item.issue }}</td>
                     <td class="px-4 py-3 text-gray-700">{{ item.action }}</td>
-                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency }}</td>
+                    <td class="px-4 py-3 text-right text-gray-700">{{ item.metrics.spend | adsCurrency: googleAmountsInAccountCurrency() }}</td>
                     <td class="px-4 py-3 text-right">
-                      <span
-                        class="text-sm font-medium"
-                        [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
-                        {{ item.metrics.pacingPct }}%
-                      </span>
+                      @if (item.metrics.pacingUnknown) {
+                        <span class="text-sm font-medium text-gray-500">Unknown</span>
+                      } @else {
+                        <span
+                          class="text-sm font-medium"
+                          [class]="item.metrics.pacingPct < 50 ? 'text-red-600' : item.metrics.pacingPct > 100 ? 'text-red-600' : 'text-gray-700'">
+                          {{ item.metrics.pacingPct }}%
+                        </span>
+                      }
                     </td>
                   </tr>
                 }
@@ -318,6 +754,16 @@
             </table>
           </div>
         </div>
+      </div>
+    } @else if (unreadCampaignCount() > 0) {
+      <div
+        class="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 p-8"
+        data-testid="optimization-actions-incomplete">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-amber-600" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-amber-800">No action items, but the check is incomplete</p>
+        <p class="text-xs text-amber-700">
+          {{ unreadCampaignCount() }} of {{ campaigns().length }} campaigns could not be read, so they were not checked. Refresh to try again.
+        </p>
       </div>
     } @else {
       <div
@@ -329,249 +775,7 @@
       </div>
     }
 
-    <!-- Wasted Keyword Spend -->
-    <div class="flex flex-col gap-3" data-testid="optimization-wasted-keywords">
-      <div class="flex items-center gap-2">
-        <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
-        @if (hasWastedKeywords()) {
-          <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
-        }
-      </div>
-      @if (keywordsLoading() && !keywordsData()) {
-        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
-          <div class="flex items-center gap-2 text-sm text-gray-500">
-            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
-            Loading keyword data...
-          </div>
-        </div>
-      } @else if (keywordsError()) {
-        <div class="flex items-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 px-4 py-3">
-          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
-          <p class="text-sm text-red-700">{{ keywordsError() }}</p>
-        </div>
-      } @else if (!hasWastedKeywords()) {
-        <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
-          <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
-          <!--
-            The all-clear is a claim about EVERY keyword, so it must not be made over a capped
-            slice: omitted rows can carry exactly the waste it says is absent. When the set was
-            truncated the same green state reports only what was actually examined.
-          -->
-          @if (keywordsPartial()) {
-            <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
-              No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
-            </p>
-          } @else if (keywordsCompletenessUnknown()) {
-            <!--
-              Completeness UNKNOWN, not proven complete. The legacy read applies a bare LIMIT with
-              no probe for a further row, so it cannot say whether more keywords exist. An
-              unqualified all-clear here would be a claim about every keyword, made over a set
-              nobody established was whole -- hiding the very waste it says is absent.
-            -->
-            <p class="text-sm text-green-700" data-testid="wasted-keywords-unverified-clear">
-              No wasted spend among the {{ keywordsExamined() }} keywords checked. Whether more keywords exist could not be established.
-            </p>
-          } @else {
-            <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
-          }
-        </div>
-      } @else {
-        <div class="flex justify-end">
-          <button
-            type="button"
-            (click)="bulkKeywordAction(wastedKeywords(), 'pause')"
-            class="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
-            data-testid="optimization-bulk-pause-wasted">
-            <i class="fa-light fa-pause" aria-hidden="true"></i>
-            Pause All ({{ wastedKeywords().length }})
-          </button>
-        </div>
-        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 bg-gray-50">
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
-                    <td class="px-4 py-2.5">
-                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
-                    </td>
-                    <td class="px-4 py-2.5">
-                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                        {{ kw.matchType }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-center">
-                      <span class="text-sm font-medium" [class]="kw.qualityScore | qualityScoreClass">
-                        {{ kw.qualityScore ?? '–' }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
-                    <td class="px-4 py-2.5 text-center">
-                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <!--
-                          THREE states, not two. An unconfirmed change may already have applied,
-                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
-                          the retry that must not happen.
-
-                          The message is RENDERED rather than hidden behind `title`: a tooltip on
-                          a non-focusable span is unreachable by keyboard and touch, and the text
-                          it carries is the "verify before retrying" guidance — the one thing an
-                          operator must read before acting on an irreversible REMOVE.
-                        -->
-                        <span class="flex flex-col items-center gap-0.5">
-                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
-                          @if (!result.success) {
-                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
-                          }
-                        </span>
-                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
-                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
-                      } @else {
-                        <div class="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'pause')"
-                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                            title="Pause this keyword"
-                            aria-label="Pause this keyword">
-                            <i class="fa-light fa-pause" aria-hidden="true"></i>
-                          </button>
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'remove')"
-                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                            title="Remove this keyword"
-                            aria-label="Remove this keyword">
-                            <i class="fa-light fa-trash" aria-hidden="true"></i>
-                          </button>
-                        </div>
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </div>
-      }
-    </div>
-
-    <!-- Low Quality Score Keywords -->
-    @if (hasLowQualityKeywords()) {
-      <div class="flex flex-col gap-3" data-testid="optimization-low-qs">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <h4 class="text-sm font-semibold text-gray-900">Low Quality Score Keywords</h4>
-            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{{ lowQualityKeywords().length }}</span>
-          </div>
-          <button
-            type="button"
-            (click)="bulkKeywordAction(lowQualityKeywords(), 'pause')"
-            class="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
-            data-testid="optimization-bulk-pause-low-qs">
-            <i class="fa-light fa-pause" aria-hidden="true"></i>
-            Pause All ({{ lowQualityKeywords().length }})
-          </button>
-        </div>
-        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 bg-gray-50">
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Quality Score</th>
-                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
-                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
-                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
-                  <tr class="border-b border-gray-100 last:border-0">
-                    <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
-                    <td class="px-4 py-2.5">
-                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                        {{ kw.matchType }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-center">
-                      <span class="text-sm font-semibold" [class]="kw.qualityScore | qualityScoreClass"> {{ kw.qualityScore }}/10 </span>
-                    </td>
-                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-center">
-                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
-                        <!--
-                          THREE states, not two. An unconfirmed change may already have applied,
-                          and a retried REMOVE is irreversible — so "Failed" would invite exactly
-                          the retry that must not happen.
-
-                          The message is RENDERED rather than hidden behind `title`: a tooltip on
-                          a non-focusable span is unreachable by keyboard and touch, and the text
-                          it carries is the "verify before retrying" guidance — the one thing an
-                          operator must read before acting on an irreversible REMOVE.
-                        -->
-                        <span class="flex flex-col items-center gap-0.5">
-                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
-                          @if (!result.success) {
-                            <span class="max-w-[16rem] text-[11px] leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
-                          }
-                        </span>
-                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
-                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
-                      } @else {
-                        <div class="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'pause')"
-                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                            title="Pause this keyword"
-                            aria-label="Pause this keyword">
-                            <i class="fa-light fa-pause" aria-hidden="true"></i>
-                          </button>
-                          <button
-                            type="button"
-                            (click)="executeKeywordAction(kw, 'remove')"
-                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-                            title="Remove this keyword"
-                            aria-label="Remove this keyword">
-                            <i class="fa-light fa-trash" aria-hidden="true"></i>
-                          </button>
-                        </div>
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    }
+    <ng-container [ngTemplateOutlet]="googleKeywordSections" />
 
     <!-- Display Campaign Performance -->
     @if (hasDisplayCampaigns()) {
@@ -580,6 +784,9 @@
           <h4 class="text-sm font-semibold text-gray-900">Display / Demand Gen Campaign Performance</h4>
           <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{{ displayCampaigns().length }}</span>
         </div>
+        @if (googleAmountsInAccountCurrency()) {
+          <p class="text-xs text-gray-500" data-testid="optimization-google-currency-note-display">Spend is in the Google Ads account's own currency.</p>
+        }
         <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -597,7 +804,7 @@
               </thead>
               <tbody>
                 @for (c of displayCampaigns(); track c.campaignId) {
-                  <tr class="border-b border-gray-100 last:border-0">
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-display-row-' + $index">
                     <td class="px-4 py-2.5">
                       <p class="font-medium text-gray-900">{{ c.eventName || c.name }}</p>
                       <p class="text-xs text-gray-400">{{ c.targeting }}</p>
@@ -612,16 +819,20 @@
                     <td class="px-4 py-2.5 text-right" [class]="c.ctr < 0.3 ? 'font-medium text-red-600' : 'text-gray-700'">
                       {{ c.ctr | adsPct }}
                     </td>
-                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency }}</td>
-                    <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
-                      {{ c.conversions | number }}
-                    </td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ c.spend | adsCurrency: googleAmountsInAccountCurrency() }}</td>
+                    @if (c.conversionsMeasured === false) {
+                      <td class="px-4 py-2.5 text-right text-gray-500">Not measured</td>
+                    } @else {
+                      <td class="px-4 py-2.5 text-right" [class]="c.conversions === 0 ? 'font-medium text-red-600' : 'text-gray-700'">
+                        {{ c.conversions | number }}
+                      </td>
+                    }
                     <td class="px-4 py-2.5">
                       <div class="flex items-center gap-2">
                         <div class="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
                           <div class="h-full rounded-full" [class]="c | pacingClass" [style.width.%]="c.displayPacingPct"></div>
                         </div>
-                        <span class="text-xs text-gray-500">{{ c.pacingPct }}%</span>
+                        <span class="text-xs text-gray-500">{{ c.displayPacingText }}</span>
                       </div>
                     </td>
                   </tr>
@@ -632,6 +843,32 @@
         </div>
       </div>
     }
+  }
+
+  <!--
+    Microsoft Advertising keywords, from campaign-service's saved reports. Outside the Google monitor
+    block above on purpose: it has its own source, window and freshness, and a Google outage must
+    not hide it. The keyword actions run through this component's own (positional) action path.
+  -->
+  @if (activeFoundationSlug()) {
+    <lfx-microsoft-keywords-table
+      [projectSlug]="activeFoundationSlug()"
+      [reloadToken]="microsoftKeywordsReload()"
+      [actionInProgress]="actionInProgress()"
+      [actionResults]="actionResults()"
+      [removedKeywords]="removedKeywords()"
+      (keywordAction)="onMicrosoftKeywordAction($event)" />
+    <!--
+      Reddit keyword performance (campaign-service #331), its own read and window. A keyword of an
+      available Reddit row of this brief can be added as its negative, through the same root
+      negative-keywords service as that row's editor.
+    -->
+    <lfx-reddit-keywords-table
+      [projectSlug]="activeFoundationSlug()"
+      [reloadToken]="redditKeywordsReload()"
+      [campaignNames]="redditCampaignNames()"
+      [briefId]="briefId()"
+      [negativeTargets]="redditNegativeTargets()" />
   }
 
   <!-- LinkedIn Optimization -->
@@ -792,4 +1029,275 @@
       }
     </div>
   }
+
+  <!--
+  Google Ads' wasted-spend and low-quality-score keyword sections. They read only `/keywords` (project-scoped),
+  so they render in the data branch and in the restricted branch, where the shared Google Ads account monitor
+  was refused (lfx-self-serve-ops#54).
+  -->
+  <ng-template #googleKeywordSections>
+    <!-- Wasted Keyword Spend -->
+    <!--
+    Focus target for a finding's keyword lever, hence the id and `tabindex="-1"`. The ring replaces
+    the outline so the operator can see where the lever moved focus.
+  -->
+    <div
+      id="optimization-wasted-keywords"
+      tabindex="-1"
+      class="flex flex-col gap-3 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      data-testid="optimization-wasted-keywords">
+      <div class="flex items-center gap-2">
+        <h4 class="text-sm font-semibold text-gray-900">Keywords Spending Without Conversions</h4>
+        @if (hasWastedKeywords()) {
+          <span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{{ wastedKeywords().length }}</span>
+        }
+      </div>
+      @if (keywordAmountsInAccountCurrency()) {
+        <p class="text-xs text-gray-500" data-testid="optimization-keyword-currency-note">
+          Keyword spend and CPC are in the Google Ads account's own currency.
+        </p>
+      }
+      @if (keywordsLoading() && !keywordsData()) {
+        <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-8">
+          <div class="flex items-center gap-2 text-sm text-gray-500">
+            <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            Loading keyword data...
+          </div>
+        </div>
+      } @else if (keywordsRestricted()) {
+        <div class="flex flex-col gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-3" data-testid="optimization-keywords-restricted">
+          <p class="text-sm font-medium text-gray-700">
+            <i class="fa-light fa-lock mr-1" aria-hidden="true"></i>Google Ads keyword insights are limited to LF administrators
+          </p>
+          <p class="text-xs text-gray-500">This legacy read uses an ad account shared by every foundation.</p>
+        </div>
+      } @else if (keywordsError()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-red-300 bg-red-50 px-4 py-3">
+          <i class="fa-light fa-triangle-exclamation text-red-500" aria-hidden="true"></i>
+          <p class="text-sm text-red-700">{{ keywordsError() }}</p>
+        </div>
+      } @else if (!hasWastedKeywords()) {
+        <div class="flex items-center gap-2 rounded-lg border border-dashed border-green-300 bg-green-50 px-4 py-3">
+          <i class="fa-light fa-circle-check text-green-500" aria-hidden="true"></i>
+          <!--
+          The all-clear is a claim about EVERY keyword, so it must not be made over a capped
+          slice: omitted rows can carry exactly the waste it says is absent. When the set was
+          truncated the same green state reports only what was actually examined.
+        -->
+          @if (keywordsPartial()) {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-partial-clear">
+              No wasted spend among the top {{ keywordsExamined() }} keywords by impressions. Keywords beyond that were not checked.
+            </p>
+          } @else if (keywordsCompletenessUnknown()) {
+            <!--
+            Completeness UNKNOWN, not proven complete. The legacy read applies a bare LIMIT with
+            no probe for a further row, so it cannot say whether more keywords exist. An
+            unqualified all-clear here would be a claim about every keyword, made over a set
+            nobody established was whole -- hiding the very waste it says is absent.
+          -->
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-unverified-clear">
+              No wasted spend among the {{ keywordsExamined() }} keywords checked. Whether more keywords exist could not be established.
+            </p>
+          } @else {
+            <p class="text-sm text-green-700" data-testid="wasted-keywords-all-clear">All keywords with spend are generating conversions.</p>
+          }
+        </div>
+      } @else {
+        <div class="flex justify-end">
+          <button
+            type="button"
+            (click)="bulkKeywordAction(wastedKeywords(), 'pause')"
+            class="flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+            data-testid="optimization-bulk-pause-wasted">
+            <i class="fa-light fa-pause" aria-hidden="true"></i>
+            Pause All ({{ wastedKeywords().length }})
+          </button>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">QS</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">CTR</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Avg CPC</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Conv.</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of wastedKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-wasted-keyword-row-' + $index">
+                    <td class="px-4 py-2.5">
+                      <p class="font-medium text-gray-900">{{ kw.keyword }}</p>
+                    </td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-medium" [class]="kw.qualityScore | qualityScoreClass">
+                        {{ kw.qualityScore ?? '–' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">{{ kw.spend | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.ctr | adsPct }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.avgCpc | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-red-600">0</td>
+                    <td class="px-4 py-2.5 text-center">
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
+                        <!--
+                        THREE states, not two. An unconfirmed change may already have applied,
+                        and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                        the retry that must not happen.
+
+                        The message is RENDERED rather than hidden behind `title`: a tooltip on
+                        a non-focusable span is unreachable by keyboard and touch, and the text
+                        it carries is the "verify before retrying" guidance — the one thing an
+                        operator must read before acting on an irreversible REMOVE.
+                      -->
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
+                        </span>
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
+                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                      } @else {
+                        <div class="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'pause')"
+                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            title="Pause this keyword"
+                            aria-label="Pause this keyword">
+                            <i class="fa-light fa-pause" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'remove')"
+                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            title="Remove this keyword"
+                            aria-label="Remove this keyword">
+                            <i class="fa-light fa-trash" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Low Quality Score Keywords -->
+    @if (hasLowQualityKeywords()) {
+      <div class="flex flex-col gap-3" data-testid="optimization-low-qs">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <h4 class="text-sm font-semibold text-gray-900">Low Quality Score Keywords</h4>
+            <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{{ lowQualityKeywords().length }}</span>
+          </div>
+          <button
+            type="button"
+            (click)="bulkKeywordAction(lowQualityKeywords(), 'pause')"
+            class="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+            data-testid="optimization-bulk-pause-low-qs">
+            <i class="fa-light fa-pause" aria-hidden="true"></i>
+            Pause All ({{ lowQualityKeywords().length }})
+          </button>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200 bg-gray-50">
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Keyword</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Match</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Quality Score</th>
+                  <th class="px-4 py-2.5 text-xs font-medium text-gray-500">Campaign</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Impr.</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Clicks</th>
+                  <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500">Spend</th>
+                  <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (kw of lowQualityKeywords(); track kw.adGroupId + '-' + kw.criterionId) {
+                  <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'optimization-low-quality-row-' + $index">
+                    <td class="px-4 py-2.5 font-medium text-gray-900">{{ kw.keyword }}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                        {{ kw.matchType }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-center">
+                      <span class="text-sm font-semibold" [class]="kw.qualityScore | qualityScoreClass"> {{ kw.qualityScore }}/10 </span>
+                    </td>
+                    <td class="px-4 py-2.5 text-xs text-gray-500">{{ kw.campaign | eventLabel }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.impressions | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.clicks | number }}</td>
+                    <td class="px-4 py-2.5 text-right text-gray-700">{{ kw.spend | adsCurrency: keywordAmountsInAccountCurrency() }}</td>
+                    <td class="px-4 py-2.5 text-center">
+                      @if (actionResults()[kw.adGroupId + '-' + kw.criterionId]; as result) {
+                        <!--
+                        THREE states, not two. An unconfirmed change may already have applied,
+                        and a retried REMOVE is irreversible — so "Failed" would invite exactly
+                        the retry that must not happen.
+
+                        The message is RENDERED rather than hidden behind `title`: a tooltip on
+                        a non-focusable span is unreachable by keyboard and touch, and the text
+                        it carries is the "verify before retrying" guidance — the one thing an
+                        operator must read before acting on an irreversible REMOVE.
+                      -->
+                        <span class="flex flex-col items-center gap-0.5">
+                          <span class="text-xs font-medium" [class]="OUTCOME_CLASS[result.state]">{{ OUTCOME_LABEL[result.state] }}</span>
+                          @if (!result.success) {
+                            <span class="max-w-64 text-xs leading-tight" [class]="OUTCOME_CLASS[result.state]">{{ result.message }}</span>
+                          }
+                        </span>
+                      } @else if (actionInProgress()[kw.adGroupId + '-' + kw.criterionId]) {
+                        <i class="fa-light fa-spinner-third fa-spin text-gray-400" aria-hidden="true"></i>
+                      } @else {
+                        <div class="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'pause')"
+                            class="rounded px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            title="Pause this keyword"
+                            aria-label="Pause this keyword">
+                            <i class="fa-light fa-pause" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            (click)="executeKeywordAction(kw, 'remove')"
+                            class="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                            title="Remove this keyword"
+                            aria-label="Remove this keyword">
+                            <i class="fa-light fa-trash" aria-hidden="true"></i>
+                          </button>
+                        </div>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    }
+  </ng-template>
 </div>

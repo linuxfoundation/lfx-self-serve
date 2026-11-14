@@ -1,20 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { Clipboard } from '@angular/cdk/clipboard';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { MessageService } from 'primeng/api';
+
+import { ButtonComponent } from '@components/button/button.component';
 
 /**
  * ProfilePanelComponent is the right-hand panel of the Profile & Account hub. Below 2xl, the layout
  * renders it inline in the content column as a standalone card; at 2xl and up, the layout wraps it
  * in a fixed, full-height 300px rail pinned to the right edge, and this component fills that rail
  * and scrolls its own content independently when the viewport is short.
- * It is purely presentational: all values arrive via signal inputs (sourced from the
+ * It is presentational: all values arrive via signal inputs (sourced from the
  * parent ProfileLayoutComponent's CombinedProfile) and the edit affordances emit
  * `editRequested` so the parent — which owns the profile data, edit dialog, and
- * optimistic-update logic — handles the actual edit flow.
+ * optimistic-update logic — handles the actual edit flow. Its only own action is copying the LFID.
  *
  * The host is `block 2xl:h-full` so at 2xl and up the inner `aside`'s `h-full`/`overflow-y-auto`
- * resolves against the fixed rail's height (mirrors lfx-sidebar's `:host { height: 100% }`);
+ * resolves against the fixed rail's height (mirrors lfx-navbar's `:host { height: 100% }`);
  * below 2xl the height chain is unused since the card renders inline instead of in a fixed rail.
  *
  * Rows render only when their value is present. About me (from the profile bio) and GitHub
@@ -23,12 +27,15 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
  */
 @Component({
   selector: 'lfx-profile-panel',
-  imports: [],
+  imports: [ButtonComponent],
   host: { class: 'block 2xl:h-full' },
   templateUrl: './profile-panel.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfilePanelComponent {
+  private readonly clipboard = inject(Clipboard);
+  private readonly messageService = inject(MessageService);
+
   // Inputs — sourced from the parent's CombinedProfile-derived signals
   public readonly loading = input<boolean>(false);
   public readonly impersonating = input<boolean>(false);
@@ -78,6 +85,23 @@ export class ProfilePanelComponent {
    */
   public onVisibility(): void {
     this.visibilityRequested.emit();
+  }
+
+  /** Copy the bare LFID (no label) to the clipboard, with toast feedback. */
+  public copyLfid(): void {
+    if (this.clipboard.copy(this.username())) {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'LFID Copied',
+        detail: 'The LFID has been copied to your clipboard',
+      });
+    } else {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Copy Failed',
+        detail: 'Unable to copy the LFID. Please copy it manually.',
+      });
+    }
   }
 
   /**

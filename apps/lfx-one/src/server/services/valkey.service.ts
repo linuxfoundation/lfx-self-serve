@@ -7,6 +7,7 @@ import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/ut
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 
+import { isoDateReplacer } from '../helpers/date-format.helper';
 import { addShutdownHook } from '../utils/shutdown';
 import { logger } from './logger.service';
 
@@ -121,7 +122,7 @@ export class ValkeyService implements CachePort {
   public async setJson(key: string, value: unknown, ttlSeconds: number, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<boolean> {
     if (!this.client) return false;
     try {
-      const serialized = JSON.stringify(value);
+      const serialized = JSON.stringify(value, isoDateReplacer);
       const writeSize = Buffer.byteLength(serialized, 'utf8');
       const maxBytes = ValkeyService.maxBytesFor(key);
       if (writeSize > maxBytes) {
@@ -592,6 +593,15 @@ function keyPrefix(): string {
   return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
 }
 
+/**
+ * Key prefix for the Gatewaze host-session store (#2738): `lfx-ui[:<namespace>]:gatewaze:v1:`. The
+ * `@gatewaze/host-session` store appends its own `session:` / `refresh-lock:` / `create-lock:` /
+ * `signed-out:` segments and an HMAC-derived id, and publishes sign-outs on `<prefix>logout`.
+ */
+export function buildGatewazeHostSessionKeyPrefix(): string {
+  return `${keyPrefix()}:${VALKEY_CACHE.GATEWAZE_HOST_SESSION_NAMESPACE}:`;
+}
+
 /** Session-store cache key for an opaque session id; null (fail-closed) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildSessionCacheKey(sessionId: string): string | null {
   if (!isFilterSafeIdentifier(sessionId)) return null;
@@ -602,6 +612,12 @@ export function buildSessionCacheKey(sessionId: string): string | null {
 export function buildAuthStateCacheKey(state: string): string | null {
   if (!isFilterSafeIdentifier(state)) return null;
   return `${keyPrefix()}:${VALKEY_CACHE.AUTH_STATE_NAMESPACE}:${state}`;
+}
+
+/** User/attempt-bound support context; only the digest is stored in the key, never the address or subject. */
+export function buildLinkedEmailSupportCacheKey(sub: string, handle: string): string {
+  const digest = createHash('sha256').update(sub).update('\0').update(handle).digest('hex');
+  return `${keyPrefix()}:${VALKEY_CACHE.EMAIL_LINKED_SUPPORT_NAMESPACE}:${digest}`;
 }
 
 /** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
@@ -716,6 +732,32 @@ export function withSocialListeningCache<T>(
   accept?: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildSocialListeningCacheKey(foundationSlug, resource, discriminator), ttlSeconds, fetcher, accept);
+}
+
+/**
+ * Per-project Participating Organizations cache key (#2091): the query's discriminator is sha256-hashed
+ * so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
+ */
+function buildProjectParticipatingOrgsCacheKey(projectSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
+  if (!isFilterSafeIdentifier(projectSlug)) return null;
+  const digest = createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16);
+  return `${keyPrefix()}:${VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_NAMESPACE}:${projectSlug}:${resource}:${digest}`;
+}
+
+/** Read-through helper for the per-project Participating Organizations namespace; a null key (unsafe slug) fetches directly. */
+export function withProjectParticipatingOrgsCache<T>(
+  projectSlug: string,
+  resource: string,
+  discriminator: readonly (string | number)[],
+  fetcher: () => Promise<T>,
+  accept: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(
+    buildProjectParticipatingOrgsCacheKey(projectSlug, resource, discriminator),
+    VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_TTL_SECONDS,
+    fetcher,
+    accept
+  );
 }
 
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */

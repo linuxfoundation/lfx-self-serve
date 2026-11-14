@@ -313,7 +313,7 @@ export type MaintainerConfirmationResult = 'maintainer' | 'contributor';
 /**
  * Social identity providers supported for OAuth verification flow
  */
-export type SocialProvider = 'github' | 'google' | 'linkedin';
+export type SocialProvider = 'github' | 'gitlab' | 'google' | 'linkedin';
 
 /**
  * Pending social connection stored in session during Flow C chain
@@ -601,6 +601,20 @@ export interface EnrichedIdentity extends CdpIdentity {
   displayState: IdentityDisplayState;
   inAuth0: boolean;
   auth0UserId?: string;
+  /** True on the single row representing the account's primary email; display-only. */
+  isPrimary?: boolean;
+}
+
+/**
+ * The account's primary email as reconciled into the identities list.
+ * `verified` requires an IdP-verified session email (`getEffectiveEmail`); the auth-service primary
+ * is then trusted even if it differs from that possibly stale session claim. A session-only fallback
+ * is verified only when it matches that verified email (the target's stored email while impersonating).
+ * Display-only — never written to CDP.
+ */
+export interface IdentitiesPrimaryEmail {
+  email: string;
+  verified: boolean;
 }
 
 // --- CDP Work Experience Types ---
@@ -643,16 +657,43 @@ export interface SendEmailVerificationResponse {
 }
 
 /**
- * Response from NATS email OTP verification request
+ * Successful no-op outcome of email OTP verification: the proven address is already connected to
+ * the caller's own account, so nothing is linked.
+ */
+export type EmailVerificationStatus = 'already_connected';
+
+/**
+ * Email outcome appended to the Flow C callback's authorization-success redirect when a pending
+ * email verification was replayed. Presentation-only — it carries no email, code, or token.
+ * `already_linked` means the code was proven but the address is linked to an LFX account.
+ */
+export type EmailVerificationCallbackStatus = EmailVerificationStatus | 'retry_required' | 'already_linked';
+
+/** Private, short-lived callback context. Contains only the caller's proven address, never an OTP/token. */
+export interface LinkedEmailSupportContext {
+  email: string;
+  expiresAt: number;
+}
+
+/** One-shot authenticated response; unavailable/expired context returns an empty object. */
+export interface LinkedEmailSupportDraft {
+  email?: string;
+}
+
+/**
+ * Response from NATS email OTP verification request. A new-address success carries the identity
+ * token for linking; an own-account success carries only `status` and no tokens.
  */
 export interface VerifyEmailOtpNatsResponse {
   success: boolean;
   data?: {
-    access_token: string;
-    id_token: string;
-    scope: string;
-    expires_in: number;
-    token_type: string;
+    access_token?: string;
+    id_token?: string;
+    scope?: string;
+    expires_in?: number;
+    token_type?: string;
+    /** Upstream value, unvalidated — compare against the exact `EmailVerificationStatus`. */
+    status?: string;
   };
   message?: string;
   error?: string;
@@ -700,6 +741,8 @@ export interface ListIdentitiesNatsResponse {
  */
 export interface VerifyAndLinkEmailResponse {
   success: boolean;
+  /** Set only when the address was already connected to the caller's account; absent on a new link. */
+  status?: EmailVerificationStatus;
   message?: string;
   error?: string;
   authorize_url?: string;

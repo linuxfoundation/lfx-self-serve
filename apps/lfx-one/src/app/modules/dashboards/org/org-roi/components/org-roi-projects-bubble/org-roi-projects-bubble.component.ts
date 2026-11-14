@@ -5,6 +5,7 @@ import { Component, computed, input, Signal } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import {
   lfxColors,
+  ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS,
   ORG_LENS_ROI_BUBBLE_FILL,
   ORG_LENS_ROI_BUBBLE_LOG_FLOOR,
   ORG_LENS_ROI_KPI_EXPLANATION,
@@ -14,7 +15,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgLensRoiProjectBubblePoint, OrgLensRoiProjectRow } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
-import type { ChartData, ChartOptions } from 'chart.js';
+import type { ChartData, ChartOptions, Tick } from 'chart.js';
 
 /** Investment against return on logarithmic axes, so the efficient outliers stay visible. */
 @Component({
@@ -64,6 +65,21 @@ export class OrgRoiProjectsBubbleComponent {
 
   protected readonly hasPoints: Signal<boolean> = computed(() => this.points().length > 0);
 
+  /**
+   * The break-even diagonal (investment = return), run across every plotted value on either axis.
+   * Its endpoints are data points, so both logarithmic axes share one domain and the line crosses
+   * the whole plot. Clipping it to the bubbles instead hid it whenever the smallest return
+   * exceeds the largest investment — the usual shape of a profitable portfolio, and the default
+   * top-five selection. A single value is padded a decade each way so the line keeps its length.
+   */
+  protected readonly breakEvenSegment: Signal<{ from: number; to: number } | null> = computed(() => {
+    const values = this.points().flatMap((point) => [point.x, point.y]);
+    if (values.length === 0) return null;
+    const low = Math.min(...values);
+    const high = Math.max(...values);
+    return low < high ? { from: low, to: high } : { from: low / 10, to: high * 10 };
+  });
+
   private readonly flooredNames: Signal<string[]> = computed(() =>
     this.points()
       .filter((point) => point.isFloored)
@@ -74,10 +90,10 @@ export class OrgRoiProjectsBubbleComponent {
 
   protected readonly flooredLabel: Signal<string> = computed(() => this.flooredNames().join(', '));
 
-  protected readonly chartSummaryLabel: Signal<string> = computed(
-    () =>
-      `Bubble chart of ${this.points().length} projects, plotting modelled investment against modelled return on logarithmic axes, with each bubble sized by net return. The same figures are listed below.`
-  );
+  protected readonly chartSummaryLabel: Signal<string> = computed(() => {
+    const breakEven = this.breakEvenSegment() ? ' A dashed line marks break-even, where investment equals return.' : '';
+    return `Bubble chart of ${this.points().length} projects, plotting modelled investment against modelled return on logarithmic axes, with each bubble sized by net return.${breakEven} The same figures are listed below.`;
+  });
 
   /** The accessible equivalent of the canvas, carrying the true unfloored figures. */
   protected readonly tableRows: Signal<{ projectId: string; projectName: string; investment: string; return: string; roi: string }[]> = computed(() =>
@@ -91,8 +107,9 @@ export class OrgRoiProjectsBubbleComponent {
     }))
   );
 
-  protected readonly chartData: Signal<ChartData<'bubble'>> = computed(() => {
+  protected readonly chartData: Signal<ChartData<'bubble' | 'line'>> = computed(() => {
     const projects = this.drawnProjects();
+    const segment = this.breakEvenSegment();
     return {
       datasets: [
         {
@@ -103,7 +120,28 @@ export class OrgRoiProjectsBubbleComponent {
           backgroundColor: projects.map((project) => (project.profit < 0 ? ORG_LENS_ROI_BUBBLE_FILL.lossMaking : ORG_LENS_ROI_BUBBLE_FILL.profitable)),
           borderColor: projects.map((project) => (project.profit < 0 ? lfxColors.amber[500] : ORG_LENS_ROI_RETURN_COLOR)),
           borderWidth: 1,
+          // Pinned axes make Chart.js clip at the plot edge, which would halve the bubbles sitting on
+          // it — the largest one always does. Autoscaled axes allowed a bubble's radius of overflow.
+          clip: false,
         },
+        ...(segment
+          ? [
+              {
+                type: 'line' as const,
+                label: 'Break-even (investment = return)',
+                data: [
+                  { x: segment.from, y: segment.from },
+                  { x: segment.to, y: segment.to },
+                ],
+                borderColor: lfxColors.gray[500],
+                borderWidth: 1.5,
+                borderDash: [6, 4],
+                pointRadius: 0,
+                pointHoverRadius: 0,
+                fill: false,
+              },
+            ]
+          : []),
       ],
     };
   });
@@ -111,6 +149,7 @@ export class OrgRoiProjectsBubbleComponent {
   protected readonly chartOptions: Signal<ChartOptions<'bubble'>> = computed(() => {
     const points = this.points();
     const projects = this.drawnProjects();
+    const segment = this.breakEvenSegment();
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -118,23 +157,34 @@ export class OrgRoiProjectsBubbleComponent {
         // Logarithmic on both axes. Portfolio ROI runs in the thousands of percent, so return spans
         // four orders of magnitude across a portfolio and a linear axis presses every project
         // except the largest into the corner — which is precisely where the efficient
-        // low-investment, high-return projects this view exists to find would be hidden.
+        // low-investment, high-return projects this view exists to find would be hidden. Both axes
+        // are pinned to the break-even span, so hiding the line from the legend cannot rescale them.
         x: {
           type: 'logarithmic',
+          min: segment?.from,
+          max: segment?.to,
           title: { display: true, text: 'Investment', font: { size: 11 } },
-          ticks: { callback: (value) => formatCurrency(Number(value)) },
+          ticks: { callback: (value, index, ticks) => this.axisTickLabel(Number(value), index, ticks) },
           grid: { color: lfxColors.gray[200] },
         },
         y: {
           type: 'logarithmic',
+          min: segment?.from,
+          max: segment?.to,
           title: { display: true, text: 'Return', font: { size: 11 } },
-          ticks: { callback: (value) => formatCurrency(Number(value)) },
+          ticks: { callback: (value, index, ticks) => this.axisTickLabel(Number(value), index, ticks) },
           grid: { color: lfxColors.gray[200] },
         },
       },
       plugins: {
-        legend: { display: false },
+        // The bubbles are read through their tooltips; the legend names only the break-even line.
+        legend: {
+          display: segment !== null,
+          position: 'bottom',
+          labels: { boxWidth: 14, font: { size: 11 }, filter: (item) => item.datasetIndex === 1 },
+        },
         tooltip: {
+          filter: (item) => item.datasetIndex === 0,
           backgroundColor: 'rgba(255, 255, 255, 0.98)',
           titleColor: lfxColors.gray[900],
           bodyColor: lfxColors.gray[600],
@@ -159,4 +209,22 @@ export class OrgRoiProjectsBubbleComponent {
       },
     };
   });
+
+  /**
+   * A log axis places a tick at every 1–9 multiple of each decade, and the pinned bounds add one at
+   * the raw minimum, so labelling them all overlaps at the top of each decade. Only the 1, 2 and 5
+   * multiples are labelled — Chart.js's own log convention — and the grid keeps the rest. A range
+   * too narrow to hold two of them (one project at $300K/$450K, say) is ticked far more finely, so
+   * it labels an even stride of at most `ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS` ticks instead: the
+   * axis never goes blank, and labelling every tick would crowd it again.
+   */
+  private axisTickLabel(value: number, index: number, ticks: Tick[]): string {
+    const isRoundStep = (tick: number): boolean => {
+      const mantissa = tick / 10 ** Math.floor(Math.log10(tick));
+      return [1, 2, 5].some((step) => Math.abs(mantissa - step) < 1e-9);
+    };
+    if (ticks.filter((tick) => isRoundStep(tick.value)).length >= 2) return isRoundStep(value) ? formatCurrency(value) : '';
+    const stride = Math.ceil(ticks.length / ORG_LENS_ROI_BUBBLE_AXIS_MAX_LABELS);
+    return index % stride === 0 ? formatCurrency(value) : '';
+  }
 }

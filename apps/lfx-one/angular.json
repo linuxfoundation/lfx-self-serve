@@ -70,7 +70,8 @@
               "@opentelemetry/semantic-conventions",
               "pdfkit",
               "google-ads-api",
-              "@aws-sdk/client-s3"
+              "@aws-sdk/client-s3",
+              "@resvg/resvg-js"
             ]
           },
           "configurations": {
@@ -161,10 +162,7 @@
           "builder": "@angular-devkit/build-angular:dev-server",
           "options": {
             "host": "0.0.0.0",
-            "allowedHosts": ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"],
-            "prebundle": {
-              "exclude": ["@gatewaze/admin-embed"]
-            }
+            "allowedHosts": ["localhost", "127.0.0.1", "0.0.0.0", "host.docker.internal"]
           },
           "configurations": {
             "production": {
@@ -198,12 +196,41 @@
             "include": ["src/app/**/*.spec.ts"],
             "watch": false
           }
+        },
+        "storybook": {
+          "builder": "@storybook/angular:start-storybook",
+          "options": {
+            "configDir": ".storybook",
+            "tsConfig": ".storybook/tsconfig.json",
+            "browserTarget": "lfx-one:build:development",
+            "compodoc": true,
+            "port": 6006,
+            "compodocArgs": ["-e", "json", "-d", ".", "-p", ".storybook/tsconfig.json"],
+            "experimentalZoneless": true,
+            "sourceMap": false
+          }
+        },
+        "build-storybook": {
+          "builder": "@storybook/angular:build-storybook",
+          "options": {
+            "configDir": ".storybook",
+            "tsConfig": ".storybook/tsconfig.json",
+            "browserTarget": "lfx-one:build:development",
+            "compodoc": true,
+            "outputDir": "storybook-static",
+            "compodocArgs": ["-e", "json", "-d", ".", "-p", ".storybook/tsconfig.json"],
+            "experimentalZoneless": true,
+            "sourceMap": false
+          }
         }
       }
     }
   },
   "cli": {
     "analytics": false,
+    "cache": {
+      "environment": "all"
+    },
     "schematicCollections": ["angular-eslint"]
   }
 }

@@ -3,8 +3,36 @@
 
 import { Routes } from '@angular/router';
 
+import type { EnrollProgramComponent } from './admin/enroll-program/enroll-program.component';
 import { menteeApplyGuard } from '@shared/guards/mentee-apply.guard';
 import { menteeRegisterGuard } from '@shared/guards/mentee-profile.guard';
+import { mentorRegisterGuard } from '@shared/guards/mentor-profile.guard';
+
+/**
+ * The Project and Foundation lenses' Mentorship Programs (lfx-mentorship#398), mounted at `/project/mentorship` and
+ * `/foundation/mentorship` with their `data.lens`: the Admin list, enroll wizard and program page, scoped to the lens's
+ * project or foundation. Each page reads the lens off the route and keeps its links on these routes, so an admin stays
+ * in the lens they came from.
+ */
+export const MENTORSHIP_LENS_ROUTES: Routes = [
+  {
+    path: '',
+    pathMatch: 'full',
+    loadComponent: () => import('./admin/admin.component').then((m) => m.AdminComponent),
+  },
+  {
+    // Enroll, or the program page's Edit (`?programId=`). Listed before `:programId`, which would otherwise match `enroll`.
+    path: 'enroll',
+    title: 'Enroll Program',
+    loadComponent: () => import('./admin/enroll-program/enroll-program.component').then((m) => m.EnrollProgramComponent),
+    canDeactivate: [(component: EnrollProgramComponent) => component.canLeave()],
+  },
+  {
+    path: ':programId',
+    title: 'Program',
+    loadComponent: () => import('./admin/program-detail/program-detail.component').then((m) => m.ProgramDetailComponent),
+  },
+];
 
 export const MENTORSHIP_ROUTES: Routes = [
   {
@@ -21,6 +49,8 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'admin/enroll',
     title: 'Enroll Program',
     loadComponent: () => import('./admin/enroll-program/enroll-program.component').then((m) => m.EnrollProgramComponent),
+    // Asks before leaving with unsaved answers, or after a partial save that left the program without a logo.
+    canDeactivate: [(component: EnrollProgramComponent) => component.canLeave()],
   },
   {
     path: 'admin/:programId',
@@ -40,12 +70,13 @@ export const MENTORSHIP_ROUTES: Routes = [
     // children below — `path: 'mentor'` with the default `prefix` match would otherwise
     // capture `/mentorship/mentor/programs` and `/mentorship/mentor/profile` too.
     //
-    // Serves the Become a Mentor form until the profiles API can tell us the signed-in
-    // user already has a mentor profile, at which point this path serves the shell
-    // instead, falling back to this form when they have none.
+    // `canActivate` checks whether the user already has a mentor profile and, if so,
+    // redirects to the shell's My Programs tab. No profile, or a failed check, renders
+    // the form.
     path: 'mentor',
     pathMatch: 'full',
     title: 'Become a Mentor',
+    canActivate: [mentorRegisterGuard],
     loadComponent: () => import('./mentor/mentor-register/mentor-register.component').then((m) => m.MentorRegisterComponent),
   },
   {
@@ -57,6 +88,14 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'mentor/programs/:programId',
     title: 'Program',
     loadComponent: () => import('./mentor/mentor-program-detail/mentor-program-detail.component').then((m) => m.MentorProgramDetailComponent),
+  },
+  {
+    // Landing page for the link in the mentor invite email (`?token=`). Like program-review, it
+    // only answers the invitation on a click, so a mail scanner prefetching the link changes
+    // nothing. A sibling listed before the prefix-matched shell, so the shell does not swallow it.
+    path: 'mentor/invites',
+    title: 'Mentor Invitation',
+    loadComponent: () => import('./mentor/mentor-invite/mentor-invite.component').then((m) => m.MentorInviteComponent),
   },
   {
     // Register form — matches `/mentorship/mentee` exactly. `canActivate` checks whether
@@ -112,9 +151,6 @@ export const MENTORSHIP_ROUTES: Routes = [
     path: 'mentor',
     loadComponent: () => import('./mentor/mentor-page/mentor-page.component').then((m) => m.MentorPageComponent),
     children: [
-      // `/mentorship/mentor/` (trailing slash) lands here rather than 404, matching the
-      // shell's default view. Wildcard below covers unknown children the same way.
-      { path: '', pathMatch: 'full', redirectTo: 'programs' },
       {
         path: 'programs',
         title: 'My Programs',
@@ -125,6 +161,7 @@ export const MENTORSHIP_ROUTES: Routes = [
         title: 'Mentor Profile',
         loadComponent: () => import('./mentor/mentor-profile/mentor-profile.component').then((m) => m.MentorProfileComponent),
       },
+      // Unknown children, and the empty path, fall to the shell's default view rather than 404.
       { path: '**', redirectTo: 'programs' },
     ],
   },

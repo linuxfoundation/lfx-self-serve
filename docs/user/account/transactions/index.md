@@ -4,7 +4,7 @@ description: View your billing and purchase history in LFX Self Serve.
 audience: [all]
 product_area: Account
 tags: [account, transactions, billing, purchases, history, receipts]
-last_updated: 2026-08-19
+last_updated: 2026-11-04
 intercom_collection: Account
 ---
 
@@ -15,9 +15,9 @@ The Transactions tab shows your Linux Foundation purchase history — payments f
 ### What you can do
 
 - View your complete purchase history
-- See transaction details including amount, date, and item purchased
-- Filter by transaction type using tabs: All Transactions, Event Tickets, Training, Certifications, Bundles, Subscriptions, Individual Support
-- Download a receipt or invoice from the transaction detail view, when available
+- See each purchase's name, order ID, date, type, and amount
+- Filter by transaction type using the filter pills above the table: All Transactions, Event Tickets, Training, Certifications, Bundles, Subscriptions, Individual Support
+- Page through longer histories — when the selected filter shows more than 10 transactions, the table shows 10 per page, and you can switch to 25 or 50
 
 ### Who this applies to
 
@@ -28,14 +28,29 @@ All authenticated users can view their own transactions. Each user sees only the
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select [**Profile & Account**](/profile) from the left navigation sidebar.
 3. Open the **Transactions** tab, or go directly to `/profile/transactions`.
-4. Select a transaction to view its details.
 
 ### What a transaction record shows
 
-- Item name and description (for example, a training course or event registration)
-- Transaction date
-- Amount charged
-- Receipt or invoice download options, when available, in the transaction detail view
+Each transaction is a row in the table with these columns:
+
+- **Name** — the item purchased, such as a training course or event registration
+- **Order ID**
+- **Date**
+- **Type** — the kind of purchase, such as events, training, or certifications
+- **Transaction Value** — the amount charged
+
+### Get a receipt or invoice
+
+The Transactions tab doesn't offer receipt or invoice downloads.
+
+- **Training, certification, bundle, and subscription purchases** — contact the LF Education support team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org) and include the order ID from the transaction row.
+- **Individual Supporter memberships** — Individual Supporter purchases are paid by credit card at checkout, so we don’t issue separate invoices for them. A receipt is emailed to you automatically when the payment goes through, and it serves as your proof of payment.
+- **Event registrations** — open your registration confirmation email and download the invoice receipt PDF from the **Payment Information** section. Turn off any pop-up blockers first, or the PDF won't download. If you can't find your confirmation email, contact LFX support.
+- **Other purchases** — contact LFX support.
+
+### Refunds and changes to training purchases
+
+The Transactions tab is read-only. Refunds, voucher extensions, and other changes to a training, certification, bundle, or subscription purchase are handled by the LF Education team at [trainingsupport.linuxfoundation.org](https://trainingsupport.linuxfoundation.org). See [Get Help with Training and Certifications](../../trainings/training-support/).
 
 ### Empty state
 

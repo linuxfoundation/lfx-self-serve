@@ -1,14 +1,14 @@
 ---
 title: Apply for Travel Funding
-description: Request travel funding to attend a Linux Foundation event you are registered for in LFX Self Serve
+description: Request travel funding to attend a Linux Foundation event that is accepting travel fund applications in LFX Self Serve
 audience: [all]
 product_area: Events
 tags: [events, travel-funding, travel-fund, attendance]
-last_updated: 2026-08-19
+last_updated: 2026-10-06
 intercom_collection: Events
 ---
 
-The Travel Fund helps open-source developers and community members attend Linux Foundation events they would otherwise be unable to attend due to a lack of funding. Priority is given to applicants from underrepresented groups and those from lower-socioeconomic backgrounds. You apply for travel funding from the **Travel Funding** tab on the My Events page.
+The Travel Fund helps open-source developers and community members attend Linux Foundation events they would otherwise be unable to attend due to a lack of funding. Priority is given to applicants from underrepresented groups and those from lower-socioeconomic backgrounds. You apply for travel funding from the **Travel Funding** tab on the Events page.
 
 > **Note:** If your employer is able to cover the cost of attending the event, please do not apply — the fund is intended for community members who have no other way to attend.
 
@@ -18,7 +18,7 @@ The Travel Fund helps open-source developers and community members attend Linux 
 2. Select **Events** from the left navigation sidebar.
 3. Open the **Travel Funding** tab.
 4. Select **New Funding Application**.
-5. **Choose an Event** — select the event you want to attend, then continue.
+5. **Choose an Event** — select the event you want to attend, then continue. The list shows upcoming events that offer travel funding and are still accepting applications. You do not need to be registered for the event.
 6. Review the **Terms and Conditions** and continue to accept them.
 7. Complete the **About Me** step with your applicant details.
 8. Complete the **Expenses** step with your estimated costs.

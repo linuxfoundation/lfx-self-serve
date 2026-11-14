@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  IMPORT_REGISTRANTS_MAX,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
+  QUERY_SERVICE_MAX_PAGES,
+  RSVP_RESPONSES,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -22,6 +29,11 @@ import {
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRegistrantsByVerifiedEmails,
+  MeetingRegistrationRemovalResult,
+  MeetingRollupFilterOptions,
+  MeetingRollupFilters,
+  MeetingRollupGroupOption,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -37,6 +49,7 @@ import {
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -44,6 +57,8 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  isMeetingAttendeeListShared,
+  isSameOccurrenceId,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
@@ -57,16 +72,33 @@ import { Request } from 'express';
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { attachRsvpsToRegistrants, filterRsvpsToActiveRegistrants } from '../helpers/meeting-rsvp.helper';
-import { NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS, RENAMED_REGISTRANT_KEYS, UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS } from '../constants';
+import {
+  NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS,
+  RENAMED_REGISTRANT_KEYS,
+  UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS,
+  UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
+} from '../constants';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
+import {
+  buildRollupScopedQuery,
+  isRollupGroups,
+  isRollupScope,
+  narrowRollupScope,
+  readRollupFilters,
+  readRollupRootUid,
+} from '../helpers/meeting-rollup.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
+import { UserVerifiedEmailsService } from './user-verified-emails.service';
+import { withPerUserCache } from './valkey.service';
 
 /**
  * Service for handling meeting business logic with microservice proxy
@@ -76,12 +108,14 @@ export class MeetingService {
   private committeeService: CommitteeService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
+  private userVerifiedEmailsService: UserVerifiedEmailsService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.committeeService = new CommitteeService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
+    this.userVerifiedEmailsService = new UserVerifiedEmailsService();
   }
 
   /**
@@ -98,8 +132,12 @@ export class MeetingService {
       query_params: Object.keys(query),
     });
 
+    const scopedQuery = await this.applyRollupScope(req, query, 'get_meetings');
+    if (!scopedQuery) {
+      return { data: [], page_token: undefined };
+    }
     const params = {
-      ...query,
+      ...scopedQuery,
       type: meetingType,
     };
 
@@ -178,14 +216,36 @@ export class MeetingService {
       query_params: Object.keys(query),
     });
 
+    const scopedQuery = await this.applyRollupScope(req, query, 'get_meetings_count');
+    if (!scopedQuery) {
+      return 0;
+    }
     const params = {
-      ...query,
+      ...scopedQuery,
       type: meetingType,
     };
 
     const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
 
     return count;
+  }
+
+  /**
+   * Options for a roll-up's filters (GH-5566): the projects in the tree under `rootUid` and their
+   * groups, both as the caller can see them, sorted by name. The group categories feed the Group type
+   * filter.
+   */
+  public async getRollupFilterOptions(req: Request, rootUid: string): Promise<MeetingRollupFilterOptions> {
+    // One walk feeds the projects, the groups and the completeness flag, so they always describe the same tree.
+    const scope = await this.resolveRollupScope(req, rootUid);
+    const { uids: scopeUids, complete: treeComplete } = scope;
+    const [projectMap, groups] = await Promise.all([this.projectService.getProjectsByIds(req, scopeUids), this.resolveRollupGroups(req, rootUid, scope)]);
+
+    const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
+    const projects = [...projectMap.values()].map((project) => ({ uid: project.uid, name: project.name, slug: project.slug })).sort(byName);
+    // The list covers the tree only if the walk was complete and every resolved project's details loaded.
+    const complete = treeComplete && scopeUids.every((uid) => projectMap.has(uid));
+    return { projects, groups: groups.filter((group) => group.name).sort(byName), complete };
   }
 
   /**
@@ -484,7 +544,10 @@ export class MeetingService {
     const fetchChunk = async (chunk: string[]): Promise<void> => {
       try {
         let pageToken: string | undefined;
+        let page = 0;
+        const requestedTokens = new Set<string>();
         do {
+          page++;
           const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'v1_meeting',
             tags: chunk,
@@ -502,6 +565,25 @@ export class MeetingService {
             }
           }
           pageToken = response.page_token;
+          // Same bound as fetchAllQueryResources (#4964): stop this chunk on a repeated token or at the
+          // page cap, keeping the entries already mapped — consistent with the per-chunk failure skip below.
+          if (pageToken) {
+            let stopReason: 'repeated_page_token' | 'max_pages' | undefined;
+            if (requestedTokens.has(pageToken)) {
+              stopReason = 'repeated_page_token';
+            } else if (page >= QUERY_SERVICE_MAX_PAGES) {
+              stopReason = 'max_pages';
+            }
+            if (stopReason) {
+              logger.warning(req, 'resolve_created_by_for_meetings', 'Pagination stopped early for a chunk', {
+                chunk_size: chunk.length,
+                page,
+                reason: stopReason,
+              });
+              break;
+            }
+            requestedTokens.add(pageToken);
+          }
         } while (pageToken);
       } catch (error) {
         logger.warning(req, 'resolve_created_by_for_meetings', 'Failed to resolve created_by for a chunk, skipping', {
@@ -541,8 +623,14 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
-    if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
+    // to opt a board meeting into sharing its guest list. A restricted meeting
+    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
+    // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
+    if (
+      isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted, {
+        allowRestricted: createPayload.show_meeting_attendees === true,
+      })
+    ) {
       createPayload.show_meeting_attendees = false;
     }
 
@@ -587,7 +675,7 @@ export class MeetingService {
   /**
    * Updates a meeting directly via microservice proxy
    */
-  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
+  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest): Promise<ApiResponse<void>> {
     // Fetch existing meeting to merge organizers
     const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}`, 'GET');
 
@@ -616,8 +704,10 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
-    if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
+    // to opt a board meeting into sharing its guest list. A restricted meeting
+    // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
+    // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
       updatePayload.show_meeting_attendees = false;
     } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
       // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
@@ -627,17 +717,15 @@ export class MeetingService {
       updatePayload.show_meeting_attendees = false;
     }
 
-    const sanitizedPayload = logger.sanitize({ updatePayload, editType });
+    const sanitizedPayload = logger.sanitize({ updatePayload });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
-
-    const query = editType ? { editType } : undefined;
 
     return await this.microserviceProxy.proxyRequestWithResponse<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}`,
       'PUT',
-      query,
+      undefined,
       updatePayload
     );
   }
@@ -670,18 +758,54 @@ export class MeetingService {
 
   /**
    * Cancels a meeting occurrence directly via microservice proxy
+   * @description An optional note is sent as the DELETE body; upstream includes it in the cancellation
+   * emails to guests. Without one no body is sent, so the request is unchanged from before.
    */
-  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string, note?: string): Promise<void> {
     logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
+      has_note: !!note,
     });
 
     await this.microserviceProxy.proxyRequest<void>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
-      'DELETE'
+      'DELETE',
+      undefined,
+      note ? { note } : undefined
+    );
+  }
+
+  /**
+   * Edits a single occurrence of a recurring meeting directly via microservice proxy
+   * @description Upstream applies the change to this occurrence only; the rest of the series keeps its
+   * schedule, title and agenda. The occurrence id is its start time, so a new `start_time` also gives it
+   * a new id. LFX `title`/`description` map to upstream `topic`/`agenda`.
+   */
+  public async updateOccurrence(req: Request, meetingUid: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Promise<void> {
+    logger.debug(req, 'update_occurrence', 'Rescheduling meeting occurrence', {
+      meeting_id: meetingUid,
+      occurrence_id: occurrenceId,
+      start_time: payload.start_time,
+      duration: payload.duration,
+      title_changed: payload.title !== undefined,
+      agenda_changed: payload.description !== undefined,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/occurrences/${encodePathSegment(occurrenceId)}`,
+      'PUT',
+      undefined,
+      {
+        start_time: payload.start_time,
+        duration: payload.duration,
+        ...(payload.title !== undefined && { topic: payload.title }),
+        ...(payload.description !== undefined && { agenda: payload.description }),
+      }
     );
   }
 
@@ -701,6 +825,7 @@ export class MeetingService {
    *   registrants — bounds upstream calls for callers that only need to know "is this over N"
    *   (e.g. enforcing a size cap) rather than the true total. The returned array's length is a
    *   lower bound, not an exact count, once it exceeds `maxResults`.
+   * @param allDatesOnly - Without a resolved occurrence, select only series-wide (`all`) RSVPs before choosing the newest
    */
   public async getMeetingRegistrants(
     req: Request,
@@ -709,7 +834,8 @@ export class MeetingService {
     occurrenceId?: string,
     failOnPartial: boolean = false,
     maxResults?: number,
-    options?: ApiRequestOptions
+    options?: ApiRequestOptions,
+    allDatesOnly: boolean = false
   ): Promise<MeetingRegistrant[]> {
     // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
     // to query parent_refs, matching the working pattern in getMeetingRsvps.
@@ -774,7 +900,7 @@ export class MeetingService {
     }
 
     const activeRsvps = filterRsvpsToActiveRegistrants(rsvps, registrants);
-    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId);
+    return attachRsvpsToRegistrants(registrants, activeRsvps, occurrenceId, allDatesOnly);
   }
 
   /**
@@ -786,7 +912,9 @@ export class MeetingService {
    *
    * The query-service applies FGA filtering so that any meeting viewer can read registrant records
    * on the tolerant listing — which is by design for community-facing meetings. The committee import
-   * flow imposes stricter business-logic constraints beyond viewer access: the caller must have
+   * flow imposes stricter business-logic constraints beyond viewer access: the caller must be an
+   * organizer of the meeting (#2827 — otherwise any eligible committee member could export the
+   * guest list of a meeting they merely can view), and must have
    * writer access on `committeeUid`, or be a member of it when it's invite_only
    * (mirroring `canSendMemberInvites()` client-side — those callers are already independently
    * authorized to send invites for that committee upstream, via their own bearer token, so
@@ -796,18 +924,21 @@ export class MeetingService {
    * partial-failure states (this exact failure mode broke in PCC).
    *
    * @throws AuthorizationError if the caller isn't authorized, per the rules above.
+   * @throws MicroserviceError if the organizer check itself could not be resolved.
    * @throws ServiceValidationError if the roster exceeds IMPORT_REGISTRANTS_MAX.
    */
   public async getAuthorizedRegistrantsForImport(req: Request, meetingUid: string, committeeUid: string): Promise<MeetingRegistrant[]> {
-    const [committee, meeting, isCommitteeWriter] = await Promise.all([
+    // Strict organizer probe on `v1_meeting`, for the reasons in `getAuthorizedCompleteRegistrants`.
+    const [committee, meeting, isCommitteeWriter, isMeetingOrganizer] = await Promise.all([
       this.committeeService.getCommitteeById(req, committeeUid, { includeMembership: true }),
       this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false }),
       this.accessCheckService.checkSingleAccess(req, { resource: 'committee', id: committeeUid, access: 'writer' }),
+      this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' }),
     ]);
 
     const isCommitteeMember = !!committee.my_role;
     const canImport = isCommitteeWriter || (committee.join_mode === 'invite_only' && isCommitteeMember);
-    if (!canImport || committee.project_uid !== meeting.project_uid) {
+    if (!isMeetingOrganizer || !canImport || committee.project_uid !== meeting.project_uid) {
       throw new AuthorizationError('Not authorized to import registrants for this meeting', {
         operation: 'get_authorized_registrants_for_import',
         service: 'meeting_service',
@@ -849,7 +980,8 @@ export class MeetingService {
     req: Request,
     meetingUid: string,
     includeRsvp: boolean = false,
-    occurrenceId?: string
+    occurrenceId?: string,
+    allDatesOnly: boolean = false
   ): Promise<MeetingRegistrant[]> {
     // `v1_meeting`, not `meeting`: the organizer tuples the platform writes hang off the v1 type,
     // which is what every other organizer probe in this codebase asks about (see
@@ -869,7 +1001,53 @@ export class MeetingService {
       });
     }
 
-    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true);
+    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, true, undefined, undefined, allDatesOnly);
+  }
+
+  /**
+   * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
+   * @description Organizers always may. Anyone else must be a registrant of the meeting, matched by
+   * email or username like `isUserInvitedToMeeting`, and the meeting must share its guest list
+   * (`isMeetingAttendeeListShared`), the same rule
+   * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
+   * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
+   * unresolvable access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewMeetingRoster(req: Request, meetingUid: string): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
+    const email = getEffectiveEmail(req) || undefined;
+    const username = (await getUsernameFromAuth(req)) ?? undefined;
+    if (!isMeetingAttendeeListShared(meeting) || (!email && !username)) {
+      return false;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    const ownRows = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+    return ownRows.length > 0;
+  }
+
+  /**
+   * Counts a meeting's registrants without reading any rows, under the M2M token so the total does
+   * not depend on what the caller may list. A count is not personal data, so callers may show it to
+   * invitees who cannot see the guest list itself.
+   */
+  public async getMeetingRegistrantCount(req: Request, meetingUid: string, m2mToken: string): Promise<number> {
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources/count',
+      'GET',
+      { type: 'v1_meeting_registrant', parent: `meeting:${meetingUid}` },
+      undefined,
+      undefined,
+      { bearerToken: m2mToken }
+    );
+    return count;
   }
 
   /**
@@ -905,12 +1083,13 @@ export class MeetingService {
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
-    // Registrant records carry email/meeting_id as data fields, not indexed tags — use `filters` (field-level AND).
+    // Registrant records carry email/meeting_id as data fields, not indexed tags — `filters` AND, `filters_or` OR.
     const normalizedEmail = email.toLowerCase();
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: '',
-      filters: [`email:${normalizedEmail}`, `meeting_id:${meetingUid}`],
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: this.emailClauses(normalizedEmail),
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
@@ -937,7 +1116,7 @@ export class MeetingService {
 
   /**
    * Fetches registrants for a meeting that match the caller's email or username in a single query.
-   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email:Y, username:Z]` so the
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z]` so the
    * query service resolves the intersection in one call instead of two sequential lookups.
    */
   public async getMeetingRegistrantsForUser(
@@ -945,19 +1124,14 @@ export class MeetingService {
     meetingUid: string,
     email: string | undefined,
     username: string | undefined,
-    m2mToken?: string
+    m2mToken?: string,
+    failOnPartial = false
   ): Promise<MeetingRegistrant[]> {
     const orClauses: string[] = [];
-    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    if (email) orClauses.push(...this.emailClauses(email.toLowerCase()));
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
-    if (orClauses.length === 0) return [];
 
-    const params: Record<string, any> = {
-      type: 'v1_meeting_registrant',
-      parent: '',
-      filters: [`meeting_id:${meetingUid}`],
-      filters_or: orClauses,
-    };
+    if (orClauses.length === 0) return [];
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
       meeting_id: meetingUid,
@@ -965,19 +1139,50 @@ export class MeetingService {
       has_username: !!username,
     });
 
-    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+    return this.queryMeetingRegistrants(req, meetingUid, orClauses, m2mToken, failOnPartial);
+  }
 
-    return fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        { ...params, ...(pageToken && { page_token: pageToken }) },
-        undefined,
-        headers
-      )
-    );
+  /**
+   * Fetches the signed-in user's registrants for a meeting by their verified emails other than
+   * `triedEmail` in one query. Rows are ordered by email priority (meeting-invite preference first).
+   * `lookupFailed` is set when nothing matched and an email source was unavailable.
+   */
+  public async getMeetingRegistrantsByVerifiedEmails(
+    req: Request,
+    meetingUid: string,
+    triedEmail: string | undefined
+  ): Promise<MeetingRegistrantsByVerifiedEmails> {
+    const { emails, preferenceEmail, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
+    const tried = triedEmail?.trim().toLowerCase();
+    const candidates = emails.filter((candidate) => candidate !== tried);
+
+    const orClauses = candidates.flatMap((candidate) => this.emailClauses(candidate));
+    const registrants = orClauses.length > 0 ? await this.queryMeetingRegistrants(req, meetingUid, orClauses) : [];
+    const rank = (registrant: MeetingRegistrant): number => {
+      const index = candidates.indexOf((registrant.email || '').trim().toLowerCase());
+      return index === -1 ? candidates.length : index;
+    };
+    registrants.sort((a, b) => rank(a) - rank(b));
+
+    const matchedEmail = registrants.length > 0 ? (registrants[0].email || '').trim().toLowerCase() : null;
+    let matchedSource: 'meeting_invite_preference' | 'auth_service' | null = null;
+    if (registrants.length > 0) {
+      matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
+    }
+    const logMeta = {
+      meeting_id: meetingUid,
+      candidate_count: candidates.length,
+      has_preference: !!preferenceEmail,
+      matched_source: matchedSource,
+      incomplete,
+    };
+    if (matchedSource) {
+      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails", logMeta);
+    } else {
+      logger.debug(req, 'get_meeting_registrants_by_verified_emails', "No registrant under the user's other verified emails", logMeta);
+    }
+
+    return { registrants, lookupFailed: registrants.length === 0 && incomplete };
   }
 
   /**
@@ -1027,7 +1232,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(registrantData.meeting_id)}/registrants`,
       'POST',
       undefined,
-      this.toUpstreamRegistrantBody(registrantData)
+      this.toUpstreamRegistrantBody(registrantData, 'create')
     );
 
     // Keys, not truthiness: a 201 carrying a literal `{}` is truthy, and mapping it would report a
@@ -1064,7 +1269,7 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantUid)}`,
       'PUT',
       undefined,
-      this.toUpstreamRegistrantBody(updateData)
+      this.toUpstreamRegistrantBody(updateData, 'update')
     );
 
     // Where upstream answered, its body is the whole answer — merging the submitted payload underneath
@@ -1108,6 +1313,80 @@ export class MeetingService {
   }
 
   /**
+   * Removes the authenticated user as a registrant of a meeting using their own bearer token.
+   * The caller's registrant records are resolved server-side (by email or username) so the client
+   * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
+   * record. Committee and mailing list registrations are removed like any other: the meeting service flags
+   * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
+   * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
+   * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
+   * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
+   * @returns the exact registrant IDs removed and those whose deletes failed
+   */
+  public async removeMeetingRegistrantSelf(
+    req: Request,
+    meetingUid: string,
+    email: string | undefined,
+    username: string | undefined,
+    m2mToken: string
+  ): Promise<MeetingRegistrationRemovalResult> {
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
+
+    if (registrants.length === 0) {
+      throw new ResourceNotFoundError('Meeting registration', meetingUid, {
+        operation: 'remove_meeting_registrant_self',
+        service: 'meeting_service',
+      });
+    }
+
+    logger.debug(req, 'remove_meeting_registrant_self', 'Removing authenticated user as meeting registrant', {
+      meeting_id: meetingUid,
+      registrant_count: registrants.length,
+    });
+
+    const outcomes = await Promise.allSettled(
+      registrants.map((registrant) =>
+        this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/self`, 'DELETE', {
+          registrant_id: registrant.uid,
+        })
+      )
+    );
+
+    const failures = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+    const result: MeetingRegistrationRemovalResult = { removed_registrant_ids: [], remaining_registrant_ids: [] };
+    outcomes.forEach((outcome, index) => {
+      const ids = outcome.status === 'fulfilled' ? result.removed_registrant_ids : result.remaining_registrant_ids;
+      ids.push(registrants[index].uid);
+    });
+
+    if (result.removed_registrant_ids.length === 0) {
+      throw failures[0].reason;
+    }
+
+    if (failures.length > 0) {
+      logger.warning(req, 'remove_meeting_registrant_self', 'Removed some but not all of the caller registrations', {
+        meeting_id: meetingUid,
+        removed_count: result.removed_registrant_ids.length,
+        failed_count: failures.length,
+        err: failures[0].reason,
+      });
+      try {
+        const rsvps = await this.getRawMeetingRsvps(req, meetingUid, undefined, true);
+        const remainingIds = new Set(result.remaining_registrant_ids);
+        // Filter raw history before any response selection: deleted rows may still be indexed.
+        result.remaining_rsvps = rsvps.filter((rsvp) => rsvp.meeting_id === meetingUid && remainingIds.has(rsvp.registrant_id));
+      } catch (error) {
+        logger.warning(req, 'remove_meeting_registrant_self', 'Failed to fetch remaining registration RSVP history after partial removal', {
+          meeting_id: meetingUid,
+          err: error,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Resend a meeting invitation to a specific registrant
    */
   public async resendMeetingInvitation(req: Request, meetingUid: string, registrantId: string): Promise<void> {
@@ -1123,6 +1402,52 @@ export class MeetingService {
       `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrantId)}/resend`,
       'POST'
     );
+  }
+
+  /**
+   * Resends the meeting invitation to the authenticated user's own registrant record using their own bearer token.
+   * The caller's registrant is resolved server-side (by email or username) so the client never needs a registrant UID;
+   * upstream re-verifies ownership and returns 403 for anyone else's record, so the M2M token is used only for the lookup.
+   * A person can hold several rows for one meeting (a direct row plus rows from committees), and each would send its own
+   * email to the same address, so the invite is resent once, to the row `pickRegistrantToResend` chooses for the
+   * occurrence the caller is viewing.
+   * @param occurrenceId the occurrence the caller is viewing, when the surface has one; rows are scoped to an occurrence
+   * @returns the ID of the registrant the invitation was resent to
+   */
+  public async resendMeetingInvitationSelf(
+    req: Request,
+    meetingUid: string,
+    email: string | undefined,
+    username: string | undefined,
+    m2mToken: string,
+    occurrenceId?: string
+  ): Promise<string> {
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+
+    if (registrants.length === 0) {
+      throw new ResourceNotFoundError('Meeting registration', meetingUid, {
+        operation: 'resend_meeting_invitation_self',
+        service: 'meeting_service',
+      });
+    }
+
+    const registrant = MeetingService.pickRegistrantToResend(registrants, occurrenceId);
+
+    logger.debug(req, 'resend_meeting_invitation_self', 'Resending meeting invitation to the authenticated user', {
+      meeting_id: meetingUid,
+      registrant_id: registrant.uid,
+      registrant_count: registrants.length,
+      occurrence_id: occurrenceId,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrant.uid)}/self_resend`,
+      'POST'
+    );
+
+    return registrant.uid;
   }
 
   /**
@@ -1178,6 +1503,11 @@ export class MeetingService {
       { failOnPartial }
     );
 
+    return this.dedupePastMeetingParticipants(raw);
+  }
+
+  /** Merges one past meeting's participant records into one row per person (see {@link getPastMeetingParticipants}). */
+  public dedupePastMeetingParticipants(raw: PastMeetingParticipant[]): PastMeetingParticipant[] {
     // Plain union-find over connected identity-match edges (pure transitive closure, no
     // conflict veto during union). isSamePerson is not transitive — a no-username row can
     // share an email with two records that carry different, conflicting usernames — so a
@@ -1220,6 +1550,32 @@ export class MeetingService {
 
     const groups = Array.from(components.values()).flatMap((component) => this.splitConflictingComponent(component));
     return groups.map((group) => this.mergePastMeetingParticipantGroup(group));
+  }
+
+  /**
+   * Whether the caller may read a past meeting's participant rows (names, emails, attendance).
+   * @description Organizers always may. Anyone else must appear in `participants`, invited or
+   * attended, matched by email or username like `isUserPastMeetingParticipant`. Deliberately
+   * independent of `show_meeting_attendees`: it defaults off, so keying on it would blank the
+   * attendance of every meeting already held. The organizer probe is strict, so an unresolvable
+   * access check throws rather than reading as a denial; callers decide how to fail.
+   */
+  public async canViewPastMeetingParticipants(req: Request, pastMeetingUid: string, participants: PastMeetingParticipant[]): Promise<boolean> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_past_meeting', id: pastMeetingUid, access: 'organizer' });
+    if (isOrganizer) {
+      return true;
+    }
+
+    const email = getEffectiveEmail(req)?.toLowerCase();
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername).toLowerCase() : null;
+    if (!email && !username) {
+      return false;
+    }
+
+    return participants.some(
+      (participant) => (!!email && participant.email?.toLowerCase() === email) || (!!username && participant.username?.toLowerCase() === username)
+    );
   }
 
   /**
@@ -1423,6 +1779,14 @@ export class MeetingService {
       }
 
       const content = Buffer.concat(chunks).toString('utf-8');
+      // An unauthenticated platform URL answers with an HTML page instead of the file.
+      if (!content.trimStart().startsWith('WEBVTT')) {
+        logger.warning(req, 'get_past_meeting_transcript_content', 'Transcript file is not WebVTT, returning null', {
+          past_meeting_id: pastMeetingUid,
+          content_type: response.headers.get('content-type'),
+        });
+        return null;
+      }
       return { content };
     } catch (error) {
       logger.warning(req, 'get_past_meeting_transcript_content', 'Failed to fetch transcript content, returning null', {
@@ -1555,6 +1919,11 @@ export class MeetingService {
     );
 
     const rsvp = mapITXResponseToMeetingRsvp(result);
+    // A successful ITX acknowledgement can omit or mangle the answer. Preserve the accepted request
+    // value at this boundary so polling, response filters, and confirmation use the same RSVP.
+    if (!RSVP_RESPONSES.includes(rsvp.response_type)) {
+      rsvp.response_type = rsvpData.response;
+    }
 
     // Poll query service until the RSVP is propagated so the UI can fetch it immediately
     await pollEndpoint({
@@ -1577,9 +1946,10 @@ export class MeetingService {
    * @param req Express request object
    * @param meetingUid Meeting UID to get RSVP for
    * @param occurrenceId Optional occurrence ID to filter RSVP for specific occurrence
+   * @param allDatesOnly Without an occurrence, select only series-wide responses before resolving the newest answer
    * @returns Promise resolving to user's RSVP or null
    */
-  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
+  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string, allDatesOnly = false): Promise<MeetingRsvp | null> {
     logger.debug(req, 'get_meeting_rsvp_for_current_user', 'Fetching user RSVP', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
@@ -1589,8 +1959,8 @@ export class MeetingService {
       // Resolve the user's registrant(s) first — handles accounts with multiple emails where the
       // RSVP record's email differs from the auth email. RSVPs reliably carry registrant_id,
       // unlike username which is often null on RSVP records.
-      // Use getEffectiveUsername (returns LFID nickname) rather than getUsernameFromAuth
-      // (returns OIDC `sub`) since registrant.username stores the plain LFID.
+      // registrant.username stores the plain LFID, which getEffectiveUsername resolves (the LF
+      // username claim, or the impersonation target's username).
       const email = getEffectiveEmail(req) ?? undefined;
       const username = getEffectiveUsername(req) ?? undefined;
 
@@ -1611,7 +1981,8 @@ export class MeetingService {
       const registrantIds = new Set(registrants.map((r) => r.uid));
 
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
-      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id));
+      const requireAllDates = allDatesOnly && !occurrenceId;
+      const userRsvps = allRsvps.filter((rsvp) => registrantIds.has(rsvp.registrant_id) && (!requireAllDates || rsvp.scope === 'all'));
 
       // Delegate to the shared scope resolver so this endpoint and
       // `calculateRsvpCounts` stay in lockstep. It normalises seconds ↔ ms on
@@ -1740,15 +2111,17 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_id: meetingUid, query_params: params });
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+    // Every page is read: attachments are filtered per occurrence in the browser, so a list cut off after the first
+    // page could hide an occurrence's materials behind other dates' ones. A partial list would do the same.
+    return fetchAllQueryResources<MeetingAttachment>(
       req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
-
-    return resources.map((resource) => resource.data);
   }
 
   /**
@@ -2153,8 +2526,9 @@ export class MeetingService {
   /**
    * Fetches committee names for all unique committees referenced in meetings.
    * Returns a Map of committee UID -> committee name for merging into meeting data.
+   * Never throws: a failed batch only leaves its committees out of the map.
    */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
+  public async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
@@ -2163,6 +2537,8 @@ export class MeetingService {
           .map((c: { uid: string }) => c.uid)
       ),
     ];
+
+    if (uniqueCommitteeUids.length === 0) return new Map();
 
     const meetingsWithCommittees = meetings.filter((m) => m.committees && m.committees.length > 0).length;
     logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
@@ -2216,6 +2592,217 @@ export class MeetingService {
     }
 
     return nameMap;
+  }
+
+  /**
+   * Resolves the optional `root_project_uid` roll-up (GH-5566): a foundation or parent project's
+   * meetings list also shows the meetings of every project beneath it, narrowed by the roll-up filters
+   * (`project_uids`, `committee_uid`, `group_type`). The descendant tree is walked with the caller's
+   * own token, and the meetings query runs with it too, so query-service FGA still drops any meeting
+   * the caller cannot see. A query without the param is returned as is; `null` means the filters
+   * match nothing (no selected project in the tree, or no group of that type), so the caller
+   * answers empty instead of sending an unscoped query.
+   */
+  private async applyRollupScope(req: Request, query: Record<string, any>, operation: string): Promise<Record<string, any> | null> {
+    const rootUid = readRollupRootUid(query, operation);
+    if (!rootUid) {
+      return query;
+    }
+    const filters = readRollupFilters(query, operation);
+
+    const scope = await this.resolveRollupScope(req, rootUid);
+    const scopeUids = narrowRollupScope(scope.uids, filters.projectUids);
+    if (scopeUids.length === 0) {
+      return null;
+    }
+
+    const committeeUids = await this.resolveRollupCommitteeUids(req, rootUid, scope, scopeUids, filters);
+    if (committeeUids?.length === 0) {
+      return null;
+    }
+
+    logger.debug(req, operation, 'Scoped meetings query to project roll-up', {
+      root_project_uid: rootUid,
+      project_count: scopeUids.length,
+      committee_count: committeeUids?.length,
+    });
+
+    return buildRollupScopedQuery(query, scopeUids, committeeUids);
+  }
+
+  /**
+   * The project UIDs under a roll-up root that the caller can see, cached per user and root, so the
+   * paged calendar feeds and Load More neither re-walk the tree on every page nor replay a page cursor
+   * against a different scope. Both helpers fail closed (fetch directly, share nothing) for a blank or
+   * unsafe username, so one user's FGA-filtered tree is never served to another. `complete` is false
+   * when a child lookup failed; only a complete scope is ever cached, so a cache hit is complete.
+   */
+  private async resolveRollupScope(req: Request, rootUid: string): Promise<{ uids: string[]; complete: boolean }> {
+    const { MEETING_ROLLUP_SCOPE_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
+    const username = getEffectiveUsername(req) ?? '';
+    // A failed child lookup leaves that branch out; such a scope is still served, but never cached, so
+    // the next request retries instead of hiding those meetings for the whole TTL. A flight that was
+    // superseded while it ran (`isCurrent` false) does not write either, like the other per-user caches.
+    // `complete` travels inside the flight's result, so a caller that joins someone else's walk learns
+    // it was incomplete too (and does not cache groups built from it); the cache itself keeps the UIDs.
+    return coalescePerUserOrgFetch(namespace, username, rootUid, async (isCurrent) => {
+      let complete = true;
+      const uids = await withPerUserCache(
+        namespace,
+        username,
+        rootUid,
+        ttlSeconds,
+        () => this.projectService.getFoundationProjectUids(req, rootUid, { onIncomplete: () => (complete = false) }),
+        isRollupScope,
+        () => complete && isCurrent()
+      );
+      return { uids, complete };
+    });
+  }
+
+  /**
+   * The groups in a roll-up root's tree that the caller can see, cached per user and root like the
+   * scope, so a group-type filter does not rescan every group on each list, count and calendar page.
+   * Groups of an incomplete tree are served but not cached, for the same reason as the scope.
+   */
+  private resolveRollupGroups(req: Request, rootUid: string, tree: { uids: string[]; complete: boolean }): Promise<MeetingRollupGroupOption[]> {
+    const { MEETING_ROLLUP_GROUPS_NAMESPACE: namespace, MEETING_ROLLUP_SCOPE_TTL_SECONDS: ttlSeconds } = VALKEY_CACHE;
+    const username = getEffectiveUsername(req) ?? '';
+    // Built from the caller's already-resolved tree (no second walk). Only a complete tree is shared: every
+    // complete walk yields the same tree, so joining another request's flight or reading the cache gives the
+    // groups of this tree too. An incomplete walk's groups are fetched for this caller alone, never shared
+    // or cached, so they can't reach a request whose own walk differs.
+    if (!tree.complete) {
+      return this.fetchRollupGroups(req, tree.uids);
+    }
+    return coalescePerUserOrgFetch(namespace, username, rootUid, (isCurrent) =>
+      withPerUserCache(
+        namespace,
+        username,
+        rootUid,
+        ttlSeconds,
+        () => this.fetchRollupGroups(req, tree.uids),
+        isRollupGroups,
+        () => isCurrent()
+      )
+    );
+  }
+
+  /**
+   * The group UIDs a roll-up query is limited to, or `undefined` when no group filter is set.
+   * `group_type` is resolved to the groups of that category within the scope; with `committee_uid`
+   * as well, the group must be one of them.
+   */
+  private async resolveRollupCommitteeUids(
+    req: Request,
+    rootUid: string,
+    tree: { uids: string[]; complete: boolean },
+    scopeUids: string[],
+    filters: MeetingRollupFilters
+  ): Promise<string[] | undefined> {
+    if (!filters.groupType) {
+      return filters.committeeUid ? [filters.committeeUid] : undefined;
+    }
+    const inScope = new Set(scopeUids);
+    const typed = (await this.resolveRollupGroups(req, rootUid, tree))
+      .filter((group) => inScope.has(group.project_uid) && group.category === filters.groupType)
+      .map((group) => group.uid);
+    if (filters.committeeUid) {
+      return typed.includes(filters.committeeUid) ? [filters.committeeUid] : [];
+    }
+    if (typed.length > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      logger.warning(req, 'resolve_rollup_committee_uids', 'Group type matches more groups than the OR batch size; the tag list is unbatched', {
+        count: typed.length,
+        batch_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+      });
+    }
+    return typed;
+  }
+
+  /** Groups (committees) in the given projects that the caller can see, batched on `filters_or`. */
+  private async fetchRollupGroups(req: Request, projectUids: string[]): Promise<MeetingRollupGroupOption[]> {
+    const batches: string[][] = [];
+    for (let i = 0; i < projectUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      batches.push(projectUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
+    const results = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<Committee>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              filters_or: batch.map((uid) => `project_uid:${uid}`),
+              page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    );
+    return results.flat().map((committee) => ({
+      uid: committee.uid,
+      name: committee.name?.trim() ?? '',
+      category: committee.category?.trim() || null,
+      project_uid: committee.project_uid,
+    }));
+  }
+
+  // `email` keeps the stored casing and term matching is case-sensitive, so also match the lowercased copy.
+  private emailClauses(email: string): string[] {
+    return [`email:${email}`, `case_insensitive_email:${email}`];
+  }
+
+  private queryMeetingRegistrants(
+    req: Request,
+    meetingUid: string,
+    orClauses: string[],
+    m2mToken?: string,
+    failOnPartial = false
+  ): Promise<MeetingRegistrant[]> {
+    const params: Record<string, any> = {
+      type: 'v1_meeting_registrant',
+      parent: '',
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: orClauses,
+    };
+
+    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+
+    return fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          { ...params, ...(pageToken && { page_token: pageToken }) },
+          undefined,
+          headers
+        ),
+      { failOnPartial }
+    );
+  }
+
+  /**
+   * Chooses which of the caller's own registrant rows to resend an invitation to.
+   * A row can be scoped to one occurrence (`occurrence_id`) or cover the whole series (none), and the invitation the
+   * meeting service sends is for that row's scope, so the row has to fit what the caller is looking at:
+   *  1. a row scoped to the occurrence being viewed (compared with `isSameOccurrenceId`, since the id the client holds
+   *     is in Unix seconds from Zoom/ITX while an indexed row may carry milliseconds, and `===` would miss it), then
+   *  2. a series-wide row, which covers every occurrence including the one being viewed, then
+   *  3. any row, when none fits (or no occurrence was given): the caller still gets an invitation rather than an error.
+   * Within the chosen group a direct row beats a committee-derived one. Past that the order is whatever the lookup
+   * returned, and that is arbitrary on purpose: every row for one caller is addressed to the caller's own email, so
+   * either sends the same person the same kind of message.
+   */
+  private static pickRegistrantToResend(registrants: MeetingRegistrant[], occurrenceId: string | undefined): MeetingRegistrant {
+    const scopedToViewed = occurrenceId ? registrants.filter((row) => isSameOccurrenceId(row.occurrence_id, occurrenceId)) : [];
+    const seriesWide = registrants.filter((row) => !row.occurrence_id);
+    const candidates = [scopedToViewed, seriesWide, registrants].find((group) => group.length > 0) ?? registrants;
+
+    return candidates.find((row) => row.type === 'direct') ?? candidates[0];
   }
 
   /**
@@ -2408,8 +2995,9 @@ export class MeetingService {
    *
    * {@link NON_NULLABLE_UPSTREAM_REGISTRANT_KEYS} gets the same treatment for the same reason,
    * without the rename: `job_title` and `username` are declared upstream under the app's own name and
-   * are equally non-nullable, and `getChangedFields` nulls them too — so a `null` on either is
-   * skipped even though the key itself is allowed through. `linkedin_profile` is left alone: it
+   * are equally non-nullable. `getChangedFields` nulls `job_title` when it is blank, and sends
+   * `username` back as stored or leaves it out — so a `null` on either is skipped even though the
+   * key itself is allowed through. `linkedin_profile` is left alone: it
    * isn't declared upstream at all, so Goa discards the key rather than the value.
    *
    * Cost: clearing an organization on an edit leaves the stored value in place. It did before this
@@ -2417,7 +3005,7 @@ export class MeetingService {
    * erased. Don't guess between `null` and `''` here; `occurrence` already gives blank its own meaning
    * ("blank = all occurrences"), so a wrong guess silently rescopes an invite.
    */
-  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest): Record<string, unknown> {
+  private toUpstreamRegistrantBody(body: CreateMeetingRegistrantRequest | UpdateMeetingRegistrantRequest, verb: 'create' | 'update'): Record<string, unknown> {
     // Spread rather than cast: the declared parameter types are interfaces with no index
     // signature, and the runtime object is exactly what a client posted, extra keys included.
     const submitted: Record<string, unknown> = { ...body };
@@ -2429,6 +3017,11 @@ export class MeetingService {
     // every one it didn't recognise. Shared with `MeetingController.hasRegistrantChanges`, which has
     // to know exactly which keys survive here to tell an empty update apart from a real one.
     for (const passthroughKey of UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS) {
+      // {@link UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS} have no stored value to be checked against on a create.
+      if (verb === 'create' && (UPDATE_ONLY_PASSTHROUGH_REGISTRANT_KEYS as readonly string[]).includes(passthroughKey)) {
+        continue;
+      }
+
       const value = submitted[passthroughKey];
 
       // Absent stays absent: a key the caller never sent must not appear upstream as `undefined`,

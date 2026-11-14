@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { USER_MEETINGS_INCLUDE_ATTENDANCE, USER_PAST_MEETINGS_INCLUDE_ARTIFACTS } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -153,9 +154,11 @@ export class UserController {
    * Returns meetings the user has direct FGA access to (host, participant, organizer), optionally filtered by project
    * @query projectUid - Optional project UID to filter meetings
    * @query foundation_uid - Optional foundation UID to filter meetings (OR across child projects)
+   * @query include - Optional; `attendance` adds `rsvp_summary` to each date of the meetings the viewer organizes
    */
   public async getUserMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');
+    const includeAttendance = (getStringQueryParam(req, 'include') ?? '').split(',').includes(USER_MEETINGS_INCLUDE_ATTENDANCE);
     const foundationUidParam = req.query['foundation_uid'];
     if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_user_meetings' })) {
       return;
@@ -170,7 +173,7 @@ export class UserController {
     try {
       // No email extraction needed — the service uses req.bearerToken (via filter_grants=direct
       // server-side FGA lookup). Auth middleware has already ensured the user is authenticated.
-      const meetings = await this.userService.getUserMeetings(req, projectUid, foundationUid);
+      const meetings = await this.userService.getUserMeetings(req, projectUid, foundationUid, { includeAttendance });
 
       // List cards never surface the Zoom host key — strip it from every item unconditionally.
       meetings.forEach((meeting) => stripHostKey(meeting));
@@ -198,9 +201,14 @@ export class UserController {
    * Returns past meetings the user has direct FGA access to (host, invitee, attendee, organizer), optionally filtered by project
    * @query projectUid - Optional project UID to filter meetings
    * @query foundation_uid - Optional foundation UID to filter meetings (OR across child projects)
+   * @query include - Optional, comma-separated; `artifacts` adds `has_recording` / `recording_share_url` / `has_ai_summary`,
+   *   `attendance` adds `attendance_summary` to the meetings the viewer organizes, other values are ignored
    */
   public async getUserPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = getStringQueryParam(req, 'projectUid');
+    const include = (getStringQueryParam(req, 'include') ?? '').split(',');
+    const includeArtifacts = include.includes(USER_PAST_MEETINGS_INCLUDE_ARTIFACTS);
+    const includeAttendance = include.includes(USER_MEETINGS_INCLUDE_ATTENDANCE);
     const foundationUidParam = req.query['foundation_uid'];
     if (!validateFoundationUidParameter(foundationUidParam, req, next, { operation: 'get_user_past_meetings' })) {
       return;
@@ -210,6 +218,7 @@ export class UserController {
     const startTime = logger.startOperation(req, 'get_user_past_meetings', {
       project_uid: projectUid,
       foundation_uid: foundationUid,
+      include_artifacts: includeArtifacts,
     });
 
     try {
@@ -227,7 +236,7 @@ export class UserController {
       }
 
       // Get user's past meetings from service
-      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, foundationUid);
+      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, foundationUid, { includeArtifacts, includeAttendance });
 
       // Past meetings never surface the Zoom host key.
       pastMeetings.forEach((meeting) => stripHostKey(meeting));

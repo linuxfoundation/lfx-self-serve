@@ -9,6 +9,8 @@ Drawer components provide detail panels that slide in from the right side of the
 
 All drawer components follow a consistent pattern built on PrimeNG's `p-drawer` with Angular signals for state management.
 
+> **New drawers:** use the uikit `UiDrawerService` with an `lfx-ui-drawer` layout (`apps/lfx-one/src/app/shared/uikit/drawer/`) instead of PrimeNG's `p-drawer`. It is built on the uikit modal, so focus trap, focus return, scroll lock, Escape and `canClose` are handled for you. The PrimeNG pattern below describes the existing drawers.
+
 ## Visibility Management
 
 Drawers use `model<boolean>(false)` for two-way binding with the parent component:
@@ -221,13 +223,14 @@ export class OrgDependencyDrawerComponent {
 
 ### Key Template Conventions
 
-- **Responsive width**: `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`. Health Metrics L2 detail drawers (e.g. `engagement-group-attendance-drawer`, `members-movements-drawer`) use the narrower `xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full` to match the design's side panel
+- **Responsive width**: `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`. Health Metrics L2 detail drawers (e.g. `engagement-group-attendance-drawer`) use the narrower `xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full` to match the design's side panel
 - **Header**: Uses `ng-template #header` for PrimeNG drawer customization
 - **Content spacing**: `flex flex-col gap-6` between sections
 - **Loading spinner**: `fa-light fa-spinner-third fa-spin`
 - **Empty state**: Icon + descriptive text in a bordered container
 - **Test IDs**: `data-testid` on the drawer and key sections
 - **Sticky footer**: `ng-template #footer` for actions that must stay visible while the body scrolls, with `[pt]="{ footer: { class: 'border-t border-gray-200' } }"` for the divider. The template must stay statically declared (PrimeNG resolves it through a ContentChild query) — hide it with a `pt` class when it has nothing to show, not with an `@if` around the template (see `formation-item-drawer`).
+- **Phone sheet and touch targets**: add `max-sm:h-dvh` to the width chain so the drawer is a full-height sheet below `sm` (the chain already makes it full width), and pin actions in `#footer` with `pb-[env(safe-area-inset-bottom)]`. Controls a voter taps need 44px; write it as `min-h-[44px]`/`min-w-[44px]` because the 14px html root makes `min-h-11` render about 38px. A bracketed class can't use the `[class.x]` binding syntax, so bind `[class]` instead. Surfaces that swap layout structurally (e.g. `votes-table` cards, `vote-ballot-inline`) use `injectIsMobileViewport()` from `@shared/utils/mobile-viewport.util`, which stays `false` through the first render and follows `VOTES_MOBILE_MEDIA_QUERY` only after `afterNextRender`, so the first client render matches the server HTML (reading the viewport up front causes an NG0500 hydration mismatch on phones). Keep keyboard focus order equal to the phone layout by ordering the DOM (Submit before Cancel) and reversing the row at `sm`, not with CSS `order`; the vote cast drawer is CSS-only.
 - **Dialog semantics**: `p-drawer` announces as an unnamed `complementary` landmark even with a mask, and never moves focus in. A modal drawer sets `[pt]="{ root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': '<title id>' } }"`, focuses its title (`tabindex="-1"`) from `(onShow)`, and hands focus back to the trigger on close. PrimeNG only emits `(onHide)` for its own Escape/mask close, never for a programmatic `visible.set(false)`, so the restore hook follows how the drawer closes: `group-seat-holders-drawer` restores from `(onHide)` and deliberately skips programmatic closes (an org switch closes it and its trigger is gone by then); `formation-item-drawer` subscribes to `toObservable(visible)` filtered to `false` (a subscription, not an `effect()`, per the frontend checklist) because its own close button and the section's post-write close are programmatic and must still hand focus back.
 
 ## List Display
@@ -265,7 +268,7 @@ Drawer components follow the standard component organization:
 
 Two shapes exist for landing a user inside a drawer from a URL:
 
-- **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. `my-newsletters` does this with `?issue=` (see its `onDrawerVisibleChange`). Use it when the drawer is a destination worth bookmarking or sharing.
+- **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. The My Newsletters reader drawer used this shape with `?issue=` until #4979 replaced it with the reader permalink page; its old links now redirect there. Use it when the drawer is a destination worth bookmarking or sharing.
 - **Consumed once** — the param is a one-shot instruction: open this thing on arrival, then forget it. `FormationChecklistSectionComponent` does this with `?item=<template_item_key>` (`FORMATION_ITEM_QUERY_PARAM`), which the Me-lens pending-action row and the formation-service item-assigned email link to (#2727, #2732, #2573, #2616). Use it when the drawer is one of many over a shared surface and a stale URL would misrepresent the page.
 
 The consumed-once shape has four rules, all in `formation-checklist-section.component.ts`'s `initDeepLink`:

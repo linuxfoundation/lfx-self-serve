@@ -87,25 +87,27 @@ export interface SocialListeningTagCount {
 }
 
 // ---------------------------------------------------------------------------
-// Analytics row shapes (aggregated from SOCIAL_LISTENING_FEED at query time)
+// Analytics row shapes (read from the governed PLATINUM_LFX_ONE.SOCIAL_LISTENING_ANALYTICS_* relations)
 // ---------------------------------------------------------------------------
 
 export interface SocialListeningAnalyticsOverview {
   TOTAL_MENTIONS: number;
-  /** Change vs. the previous equivalent-length period; null when the previous period had no mentions. */
+  /** Change vs. the modeled previous period; null when it has no mentions or fewer than 20% of the current period's mentions, never zero-filled. */
   TOTAL_MENTIONS_CHANGE_PCT: number | null;
   CHILD_PROJECTS_COUNT: number;
   POSITIVE_SENTIMENT_PERCENT: number;
   NEGATIVE_SENTIMENT_PERCENT: number;
   POSITIVE_SENTIMENT_CHANGE_PCT: number | null;
   NEGATIVE_SENTIMENT_CHANGE_PCT: number | null;
+  /** Governed materialization timestamp; null only for the uncached no-row fallback. */
+  COMPUTED_AT: string | null;
 }
 
 export interface SocialListeningOverTimePoint {
   SOURCE_PROJECT_ID: string;
   SOURCE_PROJECT_NAME: string;
   PERIOD_LABEL: string;
-  /** DATE_TRUNC bucket start (ISO date) — drives chart ordering; replaces PCC's PERIOD_NUMBER. */
+  /** Modeled bucket start (ISO date) — drives chart ordering. */
   PERIOD_START: string;
   TOTAL_MENTIONS: number;
 }
@@ -129,7 +131,7 @@ export interface SocialListeningTopProject {
 }
 
 // ---------------------------------------------------------------------------
-// Server query params (controller parses + validates into these)
+// Validated server params (controller parses JSON bodies or remaining GET queries)
 // ---------------------------------------------------------------------------
 
 /** Resolved scope: foundation slug + explicit MENTION_TS range (`resolvePeriodRange` output). */
@@ -208,10 +210,17 @@ export interface SocialListeningOptionsParams {
   foundationSlug: string;
 }
 
-export type SocialListeningAnalyticsParams = SocialListeningScopeParams & SocialListeningReadBlindFilterParams & { limit?: number };
+/** Governed analytics scope. Content filters are deliberately absent. */
+export interface SocialListeningAnalyticsParams {
+  foundationSlug: string;
+  periodKey: string;
+  sourceProjectId?: string;
+  platform?: string;
+  limit?: number;
+}
 
 // ---------------------------------------------------------------------------
-// Client request params (Angular service → REST query string; period token, not dates)
+// Client requests (feed/count POST JSON; options/analytics GET query strings)
 // ---------------------------------------------------------------------------
 
 /** Client-side filter fragment: camelCase values already stripped of `'all'`/empty sentinels by `buildMentionFilters`. */
@@ -235,9 +244,10 @@ export interface MentionFilters {
   readBeforeTs?: string;
 }
 
+/** Complete feed JSON body, including scope, filters and pagination. */
 export interface SocialListeningFeedRequest extends MentionFilters {
   foundationSlug: string;
-  /** Marketing-impact period token (`ytd`, `last-3`, `YYYY-MM`); server resolves via `getValidatedPeriod`. */
+  /** Marketing-impact period token (`ytd`, `last-3`, `last-6`, `YYYY-MM`); server resolves via `resolvePeriodRange`. */
   period?: string;
   /** Mark-all-as-read newest lookup only: skip the date window so the cutoff is foundation-global across every period. */
   allTime?: boolean;
@@ -247,6 +257,7 @@ export interface SocialListeningFeedRequest extends MentionFilters {
   page_token?: string;
 }
 
+/** Complete count JSON body, sharing the feed scope and filters. */
 export interface SocialListeningCountRequest extends MentionFilters {
   foundationSlug: string;
   period?: string;
@@ -266,15 +277,21 @@ export interface SocialListeningOptionsRequest {
   foundationSlug: string;
 }
 
-/** Analytics panels take the same feed predicate as the feed/count endpoints (minus the read-state fields), so the two tabs agree. */
-export type SocialListeningAnalyticsRequest = Omit<MentionFilters, SocialListeningFeedOnlyFilterKeys> & {
+/** Governed analytics reflect period/project/platform only, independently of content filters. */
+export interface SocialListeningAnalyticsRequest {
+  foundationSlug: string;
+  period?: string;
+  sourceProjectId?: string;
+  platform?: string;
+  limit?: number;
+}
+
+/** Tags back two callers: the filter panel (scope only, explicit cap) and the analytics panel (full predicate, default cap). */
+export type SocialListeningTagsRequest = Omit<MentionFilters, SocialListeningFeedOnlyFilterKeys> & {
   foundationSlug: string;
   period?: string;
   limit?: number;
 };
-
-/** Tags back two callers: the filter panel (scope only, explicit cap) and the analytics panel (full predicate, default cap). */
-export type SocialListeningTagsRequest = SocialListeningAnalyticsRequest;
 
 // ---------------------------------------------------------------------------
 // Responses

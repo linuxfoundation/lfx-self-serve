@@ -1,0 +1,72 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="vote-detail-facts">
+  <lfx-card data-testid="vote-detail-facts-details">
+    <div class="flex flex-col gap-3">
+      <h2 class="text-base font-semibold text-gray-900">Vote details</h2>
+      <dl class="flex flex-col divide-y divide-gray-100 text-sm">
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-created">
+          <dt class="shrink-0 text-gray-500">Created</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ createdText() }}</dd>
+        </div>
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-group">
+          <dt class="shrink-0 text-gray-500">Group</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ vote().committee_name || 'Unknown group' }}</dd>
+        </div>
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-method">
+          <dt class="shrink-0 text-gray-500">Voting method</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ methodLabel() }}</dd>
+        </div>
+        @if (closeDateText()) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-close-date">
+            <dt class="shrink-0 text-gray-500">Close date</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">
+              <span
+                [pTooltip]="closeTime() | longTimezone: viewerTimezone"
+                tooltipPosition="top"
+                tooltipEvent="both"
+                tabindex="0"
+                role="note"
+                [attr.aria-label]="closeDateText() + ' (' + (closeTime() | longTimezone: viewerTimezone) + ')'"
+                >{{ closeDateText() }}</span
+              >
+            </dd>
+          </div>
+          @if (timeRemainingText(); as remaining) {
+            <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-time-remaining">
+              <dt class="shrink-0 text-gray-500">Time remaining</dt>
+              <dd class="min-w-0 break-words text-right font-medium {{ remaining | dueDateLabelColor }}">{{ remaining }}</dd>
+            </div>
+          }
+        }
+        @if (endedEarlyNote(); as endedEarly) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-ended-early">
+            <dt class="shrink-0 text-gray-500">Ended early</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ endedEarly }}</dd>
+          </div>
+        }
+        @if (invitedText(); as invited) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-invited">
+            <dt class="shrink-0 text-gray-500">Voters</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ invited }}</dd>
+          </div>
+        }
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-vote-questions">
+          <dt class="shrink-0 text-gray-500">Vote questions</dt>
+          <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ voteQuestionCount() ?? '—' }}</dd>
+        </div>
+        @if (commentsEnabled()) {
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-comments">
+            <dt class="shrink-0 text-gray-500">Comments</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">Active</dd>
+          </div>
+          <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-comment-prompts">
+            <dt class="shrink-0 text-gray-500">Comment prompts</dt>
+            <dd class="min-w-0 break-words text-right font-medium text-gray-900">{{ resolvedCommentPromptCount() }}</dd>
+          </div>
+        }
+      </dl>
+    </div>
+  </lfx-card>
+</div>

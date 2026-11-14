@@ -120,7 +120,7 @@ const ROSTER: RosterSeed[] = [
   { uid: 'm-lf-staff-rep', first: 'Priya', last: 'Repstaff', role: 'LF Staff', votingStatus: 'Voting Rep' },
   // A committee without voting leaves staff seats with no voting status recorded at all, not
   // Observer. Must render the same neutral LF Staff tier as m-lf-staff above, not the
-  // tenure-grace High tier (GH-1848).
+  // tenure-grace tier (GH-1848; now `New`, lfx-self-serve-ops#1142).
   { uid: 'm-lf-staff-none', first: 'Alex', last: 'Nonstatus', role: 'LF Staff', votingStatus: 'None' },
 ];
 

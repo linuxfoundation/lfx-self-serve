@@ -4,9 +4,12 @@
 import type {
   MentorshipMenteeApplyBlockedReason,
   MentorshipMenteeApplyBlockedState,
+  MentorshipMenteeApplyUpstreamErrorState,
   MentorshipMenteeDemographicRow,
   MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
+import type { MentorshipRegisterFailureOptions } from '../interfaces/mentorship.interface';
+import { COUNTRIES } from './countries.constants';
 
 export const MENTORSHIP_MENTEE_REGISTER_TITLE = 'Become a Mentee';
 
@@ -36,11 +39,17 @@ export const MENTORSHIP_MENTEE_SKILLS_HAVE_LABEL = 'What skills do you currently
 export const MENTORSHIP_MENTEE_SKILLS_WANT_LABEL = 'What skills would you like to improve?';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL = 'Anything else you want mentors to know?';
 export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_PLACEHOLDER = 'Share any other context that would help a mentor get to know you.';
-export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
-export const MENTORSHIP_MENTEE_RESUME_INTRO = 'Optional, but mentors often look you up before accepting a mentee.';
-/** Passed to the resume section's `comingSoonSummary`: upload stays inert and toasts this feature name. */
-export const MENTORSHIP_MENTEE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
+/** The Country card: on register, in the profile edit drawer, and on the profile details card. */
+export const MENTORSHIP_MENTEE_COUNTRY_TITLE = 'Country';
+export const MENTORSHIP_MENTEE_COUNTRY_INTRO = 'Tell us the country you live in. The Linux Foundation HR team uses it to verify stipend eligibility.';
+export const MENTORSHIP_MENTEE_COUNTRY_LABEL = 'Country of residence';
+export const MENTORSHIP_MENTEE_COUNTRY_PLACEHOLDER = 'Select your country';
+export const MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE = 'Select your country of residence.';
+export const MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE = 'Select a country from the list.';
+/** The codes a mentee country may hold: the assigned ISO 3166-1 alpha-2 codes the dropdown offers, derived from `COUNTRIES`. */
+export const MENTORSHIP_MENTEE_COUNTRY_CODES: ReadonlySet<string> = new Set<string>(COUNTRIES.map((country) => country.value));
+export const MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX = 1000;
 
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE = 'Demographics';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO =
@@ -151,26 +160,34 @@ export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL = 'Your mentee profile has 
 /** Error code the BFF puts on the 409 returned when a mentee profile already exists. */
 export const MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE = 'MENTEE_PROFILE_EXISTS';
 
-/** Inline failure-banner copy for a rejected registration submit, keyed by `MentorshipMenteeRegisterSubmitFailureKind`. */
+/**
+ * Mentee-specific failure-banner copy for a rejected registration submit. The conflict, read-only and
+ * fallback copy both register forms share is `MENTORSHIP_REGISTER_ERROR_*` in `mentorship.constants.ts`.
+ */
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS = 'You already have a mentee profile, so we did not overwrite it.';
 export const MENTORSHIP_MENTEE_REGISTER_PROFILE_EXISTS_CONTINUE = 'Go to my mentee dashboard';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT = 'Your profile is in conflict with an existing record. Refresh the page and try again.';
 export const MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE = 'We could not accept your registration. Please confirm the eligibility statements and try again.';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY = 'You are viewing as another user, so registration is read-only.';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK = 'We could not save your registration. Please try again in a moment.';
-export const MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL = 'Choose skills from the suggested list.';
 
 /** The form fields a server 400 can name; anything else in `errors[]` is ignored rather than shown against a field that does not exist. */
 export const MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS: readonly (keyof MentorshipMenteeRegisterFieldErrors)[] = [
   'introduction',
   'skillsHave',
   'skillsWant',
+  'country',
   'ageEligible',
   'workAuthorized',
   'noDuplicateProfile',
   'complianceAccepted',
   'termsAccepted',
 ];
+
+/** How `mapMentorshipRegisterFailure` classifies a rejected Become a Mentee submit. */
+export const MENTORSHIP_MENTEE_REGISTER_FAILURE_OPTIONS: MentorshipRegisterFailureOptions<MentorshipMenteeRegisterFieldErrors> = {
+  profileExistsCode: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  profileExistsMessage: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  fieldKeys: MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
+  ineligibleMessage: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
+};
 
 // ---------------------------------------------------------------------------
 // Mentee shell page — tab metadata, overview, and tasks
@@ -202,7 +219,6 @@ export const MENTORSHIP_MENTEE_TABS = [
 
 export const MENTORSHIP_MENTEE_SHELL_TITLE = 'My Mentorship';
 export const MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL = 'Find a Program';
-export const MENTORSHIP_MENTEE_FIND_PROGRAM_URL = 'https://mentorship.dev.lfx.dev/programs';
 export const MENTORSHIP_MENTEE_TASKS_URL = '/mentorship/mentee/tasks';
 
 // ---------------------------------------------------------------------------
@@ -373,9 +389,10 @@ export const MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY = 'No tasks for this appl
 // ---------------------------------------------------------------------------
 
 /**
- * The only statuses a mentee can request: `pending → in_progress` and `in_progress → submitted`.
- * `incomplete` and `complete` are reviewer-only, and anything else is a 409 upstream. The BFF never
- * sends `file` (upload is a coming-soon toast), so the stored file satisfies upstream's file check.
+ * The only statuses a mentee can request: `pending → in_progress`, `in_progress → submitted` and
+ * `submitted → in_progress` (until the reviewer completes the task). `incomplete` and `complete` are
+ * reviewer-only, and anything else is a 409 upstream. The BFF never sends `file`: uploading a file marks
+ * the task submitted on its own, and the stored file satisfies upstream's file check on a status change.
  */
 export const MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES: readonly MentorshipMenteeUpdatableTaskStatus[] = ['in_progress', 'submitted'];
 export const MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE = 5000;
@@ -387,31 +404,92 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK = 'We could not update
 /**
  * Statuses where the local view is stale, so the applications are re-read after the toast. A 400 counts:
  * the row only sends a task id and a status it has already validated, so in practice it is upstream's
- * file-required check, which means the cached task no longer says whether a file is needed.
+ * file-required check, which means the cached task no longer says whether a file is stored or needed.
  */
 export const MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES: readonly number[] = [400, 403, 404, 409];
 
 /**
  * Status-change failures with their own copy, keyed by status. A 400 is either the BFF rejecting the
- * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both.
+ * request or upstream's file-required check, which the client cannot tell apart, so its copy covers both;
+ * the BFF's past-due 400 carries `MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE` and shows its own message.
  * A 403 can come from the gateway's assignee check or the service's; the OpenFGA assignee tuple is written
  * asynchronously, so a valid assignee may see one just after the task is created. The stale statuses
  * (400, 403, 404, 409) re-read the applications; any other status shows the fallback and keeps them.
  */
 export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<number, string>> = {
-  400: 'This task could not be updated. If it needs a file, file upload is coming soon. Your tasks have been refreshed.',
+  400: 'This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed.',
   403: 'You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed.',
   404: 'This task no longer exists. Your tasks have been refreshed.',
   409: 'This task has already moved on, so your change was not applied. Your tasks have been refreshed.',
 };
 
-/** Reasons a status option is unavailable. They are read by assistive tech; only the file-required one shows on screen. */
-export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. File upload is coming soon.';
-export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
-export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
+/**
+ * Error code on the BFF's 400 when a mentee submits a task after its due date. Upstream enforces no
+ * deadline, so the BFF checks the task's own `due_date` (the end of that UTC day) before forwarding.
+ */
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE = 'TASK_PAST_DUE';
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted or reopened.';
+/** The same 400 code, on a file upload or removal after the due date. */
+export const MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE = 'The due date for this task has passed, so its file can no longer change.';
 
 // ---------------------------------------------------------------------------
-// Profile tab constants and mock data
+// Task submission files
+// ---------------------------------------------------------------------------
+
+/** Upstream's cap on a task file (20 MiB). The picker, the BFF's raw body parser and upstream all use it. */
+export const MENTORSHIP_MENTEE_TASK_FILE_MAX_BYTES = 20 * 1024 * 1024;
+/** Extensions the picker offers and the BFF accepts. Upstream decides from the bytes: PDF, DOC, DOCX or UTF-8 text. */
+export const MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS: readonly string[] = ['.pdf', '.doc', '.docx', '.txt'];
+export const MENTORSHIP_MENTEE_TASK_FILE_ACCEPT = MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.join(',');
+/** The browser sends the raw bytes with this type, and the BFF's parser reads no other; upstream ignores the type it is sent. */
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_CONTENT_TYPE = 'application/octet-stream';
+/**
+ * Request header that carries the file's name, URI-encoded. A header rather than a query value, because the request
+ * logger writes the URL on every line and a mentee's file name often carries their own name.
+ */
+export const MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER = 'X-File-Name';
+export const MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE = 'The file is larger than 20 MB.';
+export const MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE = 'Upload a PDF, DOC, DOCX or plain-text file.';
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_SUMMARY = 'File uploaded';
+/** Upstream marks the task submitted with every upload. */
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_DETAIL = 'Your file has been saved and the task marked as submitted.';
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_ERROR_SUMMARY = 'Could not upload file';
+export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_SUCCESS_SUMMARY = 'File removed';
+export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_SUCCESS_DETAIL = 'Your file has been removed.';
+export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_ERROR_SUMMARY = 'Could not remove file';
+export const MENTORSHIP_MENTEE_TASK_FILE_ERROR_FALLBACK = 'We could not change this file right now. Please try again.';
+
+/**
+ * Upload and removal failures with their own copy, keyed by status. A 400 is an empty or unreadable file, or the BFF's
+ * past-due check, which carries `MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE` and shows its own message. A 409 is a
+ * completed task's file, or removing a submitted task's file, which can only be replaced. A 503 means object storage is
+ * not configured upstream.
+ */
+export const MENTORSHIP_MENTEE_TASK_FILE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
+  400: 'This file could not be uploaded. Choose a file that is not empty.',
+  403: 'You do not have permission to change this file. Your tasks have been refreshed.',
+  404: 'This task no longer exists. Your tasks have been refreshed.',
+  409: 'This file can no longer change that way. Your tasks have been refreshed.',
+  413: MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE,
+  415: MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE,
+  503: 'File uploads are unavailable right now. Please try again later.',
+};
+
+/** File failures that mean the cached task is out of date, so the applications are re-read after the toast. */
+export const MENTORSHIP_MENTEE_TASK_FILE_STALE_STATUSES: readonly number[] = [403, 404, 409];
+
+/**
+ * Reasons a status option is unavailable. They are read by assistive tech; the file-required and past-due
+ * ones also show on screen. The past-due hint also describes the disabled Upload button.
+ */
+export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. Upload one first.';
+export const MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE = 'The due date has passed, so this task can no longer be submitted.';
+export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
+export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Completed tasks can only be changed by your mentor.';
+export const MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE = 'The due date has passed, so this submission can no longer be reopened.';
+
+// ---------------------------------------------------------------------------
+// Profile tab constants
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_PROFILE_DETAILS_TITLE = 'Mentee Profile';
@@ -420,17 +498,11 @@ export const MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL = 'About Me';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_LABEL = 'Skills';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL = 'Areas to Improve';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_LABEL = 'Additional Notes';
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY = 'No areas to improve added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY = 'No additional notes added yet.';
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
-/**
- * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
- * the two fields are independently optional in `MentorshipMenteeProfileDetails`.
- */
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
+export const MENTORSHIP_MENTEE_PROFILE_COUNTRY_EMPTY = 'No country added yet.';
 
 // ---------------------------------------------------------------------------
 // Mentee apply page — `/mentorship/mentee/apply?programId=&programTermId=`
@@ -504,9 +576,12 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES: Readonly<Record<MentorshipM
 /**
  * Upstream statuses on the apply-target read or the submit that mean the form cannot be used,
  * keyed by status. 400 is an id that is not a UUID, 403 a program the mentee cannot view, 404 a
- * term that is not in the program, 422 a term outside its application window, and 409 an existing
- * application for the term (pending, decided or declined; upstream does not say which). Any other
- * status keeps the form and reports the failure.
+ * term that is not in the program, 422 an applicant or term that fails an eligibility rule (the
+ * term is outside its application window, no mentee profile, reapply limit, too many applications
+ * under review, ...), and 409 an
+ * existing application for the term (pending, decided or declined; upstream does not say which).
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` refines the state when the message names the rule.
+ * Any other status keeps the form and reports the failure.
  */
 export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<number, MentorshipMenteeApplyBlockedReason>> = {
   400: 'not-found',
@@ -517,19 +592,106 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<n
 };
 
 /**
+ * Clearer copy for the specific rules the mentorship service refuses an application on, matched
+ * against its error message (`lfx-mentorship` `ApplicationService.Create` and the repository's
+ * `checkCanApply`). Upstream sends `{ error }` with the sentinel's text in front of the reason
+ * ("eligibility criteria not met: create a mentee profile, ..."), which is not written for a
+ * reader, so the page shows this copy instead. The first entry whose `match` the message contains
+ * wins; a message no entry matches keeps the status's state from `MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES`.
+ * Upstream's 409 currently answers with a bare "conflict", so its two entries only take effect once
+ * the service forwards the reason.
+ */
+export const MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES: readonly MentorshipMenteeApplyUpstreamErrorState[] = [
+  {
+    match: 'create a mentee profile',
+    state: {
+      icon: 'fa-light fa-user-pen',
+      title: 'Complete your mentee profile first',
+      subtitle: 'You need a mentee profile, with the eligibility criteria confirmed, before you can apply to a program.',
+    },
+  },
+  {
+    match: 'reapplication limit reached',
+    state: {
+      icon: 'fa-light fa-ban',
+      title: 'You can no longer apply to this term',
+      subtitle: 'You have withdrawn from this term too many times, so you cannot apply to it again.',
+    },
+  },
+  {
+    match: 'reapplication is not permitted from a declined application',
+    state: {
+      icon: 'fa-light fa-ban',
+      title: 'You cannot reapply to this term',
+      subtitle: 'Your earlier application to this term was declined, so you cannot apply to it again.',
+    },
+  },
+  {
+    match: 'an application for this term already exists',
+    state: {
+      icon: 'fa-light fa-circle-check',
+      title: 'You already applied to this term',
+      subtitle: 'You have an application for this term, so you cannot apply again. Your applications are on your overview.',
+    },
+  },
+  {
+    match: 'already holds an accepted mentorship',
+    state: {
+      icon: 'fa-light fa-user-check',
+      title: 'You are already in a mentorship',
+      subtitle: 'You have been accepted into a mentorship that has not ended yet, so you cannot apply to another one until it does.',
+    },
+  },
+  {
+    match: 'applications under review',
+    state: {
+      icon: 'fa-light fa-layer-group',
+      title: 'You have reached the application limit',
+      subtitle: 'You can have up to 3 applications under review at a time. Withdraw one from your overview before applying to another term.',
+    },
+  },
+  {
+    match: 'already graduated from a mentorship',
+    state: {
+      icon: 'fa-light fa-graduation-cap',
+      title: 'You have already graduated from a mentorship',
+      subtitle: 'Mentees who have graduated from a mentorship cannot apply to another one.',
+    },
+  },
+  {
+    match: 'application window has not opened yet',
+    state: {
+      icon: 'fa-light fa-calendar-clock',
+      title: 'Applications have not opened yet',
+      subtitle: 'The application window for this term has not opened yet. Please check back once it opens.',
+    },
+  },
+  {
+    match: 'application window has closed',
+    state: {
+      icon: 'fa-light fa-calendar-xmark',
+      title: 'Applications for this term have closed',
+      subtitle: 'The application window for this term has ended, so it is no longer taking applications.',
+    },
+  },
+  {
+    match: 'applications are not open for this program',
+    state: {
+      icon: 'fa-light fa-calendar-xmark',
+      title: 'This program is not accepting applications',
+      subtitle: 'The program is not open for applications right now.',
+    },
+  },
+];
+
+/**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
  * "Edit Mentee Profile" button. Drawer-only labels: the Become a Mentee register form keeps its
- * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
+ * own intro / skill copy. About Me uses the register rich editor and its introduction rule.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
   'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
-/**
- * Same 3000 code-point cap as register About Me (`introduction`). Issue #2764's
- * mockup showed a 2000 counter; clipping the drawer to 2000 would truncate a
- * register-length intro on seed, so edit and register share this constant.
- */
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = MENTORSHIP_MENTEE_INTRODUCTION_MAX;
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =
   'Enter your current skills as well as skills you would like to improve, so mentors can match you with the right program.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL = 'What skills are you currently proficient in?';
@@ -537,9 +699,7 @@ export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL = 'What areas do y
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL = 'Save Changes';
 export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
 
-/** Ceilings the profile drawer validators and the BFF share. Above anything the skills picker catalogue reaches. */
-export const MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS = 100;
-export const MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH = 100;
+/** Ceiling the profile drawer validators and the BFF share for each demographic answer. */
 export const MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH = 100;
 
 /** Which upstream column each demographics row is stored in, in the profile update's camelCase keys. */
@@ -552,12 +712,8 @@ export const MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS = {
 export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvementSkills', 'comments'] as const;
 
 /** Top-level keys the profile update accepts. Anything else is a 400. */
-export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics'] as const;
+export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics', 'country'] as const;
 export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
-
-export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE =
-  'Your introduction has too many line breaks or special characters to save. Shorten it or remove extra blank lines.';
 
 /** Copy per status; 403 is intentionally absent (the BFF impersonation guard authors its own message). */
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {
@@ -569,7 +725,6 @@ export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_FALLBACK = 'We could not save 
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_SUCCESS_SUMMARY = 'Profile updated';
 export const MENTORSHIP_MENTEE_DEMOGRAPHICS_SAVE_SUCCESS_SUMMARY = 'Demographics updated';
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_TOAST_LIFE = 5000;
-export const MENTORSHIP_MENTEE_PROFILE_RESUME_COMING_SOON_SUMMARY = 'Resume upload';
 
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
 export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';

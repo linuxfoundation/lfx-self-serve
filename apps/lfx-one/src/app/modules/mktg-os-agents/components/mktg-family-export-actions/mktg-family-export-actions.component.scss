@@ -1,0 +1,16 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* Outline and paint only: revealing the card never changes its layout box. */
+.lfx-mktg-export-highlight {
+  outline: 2px solid theme('colors.blue.500');
+  outline-offset: 3px;
+  background-color: theme('colors.blue.50');
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lfx-mktg-export-highlight {
+    /* Ring only, no animated scroll or background pulse. */
+    background-color: theme('colors.white');
+  }
+}

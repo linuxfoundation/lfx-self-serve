@@ -42,6 +42,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       ...overrides,
     };
   }
@@ -283,6 +284,20 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(identity?.getAttribute('href')).toBe('mailto:contributor@example.org');
     });
 
+    it.each(['victim@example.com%0D%0ABcc:attacker@example.com', 'a@example.com?bcc=b@example.org', 'r&d@example.org', 'tag#1@example.org'])(
+      'renders an email %s that is not mailto-safe as plain text with no mailto link',
+      async (email) => {
+        getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ email })])));
+        const fixture = await render();
+
+        const identity = byTestId(fixture, 'org-easycla-acknowledgment-identity');
+        expect(identity?.tagName).toBe('SPAN');
+        expect(textIn(identity)).toBe(email);
+        expect(identity?.getAttribute('href')).toBeNull();
+        expect(fixture.nativeElement.querySelector('a[href^="mailto:"]')).toBeFalsy();
+      }
+    );
+
     it('renders an em-dash for the ID column when the producer sent nothing usable, rather than dropping the row', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ name: 'Name Only' })])));
       const fixture = await render();
@@ -343,6 +358,38 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(label).toContain('by cla-manager');
       expect(label).toContain('Reason: left the company');
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-acknowledged')).toBeNull();
+    });
+
+    it('names the invalidator by the resolved display instead of the username', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(
+          page([
+            ack({
+              approved: false,
+              invalidatedBy: 'cla-manager',
+              invalidatedByDisplay: 'Casey Nguyen',
+              invalidationReason: 'left the company',
+            }),
+          ])
+        )
+      );
+      const fixture = await render();
+
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('by Casey Nguyen');
+      expect(label).not.toContain('cla-manager');
+      expect(label).toContain('Reason: left the company');
+    });
+
+    it('uses a resolved email when that is the display value', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ approved: false, invalidatedBy: 'cla-manager', invalidatedByDisplay: 'manager@example.org' })]))
+      );
+      const fixture = await render();
+
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).toContain('by manager@example.org');
+      expect(label).not.toContain('cla-manager');
     });
   });
 
@@ -462,6 +509,31 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
     });
 
+    it.each([
+      ['is not on the roster', false],
+      ['has no roster answer', undefined],
+    ])('offers no remedy links or Invalidate when ACS allows both but the viewer %s', async (_case, viewerIsClaManager) => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      const fixture = await render(claGroup({ viewerIsClaManager }));
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
+
+    it('offers no remedy links or Invalidate when the row names the viewer but the fresh list says they cannot edit', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()], { canEdit: false })));
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
+
     it('offers no remedy links to a read-only reader who can neither invalidate nor edit the list', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
       checkPermission.mockReturnValue(of(false));
@@ -560,6 +632,15 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     expect(empty?.textContent).toContain('No contributor acknowledgments yet');
     // The table itself is not rendered when the panel is in the empty state.
     expect(byTestId(fixture, 'org-easycla-acknowledgments-table')).toBeNull();
+  });
+
+  it('asks ACS for Invalidate and Add-to-list with the foundation pair alongside the project pair when the CLA Group has a distinct foundation SFID', async () => {
+    const PAIR_PROJECT = 'a09410000182dD3AAI';
+    const FOUNDATION = 'a09410000182dFOUND';
+    await render(claGroup({ pairProjectSfid: PAIR_PROJECT, foundationSfid: FOUNDATION }));
+
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'ecla-invalidate', PAIR_PROJECT, FOUNDATION);
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'approval-list-update', PAIR_PROJECT, FOUNDATION);
   });
   /**
    * Per-row invalidate (#2807).
@@ -717,6 +798,16 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         { kind: 'email', value: 'ada@example.org' },
         { kind: 'github-username', value: 'ADA-L' },
       ]);
+    });
+
+    it('matches the approval-list entry of a valid email that is not mailto-safe', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', email: 'r&d@example.org' })], { canEdit: true })));
+      getApprovalList.mockReturnValueOnce(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'email', value: 'r&d@example.org' }], canEdit: false }));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog.mock.calls[0][1].data.matchingEntries()).toEqual([{ kind: 'email', value: 'r&d@example.org' }]);
     });
 
     it('offers the also-remove option when ACS allows approval-list-update', async () => {
@@ -996,6 +1087,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
                 // The approval-list removal left these stamps behind; they are not this invalidation's.
                 invalidatedAt: '2026-03-11T09:20:00Z',
                 invalidatedBy: 'former-manager',
+                invalidatedByDisplay: 'Morgan Ellis',
                 invalidationReason: 'approved list removal (Email Criteria)',
               }),
             ],
@@ -1020,6 +1112,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       // Invalidated, but with no stale date carried over from the approval-list removal.
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
       expect(allByTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toEqual([]);
+      const label = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(label).not.toContain('Morgan Ellis');
     });
 
     it('drops a Load-more response that arrives after the invalidate refresh starts', async () => {
@@ -1116,6 +1210,89 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(addMessage).toHaveBeenCalledWith(
         expect.objectContaining({ severity: 'error', detail: 'Only a CLA manager named on this CLA can invalidate acknowledgments' })
       );
+    });
+
+    it('refetches the stale row when the invalidate is refused as already invalidated or changed', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })));
+      const fixture = await render();
+      const fetchesBefore = getContributorAcknowledgments.mock.calls.length;
+      invalidateAcknowledgment.mockReturnValueOnce(
+        throwError(
+          () => new HttpErrorResponse({ status: 409, error: { message: 'This acknowledgment was already invalidated, or changed since the list loaded.' } })
+        )
+      );
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace', approved: false })], { canEdit: true })));
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'This acknowledgment was already invalidated, or changed since the list loaded.' })
+      );
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore + 1);
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+    });
+
+    it('does not mark a refused row Invalidated in place while a loaded span refetches after a 409', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 2, nextKey: null, canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const refetch = new Subject<OrgClaContributorAcknowledgmentList>();
+      getContributorAcknowledgments.mockReturnValueOnce(refetch.asObservable());
+      invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'conflict' } })));
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', { search: '' });
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeNull();
+    });
+
+    it('adds no second toast when the refetch after a 409 fails', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 2, nextKey: null, canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'conflict' } })));
+      getContributorAcknowledgments.mockReturnValueOnce(
+        throwError(
+          () =>
+            new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway', url: '/api/orgs/org-1/lens/cla/acknowledgments?search=contributor%40example.org' })
+        )
+      );
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledTimes(1);
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'conflict' }));
+      expect(warn).toHaveBeenCalledWith('Failed to refresh the loaded acknowledgments after an invalidate:', 502, 'Bad Gateway');
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('search=');
+      warn.mockRestore();
     });
 
     it('reports the proxy error sentence when the BFF puts it on error rather than message', async () => {

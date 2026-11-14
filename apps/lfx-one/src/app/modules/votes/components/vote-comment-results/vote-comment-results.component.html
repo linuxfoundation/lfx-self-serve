@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (anonymous()) {
+  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3 flex items-start gap-2" data-testid="vote-results-comments-anonymous-notice">
+    <i class="fa-light fa-lock text-slate-500 mt-0.5" aria-hidden="true"></i>
+    <p class="text-sm text-slate-700">{{ anonymousNotice() }}</p>
+  </div>
+}
+<div class="flex flex-col gap-4" data-testid="vote-results-comments-questions">
+  @for (commentResult of displayCommentResults(); track commentResult.prompt.prompt_id) {
+    @let promptId = commentResult.prompt.prompt_id;
+    @let expanded = expandedPrompts().has(promptId);
+    @let count = commentResult.total_responses ?? commentResult.totalResponses;
+    <section
+      [class]="hasMultipleQuestions() ? 'overflow-hidden rounded-lg border border-gray-200' : 'flex flex-col gap-2'"
+      [attr.data-testid]="'vote-results-comments-question-' + promptId">
+      @if (hasMultipleQuestions()) {
+        <h3>
+          <button
+            type="button"
+            class="flex w-full items-start gap-3 bg-gray-50 p-4 text-left hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+            [id]="'vote-results-comments-heading-' + promptId"
+            [attr.aria-expanded]="expanded"
+            [attr.aria-controls]="'vote-results-comments-panel-' + promptId"
+            [attr.data-testid]="'vote-results-comments-toggle-' + promptId"
+            (click)="togglePrompt(promptId)">
+            <span class="flex min-w-0 flex-1 flex-col gap-1">
+              <span class="break-words text-base font-semibold text-gray-900">{{ commentResult.prompt.prompt }}</span>
+              <span class="text-xs font-normal text-gray-500">{{ count }} {{ count === 1 ? 'comment' : 'comments' }}</span>
+            </span>
+            <span
+              class="mt-1 h-2 w-2 shrink-0 border-b-2 border-r-2 border-gray-500"
+              [class.rotate-45]="expanded"
+              [class.-rotate-45]="!expanded"
+              aria-hidden="true"></span>
+          </button>
+        </h3>
+      } @else {
+        <h3 class="break-words text-base font-semibold text-gray-900" [id]="'vote-results-comments-heading-' + promptId">
+          {{ commentResult.prompt.prompt }}
+        </h3>
+        <p class="text-xs text-gray-500">{{ count }} {{ count === 1 ? 'comment' : 'comments' }}</p>
+      }
+      <div
+        [id]="'vote-results-comments-panel-' + promptId"
+        role="region"
+        [attr.aria-labelledby]="'vote-results-comments-heading-' + promptId"
+        [hidden]="!expanded">
+        @if (expanded) {
+          <!-- Mount only when visible so individual comments measure their Show more height correctly. -->
+          <div [class]="hasMultipleQuestions() ? 'flex flex-col gap-3 border-t border-gray-200 p-4' : 'flex flex-col gap-3'">
+            <!-- Text-only responses have no vote_id; positions preserve duplicates and server order. -->
+            @for (response of commentResult.responses; track response.vote_id ?? response.position) {
+              <lfx-vote-comment-item
+                [response]="response"
+                [anonymous]="anonymous()"
+                [showBallotLink]="showBallotLinks()"
+                (viewBallot)="viewBallot.emit($event)" />
+            } @empty {
+              <p class="text-sm italic text-gray-500" [attr.data-testid]="'vote-results-comments-empty-' + promptId">No responses yet.</p>
+            }
+            <!-- The BFF caps each prompt's list; disclose truncation honestly. -->
+            @if (commentResult.total_responses && commentResult.total_responses > commentResult.totalResponses) {
+              <p class="text-xs text-gray-500" [attr.data-testid]="'vote-results-comments-truncated-' + promptId">
+                @if (anonymous()) {
+                  Showing {{ commentResult.totalResponses }} of {{ commentResult.total_responses }} responses.
+                } @else {
+                  Showing the {{ commentResult.totalResponses }} most recent of {{ commentResult.total_responses }} responses.
+                }
+              </p>
+            }
+          </div>
+        }
+      </div>
+    </section>
+  }
+</div>

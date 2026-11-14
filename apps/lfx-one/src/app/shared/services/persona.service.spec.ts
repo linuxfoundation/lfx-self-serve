@@ -99,6 +99,28 @@ describe('PersonaService — grant probe recency ordering', () => {
     expect(service.marketingGrantSlug()).toBe('foundation-b');
   });
 
+  it('keeps marketingGrantSlug on the newer foundation when an older probe applies only the relation the newer one left unverified (#3824)', () => {
+    let aResponse: PersonaApiResponse | null = null;
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (aResponse = response));
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    // B answers first: auditor granted, campaign check failed — only the marketing relation applies.
+    http
+      .expectOne((req) => req.url.includes('project=foundation-b'))
+      .flush(mockResponse({ isMarketingAuditor: true, marketingGrantCheckFailed: true, campaignManagerUnverified: true }));
+    // A answers second with a campaign grant: its relation's own mark is still open, so it applies.
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+
+    expect(service.isCampaignManager()).toBe(true);
+    expect(service.marketingGrantSlug()).toBe('foundation-b');
+
+    // A's guard force-applying its own response doesn't repoint the slug at the older foundation either.
+    service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+    expect(service.marketingGrantSlug()).toBe('foundation-b');
+    expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+  });
+
   it('does not let a later-issued probe that never itself writes (errors out) block an earlier, still-in-flight probe from applying its legitimate response (Cursor Bugbot finding, PR #1835: "Global probe gate drops grant slug")', () => {
     // foundation-a's probe is issued first; a second, unrelated probe (e.g. a background
     // sidebar-nav pre-check for foundation-b) is issued after it but errors before resolving.
@@ -232,6 +254,64 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.grantsByScope().get('foundation-b')?.isCampaignManager).toBe(false);
     });
 
+    it('keeps the last confirmed grants when a later answer could not verify them', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+
+      // The next probe answers, but its grant checks failed upstream: its `false` grants are unverified.
+      let unverified: PersonaApiResponse | null = null;
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (unverified = response));
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(
+          mockResponse({
+            isCampaignManager: false,
+            isMarketingAuditor: false,
+            marketingGrantCheckFailed: true,
+            marketingAuditorUnverified: true,
+            campaignManagerUnverified: true,
+          })
+        );
+      service.confirmActiveGrant(unverified!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(true);
+      expect(service.isMarketingAuditor()).toBe(true);
+      expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: true, isMarketingAuditor: true });
+    });
+
+    it('lets an older probe apply a relation a newer probe left unverified, out of order', () => {
+      // Probe 1 then probe 2 for the same foundation; probe 2 answers first.
+      let first: PersonaApiResponse | null = null;
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (first = response));
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      const [req1, req2] = http.match((req) => req.url.includes('project=foundation-a'));
+
+      // Probe 2: auditor denial verified, campaign check failed.
+      req2.flush(mockResponse({ isMarketingAuditor: false, isCampaignManager: false, marketingGrantCheckFailed: true, campaignManagerUnverified: true }));
+      // Probe 1: campaign grant confirmed.
+      req1.flush(mockResponse({ isMarketingAuditor: false, isCampaignManager: true }));
+      service.confirmActiveGrant(first!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(true);
+      expect(service.isMarketingAuditor()).toBe(false);
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      expect(service.marketingGrantSlug()).toBe('foundation-a');
+    });
+
+    it('applies a verified grant from a response whose other marketing check failed', () => {
+      // Campaign manager confirmed; the independent auditor check failed upstream.
+      let mixed: PersonaApiResponse | null = null;
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (mixed = response));
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: false, marketingGrantCheckFailed: true, marketingAuditorUnverified: true }));
+      service.confirmActiveGrant(mixed!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(true);
+      expect(service.isMarketingAuditor()).toBe(false);
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+    });
+
     it('writes to grantsByScope from applyPersonaResponse so the per-scope result is available before confirmActiveGrant is called', () => {
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
       http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
@@ -338,6 +418,19 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
     });
 
+    it('does not store an unscoped grant that does not cascade from ROOT under the null key, and clears a stale ROOT true', () => {
+      // Seed a ROOT-cascading campaign grant (null key) from an unscoped probe.
+      service.refreshEnrichedPersonas(true).subscribe();
+      http.expectOne((req) => !req.url.includes('project=')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: true }));
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
+
+      // ROOT `global_marketing_ops` alone: granted on ROOT, but it does not cascade to other projects.
+      service.refreshEnrichedPersonas(true).subscribe();
+      http.expectOne((req) => !req.url.includes('project=')).flush(mockResponse({ isCampaignManager: true, isCampaignManagerRootGrant: false }));
+
+      expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(false);
+    });
+
     it('gates the ROOT (null) map key by resolved key, not by the queried foundation slug — two probes for different foundations that both resolve to ROOT must race against each other (David Deal finding, PR #1835)', () => {
       service.refreshEnrichedPersonas(true, 'foundation-x').subscribe();
       service.refreshEnrichedPersonas(true, 'foundation-y').subscribe();
@@ -353,5 +446,46 @@ describe('PersonaService — grant probe recency ordering', () => {
 
       expect(service.grantsByScope().get(null)?.isCampaignManager).toBe(true);
     });
+  });
+});
+
+describe('PersonaService — personaLookupFailed', () => {
+  let service: PersonaService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [PersonaService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(PersonaService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('flags a network failure and an upstream error payload, and clears on the next answer', () => {
+    service.refreshEnrichedPersonas(true).subscribe();
+    http.expectOne((req) => req.url.includes('enriched=true')).flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(service.personaLookupFailed()).toBe(true);
+
+    service.refreshEnrichedPersonas(true).subscribe();
+    http.expectOne((req) => req.url.includes('enriched=true')).flush(mockResponse({ error: 'Failed to fetch persona detections' }));
+    expect(service.personaLookupFailed()).toBe(true);
+
+    service.refreshEnrichedPersonas(true).subscribe();
+    http.expectOne((req) => req.url.includes('enriched=true')).flush(mockResponse({}));
+    expect(service.personaLookupFailed()).toBe(false);
+  });
+
+  it('leaves the root flag alone when a project-scoped probe fails', () => {
+    service.refreshEnrichedPersonas(false, 'cncf').subscribe();
+    http.expectOne((req) => req.url.includes('project=cncf')).flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(service.personaLookupFailed()).toBe(false);
+
+    service.refreshEnrichedPersonas(false, 'cncf').subscribe();
+    http.expectOne((req) => req.url.includes('project=cncf')).flush(mockResponse({ error: 'Failed to fetch persona detections' }));
+    expect(service.personaLookupFailed()).toBe(false);
   });
 });

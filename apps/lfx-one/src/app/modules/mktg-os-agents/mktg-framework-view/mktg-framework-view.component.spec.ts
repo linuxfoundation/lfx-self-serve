@@ -1,0 +1,668 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Location } from '@angular/common';
+import { Component, signal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ProjectContextService } from '@services/project-context.service';
+import { provideRouter, Router } from '@angular/router';
+import {
+  FOUNDATION_MESSAGE_CONTENT_LIMITS,
+  FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
+  FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM,
+  MKTG_PRINT_KIT_READ_NONE,
+  MKTG_PRINT_KIT_READ_NOTES,
+  MKTG_PRINT_KIT_READ_PENDING,
+  MKTG_PRINT_LF_LOOK,
+} from '@lfx-one/shared/constants';
+import {
+  BrandKitRevision,
+  MktgFrameworkAsset,
+  MktgFrameworkViewState,
+  MktgPrintKitRead,
+  MktgSlidesExportTarget,
+  MktgRevisionApproval,
+} from '@lfx-one/shared/interfaces';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
+import { MktgPrintService } from '@services/mktg-print.service';
+import { isMktgDocumentCommentAnchor } from '@lfx-one/shared/utils';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { NEVER, of } from 'rxjs';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+
+import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
+
+/** A host that projects the feed or the questions into the view, as the run page does. */
+@Component({
+  selector: 'lfx-test-framework-host',
+  imports: [MktgFrameworkViewComponent],
+  templateUrl: './mktg-framework-view.test-host.html',
+})
+class HostComponent {
+  public readonly asset = signal<MktgFrameworkAsset | null>(null);
+  public readonly state = signal<MktgFrameworkViewState>('generating');
+  public readonly version = signal<number | null>(null);
+  public readonly approvedAsset = signal<MktgFrameworkAsset | null>(null);
+  public readonly approvedVersion = signal<number | null>(null);
+  public readonly approvedCreatedAt = signal<string | null>(null);
+  public readonly kitRead = signal<MktgPrintKitRead>(MKTG_PRINT_KIT_READ_NONE);
+  public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
+  public readonly approval = signal<MktgRevisionApproval | null>(null);
+}
+
+/** A kit read that has settled with the kit. */
+const settledKit = (kit: BrandKitRevision | null): MktgPrintKitRead => ({ settled: true, kit, failed: false });
+
+const pair = (a: string, b: string): [string, string] => [a, b];
+
+const ASSET: MktgFrameworkAsset = {
+  kind: 'messaging-framework',
+  mode: 'draft',
+  content: {
+    mf: {
+      vision: 'A vision.',
+      mission: 'A mission.',
+      positioning: 'For platform teams, TestOrbit is the open release toolkit.',
+      tagline: 'Release, open.',
+      goals: [
+        {
+          id: 'adoption',
+          n: 1,
+          t: 'Adoption',
+          vp: 'Adoption VP.',
+          key: 'Adoption key.',
+          proof: [pair('1,200 members', 'Website')],
+          bite: 'Adoption in the open',
+          icps: ['users'],
+        },
+        {
+          id: 'community',
+          n: 2,
+          t: 'Community',
+          vp: 'Community VP.',
+          key: 'Community key.',
+          proof: [pair('40 releases', 'Docs')],
+          bite: 'Built together',
+          icps: ['contributors'],
+        },
+      ],
+      crosscut: 'Every column grows the audience.',
+      say: ['open release', 'community-governed'],
+      avoid: [pair('synergy', 'working together')],
+      anchor: ['Which goal does this serve?', 'Which segment is it for?', 'Which key message does it carry?'],
+      notes: 'Check the member count.',
+    },
+    icp: [
+      {
+        id: 'users',
+        name: 'End users',
+        kind: 'Individual',
+        who: 'Engineers running releases.',
+        goals: ['adoption'],
+        need: 'Reliable releases.',
+        value: 'Fewer incidents.',
+        lead: 'Ship with confidence.',
+        proof: [pair('A fact', 'Docs')],
+        cta: 'Try it.',
+        channels: ['Docs', 'Events'],
+        objection: ['Too early?', 'Adopters are in production.'],
+        personas: [pair('SRE', 'uptime')],
+        basis: 'Website',
+      },
+      {
+        id: 'contributors',
+        name: 'Contributors',
+        kind: 'Individual',
+        who: 'Maintainers.',
+        goals: ['community'],
+        need: 'A welcoming project.',
+        value: 'Impact.',
+        lead: 'Build it with us.',
+        proof: [pair('Another fact', 'Web')],
+        cta: 'Open a PR.',
+        channels: ['GitHub'],
+        objection: ['Hard to start?', null],
+        personas: [pair('Maintainer', 'review load')],
+        basis: 'Inferred',
+      },
+    ],
+    mh: {
+      umbrella: 'Open releases for everyone.',
+      line: 'Release, open.',
+      pillars: [
+        { t: 'Open', m: 'Open message.', p: [pair('Fact one', 'Website')] },
+        { t: 'Proven', m: 'Proven message.', p: [pair('Fact two', 'Docs')] },
+        { t: 'Neutral', m: 'Neutral message.', p: [pair('Fact three', 'Web')] },
+      ],
+      found: 'A Linux Foundation project.',
+      aud: [pair('End users', 'Ship with confidence.'), pair('Contributors', 'Build it with us.')],
+    },
+    nums: [pair('1,200', 'members'), pair('40', 'releases a year')],
+  },
+  report: {
+    sources_read: ['https://testorbit.example.org'],
+    sources_failed: [{ name: 'https://blog.example.org', reason: '404' }],
+    gaps: ['No member count.'],
+    notes: 'Check the dates.',
+  },
+  checks: { findings: ['nums has 2 numbers; 3–4'] },
+};
+
+describe('MktgFrameworkViewComponent', () => {
+  let fixture: ComponentFixture<HostComponent>;
+  let host: HostComponent;
+  let printer: { prepare: Mock; printNow: Mock; clear: Mock; ensureFontStylesheet: Mock };
+  let slidesExport: { last: Mock; start: Mock; poll: Mock };
+
+  const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
+  const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
+  const tab = async (id: string): Promise<void> => {
+    query(`mktg-framework-view-tab-${id}`)?.click();
+    await fixture.whenStable();
+  };
+
+  beforeEach(async () => {
+    printer = { prepare: vi.fn(() => Promise.resolve()), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
+      poll: vi.fn(() => NEVER),
+    };
+    await TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
+        { provide: MktgPrintService, useValue: printer },
+        provideMktgSlidesExportStub(slidesExport),
+        provideMktgCommentsStub(),
+        { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(HostComponent);
+    host = fixture.componentInstance;
+    await fixture.whenStable();
+  });
+
+  it('reads shared tab URLs and pushes switches without dropping project or edit state', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?project=synthetic&profile=edit&tab=numbers');
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('aria-selected')).toBe('true');
+    const navigate = vi.spyOn(router, 'navigate');
+    const push = vi.spyOn(TestBed.inject(Location), 'go');
+    await tab('sources');
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: 'sources', project: 'synthetic' }, queryParamsHandling: 'merge' }));
+    expect(router.url).toContain('project=synthetic');
+    expect(router.url).toContain('profile=edit');
+    expect(router.url).toContain('tab=sources');
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
+    await router.navigateByUrl('/?tab=unknown');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-tab-framework')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('focuses the opened panel start only after routed content renders', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigate = router.navigate.bind(router);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = vi.spyOn(router, 'navigate').mockImplementationOnce(async (...args) => {
+      await gate;
+      return navigate(...args);
+    });
+    query('mktg-framework-view-tab-framework')?.focus();
+    const before = document.activeElement;
+    query('mktg-framework-view-tab-numbers')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-panel-numbers')).toBeNull();
+    expect(document.activeElement).toBe(before);
+    release();
+    await pending.mock.results[0]?.value;
+    await fixture.whenStable();
+    const panel = query('mktg-framework-view-panel-numbers');
+    expect(panel).not.toBeNull();
+    expect(document.activeElement).toBe(panel);
+    expect(panel?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('shows a real approval without a duplicate Draft mode and preserves export wiring', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(2);
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-framework-view-version')?.textContent?.trim()).toBe('v2');
+    expect(query('mktg-framework-view-mode')).toBeNull();
+    expect(query('mktg-framework-view-actions')).not.toBeNull();
+    expect(query('mktg-framework-view-slides-export')).not.toBeNull();
+  });
+
+  it.each([
+    ['redraft', 'Redraft'],
+    ['check', 'Checked'],
+  ] as const)('retains distinct %s mode metadata', async (mode, label) => {
+    host.asset.set({ ...ASSET, mode });
+    host.state.set('ready');
+    host.version.set(1);
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-mode')?.textContent?.trim()).toBe(label);
+  });
+
+  it('shows the generating state with the projected feed where the framework will be, tabs disabled', () => {
+    expect(query('mktg-framework-view-title')?.textContent).toContain('TestOrbit Messaging framework');
+    expect(query('mktg-framework-view-state')?.textContent).toContain('Generating');
+    expect(query('mktg-framework-view-generating')?.textContent).toContain('The feed goes here');
+    expect(query('mktg-framework-view-panel-framework')).toBeNull();
+    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]').length).toBe(3);
+    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]:disabled').length).toBe(3);
+    expect(element().textContent).not.toContain('Paul');
+    // Nothing to print or export until the framework exists.
+    expect(query('mktg-framework-view-actions')).toBeNull();
+    expect(query('mktg-framework-view-print')).toBeNull();
+  });
+
+  it('says it is waiting for answers while the questions are projected in', async () => {
+    host.state.set('questions');
+    await fixture.whenStable();
+
+    expect(query('mktg-framework-view-state')?.textContent).toContain('Waiting for your answers');
+    expect(query('mktg-framework-view-generating')).not.toBeNull();
+  });
+
+  it('anchors each framework section to its original JSON index without adding comments to report fields', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view')?.className).toContain('[@media_screen]:@container/asset');
+    expect(query('mktg-framework-view')?.className).not.toContain('@container/framework');
+    expect(query('mktg-framework-view-statements')?.className).toContain('@lg/asset:grid-cols-4');
+    const has = (field: string) => element().querySelector(`[data-mktg-comment-field="${field}"]`);
+    const keys = new Set<string>();
+    const collect = () =>
+      element()
+        .querySelectorAll('[data-mktg-comment-field]')
+        .forEach((node) => keys.add(node.getAttribute('data-mktg-comment-field') ?? ''));
+    collect();
+    for (const field of [
+      'mf.vision',
+      'mf.mission',
+      'mf.positioning',
+      'mf.tagline',
+      'mf.goals[0]',
+      'mf.goals[1]',
+      'mf.goals[1].bite',
+      'mf.goals[0].vp',
+      'mf.say',
+      'mf.avoid',
+      'mf.anchor',
+    ])
+      expect(has(field)).not.toBeNull();
+    // The ICPs and the message house are not shown, so nothing anchors a comment on them.
+    expect(has('icp[0]')).toBeNull();
+    expect(has('mh.umbrella')).toBeNull();
+    await tab('numbers');
+    collect();
+    expect(query('mktg-framework-view-panel-numbers')?.className).toContain('@2xl/asset:grid-cols-4');
+    expect(has('nums[0]')).not.toBeNull();
+    await tab('sources');
+    expect(element().querySelector('[data-mktg-comment-field]')).toBeNull();
+    expect(keys.size).toBeGreaterThan(12);
+    for (const key of keys) expect(isMktgDocumentCommentAnchor('foundation-message', ASSET.content, { kind: 'field', key })).toBe(true);
+  });
+
+  it('renders the framework tab first once ready: the statements on top, one table column per goal in rank order, say and avoid', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(1);
+    await fixture.whenStable();
+
+    expect(query('mktg-framework-view-generating')).toBeNull();
+    expect(query('mktg-framework-view-state')).toBeNull();
+    expect(query('mktg-framework-view-version')?.textContent).toContain('v1');
+    expect(query('mktg-framework-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(query('mktg-framework-view-mode')).toBeNull();
+    expect(query('mktg-framework-view-vision')?.textContent).toContain('A vision.');
+    expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
+    const goals = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(goals.tagName).toBe('TABLE');
+    const headers = Array.from(goals.querySelectorAll('thead th[data-testid]')).map((th) => th.getAttribute('data-testid'));
+    expect(headers).toEqual(['mktg-framework-view-goal-adoption', 'mktg-framework-view-goal-community']);
+    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('Goal 1');
+    const rows = Array.from(goals.querySelectorAll('tbody th')).map((th) => th.textContent?.trim());
+    expect(rows).toEqual(['Value proposition', 'Key message', 'Proof', 'Sound bite']);
+    expect(goals.textContent).toContain('1,200 members');
+    expect(goals.textContent).toContain('Website');
+    // Segments belong to the hidden ICPs: the table does not name them.
+    expect(goals.textContent).not.toContain('End users');
+    expect(query('mktg-framework-view-bite-community')?.textContent).toContain('Built together');
+    expect(query('mktg-framework-view-say')?.textContent).toContain('community-governed');
+    expect(query('mktg-framework-view-avoid')?.textContent).toContain('working together');
+    expect(query('mktg-framework-view-notes')?.textContent).toContain('Check the member count.');
+    expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]:disabled').length).toBe(0);
+  });
+
+  it('switches between the key numbers and the sources and gaps, and never offers the ICPs or the message house', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+
+    expect(query('mktg-framework-view-tab-icps')).toBeNull();
+    expect(query('mktg-framework-view-tab-message-house')).toBeNull();
+    expect(element().querySelectorAll('[role="tab"]').length).toBe(3);
+    expect(element().textContent).not.toContain('Open releases for everyone.');
+
+    await tab('numbers');
+    expect(query('mktg-framework-view-panel-numbers')?.textContent).toContain('1,200');
+    expect(query('mktg-framework-view-panel-numbers')?.textContent).toContain('releases a year');
+
+    await tab('sources');
+    expect(query('mktg-framework-view-sources-read')?.textContent).toContain('testorbit.example.org');
+    expect(query('mktg-framework-view-sources-failed')?.textContent).toContain('404');
+    expect(query('mktg-framework-view-gaps')?.textContent).toContain('No member count.');
+    expect(query('mktg-framework-view-gaps-accepted')).toBeNull();
+    expect(query('mktg-framework-view-report-notes')?.textContent).toContain('Check the dates.');
+    expect(query('mktg-framework-view-findings')?.textContent).toContain('nums has 2 numbers');
+    expect(query('mktg-framework-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(2);
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    await fixture.whenStable();
+
+    await tab('sources');
+    expect(query('mktg-framework-view-gaps')?.textContent).toContain('No member count.');
+    expect(query('mktg-framework-view-gaps-accepted')?.textContent?.trim()).toBe('Accepted when v2 was approved; still open.');
+  });
+
+  it('widens the goal table with the goal count, so the schema’s eight goals scroll sideways instead of squeezing', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const { rowHeader, goal } = FOUNDATION_MESSAGE_TABLE_MIN_WIDTH_REM;
+    const table = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(table.style.minWidth).toBe(`${rowHeader + goal * 2}rem`);
+    // The wrapper scrolls and is positioned: the field comments' sr-only live regions take it as their containing block, so
+    // a column past the viewport cannot stretch the page (#4885).
+    expect(table.parentElement?.classList.contains('overflow-x-auto')).toBe(true);
+    expect(table.parentElement?.classList.contains('relative')).toBe(true);
+
+    const [adoption] = ASSET.content.mf.goals;
+    const eight = Array.from({ length: FOUNDATION_MESSAGE_CONTENT_LIMITS.goals.max }, (_, index) => ({ ...adoption, id: `goal-${index}`, n: index + 1 }));
+    host.asset.set({ ...ASSET, content: { ...ASSET.content, mf: { ...ASSET.content.mf, goals: eight } } });
+    await fixture.whenStable();
+    const goals = query('mktg-framework-view-goals') as HTMLTableElement;
+    expect(goals.querySelectorAll('thead th[data-testid]').length).toBe(8);
+    expect(goals.style.minWidth).toBe(`${rowHeader + goal * 8}rem`);
+  });
+
+  it('moves between the tabs with the arrow keys, Home and End, wrapping round, and focuses the tab it lands on', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const tablist = query('mktg-framework-view-tabs') as HTMLElement;
+    const press = async (key: string): Promise<void> => {
+      tablist.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      await fixture.whenStable();
+    };
+    const selected = (): string | null => element().querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.id ?? null;
+
+    // Only the selected tab is in the tab order; the keys move the selection along.
+    expect(query('mktg-framework-view-tab-framework')?.getAttribute('tabindex')).toBe('0');
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('tabindex')).toBe('-1');
+
+    await press('ArrowRight');
+    expect(selected()).toBe('mktg-framework-tab-numbers');
+    expect(query('mktg-framework-view-panel-numbers')).not.toBeNull();
+    expect(document.activeElement?.id).toBe('mktg-framework-tab-numbers');
+    expect(query('mktg-framework-view-tab-numbers')?.getAttribute('tabindex')).toBe('0');
+
+    await press('End');
+    expect(selected()).toBe('mktg-framework-tab-sources');
+    await press('ArrowRight');
+    expect(selected()).toBe('mktg-framework-tab-framework');
+    await press('ArrowLeft');
+    expect(selected()).toBe('mktg-framework-tab-sources');
+    await press('Home');
+    expect(selected()).toBe('mktg-framework-tab-framework');
+    expect(document.activeElement?.id).toBe('mktg-framework-tab-framework');
+
+    // Any other key is left alone.
+    await press('Enter');
+    expect(selected()).toBe('mktg-framework-tab-framework');
+  });
+
+  it('says so under each empty part: nothing to avoid, nothing read, no failed source, no gap, nothing to check', async () => {
+    host.asset.set({
+      ...ASSET,
+      content: { ...ASSET.content, mf: { ...ASSET.content.mf, avoid: [] } },
+      report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+      checks: { findings: [] },
+    });
+    host.state.set('ready');
+    await fixture.whenStable();
+
+    expect(query('mktg-framework-view-avoid-empty')?.textContent).toContain('Nothing to avoid was stated.');
+    expect(query('mktg-framework-view-avoid')).toBeNull();
+
+    await tab('sources');
+    expect(query('mktg-framework-view-sources-read')).toBeNull();
+    expect(query('mktg-framework-view-sources-read-empty')?.textContent).toContain('Nothing was read.');
+    expect(query('mktg-framework-view-sources-failed')).toBeNull();
+    expect(query('mktg-framework-view-sources-failed-empty')?.textContent).toContain('No source failed.');
+    expect(query('mktg-framework-view-gaps')).toBeNull();
+    expect(query('mktg-framework-view-gaps-empty')?.textContent).toContain('The sources left no gap.');
+    expect(query('mktg-framework-view-report-notes')).toBeNull();
+    expect(query('mktg-framework-view-findings')).toBeNull();
+    expect(query('mktg-framework-view-checks-empty')?.textContent).toContain('Nothing to check.');
+  });
+
+  it('prints the framework’s tabs as one document in the LF look — the report and the reviewer’s note left out — with Download PDF', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(3);
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(3);
+    host.approvedCreatedAt.set('2026-10-19T08:00:00Z');
+    await fixture.whenStable();
+
+    const wrapper = query('mktg-framework-view-print');
+    expect(wrapper?.className).toContain('lfx-framework-print-only');
+    const print = query('mktg-framework-print');
+    expect(print?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-print-title')?.textContent).toContain('Messaging Framework');
+    expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V3.0');
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
+    expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers');
+    expect(query('mktg-framework-print-contents')?.textContent).toContain('Sources & gaps');
+    // The portrait book prints every chapter: the goal matrix, the profiles, the message house, the numbers, the run's report.
+    expect(query('mktg-framework-print-goals')?.querySelectorAll('thead, tfoot').length).toBe(0);
+    expect(query('mktg-framework-print-goals')?.textContent).toContain('Built together');
+    expect(query('mktg-framework-print-icp-contributors')).not.toBeNull();
+    expect(query('mktg-framework-print-pillars')).not.toBeNull();
+    expect(query('mktg-framework-print-umbrella')?.textContent).toContain('Open releases for everyone.');
+    expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
+    expect(query('mktg-framework-print-gaps')?.textContent).toContain('No member count.');
+    // The run's notes and the reviewer's note stay on screen only.
+    expect(query('mktg-framework-print-notes')).toBeNull();
+    expect(print?.textContent).not.toContain('Check the dates.');
+    expect(print?.textContent).not.toContain('Check the member count.');
+
+    // Export to Google Slides waits for the page to name a stored revision.
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.prepare).toHaveBeenCalledWith(null);
+    // The frame's title names the saved PDF like the deck: the project, the asset, the approved revision and that revision's own date.
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · Messaging framework · v3 · 2026-10-19');
+
+    fixture.destroy();
+    expect(printer.clear).toHaveBeenCalled();
+  });
+
+  it('prints approved current bytes/version independently of the newer viewed Draft', async () => {
+    host.asset.set({ ...ASSET, content: { ...ASSET.content, mf: { ...ASSET.content.mf, tagline: 'New draft only' } } });
+    host.state.set('ready');
+    host.version.set(3);
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-version')?.textContent).toContain('v3');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('V1.0');
+    expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
+    expect(query('mktg-framework-print')?.textContent).not.toContain('New draft only');
+  });
+
+  it('offers Export to Google Slides outlined and Download PDF solid beside it with an approved current', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    await fixture.whenStable();
+    const actions = query('mktg-framework-view-actions');
+    // The print root is mounted with the button, and the print service prepared for it.
+    expect(query('mktg-framework-view-print')).not.toBeNull();
+    expect(printer.prepare).toHaveBeenCalledWith(null);
+    expect(Array.from(actions?.querySelectorAll('lfx-button') ?? [], (button) => button.textContent?.trim())).toEqual([
+      'Export to Google Slides',
+      'Download PDF',
+    ]);
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(true);
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.classList.contains('p-button-outlined')).toBe(false);
+  });
+
+  it('does not create a print target or invoke the printer without approved current', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-print')).toBeNull();
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+  });
+
+  it('exports the stored framework to Google Slides, the panel under the header showing the progress', async () => {
+    const target: MktgSlidesExportTarget = { project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: 'a'.repeat(64) };
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.kitRead.set(settledKit(kit));
+    host.exportTarget.set(target);
+    await fixture.whenStable();
+
+    expect(slidesExport.last).toHaveBeenCalledWith(target);
+    query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+
+    expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
+    expect(query('mktg-slides-export-running')?.textContent).toContain('Exporting the messaging framework');
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it('sets the print in the project’s Brand Kit when there is one: its colours, its typeface (waited for before the dialog), its logo', async () => {
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.kitRead.set(settledKit(kit));
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    await fixture.whenStable();
+
+    const print = query('mktg-framework-print') as HTMLElement;
+    expect(print.getAttribute('data-brand')).toBe('kit');
+    // The kit's inks and typeface reach every frame through the portrait grammar's look.
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="framework"]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(frame.style.getPropertyValue('--pp-accent')).toBe(kit.kit.accent);
+    expect(frame.style.getPropertyValue('--pp-font')).toContain('Montserrat');
+    // No reversed artwork in the kit, and a multi-colour primary: the cover draws it in full colour on the dark band — a filter would
+    // flatten the mark to one shape (the kit grammar's rule; a one-colour primary is the one filtered to white).
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(query('mktg-framework-print-cover-logo')?.style.filter).toBe('');
+    // …and, unreversable, on the grammar's white plate (the kit cover's precedence, editor W3).
+    expect(query('mktg-portrait-plate')?.contains(query('mktg-framework-print-cover-logo'))).toBe(true);
+
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.prepare).toHaveBeenCalledWith('Montserrat');
+    // No approved date known here: the name carries none, never the download's.
+    expect(printer.printNow).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'TestOrbit · Messaging framework · v1');
+  });
+
+  it('waits for the Brand Kit read before it prints: no print root and Download PDF disabled with the reason while the read is open, then the kit’s brand once it settles (editor C1)', async () => {
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    host.kitRead.set(MKTG_PRINT_KIT_READ_PENDING);
+    await fixture.whenStable();
+    // Nothing of the LF default is built for a project whose kit is still being read.
+    expect(query('mktg-framework-print')).toBeNull();
+    const button = query('mktg-framework-view-download-pdf')?.querySelector('button');
+    expect(button?.disabled).toBe(true);
+    // The reason is the wrapping span's tooltip and label (the same span that names the approval rule).
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.pending);
+    button?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+    // The read settles late with the kit: the print is the kit's, never the LF look, and the button prints it.
+    host.kitRead.set(settledKit(kit));
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+    const frame = element().querySelector('[data-testid="lfx-mktg-portrait-page"][data-page-id="cover"]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--pp-dark')).toBe(kit.kit.dark);
+    expect(frame.style.getPropertyValue('--pp-dark')).not.toBe(MKTG_PRINT_LF_LOOK.dark);
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBeNull();
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('never prints the LF look for a failed Brand Kit read: no print root, Download PDF disabled and saying so; the LF look only for a project with no kit stored', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    host.kitRead.set({ settled: true, kit: null, failed: true });
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')).toBeNull();
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-download-pdf')?.parentElement?.getAttribute('aria-label')).toBe(MKTG_PRINT_KIT_READ_NOTES.failed);
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.printNow).not.toHaveBeenCalled();
+    // No kit stored (the read settled with none): the LF look prints.
+    host.kitRead.set(MKTG_PRINT_KIT_READ_NONE);
+    await fixture.whenStable();
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it('opens Sources from its tab without the duplicate reviewer-note link', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    document.body.appendChild(element());
+
+    expect(query('mktg-framework-view-notes-sources')).toBeNull();
+    query('mktg-framework-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-panel-sources')).not.toBeNull();
+    expect(document.activeElement).toBe(query('mktg-framework-view-panel-sources'));
+    element().remove();
+  });
+});

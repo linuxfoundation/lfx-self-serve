@@ -9,11 +9,21 @@
       styleClass="flex flex-col gap-4 [&_.p-card-body]:p-0 [&_.p-card-content]:p-0 overflow-hidden hover:!border-gray-200"
       data-testid="initiatives-cards">
       @for (initiative of filteredInitiatives(); track initiative.id) {
-        <lfx-initiative-card [initiative]="initiative" (cardClick)="onCardClick($event)" />
+        <lfx-initiative-card [initiative]="initiative" [showCreator]="showCreator()" (cardClick)="onCardClick($event)" />
       }
     </lfx-card>
   } @else {
-    <lfx-empty-state [icon]="emptyIcon()" [title]="emptyTitle()" [subtitle]="emptySubtitle()" data-testid="initiatives-empty-state" />
+    <lfx-empty-state
+      [icon]="emptyIcon()"
+      [title]="emptyTitle()"
+      [subtitle]="emptySubtitle()"
+      [ctaLabel]="initiatives().length === 0 ? 'New Initiative' : undefined"
+      [ctaHref]="createUrl()"
+      ctaTarget="_blank"
+      ctaRel="noopener noreferrer"
+      [ctaGhost]="true"
+      [ctaSize]="undefined"
+      data-testid="initiatives-empty-state" />
   }
 
   @if (hasMore()) {

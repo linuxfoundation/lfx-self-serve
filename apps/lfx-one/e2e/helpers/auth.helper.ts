@@ -9,7 +9,7 @@ export interface AuthCredentials {
 }
 
 export function skipWhenAuthMissing(): void {
-  if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
+  if (!process.env['TEST_USERNAME'] || !process.env['TEST_PASSWORD']) {
     test.skip(true, 'TEST_USERNAME and TEST_PASSWORD are required');
   }
 }
@@ -79,8 +79,9 @@ export class AuthHelper {
    * @param page - Playwright page object
    */
   static async isAuthenticated(page: Page): Promise<boolean> {
-    // Check if we're not on the auth page
-    return !page.url().includes('auth0.com');
+    // Check if we're not on the auth page. Compare the parsed host, not a substring of the whole URL.
+    const { hostname } = new URL(page.url());
+    return !(hostname === 'auth0.com' || hostname.endsWith('.auth0.com'));
   }
 
   /**
@@ -107,8 +108,8 @@ export class AuthHelper {
 
 // Test credentials - these should be stored in environment variables
 export const TEST_CREDENTIALS: AuthCredentials = {
-  username: process.env.TEST_USERNAME || '',
-  password: process.env.TEST_PASSWORD || '',
+  username: process.env['TEST_USERNAME'] || '',
+  password: process.env['TEST_PASSWORD'] || '',
 };
 
 // Generated with [Claude Code](https://claude.ai/code)

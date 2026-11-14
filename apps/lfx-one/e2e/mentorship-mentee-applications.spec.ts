@@ -25,7 +25,7 @@ import {
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
+import { MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -36,7 +36,6 @@ test.use({ viewport: { width: 1440, height: 900 } });
 
 test.describe('Mentee applications — empty state', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubMenteeApplications(page, 200, JSON.stringify({ data: [], total: 0 }));
   });
 
@@ -76,6 +75,7 @@ test.describe('Mentee applications — per-application empty states', () => {
           category: 'non_prerequisite',
           status: 'incomplete',
           submitFile: null,
+          hasFile: false,
           updatedOn: '2026-06-02T10:00:00Z',
         },
       ],
@@ -93,7 +93,6 @@ test.describe('Mentee applications — per-application empty states', () => {
   ];
 
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubMenteeApplications(page, 200, JSON.stringify({ data: applications, total: applications.length }));
   });
 
@@ -121,7 +120,6 @@ test.describe('Mentee applications — per-application empty states', () => {
 
 test.describe('Mentee applications — accepted application with no tasks', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     const accepted = {
       id: 'app-accepted',
       programId: 'prog-1',
@@ -146,7 +144,6 @@ test.describe('Mentee applications — accepted application with no tasks', () =
 
 test.describe('Mentee applications — error state', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     // No body, so the page shows its own fallback message rather than a server-authored one.
     await stubMenteeApplications(page, 503, '');
   });

@@ -21,7 +21,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -32,8 +32,7 @@ const STORED_PROFILE = {
   skillsHave: ['Python', 'Go'],
   skillsWant: ['Observability'],
   additionalNotes: 'Comfortable working asynchronously.',
-  resumeFileName: null,
-  resumeUrl: null,
+  country: 'KE',
 };
 
 interface ProfileStub {
@@ -76,10 +75,6 @@ async function openEditDrawer(page: Page): Promise<void> {
 }
 
 test.describe('Mentee Profile - persist edits', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('editing additional notes sends only the skill set and shows the saved notes without re-reading the profile', async ({ page }) => {
     const stub = await stubProfile(page, 200);
     await openEditDrawer(page);

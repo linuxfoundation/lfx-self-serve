@@ -1,202 +1,497 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
+import { HEALTH_METRICS_BASE_PATH } from './health-metrics-engagement.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsBlankCopy, HealthMetricsBlankTile, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
-  HealthMetricsOverviewArea,
-  HealthMetricsOverviewEngagementLinkSpec,
-  HealthMetricsOverviewEventsLinkSpec,
-  HealthMetricsOverviewTileLinkSpec,
-  HealthOverviewKpisRow,
-  HealthOverviewRevenueRow,
+  HealthMetricsOverviewEmptyCopy,
+  HealthMetricsOverviewEmptyStateCopy,
+  HealthMetricsOverviewExploreLink,
 } from '../interfaces/health-metrics-overview.interface';
 
 /**
- * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
- * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS},
- * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS}.
- * Order here is the tile-strip render order — never re-sorted.
- */
-export const HEALTH_METRICS_OVERVIEW_AREAS = [
-  { key: 'eng', name: 'Engagement', icon: 'fa-light fa-users' },
-  { key: 'evt', name: 'Events', icon: 'fa-light fa-calendar' },
-  { key: 'mem', name: 'Members', icon: 'fa-light fa-building' },
-  { key: 'non', name: 'Non-Members', icon: 'fa-light fa-handshake' },
-  { key: 'trn', name: 'Training', icon: 'fa-light fa-graduation-cap' },
-  { key: 'code', name: 'Code', icon: 'fa-light fa-code-branch' },
-] as const;
-
-/**
- * Urgency classification only — never category or size (logic spec hard constraint). Group name
- * is the fixed findings-list section a classification's rows render under. `icon` matches the
- * design's `TTONE`/group-header icon set 1:1 — the same icon drives both the tile status row and
- * the finding-group heading.
- */
-export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
-  act: {
-    label: 'Needs action',
-    group: 'Needs action',
-    icon: 'fa-light fa-circle-exclamation',
-    dotClass: 'bg-red-500',
-    accentClass: 'border-l-red-500',
-    textClass: 'text-red-600',
-  },
-  watch: {
-    label: 'Needs attention',
-    group: 'Needs attention',
-    icon: 'fa-light fa-triangle-exclamation',
-    dotClass: 'bg-amber-500',
-    accentClass: 'border-l-amber-500',
-    textClass: 'text-amber-600',
-  },
-  opp: {
-    label: 'Opportunity',
-    group: 'Opportunities',
-    icon: 'fa-light fa-lightbulb',
-    dotClass: 'bg-blue-500',
-    accentClass: 'border-l-blue-500',
-    textClass: 'text-blue-600',
-  },
-  ok: {
-    label: 'Going well',
-    group: 'Going well',
-    icon: 'fa-light fa-circle-check',
-    dotClass: 'bg-emerald-500',
-    accentClass: 'border-l-emerald-500',
-    textClass: 'text-emerald-600',
-  },
-  none: {
-    label: 'Awaiting data',
-    group: 'Awaiting data',
-    icon: 'fa-light fa-circle-info',
-    dotClass: 'bg-gray-400',
-    accentClass: 'border-l-gray-400',
-    textClass: 'text-gray-500',
-  },
-} as const;
-
-/**
- * Findings-list section order — fixed, always rendered in this sequence; empty groups are hidden.
- * Classification keys (not display-string group labels) so a lookup back to tone/icon never has to
- * reverse a label into a key.
- */
-export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
-  'act',
-  'watch',
-  'opp',
-  'ok',
-  'none',
-] as const satisfies readonly (keyof typeof HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS)[];
-
-/**
- * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
- * A one-line map so retiring a link when its Level 2 page ships is a one-line change.
- * `code.insights` is not here — it opens LFX Insights externally via `buildLensAwareInsightsUrl`.
- * Engagement's and Events' targets moved to their own in-app maps below.
- */
-export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
-  'mem.atrisk': '/members#at-risk',
-  'mem.renewals': '/members#renewals',
-  'mem.list': '/members',
-  'non.orgs': '/non-members',
-  'trn.enrollment': '/training',
-} as const;
-
-/**
- * `eng.*` `link_target` → the Engagement section that owns it, plus the section filters to apply on
- * arrival. A filter left `null` is cleared, so a stale cut carried over in the URL cannot hide the
- * responsible entity.
- */
-export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS = {
-  'eng.board': { section: 'committees', queryParams: { groupType: 'gov', groupPage: null } },
-  'eng.groups': { section: 'committees', queryParams: { groupType: null, groupPage: null } },
-  'eng.orgs': { section: 'orgs', queryParams: { orgFilter: null } },
-  'eng.participation': { section: 'participation', queryParams: { partMode: null } },
-} as const satisfies Record<string, HealthMetricsOverviewEngagementLinkSpec>;
-
-/**
- * `evt.*` `link_target` → the Events section that owns it. `event` is cleared until a finding carries
- * the event it names, so a stale pick in the URL cannot stand in for it.
- */
-export const HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS = {
-  'evt.forecast': { section: 'forecast', queryParams: { event: null } },
-} as const satisfies Record<string, HealthMetricsOverviewEventsLinkSpec>;
-
-/** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
-export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
-
-/** Each linked tile's target and link text; Engagement opens the unfiltered group attendance, the source of its counts. */
-export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
-  eng: { linkTarget: 'eng.groups', label: 'View groups' },
-  evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
-} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
-
-/** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */
-export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
-
-/**
- * Areas `ProjectService.buildHealthOverviewKpiAreaStates` builds from `HEALTH_OVERVIEW_KPIS` columns; the
- * iteration drops any area with no builder (`eng` is built separately from `ENGAGEMENT_GROUP_ATTENDANCE`).
- */
-export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set([
-  'eng',
-  'evt',
-  'trn',
-  'mem',
-  'non',
-  'code',
-]);
-
-/** Areas whose tile never renders a status chip — live or neutral — since no rule classifies them yet. */
-export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['eng']);
-
-/**
- * Period-suffixed `HEALTH_OVERVIEW_KPIS` columns, in their aliased uppercase form. `ProjectService`
- * builds the all-periods SELECT list and projects each period's row from this one list, so the alias
- * it emits and the key it later reads can't drift into a silent "no data" render for every period.
- */
-export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
-  'EVENTS_PCT_OF_REGISTRATION_GOAL',
-  'EVENTS_STATUS',
-  'CERTIFICATIONS_EARNED_COUNT',
-  'TRAINING_STATUS',
-  'CONTRIBUTORS_COUNT',
-] as const satisfies readonly (keyof HealthOverviewKpisRow)[];
-
-/**
- * Period-suffixed `HEALTH_OVERVIEW_REVENUE` columns, in their aliased uppercase form. Same contract as
- * {@link HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS}: `ProjectService` lowercases these for the source column
- * and aliases them per range, so the emitted alias and the key it reads back can't drift.
- */
-export const HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS = [
-  'REVENUE_USD',
-  'FOUNDATION_TOTAL_REVENUE_USD',
-] as const satisfies readonly (keyof HealthOverviewRevenueRow)[];
-
-/**
- * Rail revenue-stream metadata, keyed to match `railHTML()`'s fixed 3-stream legend. Colors mirror
- * the design's `STREAM_COLOR` map (`#009aff`/`#00bc7d`/`#8e51ff`) — the closest `lfxColors` scales
- * to those hexes are blue/emerald/violet-500, so the rail never hard-codes a hex value.
- */
-export const HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS = {
-  memberships: { label: 'Memberships', dotClass: 'bg-blue-500' },
-  events: { label: 'Events', dotClass: 'bg-emerald-500' },
-  training: { label: 'Training', dotClass: 'bg-violet-500' },
-} as const;
-
-/** Fixed "Data sources" list in the rail — only the sources the Overview actually reads today. */
-export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'LFX Insights'] as const;
-
-/**
- * Period selector (design's `.per`) — the 4 most recent options from {@link buildHealthMetricsYearOptions}
- * (3 completed years + YTD). Dropping the oldest option also keeps this in sync with
- * `HEALTH_OVERVIEW_REVENUE` and `HEALTH_OVERVIEW_KPIS`, which only expose 4 period-suffix columns (no
- * 4th-year-back variant) — `ProjectService` generates its all-periods column list from this very set,
- * so a 5th option here would emit a column neither table has. Call fresh per use, not once at module
- * load, so the labels stay correct across a calendar-year rollover in a long-running SSR process.
+ * Period selector — the 4 most recent options from {@link buildHealthMetricsYearOptions} (3 completed years
+ * plus YTD), the periods every Health Metrics view carries columns for. Call fresh per use, so the labels
+ * stay correct across a calendar-year rollover in a long-running SSR process.
  */
 export function buildHealthMetricsOverviewPeriods(): HealthMetricsYearOption[] {
   return buildHealthMetricsYearOptions().slice(-4);
 }
+
+/** The NPS audience the Overview card reports; the Members tab leads with the same one. */
+export const HEALTH_METRICS_OVERVIEW_NPS_AUDIENCE = 'Board';
+
+/** The board attendance cohort the Overview card reports. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_COHORT = 'board';
+
+/** The periods the participating orgs view splits by engagement; the others read `null`. */
+export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_SPLIT_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
+
+/** Events read per Overview list (upcoming, past); one past it flags a truncated read. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP = 1000;
+
+/** Board members read for the Overview table; one past it flags a truncated read. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP = 500;
+
+/** Newsletters read for the Overview chart; one past it flags a truncated read. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP = 1000;
+
+/** Each card's title and its tooltip, in the PCC copy. */
+export const HEALTH_METRICS_OVERVIEW_CARDS = {
+  orgs: {
+    title: 'Participating companies',
+    info: 'Engagement scores are calculated for every participating company, classifying them into three distinct levels: low, medium, and high engagement. These scores are derived from nine engagement areas:\n\n1. Board Meeting Attendance (Source: Attendance Record in PCC)\n2. Event Attendance (Source: Cvent)\n3. Code Contribution (Source: Insights)\n4. Mailing List Contributions (Source: Groups.io)\n5. Training and Certification (Source: Thought Industries)\n6. Event Sponsorship (Source: Salesforce)\n7. Corporate Training Purchases (Source: Salesforce)\n8. Speaking Proposal Submissions (Source: Sessionize)\n9. Satisfaction Levels (Source: NPS surveys in PCC)',
+  },
+  nps: {
+    title: 'Net Promoter Score',
+    info: 'The Net Promoter Score (NPS) is derived from the most recent NPS survey conducted. It is calculated by taking the difference between the percentage of promoters and the percentage of demoters.\n\nTypically, an NPS score exceeding 30 is widely considered to be an excellent rating.\n\n(Source: NPS Survey in PCC)',
+  },
+  churn: {
+    title: 'Membership churn',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nPlease note that all metrics in this section exclude free membership accounts and “Downgrades” are included in Lost Members.\n\n(Source: Salesforce)',
+  },
+  balance: {
+    title: 'Outstanding balance',
+    info: 'Outstanding Balance:\nUSD amount that is overdue from your members.\n(Source: NetSuite)\n\nMedium Risk:\nUSD amount that is currently between 60 and 89 days overdue from your members\n(Source: NetSuite)\n\nHigh Risk:\nUSD amount that is currently overdue for 90 days and more from your members, This amount also includes members that have indicated not to renew their membership independent from their invoice status.\n(Source: NetSuite)',
+  },
+  events: {
+    title: 'Events',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nYou can set and edit your annual goals for sponsorship and each upcoming event by clicking on the set goal link or edit icon.\n\n(Source: Salesforce)',
+  },
+  training: {
+    title: 'Training and certification',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nYou can switch between enrollments and revenue and set or edit your annual goals for number of enrollments and revenue, respectively.\n\n(Source: Thought Industries)',
+  },
+  code: {
+    title: 'Code contribution',
+    info: 'The data here corresponds to the selected time period at the top right of the page and originates from LFX Insights.\n\nAll percentage comparisons are against previous period’s figures.\n\n(Source: Insights)',
+  },
+  newsletter: {
+    title: 'Newsletter engagement',
+    info: 'Newsletters sent to this foundation’s newsletter audience',
+  },
+  board: {
+    title: 'Board meeting participation',
+    info: 'The data here corresponds to the selected time period at the top right of the page.\n\nBoard meeting participation is recorded at 100% for a company when at least one of its eligible members attends the meeting. In this metric, only voting representatives are considered eligible. The calculation takes into account all past board meetings held within the selected time period. (Source: PCC Meeting Attendance Record)',
+  },
+} as const;
+
+/** The participating companies card's KPI tooltips, in the PCC copy. */
+export const HEALTH_METRICS_OVERVIEW_ORGS_KPI_TIPS = {
+  active:
+    'Total active members in SFDC at the end of the selected time period. In the case of the YTD time period, the member count reflects yesterday’s status.\n\n(Source: Salesforce)',
+  new: 'Total number of members added in the selected time period based on the recorded install date. In the case of YTD time period, the new member count reflects yesterday’s status.\n\n(Source: Salesforce)',
+  nonMembers:
+    'Total number of companies with a recorded activity in the selected time period but who do not have a membership.\n\nPlease note that companies where a parent or child has a membership to the project are excluded.\n\n(Source: Salesforce)',
+  nonRenewals:
+    'Members who chose not to continue their membership in the selected time period but were active members in the last period.\n\n(Source: Salesforce)',
+} as const;
+
+/** Each card's empty state, for YTD and for a past year; the design writes it for an Executive Director. */
+export const HEALTH_METRICS_OVERVIEW_EMPTY_COPY = {
+  orgs: {
+    icon: 'fa-light fa-building',
+    ytd: {
+      title: 'No companies yet',
+      text: '',
+      reasons: [
+        'Members show once their membership is active',
+        'Non-members show once they join code, events, meetings or training',
+        'Missing members? Your Program Manager can check their records',
+      ],
+    },
+    past: {
+      title: 'No companies in {Y}',
+      text: '',
+      reasons: [
+        'No members or participating companies were recorded',
+        'The foundation may not have launched yet',
+        'Members may have been counted under a parent foundation',
+      ],
+    },
+  },
+  nps: {
+    icon: 'fa-light fa-clipboard-list',
+    ytd: {
+      title: 'No responses yet',
+      text: '',
+      reasons: ['The score comes from your latest member satisfaction survey', 'No survey has closed yet this year', 'Send a survey to hear how members feel'],
+    },
+    past: {
+      title: 'No survey in {Y}',
+      text: 'No member satisfaction survey closed this year. Each survey counts toward the year it closes.',
+      reasons: [],
+    },
+  },
+  churn: {
+    icon: 'fa-light fa-arrow-trend-down',
+    ytd: {
+      title: 'No churn so far',
+      text: 'Every paid member due so far has renewed. Memberships ending December 31 count toward next year.',
+      reasons: [],
+    },
+    past: {
+      title: 'No churn in {Y}',
+      text: '',
+      reasons: [
+        'Every paid member due for renewal renewed',
+        'The foundation may have had no paid tiers this year',
+        'Free and associate memberships aren’t counted',
+      ],
+    },
+  },
+  // The balance is today's whatever the period, so the card keeps the present-tense words for every year.
+  balance: {
+    icon: 'fa-light fa-file-invoice-dollar',
+    ytd: {
+      title: 'All invoices paid',
+      text: 'No invoice is 60 or more days overdue and no member has said they won’t renew. Late invoices show here as soon as they come up.',
+      reasons: [],
+    },
+  },
+  events: {
+    icon: 'fa-light fa-ticket',
+    ytd: {
+      title: 'No events scheduled',
+      text: 'Registrations, sponsorship and proposals show once an event is on the calendar. Planning one? Your LF Events contact can set it up.',
+      reasons: [],
+    },
+    past: {
+      title: 'No events in {Y}',
+      text: 'The foundation didn’t hold its own event this year. Co-located or parent-foundation events are counted there instead.',
+      reasons: [],
+    },
+  },
+  training: {
+    icon: 'fa-light fa-graduation-cap',
+    ytd: {
+      title: 'No enrollments so far',
+      text: '',
+      reasons: [
+        'Enrollments come from the foundation’s courses on LF Education',
+        'Courses may not be published yet',
+        'Your LF Education contact can help plan a course',
+      ],
+    },
+    past: {
+      title: 'No enrollments in {Y}',
+      text: '',
+      reasons: [
+        'No one enrolled in the foundation’s courses this year',
+        'Courses may not have been published yet',
+        'Courses may have been offered under another project',
+      ],
+    },
+  },
+  code: {
+    icon: 'fa-light fa-code',
+    ytd: {
+      title: 'No contributions tracked',
+      text: 'Contributors come from the foundation’s repositories in LFX Insights. None are connected yet, or they had no activity this year.',
+      reasons: [],
+    },
+    past: {
+      title: 'No contributions in {Y}',
+      text: 'No code activity was recorded this year. Repositories connected later need their history imported to show earlier years.',
+      reasons: [],
+    },
+  },
+  newsletter: {
+    icon: 'fa-light fa-paper-plane',
+    ytd: {
+      title: 'No newsletters sent',
+      text: 'Subscribers, opens and clicks are tracked for newsletters sent through LFX. Nothing has gone out this year.',
+      reasons: [],
+    },
+    past: {
+      title: 'No newsletters in {Y}',
+      text: 'No newsletter was sent through LFX this year. Newsletters sent with other email tools aren’t tracked.',
+      reasons: [],
+    },
+  },
+  board: {
+    icon: 'fa-light fa-users-rectangle',
+    ytd: {
+      title: 'No board meetings yet',
+      text: 'Attendance is tracked for board meetings scheduled in LFX, and none has been recorded this year. Met elsewhere? Add the meeting so attendance counts.',
+      reasons: [],
+    },
+    past: {
+      title: 'No board meetings in {Y}',
+      text: 'No governing board meeting was recorded this year. Meetings held outside LFX count once added as past meetings.',
+      reasons: [],
+    },
+  },
+} as const satisfies Record<keyof typeof HEALTH_METRICS_OVERVIEW_CARDS, HealthMetricsOverviewEmptyStateCopy>;
+
+/** The balance card's empty state when no balance was measured, so the card claims nothing is paid. */
+export const HEALTH_METRICS_OVERVIEW_BALANCE_UNMEASURED_COPY: HealthMetricsOverviewEmptyStateCopy = {
+  icon: 'fa-light fa-file-invoice-dollar',
+  ytd: {
+    title: 'No balance data yet',
+    text: 'Overdue membership invoices appear here once the foundation’s billing data is available.',
+    reasons: [],
+  },
+};
+
+/** A card's error state; the read failed, so nothing it would show can be trusted. */
+export const HEALTH_METRICS_OVERVIEW_ERROR_COPY: HealthMetricsOverviewEmptyCopy = {
+  icon: 'fa-light fa-triangle-exclamation',
+  title: 'Unavailable right now',
+  text: 'We could not load this card. Refresh the page to try again.',
+  reasons: [],
+};
+
+/** The single card shown in place of the Overview when every card is empty, for YTD and for a past year. */
+export const HEALTH_METRICS_OVERVIEW_BLANK_COPY = {
+  ytd: {
+    title: 'No health data yet',
+    lead: 'Health Metrics fills in as the foundation’s activity is recorded in LFX. Nothing has been recorded for it so far.',
+    reasons: [
+      'The foundation may be newly launched',
+      'Its memberships, events and meetings may not be linked to it yet',
+      'Your Program Manager can help connect its data',
+    ],
+  },
+  past: {
+    title: 'No health data for {Y}',
+    lead: 'Nothing was recorded for the foundation in {Y}.',
+    reasons: [
+      'The foundation may not have launched yet',
+      'Its activity may have been recorded under a parent foundation',
+      'A later year may have data to compare',
+    ],
+  },
+} as const satisfies Record<'ytd' | 'past', HealthMetricsBlankCopy>;
+
+/** The blank card's icons, left to right: the outer tiles sit lower and tilt outward; the pulse sits centred, a size up. */
+export const HEALTH_METRICS_OVERVIEW_BLANK_TILES: readonly HealthMetricsBlankTile[] = [
+  { icon: 'fa-light fa-users', transform: 'translateY(22px) rotate(-14deg)', iconSizePx: 20 },
+  { icon: 'fa-light fa-ticket', transform: 'translateY(6px) rotate(-7deg)', iconSizePx: 20 },
+  { icon: 'fa-light fa-heart-pulse', transform: 'none', iconSizePx: 22 },
+  { icon: 'fa-light fa-buildings', transform: 'translateY(6px) rotate(7deg)', iconSizePx: 20 },
+  { icon: 'fa-light fa-graduation-cap', transform: 'translateY(22px) rotate(14deg)', iconSizePx: 20 },
+];
+
+/**
+ * The NPS card's YTD empty-state action: the foundation's Surveys page, where a survey can be started. The card
+ * adds the foundation; no Health Metrics filter carries over.
+ */
+export const HEALTH_METRICS_OVERVIEW_CREATE_SURVEY_LINK: HealthMetricsOverviewExploreLink = {
+  label: 'Create Survey',
+  commands: ['/foundation/surveys'],
+  queryParams: {},
+  replaceQueryParams: true,
+};
+
+/** The newsletter card's YTD empty-state action; the card adds the foundation. */
+export const HEALTH_METRICS_OVERVIEW_CREATE_NEWSLETTER_LINK: HealthMetricsOverviewExploreLink = {
+  label: 'Create Newsletter',
+  commands: ['/foundation/newsletters/create'],
+  queryParams: {},
+  replaceQueryParams: true,
+};
+
+/** The newsletter card's subscriber engagement levels, in the design's words. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_ENGAGEMENT = {
+  high: { label: 'High', description: 'Opened 7+ newsletters and clicked a link' },
+  medium: { label: 'Medium', description: 'Opened 3–6 newsletters' },
+  low: { label: 'Low', description: 'Opened 2 newsletters or fewer' },
+} as const;
+
+/** The "Explore …" links into each Level 2 section; each clears that section's filters on arrival. */
+export const HEALTH_METRICS_OVERVIEW_EXPLORE_LINKS = {
+  members: {
+    label: 'Explore Members',
+    commands: [HEALTH_METRICS_BASE_PATH, 'members'],
+    queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null },
+  },
+  nonMembers: {
+    label: 'Explore Non-Member Participation',
+    commands: [HEALTH_METRICS_BASE_PATH, 'non-members'],
+    fragment: 'orgs',
+    queryParams: { nonFit: null, nonSearch: null, nonPage: null },
+  },
+  nps: { label: 'Explore Satisfaction (NPS)', commands: [HEALTH_METRICS_BASE_PATH, 'members'], fragment: 'nps', queryParams: { npsAudience: 'Board' } },
+  churn: {
+    label: 'Explore Membership Churn',
+    commands: [HEALTH_METRICS_BASE_PATH, 'members'],
+    fragment: 'churn',
+    queryParams: { churnMode: null, churnPage: null },
+  },
+  balance: {
+    label: 'Explore At-Risk & Balance',
+    commands: [HEALTH_METRICS_BASE_PATH, 'members'],
+    fragment: 'risk',
+    queryParams: { riskBucket: null, riskPage: null },
+  },
+  pastEvents: { label: 'Explore Past Events', commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: 'past', queryParams: {} },
+  speakers: { label: 'Explore Speakers & Proposals', commands: [HEALTH_METRICS_BASE_PATH, 'events'], fragment: 'spk', queryParams: {} },
+  training: { label: 'Explore Enrollment & Revenue', commands: [HEALTH_METRICS_BASE_PATH, 'training'], fragment: 'enroll', queryParams: {} },
+  newsletters: { label: 'Explore Newsletters', commands: [HEALTH_METRICS_BASE_PATH, 'engagement'], fragment: 'newsletters', queryParams: { nlMode: null } },
+} as const satisfies Record<string, HealthMetricsOverviewExploreLink>;
+
+/** The design's purple for maintainers, the newsletter click rate and the upcoming hatch; no `lfxColors` scale carries it. */
+export const HEALTH_METRICS_OVERVIEW_PURPLE = '#AD46FF';
+
+/** Fills for dots, bars and legend swatches, applied via `[class]`. */
+export const HEALTH_METRICS_OVERVIEW_FILL_CLASSES = {
+  high: 'bg-emerald-500',
+  medium: 'bg-amber-400',
+  low: 'bg-red-400',
+  muted: 'bg-gray-300',
+  blue: 'bg-blue-500',
+  purple: 'bg-[#AD46FF]',
+} as const;
+
+/** The same tones as SVG strokes, for the donut, gauge, training arc and newsletter charts; the trend has its own. */
+export const HEALTH_METRICS_OVERVIEW_STROKES = {
+  high: lfxColors.emerald[500],
+  medium: lfxColors.amber[400],
+  low: lfxColors.red[400],
+  track: lfxColors.gray[100],
+  progress: lfxColors.blue[500],
+  /** The training arc with no goal: a gray-200 outline drawn as a white stroke over a wider one. */
+  outline: lfxColors.gray[200],
+  outlineFill: lfxColors.white,
+  needle: lfxColors.gray[900],
+  thisYear: HEALTH_METRICS_OVERVIEW_PURPLE,
+} as const;
+
+/**
+ * The registration trend chart's colours, as the design draws them: this year and the prediction in the accent blue,
+ * last year grey, the predicted range's band with green highs and red lows, and the gap to last year green ahead and
+ * red behind. Alpha suffixes are 8-digit hex: `1F` is 12%, `24` 14%, `B8` 72%, `0F` 6%.
+ */
+export const HEALTH_METRICS_OVERVIEW_TREND_COLORS = {
+  thisYear: lfxColors.blue[500],
+  lastYear: lfxColors.gray[400],
+  predicted: lfxColors.blue[500],
+  band: `${lfxColors.blue[500]}1F`,
+  bandHigh: lfxColors.emerald[500],
+  bandLow: lfxColors.red[500],
+  ahead: `${lfxColors.emerald[500]}24`,
+  behind: `${lfxColors.red[500]}1F`,
+  goal: lfxColors.emerald[500],
+  today: lfxColors.gray[500],
+  axis: lfxColors.gray[300],
+  gridline: lfxColors.gray[100],
+  navigatorArea: `${lfxColors.blue[500]}24`,
+  navigatorDim: `${lfxColors.gray[50]}B8`,
+  navigatorSelection: `${lfxColors.blue[900]}0F`,
+} as const;
+
+/** The predicted figure's tooltip on the trend tab. */
+export const HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP =
+  "Where registrations are expected to land by the event day, projected from the current pace and how last year's registrations built up. High and low are the likely range.";
+
+/** The narrowest span, in days, the trend's navigator lets the reader zoom to. */
+export const HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS = 7;
+
+/** The newsletter rate chart's fixed top, 60%; a higher rate grows it in 10-point steps. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_SCALE_MIN = 0.6;
+
+/** A newsletter label's slot below this width collides with its neighbours, so the chart labels each month once. */
+export const HEALTH_METRICS_OVERVIEW_NEWSLETTER_LABEL_MIN_PX = 28;
+
+/** The room the chart popover needs beside its column before it opens on the other side: its 280px plus a 12px gap. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX = 292;
+
+/** The chart popover's widest, and the margin it keeps from the screen's edges when neither side has room. */
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX = 280;
+export const HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX = 8;
+
+/** The progress blue at 10%: the fill under the Engagement newsletter performance chart's open rate. */
+export const HEALTH_METRICS_OVERVIEW_PROGRESS_TINT = `${lfxColors.blue[500]}1A`;
+
+/** The three event statuses: the label the legend shows and a screen reader hears, and the bar fill that shows it. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_STATUS = {
+  onTrack: { label: 'On track', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.high, level: 'high' },
+  atRisk: { label: 'At risk', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.medium, level: 'mid' },
+  action: { label: 'Action required', fillClass: HEALTH_METRICS_OVERVIEW_FILL_CLASSES.low, level: 'low' },
+} as const;
+
+/** An upcoming event's `comp_score` → its status; an unknown or empty score keeps the neutral blue, with no status. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_PACE = {
+  high: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.onTrack,
+  medium: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.atRisk,
+  low: HEALTH_METRICS_OVERVIEW_EVENT_STATUS.action,
+} as const;
+
+/** The design's thresholds for a past event's registrations against its goal: at or above the first green, the second amber, else red. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_GOAL_SHARES = { onTrack: 1, atRisk: 0.8 } as const;
+
+/** The status legend beside the event list; the registrations bar's fill carries the same three tones. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_LEGEND = Object.entries(HEALTH_METRICS_OVERVIEW_EVENT_STATUS).map(([key, status]) => ({
+  key,
+  label: status.label,
+  dotClass: status.fillClass,
+}));
+
+/** The stacked events list's left line by status level, and gray-200 for a cell with no status. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_LINE_CLASSES = {
+  high: 'border-l-emerald-500',
+  mid: 'border-l-amber-400',
+  low: 'border-l-red-400',
+  none: 'border-l-gray-200',
+} as const;
+
+/** The upcoming share of the total events bar: the purple hatched over its lightest tint. */
+export const HEALTH_METRICS_OVERVIEW_UPCOMING_HATCH = `repeating-linear-gradient(135deg, ${HEALTH_METRICS_OVERVIEW_PURPLE} 0 2px, ${lfxColors.violet[100]} 2px 5px)`;
+
+/** The events card's tooltips, in the PCC copy. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_INFO = {
+  total:
+    'Total past and upcoming events that had their start date in the selected time period or have their start date in the future and are open for registrations.\n\n(Source: Salesforce)',
+  sponsorship: 'Total received sponsorship for all events in the selected period.\n\n(Source: Salesforce)',
+  upcoming: 'All events that have their start date in the future and are open for registrations.\n\n(Source: Salesforce)',
+  past: 'All events that had their start date in the selected time period.\n\n(Source: Salesforce)',
+  registrations: 'Total number of registrations for the event.\n\n(Source: Cvent)',
+  talks:
+    'Total number of speaking proposals for the event.\nCFP Not Yet Open, CFP Not Yet Closed and CFP In Review indicate the relevant status within the CFP (Call for Proposal) process.\n\n(Source: Sessionize)',
+} as const;
+
+/** Below this table width the events list drops its actions and the whole row opens the trend; the template's `@[912px]/evtbl`. */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_ACTIONS_MIN_WIDTH_PX = 912;
+
+/** Events shown before "View all". */
+export const HEALTH_METRICS_OVERVIEW_EVENTS_PAGE_SIZE = 5;
+
+/** How strongly the NPS gauge's inactive segments keep their color, mixed toward white. */
+export const HEALTH_METRICS_OVERVIEW_GAUGE_TINT = 0.22;
+
+/** The registration trend's whole window, in days before the event, which the navigator spans; the chart shows a span inside it. */
+export const HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS = 180;
+
+/** Board attendance at or above this share draws green; above zero amber, zero red. */
+export const HEALTH_METRICS_OVERVIEW_BOARD_GOOD_ATTENDANCE = 0.67;
+
+/** The narrowest a KPI strip item may get in one row before the strip goes two per row (the design's 170px). */
+export const HEALTH_METRICS_OVERVIEW_KPI_MIN_ITEM_WIDTH_PX = 170;
+
+/** The narrowest half of a KPI strip that still reads two per row; narrower strips stack (the design's 130px). */
+export const HEALTH_METRICS_OVERVIEW_KPI_MIN_HALF_WIDTH_PX = 130;
+
+/** The event dialog's tabs, in the design's order. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_TABS = [
+  { value: 'trend', label: 'Registration trend', icon: 'fa-light fa-chart-line' },
+  { value: 'snapshot', label: 'Snapshot', icon: 'fa-light fa-table-list' },
+] as const;
+
+/** The event dialog's phone layout, which the design starts at 640px, that width included. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_PHONE_QUERY = '(max-width: 640px)';
+
+/** How far the event dialog's body fades out at an edge with more to scroll. */
+export const HEALTH_METRICS_OVERVIEW_EVENT_DIALOG_FADE_PX = 32;
+
+/** The Snapshot tab's row tips and empty copy, from the design. */
+export const HEALTH_METRICS_OVERVIEW_SNAPSHOT_COPY = {
+  registrationRevenueTip:
+    'Ticket revenue from paid registrations, net of discounts and refunds. Free and comped registrations count toward registrations but not revenue.',
+  sponsorshipRevenueTip: 'Signed sponsorship contracts for this event, in USD.',
+  noPackages: 'No sponsorship packages sold yet.',
+} as const;

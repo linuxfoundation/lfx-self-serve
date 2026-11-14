@@ -5,6 +5,8 @@ import { Request } from 'express';
 
 import { LfxAccessTokenClaims, AuditUserProfile, ImpersonationUser, User } from '@lfx-one/shared/interfaces';
 
+import { logger } from '../services/logger.service';
+
 /**
  * Strips the auth provider prefix (e.g. "auth0|") from a username/sub claim.
  * Returns the raw username if no prefix is present.
@@ -63,7 +65,8 @@ export async function getUsernameFromAuth(req: Request): Promise<string | null> 
  * Gets the effective email for the current request context.
  * During impersonation, returns the target user's email from the impersonation session,
  * or null when the target has no stored email — it never falls back to the impersonator's
- * own OIDC email. Otherwise returns the OIDC session user's email.
+ * own OIDC email. Otherwise returns the OIDC session user's email, or null when the ID token does
+ * not assert `email_verified: true` (see `getVerifiedOidcEmail`).
  */
 export function getEffectiveEmail(req: Request): string | null {
   // Never fall back to the impersonator's OIDC email: the stored target email can be
@@ -71,7 +74,26 @@ export function getEffectiveEmail(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.email as string)?.toLowerCase() || null;
   }
-  return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
+  return getVerifiedOidcEmail(req)?.toLowerCase() || null;
+}
+
+/**
+ * The OIDC session's `email` claim, but only when the ID token asserts `email_verified: true`.
+ *
+ * Every email getter below feeds lookups that treat the address as proof of identity — several
+ * under the M2M token or without `filter_grants` (meeting registrants, vote/survey responses,
+ * groups.io members, Snowflake event registrations), precisely so email-only invitees with no
+ * LFID can be matched. An unverified address proves nothing: anyone can sign up with an
+ * invitee's email, and Auth0's unique-email constraint doesn't stop it when no account holds
+ * that address yet. Anything other than a literal `true` (false, missing, a string) fails closed
+ * to null, so callers take their existing "no email" path.
+ */
+function getVerifiedOidcEmail(req: Request): string | null {
+  const user = req.oidc?.user;
+  if (user?.['email_verified'] !== true) {
+    return null;
+  }
+  return (user['email'] as string) || null;
 }
 
 /**
@@ -98,29 +120,37 @@ export function getRawEffectiveEmail(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.email as string) || null;
   }
-  return (req.oidc?.user?.['email'] as string) || null;
+  return getVerifiedOidcEmail(req);
 }
 
 /**
- * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — the one
- * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
- * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is
- * layered on top via `req.appSession`, never by replacing `req.oidc.user`), so this is just
- * `getEffectiveEmail`'s non-impersonating branch, unconditionally.
+ * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — one of
+ * the real-identity getters in this file (with `getRealUsername`) that do NOT resolve to the
+ * impersonation target. `req.oidc.user` is always the actual authenticated user's OIDC session,
+ * impersonation or not (impersonation is layered on top via `req.appSession`, never by replacing
+ * `req.oidc.user`), so this is just `getEffectiveEmail`'s non-impersonating branch,
+ * unconditionally — including its null for an unverified email.
  *
- * Use this only where the real actor's identity — not the target's — must be attributed for a
- * genuinely externally-visible, hard-to-retract action (e.g. weekly-brief mailing-list share,
- * LFXV2-3093). Most callers want `getEffectiveEmail` instead.
+ * Use this only where the real actor — not the target — must be attributed or must act as
+ * themselves: a genuinely externally-visible, hard-to-retract action (e.g. weekly-brief
+ * mailing-list share, LFXV2-3093), or joining a meeting. Most callers want `getEffectiveEmail`
+ * instead.
  */
 export function getRealEmail(req: Request): string | null {
-  return (req.oidc?.user?.['email'] as string)?.toLowerCase() || null;
+  return getVerifiedOidcEmail(req)?.toLowerCase() || null;
 }
 
 /**
  * Gets the effective username for the current request context.
  * During impersonation, returns the target user's username from the impersonation session,
  * or null when the target has no stored username — it never falls back to the impersonator's
- * own OIDC username. Otherwise returns the OIDC session user's username/nickname.
+ * own OIDC username. Otherwise returns the IdP-asserted LF username claim
+ * (`https://sso.linuxfoundation.org/claims/username`), or null when the session has none
+ * (e.g. an unlinked social / enterprise-SSO session).
+ *
+ * Deliberately no fallback to `nickname` / `username`: those are display claims, not the LFID.
+ * This value keys M2M, NATS, Snowflake and object-store lookups, so it must be the IdP-asserted
+ * identifier only.
  */
 export function getEffectiveUsername(req: Request): string | null {
   // Never fall back to the impersonator's OIDC username: the stored target username can
@@ -128,9 +158,48 @@ export function getEffectiveUsername(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.username as string) || null;
   }
-  // `preferred_username` is the Authelia LFID-username fallback (#912) — additive last, so Auth0
-  // (nickname/username) precedence is unchanged. Mirrors `getUsernameFromAuth`.
-  return (req.oidc?.user?.['nickname'] as string) || (req.oidc?.user?.['username'] as string) || (req.oidc?.user?.['preferred_username'] as string) || null;
+  return getRealUsername(req);
+}
+
+/**
+ * Gets the REAL (impersonator's own) username, deliberately ignoring impersonation state — the
+ * username counterpart of `getRealEmail`. `req.oidc.user` is always the actual authenticated
+ * user's OIDC session, impersonation or not, so this is `getEffectiveUsername`'s non-impersonating
+ * branch, unconditionally: the IdP-asserted LF username claim, or null when the session has none.
+ *
+ * Use this only where the real actor must act as themselves while impersonating (e.g. joining a
+ * meeting). Most callers want `getEffectiveUsername` instead.
+ */
+export function getRealUsername(req: Request): string | null {
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  if (typeof claim === 'string' && claim) {
+    return claim;
+  }
+  // Authelia (local dev) sessions carry no LF username claim; there `preferred_username` is the
+  // provisioned login (#912). Honored only when the session issuer is Authelia, never for Auth0.
+  if ((process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').includes('auth.k8s.orb.local')) {
+    const preferred = req.oidc?.user?.['preferred_username'];
+    return typeof preferred === 'string' && preferred ? preferred : null;
+  }
+  return null;
+}
+
+/**
+ * The LF username EasyCLA compares a CCLA's CLA Manager list against: the Auth0 username, which
+ * the ID token carries on the LF username claim and the gateway forwards to EasyCLA.
+ *
+ * While impersonating, the session's own claims are the impersonator's, so the impersonated user's
+ * stored username is returned. Returns '' when neither is present, so a roster match fails closed.
+ * Deliberately no fallback to `nickname` or `getEffectiveUsername`: nothing ties those to the
+ * value EasyCLA compares.
+ */
+export function getEffectiveLfUsername(req: Request): string {
+  if (isImpersonating(req)) {
+    const target = req.appSession?.['impersonationUser']?.username;
+    return typeof target === 'string' ? target : '';
+  }
+  const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
+  return typeof claim === 'string' ? claim : '';
 }
 
 /**
@@ -183,9 +252,17 @@ export function isImpersonating(req: Request): boolean {
 
 /** Checks live session state before auth middleware freezes the decision on the request. */
 export function hasActiveImpersonationSession(req: Request): boolean {
-  const token = req.appSession?.['impersonationToken'];
-  const expiresAt = req.appSession?.['impersonationExpiresAt'];
-  return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!req.appSession?.['impersonationUser'];
+  return hasActiveImpersonation(req.appSession);
+}
+
+/**
+ * The same check on session data alone, for code that holds a stored session rather than a request,
+ * e.g. the Gatewaze Realtime socket re-checking its LFX session before each token refresh.
+ */
+export function hasActiveImpersonation(appSession: Record<string, unknown> | undefined | null): boolean {
+  const token = appSession?.['impersonationToken'];
+  const expiresAt = appSession?.['impersonationExpiresAt'];
+  return typeof token === 'string' && !!token && typeof expiresAt === 'number' && Date.now() < expiresAt && !!appSession?.['impersonationUser'];
 }
 
 /**
@@ -228,6 +305,41 @@ export async function resolveRealAccessToken(req: Request): Promise<string | nul
     return refreshed?.access_token ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Refreshes an expired access token during the SSR document-render path, before the request's
+ * `authenticated` status is decided.
+ *
+ * `req.oidc.isAuthenticated()` only inspects the ID token claims, so a session with a valid
+ * refresh token but an expired access token still reports authenticated — yet the SSR handler
+ * historically also required `!accessToken.isExpired()` before treating the user as signed in,
+ * so an idle session rendered as signed-out on the next full page load even though XHRs (which
+ * already refresh on demand, see `auth.middleware.ts`) saw the same session as valid. That
+ * asymmetry left `FeatureFlagService.initialize()` uncalled on the client (it only runs for an
+ * authenticated SSR user), which kept LaunchDarkly on its anonymous bootstrap context until a
+ * `/login` round-trip re-minted tokens — the root cause behind GH-4179.
+ *
+ * No-ops (and never throws) when there is nothing to refresh: no session, no access token, or an
+ * access token that isn't expired. A failed refresh falls through to the caller's existing
+ * `isExpired()` check, which correctly treats a genuinely dead session as signed-out — but the
+ * failure itself is still logged (mirroring `auth.middleware.ts`'s `extractBearerToken`), so a
+ * dead refresh token shows up in logs instead of silently reading as "page just rendered signed
+ * out".
+ */
+export async function refreshExpiredSsrAccessToken(req: Request): Promise<void> {
+  if (!req.oidc?.isAuthenticated() || !req.oidc.accessToken?.isExpired()) {
+    return;
+  }
+  try {
+    await req.oidc.accessToken.refresh();
+  } catch (error) {
+    logger.warning(req, 'ssr_token_refresh', 'SSR token refresh failed - rendering as signed out', {
+      path: req.path,
+      failure_reason: 'token_refresh_failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
   }
 }
 
@@ -292,5 +404,4 @@ export function clearImpersonationSession(req: Request): void {
   delete req.appSession['impersonationExpiresAt'];
   delete req.appSession['impersonationUser'];
   delete req.appSession['impersonator'];
-  delete req.appSession['impersonationPersonaContext'];
 }

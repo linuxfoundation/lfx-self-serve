@@ -3,8 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import type { OrgClaCoverageChip, OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { ORG_CLA_STATUS_DISPLAY } from '@lfx-one/shared/constants';
-import { orgClaCoverageChips } from '@lfx-one/shared/utils';
+import { ORG_CLA_STATUS_DISPLAY, ORG_CLA_VIEW_ONLY_COPY } from '@lfx-one/shared/constants';
+import { orgClaCoverageChips, orgClaIsViewOnly } from '@lfx-one/shared/utils';
 
 import { TagComponent } from '@components/tag/tag.component';
 
@@ -33,6 +33,10 @@ export class OrgEasyclaCardComponent {
   public readonly coverageRequested = output<void>();
 
   protected readonly status = computed(() => ORG_CLA_STATUS_DISPLAY[this.claGroup().status]);
+
+  protected readonly viewOnly = computed(() => orgClaIsViewOnly(this.claGroup()));
+
+  protected readonly viewOnlyLabel = ORG_CLA_VIEW_ONLY_COPY.label;
 
   /**
    * Coverage as the approved design frames it: name the project when there is exactly one,

@@ -115,4 +115,61 @@ describe('AudienceMissingSignalsComponent', () => {
       'a disabled Add still emitted'
     ).toEqual(['501']);
   });
+
+  it('emits Exclude as a list ref, reads as on once excluded, and stays silent when disabled', () => {
+    const excluded: string[] = [];
+    render({ searchResults: [result()] });
+    fixture.componentInstance.excludeList.subscribe((list) => excluded.push(`${list.listId}:${list.name}`));
+
+    const exclude = (): HTMLElement | null => host().querySelector<HTMLElement>('[data-testid="audience-missing-signals-exclude-501"]');
+    expect(exclude()?.getAttribute('aria-pressed')).toBe('false');
+    exclude()?.click();
+    expect(excluded).toEqual(['501:Synthetic Summit - Speakers']);
+
+    // The container owns the excluded set; once it feeds the id back, the button must read as on.
+    fixture.componentRef.setInput('excludedIds', new Set<string>(['501']));
+    fixture.detectChanges();
+    expect(exclude()?.getAttribute('aria-pressed')).toBe('true');
+    expect(exclude()?.textContent?.trim()).toBe('Excluded');
+
+    fixture.componentRef.setInput('disabled', true);
+    fixture.detectChanges();
+    exclude()?.click();
+    expect(excluded, 'a disabled Exclude still emitted').toEqual(['501:Synthetic Summit - Speakers']);
+  });
+
+  it('links a search result to HubSpot only when it has a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    render({ searchResults: [result(), result({ listId: '502', hubspotUrl: '' })] });
+
+    const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-missing-signals-link-501"]');
+    expect(link?.getAttribute('href')).toBe('https://app.hubspot.com/contacts/1/objectLists/501');
+    expect(host().querySelector('[data-testid="audience-missing-signals-link-502"]'), 'a blank URL rendered a link back to this app').toBeNull();
+  });
+
+  describe('create list', () => {
+    it('offers Create for every missing signal, as the legacy builder did, and only when allowed', () => {
+      fixture.componentRef.setInput('canCreate', true);
+      render({ missingSignals: ['event_speakers', 'page_view', 'education_enrollment'] });
+
+      for (const signal of ['event_speakers', 'page_view', 'education_enrollment']) {
+        expect(host().querySelector(`[data-testid="audience-missing-signals-create-${signal}"]`), signal).not.toBeNull();
+      }
+
+      fixture.componentRef.setInput('canCreate', false);
+      fixture.detectChanges();
+      expect(host().querySelector('[data-testid="audience-missing-signals-create-event_speakers"]')).toBeNull();
+    });
+
+    it('emits the signal and creates nothing itself', () => {
+      const emitted: AudienceSignal[] = [];
+      fixture.componentInstance.createList.subscribe((signal) => emitted.push(signal));
+      fixture.componentRef.setInput('canCreate', true);
+      render({ missingSignals: ['event_registration'] });
+
+      host().querySelector<HTMLButtonElement>('[data-testid="audience-missing-signals-create-event_registration"]')?.click();
+
+      expect(emitted).toEqual(['event_registration']);
+    });
+  });
 });

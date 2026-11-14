@@ -1,10 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Impersonation Banner -->
+<!-- Impersonation Banner — a fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX -->
 <lfx-impersonation-banner />
 
-<div [ngClass]="{ 'pt-12': userService.impersonating() }">
+<div [ngClass]="{ 'pt-[36px]': userService.impersonating() }">
   <lfx-header></lfx-header>
 
   @if (meetingLoadFailed() && (!meeting() || !meetingMatchesRoute())) {
@@ -12,11 +12,10 @@
          later terminal failure (each failing `catchError` returns `EMPTY`, no new emission), so
          checking `meeting()` first would keep showing stale content instead of this error state
          (GH-2041 follow-up). 404/403/400 already redirect to /meetings/not-found in
-         initializeMeeting(), so this only covers the case that would otherwise leave the skeleton
+         MeetingPageDataService, so this only covers the case that would otherwise leave the skeleton
          spinning forever on the *initial* load (e.g. a 5xx or network error). `!meeting()` scopes
-         this to loads with no settled meeting yet — `refreshTrigger$` re-entering the pipeline
-         after a successful registration or materials change (meeting-join.component.ts:619, 667)
-         can also call `setMeetingLoadFailed()` on a transient failure, but `meeting()` still holds
+         this to loads with no settled meeting yet — a `pageData.refresh()` after a successful
+         registration or materials change can also flag a transient failure, but `meeting()` still holds
          the working meeting then, and a blipped background refetch must not tear down an
          otherwise-working page (dealako review on #2046). `!meetingMatchesRoute()` additionally
          catches a failed fetch after navigating to a *different* `/meetings/:id` — without it,
@@ -36,7 +35,8 @@
       <div class="container mx-auto py-6 px-8">
         <div class="max-w-[900px] mx-auto flex flex-col">
           <!-- Project Logo (fallback to LFX logo) -->
-          <div class="flex items-center justify-center mb-6">
+          <!-- Hidden below md so the meeting title lands in the first viewport on phones; the header bar still shows the LFX logo. -->
+          <div class="hidden md:flex items-center justify-center mb-6" data-testid="meeting-hero-logo">
             @if (project()?.logo_url) {
               <img [src]="project()?.logo_url" [alt]="project()?.name" class="w-auto h-10 md:h-14" />
             } @else {
@@ -92,7 +92,7 @@
                 }
 
                 <!-- View Guests Button -->
-                @if (authenticated() && (meeting().organizer || meeting().invited)) {
+                @if (authenticated() && canViewGuests()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -102,7 +102,7 @@
                     styleClass="py-[0.15rem] text-xs"
                     data-testid="view-members-button">
                   </lfx-button>
-                } @else if (meeting().show_meeting_attendees) {
+                } @else if (attendeeListShared()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -115,17 +115,43 @@
                 }
               </div>
 
-              <!-- Right: Copy Link Button -->
-              <lfx-button
-                [icon]="'fa-light fa-copy'"
-                [rounded]="true"
-                size="small"
-                severity="secondary"
-                [text]="true"
-                (onClick)="handleCopyLink()"
-                [attr.data-testid]="'meeting-copy-link-button'"
-                [pTooltip]="'Copy meeting link'">
-              </lfx-button>
+              <!-- Right: Occurrence actions (organizers only) + Copy Link Button -->
+              <div class="flex items-center gap-1">
+                @if (canManageOccurrence()) {
+                  <lfx-button
+                    icon="fa-light fa-calendar-pen"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    ariaLabel="Edit this occurrence"
+                    (onClick)="rescheduleCurrentOccurrence()"
+                    data-testid="meeting-reschedule-occurrence-button"
+                    tooltip="Edit this occurrence">
+                  </lfx-button>
+                  <lfx-button
+                    icon="fa-light fa-ban"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    ariaLabel="Cancel this occurrence"
+                    (onClick)="cancelCurrentOccurrence()"
+                    data-testid="meeting-cancel-occurrence-button"
+                    tooltip="Cancel this occurrence">
+                  </lfx-button>
+                }
+                <lfx-button
+                  [icon]="'fa-light fa-copy'"
+                  [rounded]="true"
+                  size="small"
+                  severity="secondary"
+                  [text]="true"
+                  (onClick)="handleCopyLink()"
+                  [attr.data-testid]="'meeting-copy-link-button'"
+                  [pTooltip]="'Copy meeting link'">
+                </lfx-button>
+              </div>
             </div>
 
             <!-- Content Row: Title/Details + Join Button (if immediate) -->
@@ -140,7 +166,7 @@
 
                   <!-- Foundation / Project / Committee Context Chips -->
                   @if (parentProject()?.name || project()?.name || meeting().project_name || (meeting().committees && meeting().committees.length > 0)) {
-                    <div class="flex flex-wrap items-center gap-2" data-testid="meeting-context">
+                    <div class="hidden md:flex flex-wrap items-center gap-2" data-testid="meeting-context">
                       @if (parentProject()?.name; as foundationName) {
                         <button
                           type="button"
@@ -182,9 +208,32 @@
                     </div>
                   }
 
+                  <!-- Compact meta summary (mobile only): date · time · zone, foundation · project, organizer. Desktop keeps the pills below. -->
+                  <div class="flex flex-col gap-1 text-sm text-gray-700 md:hidden" data-testid="meeting-meta-mobile">
+                    @if (currentOccurrence()?.start_time || meeting().start_time; as mobileStartTime) {
+                      @if (userTimezone(); as tz) {
+                        <p class="font-medium text-gray-900" data-testid="meeting-meta-mobile-datetime">
+                          {{ mobileStartTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz }}
+                          <span data-testid="meeting-meta-mobile-timezone">{{ mobileTimezoneAbbreviation() }}</span>
+                        </p>
+                        @if (mobileScheduledTimezoneLabel(); as scheduledLabel) {
+                          <p class="text-xs text-gray-500" data-testid="meeting-meta-mobile-scheduled-zone">{{ scheduledLabel }}</p>
+                        }
+                      } @else {
+                        <p-skeleton width="14rem" height="1.25rem" animation="wave" data-testid="meeting-meta-mobile-datetime-skeleton" />
+                      }
+                    }
+                    @if (mobileContextLabel(); as contextLabel) {
+                      <p data-testid="meeting-meta-mobile-context">{{ contextLabel }}</p>
+                    }
+                    @if (authenticated()) {
+                      <p class="break-words" data-testid="meeting-meta-mobile-organizer">Organized by {{ mobileOrganizerLabel() }}</p>
+                    }
+                  </div>
+
                   <!-- Date/Time Badge -->
                   @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
-                    <div class="flex items-center gap-3">
+                    <div class="hidden md:flex items-center gap-3" data-testid="meeting-meta-desktop">
                       @if (userTimezone(); as tz) {
                         <lfx-tag
                           [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' : tz"
@@ -205,10 +254,12 @@
                   <!-- Occurrence Navigation (recurring meetings; past pages key off the series timeline since ITX past payloads omit `recurrence`) -->
                   @if (occurrenceLabel()) {
                     <div class="flex items-center gap-3" data-testid="occurrence-navigation">
+                      <!-- data-dd-privacy="mask" on both links: their href carries the meeting passcode; keep it out of Session Replay. -->
                       @if (previousOccurrenceUrl(); as prevUrl) {
                         <a
                           [href]="prevUrl"
                           class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                          data-dd-privacy="mask"
                           data-testid="occurrence-nav-prev">
                           <i class="fa-light fa-chevron-left text-xs"></i>
                           <span>Previous</span>
@@ -224,6 +275,7 @@
                         <a
                           [href]="nextUrl"
                           class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                          data-dd-privacy="mask"
                           data-testid="occurrence-nav-next">
                           <span>Next</span>
                           <i class="fa-light fa-chevron-right text-xs"></i>
@@ -270,7 +322,7 @@
                     }
 
                     <!-- AI Summary Badge -->
-                    @if (hasAiCompanion()) {
+                    @if (showAiSummaryBadge()) {
                       <lfx-tag
                         value="AI Summary"
                         severity="secondary"
@@ -310,11 +362,25 @@
                   }
 
                   <!-- Total Invitees -->
-                  @if (registrants().length > 0 && !isPastMeeting()) {
-                    <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
-                      <i class="fa-light fa-users"></i>
-                      <span>{{ totalInvitees() }} invited</span>
-                    </div>
+                  @if (totalInvitees() > 0 && !isPastMeeting()) {
+                    @if (authenticated() && canViewGuests()) {
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                        data-testid="total-invitees"
+                        aria-haspopup="dialog"
+                        [attr.aria-expanded]="showRegistrants()"
+                        [attr.aria-label]="totalInvitees() + ' invited, show guest list'"
+                        (click)="onRegistrantsToggle()">
+                        <i class="fa-light fa-users" aria-hidden="true"></i>
+                        <span>{{ totalInvitees() }} invited</span>
+                      </button>
+                    } @else {
+                      <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
+                        <i class="fa-light fa-users"></i>
+                        <span>{{ totalInvitees() }} invited</span>
+                      </div>
+                    }
                   }
                 </div>
 
@@ -361,7 +427,7 @@
               <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
               @if (canJoinMeeting() && authenticated()) {
                 @if (fetchedJoinUrl() && !showGuestForm()) {
-                  <div class="w-full md:w-[296px]">
+                  <div class="w-full md:w-[296px]" [ngClass]="{ 'max-sm:hidden': showStickyBar() }">
                     <lfx-button
                       styleClass="w-full h-[40px]"
                       label="Join Meeting"
@@ -399,7 +465,7 @@
                   <!-- Disabled+loading is the default while the join URL is resolving.
                      Placed last so it renders at SSR first paint (no join URL or error yet)
                      rather than depending on the client-only isLoadingJoinUrl signal. -->
-                  <div class="w-full md:w-[296px]">
+                  <div class="w-full md:w-[296px]" [ngClass]="{ 'max-sm:hidden': showStickyBar() }">
                     <lfx-button
                       styleClass="w-full h-[40px]"
                       label="Join Meeting"
@@ -415,57 +481,91 @@
               } @else if (authenticated() && !isPastMeeting() && meeting().organizer) {
                 <!-- RSVP Section - Future Meeting (Authenticated Organizers) -->
                 <div class="w-full md:w-[296px] flex flex-col gap-2">
-                  @if (canToggleRsvpView() && showMyRsvp()) {
-                    <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
+                  <!-- Invited organizers respond directly alongside their guest overview -->
+                  @if (canRespondAsOrganizer()) {
                     <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
                     </lfx-rsvp-button-group>
-                  } @else {
-                    <!-- Show RSVP Details for organizers (default view) -->
-                    <lfx-meeting-rsvp-details
-                      [meeting]="meeting()"
-                      [project]="project()"
-                      [currentOccurrence]="currentOccurrence()"
-                      [pastMeeting]="isPastMeeting()"
-                      [showAddButton]="!!meeting().organizer && !isPastMeeting()"
-                      [additionalRegistrantsCount]="additionalRegistrantsCount()"
-                      [initialRegistrants]="registrants()"
-                      [initialRegistrantsLoading]="registrantsLoading()"
-                      backgroundColor="bg-gray-50"
-                      borderColor="border-gray-200"
-                      (addClicked)="showRegistrants.set(true)">
-                    </lfx-meeting-rsvp-details>
                   }
-                  @if (canToggleRsvpView()) {
-                    @if (!showMyRsvp() && currentUserRsvpLabel(); as rsvpLabel) {
-                      <div
-                        class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-xs"
-                        data-testid="current-user-rsvp-status">
-                        @if (currentUserRsvpIcon(); as iconClass) {
-                          <i [class]="iconClass" aria-hidden="true"></i>
-                        }
-                        <span class="text-gray-600">Your RSVP:</span>
-                        <span class="font-medium text-gray-900">{{ rsvpLabel }}</span>
-                      </div>
-                    }
+                  <lfx-meeting-rsvp-details
+                    [meeting]="meeting()"
+                    [project]="project()"
+                    [currentOccurrence]="currentOccurrence()"
+                    [pastMeeting]="isPastMeeting()"
+                    [showAddButton]="!!meeting().organizer && !isPastMeeting()"
+                    [additionalRegistrantsCount]="additionalRegistrantsCount()"
+                    [initialRegistrants]="registrants()"
+                    [initialRegistrantsLoading]="registrantsLoading()"
+                    [confirmedRsvps]="overviewConfirmedRsvps()"
+                    backgroundColor="bg-gray-50"
+                    borderColor="border-gray-200"
+                    (addClicked)="showRegistrants.set(true)">
+                  </lfx-meeting-rsvp-details>
+                  @if (canResendInvite()) {
+                    <lfx-button
+                      class="w-full"
+                      [ngClass]="{ 'max-sm:hidden': stickyBarOffersResend() }"
+                      styleClass="w-full"
+                      icon="fa-light fa-paper-plane"
+                      label="Resend Invite"
+                      size="small"
+                      severity="secondary"
+                      [loading]="resendingInvite()"
+                      (onClick)="resendInvite()"
+                      data-testid="resend-invite-organizer-button">
+                    </lfx-button>
+                  }
+                  @if (canLeaveMeeting()) {
                     <lfx-button
                       class="w-full"
                       styleClass="w-full"
-                      [icon]="showMyRsvp() ? 'fa-light fa-users' : 'fa-light fa-hand'"
-                      [label]="rsvpToggleLabel()"
+                      icon="fa-light fa-user-xmark"
+                      label="Remove Myself"
                       size="small"
                       severity="secondary"
-                      (onClick)="onRsvpViewToggle()"
-                      data-testid="toggle-rsvp-view-button">
+                      [loading]="leavingMeeting()"
+                      (onClick)="confirmLeaveMeeting()"
+                      data-testid="leave-meeting-button">
                     </lfx-button>
                   }
                 </div>
               } @else if (authenticated() && !isPastMeeting()) {
                 <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
                 <div class="w-full md:w-[296px]">
-                  @if (effectivelyInvited() && inviteResponsesEnabled()) {
-                    @defer (when meeting()) {
-                      <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
-                    }
+                  @if (effectivelyInvited()) {
+                    <div class="flex flex-col gap-2">
+                      @if (inviteResponsesEnabled()) {
+                        @defer (when meeting()) {
+                          <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                        }
+                      }
+                      @if (canResendInvite()) {
+                        <lfx-button
+                          class="w-full"
+                          [ngClass]="{ 'max-sm:hidden': stickyBarOffersResend() }"
+                          styleClass="w-full"
+                          icon="fa-light fa-paper-plane"
+                          label="Resend Invite"
+                          size="small"
+                          severity="secondary"
+                          [loading]="resendingInvite()"
+                          (onClick)="resendInvite()"
+                          data-testid="resend-invite-button">
+                        </lfx-button>
+                      }
+                      @if (canLeaveMeeting()) {
+                        <lfx-button
+                          class="w-full"
+                          styleClass="w-full"
+                          icon="fa-light fa-user-xmark"
+                          label="Remove Myself"
+                          size="small"
+                          severity="secondary"
+                          [loading]="leavingMeeting()"
+                          (onClick)="confirmLeaveMeeting()"
+                          data-testid="leave-meeting-button">
+                        </lfx-button>
+                      }
+                    </div>
                   } @else if (canRegisterForMeeting()) {
                     <lfx-button
                       class="w-full"
@@ -557,7 +657,7 @@
               }
             </div>
 
-            @if (!(isPastMeeting() && !pastMeetingFullAccess())) {
+            @if (canViewMeetingDetails()) {
               <!-- Divider -->
               <hr class="border-gray-200 my-4" />
 
@@ -620,10 +720,19 @@
                                 <div class="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" [ngClass]="[fileType.bgColor]">
                                   <i [ngClass]="[fileType.icon, fileType.textColor]" class="text-base"></i>
                                 </div>
-                                <div class="flex flex-col flex-1 overflow-hidden gap-0.5">
-                                  <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap font-inter">{{
-                                    attachment.name
-                                  }}</span>
+                                <div class="flex flex-col flex-1 min-w-0 gap-1">
+                                  <span
+                                    class="text-sm text-gray-900 line-clamp-2 break-words font-inter"
+                                    [pTooltip]="attachment.name"
+                                    tooltipPosition="top"
+                                    [attr.data-testid]="'meeting-material-file-name-' + i"
+                                    >{{ attachment.name }}</span
+                                  >
+                                  @if (showAttachmentScopes()) {
+                                    <lfx-attachment-scope-badge
+                                      class="self-start"
+                                      [scope]="attachmentScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
+                                  }
                                   <div class="flex items-center gap-2">
                                     <span class="text-xs uppercase tracking-wide text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{{ fileType.label }}</span>
                                     @if (attachment.updated_at || attachment.created_at) {
@@ -659,9 +768,20 @@
                             @for (attachment of materialLinks(); track attachment.uid; let i = $index) {
                               <div class="flex items-center gap-3 py-1.5" [attr.data-testid]="'meeting-material-link-' + i">
                                 <i class="fa-light fa-link text-gray-400 text-sm flex-shrink-0"></i>
-                                <span class="text-sm text-gray-700 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{
-                                  attachment.name
-                                }}</span>
+                                <div class="flex flex-col flex-1 min-w-0 gap-1">
+                                  <span
+                                    class="text-sm text-gray-700 line-clamp-2 break-words font-inter"
+                                    [pTooltip]="attachment.name"
+                                    tooltipPosition="top"
+                                    [attr.data-testid]="'meeting-material-link-name-' + i"
+                                    >{{ attachment.name }}</span
+                                  >
+                                  @if (showAttachmentScopes()) {
+                                    <lfx-attachment-scope-badge
+                                      class="self-start"
+                                      [scope]="attachmentScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
+                                  }
+                                </div>
                                 <a
                                   [href]="attachment.link"
                                   target="_blank"
@@ -715,7 +835,7 @@
                   </div>
                 </div>
 
-                @if (isPastMeeting() && !pastMeetingFullAccess()) {
+                @if (!canViewMeetingDetails()) {
                   <div class="bg-amber-50 border border-amber-300 rounded px-3 py-3 flex items-start gap-3">
                     <i class="fa-light fa-lock text-amber-600 text-base mt-0.5"></i>
                     <div>
@@ -761,9 +881,12 @@
                     </div>
                   </div>
 
+                  <!-- data-dd-privacy="mask": returnTo carries the meeting passcode, even when the address bar does not; keep it out of Session Replay. -->
                   <lfx-button
                     class="w-full md:w-auto"
                     styleClass="w-full md:w-auto"
+                    data-dd-privacy="mask"
+                    data-testid="meeting-join-sign-in"
                     size="small"
                     label="Sign In"
                     icon="fa-light fa-arrow-right-to-bracket"
@@ -771,6 +894,23 @@
                     [href]="'/login?returnTo=' + returnTo()">
                   </lfx-button>
                 </div>
+
+                @if (!canViewMeetingDetails()) {
+                  <div class="bg-amber-50 border border-amber-300 rounded px-3 py-3 flex items-start gap-3">
+                    <i class="fa-light fa-lock text-amber-600 text-base mt-0.5"></i>
+                    <div>
+                      <p class="font-semibold text-sm text-amber-900">This is a private meeting</p>
+                      <p class="text-xs text-gray-600">
+                        Meeting details, recordings, and summaries are only available to meeting participants and committee members.
+                        @if (!isPastMeeting()) {
+                          Sign in or join as a guest below if you have the meeting password.
+                        } @else {
+                          Sign in if you believe you should have access.
+                        }
+                      </p>
+                    </div>
+                  </div>
+                }
 
                 @if (!isPastMeeting()) {
                   <!-- OR Divider -->
@@ -798,7 +938,7 @@
       <p-drawer
         [(visible)]="showRegistrants"
         [position]="drawerPosition()"
-        styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+        styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full max-sm:!h-[100dvh] max-sm:!max-h-[100dvh]"
         [modal]="true"
         [showCloseIcon]="false"
         data-testid="meeting-registrants-drawer">
@@ -834,6 +974,7 @@
           [meeting]="meeting()"
           [pastMeeting]="isPastMeeting()"
           [showAddRegistrant]="!!meeting().organizer && !isPastMeeting()"
+          [occurrence]="currentOccurrence()"
           [myMeetingRegistrants]="true"
           [initialRegistrants]="registrants()"
           [initialRegistrantsLoading]="registrantsLoading()"
@@ -848,13 +989,30 @@
           [(visible)]="materialsDrawerVisible"
           [meetingId]="loadedViaPastMeetingId() ? undefined : meeting().id"
           [pastMeetingId]="pastMeetingResourceId()"
+          [occurrence]="attachmentOccurrence()"
+          [canScopeToOccurrence]="canScopeToOccurrence()"
           (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
+      }
+
+      @if (showStickyBar()) {
+        <!-- Clears the fixed bar (two rows + safe area) so the last content is never covered on phones. -->
+        <div class="h-36 sm:hidden" aria-hidden="true"></div>
+        <lfx-meeting-join-sticky-bar
+          [canJoin]="canJoinMeeting()"
+          [joinHref]="fetchedJoinUrl()"
+          [joinUnavailable]="joinUrlError() !== null || showGuestForm()"
+          [unlockLabel]="joinUnlockLabel()"
+          [primaryAction]="stickyBarAction()"
+          [resending]="resendingInvite()"
+          [suppressed]="stickyBarSuppressed()"
+          (resendInvite)="resendInvite()"
+          (subscribeCalendar)="onSubscribeCalendar()" />
       }
     </div>
   } @else {
     <!-- Skeleton shown only for client-side navigations with no SSR-transferred state (GH-2041) —
-         the seeded first paint in `initializeMeeting()` means this never flashes on a fresh load. -->
+         the seeded first paint in `MeetingPageDataService.load()` means this never flashes on a fresh load. -->
     <div class="bg-gray-50 min-h-screen" role="status" aria-live="polite" data-testid="meeting-join-skeleton">
       <span class="sr-only">Loading meeting details…</span>
       <div class="container mx-auto py-6 px-8">
@@ -874,4 +1032,6 @@
       </div>
     </div>
   }
+
+  <p-confirmDialog></p-confirmDialog>
 </div>

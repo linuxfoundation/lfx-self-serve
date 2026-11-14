@@ -4,7 +4,7 @@ description: How to view and filter your crowdfunding initiatives by status in L
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, view, status, list]
-last_updated: 2026-06-29
+last_updated: 2026-11-06
 intercom_collection: Crowdfunding
 ---
 
@@ -30,15 +30,30 @@ Below the stats bar, your initiatives are displayed as cards. Use the status fil
 
 Each filter pill shows the count of initiatives in that group. The list supports pagination with a load-more button.
 
+## Create an initiative
+
+Select **New Initiative** in the page header to open the creation flow in LFX Crowdfunding in a new tab. Initiative creation and submission happen in that separate product, not in LFX Self Serve.
+
+When you have no initiatives, the empty list also offers **New Initiative**. If you already have initiatives but the selected status filter has no matches, the list shows that filter's empty message without an in-panel creation action. You can switch filters or use **New Initiative** in the header.
+
+## Initiatives under other lenses
+
+The same page appears under the **Projects**, **Foundation**, and **Organization** lenses as **Crowdfunding Initiatives**, listing the initiatives run on behalf of the selected entity. Its description reads "Fundraising initiatives on LFX Crowdfunding run on behalf of" the entity, and it can show two extra states:
+
+- **You don't have access to these initiatives** — only writers on the project or foundation, or Admins granted directly on the organization, can see the initiatives run on its behalf.
+- **Initiatives couldn't be loaded** — LFX Crowdfunding is temporarily unavailable. Select **Try again**.
+
+See [Lens-scoped Initiatives](../lens-initiatives/) for who can see these pages.
+
 ## Before you begin
 
 - Sign in to LFX Self Serve at [app.lfx.dev](https://app.lfx.dev) with your Linux Foundation account.
-- You must have created at least one crowdfunding initiative. If the My Initiatives section is empty, you have not created any initiatives yet — new initiatives are submitted at [crowdfunding.linuxfoundation.org](https://crowdfunding.linuxfoundation.org).
+- You do not need an existing initiative to use this page. To start one, use **New Initiative** to open the separate [LFX Crowdfunding product](https://crowdfunding.linuxfoundation.org) in a new tab.
 
 ## Steps
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
-2. Select **Crowdfunding → My Initiatives** from the left navigation sidebar.
+2. Select **Crowdfunding → Initiatives** from the left navigation sidebar.
 3. Review the stats bar for an overview of your fundraising activity.
 4. Select a status filter pill (**Active**, **Pending**, or **Archived**) to narrow the list.
 5. Select an initiative card to open its detail page.
@@ -50,4 +65,5 @@ The initiative detail page opens, where you can review financials and manage the
 ## Related
 
 - [Manage Initiatives](../manage-initiatives/) — edit settings, archive, or activate an initiative from its detail page
-- [My Initiatives](../my-initiatives/) — overview of the My Initiatives section
+- [Initiatives](../my-initiatives/) — overview of the Initiatives section
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization

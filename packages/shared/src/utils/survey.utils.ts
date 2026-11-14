@@ -1,9 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { COMBINED_SURVEY_STATUS } from '../constants/survey.constants';
+import {
+  COMBINED_SURVEY_STATUS,
+  SURVEY_EMAIL_BUTTON_HTML,
+  SURVEY_EMAIL_DRAFTS,
+  SURVEY_MAINTAINER_TEMPLATE_KEYWORD,
+  SURVEY_RESPONSE_FUNNEL_RANK,
+} from '../constants/survey.constants';
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
-import type { CombinedSurveyStatus, NpsBand, SurveyDisplayStatusInput, SurveyResponseItem, SurveyStatusInput } from '../interfaces/survey.interface';
+import type {
+  CombinedSurveyStatus,
+  NpsBand,
+  RenderedSurveyEmail,
+  Survey,
+  SurveyDisplayStatusInput,
+  SurveyEmailBodies,
+  SurveyEmailDraft,
+  SurveyEmailRenderContext,
+  SurveyEmailStages,
+  SurveyEngagementRates,
+  SurveyResponseItem,
+  SurveyResyncScope,
+  SurveyStatusInput,
+} from '../interfaces/survey.interface';
+import { escapeHtml } from './html-utils';
 
 /**
  * Sentinel value the API uses on `response_status` to signal that responses
@@ -168,4 +189,257 @@ export function getResponseComment(item: SurveyResponseItem): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Whether a recipient has submitted a response.
+ * @param item - The per-recipient survey response
+ */
+export function hasSurveyResponse(item: SurveyResponseItem): boolean {
+  return typeof item.response_datetime === 'string' && item.response_datetime.trim() !== '';
+}
+
+function percentOf(count: number, total: number): number {
+  return total > 0 ? Math.round((count / total) * 100) : 0;
+}
+
+/**
+ * Which invitation-email stages a recipient reached.
+ * @description A stage counts when SES flagged it or the delivery status is that stage, and a
+ * later stage implies every earlier one (a click means it was opened and delivered). A response
+ * alone proves nothing about the email: it may have come through a copied personal link.
+ * @param item - The per-recipient survey response
+ */
+export function getSurveyEmailStages(item: SurveyResponseItem): SurveyEmailStages {
+  const rank = SURVEY_RESPONSE_FUNNEL_RANK[(item.response_status ?? '').toLowerCase()] ?? 0;
+  const clicked = item.ses_link_clicked === true || rank >= 3;
+  const opened = clicked || item.ses_email_opened === true || rank >= 2;
+  const delivered = opened || item.ses_delivery_successful === true || rank >= 1;
+  return { delivered, opened, clicked };
+}
+
+/**
+ * Aggregate delivery, open, click, response and comment counts across every response row.
+ * @description Email stages come from getSurveyEmailStages; responses are counted separately.
+ * Delivery rate is over all recipients; open and click rates are over delivered; comment rate
+ * is over responded.
+ * @param rows - Every per-recipient response row for the survey (all pages)
+ * @returns Counts and whole-percentage rates
+ */
+export function getSurveyEngagementRates(rows: readonly SurveyResponseItem[]): SurveyEngagementRates {
+  let delivered = 0;
+  let opened = 0;
+  let clicked = 0;
+  let responded = 0;
+  let commented = 0;
+
+  for (const row of rows) {
+    const stages = getSurveyEmailStages(row);
+    if (stages.delivered) delivered++;
+    if (stages.opened) opened++;
+    if (stages.clicked) clicked++;
+    if (hasSurveyResponse(row)) {
+      responded++;
+      if (getResponseComment(row) !== null) commented++;
+    }
+  }
+
+  return {
+    recipients: rows.length,
+    delivered,
+    opened,
+    clicked,
+    responded,
+    commented,
+    deliveryRate: percentOf(delivered, rows.length),
+    openRate: percentOf(opened, delivered),
+    clickRate: percentOf(clicked, delivered),
+    commentRate: percentOf(commented, responded),
+  };
+}
+
+/** Formats a survey cutoff date as e.g. "November 30, 2026" (UTC), or '' when absent or invalid. */
+function formatSurveyCutoffDate(value: string | null | undefined): string {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '';
+}
+
+/** `{{Quarter}}` / `{{Year}}` from when the survey was sent (UTC); omitted when no date is known. */
+function surveySendQuarter(survey: Survey): Record<string, string> {
+  const raw = survey.survey_send_date || survey.created_at;
+  const date = raw ? new Date(raw) : null;
+  if (!date || Number.isNaN(date.getTime())) return {};
+  return { Quarter: `Q${Math.floor(date.getUTCMonth() / 3) + 1}`, Year: String(date.getUTCFullYear()) };
+}
+
+/** Matches `{{.Name}}` (ITX/Go templates, used by board surveys) and `{{Name}}` (Self Serve's wizard). */
+const SURVEY_EMAIL_PLACEHOLDER = /\{\{\s*\.?([A-Za-z]+)\s*\}\}/g;
+
+/**
+ * Render a survey's sent email as one recipient received it.
+ * @description Replaces the template placeholders with the recipient's values. Values are
+ * HTML-escaped in the body (quotes included, so a value inside an attribute stays inert);
+ * the subject is plain text. Unknown placeholders are left as-is.
+ * @param survey - Survey detail carrying `email_subject` / `email_body`
+ * @param item - The recipient's response row
+ * @param context - Project-level values the row does not carry
+ * @returns The rendered subject and HTML body
+ */
+export function renderSurveyEmailForRecipient(survey: Survey, item: SurveyResponseItem, context: SurveyEmailRenderContext = {}): RenderedSurveyEmail {
+  const committee = survey.committees?.find((c) => c.committee_uid === item.committee_uid);
+  const surveyLink = item.survey_link || '#';
+  const values: Record<string, string> = {
+    FirstName: item.first_name ?? '',
+    LastName: item.last_name ?? '',
+    EmailAddress: item.email ?? '',
+    ProjectName: item.project?.name || committee?.project_name || context.projectName || '',
+    CommitteeName: committee?.committee_name ?? '',
+    CommitteeType: survey.committee_category ?? '',
+    OrganizationName: item.organization?.name ?? '',
+    MembershipTier: item.membership_tier ?? '',
+    SurveyLink: surveyLink,
+    CutoffDate: formatSurveyCutoffDate(survey.survey_cutoff_date),
+    ...surveySendQuarter(survey),
+    ExecutiveDirectorName: context.executiveDirectorName ?? '',
+    ProgramManagerName: context.programManagerName ?? '',
+    ProjectLogo: context.projectLogo ?? '',
+    TrackerAlertPartial: '',
+    // Offered by the Self Serve wizard, but the survey service returns no template name or sender
+    // details. Blank rather than a literal token, which would read as a rendering bug.
+    SurveyTemplate: '',
+    SenderTitle: '',
+    SenderEmail: '',
+  };
+
+  const render = (template: string, escape: boolean): string =>
+    template.replace(SURVEY_EMAIL_PLACEHOLDER, (match, name: string) => {
+      // {{SurveyButton}} (Self Serve wizard) is markup, not a value: a link to the recipient's survey.
+      if (name === 'SurveyButton') {
+        return escape ? `<a href="${escapeHtml(surveyLink)}" target="_blank" rel="noopener noreferrer">Take the survey</a>` : 'Take the survey';
+      }
+      if (!(name in values)) return match;
+      return escape ? escapeHtml(values[name]) : values[name];
+    });
+
+  return {
+    subject: render(survey.email_subject ?? '', false),
+    html: render(survey.email_body ?? '', true),
+  };
+}
+
+/**
+ * Build a `mailto:` link that opens a follow-up email to one recipient with their personal link.
+ * @param survey - The survey being followed up
+ * @param item - The recipient's response row
+ * @returns The mailto URL, or null when the recipient has no email address
+ */
+export function buildSurveyFollowUpMailto(survey: Survey, item: SurveyResponseItem): string | null {
+  if (!item.email) return null;
+
+  const greeting = item.first_name ? `Hi ${item.first_name},` : 'Hi,';
+  const cutoff = formatSurveyCutoffDate(survey.survey_cutoff_date);
+  const deadline = cutoff ? ` by ${cutoff}` : '';
+  const linkLine = item.survey_link ? `\n\nYour personal survey link:\n${item.survey_link}` : '';
+  const body = `${greeting}\n\nA quick reminder to share your feedback in the "${survey.survey_title}" survey${deadline}.${linkLine}\n\nThank you!`;
+
+  return `mailto:${encodeURIComponent(item.email)}?subject=${encodeURIComponent(`Reminder: ${survey.survey_title}`)}&body=${encodeURIComponent(body)}`;
+}
+
+/**
+ * Build CSV rows (header first) for a survey's responses. Personal survey links are deliberately excluded.
+ * @param survey - The survey, used for committee labels
+ * @param rows - Every per-recipient response row
+ * @returns Rows ready for `downloadCsv`
+ */
+export function buildSurveyResponsesCsvRows(survey: Survey, rows: readonly SurveyResponseItem[]): (string | number)[][] {
+  const header = ['Name', 'Email', 'Organization', 'Committee', 'Role', 'Delivery Status', 'Delivered', 'Opened', 'Clicked', 'Responded At', 'NPS', 'Comment'];
+  const yesNo = (value: boolean): string => (value ? 'Yes' : 'No');
+
+  const body = rows.map((row) => {
+    const committee = survey.committees?.find((c) => c.committee_uid === row.committee_uid);
+    const responded = hasSurveyResponse(row);
+    const stages = getSurveyEmailStages(row);
+    return [
+      `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.username || '',
+      row.email ?? '',
+      row.organization?.name ?? '',
+      [committee?.project_name, committee?.committee_name].filter(Boolean).join(' | '),
+      row.role ?? '',
+      row.response_status ?? '',
+      yesNo(stages.delivered),
+      yesNo(stages.opened),
+      yesNo(stages.clicked),
+      responded ? (row.response_datetime ?? '') : '',
+      responded && typeof row.nps_value === 'number' ? row.nps_value : '',
+      getResponseComment(row) ?? '',
+    ];
+  });
+
+  return [header, ...body];
+}
+
+/**
+ * Whether follow-up actions that email recipients (reminders, resync) apply: only while the survey accepts responses.
+ * @param survey - The survey
+ */
+export function isSurveyOpenForFollowUp(survey: Survey): boolean {
+  return getSurveyDisplayStatus(survey) === SurveyStatus.OPEN;
+}
+
+/**
+ * Resolve the committees a resync started from a project covers, so it never reaches another project's committee.
+ * @description Always the active project's committees by UID, never "the whole survey": the drawer's
+ * survey detail is project-filtered and can't show every committee the survey was sent to.
+ * @param survey - The survey
+ * @param projectUid - The active project
+ * @returns The scope, or null when the project has no committee on the survey (resync not offered)
+ */
+export function getSurveyResyncScope(survey: Survey, projectUid: string | null | undefined): SurveyResyncScope | null {
+  if (!projectUid) return null;
+  const committeeUids = (survey.committees ?? []).filter((c) => c.project_uid === projectUid && !!c.committee_uid).map((c) => c.committee_uid);
+  return committeeUids.length > 0 ? { committeeUids } : null;
+}
+
+/**
+ * Converts the user-facing `{{Variable}}` placeholders in survey email text
+ * into the Go template form (`{{.Variable}}`) required by the survey service.
+ * Placeholders that already use the dot form are left unchanged.
+ */
+export function toSurveyTemplateVariables(text: string): string {
+  return text.replace(/\{\{\s*(?:\.\s*)?(\w+)\s*\}\}/g, '{{.$1}}');
+}
+
+/**
+ * Builds the survey email bodies sent to the survey service.
+ * Expands `{{SurveyButton}}` (a link in the HTML body, the bare survey link in the text body)
+ * and converts every placeholder to the Go template form (`{{.Variable}}`).
+ */
+export function buildSurveyEmailBodies(body: string): SurveyEmailBodies {
+  const withButton = (replacement: string): string => body.replace(/\{\{\s*(?:\.\s*)?SurveyButton\s*\}\}/g, () => replacement);
+
+  return {
+    html: toSurveyTemplateVariables(`<!DOCTYPE html><html><body>${withButton(SURVEY_EMAIL_BUTTON_HTML)}</body></html>`),
+    text: toSurveyTemplateVariables(withButton('{{SurveyLink}}')),
+  };
+}
+
+/**
+ * Pick the default email draft for a survey template.
+ * @description ITX templates carry no category, so a title naming maintainers gets the maintainer draft
+ * and every other title gets the general one (PCC's rule).
+ * @param templateTitle - The chosen template's title
+ * @returns The audience-matched draft
+ */
+export function getSurveyEmailDraft(templateTitle: string | null | undefined): SurveyEmailDraft {
+  return templateTitle?.toLowerCase().includes(SURVEY_MAINTAINER_TEMPLATE_KEYWORD) ? SURVEY_EMAIL_DRAFTS.maintainer : SURVEY_EMAIL_DRAFTS.general;
+}
+
+/**
+ * Whether an email field still holds one of the default drafts, meaning the user hasn't edited it.
+ * @param field - The draft field to compare
+ * @param value - The field's current value
+ * @returns True when the value equals that field of any default draft
+ */
+export function isDefaultSurveyEmailField(field: keyof SurveyEmailDraft, value: unknown): boolean {
+  return typeof value === 'string' && Object.values(SURVEY_EMAIL_DRAFTS).some((draft) => draft[field] === value);
 }

@@ -3,115 +3,125 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   @if (!personaLoaded()) {
-    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+    <div class="flex flex-col gap-4" data-testid="dashboard-persona-loading">
       <p-skeleton width="12rem" height="2rem" />
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
-    <div class="mt-3 mb-8">
-      <div class="mb-6">
-        <!-- Stacks below sm: the heading plus two labelled actions cannot fit the mobile content width,
-             and the actions wrap so neither is clipped at high zoom. -->
-        <div class="flex flex-col gap-3 w-full sm:flex-row sm:justify-between sm:items-center sm:gap-4">
-          <h1 class="font-display font-light text-2xl">{{ activeLens() === 'me' ? 'My Meetings' : 'Meetings' }}</h1>
-          <div class="flex flex-wrap items-center gap-2">
-            <!-- Gated independently of Create Meeting: the public calendar is a read-only view anyone
+    <div class="mb-8">
+      <!-- Actions stack below sm and wrap, so neither labelled action is clipped at high zoom. -->
+      <lfx-page-header
+        class="mb-6"
+        title="Meetings"
+        [description]="
+          activeLens() === 'me'
+            ? 'Meetings you\'re invited to or organizing, across all your projects.'
+            : 'Coordinate decisions, align stakeholders, and maintain transparent governance in your project'
+        "
+        descriptionTestId="meetings-subtitle">
+        <div pageHeaderActions class="flex flex-wrap items-center gap-2">
+          <!-- Gated independently of Create Meeting: the public calendar is a read-only view anyone
                  with project context can share, so it is not behind meeting write access. -->
-            @if (publicCalendarUrl(); as calendarUrl) {
-              <lfx-button
-                icon="fa-light fa-globe"
-                severity="secondary"
-                [outlined]="true"
-                [attr.data-testid]="'public-calendar-button'"
-                label="Public Calendar"
-                size="small"
-                [href]="calendarUrl"
-                target="_blank"
-                rel="noopener noreferrer">
-              </lfx-button>
-            }
-            @if (activeLens() !== 'me' && canWriteMeetings()) {
-              <!-- Same button, two behaviours: the meetings v2 dropdown for a targeted user, the
+          @if (publicCalendarUrl(); as calendarUrl) {
+            <lfx-button
+              icon="fa-light fa-globe"
+              severity="secondary"
+              [outlined]="true"
+              [attr.data-testid]="'public-calendar-button'"
+              label="Public Calendar"
+              size="small"
+              [href]="calendarUrl"
+              target="_blank"
+              rel="noopener noreferrer">
+            </lfx-button>
+          }
+          @if (activeLens() !== 'me' && canWriteMeetings()) {
+            <!-- Same button, two behaviours: the meetings v2 dropdown for a targeted user, the
                    pre-v2 link to `/meetings/create` for everyone else. Same `data-testid` on both so
                    the trigger stays findable either way. -->
-              @if (meetingsV2Enabled()) {
-                <div class="flex items-center">
-                  <!-- One button, not a split: every create path starts by picking a meeting type or Advanced,
+            @if (meetingsV2Enabled()) {
+              <div class="flex items-center">
+                <!-- One button, not a split: every create path starts by picking a meeting type or Advanced,
                        so there is no default action for a separate primary half to perform. -->
-                  <lfx-button
-                    icon="fa-light fa-chevron-down"
-                    iconPos="right"
-                    severity="info"
-                    [attr.data-testid]="'meeting-create-button'"
-                    label="Create Meeting"
-                    size="small"
-                    ariaHaspopup="menu"
-                    [ariaExpanded]="createMenu.isOpen()"
-                    (onClick)="createMenu.toggle($event)">
-                    <!-- The calendar sits here rather than in `icon` because `lfx-button` takes a single
-                         icon and the chevron needs it. PrimeNG renders projected content before its own
-                         icon and label, and `p-button-icon-right` reorders the chevron last, so this
-                         lands left of the label and inherits the button's own gap. -->
-                    <i class="fa-light fa-calendar" aria-hidden="true"></i>
-                  </lfx-button>
-                  <!-- Rendered beside the button rather than inside it: the panel is a popup PrimeNG
-                       teleports to `body`, and the same dropdown is mounted by the project dashboard's
-                       Quick links. It renders nothing until the button toggles it. -->
-                  <lfx-meeting-create-menu #createMenu />
-                </div>
-              } @else {
                 <lfx-button
-                  icon="fa-light fa-calendar"
+                  icon="fa-light fa-chevron-down"
+                  iconPos="right"
                   severity="info"
                   [attr.data-testid]="'meeting-create-button'"
                   label="Create Meeting"
                   size="small"
-                  [routerLink]="['/meetings', 'create']">
+                  ariaHaspopup="menu"
+                  [ariaExpanded]="createMenu.isOpen()"
+                  (onClick)="createMenu.toggle($event)">
+                  <!-- The calendar sits here rather than in `icon` because `lfx-button` takes a single
+                         icon and the chevron needs it. PrimeNG renders projected content before its own
+                         icon and label, and `p-button-icon-right` reorders the chevron last, so this
+                         lands left of the label and inherits the button's own gap. -->
+                  <i class="fa-light fa-calendar" aria-hidden="true"></i>
                 </lfx-button>
-              }
+                <!-- Rendered beside the button rather than inside it: the panel is a popup PrimeNG
+                       teleports to `body`, and the same dropdown is mounted by the project dashboard's
+                       Quick links. It renders nothing until the button toggles it. -->
+                <lfx-meeting-create-menu #createMenu />
+              </div>
+            } @else {
+              <lfx-button
+                icon="fa-light fa-calendar"
+                severity="info"
+                [attr.data-testid]="'meeting-create-button'"
+                label="Create Meeting"
+                size="small"
+                [routerLink]="['/meetings', 'create']">
+              </lfx-button>
             }
-          </div>
+          }
         </div>
-        <p class="mt-1 text-sm text-gray-500">Coordinate decisions, align stakeholders, and maintain transparent governance in your project</p>
-      </div>
+      </lfx-page-header>
 
       @if (activeLens() === 'me') {
         <div class="mb-6" data-testid="meetings-me-stats">
           <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
             <div class="grid w-full grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
               @if (timeFilter() === 'upcoming') {
-                <div class="flex items-center gap-3 p-4">
+                <!-- Counts individual dates, so a weekly series adds one per week instead of one per series. -->
+                <div class="flex items-center gap-3 p-4 min-w-0" data-testid="meetings-me-stat-next-window">
                   <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
                     <i class="fa-light fa-calendar text-xl"></i>
                   </div>
+                  <div class="flex flex-col gap-0.5 min-w-0">
+                    @if (meLensStatsLoading()) {
+                      <p class="text-xl font-medium text-gray-400">&mdash;</p>
+                    } @else {
+                      <p class="text-xl font-medium text-gray-900">{{ nextWindowCount() }}</p>
+                    }
+                    <p class="text-sm font-normal text-gray-900">Meetings in the Next {{ statsWindowDays }} Days</p>
+                    @if (!meLensStatsLoading() && nextMeetingLabel()) {
+                      <p class="text-xs text-gray-400 truncate" [title]="nextMeetingLabel()">Next: {{ nextMeetingLabel() }}</p>
+                    }
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="flex items-center gap-3 p-4 text-left transition-colors hover:bg-gray-50"
+                  [class.bg-blue-50]="responseFilter() === 'pending'"
+                  [attr.aria-pressed]="responseFilter() === 'pending'"
+                  (click)="onPendingRsvpStatClick()"
+                  data-testid="meetings-me-stat-pending-rsvp">
+                  <div class="flex items-center justify-center w-11 h-11 rounded-full bg-amber-100 text-amber-600 flex-shrink-0">
+                    <i class="fa-light fa-hand text-xl"></i>
+                  </div>
                   <div class="flex flex-col gap-0.5">
                     @if (meLensStatsLoading()) {
                       <p class="text-xl font-medium text-gray-400">&mdash;</p>
                     } @else {
-                      <p class="text-xl font-medium text-gray-900">{{ upcomingCount() }}</p>
+                      <p class="text-xl font-medium text-gray-900">{{ pendingRsvpCount() }}</p>
                     }
-                    <p class="text-sm font-normal text-gray-900">Upcoming Meetings</p>
-                    @if (!meLensStatsLoading() && nextMeetingDate()) {
-                      <p class="text-xs text-gray-400">Next: {{ nextMeetingDate() }}</p>
-                    }
-                  </div>
-                </div>
-                <div class="flex items-center gap-3 p-4">
-                  <div class="flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 text-purple-600 flex-shrink-0">
-                    <i class="fa-light fa-repeat text-xl"></i>
-                  </div>
-                  <div class="flex flex-col gap-0.5">
-                    @if (meLensStatsLoading()) {
-                      <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                    } @else {
-                      <p class="text-xl font-medium text-gray-900">{{ recurringCount() }}</p>
-                    }
-                    <p class="text-sm font-normal text-gray-900">Recurring Series</p>
-                    @if (!meLensStatsLoading() && recurringAcrossLabel()) {
-                      <p class="text-xs text-gray-400">{{ recurringAcrossLabel() }}</p>
+                    <p class="text-sm font-normal text-gray-900">Needs response</p>
+                    @if (!meLensStatsLoading() && earliestPendingRsvpLabel()) {
+                      <p class="text-xs text-gray-400">Earliest: {{ earliestPendingRsvpLabel() }}</p>
                     }
                   </div>
-                </div>
+                </button>
               } @else {
                 <div class="flex items-center gap-3 p-4">
                   <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
@@ -218,8 +228,8 @@
         </div>
       }
 
-      <!-- Top Bar with Tabs, Search, and Meeting Type Filter -->
-      <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8">
+      <!-- Primary meeting views and controlled secondary filters -->
+      <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 mb-8">
         @if (upcomingMeetings() || pastMeetings()) {
           <lfx-meetings-top-bar
             [meetingTypeOptions]="meetingTypeOptions()"
@@ -227,35 +237,55 @@
             [projectOptions]="projectOptions()"
             [showFoundationFilter]="showFoundationFilter()"
             [showProjectFilter]="showProjectFilter()"
-            [timeFilter]="timeFilter()"
-            [pendingRsvpOnly]="pendingRsvpOnly()"
-            [showPendingRsvpFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
-            [organizerOnly]="organizerOnly()"
-            [showOrganizerFilter]="activeLens() === 'me'"
+            [meetingView]="meetingView()"
+            [showPersonalFilters]="activeLens() === 'me' && timeFilter() === 'upcoming'"
+            [responseFilter]="responseFilter()"
+            (responseFilterChange)="responseFilter.set($event)"
+            [organizedByMe]="organizedByMe()"
+            (organizedByMeChange)="organizedByMe.set($event)"
+            [allMeetingsCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? allMeetingsCount() : null"
+            [pendingRsvpCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? pendingRsvpCount() : null"
+            [acceptedCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? acceptedCount() : null"
+            [maybeCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? maybeCount() : null"
+            [declinedCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? declinedCount() : null"
+            [organizerCount]="timeFilter() === 'upcoming' && !meLensStatsLoading() ? organizerCount() : null"
+            [meetingTypeFilter]="meetingTypeFilter()"
+            [foundationFilter]="foundationFilter()"
+            [projectFilter]="projectFilter()"
+            [showRollupFilters]="canShowCalendarView()"
+            [rollupProjectOptions]="rollupProjectOptions()"
+            [groupOptions]="groupOptions()"
+            [groupTypeOptions]="groupTypeOptions()"
+            [rollupProjectsFilter]="rollupProjectsFilter()"
+            [groupFilter]="groupFilter()"
+            [groupTypeFilter]="groupTypeFilter()"
+            (rollupProjectsFilterChange)="onRollupProjectsFilterChange($event)"
+            (groupFilterChange)="groupFilter.set($event)"
+            (groupTypeFilterChange)="onGroupTypeFilterChange($event)"
+            [hideDeclined]="hideDeclined()"
+            (hideDeclinedChange)="hideDeclined.set($event)"
             (meetingTypeChange)="onMeetingTypeChange($event)"
             (foundationFilterChange)="onFoundationFilterChange($event)"
             (projectFilterChange)="onProjectFilterChange($event)"
             [searchQuery]="searchQuery()"
             (searchQueryChange)="searchQuery.set($event)"
-            (timeFilterChange)="onTimeFilterChange($event)"
-            (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)"
-            (organizerOnlyChange)="organizerOnly.set($event)" />
+            (meetingViewChange)="onMeetingViewChange($event)" />
         }
       </div>
     </div>
 
-    <div class="flex items-center justify-end gap-2 mb-4" data-testid="meetings-view-actions">
-      <div role="group" aria-label="Meetings view" class="flex items-center gap-2" data-testid="meetings-view-toggle">
-        <lfx-button
-          label="List"
-          icon="fa-light fa-list-ul"
-          size="small"
-          [severity]="isListView() ? 'info' : 'secondary'"
-          [outlined]="!isListView()"
-          [ariaLabel]="'List view' + (isListView() ? ' (active)' : '')"
-          (onClick)="viewMode.set('list')"
-          data-testid="meetings-list-btn"></lfx-button>
-        @if (canShowCalendarView()) {
+    @if (canShowCalendarView()) {
+      <div class="flex items-center justify-end gap-2 mb-4" data-testid="meetings-view-actions">
+        <div role="group" aria-label="Meetings view" class="flex items-center gap-2" data-testid="meetings-view-toggle">
+          <lfx-button
+            label="List"
+            icon="fa-light fa-list-ul"
+            size="small"
+            [severity]="isListView() ? 'info' : 'secondary'"
+            [outlined]="!isListView()"
+            [ariaLabel]="'List view' + (isListView() ? ' (active)' : '')"
+            (onClick)="viewMode.set('list')"
+            data-testid="meetings-list-btn"></lfx-button>
           <lfx-button
             label="Calendar"
             icon="fa-light fa-calendar-days"
@@ -265,9 +295,7 @@
             [ariaLabel]="'Calendar view' + (isCalendarView() ? ' (active)' : '')"
             (onClick)="viewMode.set('calendar')"
             data-testid="meetings-calendar-btn"></lfx-button>
-        }
-      </div>
-      @if (canShowCalendarView()) {
+        </div>
         <lfx-button
           label="Subscribe"
           icon="fa-light fa-calendar-arrow-down"
@@ -277,8 +305,8 @@
           ariaLabel="Subscribe to calendar"
           (onClick)="onSubscribe()"
           data-testid="meetings-subscribe-btn"></lfx-button>
-      }
-    </div>
+      </div>
+    }
 
     <div class="min-h-[400px]">
       @if (isCalendarView()) {
@@ -357,6 +385,8 @@
                 (meetingUpdated)="refreshMeetings()"
                 (meetingDeleted)="refreshMeetings()"
                 [pastMeeting]="timeFilter() === 'past'"
+                [groupLinkState]="groupLinkState()"
+                [contextProjectUid]="rollupContextUid()"
                 [showBorder]="true"></lfx-meeting-card>
             } @placeholder {
               <div class="bg-white border border-gray-200 rounded-lg p-6 animate-pulse min-h-[200px]"></div>

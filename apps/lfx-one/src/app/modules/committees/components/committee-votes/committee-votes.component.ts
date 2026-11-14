@@ -1,24 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { buildCommitteeCreateQueryParams } from '@lfx-one/shared/utils';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
-import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
-import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, map, merge, of, Subject, switchMap } from 'rxjs';
+import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent],
+  imports: [ButtonComponent, CardComponent, VotesTableComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -26,42 +23,61 @@ import { catchError, filter, finalize, map, merge, of, Subject, switchMap } from
 export class CommitteeVotesComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly lensService = inject(LensService);
-  private readonly voteService = inject(VoteService);
   private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
 
-  // Inputs
+  // Inputs — votes data is pre-fetched and passed from committee-view so the tab badge count is
+  // available before the user first opens this tab.
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
+  public votes = input<Vote[]>([]);
+  public votesLoading = input<boolean>(true);
+
+  // Outputs
+  /** Emitted when a vote is deleted so the parent can re-fetch and update the tab badge count. */
+  public readonly refresh = output<void>();
+  /** Relays votes-table's voteExtended output to committee-view, which holds the override in
+   *  parent-owned state — this component (and any local override it held) is destroyed/recreated on
+   *  every tab switch, which previously dropped the confirmed deadline (per @audigregorie, GH-3823
+   *  review). */
+  public readonly voteExtended = output<Vote>();
+  /** Relays votes-table's voteClosed output to committee-view for the same reason as voteExtended. */
+  public readonly voteClosed = output<Vote>();
 
   // State
-  public loading = signal<boolean>(true);
   public creating = signal(false);
-  public resultsDrawerVisible = model<boolean>(false);
-  public selectedVoteId = signal<string | null>(null);
-  public selectedVote = signal<Vote | null>(null);
-  // Refresh trigger for initVotes(), fired by votes-table's own refresh output (after a delete) —
-  // separate from the committee-change source it merges with below so a refresh can't double-emit
-  // against it (no startWith).
-  private readonly votesRefresh$ = new Subject<void>();
 
   // Data
-  public votes: Signal<Vote[]> = this.initVotes();
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
   // Edit-link fallback: every row here belongs to this committee, so its committee_uid admits
   // committee writers through writerGuard even when the indexed row omits the field (GH-1568).
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
 
-  public viewVoteResults(voteUid: string): void {
-    const vote = this.votes().find((v) => v.uid === voteUid) || null;
-    this.selectedVoteId.set(voteUid);
-    this.selectedVote.set(vote);
-    this.resultsDrawerVisible.set(true);
+  /** Mirrors the votes dashboard: a vote opens on its page, whose breadcrumb leads back. */
+  public viewVote(voteUid: string): void {
+    void this.router.navigate(['/votes', voteUid]);
   }
 
-  /** votes-table's refresh output, fired after a successful delete. */
+  public viewVoteResults(voteUid: string): void {
+    void this.router.navigate(['/votes', voteUid], { queryParams: { tab: 'results' } });
+  }
+
+  /** votes-table's refresh output, fired after a successful delete — propagates to parent. */
   public refreshVotes(): void {
-    this.votesRefresh$.next();
+    this.refresh.emit();
+  }
+
+  /** votes-table's voteExtended output — carries the confirmed vote so the row's deadline updates immediately
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
+   *  Relayed to committee-view rather than held locally so the override survives this component being
+   *  destroyed/recreated on tab switches (per @audigregorie, GH-3823 review). */
+  protected onVoteExtended(vote: Vote): void {
+    this.voteExtended.emit(vote);
+  }
+
+  /** votes-table's voteClosed output, relayed so the ended status survives tab switches. */
+  protected onVoteClosed(vote: Vote): void {
+    this.voteClosed.emit(vote);
   }
 
   protected onCreateVote(): void {
@@ -90,28 +106,5 @@ export class CommitteeVotesComponent {
   // Private initializer functions
   private initCreateVoteQueryParams(): Signal<Record<string, string>> {
     return computed(() => buildCommitteeCreateQueryParams(this.committee()));
-  }
-
-  private initVotes(): Signal<Vote[]> {
-    return toSignal(
-      // votesRefresh$ re-reads this.committee() rather than using startWith, so a refresh can't
-      // double-emit against the toObservable(this.committee) source alongside it.
-      merge(toObservable(this.committee), this.votesRefresh$.pipe(map(() => this.committee()))).pipe(
-        filter((c) => !!c?.uid),
-        switchMap((c) => {
-          this.loading.set(true);
-          return this.voteService.getVotesByCommittee(c.uid).pipe(
-            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale index rows.
-            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
-            catchError(() => {
-              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
-              return of([]);
-            }),
-            finalize(() => this.loading.set(false))
-          );
-        })
-      ),
-      { initialValue: [] }
-    );
   }
 }

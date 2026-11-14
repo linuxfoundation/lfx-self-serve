@@ -75,6 +75,7 @@ describe('EventsSpeakersComponent', () => {
   let getEventsSpeakers: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
   let notes: string[];
 
   async function render(payload: HealthMetricsEventsSpeakers | Error = speakers()): Promise<void> {
@@ -94,7 +95,10 @@ describe('EventsSpeakersComponent', () => {
 
     fixture = TestBed.createComponent(EventsSpeakersComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     fixture.componentInstance.noteChange.subscribe((note) => notes.push(note));
     await settle();
   }
@@ -128,6 +132,7 @@ describe('EventsSpeakersComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
     notes = [];
   });
 
@@ -137,20 +142,42 @@ describe('EventsSpeakersComponent', () => {
     expect(getEventsSpeakers).toHaveBeenCalledTimes(1);
     expect(getEventsSpeakers).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(notes).toEqual(['', 'down 35% YoY']);
     expect(query('events-speakers-loading')).toBeNull();
   });
 
-  it("renders the period's headline, side stats and status bars", async () => {
+  it("renders the period's headline, side stats and status rows", async () => {
     await render();
 
     expect(text('events-speakers-headline-value')).toBe('300');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-speakers-hero')?.classList).not.toContain('border');
     expect(text('events-speakers-side-total-value')).toBe('1,200');
     expect(text('events-speakers-side-acceptance-rate-value')).toBe('25%');
     expect(text('events-speakers-side-speakers-delta')).toBe('−35%');
     expect(text('events-speakers-status-declined-value')).toBe('800');
     expect(text('events-speakers-count')).toBe('1,200 proposals');
     expect(query('events-speakers-chart')).not.toBeNull();
+  });
+
+  it('stacks status over the per-year chart and titles each list with its caption', async () => {
+    await render();
+    const breakdown = query('events-speakers-breakdown');
+    // Heading and caption are separate flex items, spaced by the gap rather than a text node.
+    const heading = (testId: string): string =>
+      Array.from(query(testId)?.querySelector('h4')?.parentElement?.children ?? [])
+        .map((child) => child.textContent?.trim())
+        .join(' ');
+
+    expect(breakdown?.classList).toContain('flex-col');
+    expect(breakdown?.classList).toContain('gap-[24px]');
+    expect(Array.from(breakdown?.children ?? []).map((child) => child.getAttribute('data-testid'))).toEqual([
+      'events-speakers-status',
+      'events-speakers-by-year',
+    ]);
+    expect(heading('events-speakers-status')).toBe('Proposals by status count');
+    expect(heading('events-speakers-organizations')).toBe('Most active organizations proposals submitted');
   });
 
   it('ranks the organizations and keeps individual speakers on their own line', async () => {
@@ -205,19 +232,21 @@ describe('EventsSpeakersComponent', () => {
     expect(fixture.componentInstance['chartData']()).toBe(chartData);
   });
 
-  it('says a period is unmeasured rather than showing zeros', async () => {
+  it('settles an unmeasured period empty, with no body, rather than showing zeros', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
 
-    expect(query('events-speakers-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
     expect(query('events-speakers-hero')).toBeNull();
+    expect(query('events-speakers-breakdown')).toBeNull();
   });
 
-  it('says so when the foundation has no proposals at all', async () => {
+  it('settles empty, with no body, when the foundation has no proposals at all', async () => {
     await render(speakers({ periods: [], organizations: [], unaffiliated: [], proposals: [] }));
 
-    expect(query('events-speakers-foundation-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('events-speakers-hero')).toBeNull();
   });
 
   it('shows the error state and clears the note when the read fails', async () => {
@@ -226,6 +255,7 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-error')).not.toBeNull();
     expect(notes).toEqual(['', '']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('re-reads on a foundation switch, clearing the note until the new read settles', async () => {

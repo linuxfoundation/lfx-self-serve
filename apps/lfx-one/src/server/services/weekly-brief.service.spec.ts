@@ -220,7 +220,7 @@ import { logger } from './logger.service';
 import { __resetMockBriefStateForTesting, briefWindow, currentWeekInProgressWindow, WeeklyBriefService } from './weekly-brief.service';
 
 const req = {} as unknown as Request;
-const userReq = { oidc: { user: { nickname: 'alice', sub: 'auth0|alice-sub' } } } as unknown as Request;
+const userReq = { oidc: { user: { 'https://sso.linuxfoundation.org/claims/username': 'alice', sub: 'auth0|alice-sub' } } } as unknown as Request;
 
 describe('briefWindow', () => {
   afterEach(() => {
@@ -2218,7 +2218,7 @@ describe('WeeklyBriefService', () => {
     });
 
     it('rateBrief throws (400) when the resolved identity cannot build a safe rating key (defense-in-depth — not reachable via normal auth)', async () => {
-      const unsafeReq = { oidc: { user: { nickname: 'unsafe' } } } as unknown as Request;
+      const unsafeReq = { oidc: { user: { 'https://sso.linuxfoundation.org/claims/username': 'unsafe' } } } as unknown as Request;
       const initial = await service.getCurrentBrief(unsafeReq, 'committee-1');
 
       await expect(service.rateBrief(unsafeReq, 'committee-1', initial.brief!.uid, 'up', 1)).rejects.toMatchObject({ statusCode: 400 });
@@ -2329,6 +2329,7 @@ describe('WeeklyBriefService', () => {
 
       await expect(service.shareToSlack(req, 'committee-1', 1)).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
       expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     });
 
     it('throws 409 BACKEND_NOT_LIVE when WEEKLY_BRIEF_BACKEND is not "live" — checked only after every other local precondition passes, before the committee-service call', async () => {
@@ -2472,7 +2473,7 @@ describe('WeeklyBriefService', () => {
       });
     }
 
-    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com' } }, bearerToken: 'writer-token' } as unknown as Request;
+    const nonImpersonatingReq = { oidc: { user: { email: 'Writer@Example.com', email_verified: true } }, bearerToken: 'writer-token' } as unknown as Request;
 
     /**
      * Impersonation session: `bearerToken` starts as the impersonation token (what
@@ -2494,7 +2495,7 @@ describe('WeeklyBriefService', () => {
           impersonationUser: { email: 'Target@Example.com', sub: 'auth0|target' },
         },
         oidc: {
-          user: { email: 'Staff@Example.com' },
+          user: { email: 'Staff@Example.com', email_verified: true },
           accessToken: {
             access_token: 'real-staff-token',
             isExpired: () => !!opts.realTokenExpired,
@@ -2513,7 +2514,7 @@ describe('WeeklyBriefService', () => {
       expect(result).toEqual({ committee_name: 'Test Committee', total_recipients: 42 });
       expect(checkSingleAccessStrictMock).toHaveBeenCalledWith(
         nonImpersonatingReq,
-        { resource: 'project', id: 'project-1', access: 'writer' },
+        { resource: 'project', id: 'project-1', access: 'writer_guard' },
         { bearerToken: 'writer-token' }
       );
       expect(createNewsletterMock).toHaveBeenCalledWith(

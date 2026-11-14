@@ -79,8 +79,9 @@ export interface OrgLensProjectHero {
   healthMaxScore: number | null;
   /**
    * Warehouse-computed count (0–3) of categories covered for `health`. `2` marks a partial score and drives only the
-   * ` - Partial` suffix — never availability: a null label is unavailable regardless of this count. Sourced straight
-   * from `covered_category_count_v2`, never recomputed locally.
+   * partial marking (`*` on the visible label, `, partial score` in the accessible name), never availability: a null
+   * label is unavailable regardless of this count. Sourced straight from `covered_category_count_v2`, never recomputed
+   * locally.
    */
   healthCoveredCategoryCount: number | null;
   /** Maintainer Health category score (0–40) from the same snapshot row; `null` when the category is uncovered/unavailable. */
@@ -312,4 +313,14 @@ export interface BoardRenderState {
   first: number;
   rowsPerPage: number;
   loading: boolean;
+}
+
+/**
+ * Which leaderboard rows are the viewing organization's (lfx-self-serve-ops#1219): every row carrying the account
+ * under `all`, and only the account's LFX Insights organization's row under `insights` (`insightsOrgId` set).
+ * Server-internal.
+ */
+export interface OrgLensViewingOrg {
+  accountId: string;
+  insightsOrgId: string | null;
 }

@@ -109,6 +109,71 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to the single-segment vote link page (/votes/:id)', async () => {
+    const req = buildReq({ path: '/votes/abc123' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it.each(['/votes/create', '/votes/create;source=link', '/votes/%63reate', '/votes/abc123/edit', '/votes/abc123/present', '/votes/%ZZ'])(
+    'keeps %s on required auth',
+    async (path) => {
+      const req = buildReq({ path });
+      const res = buildRes();
+      const next = vi.fn() as unknown as NextFunction;
+
+      await middleware(req, res, next);
+
+      expect(res.oidc.login).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('allows an anonymous GET to the newsletter permalink (/newsletters/:projectSlug/:id) for link previews', async () => {
+    const req = buildReq({ path: '/newsletters/acme/news-123' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it('allows an anonymous GET to the newsletter invite landing (/newsletters/invite)', async () => {
+    const req = buildReq({ path: '/newsletters/invite' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/newsletters/my/acme',
+    '/newsletters/my;x=1/acme',
+    '/newsletters/%6Dy/acme',
+    '/newsletters/my',
+    '/newsletters/list',
+    '/newsletters/create',
+    '/newsletters/proj-1/news-123/edit',
+    '/newsletters/proj-1/news-123/analytics',
+  ])('keeps %s on required auth', async (path) => {
+    const req = buildReq({ path });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('allows an anonymous GET to a public meeting join (/meetings/:id)', async () => {
     const req = buildReq({ path: '/meetings/abc123' });
     const res = buildRes();

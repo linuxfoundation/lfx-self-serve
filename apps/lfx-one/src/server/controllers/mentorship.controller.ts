@@ -1,137 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_ENROLL_NAME_MAX } from '@lfx-one/shared/constants';
 import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { parseTrimmedString } from '../helpers/mentorship-params.helper';
-import { isMentorshipProgramReviewDecision, isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
+import { readMentorshipLfxProfileFields } from '../helpers/mentorship-lfx-profile.helper';
+import { parseIntQuery, parseTrimmedString } from '../helpers/mentorship-params.helper';
+import { getStrictStringQueryParam } from '../helpers/strict-query-param.helper';
+import { isMentorshipProgramReviewDecision, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
-
-const parseIntQuery = (val: unknown): number | undefined => {
-  const raw = parseTrimmedString(val);
-  if (raw === undefined) return undefined;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
 
 export class MentorshipController {
   private readonly mentorshipService = new MentorshipService();
 
-  // GET /api/mentorship/programs
-  public async getPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_programs');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_programs' });
-      }
-
-      const { search, status } = req.query;
-
-      const rawStatus = parseTrimmedString(status);
-      if (rawStatus !== undefined && !isMentorshipProgramStatus(rawStatus)) {
-        throw ServiceValidationError.forField('status', `status must be one of: open, pending-review, completed`, {
-          operation: 'get_mentorship_programs',
-        });
-      }
-
-      const programs = await this.mentorshipService.getPrograms(req, {
-        search: parseTrimmedString(search),
-        status: rawStatus,
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
-      });
-
-      logger.success(req, 'get_mentorship_programs', startTime, { result_count: programs.data.length });
-
-      res.json(programs);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentor/programs
-  public async getMentorPrograms(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentor_programs');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_programs' });
-      }
-
-      const programs = await this.mentorshipService.getMentorPrograms(req);
-      logger.success(req, 'get_mentorship_mentor_programs', startTime, { result_count: programs.data.length });
-      res.json(programs);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentor/programs/:programId — id (default) or slug
-  public async getMentorProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentor_program');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_program' });
-      }
-
-      const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_mentor_program' });
-      }
-
-      const program = await this.mentorshipService.getMentorProgram(req, programId);
-      logger.success(req, 'get_mentorship_mentor_program', startTime, { programId });
-      res.json(program);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/mentor/profile
-  public async getMentorProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_mentor_profile');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentor_profile' });
-      }
-
-      const profile = await this.mentorshipService.getMentorProfile(req);
-      logger.success(req, 'get_mentorship_mentor_profile', startTime, { history_count: profile.history.length });
-      res.json(profile);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/programs/:programId — id (default) or slug
-  public async getProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_program');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_program' });
-      }
-
-      const programId = typeof req.params['programId'] === 'string' ? req.params['programId'].trim() : '';
-      if (!programId) {
-        throw ServiceValidationError.forField('programId', 'Program id or slug is required.', { operation: 'get_mentorship_program' });
-      }
-
-      const program = await this.mentorshipService.getProgram(req, programId);
-      logger.success(req, 'get_mentorship_program', startTime, { programId });
-      res.json(program);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/programs/name-available
+  // GET /api/mentorship/programs/name-available — `excludeProgramId` lets the edit wizard check a program's name without the program itself
   public async isProgramNameAvailable(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_name_available');
 
@@ -144,8 +29,18 @@ export class MentorshipController {
       if (!name) {
         throw ServiceValidationError.forField('name', 'Program name is required.', { operation: 'get_mentorship_name_available' });
       }
+      if (name.length > MENTORSHIP_ENROLL_NAME_MAX) {
+        throw ServiceValidationError.forField('name', `Program name must be at most ${MENTORSHIP_ENROLL_NAME_MAX} characters.`, {
+          operation: 'get_mentorship_name_available',
+        });
+      }
 
-      const result = await this.mentorshipService.isProgramNameAvailable(req, name);
+      const excludeProgramId = parseTrimmedString(req.query['excludeProgramId']);
+      if (excludeProgramId !== undefined && !isUuid(excludeProgramId)) {
+        throw ServiceValidationError.forField('excludeProgramId', 'excludeProgramId must be a UUID.', { operation: 'get_mentorship_name_available' });
+      }
+
+      const result = await this.mentorshipService.isProgramNameAvailable(req, name, excludeProgramId);
       logger.success(req, 'get_mentorship_name_available', startTime, { available: result.available });
       res.json(result);
     } catch (error) {
@@ -162,36 +57,22 @@ export class MentorshipController {
         throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_lf_projects' });
       }
 
-      const projects = await this.mentorshipService.getLfProjects(req, {
-        search: parseTrimmedString(req.query['search']),
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
-      });
-
-      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length });
-      res.json(projects);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // GET /api/mentorship/invitable-users
-  public async getInvitableUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_mentorship_invitable_users');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_invitable_users' });
+      // The Foundation lens wizard lists the foundation's direct sub-projects here (lfx-mentorship#398).
+      // A repeated parentUid is a 400, so a scoping filter never silently drops to every project.
+      const parentUid = parseTrimmedString(getStrictStringQueryParam(req, 'parentUid', 'get_mentorship_lf_projects'));
+      if (parentUid !== undefined && !isUuid(parentUid)) {
+        throw ServiceValidationError.forField('parentUid', 'parentUid must be a UUID.', { operation: 'get_mentorship_lf_projects' });
       }
 
-      const users = await this.mentorshipService.getInvitableUsers(req, {
+      const projects = await this.mentorshipService.getLfProjects(req, {
         search: parseTrimmedString(req.query['search']),
-        offset: parseIntQuery(req.query['offset']),
-        limit: parseIntQuery(req.query['limit']),
+        pageToken: parseTrimmedString(req.query['page_token']),
+        limit: parseIntQuery(req.query['page_size']),
+        ...(parentUid && { parentUid }),
       });
 
-      logger.success(req, 'get_mentorship_invitable_users', startTime, { result_count: users.data.length });
-      res.json(users);
+      logger.success(req, 'get_mentorship_lf_projects', startTime, { result_count: projects.data.length, parentUid });
+      res.json(projects);
     } catch (error) {
       next(error);
     }
@@ -235,6 +116,34 @@ export class MentorshipController {
 
       logger.success(req, 'submit_mentorship_program_decision', startTime, { programId, decision, status: review.status });
       res.json(review);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // PATCH /api/mentorship/me/lfx-profile
+  // Auth: logged-in user required (401 otherwise); refused while impersonating by the route. The
+  // body is the name and logo the profile card shows after an Edit LFX Profile save, or empty after
+  // a Connect, checked with the rules the browser applies (400 with per-field errors); any email or
+  // link in it is ignored. Copies them, with the caller's verified primary email and connected
+  // GitHub link, onto every mentor and mentee profile the caller holds; 204 whether or not there
+  // were any.
+  public async syncLfxProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'sync_mentorship_lfx_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'sync_mentorship_lfx_profile' });
+      }
+
+      const { fields, errors } = readMentorshipLfxProfileFields(req.body);
+      if (Object.keys(errors).length > 0) {
+        throw ServiceValidationError.fromFieldErrors(errors, 'Validation failed', { operation: 'sync_mentorship_lfx_profile' });
+      }
+
+      const syncedCount = await this.mentorshipService.syncLfxProfileFields(req, fields);
+      logger.success(req, 'sync_mentorship_lfx_profile', startTime, { synced_count: syncedCount, field_count: Object.keys(fields).length });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }

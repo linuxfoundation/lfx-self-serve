@@ -80,6 +80,9 @@ export interface DashboardMetricCard {
   /** Chart type - line or bar */
   chartType: ChartType;
 
+  /** Stat-only card: renders no chart area (and no chart skeleton) so the value sits directly under the header */
+  hideChart?: boolean;
+
   /**
    * Chart.js data configuration.
    * Typed `ChartData<any>` rather than `ChartData<ChartType>` because `ChartDataset<TType>`
@@ -94,6 +97,9 @@ export interface DashboardMetricCard {
 
   /** Color for bar chart */
   chartColor?: string;
+
+  /** Line under the chart stating its window (e.g. which months the bars cover) */
+  chartCaption?: string;
 
   // ============================================
   // Filtering & Organization
@@ -166,6 +172,22 @@ export interface DashboardMetricCard {
 
   /** Flag indicating this is a membership tier metric */
   isMembershipTier?: boolean;
+}
+
+/** Availability copy displayed when a Foundation Health source has no usable measurement. */
+export interface FoundationHealthMetricStateCopy {
+  title: string;
+  description: string;
+  icon: string;
+  retryable: boolean;
+}
+
+/** Foundation Health card presentation, including headline and supporting-source availability. */
+export interface FoundationHealthMetricCard extends DashboardMetricCard {
+  unavailable: FoundationHealthMetricStateCopy | null;
+  detailsUnavailable: FoundationHealthMetricStateCopy | null;
+  /** Source to retry; it can differ from the card's drawer when only supporting data fails. */
+  retryType?: DashboardDrawerType;
 }
 
 /**
@@ -417,7 +439,16 @@ export interface FilterPillOption {
   label: string;
   /** Full untruncated label shown as tooltip */
   fullLabel?: string;
+  /** Accessible name override; takes precedence over `fullLabel`/`label` and never shows a tooltip */
+  ariaLabel?: string;
+  /** Optional accent for the default `pill` variant; omitted pills keep the blue selected style */
+  color?: FilterPillColor;
+  /** Optional count shown as a small badge beside the label; omitted (or 0) renders none */
+  count?: number;
 }
+
+/** Accent colors a filter pill can take */
+export type FilterPillColor = 'green' | 'red' | 'purple' | 'blue';
 
 /**
  * A single signal row within a dual-signal metric card

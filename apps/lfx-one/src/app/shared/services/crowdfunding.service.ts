@@ -3,9 +3,8 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { isPlatformBrowser, DOCUMENT } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 
 import {
   EMPTY_CROWDFUNDING_STATS,
@@ -18,50 +17,68 @@ import {
 import {
   Announcement,
   AnnouncementList,
+  AttributionOptions,
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
+  DonationAnonymityResult,
   DonationStats,
   InitiativeDetail,
   InitiativesResponse,
+  InitiativesScope,
   MyDonationsResponse,
+  OrgDonationsResponse,
   PaymentMethod,
   PresignedURLResult,
   RecurringDonation,
   RecurringDonationsResponse,
   UpdateAnnouncementInput,
+  UpdateDonationAnonymityInput,
+  UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { catchError, EMPTY, Observable, of, throwError } from 'rxjs';
+import { catchError, Observable, of, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
 })
 export class CrowdfundingService {
   private readonly http = inject(HttpClient);
-  private readonly platformId = inject(PLATFORM_ID);
-  private readonly document = inject(DOCUMENT);
 
-  public getMyInitiatives(params?: { pageSize?: number; offset?: number }): Observable<InitiativesResponse> {
-    let httpParams = new HttpParams();
+  /**
+   * The caller's own initiatives, or — with a `scope` — those attributed to that project or organization (lens
+   * Initiatives pages). A scoped call surfaces its errors (403 not a writer, 5xx CF/FGA down) for the page to show;
+   * the caller's own list keeps its empty fallback.
+   */
+  public getMyInitiatives(params?: { pageSize?: number; offset?: number; scope?: InitiativesScope }): Observable<InitiativesResponse> {
+    let httpParams = this.scopeParams(params?.scope);
     if (params?.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
     if (params?.offset != null) httpParams = httpParams.set('offset', String(params.offset));
 
-    return this.http
-      .get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams })
-      .pipe(catchError(this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives')));
+    const request = this.http.get<InitiativesResponse>('/api/crowdfunding/initiatives', { params: httpParams });
+    return request.pipe(
+      catchError(params?.scope ? this.logAndRethrow('getMyInitiatives') : this.handleCfError(EMPTY_INITIATIVES_RESPONSE, 'getMyInitiatives'))
+    );
   }
 
-  public getMyInitiativesStats(): Observable<CrowdfundingInitiativesStats> {
-    return this.http
-      .get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats')
-      .pipe(catchError(this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats')));
+  /** Stats for `getMyInitiatives`'s set; scoped calls surface their errors the same way. */
+  public getMyInitiativesStats(scope?: InitiativesScope): Observable<CrowdfundingInitiativesStats> {
+    const request = this.http.get<CrowdfundingInitiativesStats>('/api/crowdfunding/initiatives-stats', { params: this.scopeParams(scope) });
+    return request.pipe(
+      catchError(scope ? this.logAndRethrow('getMyInitiativesStats') : this.handleCfError(EMPTY_CROWDFUNDING_STATS, 'getMyInitiativesStats'))
+    );
   }
 
-  public getInitiativeBySlug(slug: string): Observable<InitiativeDetail | null> {
-    return this.http
-      .get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`)
-      .pipe(catchError(this.handleCfError(null, 'getInitiativeBySlug')));
+  /** Rethrows so the page can show not-found (404), no access (403) or unavailable; logs only the unexpected failures. */
+  public getInitiativeBySlug(slug: string): Observable<InitiativeDetail> {
+    return this.http.get<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(slug)}`).pipe(
+      catchError((err: HttpErrorResponse) => {
+        if (err.status !== 404 && err.status !== 403) {
+          console.error('[CrowdfundingService] getInitiativeBySlug failed', err);
+        }
+        return throwError(() => err);
+      })
+    );
   }
 
   public getMyPaymentMethod(): Observable<PaymentMethod | null> {
@@ -70,7 +87,7 @@ export class CrowdfundingService {
 
   // POST /api/crowdfunding/payment-method — mirrors the crowdfunding-app BFF payload: { paymentMethodId }.
   public savePaymentMethod(paymentMethodId: string): Observable<PaymentMethod> {
-    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId }).pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.post<PaymentMethod>('/api/crowdfunding/payment-method', { paymentMethodId });
   }
 
   public getMyDonationStats(): Observable<DonationStats> {
@@ -100,14 +117,33 @@ export class CrowdfundingService {
       .pipe(catchError(this.handleCfError(EMPTY_MY_DONATIONS, 'getMyDonations')));
   }
 
+  /** Donations matched to an organization (Org lens, #415). Errors surface (403 not an auditor, 5xx CF/FGA down) for the page to show. */
+  public getOrgDonations(params: { orgUid: string; pageSize?: number; offset?: number }): Observable<OrgDonationsResponse> {
+    let httpParams = new HttpParams().set('orgUid', params.orgUid);
+    if (params.pageSize != null) httpParams = httpParams.set('pageSize', String(params.pageSize));
+    if (params.offset != null) httpParams = httpParams.set('offset', String(params.offset));
+
+    return this.http
+      .get<OrgDonationsResponse>('/api/crowdfunding/org-donations', { params: httpParams })
+      .pipe(catchError(this.logAndRethrow('getOrgDonations')));
+  }
+
   public getPresignedUrl(contentType: string): Observable<PresignedURLResult> {
-    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType }).pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.post<PresignedURLResult>('/api/crowdfunding/presigned-url', { contentType });
   }
 
   public updateInitiative(id: string, input: UpdateInitiativeInput): Observable<InitiativeDetail> {
-    return this.http
-      .patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input);
+  }
+
+  /** Organizations and projects the caller may attribute an initiative to. Errors surface: an empty list would read as "no affiliations". */
+  public getAttributionOptions(): Observable<AttributionOptions> {
+    return this.http.get<AttributionOptions>('/api/crowdfunding/attribution-options').pipe(catchError(this.logAndRethrow('getAttributionOptions')));
+  }
+
+  /** Re-attributes an initiative: creator only, while submitted (lfx-crowdfunding#342). */
+  public updateInitiativeAttribution(id: string, input: UpdateInitiativeAttributionInput): Observable<InitiativeDetail> {
+    return this.http.put<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}/attribution`, input);
   }
 
   public getAnnouncements(initiativeId: string): Observable<AnnouncementList> {
@@ -117,29 +153,38 @@ export class CrowdfundingService {
   }
 
   public createAnnouncement(initiativeId: string, input: CreateAnnouncementInput): Observable<Announcement> {
-    return this.http
-      .post<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`, input)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.post<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`, input);
   }
 
   public updateAnnouncement(initiativeId: string, announcementId: string, input: UpdateAnnouncementInput): Observable<Announcement> {
-    return this.http
-      .put<Announcement>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`, input)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.put<Announcement>(
+      `/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      input
+    );
   }
 
   public deleteAnnouncement(initiativeId: string, announcementId: string): Observable<void> {
-    return this.http
-      .delete<void>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`)
-      .pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.delete<void>(`/api/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`);
   }
 
   public deletePaymentMethod(): Observable<void> {
-    return this.http.delete<void>('/api/crowdfunding/payment-method').pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.delete<void>('/api/crowdfunding/payment-method');
   }
 
   public cancelSubscription(id: string): Observable<void> {
-    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`).pipe(catchError(this.redirectIfCfUnauthenticated()));
+    return this.http.delete<void>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`);
+  }
+
+  /** Hides or shows the caller's name on one of their one-time donations (lfx-crowdfunding#466). `id` is the row's `donationId`. */
+  public updateDonationAnonymity(id: string, anonymous: boolean): Observable<DonationAnonymityResult> {
+    const body: UpdateDonationAnonymityInput = { anonymous };
+    return this.http.patch<DonationAnonymityResult>(`/api/crowdfunding/my-donations/${encodeURIComponent(id)}`, body);
+  }
+
+  /** Hides or shows the caller's name on every charge of a recurring donation (lfx-crowdfunding#466). `id` is the subscription id. */
+  public updateSubscriptionAnonymity(id: string, anonymous: boolean): Observable<DonationAnonymityResult> {
+    const body: UpdateDonationAnonymityInput = { anonymous };
+    return this.http.patch<DonationAnonymityResult>(`/api/crowdfunding/subscriptions/${encodeURIComponent(id)}`, body);
   }
 
   public getInitiativeTransactions(
@@ -172,48 +217,26 @@ export class CrowdfundingService {
       .pipe(catchError(this.handleCfError(EMPTY_TRANSACTION_LIST, 'getMyInitiativeTransactions')));
   }
 
+  private scopeParams(scope?: InitiativesScope): HttpParams {
+    const params = new HttpParams();
+    if (!scope) return params;
+    return params.set(scope.kind === 'projects' ? 'projectUid' : 'orgUid', scope.uid);
+  }
+
+  /** Scoped lens calls: log, then rethrow so the page records its error state (frontend-checklist §13). */
+  private logAndRethrow(label: string) {
+    return (err: HttpErrorResponse): Observable<never> => {
+      console.error(`[CrowdfundingService] ${label} failed`, err);
+      return throwError(() => err);
+    };
+  }
+
   private handleCfError<T>(fallback: T, label: string) {
     return (err: HttpErrorResponse): Observable<T> => {
-      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
-        if (isPlatformBrowser(this.platformId)) {
-          this.redirectToCfAuth();
-          return EMPTY; // navigating away — don't emit fallback so loading state persists
-        }
-        return of(fallback);
-      }
       if (err.status !== 404) {
         console.error(`[CrowdfundingService] ${label} failed`, err);
       }
       return of(fallback);
     };
-  }
-
-  /**
-   * Error handler for mutation endpoints (POST / DELETE).
-   * Redirects to the CF auth flow on CF_UNAUTHENTICATED (expired/missing token),
-   * and rethrows all other errors so the caller's error callback can surface a toast.
-   */
-  private redirectIfCfUnauthenticated() {
-    return (err: HttpErrorResponse): Observable<never> => {
-      if (err.status === 401 && (err.error as Record<string, unknown>)?.['code'] === 'CF_UNAUTHENTICATED') {
-        if (isPlatformBrowser(this.platformId)) {
-          this.redirectToCfAuth();
-        }
-        return EMPTY; // navigating away — don't surface a toast
-      }
-      return throwError(() => err);
-    };
-  }
-
-  /**
-   * Redirects to the CF auth-start endpoint, but only if the current URL does not
-   * already carry an `error` query param. An existing error param means the auth
-   * flow already failed (e.g. auth not configured) and we should not loop.
-   */
-  private redirectToCfAuth(): void {
-    const params = new URLSearchParams(this.document.location.search);
-    if (params.has('error')) return; // already errored — don't loop
-    const returnTo = encodeURIComponent(this.document.location.pathname + this.document.location.search);
-    this.document.location.href = `/api/crowdfunding/auth/start?returnTo=${returnTo}`;
   }
 }

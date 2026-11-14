@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { NgClass } from '@angular/common';
+import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
@@ -26,13 +26,11 @@ import {
   MeetingDeleteConfirmationComponent,
   MeetingDeleteResult,
 } from '@app/modules/meetings/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
-import {
-  MeetingDeleteTypeResult,
-  MeetingDeleteTypeSelectionComponent,
-} from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
+import { MeetingDeleteTypeSelectionComponent } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
 import { HostKeyPopoverComponent } from '@app/modules/meetings/components/host-key-popover/host-key-popover.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -45,6 +43,7 @@ import {
   COMMITTEE_LABEL,
   resolveMeetingBaseCount,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getActiveOccurrences,
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
   getEntityCommands,
@@ -52,14 +51,19 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
+  GroupLinkState,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
+  MeetingDeleteTypeResult,
+  MeetingGroupLink,
   MeetingOccurrence,
+  MeetingRsvp,
   MeetingRecurrence,
+  MeetingRescheduleOccurrenceResult,
+  RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
-  MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
@@ -69,13 +73,28 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import {
+  applyAttachmentScopeOverrides,
+  applyMeetingAttachmentChanges,
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
+  getMeetingSelfRemovalMessage,
+  isMeetingAttendeeListShared,
+  isMeetingInviteResponsesEnabled,
+  isPastMeetingSummaryReadOnly,
+  isSameOccurrenceId,
+  retainConfirmedRsvp,
+} from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -85,17 +104,37 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  filter,
+  finalize,
+  map,
+  Observable,
+  of,
+  pairwise,
+  skip,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
+import { AttachmentScopeBadgeComponent } from '../attachment-scope-badge/attachment-scope-badge.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
+import { RecurringMeetingEditOptionsComponent } from '../../components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
+import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 
 @Component({
   selector: 'lfx-meeting-card',
   imports: [
     NgClass,
+    NgTemplateOutlet,
     RouterLink,
     ButtonComponent,
     TagComponent,
@@ -111,7 +150,9 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    MeetingInviteeAttendeesComponent,
     MeetingMaterialsDrawerComponent,
+    AttachmentScopeBadgeComponent,
     MeetingOrganizerComponent,
     HostKeyPopoverComponent,
   ],
@@ -121,8 +162,11 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
 export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly selfRemoval = inject(MeetingSelfRemovalService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
@@ -138,18 +182,24 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
+  // Navigation state for the group links, so the group page returns to the list the card is on. Without it the page defaults to Groups.
+  public readonly groupLinkState = input<GroupLinkState | null>(null);
+  // The group whose page the card is already on (its own Meetings tab); that group shows as plain text instead of a link to itself.
+  public readonly currentGroupUid = input<string>('');
+  // The project whose meetings list the card is on. A meeting from another project (a sub-project rolled
+  // up into a foundation's list) is labelled with its own project name; empty means no label.
+  public readonly contextProjectUid = input<string>('');
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
-  public showMyRsvp: WritableSignal<boolean> = signal(false);
-  // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
-  // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
-  public userHasRsvp: WritableSignal<boolean> = signal(false);
+  /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
+  public openRegistrantsOnAddForm: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public readonly confirmedRsvps = signal<MeetingRsvp[]>([]);
   /**
    * What the registrants drawer counted, or `null` while it has not counted yet.
    * @description `null` and `0` are different answers here, which is why this is not a plain `signal(0)`.
@@ -162,6 +212,9 @@ export class MeetingCardComponent implements OnInit {
    */
   public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
+  // True once the user has removed themselves, so the card does not offer "Remove" again while a refetched
+  // `invited` flag is stale (query-service indexing lag). Read from the service so it outlasts this card.
+  private readonly optimisticLeft: Signal<boolean> = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting().id));
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
@@ -169,6 +222,8 @@ export class MeetingCardComponent implements OnInit {
   public materialsDrawerVisible = signal(false);
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
+  public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
+  public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -179,6 +234,20 @@ export class MeetingCardComponent implements OnInit {
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly totalResourcesCount: Signal<number> = this.initTotalResourcesCount();
+  /** True when materials carry a scope worth showing: an upcoming recurring meeting, where each one is for one date or the whole series. */
+  public readonly showAttachmentScopes: Signal<boolean> = computed(() => !this.pastMeeting() && !!this.meeting().recurrence);
+  public readonly occurrenceAttachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = computed(() =>
+    this.attachments().filter((attachment) => getAttachmentScope(attachment as MeetingAttachment) === 'occurrence')
+  );
+  public readonly seriesAttachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = computed(() =>
+    this.attachments().filter((attachment) => getAttachmentScope(attachment as MeetingAttachment) === 'series')
+  );
+  /** The occurrence the materials drawer manages: the one this card shows, for an upcoming recurring meeting. */
+  public readonly attachmentOccurrence: Signal<MeetingOccurrence | null> = computed(() => (this.showAttachmentScopes() ? this.occurrence() : null));
+  /** False once the shown occurrence is cancelled or already past, where the service would reject a scope. */
+  public readonly canScopeToOccurrence: Signal<boolean> = computed(
+    () => this.showAttachmentScopes() && canScopeAttachmentToOccurrence(this.meeting() as Meeting, this.occurrence())
+  );
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
   public readonly meetingTypeBadge: Signal<{
     severity: TagSeverity;
@@ -187,12 +256,20 @@ export class MeetingCardComponent implements OnInit {
     text: string;
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
-  public readonly rsvpToggleLabel: Signal<string> = this.initRsvpToggleLabel();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
+  public readonly rsvpMeeting: Signal<Meeting> = this.initRsvpMeeting();
+  public readonly overviewConfirmedRsvps: Signal<MeetingRsvp[]> = this.initOverviewConfirmedRsvps();
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
+  public readonly subProjectName: Signal<string | null> = computed(() => {
+    const contextUid = this.contextProjectUid();
+    const meeting = this.meeting();
+    if (!contextUid || !meeting.project_uid || meeting.project_uid === contextUid) return null;
+    return meeting.project_name?.trim() || null;
+  });
+  public readonly meetingDuration: Signal<number> = computed(() => this.occurrence()?.duration || this.meeting().duration);
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
@@ -216,19 +293,48 @@ export class MeetingCardComponent implements OnInit {
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   // True when the user is invited OR has just registered in this session (optimistic, before the
   // meeting refetch settles invited:true). Used to show RSVP options immediately after registration.
-  public readonly effectivelyInvited: Signal<boolean> = computed(() => this.isInvited() || this.optimisticInvited());
+  public readonly effectivelyInvited: Signal<boolean> = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
+  public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
+  public readonly isRegisteredAttendee: Signal<boolean> = computed(
+    () => this.authenticated() && this.effectivelyInvited() && !this.pastMeeting() && (!this.meeting().organizer || this.hasOwnRegistration())
+  );
+  public readonly userAttended: Signal<boolean> = computed(() => {
+    // Read the input, not the local `meeting` signal: that one is only seeded while it has no id, so a
+    // refreshed input for the same card would leave this stale. `user_attended` has no optimistic updates.
+    const meeting = this.meetingInput();
+    return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
+  });
+  // An organizer's invitation is a registrant row like anyone else's, but organizer access does not depend on it, so
+  // an organizer may have none. `my_registrant_ids` is the authoritative list where the feed provides it; otherwise
+  // `invited` comes from the registrant lookup. It is read from the input, not the local snapshot, which is only
+  // seeded once, so a feed refresh that adds or drops the viewer's registration is picked up.
+  private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
+    const registrantIds = this.meetingInput().my_registrant_ids;
+    return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
+  });
+  // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // Resending goes to the viewer's own registrant row, so it needs one that really exists. `isRegisteredAttendee` is not
+  // enough for a non-organizer: `invited` is derived from access grants and can be true while the feed's
+  // `my_registrant_ids` is `[]` (no active registration), which would offer a resend that 404s. So a supplied list is
+  // honored for every viewer, except right after registering here, when the feed has not caught up yet.
+  public readonly canResendInvite: Signal<boolean> = computed(() => this.isRegisteredAttendee() && (this.optimisticInvited() || this.hasOwnRegistration()));
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
-  // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
-  // True when user is both an organizer AND invited, and this meeting collects LFX RSVPs.
-  public readonly canToggleRsvpView: Signal<boolean> = computed(
-    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
+  // Invited organizers see their response controls alongside the guest overview.
+  public readonly canRespondAsOrganizer: Signal<boolean> = computed(
+    () => !!this.meeting().organizer && this.effectivelyInvited() && !this.pastMeeting() && this.inviteResponsesEnabled()
   );
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
+  public readonly groupLinks: Signal<MeetingGroupLink[]> = this.initGroupLinks();
+  public readonly groupQueryParams: Signal<{ project: string } | null> = computed(() => {
+    const slug = this.meeting().project_slug;
+    return slug ? { project: slug } : null;
+  });
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
@@ -249,7 +355,7 @@ export class MeetingCardComponent implements OnInit {
    * full-page editor rather than a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
 
   // The two signals below are the flag-off edit target. They carry the same URL and query params
   // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
@@ -295,7 +401,8 @@ export class MeetingCardComponent implements OnInit {
     // Initialize join URL stream
     const meeting$ = toObservable(this.meetingInput);
     const occurrence$ = toObservable(this.occurrence);
-    const user$ = toObservable(this.userService.user);
+    // The join link is built for the real viewer, never the impersonation target.
+    const user$ = toObservable(this.userService.meetingJoinIdentity);
     const authenticated$ = toObservable(this.userService.authenticated);
     const pastMeeting$ = toObservable(this.pastMeeting);
 
@@ -326,15 +433,24 @@ export class MeetingCardComponent implements OnInit {
       )
       .subscribe(() => this.refreshAttachments$.next());
 
-    // Reset post-registration flag if this card instance is reused for a different meeting.
-    toObservable(this.meetingInput)
+    // Local confirmations and post-registration state belong to this meeting and viewer identity.
+    combineLatest([meeting$, toObservable(this.userService.meetingFeedIdentity)])
       .pipe(
-        map((m) => m?.id),
-        distinctUntilChanged(),
+        distinctUntilChanged(
+          ([previousMeeting, previousIdentity], [meeting, identity]) => previousMeeting?.id === meeting?.id && previousIdentity === identity
+        ),
         skip(1),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.optimisticInvited.set(false));
+      .subscribe(() => {
+        this.optimisticInvited.set(false);
+        this.confirmedRsvps.set([]);
+      });
+  }
+
+  public onRsvpChanged(rsvp: MeetingRsvp): void {
+    if (!this.userService.isMeetingRsvpCurrent(rsvp, this.meetingInput())) return;
+    this.confirmedRsvps.update((responses) => retainConfirmedRsvp(responses, rsvp));
   }
 
   /**
@@ -374,19 +490,23 @@ export class MeetingCardComponent implements OnInit {
             return;
           }
 
-          // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
-          // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
-          // full-page editor through the router, which is what this button did before v2.
-          if (!this.meetingsV2Enabled()) {
-            void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+          if (fresh.recurrence && this.isShownOccurrenceGone(fresh)) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Occurrence changed',
+              detail: 'This occurrence was moved or cancelled. The list has been refreshed.',
+            });
+            this.meetingDeleted.emit();
             return;
           }
 
-          this.composer.open({
-            mode: 'edit',
-            meetingUid: meeting.id,
-            projectUid: meeting.project_uid,
-          });
+          const occurrence = fresh.recurrence ? this.resolveEditOccurrence(fresh) : null;
+          if (occurrence) {
+            this.showEditScopeModal(fresh, occurrence);
+            return;
+          }
+
+          this.openSeriesEditor(meeting);
         },
         error: (error: unknown) => this.reportEditProbeFailure(error),
       });
@@ -405,8 +525,14 @@ export class MeetingCardComponent implements OnInit {
     this.showRegistrants.set(!this.showRegistrants());
   }
 
-  public onRsvpViewToggle(): void {
-    this.showMyRsvp.set(!this.showMyRsvp());
+  public onInvitePeople(): void {
+    this.openRegistrantsOnAddForm.set(true);
+    this.showRegistrants.set(true);
+  }
+
+  public onRegistrantsDrawerHide(): void {
+    this.drawerGuestCount.set(null);
+    this.openRegistrantsOnAddForm.set(false);
   }
 
   public openMaterialsDrawer(): void {
@@ -467,10 +593,29 @@ export class MeetingCardComponent implements OnInit {
     dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
       if (result?.registered) {
         this.optimisticInvited.set(true);
+        this.meetingService.clearRemovedRegistration(meeting.id);
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
     });
+  }
+
+  public confirmLeaveMeeting(): void {
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting().invited_via_committee, organizer: this.meeting().organizer }),
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leaveMeeting(),
+    });
+  }
+
+  public resendInvite(): void {
+    // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
+    // over the next occurrence, and the registration to resend has to fit what the card displays.
+    this.inviteResend.resendOwn(this.meeting().id, (this.occurrence() ?? this.currentOccurrence())?.occurrence_id);
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -517,7 +662,8 @@ export class MeetingCardComponent implements OnInit {
     // Keep the action guard identical to the banner's render condition
     // (hasSummary() === !!summaryContent()) so the "Review Summary" button is
     // never visible-but-inert. The modal only needs content to open; the summary
-    // uid is required solely for the edit/approve write path.
+    // uid is required solely for the edit/approve write path, and whether that
+    // path is offered at all is decided by `readOnly` below.
     if (!this.summaryContent()) {
       return;
     }
@@ -536,9 +682,10 @@ export class MeetingCardComponent implements OnInit {
         pastMeetingUid: getPastMeetingResourceId(this.meeting()),
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
-        // Edit/Approve write back via the summary uid; without one the modal
-        // opens read-only so its actions are never visible-but-inert.
-        readOnly: !summaryUid,
+        // Read-only unless the viewer is an organizer with a summary uid to write
+        // to: Edit/Approve are only offered to the viewer the upstream write accepts,
+        // so a non-organizer who can view the summary never sees inert actions.
+        readOnly: isPastMeetingSummaryReadOnly(this.meeting(), this.summary()),
         // Sync the card the moment an edit/approve succeeds — not on dialog close.
         // The dialog's onClose payload is only built by the "Close" button, so an
         // X or backdrop dismiss left the card stale (e.g. approved summary kept
@@ -556,7 +703,8 @@ export class MeetingCardComponent implements OnInit {
     const isRecurring = !!meeting.recurrence;
 
     if (isRecurring) {
-      // For recurring meetings, first show the delete type selection modal
+      // For recurring meetings, first show the delete type selection modal. Its occurrence picker opens on
+      // the occurrence this card shows, falling back to the next active one like the cancel step below.
       const dialogRef = this.dialogService.open(MeetingDeleteTypeSelectionComponent, {
         header: 'Delete Recurring Meeting',
         width: '500px',
@@ -565,14 +713,15 @@ export class MeetingCardComponent implements OnInit {
         dismissableMask: true,
         data: {
           meeting: meeting,
+          occurrence: this.occurrence() ?? getCurrentOrNextOccurrence(meeting),
         },
       }) as DynamicDialogRef;
 
-      dialogRef.onClose.pipe(take(1)).subscribe((typeResult: MeetingDeleteTypeResult) => {
+      dialogRef.onClose.pipe(take(1)).subscribe((typeResult: MeetingDeleteTypeResult | undefined) => {
         if (typeResult) {
           if (typeResult.deleteType === 'occurrence') {
-            // User wants to cancel just this occurrence
-            this.showCancelOccurrenceModal(meeting);
+            // User wants to cancel the occurrence they picked
+            this.showCancelOccurrenceModal(meeting, typeResult.occurrenceId);
           } else {
             // User wants to delete the entire series
             this.showDeleteMeetingModal(meeting);
@@ -601,9 +750,9 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private showCancelOccurrenceModal(meeting: Meeting): void {
-    // Prefer the explicitly selected/current occurrence; fallback to next active
-    const occurrenceToCancel = this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
+  private showCancelOccurrenceModal(meeting: Meeting, occurrenceId?: string): void {
+    // Prefer the occurrence picked in the delete dialog, then the one this card shows; fallback to next active
+    const occurrenceToCancel = (occurrenceId ? this.findOccurrence(meeting, occurrenceId) : null) ?? this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
 
     if (!occurrenceToCancel) {
       this.messageService.add({
@@ -619,7 +768,7 @@ export class MeetingCardComponent implements OnInit {
       width: '450px',
       modal: true,
       closable: true,
-      dismissableMask: true,
+      dismissableMask: false,
       data: {
         meeting: meeting,
         occurrence: occurrenceToCancel,
@@ -644,6 +793,125 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  private openSeriesEditor(meeting: Meeting): void {
+    // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
+    // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
+    // full-page editor through the router, which is what this button did before v2.
+    if (!this.meetingsV2Enabled()) {
+      void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+      return;
+    }
+
+    this.composer.open({
+      mode: 'edit',
+      meetingUid: meeting.id,
+      projectUid: meeting.project_uid,
+    });
+  }
+
+  /**
+   * The occurrence a recurring-meeting edit targets, read off the just-fetched meeting.
+   * @description `occurrence()` is derived from the payload the card rendered with, which another
+   * organizer may have moved or cancelled since. It still decides which slot is meant — the one the
+   * user is looking at — and its current values come from `fresh`. Falling back to the fresh next
+   * occurrence would silently retarget the edit onto a later slot once the shown one is cancelled, so
+   * callers rule that case out via `isShownOccurrenceGone` first.
+   */
+  private resolveEditOccurrence(fresh: Meeting): MeetingOccurrence | null {
+    const shown = this.occurrence();
+    if (shown) {
+      return this.findOccurrence(fresh, shown.occurrence_id);
+    }
+    return getCurrentOrNextOccurrence(fresh);
+  }
+
+  /** True when the occurrence this card shows is no longer active in the fresh read. */
+  private isShownOccurrenceGone(fresh: Meeting): boolean {
+    const shown = this.occurrence();
+    return !!shown && !this.findOccurrence(fresh, shown.occurrence_id);
+  }
+
+  private findOccurrence(meeting: Meeting, occurrenceId: string): MeetingOccurrence | null {
+    return (
+      getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences).find((candidate) =>
+        isSameOccurrenceId(candidate.occurrence_id, occurrenceId)
+      ) ?? null
+    );
+  }
+
+  private showEditScopeModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    const dialogRef = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
+      header: 'Edit Recurring Meeting',
+      width: '500px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: RecurringMeetingEditScopeResult | undefined) => {
+      if (!result?.proceed) {
+        return;
+      }
+
+      if (result.scope === 'series') {
+        this.openSeriesEditor(meeting);
+        return;
+      }
+
+      // The dialog lists only occurrences read off `meeting`, so the lookup can only miss when it returned no id.
+      const picked = (result.occurrenceId ? this.findOccurrence(meeting, result.occurrenceId) : null) ?? occurrence;
+      this.openOccurrenceEditor(meeting, picked);
+    });
+  }
+
+  /**
+   * Opens the editor for one occurrence of a recurring meeting.
+   * @description Same `MEETING_V2_ENABLED_FLAG` split as {@link openSeriesEditor}: flag on opens the
+   * composer drawer narrowed to that occurrence, flag off keeps the pre-v2 reschedule dialog.
+   */
+  private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    if (!this.meetingsV2Enabled()) {
+      this.showRescheduleOccurrenceModal(meeting, occurrence);
+      return;
+    }
+
+    this.composer.open({
+      mode: 'edit',
+      meetingUid: meeting.id,
+      projectUid: meeting.project_uid,
+      occurrenceId: occurrence.occurrence_id,
+    });
+  }
+
+  private showRescheduleOccurrenceModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
+    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
+      header: 'Edit Occurrence',
+      width: '520px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+      if (!result?.confirmed) {
+        return;
+      }
+
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Occurrence updated',
+        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
+      });
+      // Not every host binds `meetingDeleted` (the committee meetings list doesn't), so the card
+      // re-reads the series itself to show the occurrence under its new start time (also its new id).
+      // The emit still lets a listening parent re-sort its list.
+      this.refreshMeeting();
+      this.meetingDeleted.emit();
+    });
+  }
+
   private showDeleteMeetingModal(meeting: Meeting): void {
     const dialogRef = this.dialogService.open(MeetingDeleteConfirmationComponent, {
       header: 'Delete Meeting',
@@ -663,6 +931,46 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  private leaveMeeting(): void {
+    const meetingId = this.meeting().id;
+    this.leavingMeeting.set(true);
+
+    this.selfRemoval
+      .remove$(meetingId, 'meeting-card')
+      .pipe(
+        take(1),
+        finalize(() => this.leavingMeeting.set(false))
+      )
+      .subscribe({
+        next: (result) => {
+          if (this.meeting().id !== meetingId) return;
+          if (result.remaining_registrant_ids.length > 0) {
+            this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
+            this.optimisticInvited.set(true);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.refreshMeeting();
+            return;
+          }
+          this.confirmedRsvps.set([]);
+          this.optimisticInvited.set(false);
+          this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Removed',
+            detail: 'You have been removed from this meeting.',
+          });
+          this.meetingDeleted.emit();
+        },
+        error: (error: unknown) => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfRemoval.describeFailure(error) });
+        },
+      });
+  }
+
   private refreshMeeting(): void {
     this.meetingService
       .getMeeting(this.meeting().id)
@@ -680,11 +988,28 @@ export class MeetingCardComponent implements OnInit {
   private initAttachments(): Signal<(MeetingAttachment | PastMeetingAttachment)[]> {
     return runInInjectionContext(this.injector, () => {
       const id = this.pastMeeting() ? getPastMeetingResourceId(this.meetingInput()) : this.meetingInput().id;
-      const attachments$ = this.pastMeeting() ? this.meetingService.getPastMeetingAttachments(id) : this.meetingService.getMeetingAttachments(id);
+      const attachments$: Observable<(MeetingAttachment | PastMeetingAttachment)[]> = this.pastMeeting()
+        ? this.meetingService.getPastMeetingAttachments(id)
+        : this.meetingService.getMeetingAttachments(id);
 
-      return toSignal(
+      const fetched = toSignal(
         this.refreshAttachments$.pipe(switchMap(() => attachments$.pipe(catchError(() => of([] as (MeetingAttachment | PastMeetingAttachment)[]))))),
-        { initialValue: [] }
+        { initialValue: [] as (MeetingAttachment | PastMeetingAttachment)[] }
+      );
+
+      // The meeting's materials span every date; this card shows one, so another date's materials are dropped.
+      // Scope changes saved in this session are overlaid because a refetch can still return the old scope while the query service
+      // catches up, and this card must not wait for it.
+      return computed(() =>
+        this.pastMeeting()
+          ? fetched()
+          : filterAttachmentsForOccurrence(
+              applyAttachmentScopeOverrides(
+                applyMeetingAttachmentChanges(fetched() as MeetingAttachment[], this.meetingService.attachmentChanges().get(id)),
+                this.meetingService.attachmentScopeOverrides()
+              ),
+              this.occurrence()?.occurrence_id
+            )
       );
     });
   }
@@ -778,11 +1103,27 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private initRsvpToggleLabel(): Signal<string> {
+  private initRsvpMeeting(): Signal<Meeting> {
     return computed(() => {
-      if (this.showMyRsvp()) return 'Hide My RSVP';
-      if (this.userHasRsvp()) return 'Update My RSVP';
-      return 'Set My RSVP';
+      const meeting = this.meeting();
+      const input = this.meetingInput();
+      const supplied = input.my_rsvp;
+      const myRsvp = supplied && !this.userService.isMeetingRsvpCurrent(supplied, input) ? null : supplied;
+      return meeting.my_rsvp === myRsvp && meeting.my_registrant_ids === input.my_registrant_ids
+        ? meeting
+        : { ...meeting, my_rsvp: myRsvp, my_registrant_ids: input.my_registrant_ids };
+    });
+  }
+
+  private initOverviewConfirmedRsvps(): Signal<MeetingRsvp[]> {
+    return computed(() => {
+      const meeting = this.rsvpMeeting();
+      const supplied = meeting.my_rsvp;
+      // Retained answers outlive this card instance, so a recreated card keeps a successful write too.
+      const confirmed = [...this.confirmedRsvps(), ...this.userService.confirmedMeetingRsvps(meeting.id)].filter((rsvp) =>
+        this.userService.isMeetingRsvpCurrent(rsvp, meeting)
+      );
+      return supplied ? [...confirmed, supplied] : confirmed;
     });
   }
 
@@ -930,6 +1271,24 @@ export class MeetingCardComponent implements OnInit {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
       return occurrence?.title || meeting.title || '';
+    });
+  }
+
+  /**
+   * The groups (committees) the meeting belongs to, each with its group-details link; a group with no resolved name is
+   * left out rather than shown blank, and the group the card is already on gets no link.
+   */
+  private initGroupLinks(): Signal<MeetingGroupLink[]> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const currentGroupUid = this.currentGroupUid();
+      return (meeting.committees ?? []).flatMap((committee) => {
+        const name = committee.name?.trim();
+        if (!name) return [];
+        const uid = committee.uid?.trim();
+        const commands = uid && uid !== currentGroupUid ? (getEntityCommands('groups', uid, meeting.is_foundation) ?? ['/groups', uid]) : null;
+        return [{ uid: committee.uid, name, commands }];
+      });
     });
   }
 

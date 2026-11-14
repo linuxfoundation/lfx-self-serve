@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-drawer heading="Edit stage and legal entity" data-testid="formation-record-edit-drawer">
+  @if (loading()) {
+    <p class="text-ui-neutral-600" role="status" data-testid="formation-record-edit-loading">Loading the current record…</p>
+  } @else if (loadFailed()) {
+    <div class="flex flex-col items-start gap-[12px]" role="alert" data-testid="formation-record-edit-load-error">
+      <p class="text-ui-neutral-700">Couldn&apos;t load the current record. Try again.</p>
+      <lfx-ui-button variant="secondary" (click)="onReload()" data-testid="formation-record-edit-retry">Try again</lfx-ui-button>
+    </div>
+  } @else {
+    @if (errorMessage(); as message) {
+      <div
+        class="flex flex-col items-start gap-[12px] rounded-ui-lg border border-ui-danger-200 bg-ui-danger-50 p-[12px]"
+        role="alert"
+        data-testid="formation-record-edit-error">
+        <p class="text-ui-danger-700">{{ message }}</p>
+        @if (conflict()) {
+          <lfx-ui-button variant="secondary" (click)="onReload()" data-testid="formation-record-edit-reload">Reload latest</lfx-ui-button>
+        }
+      </div>
+    }
+
+    <lfx-ui-select label="Stage" [(value)]="stage" data-testid="formation-record-stage">
+      @for (option of stageOptions(); track option.value) {
+        <lfx-ui-option [value]="option.value" [label]="option.label" [disabled]="option.disabled" />
+      }
+    </lfx-ui-select>
+
+    @if (showDissolutionDate()) {
+      <lfx-ui-input
+        label="Dissolution date"
+        placeholder="YYYY-MM-DD"
+        hint="Required to archive a project."
+        [required]="true"
+        [error]="dissolutionDateError() ?? ''"
+        [(value)]="dissolutionDate"
+        data-testid="formation-record-dissolution-date" />
+    }
+
+    <lfx-ui-select label="Legal entity type" [(value)]="legalEntityType" data-testid="formation-record-legal-entity-type">
+      <lfx-ui-option value="" label="Not set" />
+      @for (type of legalEntityTypeOptions; track type) {
+        <lfx-ui-option [value]="type" [label]="type" />
+      }
+    </lfx-ui-select>
+
+    <lfx-ui-input label="Legal entity name" [(value)]="legalEntityName" data-testid="formation-record-legal-entity-name" />
+
+    <lfx-ui-input label="Formation date" placeholder="YYYY-MM-DD" [(value)]="formationDate" data-testid="formation-record-formation-date" />
+
+    <lfx-ui-input label="Formation document URL" type="url" placeholder="https://" [(value)]="documentUrl" data-testid="formation-record-document-url" />
+
+    @if (confirming()) {
+      <div
+        class="flex flex-col gap-[12px] rounded-ui-lg border border-ui-warning-200 bg-ui-warning-50 p-[12px]"
+        role="alert"
+        data-testid="formation-record-confirmation">
+        <p class="text-ui-neutral-900">{{ confirmationMessage() }}</p>
+      </div>
+    }
+  }
+
+  <ng-container drawerFooter>
+    @if (confirming()) {
+      <lfx-ui-button variant="tertiary" (click)="onBack()" data-testid="formation-record-confirm-back">Back</lfx-ui-button>
+      <lfx-ui-button variant="primary" [loading]="saving()" (click)="onSave()" data-testid="formation-record-confirm">Confirm and save</lfx-ui-button>
+    } @else {
+      <lfx-ui-button variant="tertiary" [disabled]="saving()" (click)="onCancel()" data-testid="formation-record-cancel">Cancel</lfx-ui-button>
+      <lfx-ui-button variant="primary" [disabled]="loading() || loadFailed()" [loading]="saving()" (click)="onSave()" data-testid="formation-record-save"
+        >Save changes</lfx-ui-button
+      >
+    }
+  </ng-container>
+</lfx-ui-drawer>

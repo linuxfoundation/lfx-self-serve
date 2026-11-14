@@ -5,12 +5,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   daysUntilInTimezone,
+  detectBrowserTimezoneOption,
+  findSameWallClockZone,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
+  getTimezoneAbbreviation,
+  isLocalDateOnlyString,
+  isSameMinute,
   localDateStamp,
   normalizeSnowflakeTimestamp,
   parseIsoDateAsUtcMidnight,
@@ -254,6 +259,19 @@ describe('formatVoteDeadline', () => {
     expect(formatVoteDeadline(null)).toBe('');
     expect(formatVoteDeadline('not-a-date', 'America/New_York')).toBe('');
   });
+
+  it.each([
+    ['Europe/Lisbon', '2027-01-15T12:00:00.000Z', 'Jan 15, 2027 12:00 PM UTC'],
+    ['Atlantic/Azores', '2027-07-15T12:00:00.000Z', 'Jul 15, 2027 12:00 PM UTC'],
+  ])('shows a zero-offset zone with no abbreviation (%s) as UTC, not GMT+0 (#4767)', (zone, instant, expected) => {
+    expect(formatVoteDeadline(instant, zone)).toBe(expected);
+  });
+
+  it('leaves zero-offset zones that have an abbreviation, and non-zero offsets, unchanged', () => {
+    expect(formatVoteDeadline('2027-01-15T12:00:00.000Z', 'Europe/London')).toBe('Jan 15, 2027 12:00 PM GMT');
+    expect(formatVoteDeadline('2027-07-15T12:00:00.000Z', 'Europe/London')).toBe('Jul 15, 2027 1:00 PM GMT+1');
+    expect(formatVoteDeadline('2027-01-15T12:00:00.000Z', 'UTC')).toBe('Jan 15, 2027 12:00 PM UTC');
+  });
 });
 
 describe('getLongTimezoneName', () => {
@@ -354,6 +372,23 @@ describe('tryParseLocalDateString', () => {
   });
 });
 
+// Gates which cached Snowflake `Date`s skip ISO normalization (server `isoDateReplacer`): only a bare
+// DATE may pass; every timestamp shape, including Snowflake's own output format, must not.
+describe('isLocalDateOnlyString', () => {
+  it.each([
+    ['2030-03-04', true],
+    ['2030-03-04T00:00:00.000Z', false],
+    ['2026-10-21 16:12:33.000 -0700', false],
+    ['2030-3-4', false],
+    ['', false],
+    [null, false],
+    [undefined, false],
+    [20300304, false],
+  ])('isLocalDateOnlyString(%s) → %s', (value, expected) => {
+    expect(isLocalDateOnlyString(value)).toBe(expected);
+  });
+});
+
 // The DST-gap cases pin a process timezone because the bug lives in the HOST zone, not the target
 // zone: 2027-03-13T17:30Z is 2:30 AM on 2027-03-14 in Tokyo, a wall time that does not exist in
 // America/New_York (spring forward at 2:00 AM that day). toZonedTime's host-local carrier
@@ -422,6 +457,45 @@ describe('toZonedDateCarrier', () => {
   });
 });
 
+/**
+ * Pins the exact boundary a `<= 60_000` millisecond tolerance gets wrong (GH-4944 review feedback):
+ * a genuine one-minute edit -- the smallest increment a time picker supports -- must count as a
+ * real change, not get folded into "unchanged" alongside round-tripping seconds/ms noise.
+ */
+describe('isSameMinute', () => {
+  it('treats sub-minute differences as the same minute (round-tripping noise)', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:45.000Z')).toBe(true);
+  });
+
+  it('treats an exact one-minute difference as a real change', () => {
+    // The exact boundary a `<= 60_000` ms tolerance let through.
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:01:00.000Z')).toBe(false);
+  });
+
+  it('treats identical instants as the same minute', () => {
+    expect(isSameMinute('2026-11-11T20:00:00.000Z', '2026-11-11T20:00:00.000Z')).toBe(true);
+  });
+
+  // Pins the DST fall-back collision review feedback caught: truncating with the local-time
+  // `setSeconds` (rather than `setUTCSeconds`) reads and reconstructs through the host's
+  // wall-clock fields, and the repeated local hour during a fall-back can make two UTC instants
+  // a full hour apart reconstruct to the same result. 2027-11-07 05:30Z and 06:30Z are both
+  // 1:30 AM America/New_York (once EDT, once EST, an hour apart in UTC) -- a real one-hour Start
+  // time edit, not sub-minute noise, and must not be treated as unchanged.
+  describe('across a DST fall-back transition', () => {
+    const originalTz = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTz;
+    });
+
+    it('does not collapse two UTC instants an hour apart that share a local wall-clock reading', () => {
+      process.env.TZ = 'America/New_York';
+      expect(isSameMinute('2027-11-07T05:30:00.000Z', '2027-11-07T06:30:00.000Z')).toBe(false);
+    });
+  });
+});
+
 // Dates use the local constructor: the function reads host-local wall fields, so an ISO-string
 // date would shift with the test machine's TZ (convention: vote.validators.spec.ts).
 describe('wallTimeExistsInTimezone', () => {
@@ -467,5 +541,86 @@ describe('wallTimeExistsInTimezone', () => {
         process.env.TZ = previousTz;
       }
     }
+  });
+});
+
+describe('detectBrowserTimezoneOption', () => {
+  // The reported zone is passed in, so no `Intl` stub is needed; `now` pins the sampled year.
+  const june2026 = new Date('2026-06-01T00:00:00Z');
+
+  it('returns the reported zone when it is one of the picker options', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Berlin')).toBe('Europe/Berlin');
+  });
+
+  it('maps a legacy alias onto the picker option for the same zone', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Asia/Calcutta')).toBe('Asia/Kolkata');
+  });
+
+  it('falls back to a listed zone that keeps the same wall-clock time all year', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Europe/Lisbon')).toBe('Europe/London');
+  });
+
+  it('does not pair zones that share an offset only part of the year', () => {
+    // Same offset as Europe/London in winter, but no DST: only UTC matches it all year.
+    expect(detectBrowserTimezoneOption(june2026, 'Africa/Abidjan')).toBe('UTC');
+  });
+
+  it('returns null when no zone is reported', () => {
+    expect(detectBrowserTimezoneOption(june2026, '')).toBeNull();
+  });
+
+  it('returns null when no picker option matches the reported zone', () => {
+    expect(detectBrowserTimezoneOption(june2026, 'Antarctica/Troll')).toBeNull();
+  });
+
+  it('reads the browser zone when none is passed', () => {
+    const reported = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(detectBrowserTimezoneOption(june2026)).toBe(detectBrowserTimezoneOption(june2026, reported));
+  });
+});
+
+describe('findSameWallClockZone', () => {
+  // Fixed, synthetic zones so the matching is tested independently of the runtime's tzdata: each is UTC+2 in
+  // winter and UTC+3 in summer, differing only in the instant the clocks change.
+  const hour = 60 * 60 * 1000;
+  const reference = Date.UTC(2026, 2, 29, 1); // last Sunday of March, 01:00 UTC
+  const springForward: Record<string, number> = {
+    REF: reference,
+    SAME: reference,
+    HOUR_LATER: reference + hour,
+    DAY_LATER: reference + 24 * hour,
+  };
+  const offsetAt = (zone: string, time: number): number => (time >= springForward[zone] ? 3 : 2) * hour;
+
+  it('pairs a zone whose clocks change at the same instant', () => {
+    expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER', 'SAME'], offsetAt)).toBe('SAME');
+  });
+
+  it('does not pair zones whose clocks change an hour or a day apart', () => {
+    expect(findSameWallClockZone('REF', 2026, ['HOUR_LATER', 'DAY_LATER'], offsetAt)).toBeNull();
+  });
+});
+
+describe('getTimezoneAbbreviation', () => {
+  it('returns the standard abbreviation in winter and the daylight one in summer', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'America/Los_Angeles')).toBe('PST');
+    expect(getTimezoneAbbreviation('2026-07-15T20:00:00Z', 'America/Los_Angeles')).toBe('PDT');
+  });
+
+  it('resolves the abbreviation for the instant, across a DST boundary', () => {
+    expect(getTimezoneAbbreviation('2026-03-08T09:59:00Z', 'America/Los_Angeles')).toBe('PST');
+    expect(getTimezoneAbbreviation('2026-03-08T10:01:00Z', 'America/Los_Angeles')).toBe('PDT');
+  });
+
+  it('returns UTC for the UTC zone', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'UTC')).toBe('UTC');
+  });
+
+  it('falls back to the zone id for an invalid zone', () => {
+    expect(getTimezoneAbbreviation('2026-01-15T20:00:00Z', 'Not/AZone')).toBe('Not/AZone');
+  });
+
+  it('returns an empty string for an invalid date', () => {
+    expect(getTimezoneAbbreviation('not-a-date', 'America/New_York')).toBe('');
   });
 });

@@ -29,19 +29,21 @@ function period(overrides: Partial<HealthMetricsEventsAtAGlancePeriod> = {}): He
   };
 }
 
-function glance(): HealthMetricsEventsAtAGlance {
+function glance(overrides: Partial<HealthMetricsEventsAtAGlance> = {}): HealthMetricsEventsAtAGlance {
   return {
     periods: [period(), period({ range: 'COMPLETED_YEAR_2', registrations: 8000, changes: null })],
     upcomingEvents: 3,
     hasEvents: true,
+    ...overrides,
   };
 }
 
 describe('EventsAtAGlanceComponent', () => {
   let fixture: ComponentFixture<EventsAtAGlanceComponent>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
-  async function render(status: HealthMetricsEventsAtAGlanceStatus = 'ready'): Promise<void> {
+  async function render(status: HealthMetricsEventsAtAGlanceStatus = 'ready', value: HealthMetricsEventsAtAGlance = glance()): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [EventsAtAGlanceComponent],
       providers: [
@@ -53,10 +55,13 @@ describe('EventsAtAGlanceComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsAtAGlanceComponent);
-    fixture.componentRef.setInput('glance', glance());
+    fixture.componentRef.setInput('glance', value);
     fixture.componentRef.setInput('status', status);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -76,6 +81,7 @@ describe('EventsAtAGlanceComponent', () => {
 
   beforeEach(() => {
     lifecycle = [];
+    verdicts = [];
   });
 
   it('renders the period control line, headline and side stats from the view', async () => {
@@ -86,14 +92,32 @@ describe('EventsAtAGlanceComponent', () => {
     expect(text('events-at-a-glance-headline-delta')).toBe('−12%');
     expect(text('events-at-a-glance-side-show-up-rate-value')).toBe('75%');
     expect(text('events-at-a-glance-side-show-up-rate-delta')).toBe('+2.2 pp');
+    expect(verdicts).toEqual([false]);
   });
 
-  it('flags a steep fall in attendees and compares against the same point last year', async () => {
+  it('compares against the same point last year, with no warning icon on a steep fall', async () => {
     await render();
 
-    expect(query('events-at-a-glance-tile-attendees-warn')).not.toBeNull();
-    expect(query('events-at-a-glance-tile-speakers-warn')).toBeNull();
+    expect(text('events-at-a-glance-tile-attendees-delta')).toBe('−35%');
+    expect(query('events-at-a-glance-tile-attendees')?.querySelector('.fa-triangle-exclamation')).toBeNull();
     expect(text('events-at-a-glance-baseline')).toBe('all against the same point last year');
+  });
+
+  it('shows Events as past plus upcoming, with no year-over-year delta', async () => {
+    await render();
+
+    expect(query('events-at-a-glance-side-events')?.querySelector('dt')?.textContent?.trim()).toBe('Events');
+    expect(text('events-at-a-glance-side-events-value')).toBe('9');
+    expect(query('events-at-a-glance-side-events-delta')).toBeNull();
+  });
+
+  it('draws the hero and the metric tiles unboxed, each tile labelled above its value', async () => {
+    await render();
+
+    expect(query('events-at-a-glance-hero')?.classList).not.toContain('border');
+    const tile = query('events-at-a-glance-tile-attendees');
+    expect(tile?.classList).not.toContain('border');
+    expect(tile?.firstElementChild?.textContent?.trim()).toBe('Attendees');
   });
 
   it('re-projects a period change without deltas for an uncompared year, and settles again', async () => {
@@ -109,14 +133,40 @@ describe('EventsAtAGlanceComponent', () => {
     expect(lifecycle).toEqual(['settled', 'settled']);
   });
 
-  it('shows the unmeasured state for a period the read does not carry', async () => {
+  it('settles empty, with no body, for a period the read does not carry', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(query('events-at-a-glance-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
     expect(query('events-at-a-glance-headline')).toBeNull();
+    expect(query('events-at-a-glance-tiles')).toBeNull();
+  });
+
+  it('settles empty, with no body, for a zero-filled period with nothing upcoming', async () => {
+    // The server zero-fills every count for a quiet period.
+    const quiet = period({ events: 0, pastEvents: 0, registrations: 0, attendees: 0, organizations: 0, speakers: 0, countries: 0 });
+    await render('ready', glance({ periods: [quiet], upcomingEvents: 0 }));
+
+    expect(verdicts).toEqual([true]);
+    expect(query('events-at-a-glance-control')).toBeNull();
+    expect(query('events-at-a-glance-headline')).toBeNull();
+  });
+
+  it('keeps the body for a period with no events counted but attendees measured', async () => {
+    await render('ready', glance({ periods: [period({ events: null, pastEvents: null, registrations: null, attendees: 120 })], upcomingEvents: 0 }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('events-at-a-glance-headline')).not.toBeNull();
+  });
+
+  it('keeps the body for a quiet year to date that has events upcoming', async () => {
+    const quiet = period({ events: 0, pastEvents: 0, registrations: 0 });
+    await render('ready', glance({ periods: [quiet], upcomingEvents: 2 }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('events-at-a-glance-headline')).not.toBeNull();
   });
 
   it('holds the skeleton and reports a read in flight while loading, then settles when it lands', async () => {
@@ -138,5 +188,6 @@ describe('EventsAtAGlanceComponent', () => {
     expect(query('events-at-a-glance-error')).not.toBeNull();
     expect(query('events-at-a-glance-headline')).toBeNull();
     expect(lifecycle).toEqual(['settled']);
+    expect(verdicts).toEqual([false]);
   });
 });

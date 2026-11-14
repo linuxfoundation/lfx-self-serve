@@ -15,10 +15,19 @@ import { FoundationHealthComponent } from '../components/foundation-health/found
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
 import { RecentProgressComponent } from '../components/recent-progress/recent-progress.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-user-dashboard',
-  imports: [FoundationHealthComponent, RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, SkeletonModule, DashboardCastDrawerHostComponent],
+  imports: [
+    FoundationHealthComponent,
+    RecentProgressComponent,
+    PendingActionsComponent,
+    MyMeetingsComponent,
+    SkeletonModule,
+    DashboardCastDrawerHostComponent,
+    PageHeaderComponent,
+  ],
   templateUrl: './user-dashboard.component.html',
   styleUrl: './user-dashboard.component.scss',
 })

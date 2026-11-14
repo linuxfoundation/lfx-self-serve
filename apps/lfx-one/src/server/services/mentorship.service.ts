@@ -2,65 +2,52 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS,
-  EMPTY_MENTORSHIP_PROGRAM_LISTS,
-  MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
-  MENTORSHIP_PROGRAM_STATUSES,
-  MOCK_MENTORSHIP_INVITABLE_USERS,
-  MOCK_MENTORSHIP_LF_PROJECTS,
-  MOCK_MENTORSHIP_MENTOR_PROFILE,
-  getMockMentorshipMentorProgramLists,
-  getMockMentorshipMentorPrograms,
-  MOCK_MENTORSHIP_PROGRAM_LISTS,
-  MOCK_MENTORSHIP_PROGRAMS,
+  ROOT_PROJECT_SLUG,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
-  MentorshipInvitableUsersResponse,
+  MentorshipLfProject,
+  MentorshipLfProjectsQuery,
   MentorshipLfProjectsResponse,
-  MentorshipMentorProfileResponse,
-  MentorshipMentorProgram,
-  MentorshipMentorProgramDetail,
-  MentorshipMentorProgramLists,
-  MentorshipMentorProgramsResponse,
   MentorshipNameAvailability,
-  MentorshipProgram,
-  MentorshipProgramDetail,
+  MentorshipProgramDecisionResult,
   MentorshipProgramReview,
   MentorshipProgramReviewDecision,
-  MentorshipProgramsResponse,
-  MentorshipProgramStatus,
+  MentorshipLfxProfileFields,
   MentorshipUpstreamProgram,
+  MentorshipUpstreamProgramCatalog,
   MentorshipUpstreamProgramDecisionRequest,
+  MentorshipUpstreamUserProfile,
+  Project,
+  QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId, normalizeToUrl, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import {
+  MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH,
+  MENTORSHIP_LF_PROJECT_MAX_LIMIT,
+  MENTORSHIP_LF_PROJECT_MAX_READS,
+  MENTORSHIP_ME_PROFILES_PATH,
+  MENTORSHIP_PROGRAMS_PATH,
+} from '../constants';
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { findByIdOrSlug } from '../helpers/mentorship-params.helper';
+import { listAllMentorshipPages, proxyMentorshipRequest, withoutQueryInErrorPath } from '../helpers/mentorship-api.helper';
+import {
+  buildMentorshipUpstreamLfxProfileFields,
+  buildMentorshipUpstreamProfileLinks,
+  resolveMentorshipGithubProfileLink,
+  resolveMentorshipPrimaryEmail,
+} from '../helpers/mentorship-lfx-profile.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
-const DEFAULT_PROGRAM_LIMIT = 50;
-const MAX_LIMIT = 50;
 const CII_BADGE_TIMEOUT_MS = 10_000;
-
-/**
- * Read-only mock seed data — the admin list has data to show while the upstream
- * mentorship-service is not yet wired. No writes; enrollment shows a coming-soon
- * toast instead.
- */
-const mockPrograms: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
-
-function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: number): { data: T[]; total: number } {
-  const start = Math.max(0, offset);
-  const size = Math.min(MAX_LIMIT, Math.max(1, limit));
-  return { data: items.slice(start, start + size), total: items.length };
-}
 
 /**
  * Allowlisted CII badge URL. `Number()` is the sanitizer CodeQL models for path IDs
@@ -77,108 +64,71 @@ function buildCiiBadgeJsonUrl(projectId: string): string {
 
 export class MentorshipService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
 
-  public async getPrograms(
-    req: Request,
-    options: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number } = {}
-  ): Promise<MentorshipProgramsResponse> {
-    logger.debug(req, 'mentorship_get_programs', 'Filtering mentorship programs', options);
-
-    let filtered: readonly MentorshipProgram[] = mockPrograms;
-    if (options.status) {
-      filtered = filtered.filter((p) => p.status === options.status);
-    }
-    if (options.search) {
-      const needle = options.search.trim().toLowerCase();
-      if (needle) {
-        filtered = filtered.filter((p) => p.name.toLowerCase().includes(needle) || p.projectName.toLowerCase().includes(needle));
-      }
-    }
-
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? DEFAULT_PROGRAM_LIMIT);
-    logger.debug(req, 'mentorship_get_programs', 'Mentorship programs page built', { count: page.data.length, total: page.total });
-
-    return page;
-  }
-
-  public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
-    logger.debug(req, 'mentorship_get_mentor_programs', 'Loading mentor programs');
-    const data = getMockMentorshipMentorPrograms().map((program) => ({ ...program }));
-    logger.debug(req, 'mentorship_get_mentor_programs', 'Mentor programs loaded', { count: data.length });
-    return { data, total: data.length };
-  }
-
-  public async getMentorProfile(req: Request): Promise<MentorshipMentorProfileResponse> {
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Loading mentor profile');
-    const response: MentorshipMentorProfileResponse = {
-      profile: { ...MOCK_MENTORSHIP_MENTOR_PROFILE.profile, skills: [...MOCK_MENTORSHIP_MENTOR_PROFILE.profile.skills] },
-      history: MOCK_MENTORSHIP_MENTOR_PROFILE.history.map((entry) => ({ ...entry })),
-    };
-    logger.debug(req, 'mentorship_get_mentor_profile', 'Mentor profile loaded', { history_count: response.history.length });
-    return response;
-  }
-
-  public async getMentorProgram(req: Request, programId: string): Promise<MentorshipMentorProgramDetail> {
-    logger.debug(req, 'mentorship_get_mentor_program', 'Resolving mentor program', { programId });
-    const program = this.findMentorProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentor program', programId, { operation: 'mentorship_get_mentor_program' });
-    }
-
-    // Lists are keyed by mentor program id so a Fall card cannot pick up a Winter
-    // slug-twin, and cards without people fixtures stay empty instead of inheriting
-    // another program's rows.
-    const lists: MentorshipMentorProgramLists = getMockMentorshipMentorProgramLists()[program.id] ?? EMPTY_MENTORSHIP_MENTOR_PROGRAM_LISTS;
-    const detail = buildMentorshipMentorProgramDetail(program, lists);
-    logger.debug(req, 'mentorship_get_mentor_program', 'Mentor program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
-    return detail;
-  }
-
-  public async getProgram(req: Request, programId: string): Promise<MentorshipProgramDetail> {
-    logger.debug(req, 'mentorship_get_program', 'Resolving mentorship program', { programId });
-    const program = this.findProgram(programId);
-    if (!program) {
-      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_program' });
-    }
-
-    const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
-    const detail = buildMentorshipProgramDetail(program, lists);
-    logger.debug(req, 'mentorship_get_program', 'Mentorship program detail built', { programId, slug: program.slug, tabCounts: detail.tabCounts });
-    return detail;
-  }
-
-  public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
-    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { name });
-    const needle = name.trim().toLowerCase();
-    const taken = mockPrograms.some((program) => program.name.trim().toLowerCase() === needle);
-    logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: !taken });
-    return { available: !taken };
-  }
-
-  public async getLfProjects(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipLfProjectsResponse> {
-    logger.debug(req, 'mentorship_get_lf_projects', 'Filtering LF projects', options);
-    const needle = options.search?.trim().toLowerCase() ?? '';
-    const filtered = needle ? MOCK_MENTORSHIP_LF_PROJECTS.filter((project) => project.name.toLowerCase().includes(needle)) : [...MOCK_MENTORSHIP_LF_PROJECTS];
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE);
-    logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: page.data.length, total: page.total });
-    return page;
+  /** `excludeProgramId` leaves that program out, so an edited program's own name reads as available. */
+  public async isProgramNameAvailable(req: Request, name: string, excludeProgramId?: string): Promise<MentorshipNameAvailability> {
+    logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { excludeProgramId });
+    const result = await proxyMentorshipRequest<MentorshipNameAvailability>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/name-availability`,
+      'GET',
+      excludeProgramId ? { name: name.trim(), exclude_program_id: excludeProgramId } : { name: name.trim() }
+    ).catch((error: unknown) => {
+      throw withoutQueryInErrorPath(error);
+    });
+    logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: result.available });
+    return { available: result.available };
   }
 
   /**
-   * LFX users that can be invited as mentors. Not program-scoped — this is the
-   * general user pool; callers exclude anyone already on their own list.
+   * One lazy-load page of LF projects for the enroll picker (ROOT excluded): by name when `search` is blank, by relevance otherwise.
+   * The query service can trim a page after cutting it (access filtering) and still return a `page_token`, so this follows the
+   * token until `limit` projects are in hand or `MENTORSHIP_LF_PROJECT_MAX_READS` reads are spent, and hands back the token it
+   * stopped at, so a short page can still carry a cursor. A cursor that comes back unchanged ends the list (no `page_token`): following it
+   * would only replay the page just read and duplicate its projects. Each read asks only for the slots still open, so the page never holds more
+   * than `limit` (the cursor carries the sort position, not the page size). `limit` is held to 1–`MENTORSHIP_LF_PROJECT_MAX_LIMIT` and `search` is cut to
+   * `MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH`. With `parentUid`, only that project's direct sub-projects: the Foundation lens
+   * wizard (lfx-mentorship#398) offers its foundation, which it already has, and these sub-projects.
    */
-  public async getInvitableUsers(req: Request, options: { search?: string; offset?: number; limit?: number } = {}): Promise<MentorshipInvitableUsersResponse> {
-    logger.debug(req, 'mentorship_get_invitable_users', 'Filtering invitable users', options);
+  public async getLfProjects(req: Request, options: MentorshipLfProjectsQuery = {}): Promise<MentorshipLfProjectsResponse> {
+    const search = truncateToUtf16Units(options.search?.trim() ?? '', MENTORSHIP_ADMIN_SEARCH_MAX_LENGTH);
+    const limit = Math.min(MENTORSHIP_LF_PROJECT_MAX_LIMIT, Math.max(1, options.limit ?? MENTORSHIP_LF_PROJECT_PAGE_SIZE));
+    let pageToken = options.pageToken || undefined;
+    const parentUid = options.parentUid;
+    logger.debug(req, 'mentorship_get_lf_projects', 'Listing LF projects', {
+      has_search: search.length > 0,
+      has_page_token: !!pageToken,
+      limit,
+      parentUid,
+    });
 
-    const needle = options.search?.trim().toLowerCase() ?? '';
-    const filtered = needle
-      ? MOCK_MENTORSHIP_INVITABLE_USERS.filter((user) => user.name.toLowerCase().includes(needle) || user.email.toLowerCase().includes(needle))
-      : [...MOCK_MENTORSHIP_INVITABLE_USERS];
+    const projects: Project[] = [];
+    let reads = 0;
+    do {
+      const requestedToken = pageToken;
+      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        ...(parentUid && { parent: `project:${parentUid}` }),
+        ...(search ? { name: search, sort: 'best_match' } : { sort: 'name_asc' }),
+        page_size: limit - projects.length,
+        ...(pageToken && { page_token: pageToken }),
+      });
+      projects.push(...response.resources.map((resource) => resource.data).filter((project) => project.slug !== ROOT_PROJECT_SLUG));
+      pageToken = response.page_token && response.page_token !== requestedToken ? response.page_token : undefined;
+      reads++;
+    } while (pageToken && projects.length < limit && reads < MENTORSHIP_LF_PROJECT_MAX_READS);
 
-    const page = paginateOffsetLimit(filtered, options.offset ?? 0, options.limit ?? MENTORSHIP_INVITABLE_USER_PAGE_SIZE);
-    logger.debug(req, 'mentorship_get_invitable_users', 'Invitable users page built', { count: page.data.length, total: page.total });
-    return page;
+    const data: MentorshipLfProject[] = projects.map((project) => ({
+      id: project.uid,
+      name: project.name,
+      slug: project.slug,
+      ...(project.logo_url ? { logoUrl: project.logo_url } : {}),
+    }));
+
+    logger.debug(req, 'mentorship_get_lf_projects', 'LF projects page built', { count: data.length, reads, has_more: !!pageToken });
+    return { data, ...(pageToken && { page_token: pageToken }) };
   }
 
   public async getCiiBadge(req: Request, projectId: string): Promise<MentorshipCiiBadge> {
@@ -246,18 +196,26 @@ export class MentorshipService {
   }
 
   /**
-   * The program an approve/reject email link points at. Proxied to the mentorship service
-   * with the caller's own token, so its `viewer` check decides who can see the program.
+   * The program a review email link points at, as its public page shows it. Read with the caller's
+   * own token, so upstream's `viewer` check decides who sees it: approvers pass it through `auditor`.
+   *
+   * The catalog serves only pending and published programs and answers 404 for the rest, so on a 404
+   * the plain program read (same `viewer` guard) tells a decided program from a missing one. A
+   * rejected or hidden program comes back with its status and no details, which is all the page
+   * shows once a program is no longer pending; a missing one still ends in 404.
    */
   public async getProgramReview(req: Request, programId: string): Promise<MentorshipProgramReview> {
+    const path = `/mentorship/v1/programs/${encodeURIComponent(programId)}`;
     logger.debug(req, 'mentorship_get_program_review', 'Fetching program for review', { programId });
-    const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
-      req,
-      'LFX_V2_SERVICE',
-      `/mentorship/v1/programs/${encodeURIComponent(programId)}`,
-      'GET'
-    );
-    return toProgramReview(program);
+    try {
+      const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgramCatalog>(req, 'LFX_V2_SERVICE', `${path}/catalog`, 'GET');
+      return toProgramReview(program);
+    } catch (error) {
+      if (!(error instanceof MicroserviceError && error.statusCode === 404)) throw error;
+      logger.debug(req, 'mentorship_get_program_review', 'Program not in the catalog, reading its status', { programId });
+      const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(req, 'LFX_V2_SERVICE', path, 'GET');
+      return toDecidedProgramReview(program);
+    }
   }
 
   /**
@@ -265,7 +223,7 @@ export class MentorshipService {
    * mentorship approver team (403 otherwise) and only from `pending` (409 otherwise); both
    * statuses pass through to the page unchanged.
    */
-  public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramReview> {
+  public async submitProgramDecision(req: Request, programId: string, decision: MentorshipProgramReviewDecision): Promise<MentorshipProgramDecisionResult> {
     const body: MentorshipUpstreamProgramDecisionRequest = { status: MENTORSHIP_PROGRAM_REVIEW_DECISION_STATUS[decision] };
     logger.debug(req, 'mentorship_submit_program_decision', 'Submitting program review decision', { programId, status: body.status });
     const program = await this.microserviceProxy.proxyRequest<MentorshipUpstreamProgram>(
@@ -276,29 +234,96 @@ export class MentorshipService {
       undefined,
       body
     );
-    return toProgramReview(program);
+    return { id: program.id, name: program.name, status: program.status };
   }
 
-  /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
-  private findProgram(programId: string): MentorshipProgram | undefined {
-    return findByIdOrSlug(mockPrograms, programId);
-  }
+  /**
+   * Copies the LFX profile's name and logo, with the caller's verified primary email and connected
+   * GitHub account, onto every mentor and mentee profile the caller holds, and returns how many were
+   * updated. The email and the GitHub link are looked up here rather than taken from the browser,
+   * and each is left out when its lookup fails. The GitHub link is laid over each row's stored
+   * `profile_links`, since upstream replaces that column whole. Each row is patched by id, since
+   * `PATCH /me/profiles/{type}` refuses a type with more than one row; upstream checks the row is
+   * the caller's. Only the keys that have a value are sent, so with no rows, or nothing to send, no
+   * row is patched. A failed row propagates and leaves the rows after it unpatched; the card asks
+   * the user to save again, which rewrites them all.
+   */
+  public async syncLfxProfileFields(req: Request, fields: MentorshipLfxProfileFields): Promise<number> {
+    const profiles = await listAllMentorshipPages<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_PROFILES_PATH);
+    const targets = profiles.filter((profile) => profile.profile_type === 'mentor' || profile.profile_type === 'mentee');
+    if (targets.length === 0) return 0;
 
-  /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
-  private findMentorProgram(programId: string): MentorshipMentorProgram | undefined {
-    return findByIdOrSlug(getMockMentorshipMentorPrograms(), programId);
-  }
-}
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamLfxProfileFields(fields, email);
+    if (Object.keys(body).length === 0 && githubProfileLink === undefined) return 0;
+    logger.debug(req, 'mentorship_sync_lfx_profile', 'Copying LFX profile fields onto mentorship profiles', {
+      profile_count: targets.length,
+      field_count: Object.keys(body).length,
+      has_email: body.email !== undefined,
+      has_github: githubProfileLink !== undefined,
+    });
 
-export function isMentorshipProgramStatus(value: unknown): value is MentorshipProgramStatus {
-  return typeof value === 'string' && (MENTORSHIP_PROGRAM_STATUSES as readonly string[]).includes(value);
+    for (const profile of targets) {
+      const profileLinks = buildMentorshipUpstreamProfileLinks(profile.profile_links, githubProfileLink);
+      await proxyMentorshipRequest<unknown>(
+        this.microserviceProxy,
+        req,
+        `${MENTORSHIP_ME_PROFILES_PATH}/by-id/${encodeURIComponent(profile.id)}`,
+        'PATCH',
+        undefined,
+        profileLinks ? { ...body, profile_links: profileLinks } : body
+      );
+    }
+    return targets.length;
+  }
 }
 
 export function isMentorshipProgramReviewDecision(value: unknown): value is MentorshipProgramReviewDecision {
   return typeof value === 'string' && (MENTORSHIP_PROGRAM_REVIEW_DECISIONS as readonly string[]).includes(value);
 }
 
-/** Only what the review page shows; the full upstream program is not forwarded. */
-function toProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
-  return { id: program.id, name: program.name, status: program.status };
+/**
+ * Only what the review page shows; terms, mentors and the rest of the catalog item are not
+ * forwarded. Links that are not http(s) URLs and a non-numeric CII id become `null`, so the page
+ * never binds an unsafe or broken value.
+ */
+function toProgramReview(program: MentorshipUpstreamProgramCatalog): MentorshipProgramReview {
+  const ciiProjectId = program.cii_project_id?.trim() ?? '';
+  return {
+    id: program.id,
+    name: program.name,
+    status: program.status,
+    projectName: program.project_name?.trim() || null,
+    description: program.description?.trim() || null,
+    logoUrl: toHttpUrl(program.logo_url),
+    repoUrl: toHttpUrl(program.repo_link),
+    codeOfConductUrl: toHttpUrl(program.code_of_conduct),
+    ciiProjectId: isMentorshipCiiProjectId(ciiProjectId) ? ciiProjectId : null,
+    skills: (program.skills ?? []).map((skill) => skill.trim()).filter((skill) => skill.length > 0),
+    hasDetails: true,
+  };
+}
+
+/** A program the catalog does not serve (rejected or hidden): its status, without details. */
+function toDecidedProgramReview(program: MentorshipUpstreamProgram): MentorshipProgramReview {
+  return {
+    id: program.id,
+    name: program.name,
+    status: program.status,
+    projectName: program.project_name?.trim() || null,
+    description: null,
+    logoUrl: null,
+    repoUrl: null,
+    codeOfConductUrl: null,
+    ciiProjectId: null,
+    skills: [],
+    hasDetails: false,
+  };
+}
+
+function toHttpUrl(value: string | undefined): string | null {
+  return value ? normalizeToUrl(value) : null;
 }

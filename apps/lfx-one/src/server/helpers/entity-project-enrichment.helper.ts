@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Project } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation } from '@lfx-one/shared/utils';
+import { computeIsFoundation } from '@lfx-one/shared/utils/project.utils';
 import type { Request } from 'express';
 
 import { logger } from '../services/logger.service';

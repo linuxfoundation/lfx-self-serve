@@ -152,9 +152,8 @@ test.describe('Org Lens EasyCLA corporate self-sign — structure', () => {
 
     await onlyState(page, 'org-easycla-sign-ready');
     await expect(page.getByTestId('org-easycla-sign-review')).toBeVisible();
-    // No way out but forward: the agreement and its envelope exist by now, and the address behind
-    // this control is the only thing that reaches them.
-    await expect(page.getByTestId('org-easycla-sign-cancel')).toHaveCount(0);
+    // The signatory can still back out (#3756): the CLA service reuses the unsigned record next time.
+    await expect(page.getByTestId('org-easycla-sign-handoff-close')).toBeVisible();
   });
 
   test('settles on the failure state alone when the request is refused', async ({ page }) => {

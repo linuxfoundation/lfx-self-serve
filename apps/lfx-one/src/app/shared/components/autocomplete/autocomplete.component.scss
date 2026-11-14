@@ -28,7 +28,7 @@
     // Add custom dropdown caret using ::after (same as calendar)
     &::after {
       content: '\f078'; // Font Awesome chevron-down icon
-      font-family: 'Font Awesome 6 Pro';
+      font-family: 'Font Awesome 7 Pro';
       font-weight: 300; // fa-light
       @apply absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm;
     }

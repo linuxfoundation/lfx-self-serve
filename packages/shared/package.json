@@ -41,6 +41,12 @@
       "require": "./dist/utils/index.js",
       "default": "./dist/utils/index.js"
     },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js",
+      "require": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -58,7 +64,7 @@
     "@fullcalendar/core": "^6.1.19",
     "@types/sanitize-html": "^2.16.0",
     "typescript": "5.8.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "@angular/core": "^20.3.15",
@@ -66,11 +72,13 @@
     "@fullcalendar/core": "^6.1.19",
     "chart.js": "^4.5.0",
     "rxjs": "^7.8.0",
-    "snowflake-sdk": "^2.3.1"
+    "snowflake-sdk": "^3.4.1"
   },
   "dependencies": {
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
-    "sanitize-html": "^2.17.4"
+    "sanitize-html": "^2.17.4",
+    "tldts": "^7.0.5",
+    "zod": "4.6.6"
   }
 }

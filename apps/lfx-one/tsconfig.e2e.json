@@ -3,8 +3,9 @@
   "compilerOptions": {
     "outDir": "./out-tsc/e2e",
     "module": "commonjs",
-    "target": "es2021",
+    "target": "es2022",
     "types": ["node"],
+    "resolveJsonModule": true,
     "sourceMap": false,
     "declaration": false
   },

@@ -3,13 +3,20 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import type { PendingActionItem } from '@lfx-one/shared/interfaces';
+import { ButtonComponent } from '@components/button/button.component';
+import { PENDING_ACTION_FADE_OUT_MS } from '@lfx-one/shared/constants';
+import type { Meeting, PendingActionItem } from '@lfx-one/shared/interfaces';
+import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { LensService } from '@services/lens.service';
+import { UserService } from '@services/user.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PendingActionsDrawerComponent } from './pending-actions-drawer.component';
@@ -181,5 +188,598 @@ describe('PendingActionsDrawerComponent — Survey row click (GH-2987)', () => {
     (anchor as HTMLAnchorElement).click();
 
     expect(hiddenActions.hideAction).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Section grouping: rows render under fixed-order section headers (label + count badge + gray divider),
+// sections with no visible rows are omitted, and the drawer title keeps the grand total. The block also
+// exercises the row actions inside the sectioned structure (GH-3166 criterion 5) — Dismiss, Cast Vote,
+// invitation Accept/Decline and the inline RSVP group all live one nesting level deeper than before.
+describe('PendingActionsDrawerComponent — section grouping', () => {
+  let fixture: ComponentFixture<PendingActionsDrawerComponent>;
+
+  // Mirror the real HiddenActionsService contract: hide/dismiss write a cookie, after which
+  // isActionHidden reports the row hidden — the completion fade-out relies on that pair staying in sync.
+  // Keyed on identity fields (like the real getActionIdentifier), not object identity: the drawer's
+  // visibleRows decoration spreads each wire row into a fresh object on every recompute.
+  const hiddenKeys = new Set<string>();
+  const keyOf = (item: PendingActionItem): string =>
+    [item.type, item.meetingUid, item.voteUid, item.briefActionUid, item.formationItemUid, item.badge, item.text, item.buttonLink].filter(Boolean).join('|');
+  const hiddenActions = {
+    isActionHidden: (item: PendingActionItem) => hiddenKeys.has(keyOf(item)),
+    hideAction: vi.fn((item: PendingActionItem) => void hiddenKeys.add(keyOf(item))),
+    dismissAction: vi.fn((item: PendingActionItem) => void hiddenKeys.add(keyOf(item))),
+  };
+  // Minimal Meeting the inline RSVP group will render: invite responses on, no recurrence.
+  const meeting = { id: 'meeting-1', topic: 'Board Meeting', is_invite_responses_enabled: true } as unknown as Meeting;
+  const meetingService = { getMeeting: vi.fn(() => of(meeting)), getMeetingRsvpForCurrentUser: vi.fn(() => of(null)) };
+
+  // p-drawer renders into document.body — query the global document like the blocks above.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+    hiddenKeys.clear();
+    vi.clearAllMocks();
+  });
+
+  const row = (type: PendingActionItem['type'], text: string, overrides: Partial<PendingActionItem> = {}): PendingActionItem => ({
+    type,
+    badge: 'Acme Project',
+    text,
+    icon: 'fa-light fa-list-check',
+    severity: 'warn',
+    buttonText: 'Open',
+    ...overrides,
+  });
+
+  const render = async (actions: PendingActionItem[]): Promise<void> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [PendingActionsDrawerComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: HiddenActionsService, useValue: hiddenActions },
+        { provide: InvitationService, useValue: { resolvedInviteUids: signal(new Set<string>()) } },
+        { provide: MeetingService, useValue: meetingService },
+        // The inline RSVP child reads userService.user/authenticated at field-init. DialogService needs no
+        // provider: the child declares its own component-level `providers: [DialogService]`, which shadows
+        // any TestBed provider (the recurring-scope modal is never opened here).
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            authenticated: signal(false),
+            viewerUsername: signal(null),
+            meetingRegistrationGeneration: vi.fn(() => 0),
+            recordConfirmedMeetingRsvp: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
+          },
+        },
+        { provide: LensService, useValue: { activeLens: signal('me') } },
+        MessageService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(PendingActionsDrawerComponent);
+    fixture.componentRef.setInput('pendingActions', actions);
+    fixture.detectChanges();
+    fixture.componentInstance.visible.set(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const byTestId = (id: string): HTMLElement | null => document.body.querySelector(`[data-testid="${id}"]`);
+  // Only the <section> wrappers — the title (h2) and count (lfx-badge) testids share the same prefix.
+  const sectionIds = (): (string | null)[] =>
+    Array.from(document.body.querySelectorAll('section[data-testid^="pending-actions-drawer-section-"]')).map((el) => el.getAttribute('data-testid'));
+
+  it('renders sections in fixed order with per-section counts, skipping empty sections', async () => {
+    await render([row('Survey', 'Survey A'), row('RSVP', 'RSVP A'), row('Vote', 'Vote A'), row('RSVP', 'RSVP B')]);
+
+    expect(sectionIds()).toEqual(['pending-actions-drawer-section-meetings', 'pending-actions-drawer-section-votes', 'pending-actions-drawer-section-surveys']);
+    expect(byTestId('pending-actions-drawer-section-count-meetings')?.textContent?.trim()).toBe('2');
+    expect(byTestId('pending-actions-drawer-section-count-votes')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-section-count-surveys')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-section-title-meetings')?.textContent).toContain('Meetings');
+    expect(byTestId('pending-actions-drawer-section-title-votes')?.textContent).toContain('Votes');
+    expect(byTestId('pending-actions-drawer-section-title-surveys')?.textContent).toContain('Surveys');
+    // Criterion 2: each header carries its divider line, and the section wrapper is a labeled group.
+    for (const [section, label] of [
+      ['meetings', 'Meetings'],
+      ['votes', 'Votes'],
+      ['surveys', 'Surveys'],
+    ] as const) {
+      const el = byTestId(`pending-actions-drawer-section-${section}`);
+      expect(el?.getAttribute('role')).toBe('group');
+      expect(el?.getAttribute('aria-label')).toBe(label);
+      expect(el?.querySelector('div.border-t[aria-hidden="true"]')).not.toBeNull();
+    }
+    // No Invitation/FormationItem rows fed — their sections stay out of the DOM entirely.
+    expect(byTestId('pending-actions-drawer-section-invitations')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-formation')).toBeNull();
+    // The drawer title keeps the grand total across sections.
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(4)');
+  });
+
+  it('keeps the header total equal to the sum of the section badges when a row is hidden', async () => {
+    // Pre-hidden via the mock's cookie contract (matched by identity fields) — it never reaches visibleRows.
+    hiddenActions.hideAction(row('Survey', 'Survey Hidden'));
+    await render([row('RSVP', 'RSVP A'), row('Vote', 'Vote A'), row('Survey', 'Survey Hidden')]);
+
+    // Three rows fed, one hidden: the header counts only what the sections render.
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
+    expect(byTestId('pending-actions-drawer-section-count-meetings')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-section-count-votes')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-section-surveys')).toBeNull();
+  });
+
+  // A row whose type this bundle doesn't know still renders — under the catch-all section — so the
+  // header total and the section counts never disagree (server/app bundle version skew).
+  it('lands rows with an unknown type in the Other section rather than dropping them', async () => {
+    await render([row('Bogus' as PendingActionItem['type'], 'Mystery A')]);
+
+    const other = byTestId('pending-actions-drawer-section-other');
+    expect(other).not.toBeNull();
+    expect(other?.querySelectorAll('[data-testid="pending-actions-drawer-item-Bogus"]').length).toBe(1);
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+  });
+
+  it('nests each row under its own section, preserving feed order within the section', async () => {
+    await render([row('RSVP', 'RSVP A'), row('Agenda', 'Agenda A'), row('Vote', 'Vote A')]);
+
+    const meetings = byTestId('pending-actions-drawer-section-meetings');
+    // Agenda groups with the meeting RSVPs.
+    expect(meetings?.querySelectorAll('[data-testid="pending-actions-drawer-item-RSVP"]').length).toBe(1);
+    expect(meetings?.querySelectorAll('[data-testid="pending-actions-drawer-item-Agenda"]').length).toBe(1);
+    const titles = Array.from(meetings?.querySelectorAll('[data-testid="pending-actions-drawer-title"]') ?? []).map((el) => el.textContent?.trim());
+    expect(titles).toEqual(['RSVP A', 'Agenda A']);
+
+    const votes = byTestId('pending-actions-drawer-section-votes');
+    expect(votes?.querySelectorAll('[data-testid="pending-actions-drawer-item-Vote"]').length).toBe(1);
+  });
+
+  it('omits the section header and count badge when there is a single section, keeping the labeled group', async () => {
+    await render([row('RSVP', 'RSVP A'), row('RSVP', 'RSVP B')]);
+
+    expect(sectionIds()).toEqual(['pending-actions-drawer-section-meetings']);
+    expect(byTestId('pending-actions-drawer-section-title-meetings')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-count-meetings')).toBeNull();
+    expect(byTestId('pending-actions-drawer-section-meetings')?.getAttribute('aria-label')).toBe('Meetings');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
+  });
+
+  it('renders the start time under the title of a linked RSVP row only, formatted in the viewer timezone', async () => {
+    // The server-formatted `date` is deliberately different from what the browser must render from `startTime`.
+    const startTime = '2026-10-19T19:00:00.000Z';
+    const expected = new MeetingTimePipe().transform(startTime, null, 'compact');
+    await render([
+      row('RSVP', 'Board', { buttonLink: '/meetings/m-1', date: 'Mon, Oct 19, server-local', startTime }),
+      row('RSVP', 'No Time', { buttonLink: '/meetings/m-2', date: 'Mon, Oct 19, server-local' }),
+      row('Vote', 'Vote A', { buttonLink: '/votes', date: 'Closes Oct 30, 2026', startTime }),
+    ]);
+
+    const dates = Array.from(document.body.querySelectorAll('[data-testid="pending-actions-drawer-meeting-date"]'));
+    expect(dates.map((el) => el.textContent?.trim())).toEqual([expected]);
+    expect(dates[0].textContent).not.toContain('server-local');
+  });
+
+  it('maps the remaining types to their sections', async () => {
+    await render([row('Invitation', 'Invite A'), row('FormationItem', 'Formation A'), row('Submitted', 'Submitted A'), row('BriefAction', 'Brief A')]);
+
+    // Surveys leads: 'Submitted' (completed-survey acknowledgement) joins the surveys section ahead of invitations.
+    expect(sectionIds()).toEqual([
+      'pending-actions-drawer-section-surveys',
+      'pending-actions-drawer-section-invitations',
+      'pending-actions-drawer-section-formation',
+      'pending-actions-drawer-section-other',
+    ]);
+    expect(byTestId('pending-actions-drawer-section-other')?.querySelectorAll('[data-testid="pending-actions-drawer-item-BriefAction"]').length).toBe(1);
+  });
+
+  const applicationRow = (overrides: Partial<PendingActionItem> = {}): PendingActionItem =>
+    row('JoinApplication', 'Applicant', {
+      badge: 'Group Alpha',
+      committeeUid: 'group-alpha',
+      applicationUid: 'application-1',
+      applicationApplicantEmail: 'applicant@example.com',
+      applicationApplicantName: 'Applicant Name',
+      ...overrides,
+    });
+
+  it('places independent same-email applications after invitations and before formation, linking only to the group (never a buttonLink), each with a Dismiss control', async () => {
+    const first = applicationRow({ buttonLink: '/must-not-navigate' });
+    const second = applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta', applicationApplicantName: undefined });
+    await render([formationRow(), second, row('Invitation', 'Invite A'), first]);
+
+    expect(sectionIds()).toEqual([
+      'pending-actions-drawer-section-invitations',
+      'pending-actions-drawer-section-applications',
+      'pending-actions-drawer-section-formation',
+    ]);
+    const applications = byTestId('pending-actions-drawer-section-applications');
+    const rows = applications?.querySelectorAll('[data-testid="pending-actions-drawer-item-JoinApplication"]');
+    expect(rows?.length).toBe(2);
+    expect(rows?.[0].textContent).toContain('applicant@example.com');
+    expect(rows?.[0].textContent).toContain('Group Beta');
+    expect(rows?.[0].querySelector('[data-testid="pending-actions-drawer-application-name"]')).toBeNull();
+    expect(rows?.[1].textContent).toContain('Applicant Name');
+    expect(rows?.[1].textContent).toContain('applicant@example.com');
+    expect(rows?.[1].textContent).toContain('Group Alpha');
+    // The only links are the group-name links to the group's own page; a stray buttonLink must never become one.
+    const anchors = Array.from(applications?.querySelectorAll('a') ?? []);
+    expect(anchors).toHaveLength(2);
+    expect(anchors.every((a) => a.getAttribute('data-testid') === 'pending-actions-drawer-application-group')).toBe(true);
+    expect(anchors.some((a) => a.getAttribute('href')?.includes('must-not-navigate'))).toBe(false);
+    expect(applications?.querySelectorAll('[data-testid="pending-actions-drawer-dismiss-JoinApplication"]')).toHaveLength(2);
+    expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('2');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(4)');
+
+    fixture.componentRef.setInput('pendingActions', [formationRow(), first, row('Invitation', 'Invite A')]);
+    fixture.detectChanges();
+    expect(applications?.querySelectorAll('[data-testid="pending-actions-drawer-item-JoinApplication"]').length).toBe(1);
+    expect(applications?.textContent).toContain('Group Alpha');
+    expect(applications?.textContent).not.toContain('Group Beta');
+    expect(byTestId('pending-actions-drawer-section-count-applications')?.textContent?.trim()).toBe('1');
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(3)');
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+  });
+
+  it('dismisses one request for this reviewer without reviewing it, keeps the others, and tells the parent to refresh', async () => {
+    await render([applicationRow(), applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta' })]);
+    const completed = vi.fn();
+    const approve = vi.fn();
+    const reject = vi.fn();
+    fixture.componentInstance.actionCompleted.subscribe(completed);
+    fixture.componentInstance.approveApplicationRequested.subscribe(approve);
+    fixture.componentInstance.rejectApplicationRequested.subscribe(reject);
+
+    byTestId('pending-actions-drawer-section-applications')
+      ?.querySelector<HTMLButtonElement>('[data-testid="pending-actions-drawer-dismiss-JoinApplication"]')
+      ?.click();
+    fixture.detectChanges();
+
+    expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(approve).not.toHaveBeenCalled();
+    expect(reject).not.toHaveBeenCalled();
+    const section = byTestId('pending-actions-drawer-section-applications');
+    expect(section?.querySelectorAll('[data-testid="pending-actions-drawer-item-JoinApplication"]')).toHaveLength(1);
+    expect(section?.textContent).toContain('Group Beta');
+    expect(section?.textContent).not.toContain('Group Alpha');
+  });
+
+  it('renders Reject as a danger-severity control so it reads differently from the grey Dismiss text', async () => {
+    await render([applicationRow()]);
+    const reject = byTestId('pending-actions-drawer-section-applications')?.querySelector('[data-testid="pending-actions-drawer-application-reject"] button');
+    expect(reject?.className).toContain('p-button-danger');
+  });
+
+  it('retains rows and counts while only the matched approval loads and every review control is disabled', async () => {
+    await render([applicationRow(), applicationRow({ committeeUid: 'group-beta', badge: 'Group Beta' })]);
+    fixture.componentRef.setInput('processingApplicationKey', 'JoinApplication-group-alpha-application-1');
+    fixture.detectChanges();
+
+    const section = byTestId('pending-actions-drawer-section-applications');
+    const approvals = section?.querySelectorAll('[data-testid="pending-actions-drawer-application-approve"] button');
+    expect(approvals?.[0].textContent).toContain('Saving');
+    expect(approvals?.[1].textContent).toContain('Approve');
+    const controls = Array.from(section?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+    expect(controls).toHaveLength(6);
+    expect(controls.every((button) => button.disabled)).toBe(true);
+    const loadingButtons = fixture.debugElement
+      .queryAll(By.directive(ButtonComponent))
+      .map((element) => element.componentInstance as ButtonComponent)
+      .filter((button) => button.loading());
+    expect(loadingButtons).toHaveLength(1);
+    expect(loadingButtons[0].label()).toBe('Saving');
+    // Single section: the header badge is skipped, the drawer total still counts both rows.
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
+
+    fixture.componentRef.setInput('processingApplicationKey', null);
+    fixture.detectChanges();
+    expect(controls.every((button) => !button.disabled)).toBe(true);
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+  });
+
+  it.each(['committeeUid', 'applicationUid', 'applicationApplicantEmail'] as const)(
+    'disables review when %s is missing without dropping the row',
+    async (field) => {
+      await render([applicationRow({ [field]: undefined })]);
+      const controls = Array.from(byTestId('pending-actions-drawer-section-applications')?.querySelectorAll<HTMLButtonElement>('button') ?? []);
+      expect(controls).toHaveLength(3);
+      expect(controls.every((button) => button.disabled)).toBe(true);
+      expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+    }
+  );
+
+  it('preserves distinct incomplete request views when the feed reorders and replaces rows', async () => {
+    const first = applicationRow({ applicationUid: undefined, text: 'first@example.com', applicationApplicantEmail: 'first@example.com' });
+    const second = applicationRow({ applicationUid: undefined, text: 'second@example.com', applicationApplicantEmail: 'second@example.com' });
+    await render([first, second]);
+    const getRows = () => Array.from(document.body.querySelectorAll<HTMLElement>('[data-testid="pending-actions-drawer-item-JoinApplication"]'));
+    const initial = getRows();
+    fixture.componentRef.setInput('pendingActions', [{ ...second }, { ...first }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const reordered = getRows();
+    expect(reordered[0]).toBe(initial[1]);
+    expect(reordered[1]).toBe(initial[0]);
+    expect(reordered.map((row) => row.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.textContent?.trim())).toEqual([
+      'second@example.com',
+      'first@example.com',
+    ]);
+
+    const third = applicationRow({ applicationUid: undefined, text: 'third@example.com', applicationApplicantEmail: 'third@example.com' });
+    fixture.componentRef.setInput('pendingActions', [{ ...second }, third]);
+    fixture.detectChanges();
+    expect(getRows()[0]).toBe(initial[1]);
+    expect(initial[0].isConnected).toBe(false);
+    expect(getRows().map((row) => row.querySelector('[data-testid="pending-actions-drawer-application-email"]')?.textContent?.trim())).toEqual([
+      'second@example.com',
+      'third@example.com',
+    ]);
+    expect(
+      getRows()
+        .flatMap((row) => Array.from(row.querySelectorAll<HTMLButtonElement>('button')))
+        .every((button) => button.disabled)
+    ).toBe(true);
+  });
+
+  it('cannot cookie-complete an application through the generic completion handlers (only explicit Dismiss hides it)', async () => {
+    await render([applicationRow()]);
+    const component = fixture.componentInstance;
+    const application = component['visibleRows']()[0];
+    component['handleAgendaOrOtherClick'](application);
+    component['startCompletion'](application);
+    fixture.detectChanges();
+
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+    expect(component['completingRowKeys']().size).toBe(0);
+    expect(byTestId('pending-actions-drawer-item-JoinApplication')).not.toBeNull();
+    expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+  });
+
+  it('renders the empty state and no sections when nothing is visible', async () => {
+    await render([]);
+
+    expect(byTestId('pending-actions-drawer-empty')).not.toBeNull();
+    expect(document.body.querySelector('section[data-testid^="pending-actions-drawer-section-"]')).toBeNull();
+  });
+
+  // Criterion 3's dynamic half: the section rides out the completing row's fade-out, then disappears
+  // once the dismissal takes effect — its sibling section and the corrected grand total remain.
+  it('keeps the section mounted through the fade-out, then removes it when its last row is dismissed', async () => {
+    await render([row('Vote', 'Vote A', { voteUid: 'vote-1' }), row('Survey', 'Survey A')]);
+    expect(byTestId('pending-actions-drawer-section-votes')).not.toBeNull();
+
+    vi.useFakeTimers();
+    try {
+      const dismiss = document.body.querySelector('[data-testid="pending-actions-drawer-dismiss-Vote"]') as HTMLButtonElement | null;
+      expect(dismiss).not.toBeNull();
+      dismiss?.click();
+      fixture.detectChanges();
+
+      // Mid-fade: the completing row keeps its section and the grand total mounted.
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+      expect(byTestId('pending-actions-drawer-section-votes')).not.toBeNull();
+      expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
+
+      await vi.advanceTimersByTimeAsync(PENDING_ACTION_FADE_OUT_MS);
+      fixture.detectChanges();
+
+      // Fade drained: the empty section is gone, the sibling section stays, the total re-counts.
+      expect(byTestId('pending-actions-drawer-section-votes')).toBeNull();
+      expect(byTestId('pending-actions-drawer-section-surveys')).not.toBeNull();
+      expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Criterion 5 wiring, one per row action, each asserted inside its own section.
+  it('closes the drawer and emits the vote uid when Cast Vote is clicked inside the votes section', async () => {
+    await render([row('Vote', 'Vote A', { voteUid: 'vote-1', buttonText: 'Cast Vote' })]);
+    const castVoteSpy = vi.fn();
+    fixture.componentInstance.castVoteRequested.subscribe(castVoteSpy);
+
+    const button = byTestId('pending-actions-drawer-section-votes')?.querySelector('[data-testid="pending-actions-drawer-vote-button"] button');
+    expect(button).not.toBeNull();
+    (button as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(castVoteSpy).toHaveBeenCalledWith('vote-1');
+    expect(fixture.componentInstance.visible()).toBe(false);
+  });
+
+  it('delegates invitation Accept/Decline to the parent outputs from the invitations section', async () => {
+    await render([row('Invitation', 'Invite A', { inviteUid: 'inv-1', committeeUid: 'com-1', buttonText: 'Accept' })]);
+    const acceptSpy = vi.fn();
+    const declineSpy = vi.fn();
+    fixture.componentInstance.acceptInvitationRequested.subscribe(acceptSpy);
+    fixture.componentInstance.declineInvitationRequested.subscribe(declineSpy);
+
+    const section = byTestId('pending-actions-drawer-section-invitations');
+    const accept = section?.querySelector('[data-testid="pending-actions-drawer-invitation-accept"] button');
+    const decline = section?.querySelector('[data-testid="pending-actions-drawer-invitation-decline"] button');
+    expect(accept).not.toBeNull();
+    expect(decline).not.toBeNull();
+    (accept as HTMLButtonElement).click();
+    (decline as HTMLButtonElement).click();
+
+    expect(acceptSpy).toHaveBeenCalledTimes(1);
+    expect(acceptSpy).toHaveBeenCalledWith(expect.objectContaining({ inviteUid: 'inv-1' }));
+    expect(declineSpy).toHaveBeenCalledTimes(1);
+    // The row stays put — resolution (and removal) is the parent's optimistic markResolved.
+    expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+    expect(hiddenActions.hideAction).not.toHaveBeenCalled();
+  });
+
+  it('renders the inline RSVP buttons inside the meetings section once the meeting loads', async () => {
+    await render([row('RSVP', 'RSVP A', { meetingUid: 'meeting-1' })]);
+
+    expect(meetingService.getMeeting).toHaveBeenCalledWith('meeting-1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const meetings = byTestId('pending-actions-drawer-section-meetings');
+    expect(meetings?.querySelector('[data-testid="pending-actions-drawer-rsvp-buttons"]')).not.toBeNull();
+    expect(meetings?.querySelector('[data-testid="meeting-rsvp-button-yes"]')).not.toBeNull();
+  });
+
+  it('loads a new RSVP after an empty feed refresh without closing the drawer', async () => {
+    await render([row('Survey', 'Survey A')]);
+    fixture.componentRef.setInput('pendingActions', []);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(byTestId('pending-actions-drawer-empty')).not.toBeNull();
+
+    fixture.componentRef.setInput('pendingActions', [row('RSVP', 'New meeting', { meetingUid: 'meeting-1' })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(byTestId('pending-actions-drawer-rsvp-loading')).toBeNull();
+    expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+  });
+
+  it('recovers a failed RSVP load on replacement feeds while the same drawer remains open', async () => {
+    const action = row('RSVP', 'Synthetic meeting', { meetingUid: 'meeting-1', buttonLink: '/meetings/meeting-1' });
+    meetingService.getMeeting.mockReturnValueOnce(throwError(() => new Error('Transient outage')));
+    await render([action]);
+    expect(byTestId('meeting-rsvp-button-yes')).toBeNull();
+    expect(byTestId('pending-actions-drawer-item-RSVP')?.querySelector('a')?.getAttribute('href')).toBe('/meetings/meeting-1');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(meetingService.getMeeting).toHaveBeenCalledOnce();
+
+    fixture.componentRef.setInput('pendingActions', [{ ...action }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(byTestId('meeting-rsvp-button-yes')).not.toBeNull();
+    expect(meetingService.getMeeting).toHaveBeenCalledTimes(2);
+  });
+
+  // #5512: a section-level "Dismiss all" for sections whose rows carry a per-item Dismiss.
+  describe('Dismiss all', () => {
+    const dismissAllId = (section: string): string => `pending-actions-drawer-dismiss-all-${section}`;
+
+    it('offers Dismiss all on dismissible sections only, never on invitations, applications or formation', async () => {
+      await render([
+        row('Vote', 'Vote A', { voteUid: 'vote-1' }),
+        row('Survey', 'Survey A'),
+        row('Invitation', 'Invite A', { inviteUid: 'inv-1', committeeUid: 'c-1' }),
+        formationRow({ formationItemUid: 'item-9' }),
+      ]);
+
+      expect(byTestId(dismissAllId('votes'))).not.toBeNull();
+      expect(byTestId(dismissAllId('surveys'))).not.toBeNull();
+      expect(byTestId(dismissAllId('invitations'))).toBeNull();
+      expect(byTestId(dismissAllId('formation'))).toBeNull();
+    });
+
+    it('asks for confirmation, then dismisses every row in that section only', async () => {
+      await render([row('Survey', 'Survey A'), row('Survey', 'Survey B'), row('Vote', 'Vote A', { voteUid: 'vote-1' })]);
+
+      vi.useFakeTimers();
+      try {
+        (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+        fixture.detectChanges();
+        // Nothing is dismissed until the confirm dialog is accepted.
+        expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+
+        const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+        expect(accept).not.toBeNull();
+        accept?.click();
+        fixture.detectChanges();
+
+        expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(PENDING_ACTION_FADE_OUT_MS);
+        fixture.detectChanges();
+
+        expect(byTestId('pending-actions-drawer-section-surveys')).toBeNull();
+        expect(byTestId('pending-actions-drawer-section-votes')).not.toBeNull();
+        expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(1)');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('skips RSVP rows still loading their meeting, so a section of only those offers no Dismiss all', async () => {
+      meetingService.getMeeting.mockReturnValueOnce(NEVER);
+      await render([row('RSVP', 'RSVP A', { meetingUid: 'meeting-1' })]);
+
+      expect(byTestId('pending-actions-drawer-section-meetings')).not.toBeNull();
+      expect(byTestId(dismissAllId('meetings'))).toBeNull();
+    });
+
+    it('dismisses only the ready RSVP in a section that also holds one still loading', async () => {
+      // Rows load in feed order: the first meeting resolves, the second never does.
+      meetingService.getMeeting.mockReturnValueOnce(of(meeting)).mockReturnValueOnce(NEVER);
+      await render([row('RSVP', 'RSVP ready', { meetingUid: 'meeting-1' }), row('RSVP', 'RSVP loading', { meetingUid: 'meeting-2' })]);
+
+      (byTestId(dismissAllId('meetings')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(document.body.querySelector('.p-confirmdialog-message')?.textContent).toContain('Dismiss 1 item from Meetings');
+
+      const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+      expect(accept).not.toBeNull();
+      accept?.click();
+      fixture.detectChanges();
+
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+      expect(hiddenActions.dismissAction).toHaveBeenCalledWith(expect.objectContaining({ text: 'RSVP ready' }));
+    });
+
+    it('skips a row dismissed on its own while the confirm is open, so nothing is dismissed twice', async () => {
+      await render([row('Survey', 'Survey A', { buttonLink: 'https://example.test/a' }), row('Survey', 'Survey B', { buttonLink: 'https://example.test/b' })]);
+
+      (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      // Dismiss the first survey individually while the confirm is still showing.
+      (byTestId('pending-actions-drawer-section-surveys')?.querySelector('[data-testid="pending-actions-drawer-dismiss-Survey"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(1);
+
+      const accept = document.body.querySelector('.p-confirmdialog-accept-button, .p-confirm-dialog-accept') as HTMLButtonElement | null;
+      accept?.click();
+      fixture.detectChanges();
+
+      // One individual dismissal plus one bulk dismissal of the remaining row — never three.
+      expect(hiddenActions.dismissAction).toHaveBeenCalledTimes(2);
+      expect(hiddenActions.dismissAction).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'Survey B' }));
+    });
+
+    it('with a single dismissible section shows Dismiss all without repeating the section title or count', async () => {
+      await render([row('Survey', 'Survey A')]);
+
+      expect(byTestId(dismissAllId('surveys'))).not.toBeNull();
+      expect(byTestId('pending-actions-drawer-section-title-surveys')).toBeNull();
+      expect(byTestId('pending-actions-drawer-section-count-surveys')).toBeNull();
+    });
+
+    it('dismisses nothing when the confirmation is cancelled', async () => {
+      await render([row('Survey', 'Survey A')]);
+
+      (byTestId(dismissAllId('surveys')) as HTMLButtonElement).click();
+      fixture.detectChanges();
+      const reject = document.body.querySelector('.p-confirmdialog-reject-button, .p-confirm-dialog-reject') as HTMLButtonElement | null;
+      expect(reject).not.toBeNull();
+      reject?.click();
+      fixture.detectChanges();
+
+      expect(hiddenActions.dismissAction).not.toHaveBeenCalled();
+      expect(byTestId('pending-actions-drawer-section-surveys')).not.toBeNull();
+    });
   });
 });

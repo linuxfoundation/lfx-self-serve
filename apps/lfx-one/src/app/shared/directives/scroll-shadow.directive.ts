@@ -27,8 +27,23 @@ export class ScrollShadowDirective {
       container.addEventListener('scroll', this.scrollHandler);
       this.updateScrollShadows();
 
+      // Scroll events alone miss content swaps (skeleton → menu, an expanded group) and resizes, which
+      // would leave a stale fade — re-measure on the next frame whenever either happens.
+      let frame = 0;
+      const scheduleUpdate = (): void => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => this.updateScrollShadows());
+      };
+      const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleUpdate);
+      resizeObserver?.observe(container);
+      const mutationObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver(scheduleUpdate);
+      mutationObserver?.observe(container, { childList: true, subtree: true });
+
       this.destroyRef.onDestroy(() => {
         container.removeEventListener('scroll', this.scrollHandler);
+        resizeObserver?.disconnect();
+        mutationObserver?.disconnect();
+        cancelAnimationFrame(frame);
       });
     });
   }

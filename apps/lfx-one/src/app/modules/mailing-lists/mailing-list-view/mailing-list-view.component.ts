@@ -17,20 +17,29 @@ import {
   MAILING_LIST_VISIBILITY_LABELS,
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
-import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
-import { getMailingListCommands, getMailingListLinkQueryParams } from '@lfx-one/shared/utils';
+import { CommitteeReference, GroupLinkState, GroupsIOMailingList, MailingListGroupLink } from '@lfx-one/shared/interfaces';
+import {
+  getMailingListGroupLinks,
+  getMailingListCommands,
+  getMailingListEmail,
+  getMailingListGroupsIoUrl,
+  getMailingListLinkQueryParams,
+} from '@lfx-one/shared/utils';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
+import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap, tap } from 'rxjs';
 
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
 
 import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
+import { MailingListSyncSettingsComponent } from '../components/mailing-list-sync-settings/mailing-list-sync-settings.component';
 
 @Component({
   selector: 'lfx-mailing-list-view',
@@ -43,6 +52,7 @@ import { MailingListMembersComponent } from '../components/mailing-list-members/
     MailingListVisibilitySeverityPipe,
     StripHtmlPipe,
     MailingListMembersComponent,
+    MailingListSyncSettingsComponent,
     TooltipModule,
   ],
   templateUrl: './mailing-list-view.component.html',
@@ -55,10 +65,14 @@ export class MailingListViewComponent {
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly lensService = inject(LensService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Back-navigation label injected from router state at navigation time
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
+
+  // True when the user arrived from the Me lens My Mailing Lists page — drives the context-transition notice
+  protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
 
   // Protected constants
   protected readonly mailingListLabel = MAILING_LIST_LABEL;
@@ -73,12 +87,21 @@ export class MailingListViewComponent {
   public error = signal<boolean>(false);
   public refresh = new BehaviorSubject<void>(undefined);
 
+  // Holds a sync-settings save result between the moment the child component emits it and the next
+  // real navigation — lets the view reflect a just-saved `sync_mode` immediately instead of racing
+  // the query index's eventual-consistency window via a `getMailingList()` refetch (#4880 review).
+  private readonly mailingListOverride = signal<GroupsIOMailingList | null>(null);
+
   // Complex computed/toSignal signals
-  public readonly mailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  private readonly fetchedMailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  public readonly mailingList: Signal<GroupsIOMailingList | null> = computed(() => this.mailingListOverride() ?? this.fetchedMailingList());
   public readonly backLabel: Signal<string> = computed(() => this.navBackLabel ?? this.mailingListLabel.plural);
   public readonly emailAddress: Signal<string> = this.initEmailAddress();
   public readonly memberCount: Signal<number> = this.initMemberCount();
   public readonly linkedCommittees: Signal<CommitteeReference[]> = this.initLinkedCommittees();
+  public readonly groupLinks: Signal<MailingListGroupLink[]> = this.initGroupLinks();
+  // The group page returns to the mailing lists and restores the Me lens when the user opened this page from there.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: this.mailingListLabel.plural, backPath: '/mailing-lists', fromMeLens: this.fromMeLens };
   public readonly postingTypeLabel: Signal<string> = this.initPostingTypeLabel();
   public readonly audienceAccessLabel: Signal<string> = this.initAudienceAccessLabel();
   public readonly visibilityLabel: Signal<string> = this.initVisibilityLabel();
@@ -94,6 +117,7 @@ export class MailingListViewComponent {
       preferEntityKind: true,
       canonicalizeRoute: true,
     });
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, '/mailing-lists');
     bindLfxDocumentTitle(computed(() => this.mailingList()?.title || this.mailingList()?.group_name));
   }
 
@@ -101,7 +125,24 @@ export class MailingListViewComponent {
     this.refresh.next();
   }
 
+  // Applies a sync-settings save result directly instead of refetching through the query index
+  // (#4880 review) — the child already holds the authoritative, just-written resource.
+  public applySyncSettingsUpdate(updated: GroupsIOMailingList): void {
+    const current = this.mailingList();
+    // The `:id` route reuses this component across list-to-list navigation, so a save started on
+    // list A can resolve after the route has already moved to list B. Dropping a result whose uid
+    // no longer matches the currently displayed list prevents it from overriding B's page (#4880
+    // review).
+    if (!current || current.uid !== updated.uid) {
+      return;
+    }
+    this.mailingListOverride.set(updated);
+  }
+
   public goBack(): void {
+    if (this.fromMeLens) {
+      this.lensService.setLens('me');
+    }
     this.router.navigate(['/', 'mailing-lists']);
   }
 
@@ -110,6 +151,7 @@ export class MailingListViewComponent {
     return toSignal(
       combineLatest([this.route.paramMap, this.refresh]).pipe(
         switchMap(([params]) => {
+          this.mailingListOverride.set(null);
           const mailingListId = params?.get('id');
           if (!mailingListId) {
             this.loading.set(false);
@@ -118,6 +160,13 @@ export class MailingListViewComponent {
           }
 
           return this.mailingListService.getMailingList(mailingListId).pipe(
+            // Clearing the override only when navigation *starts* (above) leaves a gap: a
+            // previous list's late-resolving save can still set the override during this list's
+            // own fetch, landing right after the start-of-navigation reset but before this fetch
+            // completes — which would otherwise keep masking the newly-loaded list once it lands.
+            // Re-clearing here, when the authoritative fetched data actually arrives, closes that
+            // window regardless of arrival order (Cursor Bugbot).
+            tap(() => this.mailingListOverride.set(null)),
             catchError(() => {
               this.messageService.add({
                 severity: 'error',
@@ -139,12 +188,7 @@ export class MailingListViewComponent {
   }
 
   private initEmailAddress(): Signal<string> {
-    return computed(() => {
-      const ml = this.mailingList();
-      if (!ml?.group_name) return '';
-      if (!ml.service?.domain) return ml.group_name;
-      return `${ml.group_name}@${ml.service.domain}`;
-    });
+    return computed(() => getMailingListEmail(this.mailingList()));
   }
 
   private initMemberCount(): Signal<number> {
@@ -153,6 +197,11 @@ export class MailingListViewComponent {
 
   private initLinkedCommittees(): Signal<CommitteeReference[]> {
     return computed(() => this.mailingList()?.committees || []);
+  }
+
+  /** Each linked group with its group-details link from the list's own tier; a group with no uid shows as plain text. */
+  private initGroupLinks(): Signal<MailingListGroupLink[]> {
+    return computed(() => getMailingListGroupLinks({ committees: this.linkedCommittees(), is_foundation: this.mailingList()?.is_foundation }));
   }
 
   private initPostingTypeLabel(): Signal<string> {
@@ -180,7 +229,7 @@ export class MailingListViewComponent {
   }
 
   private initGroupsIoUrl(): Signal<string | null> {
-    return computed(() => this.mailingList()?.service?.url || null);
+    return computed(() => getMailingListGroupsIoUrl(this.mailingList()));
   }
 
   // Canonical edit URL derives from the list's own tier (is_foundation), not the active lens;

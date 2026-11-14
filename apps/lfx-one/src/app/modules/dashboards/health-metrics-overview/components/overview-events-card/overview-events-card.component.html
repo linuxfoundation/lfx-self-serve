@@ -1,0 +1,297 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-events">
+  @if (view(); as view) {
+    <!-- The design's viewport rules: the KPIs stack at 900px or narrower, the footer at 1100px; the table follows its own width. -->
+    <div class="flex min-w-0 flex-col gap-[24px]">
+      <div class="grid grid-cols-1 border-y border-gray-200 min-[901px]:grid-cols-2" data-testid="overview-events-kpis">
+        <div class="flex min-w-0 flex-col gap-[8px] py-[18px] min-[901px]:pr-[24px]" data-testid="overview-events-total">
+          <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
+            >Total events<lfx-overview-info-tip [text]="info.total"
+          /></span>
+          <div class="flex flex-wrap items-baseline gap-x-[8px]">
+            <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900" data-testid="overview-events-total-value">{{
+              view.total.value
+            }}</span>
+            @if (view.total.delta; as delta) {
+              <span
+                class="inline-flex items-center gap-[3px] whitespace-nowrap text-[12px] font-medium"
+                [class]="delta.good ? 'text-emerald-700' : 'text-red-700'"
+                data-testid="overview-events-total-delta">
+                <i class="text-[10px]" [class]="delta.direction === 'up' ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'" aria-hidden="true"></i>
+                <span class="sr-only">{{ delta.direction === 'up' ? 'Up' : 'Down' }}</span
+                >{{ delta.label }}
+              </span>
+            }
+          </div>
+          <div class="flex h-[8px] gap-[2px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true" data-testid="overview-events-split">
+            @if (view.total.pastPct > 0) {
+              <span [class]="pastClass" [style.flex]="'0 0 ' + view.total.pastPct + '%'"></span>
+            }
+            @if (view.total.upcomingPct > 0) {
+              <span class="flex-1" [style.background]="upcomingHatch"></span>
+            }
+          </div>
+          <div class="flex flex-wrap gap-x-[16px] gap-y-[6px] text-[12px] text-gray-500">
+            <span class="inline-flex items-center gap-[6px]" data-testid="overview-events-past-count"
+              ><span class="h-[8px] w-[14px] rounded-[2px]" [class]="pastClass" aria-hidden="true"></span>Past
+              <span class="text-gray-900">{{ view.total.pastLabel }}</span></span
+            >
+            <span class="inline-flex items-center gap-[6px]" data-testid="overview-events-upcoming-count"
+              ><span class="h-[8px] w-[14px] rounded-[2px]" aria-hidden="true" [style.background]="upcomingHatch"></span>Upcoming
+              <span class="text-gray-900">{{ view.total.upcomingLabel }}</span></span
+            >
+          </div>
+        </div>
+
+        <div
+          class="flex min-w-0 flex-col gap-[8px] border-t border-gray-200 py-[18px] min-[901px]:border-l min-[901px]:border-t-0 min-[901px]:pl-[24px]"
+          data-testid="overview-events-sponsorship">
+          <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500"
+            >Sponsorship<lfx-overview-info-tip [text]="info.sponsorship"
+          /></span>
+          <span class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900" data-testid="overview-events-sponsorship-value">{{
+            view.sponsorship.valueLabel
+          }}</span>
+          @if (view.sponsorship.hasGoal) {
+            <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+              ><span class="block h-full rounded-full" [class]="view.sponsorship.barClass" [style.width.%]="view.sponsorship.widthPct"></span
+            ></span>
+          }
+          <div class="flex flex-wrap items-center justify-between gap-[8px] text-[12px]">
+            @if (view.sponsorship.hasGoal) {
+              <span class="text-gray-500" data-testid="overview-events-sponsorship-goal"
+                >Goal <span class="font-medium text-gray-900">{{ view.sponsorship.goalLabel }}</span></span
+              >
+            }
+            <span class="text-gray-400" data-testid="overview-events-sponsorship-progress">{{ view.sponsorship.progressLabel }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex min-w-0 flex-col gap-[10px]" data-testid="overview-events-list">
+        <span class="inline-flex items-center gap-[6px] text-[13px] font-semibold text-gray-900" data-testid="overview-events-list-title"
+          >{{ view.listTitle }}<lfx-overview-info-tip [text]="view.listInfo"
+        /></span>
+        <!-- On a phone the legend moves under the title, above the list it explains. -->
+        <div class="hidden flex-wrap gap-x-[16px] gap-y-[6px] max-[640px]:flex" data-testid="overview-events-legend-top">
+          <ng-container *ngTemplateOutlet="legendItems" />
+        </div>
+
+        <!--
+          The design's breakpoints follow the table's own width, not the viewport: stacked rows with no header up to 560px;
+          rings below 1000px, bars from it; "Trend" for the first action below 961px; below 912px no actions, and the
+          whole row opens the trend.
+        -->
+        <div #table class="@container/evtbl min-w-0" data-testid="overview-events-table">
+          <div class="flex min-w-0 flex-col" role="table" [attr.aria-label]="view.listTitle">
+            <div
+              class="border-b border-gray-200 pb-[8px] text-[12px] text-gray-500 whitespace-nowrap"
+              [class]="gridClasses + ' hidden @[561px]/evtbl:grid'"
+              role="row">
+              <span role="columnheader">Event</span>
+              <span class="inline-flex items-center gap-[6px]" role="columnheader">Registrations<lfx-overview-info-tip [text]="info.registrations" /></span>
+              <span class="inline-flex items-center gap-[6px]" role="columnheader"
+                >Accepted speaking proposals<lfx-overview-info-tip [text]="info.talks"
+              /></span>
+              <span class="hidden @[912px]/evtbl:block" role="columnheader"><span class="sr-only">Actions</span></span>
+            </div>
+            @for (row of visibleRows(); track row.eventId) {
+              <div
+                class="relative -mx-[12px] cursor-pointer items-stretch border-b border-gray-100 px-[12px] py-[16px] transition-colors @[561px]/evtbl:items-center @[561px]/evtbl:py-[12px] hover:bg-[var(--ui-neutral-alpha-50)] @[912px]/evtbl:mx-0 @[912px]/evtbl:cursor-auto @[912px]/evtbl:px-0 @[912px]/evtbl:hover:bg-transparent"
+                [class]="gridClasses"
+                role="row"
+                [attr.data-testid]="'overview-events-row-' + row.eventId">
+                <!-- Stacked rows put the event across both halves, 4px over its figures. -->
+                <div class="col-span-2 mb-[4px] flex min-w-0 flex-col gap-[2px] @[561px]/evtbl:col-span-1 @[561px]/evtbl:mb-0" role="cell">
+                  <!-- A narrow table's whole row opens the trend: the name becomes a button whose hit area and focus ring cover the row. -->
+                  @if (narrow()) {
+                    <button
+                      type="button"
+                      class="m-0 border-0 bg-transparent p-0 text-left text-[13px] font-semibold leading-[1.35] text-gray-900 outline-none after:absolute after:inset-0 after:z-[1] after:rounded-[4px] focus-visible:after:outline focus-visible:after:outline-2 focus-visible:after:outline-blue-500"
+                      aria-haspopup="dialog"
+                      [attr.data-testid]="'overview-events-row-' + row.eventId + '-open'"
+                      (click)="openEvent(row, 'trend')">
+                      {{ row.name }}
+                    </button>
+                  } @else {
+                    <span class="text-[13px] font-semibold leading-[1.35] text-gray-900">{{ row.name }}</span>
+                  }
+                  <span class="text-[12px] text-gray-500">{{ row.meta }}</span>
+                </div>
+
+                <!-- Stacked, a cell is a label over its value beside a 3px line in its status colour; rings and bars hide. Exact
+                     px from the design, which the 14px root's rem scale undershoots. -->
+                <div
+                  class="flex min-w-0 flex-col justify-center border-l-[3px] pl-[8px] @[561px]/evtbl:flex-row @[561px]/evtbl:items-center @[561px]/evtbl:justify-start @[561px]/evtbl:gap-[10px] @[561px]/evtbl:border-l-0 @[561px]/evtbl:pl-0"
+                  [class]="row.registrations.lineClass"
+                  role="cell"
+                  [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations'">
+                  <span class="truncate text-[11px] font-medium leading-[15px] text-gray-500 @[561px]/evtbl:hidden">Registrations</span>
+                  <span
+                    class="truncate text-[13px] leading-[18px] text-gray-900 @[561px]/evtbl:hidden"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-compact'"
+                    >{{ row.registrations.compactValue }}</span
+                  >
+                  <div
+                    class="hidden min-w-0 items-center gap-[10px] @[561px]/evtbl:flex @[1000px]/evtbl:hidden"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-ring'">
+                    <!-- 52px is the design's ring for a table cell. -->
+                    <lfx-ui-gauge
+                      label="Registrations against goal"
+                      weight="thin"
+                      [size]="52"
+                      [value]="row.registrations.widthPct"
+                      [attr.aria-hidden]="row.registrations.gauge.unmeasured || null"
+                      [tone]="row.registrations.gauge.tone"
+                      [level]="row.registrations.gauge.level"
+                      [empty]="row.registrations.gauge.empty" />
+                    <div class="flex min-w-0 flex-col gap-[1px]">
+                      <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.registrations }" />
+                    </div>
+                  </div>
+                  <div class="hidden w-full min-w-0 flex-col gap-[6px] @[1000px]/evtbl:flex">
+                    <div class="flex items-baseline justify-between gap-[8px]">
+                      <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.registrations }" />
+                    </div>
+                    <!-- With no goal the bar is the design's neutral track: white, outlined, unfilled. -->
+                    <span
+                      class="h-[8px] overflow-hidden rounded-full"
+                      [class]="row.registrations.neutral ? 'bg-white shadow-[inset_0_0_0_1px] shadow-gray-200' : 'bg-gray-100'"
+                      aria-hidden="true"
+                      [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-track'"
+                      ><span
+                        class="block h-full rounded-full"
+                        [class]="row.registrations.barClass"
+                        [style.width.%]="row.registrations.widthPct"
+                        [attr.data-testid]="'overview-events-row-' + row.eventId + '-registrations-bar'"></span
+                    ></span>
+                  </div>
+                  @if (row.registrations.statusLabel; as status) {
+                    <span class="sr-only">Status: {{ status }}</span>
+                  }
+                </div>
+
+                <div
+                  class="flex min-w-0 flex-col justify-center border-l-[3px] pl-[8px] @[561px]/evtbl:flex-row @[561px]/evtbl:items-center @[561px]/evtbl:justify-start @[561px]/evtbl:gap-[10px] @[561px]/evtbl:border-l-0 @[561px]/evtbl:pl-0"
+                  [class]="row.talks.lineClass"
+                  role="cell"
+                  [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks'">
+                  <span class="truncate text-[11px] font-medium leading-[15px] text-gray-500 @[561px]/evtbl:hidden">Accepted proposals</span>
+                  <span
+                    class="truncate text-[13px] leading-[18px] text-gray-900 @[561px]/evtbl:hidden"
+                    [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-compact'"
+                    >{{ row.talks.compactValue }}</span
+                  >
+                  @if (row.talks.hasProposals) {
+                    <div
+                      class="hidden min-w-0 items-center gap-[10px] @[561px]/evtbl:flex @[1000px]/evtbl:hidden"
+                      [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-ring'">
+                      <lfx-ui-gauge
+                        label="Accepted speaking proposals"
+                        weight="thin"
+                        [size]="52"
+                        [value]="row.talks.widthPct"
+                        [tone]="row.talks.gauge.tone"
+                        [level]="row.talks.gauge.level" />
+                      <div class="flex min-w-0 flex-col gap-[1px]">
+                        <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.talks }" />
+                      </div>
+                    </div>
+                    <div class="hidden w-full min-w-0 flex-col gap-[6px] @[1000px]/evtbl:flex">
+                      <div class="flex items-baseline justify-between gap-[8px]">
+                        <ng-container *ngTemplateOutlet="figure; context: { $implicit: row.talks }" />
+                      </div>
+                      <span class="h-[8px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                        ><span
+                          class="block h-full rounded-full"
+                          [class]="row.talks.barClass"
+                          [style.width.%]="row.talks.widthPct"
+                          [attr.data-testid]="'overview-events-row-' + row.eventId + '-talks-bar'"></span
+                      ></span>
+                    </div>
+                  } @else {
+                    <span class="hidden text-[13px] text-gray-400 @[561px]/evtbl:inline">{{ row.talks.note }}</span>
+                  }
+                </div>
+
+                <!-- Two pairs, so the first label shortens with the table's width, not a measured one. -->
+                <div class="hidden justify-end @[912px]/evtbl:flex" role="cell" [attr.data-testid]="'overview-events-row-' + row.eventId + '-actions'">
+                  @for (pair of actionPairs; track pair.key) {
+                    <lfx-ui-split-button
+                      role="group"
+                      variant="secondary"
+                      size="small"
+                      icon="fa-light fa-chart-line"
+                      secondaryIcon="fa-light fa-table-list"
+                      secondaryLabel="Snapshot"
+                      [class]="pair.class"
+                      [label]="pair.label"
+                      [attr.aria-label]="row.name"
+                      (triggered)="openEvent(row, 'trend')"
+                      (secondaryTriggered)="openEvent(row, 'snapshot')" />
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!--
+        Footer: links left, "View all" centre and the legend right; at 1100px or narrower it stacks, left-aligned, as
+        legend, then "View all", then the links last.
+      -->
+      <div
+        class="flex flex-col items-start gap-[12px] min-[1101px]:grid min-[1101px]:grid-cols-[1fr_auto_1fr] min-[1101px]:items-center min-[1101px]:gap-x-[24px]"
+        data-testid="overview-events-footer">
+        <div class="order-3 flex flex-wrap gap-[8px] pt-[2px] min-[1101px]:order-1 min-[1101px]:pt-0">
+          <lfx-overview-explore-link [link]="pastLink" testId="overview-events-explore-past" />
+          <lfx-overview-explore-link [link]="speakersLink" testId="overview-events-explore-speakers" />
+        </div>
+        <div class="order-2 flex justify-center">
+          @if (hiddenCount() > 0) {
+            <button
+              type="button"
+              class="inline-flex h-[30px] items-center gap-[6px] whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              data-testid="overview-events-view-all"
+              (click)="showAll.set(true)">
+              View all ({{ view.rows.length }})<i class="fa-light fa-angle-down text-[12px]" aria-hidden="true"></i>
+            </button>
+          }
+        </div>
+        <!-- A phone shows the legend above the list instead. -->
+        <div
+          class="order-1 flex flex-wrap gap-x-[24px] gap-y-[6px] max-[640px]:hidden min-[1101px]:order-3 min-[1101px]:justify-end"
+          data-testid="overview-events-legend">
+          <ng-container *ngTemplateOutlet="legendItems" />
+        </div>
+      </div>
+    </div>
+  }
+</lfx-overview-card>
+
+<!-- The status legend's items, shown in the footer, or under the list title on a phone. -->
+<ng-template #legendItems>
+  @for (item of legend; track item.key) {
+    <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+      ><span class="h-[8px] w-[8px] rounded-full" [class]="item.dotClass" aria-hidden="true"></span>{{ item.label }}</span
+    >
+  }
+</ng-template>
+
+<!-- A cell's figure and its description, shared by the ring and the bar layouts: "Goal: 1,000", or "No goal set" in the quiet colour. -->
+<ng-template #figure let-bar>
+  <span class="text-[16px] leading-[22px] text-gray-900">{{ bar.countLabel }}</span>
+  <span class="whitespace-nowrap text-[12px] leading-[16px]" [class]="bar.neutral ? 'text-gray-400' : 'text-gray-600'"
+    >{{ bar.sideLabel }} {{ bar.sideValue }}</span
+  >
+</ng-template>

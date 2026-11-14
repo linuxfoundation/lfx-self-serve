@@ -4,11 +4,6 @@
 # Build stage
 FROM node:22-alpine AS builder
 
-# Set build environment
-ARG BUILD_ENV=production
-ARG APP_VERSION=development
-ENV APP_VERSION=${APP_VERSION}
-
 # Enable Corepack for Yarn
 RUN corepack enable
 
@@ -26,18 +21,32 @@ RUN yarn install --immutable
 # NOW copy source code (changes here won't invalidate the dependency layer)
 COPY . .
 
+# Select the environment only after installation, so release builds can reuse
+# the dependency cache exported by main's dev-cluster builds.
+ARG BUILD_ENV=production
+
 # Build shared package first
 RUN yarn workspace @lfx-one/shared build:${BUILD_ENV}
+
+# Inject the version only when compiling the app, so new release tags do not
+# invalidate dependency installation or the version-independent shared build.
+ARG APP_VERSION=development
+ENV APP_VERSION=${APP_VERSION}
 
 # Build the Angular application
 # Note: Client IDs (LaunchDarkly, DataDog RUM) are now injected at runtime
 # via environment variables (LD_CLIENT_ID, DD_RUM_CLIENT_ID, DD_RUM_APPLICATION_ID)
-RUN yarn workspace lfx-one-ui build:${BUILD_ENV}
+# Allow the Angular compiler worker more heap for the full SSR build.
+# Scope this to the build command so the runtime keeps Node's default limit.
+RUN NODE_OPTIONS="--max-old-space-size=6144" yarn workspace lfx-one-ui build:${BUILD_ENV}
 
 # build:${BUILD_ENV} (unlike the bare `build` script) doesn't copy PDF
 # templates into dist/, since certificate.service.ts resolves them relative
 # to the compiled server bundle, not the source tree.
 RUN cp -r apps/lfx-one/src/server/pdf-templates apps/lfx-one/dist/lfx-one/server/
+# Same for the embed theme layer: gw-embed-stylesheet.service.ts appends it to the scoped
+# Gatewaze stylesheet at runtime and resolves it beside the server bundle.
+RUN cp apps/lfx-one/src/styles/gw-embed-theme.css apps/lfx-one/dist/lfx-one/server/
 
 # Install production-only dependencies in a clean layer, so the runtime
 # stage below never inherits devDependencies (playwright, angular/cli,

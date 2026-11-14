@@ -35,5 +35,17 @@ export class PermissionsMatrixComponent {
         severity: 'success',
       },
     },
+    {
+      scope: 'Project',
+      level: 'Meeting Coordinator',
+      description: 'Manage meetings for the project',
+      capabilities: ['Create, update and delete meetings and past meetings, including registrants, attachments and recordings'],
+      badge: {
+        // Important modifiers: the accent tag's own violet classes would otherwise win over these.
+        color: '!text-purple-700',
+        bgColor: '!bg-purple-100',
+        severity: 'accent',
+      },
+    },
   ];
 }

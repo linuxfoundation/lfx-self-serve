@@ -4,9 +4,21 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation, getRepresentatives } = vi.hoisted(() => ({
+const {
+  getAttendanceTrend,
+  getGroupAttendance,
+  getMeetingParticipation,
+  getNewsletterPerformance,
+  getNewsletterRecipients,
+  getNonMemberParticipation,
+  getOrgParticipation,
+  getRepresentatives,
+} = vi.hoisted(() => ({
+  getAttendanceTrend: vi.fn(),
   getGroupAttendance: vi.fn(),
   getMeetingParticipation: vi.fn(),
+  getNewsletterPerformance: vi.fn(),
+  getNewsletterRecipients: vi.fn(),
   getNonMemberParticipation: vi.fn(),
   getOrgParticipation: vi.fn(),
   getRepresentatives: vi.fn(),
@@ -18,17 +30,23 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
   return {
     isSupportedEngagementRange: actual.isSupportedEngagementRange,
     HealthMetricsEngagementService: class {
+      public getAttendanceTrend = getAttendanceTrend;
       public getGroupAttendance = getGroupAttendance;
       public getMeetingParticipation = getMeetingParticipation;
+      public getNewsletterPerformance = getNewsletterPerformance;
+      public getNewsletterRecipients = getNewsletterRecipients;
       public getNonMemberParticipation = getNonMemberParticipation;
       public getOrgParticipation = getOrgParticipation;
       public getRepresentatives = getRepresentatives;
     },
   };
 });
-// The controller constructs six unrelated domain services; none of them are exercised here.
+// The controller constructs nine unrelated domain services; none of them are exercised here.
 vi.mock('../services/health-metrics-events.service', () => ({ HealthMetricsEventsService: class {} }));
 vi.mock('../services/health-metrics-members.service', () => ({ HealthMetricsMembersService: class {} }));
+vi.mock('../services/health-metrics-non-members.service', () => ({ HealthMetricsNonMembersService: class {}, isSupportedNonMembersRange: () => true }));
+vi.mock('../services/health-metrics-training.service', () => ({ HealthMetricsTrainingService: class {} }));
+vi.mock('../services/health-metrics-overview.service', () => ({ HealthMetricsOverviewService: class {} }));
 vi.mock('../services/org-involvement.service', () => ({ OrgInvolvementService: class {} }));
 vi.mock('../services/organization.service', () => ({ OrganizationService: class {} }));
 vi.mock('../services/project.service', () => ({ ProjectService: class {} }));
@@ -45,8 +63,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
@@ -117,6 +138,8 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
   it.each([
     ['foundationSlug', { foundationSlug: 'Acme Corp' }],
     ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+    // Same shape the client selector accepts: no edge hyphen.
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: '-acme-core' }],
   ])('rejects a %s that is not a slug', async (field, queryParams) => {
     const { next, promise } = call(queryParams);
     await promise;
@@ -175,15 +198,15 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
     const { res, promise } = callParticipation({ foundationSlug: 'acme' });
     await promise;
 
-    expect(getMeetingParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD' });
+    expect(getMeetingParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: null, range: 'YTD' });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
-  it('forwards a supported range', async () => {
-    const { promise } = callParticipation({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
+  it('forwards a supported range and the selected project', async () => {
+    const { promise } = callParticipation({ foundationSlug: 'acme', projectSlug: 'acme-core', range: 'COMPLETED_YEAR' });
     await promise;
 
-    expect(getMeetingParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
+    expect(getMeetingParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: 'acme-core', range: 'COMPLETED_YEAR' });
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
@@ -194,12 +217,15 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
     expect(rejectedField(next)).toBe('foundationSlug');
   });
 
-  it('rejects a foundation slug that is not a slug', async () => {
-    const { next, promise } = callParticipation({ foundationSlug: "acme' OR 1=1" });
+  it.each([
+    ['foundationSlug', { foundationSlug: "acme' OR 1=1" }],
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+  ])('rejects a %s that is not a slug', async (field, queryParams) => {
+    const { next, promise } = callParticipation(queryParams);
     await promise;
 
     expect(getMeetingParticipation).not.toHaveBeenCalled();
-    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(rejectedField(next)).toBe(field);
   });
 
   it('rejects an unknown range, and the one range this view has no columns for', async () => {
@@ -225,6 +251,64 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
   });
 });
 
+function callTrend(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementAttendanceTrend(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementAttendanceTrend', () => {
+  beforeEach(() => {
+    getAttendanceTrend.mockReset();
+    getAttendanceTrend.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
+  });
+
+  // The trend always covers the last twelve months, so a range on the wire would be a param the service ignores.
+  it('takes the foundation and project only, and answers with the service response', async () => {
+    const { res, next, promise } = callTrend({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAttendanceTrend).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: null });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
+
+    await callTrend({ foundationSlug: 'acme', projectSlug: 'acme-core' }).promise;
+    expect(getAttendanceTrend).toHaveBeenLastCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: 'acme-core' });
+  });
+
+  it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
+    const { next, promise } = callTrend({});
+    await promise;
+
+    expect(getAttendanceTrend).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it.each([
+    ['foundationSlug', { foundationSlug: "acme' OR 1=1" }],
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+  ])('rejects a %s that is not a slug', async (field, queryParams) => {
+    const { next, promise } = callTrend(queryParams);
+    await promise;
+
+    expect(getAttendanceTrend).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe(field);
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getAttendanceTrend.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callTrend({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
 function callOrgs(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
   const controller = new AnalyticsController();
   const res = { json: vi.fn() } as unknown as Response;
@@ -241,13 +325,16 @@ describe('AnalyticsController.getEngagementOrgParticipation', () => {
   });
 
   // Every period ships in one read, so a range on the wire would be a param the service ignores.
-  it('takes the foundation alone and answers with the service response', async () => {
+  it('takes the foundation and project only, and answers with the service response', async () => {
     const { res, next, promise } = callOrgs({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getOrgParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(getOrgParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: null });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
+
+    await callOrgs({ foundationSlug: 'acme', projectSlug: 'acme-core' }).promise;
+    expect(getOrgParticipation).toHaveBeenLastCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
@@ -258,12 +345,15 @@ describe('AnalyticsController.getEngagementOrgParticipation', () => {
     expect(rejectedField(next)).toBe('foundationSlug');
   });
 
-  it('rejects a foundation slug that is not a slug', async () => {
-    const { next, promise } = callOrgs({ foundationSlug: "acme' OR 1=1" });
+  it.each([
+    ['foundationSlug', { foundationSlug: "acme' OR 1=1" }],
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+  ])('rejects a %s that is not a slug', async (field, queryParams) => {
+    const { next, promise } = callOrgs(queryParams);
     await promise;
 
     expect(getOrgParticipation).not.toHaveBeenCalled();
-    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(rejectedField(next)).toBe(field);
   });
 
   it('hands a service failure to the error middleware rather than answering with a body', async () => {
@@ -344,15 +434,17 @@ describe('AnalyticsController.getEngagementRepresentatives', () => {
     getRepresentatives.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
   });
 
-  // Scope is expressed by the caption columns rather than a project key, so a project on the wire
-  // would be a param the service ignores.
-  it('takes the foundation alone and answers with the service response', async () => {
-    const { res, next, promise } = callReps({ foundationSlug: 'acme', projectSlug: 'acme-core' });
+  // A null project reads the all-projects roll-up rows; a slug reads that project's rows.
+  it('takes the foundation and project only, and answers with the service response', async () => {
+    const { res, next, promise } = callReps({ foundationSlug: 'acme', projectSlug: 'acme-core', range: 'YTD' });
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getRepresentatives).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(getRepresentatives).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: 'acme-core' });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
+
+    await callReps({ foundationSlug: 'acme' }).promise;
+    expect(getRepresentatives).toHaveBeenLastCalledWith(expect.anything(), { foundationSlug: 'acme', projectSlug: null });
   });
 
   it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
@@ -363,18 +455,113 @@ describe('AnalyticsController.getEngagementRepresentatives', () => {
     expect(rejectedField(next)).toBe('foundationSlug');
   });
 
-  it('rejects a foundation slug that is not a slug', async () => {
-    const { next, promise } = callReps({ foundationSlug: "acme' OR 1=1" });
+  it.each([
+    ['foundationSlug', { foundationSlug: "acme' OR 1=1" }],
+    ['projectSlug', { foundationSlug: 'acme', projectSlug: "core' OR 1=1" }],
+  ])('rejects a %s that is not a slug', async (field, queryParams) => {
+    const { next, promise } = callReps(queryParams);
     await promise;
 
     expect(getRepresentatives).not.toHaveBeenCalled();
-    expect(rejectedField(next)).toBe('foundationSlug');
+    expect(rejectedField(next)).toBe(field);
   });
 
   it('hands a service failure to the error middleware rather than answering with a body', async () => {
     getRepresentatives.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callReps({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callNewsletters(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementNewsletterPerformance(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementNewsletterPerformance', () => {
+  beforeEach(() => {
+    getNewsletterPerformance.mockReset();
+    getNewsletterPerformance.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED);
+  });
+
+  it('reads the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callNewsletters({ foundationSlug: 'acme', range: 'YTD' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNewsletterPerformance).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['not a slug', { foundationSlug: "acme' OR 1=1" }],
+  ])('rejects a foundation slug that is %s', async (_case, queryParams) => {
+    const { next, promise } = callNewsletters(queryParams);
+    await promise;
+
+    expect(getNewsletterPerformance).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getNewsletterPerformance.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callNewsletters({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callRecipients(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementNewsletterRecipients(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementNewsletterRecipients', () => {
+  beforeEach(() => {
+    getNewsletterRecipients.mockReset();
+    getNewsletterRecipients.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED);
+  });
+
+  it('reads the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callRecipients({ foundationSlug: 'acme', search: 'reyes' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNewsletterRecipients).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['not a slug', { foundationSlug: "acme' OR 1=1" }],
+  ])('rejects a foundation slug that is %s', async (_case, queryParams) => {
+    const { next, promise } = callRecipients(queryParams);
+    await promise;
+
+    expect(getNewsletterRecipients).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getNewsletterRecipients.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callRecipients({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();

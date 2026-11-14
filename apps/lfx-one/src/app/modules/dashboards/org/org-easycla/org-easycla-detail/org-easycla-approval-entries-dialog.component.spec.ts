@@ -299,11 +299,13 @@ describe('OrgEasyclaApprovalEntriesDialogComponent', () => {
       });
     });
 
-    it('warns that contributors covered only by the old value must acknowledge again', async () => {
+    it('warns that contributors covered only by the old value will show as Not Authorized', async () => {
       const fixture = await render(editMode({ kind: 'domain', value: 'old.example.com' }));
 
       const warning = fixture.nativeElement.querySelector('[data-testid="org-easycla-approval-dialog-edit-warning"]');
-      expect(warning?.textContent).toContain('acknowledge this CLA again');
+      expect(warning?.textContent).toContain('will show as Not Authorized until you add it back');
+      expect(warning?.textContent).not.toContain('acknowledge this CLA again');
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-approval-dialog-hint"]')?.textContent).not.toContain('invalidated');
     });
 
     // The design's copy for this dialog claims the opposite — that existing contributors keep

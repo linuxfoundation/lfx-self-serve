@@ -4,8 +4,9 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
+import { GW_EMBED_ROUTE_PREFIXES, GW_EMBED_STYLESHEET_ROUTE } from '@lfx-one/shared/constants';
 import { AuthContext, RuntimeConfig, ServerRequestContext, User } from '@lfx-one/shared/interfaces';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/credential-redaction.utils';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { randomBytes } from 'node:crypto';
@@ -14,17 +15,23 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
-import { CrowdfundingController } from './controllers/crowdfunding.controller';
 import { ProfileController } from './controllers/profile.controller';
-import { CrowdfundingAuthService } from './services/crowdfunding-auth.service';
+import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
+import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
-import { resolvePublishableGwSupabaseKey } from './helpers/supabase-key.helper';
+import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
+import { resolveSsrFlags } from './helpers/ssr-flags.helper';
+import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
+import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
+import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import inviteRouter from './routes/invite.route';
@@ -37,14 +44,17 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import formationPipelineRouter from './routes/formation-pipeline.route';
 import formationsRouter from './routes/formations.route';
+import gatewazeRouter from './routes/gatewaze.route';
 import projectApplicationsRouter from './routes/project-applications.route';
-import gwProxyRouter from './routes/gw-proxy.route';
+import gwEmbedStylesheetRouter from './routes/gw-embed-stylesheet.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import meetupsRouter from './routes/meetups.route';
 import navigationRouter from './routes/navigation.route';
+import newsletterPublicationsRouter from './routes/newsletter-publications.route';
 import newslettersRouter from './routes/newsletters.route';
 import organizationsRouter from './routes/organizations.route';
 import orgsRouter from './routes/orgs.route';
@@ -56,6 +66,8 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicNewslettersRouter from './routes/public-newsletters.route';
+import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -76,12 +88,20 @@ import akritesRouter from './routes/akrites.route';
 import mktgAgentsRouter from './routes/mktg-agents.route';
 import weeklyBriefRouter from './routes/weekly-brief.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
+import { getGatewazeRealtimeService } from './services/gatewaze-realtime.service';
+import { LaunchDarklyServerService } from './services/launchdarkly-server.service';
 import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
-import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
+import {
+  buildImpersonationIdentityOverride,
+  clearImpersonationSession,
+  decodeJwtPayload,
+  isImpersonating,
+  refreshExpiredSsrAccessToken,
+} from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
@@ -107,7 +127,13 @@ installAsyncRouteErrorBridge();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
-const angularApp = new AngularNodeAppEngine();
+// @angular/ssr 20.3.42+ serves the client-only shell (no auth state, so authGuard loops through
+// /login) for any request whose Host is not allowed or that carries an untrusted x-forwarded-*
+// header. Trust exactly the headers our ingress sends (#4649).
+const angularApp = new AngularNodeAppEngine({
+  allowedHosts: [new URL(process.env['PCC_BASE_URL'] || 'http://localhost:4000').hostname],
+  trustProxyHeaders: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-forwarded-server'],
+});
 const app = express();
 
 // Cold-start phase marks (see #1378) — performance.now() is monotonic and
@@ -126,10 +152,10 @@ app.use(
   compression({
     level: 6,
     threshold: 1024,
-    // Exclude /api/gw: gw-proxy.controller.ts streams the upstream Gatewaze response body
-    // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it.
-    // The body reaching here is already plaintext — undici decodes whatever the upstream encoded —
-    // so the exclusion is about not re-wrapping a proxied stream, not about what it arrived as.
+    // Exclude /api/gatewaze: gatewaze-proxy.controller.ts streams the upstream response body
+    // straight through byte-for-byte, so this middleware must never re-compress or re-wrap it. The
+    // body is still encoded, because @gatewaze/host-session forwards over node:http, and its
+    // Content-Encoding is passed through with it, so compressing it again would corrupt it.
     //
     // This is the exclusion that silently did nothing, and `gwMountPath` is why it now works: the
     // filter is deferred to the first `res.write`, by which point `req.path` has been trimmed to
@@ -148,12 +174,12 @@ app.use(
   })
 );
 
-// /api/gw (gw-proxy.route.ts) is excluded from both parsers below: it forwards the request body to
-// GW_API_URL byte-for-byte and content-type-agnostically (JSON, multipart, or anything else), so it
-// needs the raw, unconsumed request stream rather than a parsed body it would have to
-// re-serialize. These two mounts run before authMiddleware (like the parsers they wrap), so
-// exclusion by path is used here rather than mounting gwProxyRouter "before" them — see
-// gw-proxy.route.ts's own mount below, after authMiddleware, for the auth-ordering half of this.
+// /api/gatewaze (gatewaze.route.ts) is excluded from both parsers below. Its proxies forward the
+// request body upstream byte-for-byte and content-type-agnostically (JSON, multipart, or anything
+// else), so they need the raw, unconsumed request stream rather than a parsed body they would have
+// to re-serialize. The parsers run before authMiddleware, so exclusion by path is used here rather
+// than mounting gatewazeRouter "before" them — see its own mount below, after authMiddleware, for
+// the auth-ordering half of this.
 const jsonBodyParser = express.json({ limit: '15mb' });
 const urlencodedBodyParser = express.urlencoded({ extended: true, limit: '15mb' });
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -171,7 +197,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   urlencodedBodyParser(req, res, next);
 });
 
-// See `attachGwDrainGuard`: /api/gw is excluded from the body parsers above, so a middleware
+// See `attachGwDrainGuard`: /api/gatewaze is excluded from the body parsers above, so a middleware
 // between here and the proxy router that answers on its own (401, 429) would otherwise leave an
 // in-progress upload unread and the connection unable to close.
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -218,28 +244,8 @@ app.get('/readyz', (_req: Request, res: Response) => {
 // for any code path that does fall through.
 app.use(sitemapRouter);
 
-app.get(
-  '**',
-  express.static(browserDistFolder, {
-    index: false,
-    setHeaders: (res, filePath) => {
-      if (/-[A-Z0-9]{8,}\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|webp)$/i.test(filePath)) {
-        // Angular emits content-hashed filenames (outputHashing: "all") — safe to
-        // cache permanently; the hash changes whenever content changes.
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        return;
-      }
-      if (/\.(html|js|css)$/i.test(filePath)) {
-        // Non-hashed HTML, JS, and CSS (e.g. index.html, main.js in dev builds where
-        // outputHashing is not "all") must revalidate on every request — stale entry
-        // bundles reference old chunk hashes and cause "Importing a module script failed".
-        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-        return;
-      }
-      res.setHeader('Cache-Control', 'public, max-age=300');
-    },
-  })
-);
+// Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
+app.use(createBrowserAssetsMiddleware(browserDistFolder));
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
@@ -257,7 +263,7 @@ app.use(httpLogger);
 
 // LFXV2-2666: move the session bundle out of the encrypted `appSession` cookie and into Valkey,
 // keyed by an opaque session id, so cookie size stays flat as more tokens (impersonation,
-// API-gateway, crowdfunding, profile) are added onto req.appSession. Only wired up when
+// API-gateway, profile) are added onto req.appSession. Only wired up when
 // SESSION_STORE_ENABLED is set and VALKEY_URL is present — without VALKEY_URL every store
 // read/write would degrade to "session missing" (ValkeyService's fail-soft behavior) and silently
 // log everyone out. Note: this only gates on URL presence, not live reachability — a Valkey outage
@@ -345,12 +351,23 @@ if (sessionStoreEnabled) {
   });
 }
 
+// Also registered before auth(authConfig), for the same /logout reason as above.
+app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
+// Same reason: revokes and deletes the user's Gatewaze host session. Bounded, and always calls
+// next(), so a Gatewaze or Valkey fault never blocks the LFX logout.
+app.use('/logout', endGatewazeSessionOnLogout);
+
+// Old openprofile.dev paths (ID-1147). Before auth so signed-out visitors are redirected, then logged in on the new URL.
+app.use(openprofileRedirect);
+
 app.use(auth(authConfig));
 
 // Public pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
 app.use('/groups/', attemptSilentLogin());
 
+// Must precede the /login handler below, which always ends the response.
+app.use('/login', authRateLimiter);
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     const returnTo = req.query['returnTo'] as string;
@@ -375,14 +392,25 @@ app.use(authMiddleware);
 
 app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
-app.use('/login', authRateLimiter);
+
+// Vote pages can carry a login-free vote link token in the URL fragment. Browsers never send the fragment, but the
+// document must also never leak the page URL via Referer to anything it links to or loads (#4363).
+app.use('/votes', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 
 app.use('/public/api/meetings', publicMeetingsRouter);
+app.use('/public/api/newsletters', publicNewslettersRouter);
+app.use('/public/api/votes', publicVotesRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
 app.use('/public/api/profile', publicProfileRouter);
 app.use('/public/api/projects', publicProjectsRouter);
+// The Gatewaze embed's stylesheet, scoped to the LFX chrome and cached by hashed name. Public:
+// the loader fetches it without credentials and the content is public (see the controller).
+app.use(GW_EMBED_STYLESHEET_ROUTE, gwEmbedStylesheetRouter);
 
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
@@ -416,6 +444,8 @@ app.use('/api/events', eventsRouter);
 // resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
 // routers above.
 app.use('/api', formationsRouter);
+// Formation team's project pipeline (#5475) — its own router so the checklist router and its specs stay untouched.
+app.use('/api/formations/pipeline', formationPipelineRouter);
 app.use('/api/project-applications', projectApplicationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
@@ -432,6 +462,7 @@ app.use('/api/changelog', changelogRouter);
 // manager router below — different prefixes, no overlap.
 app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
+app.use('/api/projects/:projectUid/newsletter-publications', newsletterPublicationsRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
@@ -442,12 +473,13 @@ app.use('/api/ossprey', (req, res) => {
 });
 // Marketing OS Agents: Guild proxy, gated to authenticated users (LD flag controls UI visibility).
 app.use('/api/mktg-agents', mktgAgentsRouter);
-// Gatewaze admin embed pilot proxy — forwards to GW_API_URL, gated server-side by
-// GatewazeEmbedEnabled (see server-feature-flag.helper.ts) with a uniform 404 when the flag is
-// off or the caller is unauthenticated. Mounted here, after authMiddleware and the rate limiters
-// above, per the spec; see the body-parser/compression exclusions above for the other half of
-// this route's isolation from global middleware.
-app.use('/api/gw', gwProxyRouter);
+// Gatewaze host-session mode, the embed's only server surface: its session check and sign-out, and
+// its Supabase and API proxies (the latter forwards to GW_API_URL), answered with the session LFX
+// One holds for the user (gw-host-session.md). A uniform 404 unless LFX_GATEWAZE_HOST_SESSION,
+// LFX_GATEWAZE_EMBED_ENABLED and the host-session config are all on, then `requireGwEmbedAccess`.
+// Mounted here, after authMiddleware and the rate limiters above. The proxies stream the raw body,
+// so `isGwProxyPath` gives this mount the body-parser, compression and drain-guard exclusions above.
+app.use('/api/gatewaze', gatewazeRouter);
 
 app.use('/public/api/*', apiErrorHandler);
 app.use('/api/*', apiErrorHandler);
@@ -460,11 +492,6 @@ app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallback
 
 // GitHub/LinkedIn OAuth redirect target. Same in-handler impersonation guard as above.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
-
-const crowdfundingCallbackController = new CrowdfundingController();
-app.get('/crowdfunding/callback', authRateLimiter, (req, res) => crowdfundingCallbackController.handleCrowdfundingAuthCallback(req, res));
-
-const crowdfundingAuthService = new CrowdfundingAuthService();
 
 // Minimal frame protection for the embedded Gatewaze admin pilot pages only — NOT applied
 // globally. Scoped narrowly because the rest of the app's framing behavior is out of scope for
@@ -490,6 +517,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     organizations: [],
   };
 
+  // See refreshExpiredSsrAccessToken's docstring — this is what makes an idle-but-valid session
+  // render as authenticated on a full page load instead of tripping the GH-4179 LaunchDarkly stall.
+  await refreshExpiredSsrAccessToken(req);
+
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
     try {
@@ -509,19 +540,22 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
-  if (
-    auth.authenticated &&
-    req.originalUrl.startsWith('/crowdfunding') &&
-    !req.query['error'] &&
-    crowdfundingAuthService.isConfigured() &&
-    !crowdfundingAuthService.hasValidToken(req)
-  ) {
-    res.redirect(crowdfundingAuthService.getAuthorizationUrl(req, req.originalUrl));
-    return;
-  }
-
   if (auth.authenticated) {
-    const personaResult = await resolvePersonaForSsr(req, res);
+    // The stored-name lookup is bounded and fail-open, and runs alongside persona resolution so a
+    // healthy NATS adds no serial round trip. Skipped while impersonating: that identity is
+    // overridden below.
+    const [personaResult, storedName] = await Promise.all([
+      resolvePersonaForSsr(req, res),
+      auth.user && !isImpersonating(req)
+        ? resolveStoredDisplayName(req, {
+            given_name: auth.user.given_name || auth.user.first_name,
+            family_name: auth.user.family_name || auth.user.last_name,
+          })
+        : Promise.resolve(null),
+    ]);
+    if (auth.user && storedName) {
+      auth.user = { ...auth.user, name: storedName };
+    }
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
     auth.organizations = personaResult.organizations ?? [];
@@ -558,6 +592,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
+  // After the impersonation override, so the flag context is the identity the browser evaluates.
+  const flags = auth.authenticated ? await resolveSsrFlags(req, auth.user) : {};
+
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
     dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
@@ -565,16 +602,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
     intercomAppId: process.env['INTERCOM_APP_ID'] || '',
     stripePublishableKey: process.env['STRIPE_PUBLISHABLE_KEY'] || '',
-    // Gatewaze admin embed pilot (both mounts — see GW_EMBED_ROUTE_PREFIXES) — see RuntimeConfig's doc comments for the
-    // ASSUMPTION notes: no real Supabase project or LFID start URL exist for this pilot yet, so
-    // these are empty (falsy) until the real values are provided.
-    gwSupabaseUrl: process.env['GW_SUPABASE_URL'] || '',
-    // Withheld unless it is actually publishable. This value lands in the SSR payload of every
-    // page, so a service-role key pasted here would hand full RLS-bypassing database access to
-    // anyone who views source. The outlet already fails closed on an empty key with a clear
-    // "not configured" message, which is the right outcome for a misconfiguration.
-    gwSupabaseAnonKey: resolvePublishableGwSupabaseKey(req),
-    gwLfidStartUrl: process.env['GW_LFID_START_URL'] || '',
+    ...buildGwRuntimeConfig(req),
   };
 
   logger.debug(req, 'intercom_ssr_context', 'Intercom SSR inputs resolved', {
@@ -590,7 +618,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const renderContext: ServerRequestContext = {
     auth,
     runtimeConfig,
+    flags,
     notFound: false,
+    unavailable: false,
     providers: [
       { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
       { provide: REQUEST, useValue: req },
@@ -606,21 +636,13 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
       applySsrCacheHeaders(response);
 
-      // Web `Response.status` is read-only, so rebuild with 404 when the render flagged not-found.
-      // Buffer the body first (404 pages are small) so we never hand a consumed stream to the new Response.
-      if (renderContext.notFound && response.status === 200) {
-        const body = await response.text();
-        const finalResponse = new globalThis.Response(body, { status: 404, statusText: 'Not Found', headers: response.headers });
-        return writeResponseToNodeResponse(finalResponse, res);
-      }
-
-      return writeResponseToNodeResponse(response, res);
+      return writeResponseToNodeResponse(await applySsrRenderStatus(response, renderContext), res);
     })
     .catch((error) => {
       logger.error(req, 'ssr_render', ssrStartTime, error, {
         error_message: error.message,
         code: error.code,
-        url: req.url,
+        url: redactLoggedUrl(req.url, 'http://localhost'),
         method: req.method,
         user_agent: req.get('User-Agent'),
       });
@@ -795,6 +817,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
         }
       )
     ),
+    // Closes the LaunchDarkly streaming connection only if a flag was ever evaluated on this pod.
+    raceDrain('launchdarkly', LaunchDarklyServerService.shutdownIfInitialized()),
   ]);
 
   logger.success(undefined, 'graceful_shutdown', startTime, {});
@@ -814,7 +838,13 @@ export function startServer() {
       routes_ms: Math.round(routesReadyMs),
       boot_ms: Math.round(performance.now()),
     });
+    // Once per process: which model AI_MODEL resolved to and which sampling params it gets.
+    logAiModelConfig();
   });
+  // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
+  // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev
+  // server, so Realtime works only on a built server. Each upgrade runs through `app`.
+  getGatewazeRealtimeService().attach(httpServer, app);
 }
 
 const metaUrl = import.meta.url;

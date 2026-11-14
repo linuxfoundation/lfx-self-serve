@@ -1,11 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MEETING_AGENDA_MAX_LENGTH, MEETING_AGENDA_PROMPT_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  MAX_MEETING_DURATION,
+  MEETING_AGENDA_MAX_LENGTH,
+  MEETING_AGENDA_PROMPT_MAX_LENGTH,
+  MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
+  MEETING_REGISTRANT_BATCH_CONCURRENCY,
+  MEETING_REGISTRANT_BATCH_MAX,
+  MEETING_REMOVAL_SOURCE_HEADER,
+  MEETING_REMOVAL_SOURCES,
+  MIN_CUSTOM_DURATION,
+} from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   AttachmentCategory,
   BatchRegistrantOperationResponse,
+  CancelMeetingOccurrenceRequest,
   Committee,
   CommitteeMember,
   CreateMeetingAttachmentRequest,
@@ -18,10 +29,11 @@ import {
   MeetingRegistrant,
   PresignAttachmentRequest,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -33,14 +45,16 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
-import { validateUidParameter } from '../helpers/validation.helper';
+import { readRollupRootUid } from '../helpers/meeting-rollup.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
+import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -74,14 +88,14 @@ export class MeetingController {
       // forwarding it to /query/resources would send an unsupported param upstream.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { skip_registrants: _skipRegistrants, ...meetingQuery } = req.query as Record<string, any>;
-      const [{ data: meetings, page_token }, registeredMeetingIds] = await Promise.all([
+      const [{ data: meetings, page_token }, registrations] = await Promise.all([
         this.meetingService.getMeetings(req, meetingQuery, 'v1_meeting', true),
-        this.userService.getUserRegisteredMeetingIds(req, userEmail),
+        this.userService.getUserMeetingRegistrations(req, userEmail),
       ]);
 
       // List cards never surface the host key — strip it from every item unconditionally.
       const result = meetings.map((m) => {
-        const meeting = { ...m, invited: registeredMeetingIds.has(m.id) };
+        const meeting = { ...m, invited: registrations.has(m.id), invited_via_committee: registrations.get(m.id) === true };
         stripHostKey(meeting);
         return meeting;
       });
@@ -93,6 +107,36 @@ export class MeetingController {
       });
 
       res.json({ data: result, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/rollup-filters?root_project_uid=
+   *
+   * Options for the roll-up filters on a foundation or parent project's meetings list (GH-5566): the
+   * projects in the tree and their groups, as the caller can see them.
+   */
+  public async getRollupFilterOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_rollup_filters', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const rootUid = readRollupRootUid({ root_project_uid: req.query['root_project_uid'] }, 'get_meeting_rollup_filters');
+      if (!rootUid) {
+        throw ServiceValidationError.forField('root_project_uid', 'root_project_uid is required', { operation: 'get_meeting_rollup_filters' });
+      }
+
+      const options = await this.meetingService.getRollupFilterOptions(req, rootUid);
+
+      logger.success(req, 'get_meeting_rollup_filters', startTime, {
+        project_count: options.projects.length,
+        group_count: options.groups.length,
+      });
+
+      res.json(options);
     } catch (error) {
       next(error);
     }
@@ -248,13 +292,11 @@ export class MeetingController {
   public async updateMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const meetingData: UpdateMeetingRequest = req.body;
-    const { editType } = req.query;
     const startTime = logger.startOperation(req, 'update_meeting', {
       meeting_id: uid,
       project_uid: meetingData?.project_uid,
       start_time: meetingData?.start_time,
       timezone: meetingData?.timezone,
-      edit_type: editType,
       body_size: JSON.stringify(req.body).length,
     });
 
@@ -270,12 +312,11 @@ export class MeetingController {
       }
 
       // Update the meeting
-      const response = await this.meetingService.updateMeeting(req, uid, meetingData, editType as 'single' | 'future');
+      const response = await this.meetingService.updateMeeting(req, uid, meetingData);
 
       // Log the success
       logger.success(req, 'update_meeting', startTime, {
         meeting_id: uid,
-        edit_type: editType || 'single',
         status_code: response.status,
       });
 
@@ -326,9 +367,12 @@ export class MeetingController {
 
   /**
    * DELETE /meetings/:uid/occurrences/:occurrenceId
+   *
+   * Accepts an optional `{ note }` body; upstream includes the note in the cancellation emails to guests.
    */
   public async cancelOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, occurrenceId } = req.params;
+    const body = (req.body ?? {}) as Partial<CancelMeetingOccurrenceRequest>;
     const startTime = logger.startOperation(req, 'cancel_occurrence', {
       meeting_id: uid,
       occurrence_id: occurrenceId,
@@ -355,13 +399,34 @@ export class MeetingController {
         return next(validationError);
       }
 
+      // Upstream rejects a non-object body; reading `note` off an array would cancel with the reason silently lost.
+      if (req.body != null && (typeof req.body !== 'object' || Array.isArray(req.body))) {
+        return next(
+          ServiceValidationError.forField('body', 'Request body must be a JSON object', {
+            operation: 'cancel_occurrence',
+            service: 'meeting_controller',
+          })
+        );
+      }
+
+      const note = typeof body.note === 'string' ? body.note.trim() : body.note;
+      if (note != null && (typeof note !== 'string' || codePointLength(note) > MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH)) {
+        return next(
+          ServiceValidationError.forField('note', `Note must be text of at most ${MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH} characters`, {
+            operation: 'cancel_occurrence',
+            service: 'meeting_controller',
+          })
+        );
+      }
+
       // Cancel the occurrence
-      await this.meetingService.cancelOccurrence(req, uid, occurrenceId);
+      await this.meetingService.cancelOccurrence(req, uid, occurrenceId, note || undefined);
 
       // Log the success
       logger.success(req, 'cancel_occurrence', startTime, {
         meeting_id: uid,
         occurrence_id: occurrenceId,
+        has_note: !!note,
         status_code: 204,
       });
 
@@ -369,6 +434,94 @@ export class MeetingController {
       res.status(204).send();
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /meetings/:uid/occurrences/:occurrenceId
+   *
+   * Edits one occurrence of a recurring meeting: its start time and duration, and optionally its title
+   * and agenda. No recurrence is forwarded: upstream rejects one here unless `all_following_occurrences`
+   * is set, which would widen the change from this occurrence to every later one.
+   */
+  public async updateOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, occurrenceId } = req.params;
+    const body = (req.body ?? {}) as Partial<UpdateMeetingOccurrenceRequest>;
+    const startTime = logger.startOperation(req, 'update_occurrence', {
+      meeting_id: uid,
+      occurrence_id: occurrenceId,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_occurrence',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const newStartTime = typeof body.start_time === 'string' ? body.start_time.trim() : '';
+      const newStartMs = Date.parse(newStartTime);
+      const duration = body.duration;
+      const fieldErrors: Record<string, string> = {};
+
+      if (!/^\d+$/.test(occurrenceId ?? '')) {
+        fieldErrors['occurrenceId'] = 'Occurrence ID must be a Unix timestamp';
+      }
+
+      const startTimeError = this.getOccurrenceStartTimeError(newStartTime, newStartMs, occurrenceId);
+      if (startTimeError) {
+        fieldErrors['start_time'] = startTimeError;
+      }
+
+      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_MEETING_DURATION) {
+        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_MEETING_DURATION}`;
+      }
+
+      const title = typeof body.title === 'string' ? body.title.trim() : body.title;
+      if (title !== undefined && (typeof title !== 'string' || title.length === 0)) {
+        fieldErrors['title'] = 'Title must be a non-empty string';
+      }
+
+      // Upstream drops an empty agenda, so an empty value would report success and change nothing.
+      const description = typeof body.description === 'string' ? body.description.trim() : body.description;
+      if (description !== undefined && (typeof description !== 'string' || description.length === 0 || description.length > MEETING_AGENDA_MAX_LENGTH)) {
+        fieldErrors['description'] = `Agenda must be between 1 and ${MEETING_AGENDA_MAX_LENGTH} characters`;
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        return next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Occurrence update validation failed', {
+            operation: 'update_occurrence',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const normalizedStartTime = new Date(newStartMs).toISOString();
+      await this.meetingService.updateOccurrence(req, uid, occurrenceId, {
+        start_time: normalizedStartTime,
+        duration: duration as number,
+        ...(title !== undefined && { title: title as string }),
+        ...(description !== undefined && { description: description as string }),
+      });
+
+      logger.success(req, 'update_occurrence', startTime, {
+        meeting_id: uid,
+        occurrence_id: occurrenceId,
+        start_time: normalizedStartTime,
+        duration,
+        title_changed: title !== undefined,
+        agenda_changed: description !== undefined,
+        status_code: 204,
+      });
+
+      res.status(204).send();
+    } catch (error) {
       next(error);
     }
   }
@@ -386,8 +539,9 @@ export class MeetingController {
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee } = req.query;
+    const { include_rsvp, occurrence_id, fail_on_partial, committee_uid, include_committee, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
     const includeCommittee = include_committee === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
     const failOnPartial = fail_on_partial === 'true';
@@ -419,16 +573,21 @@ export class MeetingController {
       // word. The query-service FGA filtering applies to all paths, but complete-roster workflows
       // enforce additional constraints: scoped to a committee it is the "import registrants" flow
       // with its own rules and size cap; unscoped it is the composer's Guests section, which
-      // requires the organizer relation. Only the tolerant listing — the one that may come back
-      // short — goes straight through on the caller's own bearer token, relying on query-service
-      // FGA filtering as its authorization boundary.
+      // requires the organizer relation. The tolerant listing — the one that may come back short —
+      // reads on the caller's own bearer token, but only after `canViewMeetingRoster`: query-service
+      // FGA lets anyone who can view the meeting list its registrants, which is wider than who may
+      // see the guests.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
-        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
+        registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId, allDatesOnly);
+      } else if (await this.canViewRosterOrHide(req, uid, 'get_meeting_registrants')) {
+        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial, undefined, undefined, allDatesOnly);
       } else {
-        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        logger.success(req, 'get_meeting_registrants', startTime, { meeting_id: uid, roster_hidden: true, registrant_count: 0 });
+        res.json([]);
+        return;
       }
 
       // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
@@ -436,10 +595,9 @@ export class MeetingController {
       //
       // Authorized first, and only on the tolerant branch: group attribution says which committee a
       // registrant sits on, which the branches above have already established the caller may see
-      // — both authorize before they read. The tolerant listing has not, and never can: it goes
-      // through on the caller's own bearer token; query-service FGA filtering is the authorization
-      // boundary for that listing. Group attribution adds committee-membership data that goes beyond
-      // what the viewer relation protects, so without this an authenticated non-organizer replaying
+      // — both authorize before they read. The tolerant listing has not: `canViewMeetingRoster` also
+      // admits invitees of meetings that share their guests. Group attribution adds
+      // committee-membership data that goes beyond the guest list, so without this an invitee replaying
       // this URL with `include_committee=true` would receive committee attribution they aren't
       // entitled to. The
       // check sits inside the try on the same reasoning as the fetch below — this listing's
@@ -479,19 +637,24 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/my-meeting-registrants
-   * Retrieves registrants for a meeting with access control based on show_meeting_attendees setting
-   * Only returns registrants if the authenticated user is a registrant of the meeting
+   * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
+   * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on
+   * and the meeting is neither Board nor restricted.
+   * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { include_rsvp, occurrence_id } = req.query;
+    const { include_rsvp, occurrence_id, preview, rsvp_scope } = req.query;
     const includeRsvp = include_rsvp === 'true';
+    const allDatesOnly = rsvp_scope === 'all';
+    const isPreview = preview === 'true';
     const occurrenceId = typeof occurrence_id === 'string' && occurrence_id.length > 0 ? occurrence_id : undefined;
 
     const startTime = logger.startOperation(req, 'get_my_meeting_registrants', {
       meeting_id: uid,
       include_rsvp: includeRsvp,
       occurrence_id: occurrenceId,
+      preview: isPreview,
     });
 
     try {
@@ -505,20 +668,22 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Resolve the caller's identity up front. The registrant gate check below is
-      // email-only (getMeetingRegistrantsByEmail), matching the pre-existing authorization surface
-      // — this PR does not widen the gate to also match by username.
-      const userEmail = getEffectiveEmail(req) ?? undefined;
+      // Step 1: Resolve the caller's identity up front. The registrant gate check below matches by
+      // email or username, the rule `isUserInvitedToMeeting` and `canViewMeetingRoster` use, so a
+      // caller shown as invited is never refused as a non-registrant here.
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,
         has_email: !!userEmail,
+        has_username: !!username,
       });
 
-      if (!userEmail) {
+      if (!userEmail && !username) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
-          no_email: true,
+          no_identity: true,
           registrant_count: 0,
         });
         res.json([]);
@@ -535,7 +700,7 @@ export class MeetingController {
         this.meetingService.getMeetingById(req, uid, 'v1_meeting', { access: true }),
         generateM2MToken(req).then((token) => {
           m2mToken = token;
-          return this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail, token);
+          return this.meetingService.getMeetingRegistrantsForUser(req, uid, userEmail, username, token);
         }),
       ]);
 
@@ -568,6 +733,21 @@ export class MeetingController {
         return;
       }
 
+      // The roster below is read with an M2M token, so this is the only place the meeting's
+      // attendee-visibility setting can be enforced: a registrant sees the other guests only when
+      // the organizer chose to share them.
+      if (!meeting.organizer && !isMeetingAttendeeListShared(meeting)) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          is_registrant: true,
+          is_organizer: false,
+          attendees_hidden: true,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
       // Step 4: User is a registrant or organizer, fetch all registrants using the M2M token —
       // passed via ApiRequestOptions.bearerToken (not a req.bearerToken mutation) so it can't race
       // against the caller's own token on a shared req.
@@ -580,9 +760,28 @@ export class MeetingController {
 
       // The join page treats this roster's length as an authoritative denominator (GH-1731) —
       // a partial query-service page failure must surface as an error, not a silently truncated list.
-      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, true, undefined, {
-        bearerToken: m2mToken,
-      });
+      // A preview only draws a few faces and a "+N", so a short roster beats an empty one there.
+      const registrants = await this.meetingService.getMeetingRegistrants(
+        req,
+        uid,
+        includeRsvp,
+        occurrenceId,
+        !isPreview,
+        undefined,
+        { bearerToken: m2mToken },
+        allDatesOnly
+      );
+
+      if (isPreview) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          preview: true,
+          registrant_count: registrants.length,
+          include_rsvp: includeRsvp,
+        });
+        res.json(registrants);
+        return;
+      }
 
       logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
         meeting_id: uid,
@@ -681,6 +880,23 @@ export class MeetingController {
         });
 
         // Send the validation error to the next middleware
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'add_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
         next(validationError);
         return;
       }
@@ -817,6 +1033,23 @@ export class MeetingController {
         return;
       }
 
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (updateData.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrants',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'update_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
+        next(validationError);
+        return;
+      }
+
       // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
@@ -884,6 +1117,116 @@ export class MeetingController {
   }
 
   /**
+   * DELETE /meetings/:uid/registrants/self
+   * @description Removes the authenticated user as a registrant of the meeting. The caller's registrant
+   * records are resolved server-side and the delete runs under the user's own token; the M2M token is
+   * used only for the registrant lookup, after the caller's identity has been resolved from their session.
+   * The optional removal-source header only labels the log entries; an unrecognised value is logged as `unknown`.
+   */
+  public async removeMyMeetingRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const source = MEETING_REMOVAL_SOURCES.find((known) => known === req.get(MEETING_REMOVAL_SOURCE_HEADER)) ?? 'unknown';
+
+    const startTime = logger.startOperation(req, 'remove_my_meeting_registration', { meeting_id: uid, source });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'remove_my_meeting_registration',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
+
+      if (!userEmail && !username) {
+        next(
+          ServiceValidationError.forField('user', 'Unable to determine your identity', {
+            operation: 'remove_my_meeting_registration',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const m2mToken = await generateM2MToken(req);
+      const result = await this.meetingService.removeMeetingRegistrantSelf(req, uid, userEmail, username, m2mToken);
+
+      logger.success(req, 'remove_my_meeting_registration', startTime, {
+        meeting_id: uid,
+        source,
+        removed_registrant_ids: result.removed_registrant_ids,
+        removed_count: result.removed_registrant_ids.length,
+        remaining_count: result.remaining_registrant_ids.length,
+      });
+
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /meetings/:uid/registrants/self/resend
+   * @description Resends the meeting invitation to the authenticated user's own registrant record. The registrant
+   * is resolved server-side and the resend runs under the user's own token; the M2M token is used only for the
+   * registrant lookup, after the caller's identity has been resolved from their session. Upstream verifies the
+   * registrant belongs to the caller. The optional body `occurrence_id` names the occurrence the caller is viewing,
+   * so the registrant row that fits it is chosen; it only ever picks among the caller's own rows, so anything but a
+   * non-empty string is treated as absent rather than refused.
+   */
+  public async resendMyMeetingInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+
+    const startTime = logger.startOperation(req, 'resend_my_meeting_invitation', { meeting_id: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'resend_my_meeting_invitation',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
+
+      if (!userEmail && !username) {
+        next(
+          ServiceValidationError.forField('user', 'Unable to determine your identity', {
+            operation: 'resend_my_meeting_invitation',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const bodyOccurrenceId: unknown = req.body?.occurrence_id;
+      const occurrenceId = typeof bodyOccurrenceId === 'string' && bodyOccurrenceId.trim() ? bodyOccurrenceId.trim() : undefined;
+
+      const m2mToken = await generateM2MToken(req);
+      const registrantId = await this.meetingService.resendMeetingInvitationSelf(req, uid, userEmail, username, m2mToken, occurrenceId);
+
+      logger.success(req, 'resend_my_meeting_invitation', startTime, {
+        meeting_id: uid,
+        registrant_id: registrantId,
+        occurrence_id: occurrenceId,
+      });
+
+      res.status(200).json({ message: 'Invitation resent successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /meetings/:uid/registrants
    * @description Deletes one or more registrants with partial success support
    */
@@ -893,8 +1236,11 @@ export class MeetingController {
 
     const startTime = logger.startOperation(req, 'delete_meeting_registrants', {
       meeting_id: uid,
-      registrant_count: registrantsUid.length,
-      body_size: JSON.stringify(req.body).length,
+      // The body isn't validated yet, so a string or object must not be counted by its .length.
+      registrant_count: Array.isArray(registrantsUid) ? registrantsUid.length : 0,
+      // Read from the header rather than re-serializing a body that hasn't been validated yet — same
+      // field as the add and update batch endpoints.
+      request_content_length: MeetingController.readContentLength(req),
     });
 
     try {
@@ -910,8 +1256,8 @@ export class MeetingController {
         return;
       }
 
-      // Check if the registrant UIDs are provided
-      if (!registrantsUid.length) {
+      // Check if the registrant UIDs are provided (non-array bodies are rejected by the next check)
+      if (Array.isArray(registrantsUid) && !registrantsUid.length) {
         const validationError = ServiceValidationError.forField('registrantUids', 'Empty registrant UIDs array', {
           operation: 'delete_meeting_registrants',
           service: 'meeting_controller',
@@ -929,6 +1275,23 @@ export class MeetingController {
           service: 'meeting_controller',
           path: req.path,
         });
+
+        next(validationError);
+        return;
+      }
+
+      // Each item becomes one upstream write, so the array length is capped before anything is
+      // attempted — see MEETING_REGISTRANT_BATCH_MAX.
+      if (registrantsUid.length > MEETING_REGISTRANT_BATCH_MAX) {
+        const validationError = ServiceValidationError.forField(
+          'registrantUids',
+          `At most ${MEETING_REGISTRANT_BATCH_MAX} registrants can be processed per request`,
+          {
+            operation: 'delete_meeting_registrants',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
 
         next(validationError);
         return;
@@ -1093,7 +1456,7 @@ export class MeetingController {
    */
   public async getMeetingRsvpForCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { occurrenceId } = req.query;
+    const { occurrenceId, rsvp_scope } = req.query;
 
     const startTime = logger.startOperation(req, 'get_meeting_rsvp_for_current_user', {
       meeting_id: uid,
@@ -1111,7 +1474,7 @@ export class MeetingController {
       }
 
       // Get the user's RSVP using direct meeting service call
-      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined);
+      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined, rsvp_scope === 'all');
 
       // Log success
       logger.success(req, 'get_meeting_rsvp_for_current_user', startTime, {
@@ -1144,6 +1507,12 @@ export class MeetingController {
           operation: 'get_meeting_rsvps',
         })
       ) {
+        return;
+      }
+
+      if (!(await this.canViewRosterOrHide(req, uid, 'get_meeting_rsvps'))) {
+        logger.success(req, 'get_meeting_rsvps', startTime, { meeting_id: uid, roster_hidden: true, count: 0 });
+        res.json([]);
         return;
       }
 
@@ -1509,6 +1878,8 @@ export class MeetingController {
   public async uploadMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const { name, file_size, file_type, category, description } = req.query as Record<string, string>;
+    // Read through the helper rather than the cast above: a repeated key would otherwise reach the service as an array.
+    const occurrenceId = getStringQueryParam(req, 'occurrence_id')?.trim();
 
     const startTime = logger.startOperation(req, 'upload_meeting_attachment', {
       meeting_id: uid,
@@ -1570,6 +1941,7 @@ export class MeetingController {
         file_type,
         ...(category && { category: category as AttachmentCategory }),
         ...(description && { description }),
+        ...(occurrenceId && { occurrence_id: occurrenceId }),
       };
 
       const result = await this.meetingService.uploadMeetingAttachment(req, uid, fileBuffer, presignData);
@@ -1712,10 +2084,10 @@ export class MeetingController {
       // Process the first registrant
       const firstResult = await operation(inputData[0]);
 
-      // If the first registrant succeeds, process the remaining in parallel
+      // If the first registrant succeeds, process the remaining with bounded concurrency
       let results: PromiseSettledResult<R>[];
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [{ status: 'fulfilled', value: firstResult }, ...remainingResults];
       } else {
         results = [{ status: 'fulfilled', value: firstResult }];
@@ -1754,7 +2126,7 @@ export class MeetingController {
       let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
 
       if (inputData.length > 1) {
-        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        const remainingResults = await settleInBatches(inputData.slice(1), MEETING_REGISTRANT_BATCH_CONCURRENCY, operation);
         results = [...results, ...remainingResults];
       }
 
@@ -1824,6 +2196,19 @@ export class MeetingController {
         failed: failures.length,
       },
     };
+  }
+
+  /**
+   * Roster listings may come back short but must not error, so a gate check that cannot be resolved
+   * hides the rows rather than failing the request.
+   */
+  private async canViewRosterOrHide(req: Request, uid: string, operation: string): Promise<boolean> {
+    try {
+      return await this.meetingService.canViewMeetingRoster(req, uid);
+    } catch (error) {
+      logger.warning(req, operation, 'Roster visibility check failed, hiding the roster', { meeting_id: uid, err: error });
+      return false;
+    }
   }
 
   /**
@@ -2261,5 +2646,55 @@ export class MeetingController {
     // from the absent header — and anything past `2^53 - 1` has already lost precision, so the value
     // recorded is not the one the header carried.
     return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+
+  /** Returns the validation message for a rescheduled occurrence start, or `null` when it is usable. */
+  /**
+   * A past start is accepted only when it is the occurrence's own start (its id is that instant in Unix
+   * seconds): upstream needs a start on every occurrence write, so a title or agenda edit during a live
+   * occurrence resends it unchanged. Upstream still rejects one for an occurrence that has ended.
+   */
+  private getOccurrenceStartTimeError(value: string, parsedMs: number, occurrenceId: string): string | null {
+    if (!value) {
+      return 'Start time is required';
+    }
+
+    if (Number.isNaN(parsedMs) || !this.isRfc3339CalendarDateTime(value)) {
+      return 'Start time must be an RFC3339 date-time';
+    }
+
+    if (parsedMs <= Date.now() && parsedMs !== Number(occurrenceId) * 1000) {
+      return 'Start time must be in the future';
+    }
+
+    return null;
+  }
+
+  /**
+   * `Date.parse` rolls impossible components forward (`2030-02-30` becomes March 2, `T24:00` the next
+   * day), so the occurrence would silently move to a day the caller never asked for. Each component is
+   * checked against the real calendar instead.
+   */
+  private isRfc3339CalendarDateTime(value: string): boolean {
+    const match = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/.exec(value);
+    if (!match) {
+      return false;
+    }
+
+    const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+    const offsetHour = match[7] === undefined ? 0 : Number(match[7]);
+    const offsetMinute = match[8] === undefined ? 0 : Number(match[8]);
+    const calendarDay = new Date(Date.UTC(year, month - 1, day));
+
+    return (
+      calendarDay.getUTCFullYear() === year &&
+      calendarDay.getUTCMonth() === month - 1 &&
+      calendarDay.getUTCDate() === day &&
+      hour <= 23 &&
+      minute <= 59 &&
+      second <= 59 &&
+      offsetHour <= 23 &&
+      offsetMinute <= 59
+    );
   }
 }

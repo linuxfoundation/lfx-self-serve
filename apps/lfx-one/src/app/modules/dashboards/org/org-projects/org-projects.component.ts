@@ -4,7 +4,7 @@
 import { Component, computed, DestroyRef, inject, model, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import {
   DEFAULT_ORG_PROJECTS_PAGE_SIZE,
   DEFAULT_ORG_PROJECTS_SORT_DIR,
@@ -12,9 +12,10 @@ import {
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
   DEFAULT_ORG_PROJECTS_WORKSPACES,
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   HEALTH_SCORE_BADGE,
   HEALTH_SCORE_LABELS,
-  HEALTH_SCORE_PARTIAL_SUFFIX,
   INFLUENCE_BAND_BAR_FILL_CLASS,
   INFLUENCE_BAND_BAR_FILL_CLASS_LIGHT,
   INFLUENCE_BAND_LABELS,
@@ -24,9 +25,17 @@ import {
   INFLUENCE_TREND_COLOR,
   INFLUENCE_TREND_TEXT_CLASS,
   ORG_PROJECTS_ALL_FOUNDATIONS_FILTER,
+  ORG_PROJECTS_CONTRIBUTORS_TOOLTIP,
   ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL,
   ORG_PROJECTS_PAGE_SIZE_OPTIONS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
+  ORG_SCOPE_PROJECTS_NOTE,
+  ORG_SCOPE_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_LABEL,
+  ORG_TEAM_MEMBERS_OPTIONS,
+  ORG_TEAM_MEMBERS_PROJECTS_TOOLTIP,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE,
   PD_CONTRIBUTORS_CARD_KEY,
   PD_DRAWER_QUERY_PARAM,
   VALID_ORG_PROJECTS_SORT_FIELDS,
@@ -46,15 +55,18 @@ import type {
   OrgProjectsTableRow,
   OrgProjectsWorkspace,
   OrgProjectsWorkspaceId,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
   SortDirection,
 } from '@lfx-one/shared/interfaces';
-import { buildHealthAriaLabel, downloadCsv, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
+import { buildHealthAriaLabel, downloadCsv, formatHealthLabel, isPartialHealthScore, localDateStamp } from '@lfx-one/shared/utils';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogModule } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, concat, distinctUntilChanged, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, concat, distinctUntilChanged, filter, finalize, firstValueFrom, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -64,15 +76,22 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { MoreFiltersToggleComponent } from '@components/more-filters-toggle/more-filters-toggle.component';
+import { OrgScopeSelectComponent } from '@components/org-scope-select/org-scope-select.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { SelectComponent } from '@components/select/select.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgEditAccessService } from '@shared/services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
+import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
+import { readOrgTeamMembers, syncOrgTeamMembersWithUrl } from '@shared/utils/org-team-members-url.util';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
 type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
@@ -80,6 +99,7 @@ type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
 @Component({
   selector: 'lfx-org-projects',
   imports: [
+    PageHeaderComponent,
     AvatarComponent,
     ButtonComponent,
     CardComponent,
@@ -90,6 +110,8 @@ type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
     MenuComponent,
     MultiSelectComponent,
     OrgLensEmptyStateComponent,
+    MoreFiltersToggleComponent,
+    OrgScopeSelectComponent,
     PopoverModule,
     RouterLink,
     SelectComponent,
@@ -109,14 +131,21 @@ export class OrgProjectsComponent {
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
+  private readonly orgEditAccess = inject(OrgEditAccessService);
   private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
-  protected readonly contributorsDrawerQueryParams: Record<string, string> = { [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY };
   /** Label for metrics a "no activity yet" row cannot report (influence, trend). */
   protected readonly metricUnavailableLabel = ORG_PROJECTS_METRIC_UNAVAILABLE_LABEL;
+  protected readonly orgScopeNote = ORG_SCOPE_PROJECTS_NOTE;
+  protected readonly teamMembersOptions: OrgTeamMembersOption[] = [...ORG_TEAM_MEMBERS_OPTIONS];
+  protected readonly teamMembersLabel = ORG_TEAM_MEMBERS_LABEL;
+  protected readonly teamMembersTooltip = ORG_TEAM_MEMBERS_PROJECTS_TOOLTIP;
+  protected readonly teamMembersUnavailableNote = ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE;
+  protected readonly contributorsTooltip = ORG_PROJECTS_CONTRIBUTORS_TOOLTIP;
   // Static explanatory hover for the Technical / Ecosystem influence column headers.
   protected readonly influenceColumnTooltipHtml = `<ul class="flex list-disc flex-col gap-1.5 pl-4 text-left"><li>Technical influence examines code activities (commits, PRs) while ecosystem influence examines non-code collaboration activities (documentation, committees, meetings, events).</li><li>Comparing our company's share of these activities to the project total indicates greater influence in the project.</li></ul>`;
   // Minimal Chart.js line config for the Influence Trend sparkline (no axes, points, legend, or tooltip).
@@ -132,6 +161,14 @@ export class OrgProjectsComponent {
   protected readonly filterForm = new FormGroup({
     foundation: new FormControl<string>(this.route.snapshot.queryParamMap.get('foundation') ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, { nonNullable: true }),
     employees: new FormControl<string[]>(this.readEmployeesFromUrl(), { nonNullable: true }),
+  });
+  /**
+   * Organization scope (lfx-self-serve-ops#1219) and team members (lfx-self-serve-ops#1246): only the contributors
+   * column follows them. Both follow the URL (`?orgScope=`, `?teamMembers=`), dropped at their defaults.
+   */
+  protected readonly scopeForm = new FormGroup({
+    orgScope: new FormControl<OrgScopeFilter>(readOrgScope(this.route), { nonNullable: true }),
+    teamMembers: new FormControl<OrgTeamMembersFilter>(readOrgTeamMembers(this.route), { nonNullable: true }),
   });
   /** Name field for the add / rename workspace dialog. */
   protected readonly workspaceForm = new FormGroup({
@@ -176,13 +213,35 @@ export class OrgProjectsComponent {
   private readonly workspaceReload = signal(0);
   private addableProjectsSearchRequestId = 0;
   private addableProjectsSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The last name each employee id was listed under, so a selected id the current projects don't list keeps its label. */
+  private readonly employeeLabels = new Map<string, string>();
+  /** Set while `resetFilters` resets the form, so its single navigation is the only URL write. */
+  private resettingFilters = false;
   /** Action menu items rebuilt per row when the kebab is opened. */
   protected rowMenuItems: MenuItem[] = [];
 
   // Computed / toSignal
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   private readonly formValue = toSignal(this.filterForm.valueChanges, { initialValue: this.filterForm.getRawValue() });
+  private readonly orgScope: Signal<OrgScopeFilter> = toSignal(this.scopeForm.controls.orgScope.valueChanges, {
+    initialValue: this.scopeForm.controls.orgScope.value,
+  });
+  private readonly teamMembers: Signal<OrgTeamMembersFilter> = toSignal(this.scopeForm.controls.teamMembers.valueChanges, {
+    initialValue: this.scopeForm.controls.teamMembers.value,
+  });
+  // The organization scope and team members sit behind "More filters" (lfx-self-serve#4735): shown for this visit only,
+  // and each counted while not at its default so a pick from the URL stays visible on the collapsed link.
+  protected readonly moreFiltersExpanded = signal(false);
+  protected readonly hiddenFilterCount: Signal<number> = computed(
+    () => [this.orgScope() !== DEFAULT_ORG_SCOPE, this.teamMembers() !== DEFAULT_ORG_TEAM_MEMBERS].filter(Boolean).length
+  );
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
+  /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
+  protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
+  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() => ({
+    ...this.projectDetailQueryParams(),
+    [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
+  }));
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -207,6 +266,8 @@ export class OrgProjectsComponent {
   protected readonly selectedWorkspaceName = computed<string>(() => this.selectedWorkspace()?.name ?? '');
   private readonly workspacesResponse = this.initWorkspaces();
   private readonly response: Signal<OrgLensProjectsResponse | null> = this.initResponse();
+  protected readonly maintainerRolesUnavailable = computed<boolean>(() => this.response()?.maintainerRolesUnavailable === true);
+  protected readonly teamMembersUnavailable = computed<boolean>(() => this.response()?.teamMembersUnavailable === true);
   protected readonly foundationOptions = this.initFoundationOptions();
   protected readonly employeeOptions = this.initEmployeeOptions();
 
@@ -220,17 +281,12 @@ export class OrgProjectsComponent {
   /**
    * May the caller change this org's workspaces?
    *
-   * Direct writer only, matching Org Profile, the People tabs and Org Lens Access. Until LF staff
-   * existed, selecting an org implied holding a grant on it, so these controls were gated on
-   * selection alone; a staff caller can now select any org while being strictly read-only, which
-   * makes selection the wrong question. Read-only auditors also stop seeing controls they could
-   * never successfully use.
+   * Editors only (#3136): a direct or roll-up admin, or `writer` from the authorizer — matching Org
+   * Profile, the People tabs and Org Lens Access. Selection alone is the wrong question: read-only
+   * company-wide teams (`lf-staff`) and auditors can select an org but could never use these controls.
+   * Loading the page stays a pure read for non-roster editors (server `resolveCanEdit`).
    */
-  protected readonly canManageWorkspaces = computed(() => {
-    const uid = this.accountContext.selectedAccount()?.uid;
-    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
-    return !!uid && this.orgRoleGrants.editorSet().has(uid);
-  });
+  protected readonly canManageWorkspaces = this.orgEditAccess.canEditSelected;
   protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
   protected readonly selectedAddProjectCount = computed(() => this.addProjectsFormValue().projects?.length ?? 0);
@@ -282,17 +338,16 @@ export class OrgProjectsComponent {
   );
 
   public constructor() {
+    // A pick changes which projects an Employees filter matches, so it starts again on page 1, as the filters do.
+    syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router, { page: null });
+    syncOrgTeamMembersWithUrl(this.scopeForm.controls.teamMembers, this.route, this.router, { page: null });
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
-      void this.router.navigate([], {
-        relativeTo: this.route,
-        queryParams: {
-          foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
-          employees: value.employees && value.employees.length ? value.employees.join(',') : null,
-          page: null,
-        },
-        queryParamsHandling: 'merge',
-        replaceUrl: true,
+      if (this.resettingFilters) return;
+      this.writeQueryParams({
+        foundation: value.foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER ? null : value.foundation,
+        employees: value.employees && value.employees.length ? value.employees.join(',') : null,
+        page: null,
       });
     });
 
@@ -306,6 +361,18 @@ export class OrgProjectsComponent {
       this.editingWorkspace.set(null);
     });
 
+    // The selection came from the previous org's roster, so a change between two resolved orgs (a switch, or Back /
+    // Forward across one) clears it; the switch navigation strips `?employees=` too. The first org resolving
+    // (null → uid) must keep a deep-linked selection.
+    this.orgUid$
+      .pipe(
+        filter((uid) => uid !== null),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.filterForm.controls.employees.setValue([]));
+
     this.workspaceForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value.name?.trim()) {
         this.workspaceNameError.set(null);
@@ -313,7 +380,7 @@ export class OrgProjectsComponent {
     });
 
     // Clear pending debounce timer on teardown.
-    inject(DestroyRef).onDestroy(() => {
+    this.destroyRef.onDestroy(() => {
       if (this.addableProjectsSearchDebounceTimer) {
         clearTimeout(this.addableProjectsSearchDebounceTimer);
       }
@@ -354,9 +421,20 @@ export class OrgProjectsComponent {
     });
   }
 
+  /** One navigation clears every filter, the organization scope, team members and the workspace, so no write can restore another's pre-reset params. */
   protected resetFilters(): void {
+    this.resettingFilters = true;
     this.filterForm.reset({ foundation: ORG_PROJECTS_ALL_FOUNDATIONS_FILTER, employees: [] });
-    this.selectWorkspace(DEFAULT_ORG_PROJECTS_WORKSPACE_ID);
+    this.resettingFilters = false;
+    // The organization scope and team members too, hidden behind "More filters" or not (lfx-self-serve#4735); the URL syncs reset their pickers.
+    this.writeQueryParams({
+      foundation: null,
+      employees: null,
+      workspace: null,
+      page: null,
+      [ORG_SCOPE_QUERY_PARAM]: null,
+      [ORG_TEAM_MEMBERS_QUERY_PARAM]: null,
+    });
   }
 
   protected openAddProjects(): void {
@@ -739,12 +817,14 @@ export class OrgProjectsComponent {
         workspaceError: this.workspaceError(),
         workspaceLoading: this.workspaceLoading(),
         _workspaces: this.workspacesResponse(),
+        orgScope: this.orgScope(),
+        teamMembers: this.teamMembers(),
         _reload: this.reload(),
       }))
     );
     return toSignal(
       account$.pipe(
-        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces }) => {
+        switchMap(({ account, workspace, workspaceError, workspaceLoading, _workspaces, orgScope, teamMembers }) => {
           if (!account?.uid || !workspace || workspaceError || workspaceLoading || _workspaces === null) {
             this.projectsLoading.set(false);
             return of(null);
@@ -758,7 +838,14 @@ export class OrgProjectsComponent {
           this.projectsError.set(false);
           return concat(
             of(null),
-            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs).pipe(
+            this.projectsService.getProjects(account.uid, account.accountName ?? '', workspace.projectSlugs, orgScope, teamMembers).pipe(
+              tap((response) => {
+                for (const project of response.projects) {
+                  for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+                    this.employeeLabels.set(person.id, person.name);
+                  }
+                }
+              }),
               catchError((err) => {
                 console.error('Failed to load org projects', err);
                 this.projectsError.set(true);
@@ -987,14 +1074,20 @@ export class OrgProjectsComponent {
         byId.set(person.id, person.name);
       }
     }
-    return [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    const options = [...byId.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+    // A selected id no project here lists (stale link, other workspace) stays offered so the picker can show and remove it.
+    for (const id of new Set(this.formValue().employees ?? [])) {
+      if (!byId.has(id)) options.push({ value: id, label: this.employeeLabels.get(id) ?? id });
+    }
+    return options;
   }
 
   private buildFilteredProjects(): OrgLensProject[] {
     const all = this.response()?.projects ?? [];
     const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
-    const validEmployeeIds = new Set(this.employeeOptions().map((option) => option.value));
-    const employees = (this.formValue().employees ?? []).filter((id) => validEmployeeIds.has(id));
+    // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
+    // predicate and match nothing, so a selection never widens the list or the CSV export.
+    const employees = this.formValue().employees ?? [];
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
       .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
@@ -1054,15 +1147,14 @@ export class OrgProjectsComponent {
     return Object.prototype.hasOwnProperty.call(HEALTH_SCORE_BADGE, health) ? health : 'unavailable';
   }
 
-  // Bare band label, plus " - Partial" when the BFF-sourced coveredCategoryCount marks a 2-of-3 score
-  // (never recomputed locally — see OrgLensProject.healthCoveredCategoryCount). Gated on available:
-  // an unavailable badge never carries the suffix.
+  // Band label, marked partial from the BFF-sourced covered count; an unavailable badge never gets the marker.
   private healthLabelFor(project: OrgLensProject): string {
-    const label = HEALTH_SCORE_LABELS[this.normalizeHealth(project.health)];
-    if (project.health === 'unavailable') {
+    const health = this.normalizeHealth(project.health);
+    const label = HEALTH_SCORE_LABELS[health];
+    if (health === 'unavailable') {
       return label;
     }
-    return isPartialHealthScore(project.healthCoveredCategoryCount) ? `${label}${HEALTH_SCORE_PARTIAL_SUFFIX}` : label;
+    return formatHealthLabel(label, isPartialHealthScore(project.healthCoveredCategoryCount));
   }
 
   // Fallback rows (explicit health-only/unavailable, influence/trend "Unavailable") always sort after measured rows,
@@ -1186,5 +1278,12 @@ export class OrgProjectsComponent {
   private readEmployeesFromUrl(): string[] {
     const raw = this.route.snapshot.queryParamMap.get('employees');
     return raw ? raw.split(',').filter(Boolean) : [];
+  }
+
+  /** Merges `queryParams` into the URL once no other navigation (an org switch swapping the path) is in flight. */
+  private writeQueryParams(queryParams: Params): void {
+    runWhenRouterIdle(this.router, this.destroyRef, () => {
+      void this.router.navigate([], { relativeTo: this.route, queryParams, queryParamsHandling: 'merge', replaceUrl: true });
+    });
   }
 }

@@ -19,6 +19,7 @@ const service = {
   listMine: vi.fn(),
   listQueue: vi.fn(),
   isFormationTeamMember: vi.fn(),
+  isLfStaffMember: vi.fn(),
   isFormationTeamMemberStrict: vi.fn(),
   create: vi.fn(),
   revise: vi.fn(),
@@ -120,10 +121,14 @@ describe('reads', () => {
     expect(service.listMine).not.toHaveBeenCalled();
   });
 
-  it('GET /access reports formation-team membership', async () => {
+  it('GET /access reports formation-team and LF-staff membership independently (#5544)', async () => {
     service.isFormationTeamMember.mockResolvedValue(true);
-    const res = await send('GET', '/access');
-    expect(await res.json()).toEqual({ is_formation_team: true });
+    service.isLfStaffMember.mockResolvedValue(false);
+    expect(await (await send('GET', '/access')).json()).toEqual({ is_formation_team: true, is_lf_staff: false });
+
+    service.isFormationTeamMember.mockResolvedValue(false);
+    service.isLfStaffMember.mockResolvedValue(true);
+    expect(await (await send('GET', '/access')).json()).toEqual({ is_formation_team: false, is_lf_staff: true });
   });
 });
 
@@ -168,6 +173,43 @@ describe('create', () => {
     const res = await send('POST', '/', {});
     expect(res.status).toBe(400);
   });
+
+  describe('target_parent_uid hint (#5187)', () => {
+    const application = { project_name: 'Example' };
+
+    it('passes a UUID through upstream', async () => {
+      const res = await send('POST', '/', { application, target_parent_uid: PARENT_UID });
+      expect(res.status).toBe(201);
+      expect(service.create.mock.calls[0][1]).toEqual({
+        submitter_username: 'jdoe',
+        submitter_name: 'Jane Doe',
+        submitter_email: 'jane@example.org',
+        target_parent_uid: PARENT_UID,
+        application,
+      });
+    });
+
+    it.each([
+      ['a missing key', {}],
+      ['null', { target_parent_uid: null }],
+    ])('sends no key upstream for %s', async (_label, extra) => {
+      const res = await send('POST', '/', { application, ...extra });
+      expect(res.status).toBe(201);
+      expect(service.create.mock.calls[0][1]).not.toHaveProperty('target_parent_uid');
+    });
+
+    it.each([
+      ['a slug', 'agentic-ai-foundation'],
+      ['an empty string', ''],
+      ['a number', 42],
+      ['an object', { uid: PARENT_UID }],
+    ])('refuses %s with 400 and makes no upstream call', async (_label, value) => {
+      const res = await send('POST', '/', { application, target_parent_uid: value });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(await res.json())).toContain('target_parent_uid');
+      expect(service.create).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('impersonation', () => {
@@ -193,6 +235,11 @@ describe('mutations', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('etag')).toBe('3');
     expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', answers);
+  });
+
+  it('revise never forwards target_parent_uid (#5187)', async () => {
+    await send('PUT', `/${UID}`, { application: { project_name: 'X' }, target_parent_uid: PARENT_UID }, { 'If-Match': '2' });
+    expect(service.revise).toHaveBeenCalledWith(expect.anything(), UID, '2', { project_name: 'X' });
   });
 
   it('revise without a parent key skips the formation-team check', async () => {

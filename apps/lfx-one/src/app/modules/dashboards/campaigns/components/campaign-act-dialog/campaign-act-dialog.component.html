@@ -1,0 +1,175 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="campaign-act-dialog">
+  <p class="text-sm text-gray-500" data-testid="campaign-act-dialog-subject">
+    {{ data.campaignName }} · {{ platformLabel }} campaign {{ data.platformCampaignId }}
+  </p>
+
+  @switch (state()) {
+    @case ('resolving') {
+      <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="campaign-act-dialog-resolving">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Finding this campaign in LFX One…
+      </p>
+    }
+    @case ('loading-record') {
+      <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="campaign-act-dialog-loading-record">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Reading the campaign's current state…
+      </p>
+    }
+    @case ('resolve-failed') {
+      <div class="flex flex-col items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3" role="alert" data-testid="campaign-act-dialog-resolve-failed">
+        <p class="text-sm text-red-800">{{ failureMessage() }}</p>
+        <lfx-button label="Try again" size="small" severity="secondary" [outlined]="true" (onClick)="resolve()" data-testid="campaign-act-dialog-retry" />
+      </div>
+    }
+    @case ('record-failed') {
+      <div class="flex flex-col items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3" role="alert" data-testid="campaign-act-dialog-record-failed">
+        <p class="text-sm text-red-800">{{ failureMessage() }}</p>
+        <lfx-button
+          label="Try again"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="loadRecord()"
+          data-testid="campaign-act-dialog-record-retry" />
+      </div>
+    }
+    @case ('unowned') {
+      <div class="flex flex-col items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="campaign-act-dialog-unowned">
+        <p class="text-sm text-gray-700">{{ unownedMessage }}</p>
+        <lfx-button label="Adopt this campaign" size="small" (onClick)="adopt()" data-testid="campaign-act-dialog-adopt" />
+      </div>
+    }
+    @case ('ambiguous') {
+      <div class="flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3" role="alert" data-testid="campaign-act-dialog-ambiguous">
+        <p class="text-sm font-semibold text-amber-900">Not changed: {{ matchCount() }} campaigns in LFX One carry this id</p>
+        <p class="text-sm text-amber-800">{{ ambiguousMessage }}</p>
+      </div>
+    }
+    @case ('ready') {
+      @if (record(); as campaign) {
+        <div class="flex flex-col gap-3" data-testid="campaign-act-dialog-ready">
+          <p class="text-xs text-gray-500" data-testid="campaign-act-dialog-status">Status in LFX One: {{ status() }}</p>
+
+          @if (conflicted()) {
+            <div class="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="campaign-act-dialog-conflict">
+              <p class="text-sm text-amber-900">This campaign changed since it was loaded, and nothing was changed.</p>
+              <lfx-button
+                label="Reload campaign"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                [disabled]="pending()"
+                (onClick)="loadRecord()"
+                data-testid="campaign-act-dialog-reload" />
+            </div>
+          }
+
+          @switch (data.lever) {
+            @case ('pause_resume') {
+              <div class="flex flex-col gap-2" data-testid="campaign-act-dialog-toggle-panel">
+                @if (toggleAction() === 'unavailable') {
+                  <p class="text-sm text-gray-500" id="campaign-act-toggle-unavailable" data-testid="campaign-act-dialog-toggle-unavailable">
+                    {{ toggleUnavailableReason() }}
+                  </p>
+                } @else {
+                  @for (note of resumeNotes(); track note) {
+                    <p class="text-xs text-gray-600" data-testid="campaign-act-dialog-resume-note">{{ note }}</p>
+                  }
+                  @if (resumeAdopted()) {
+                    <!--
+                      An adopted campaign: campaign-service never resumes it. A raw button because
+                      lfx-button forwards neither aria-disabled nor aria-describedby to its inner
+                      button; aria-disabled (not disabled) keeps it focusable so the reason is read
+                      with it, and toggle() ignores the click.
+                    -->
+                    <p class="text-xs text-gray-600" id="campaign-act-resume-adopted" data-testid="campaign-act-dialog-resume-adopted">
+                      {{ resumeAdoptedReason() }}
+                    </p>
+                    <div>
+                      <button
+                        type="button"
+                        aria-disabled="true"
+                        aria-describedby="campaign-act-resume-adopted"
+                        [attr.aria-label]="toggleLabel() + ' ' + campaign.campaign_name"
+                        (click)="toggle()"
+                        class="cursor-not-allowed rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                        data-testid="campaign-act-dialog-toggle">
+                        {{ toggleLabel() }}
+                      </button>
+                    </div>
+                  } @else {
+                    <div>
+                      <lfx-button
+                        [label]="toggleLabel()"
+                        size="small"
+                        [ariaLabel]="toggleLabel() + ' ' + campaign.campaign_name"
+                        [disabled]="pending() || conflicted()"
+                        [loading]="pending()"
+                        (onClick)="toggle()"
+                        data-testid="campaign-act-dialog-toggle" />
+                    </div>
+                  }
+                }
+                @if (toggleOutcome(); as outcome) {
+                  @if (outcome.state === 'unconfirmed') {
+                    <p class="text-sm text-amber-800" data-testid="campaign-act-dialog-toggle-unconfirmed">{{ outcome.message }}</p>
+                  } @else if (outcome.state === 'failed') {
+                    <p class="text-sm text-red-600" data-testid="campaign-act-dialog-toggle-error">{{ outcome.message }}</p>
+                  }
+                }
+              </div>
+            }
+            @case ('budget') {
+              @if (budgetUnavailableReason(); as reason) {
+                <p class="text-sm text-gray-500" data-testid="campaign-act-dialog-budget-unavailable">{{ reason }}</p>
+              } @else {
+                @if (confirmedBudget(); as budget) {
+                  <p class="text-xs text-gray-600" data-testid="campaign-act-dialog-budget-current">
+                    Budget set here: {{ budget.budget }} {{ budget.budgetType }} (ad account currency)
+                  </p>
+                }
+                <lfx-campaign-budget-form
+                  [campaignId]="campaign.id"
+                  [campaignName]="campaign.campaign_name"
+                  [knownBudgetType]="confirmedBudget()?.budgetType ?? null"
+                  [initialBudget]="confirmedBudget()?.budget ?? null"
+                  [dailyOnly]="budgetDailyOnly()"
+                  [pending]="pending()"
+                  [blockedReason]="budgetBlockedReason()"
+                  [outcome]="budgetOutcome()"
+                  (submitBudget)="changeBudget($event)"
+                  (cancelEdit)="close()" />
+              }
+            }
+            @case ('bid') {
+              @if (bidUnavailableReason(); as reason) {
+                <p class="text-sm text-gray-500" data-testid="campaign-act-dialog-bid-unavailable">{{ reason }}</p>
+              } @else {
+                @if (confirmedBid(); as bid) {
+                  <p class="text-xs text-gray-600" data-testid="campaign-act-dialog-bid-current">Bid set here: {{ bid.bid }} (ad account currency)</p>
+                }
+                <lfx-campaign-bid-form
+                  [campaignId]="campaign.id"
+                  [campaignName]="campaign.campaign_name"
+                  [initialBid]="confirmedBid()?.bid ?? null"
+                  [pending]="pending()"
+                  [blockedReason]="bidBlockedReason()"
+                  [outcome]="bidOutcome()"
+                  (submitBid)="changeBid($event)"
+                  (cancelEdit)="close()" />
+              }
+            }
+          }
+        </div>
+      }
+    }
+  }
+
+  <div class="flex justify-end">
+    <lfx-button label="Close" size="small" severity="secondary" [text]="true" (onClick)="close()" data-testid="campaign-act-dialog-close" />
+  </div>
+</div>

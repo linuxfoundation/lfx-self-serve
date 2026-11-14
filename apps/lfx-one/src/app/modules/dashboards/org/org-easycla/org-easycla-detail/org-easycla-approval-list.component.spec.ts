@@ -48,6 +48,7 @@ describe('OrgEasyclaApprovalListComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: true,
       ...overrides,
     };
   }
@@ -318,8 +319,8 @@ describe('OrgEasyclaApprovalListComponent', () => {
   });
 
   /**
-   * ACS denies the update. Roster `canEdit` is PUT defence-in-depth and does not drive
-   * Add/Edit/Remove — so a stale ACL that still says the viewer can edit cannot un-hide them.
+   * ACS denies the update. Roster `canEdit` alone cannot show Add/Edit/Remove, so a stale ACL
+   * that still says the viewer can edit cannot un-hide them.
    */
   describe('a caller who may only read', () => {
     it('offers no add, edit or delete control', async () => {
@@ -350,6 +351,31 @@ describe('OrgEasyclaApprovalListComponent', () => {
     });
   });
 
+  describe('a caller ACS allows to update but who is not on the roster', () => {
+    it.each([
+      ['is not on the roster', false],
+      ['has no roster answer', undefined],
+    ])('offers no add, edit or delete control when the viewer %s', async (_case, viewerIsClaManager) => {
+      const fixture = await render(claGroup({ viewerIsClaManager }));
+
+      expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-edit')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-delete')).toBeNull();
+      expect(allByTestId(fixture, 'org-easycla-approval-row')).toHaveLength(1);
+    });
+
+    it('offers no add, edit or delete control when the row names the viewer but the fresh list says they cannot edit', async () => {
+      getApprovalList.mockReturnValue(of(list([{ kind: 'domain', value: 'example.com' }], false)));
+
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
+
+      expect(byTestId(fixture, 'org-easycla-approval-add')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-edit')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-approval-delete')).toBeNull();
+      expect(allByTestId(fixture, 'org-easycla-approval-row')).toHaveLength(1);
+    });
+  });
+
   describe('a caller ACS allows to update', () => {
     it('offers the write controls to a CLA manager', async () => {
       const fixture = await render();
@@ -357,6 +383,18 @@ describe('OrgEasyclaApprovalListComponent', () => {
       expect(byTestId(fixture, 'org-easycla-approval-add')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-approval-edit')).not.toBeNull();
       expect(byTestId(fixture, 'org-easycla-approval-delete')).not.toBeNull();
+    });
+
+    // The approval-list permission check has to carry the distinct foundation id alongside the
+    // covered-project id so an EasyCLA grant on the foundation pair wins the OR for Add/Edit/
+    // Remove. Without this assertion, dropping the fourth argument at `component.ts`'s
+    // `checkPermission(...)` call would leave the suite green and hide those controls from a
+    // foundation-only manager. The managers and contributor-acknowledgments specs assert the same
+    // shape; this one is the regression pin for the approval list.
+    it('sends both the project pair and the foundation pair to checkPermission', async () => {
+      await render(claGroup({ pairProjectSfid: 'a09410000182dD3AAI', foundationSfid: 'a09410000182dFOUND' }));
+
+      expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'approval-list-update', 'a09410000182dD3AAI', 'a09410000182dFOUND');
     });
   });
 
@@ -452,26 +490,27 @@ describe('OrgEasyclaApprovalListComponent', () => {
       });
     });
 
-    it("says the previous value's acknowledgements were invalidated", async () => {
+    it("says the previous value's acknowledgments show as Not Authorized", async () => {
       const fixture = await render();
       click(fixture, 'org-easycla-approval-edit');
 
       closeDialogWith({ add: [{ kind: 'domain', value: 'new.example.com' }], remove: [{ kind: 'domain', value: 'example.com' }] });
 
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('invalidated') }));
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('now show as Not Authorized') }));
+      expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('invalidated') }));
     });
   });
 
   describe('deleting an entry', () => {
-    // The producer flips the matching acknowledgements to unapproved and emails the contributors.
-    // A CLA manager is entitled to know that before the click, not from the receipt.
-    it('names the invalidation in the confirmation, before anything is sent', async () => {
+    it('names the Not Authorized outcome in the confirmation, before anything is sent', async () => {
       const fixture = await render();
 
       click(fixture, 'org-easycla-approval-delete');
 
       expect(confirmations).toHaveLength(1);
-      expect(confirmations[0].message).toContain('invalidated');
+      expect(confirmations[0].message).toContain('Their acknowledgments will show as Not Authorized until you add the entry back.');
+      expect(confirmations[0].message).not.toContain('invalidated');
+      expect(confirmations[0].message).not.toContain('acknowledge it again');
       expect(confirmations[0].message).toContain('example.com');
       expect(updateApprovalList).not.toHaveBeenCalled();
     });
@@ -502,7 +541,9 @@ describe('OrgEasyclaApprovalListComponent', () => {
 
       confirmations[0].accept?.();
 
-      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: expect.stringContaining('invalidated') }));
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'success', detail: 'The entry was removed. Acknowledgments it covered now show as Not Authorized.' })
+      );
     });
   });
 

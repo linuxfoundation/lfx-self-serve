@@ -5,6 +5,7 @@
 // which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
+import { MENTORSHIP_ENROLL_NAME_MAX } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +26,9 @@ vi.mock('../utils/auth-helper', () => ({
 
 const { MentorshipController } = await import('./mentorship.controller');
 const { MentorshipService } = await import('../services/mentorship.service');
-const { MicroserviceError, ServiceValidationError } = await import('../errors');
+const { AuthenticationError, MicroserviceError, ServiceValidationError } = await import('../errors');
+const { getUsernameFromAuth } = await import('../utils/auth-helper');
+const { logger } = await import('../services/logger.service');
 
 describe('MentorshipController program review', () => {
   const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
@@ -47,12 +50,24 @@ describe('MentorshipController program review', () => {
   });
 
   it('returns the review for a program UUID', async () => {
-    const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue({ ...review, status: 'pending' });
+    const details = {
+      ...review,
+      status: 'pending' as const,
+      projectName: null,
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+      hasDetails: true,
+    };
+    const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue(details);
 
     await controller.getProgramReview(buildReq({ programId }), res, next);
 
     expect(getProgramReview).toHaveBeenCalledWith(expect.anything(), programId);
-    expect(res.json).toHaveBeenCalledWith({ ...review, status: 'pending' });
+    expect(res.json).toHaveBeenCalledWith(details);
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -106,5 +121,174 @@ describe('MentorshipController program review', () => {
     expect(next).toHaveBeenCalledWith(error);
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: status }));
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+describe('MentorshipController enroll lookups', () => {
+  let controller: InstanceType<typeof MentorshipController>;
+  let res: Response;
+  let next: NextFunction;
+
+  // Express parses a repeated query param into an array.
+  const buildReq = (query: Record<string, string | string[]>): Request => ({ query }) as unknown as Request;
+
+  beforeEach(() => {
+    controller = new MentorshipController();
+    res = { json: vi.fn() } as unknown as Response;
+    next = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it('returns the upstream availability and logs only the flag', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: false });
+
+    await controller.isProgramNameAvailable(buildReq({ name: '  Secret Program Name ' }), res, next);
+
+    expect(isAvailable).toHaveBeenCalledWith(expect.anything(), 'Secret Program Name', undefined);
+    expect(res.json).toHaveBeenCalledWith({ available: false });
+    expect(
+      vi
+        .mocked(logger.success)
+        .mock.calls.map(([, , , metadata]) => JSON.stringify(metadata))
+        .join()
+    ).not.toContain('Secret Program Name');
+  });
+
+  it('passes a program to leave out of the check', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockResolvedValue({ available: true });
+    const programId = '3f2c1a9e-7b4d-4c1e-9a55-0d6e8f1a2b3c';
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'Program', excludeProgramId: programId }), res, next);
+
+    expect(isAvailable).toHaveBeenCalledWith(expect.anything(), 'Program', programId);
+  });
+
+  it('rejects a program to leave out that is not a UUID before calling upstream', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'Program', excludeProgramId: 'program-1' }), res, next);
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('rejects a blank name before calling upstream', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
+
+    await controller.isProgramNameAvailable(buildReq({ name: '   ' }), res, next);
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('rejects a name longer than the form allows before calling upstream', async () => {
+    const isAvailable = vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable');
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'a'.repeat(MENTORSHIP_ENROLL_NAME_MAX + 1) }), res, next);
+
+    expect(isAvailable).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('forwards an upstream name-check failure to the error handler', async () => {
+    const failure = new MicroserviceError('upstream failed', 500, 'UPSTREAM_ERROR');
+    vi.spyOn(MentorshipService.prototype, 'isProgramNameAvailable').mockRejectedValue(failure);
+
+    await controller.isProgramNameAvailable(buildReq({ name: 'Program' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('parses the project search, page_token and page_size and returns the page', async () => {
+    const page = { data: [{ id: 'uid-1', name: 'Alpha', slug: 'alpha' }], page_token: 'cursor-3' };
+    const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects').mockResolvedValue(page);
+
+    await controller.getLfProjects(buildReq({ search: ' alp ', page_token: ' cursor-2 ', page_size: '5' }), res, next);
+
+    expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: 'alp', pageToken: 'cursor-2', limit: 5 });
+    expect(res.json).toHaveBeenCalledWith(page);
+  });
+
+  it('passes a parent project through, so the Foundation lens picker lists its sub-projects only', async () => {
+    const parentUid = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects').mockResolvedValue({ data: [] });
+
+    await controller.getLfProjects(buildReq({ parentUid: ` ${parentUid} ` }), res, next);
+
+    expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: undefined, pageToken: undefined, limit: undefined, parentUid });
+  });
+
+  it.each([['cncf'], [['7c9e6679-7425-40de-944b-e07fc1f90ae7', '0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47']]])(
+    'rejects a parent project %j that is not one UUID with a 400, rather than listing every project',
+    async (parentUid) => {
+      const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects');
+
+      await controller.getLfProjects(buildReq({ parentUid }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(getLfProjects).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('MentorshipController LFX profile sync', () => {
+  const fields = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
+  let controller: InstanceType<typeof MentorshipController>;
+  let res: Response;
+  let next: NextFunction;
+
+  const buildReq = (body?: unknown): Request => ({ params: {}, body }) as unknown as Request;
+
+  beforeEach(() => {
+    controller = new MentorshipController();
+    res = { status: vi.fn().mockReturnThis(), send: vi.fn() } as unknown as Response;
+    next = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('hands the checked fields to the sync and answers 204', async () => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields').mockResolvedValue(2);
+
+    await controller.syncLfxProfile(buildReq(fields), res, next);
+
+    expect(sync).toHaveBeenCalledWith(expect.anything(), fields);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('ignores an email in the body, since the sync reads the verified primary email itself', async () => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields').mockResolvedValue(1);
+
+    await controller.syncLfxProfile(buildReq({ ...fields, email: 'not-an-email' }), res, next);
+
+    expect(sync).toHaveBeenCalledWith(expect.anything(), fields);
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it.each([undefined, 'text', { logoUrl: 'http://example.com/avatar.png' }, { firstName: '' }])('rejects the body %j before calling upstream', async (body) => {
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields');
+
+    await controller.syncLfxProfile(buildReq(body), res, next);
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('refuses a caller with no session', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null as unknown as string);
+    const sync = vi.spyOn(MentorshipService.prototype, 'syncLfxProfileFields');
+
+    await controller.syncLfxProfile(buildReq(fields), res, next);
+
+    expect(sync).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(AuthenticationError));
   });
 });

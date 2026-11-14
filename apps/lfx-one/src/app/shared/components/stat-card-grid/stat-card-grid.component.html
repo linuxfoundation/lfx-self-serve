@@ -4,11 +4,11 @@
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
   <div class="grid w-full grid-cols-1" [class]="gridColsClass() + ' ' + gridDividerClass()">
     @for (card of cards(); track card.label) {
-      <div class="flex items-center gap-3 p-4" [attr.data-testid]="'stat-card-' + card.label">
+      <ng-template #cellContent>
         <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
           <i [class]="card.icon + ' text-xl'" aria-hidden="true"></i>
         </div>
-        <div class="flex flex-col gap-0.5">
+        <div class="flex flex-col gap-0.5 min-w-0">
           @if (loading()) {
             <p class="text-xl font-medium text-gray-400">&mdash;</p>
           } @else {
@@ -16,7 +16,14 @@
           }
           <p class="text-sm font-normal text-gray-900">{{ card.label }}</p>
           @if (card.subLine && !loading()) {
-            <p class="text-xs text-gray-400">{{ card.subLine }}</p>
+            <p class="text-xs" [class]="card.subLineClass ?? 'text-gray-400'">{{ card.subLine }}</p>
+          }
+          @if (card.progress && !loading()) {
+            <div class="flex h-1.5 w-full overflow-hidden rounded-full bg-gray-200 my-1" role="img" [attr.aria-label]="card.progress.ariaLabel">
+              @for (segment of card.progress.segments; track $index) {
+                <div class="h-full" [class]="segment.className" [style.width.%]="segment.percentage"></div>
+              }
+            </div>
           }
           @if (card.delta && !loading()) {
             <p
@@ -26,8 +33,42 @@
               {{ card.delta.label }}
             </p>
           }
+          @if (card.ctas?.length) {
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              @for (cta of card.ctas; track cta.action) {
+                <lfx-button
+                  [label]="cta.label"
+                  [icon]="cta.icon"
+                  [text]="!!cta.text"
+                  [outlined]="!cta.text"
+                  severity="secondary"
+                  size="small"
+                  [ariaLabel]="cta.ariaLabel"
+                  [disabled]="loading() || card.disabled || cta.disabled"
+                  [attr.data-testid]="'stat-card-cta-' + cta.action"
+                  (onClick)="actionClick.emit(cta.action)"></lfx-button>
+              }
+            </div>
+          }
         </div>
-      </div>
+      </ng-template>
+      @let action = card.ctas?.length ? undefined : card.action;
+      @if (action) {
+        <button
+          type="button"
+          class="flex items-center gap-3 p-4 min-w-0 text-left transition-colors enabled:hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:-outline-offset-2"
+          [class.bg-blue-50]="card.selected"
+          [disabled]="loading() || card.disabled"
+          [attr.aria-pressed]="card.selected === undefined ? null : card.selected"
+          [attr.data-testid]="'stat-card-' + action"
+          (click)="actionClick.emit(action)">
+          <ng-container [ngTemplateOutlet]="cellContent" />
+        </button>
+      } @else {
+        <div class="flex items-center gap-3 p-4" [attr.data-testid]="'stat-card-' + card.label">
+          <ng-container [ngTemplateOutlet]="cellContent" />
+        </div>
+      }
     }
   </div>
 </lfx-card>

@@ -2,17 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, type Signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
+import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingService } from '@services/meeting.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-cancel-occurrence-confirmation',
-  imports: [ButtonComponent, MessageComponent, MeetingTimePipe],
+  imports: [ReactiveFormsModule, ButtonComponent, MessageComponent, TextareaComponent, MeetingTimePipe],
   templateUrl: './cancel-occurrence-confirmation.component.html',
 })
 export class CancelOccurrenceConfirmationComponent {
@@ -23,15 +30,30 @@ export class CancelOccurrenceConfirmationComponent {
   public readonly meeting: Meeting = this.config.data.meeting;
   public readonly occurrence: MeetingOccurrence = this.config.data.occurrence;
   public readonly isCanceling = signal(false);
+  /** Meeting v2 styling (compact details card, icon-only warning, taller reason field). Flag off keeps the pre-v2 look. */
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(inject(FeatureFlagService));
+  public readonly noteMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
+  public readonly form = new FormGroup({
+    note: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH, { trim: true })] }),
+  });
+
+  public constructor() {
+    // Closing mid-request would drop the result, so the parent never refreshes past the cancelled date.
+    lockDynamicDialogWhile(this.isCanceling);
+  }
 
   public onCancel(): void {
     this.dialogRef.close({ confirmed: false });
   }
 
   public onConfirm(): void {
+    if (this.form.invalid) {
+      return;
+    }
     this.isCanceling.set(true);
+    const note = this.form.controls.note.value.trim();
 
-    this.meetingService.cancelOccurrence(this.meeting.id, this.occurrence.occurrence_id).subscribe({
+    this.meetingService.cancelOccurrence(this.meeting.id, this.occurrence.occurrence_id, note || undefined).subscribe({
       next: () => {
         this.isCanceling.set(false);
         this.dialogRef.close({ confirmed: true });

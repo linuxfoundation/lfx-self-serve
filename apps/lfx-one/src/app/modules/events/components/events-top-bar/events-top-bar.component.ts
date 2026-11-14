@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, output, Signal, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, Signal, signal } from '@angular/core';
 import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FilterOption } from '@lfx-one/shared/interfaces';
-import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, shareReplay, skip, switchMap } from 'rxjs';
+import { debounceTime, distinctUntilChanged, finalize, map, of, shareReplay, skip, switchMap } from 'rxjs';
 import { EventsService } from '@app/shared/services/events.service';
 import { EVENT_ROLE_OPTIONS, MY_EVENT_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 
@@ -25,6 +25,8 @@ export class EventsTopBarComponent {
   public readonly projectName = input<string | undefined>(undefined);
   /** When true, foundation options are scoped to the user's registered past events */
   public readonly isPast = input<boolean>(false);
+  public readonly registeredOnly = input<boolean | null>(false);
+  public readonly foundation = input<string | null>(null);
   public readonly searchPlaceholder = input<string>('Search events...');
   public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
@@ -59,14 +61,14 @@ export class EventsTopBarComponent {
       this.searchQueryChange.emit(value || '');
     });
 
-    // Clear the foundation dropdown when the tab changes (isPast flips).
-    // emitEvent: false prevents a spurious foundationChange output that would conflict
-    // with the dashboard's own selectedFoundation reset.
-    toObservable(this.isPast)
-      .pipe(skip(1), takeUntilDestroyed())
-      .subscribe(() => {
-        this.searchForm.get('foundation')?.setValue(null, { emitEvent: false });
-      });
+    // The parent owns Foundation resets; syncing silently avoids echoing a second filter change.
+    effect(() => {
+      const foundation = this.foundation();
+      const control = this.searchForm.get('foundation');
+      if (control?.value !== foundation) {
+        control?.setValue(foundation, { emitEvent: false });
+      }
+    });
 
     // Clear status when the available options change (e.g. switching between event tabs
     // and visa/TF tabs which have different status sets).
@@ -113,12 +115,22 @@ export class EventsTopBarComponent {
 
   private initFoundationOptions(): Signal<FilterOption[]> {
     const defaultOptions = [{ label: 'All Foundations', value: null }] as FilterOption[];
+    const scope = computed(() => ({
+      projectName: this.projectName(),
+      isPast: this.isPast(),
+      isFoundationFilter: this.isFoundationFilter(),
+      registeredOnly: this.registeredOnly(),
+    }));
     return toSignal(
-      combineLatest([toObservable(this.projectName), toObservable(this.isPast), toObservable(this.isFoundationFilter)]).pipe(
-        distinctUntilChanged((a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]),
-        switchMap(([projectName, isPast, isFoundationFilter]) => {
-          if (!isFoundationFilter) {
-            // Foundation dropdown is not rendered — skip the API call and clear loading.
+      toObservable(scope).pipe(
+        debounceTime(0),
+        distinctUntilChanged(
+          (a, b) =>
+            a.projectName === b.projectName && a.isPast === b.isPast && a.isFoundationFilter === b.isFoundationFilter && a.registeredOnly === b.registeredOnly
+        ),
+        switchMap(({ projectName, isPast, isFoundationFilter, registeredOnly }) => {
+          if (!isFoundationFilter || registeredOnly === null) {
+            // Pending scope also cancels stale options without requesting the wrong default.
             this.foundationOptionsLoading.set(false);
             return of(defaultOptions);
           }
@@ -127,6 +139,7 @@ export class EventsTopBarComponent {
             .getEventOrganizations({
               projectName,
               isPast,
+              registeredOnly,
             })
             .pipe(
               map(({ data }) => [{ label: 'All Foundations', value: null }, ...data.map((name) => ({ label: name, value: name }))]),

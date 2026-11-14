@@ -3,7 +3,7 @@ name: preflight
 description: >
   Mechanical pre-PR pipeline, license headers, format, lint, build, protected
   file check, commit verification, and PR change summary. Named in the
-  `Preflight` value of `CLAUDE.md`'s **Pre-PR review** section, after
+  `Preflight` value of `AGENTS.md`'s **Pre-PR review** section, after
   `/lfx-self-serve-pr-readiness`. Review protocol and
   pattern/convention auditing are not owned by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol; this skill is named in its `Preflight` value and owns only the checks below. Before running it, `/lfx-self-serve-pr-readiness` must be complete.
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `AGENTS.md`'s **Pre-PR review** section owns the review protocol; this skill is named in its `Preflight` value and owns only the checks below. Before running it, `/lfx-self-serve-pr-readiness` must be complete.
 
 Run each check in order, report results clearly, and help fix any issues found.
 

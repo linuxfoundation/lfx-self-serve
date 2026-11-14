@@ -4,8 +4,9 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AudienceDemographicsComponent } from './audience-demographics.component';
@@ -78,5 +79,44 @@ describe('AudienceDemographicsComponent', () => {
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text, 'the actionable upstream message was discarded').toContain('Connect Google Ads for this project.');
+  });
+
+  it('shows a restriction instead of cached audience data and resets on retry or foundation change', async () => {
+    getAudience.mockReturnValue(
+      of({
+        pulledAt: '2026-10-01T00:00:00Z',
+        days: 30,
+        age: [{ label: '25-34', impressions: 100, clicks: 5, ctr: 5, spend: 2, conversions: 1 }],
+        gender: [],
+        device: [],
+      })
+    );
+    await render();
+    const el = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+    const refresh = () => {
+      (el('audience-refresh') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    };
+    expect(el('audience-age')).not.toBeNull();
+
+    getAudience.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } })));
+    refresh();
+    expect(el('audience-restricted')?.textContent).toContain('audience insights are limited to LF administrators');
+    expect(el('audience-error')).toBeNull();
+    expect(el('audience-age')).toBeNull();
+
+    getAudience.mockReturnValue(new Subject<never>());
+    refresh();
+    expect(el('audience-restricted')).toBeNull();
+    expect(el('audience-loading')).not.toBeNull();
+
+    getAudience.mockReturnValue(of({ pulledAt: '', days: 30, age: [], gender: [], device: [] }));
+    fixture.componentRef.setInput('projectSlug', 'acme-foundation');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el('audience-restricted')).toBeNull();
+    expect(el('audience-empty')).not.toBeNull();
+    expect(getAudience).toHaveBeenLastCalledWith('acme-foundation', 30);
   });
 });

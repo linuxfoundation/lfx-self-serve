@@ -7,6 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, convertToParamMap, provideRouter, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 import { Account, OrgResolveResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
 import { OrgSlugResolverService } from '@shared/services/org-slug-resolver.service';
 import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
@@ -28,6 +29,10 @@ describe('orgPathParamGuard', () => {
   let clearAccount: Mock;
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
+  let noteAddressed: Mock;
+  let selectRollUp: Mock;
+  let setAccount: Mock;
+  let demoteAddressedRollUp: Mock;
   let router: Router;
 
   const account = (overrides: Partial<Account>): Account => ({
@@ -66,13 +71,30 @@ describe('orgPathParamGuard', () => {
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
+    noteAddressed = vi.fn();
+    selectRollUp = vi.fn(() => true);
+    setAccount = vi.fn((next: Account) => selectedAccount.set(next));
+    demoteAddressedRollUp = vi.fn(() => null);
 
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount,
+            adoptFromAddress,
+            pinSelection,
+            clearAccount,
+            refreshCanonicalRecord,
+            selectRollUp,
+            setAccount,
+            demoteAddressedRollUp,
+          },
+        },
         { provide: OrgSlugResolverService, useValue: { resolve } },
+        { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
       ],
     });
     router = TestBed.inject(Router);
@@ -233,6 +255,18 @@ describe('orgPathParamGuard', () => {
       expect(await outcome(UID_B, `/org/${UID_B}/people`)).toBe(true);
     });
 
+    it('records whether the resolved organization is CLA-only, before adopting it', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), claOnly: true }));
+      await outcome(UID_B, `/org/${UID_B}/easycla`);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, true);
+      expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(adoptFromAddress.mock.invocationCallOrder[0]);
+
+      selectedAccount.set(placeholder);
+      resolve.mockReturnValueOnce(of(hit(UID_B, null)));
+      await outcome(UID_B, `/org/${UID_B}/people`);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
+    });
+
     it('lands on not-found for a miss (404/409 surface as null) without touching the selection (FR-024)', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       resolve.mockReturnValue(of(null));
@@ -271,6 +305,110 @@ describe('orgPathParamGuard', () => {
       resolve.mockReturnValue(httpError(503));
       expect(await outcome('bravo-llc', '/org/bravo-llc/projects')).toBe('/org/not-found');
       expect(adoptFromAddress).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * lfx-self-serve#4125/#4133 — the All Organizations roll-up. Added after PR #4415 review 2 noted
+   * that three behaviour changes here shipped untested, one of them (`prefer`) a single condition
+   * whose loss had been a high-severity regression in round 1.
+   */
+  describe('family roll-up', () => {
+    const ROOT = '0014100000RootAAAA';
+    const SEGMENT = `family-${ROOT}`;
+
+    /**
+     * The `admitWhilePending` argument is the contract this guard owes the service, so it is pinned
+     * here: on a cold deep link the grant sets have not answered, and without opting in a
+     * conglomerate admin whose siblings are inherited grants would be bounced to their single
+     * persona seed before anyone knows better. What that flag then *does* is the service's
+     * behaviour and is covered by its own specs — asserting it here against a mock that honours the
+     * argument would only restate this expectation.
+     */
+    it('adopts /org/family-{root} without asking the resolver, for that family, opting into admission while pending', async () => {
+      expect(await runGuard(SEGMENT, `/org/${SEGMENT}/people`)).toBe(true);
+      expect(selectRollUp).toHaveBeenCalledWith(ROOT, { admitWhilePending: true });
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
+    // Re-pointed at the organization they do hold, keeping the page they asked for — not bounced to
+    // overview, and not sent to the dead end: the address names something that shrank, not something
+    // unreachable.
+    it('re-points an ineligible caller at their own organization, same page', async () => {
+      selectRollUp.mockReturnValue(false);
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_A, slug: 'alpha-inc' }));
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/alpha-inc/people');
+    });
+
+    /**
+     * Regression, PR #4415 review 7. A caller whose organizations are all inherited grants has no
+     * persona seeds, so nothing has selected one and `selectedAccount()` is the placeholder.
+     * Falling back to it alone sent them to the dead end while they held an organization the
+     * roll-up had been counting a moment earlier.
+     */
+    it('re-points at the organization the service demotes to, keeping the page', async () => {
+      selectRollUp.mockReturnValue(false);
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/beta-llc/people');
+      expect(demoteAddressedRollUp).toHaveBeenCalledTimes(1);
+      expect(demoteAddressedRollUp).toHaveBeenCalledWith(ROOT);
+    });
+
+    // A roster selection names a person in the family, not in the organization it demotes to.
+    it('drops the per-organization query state on the re-point, keeping the rest', async () => {
+      selectRollUp.mockReturnValue(false);
+      demoteAddressedRollUp.mockReturnValue(account({ uid: UID_B, slug: 'beta-llc' }));
+
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people?employees=jdoe&tab=board`)).toBe('/org/beta-llc/people?tab=board');
+    });
+
+    // Which organization, whether the stored choice survives, and the address pin are all the
+    // service's call — the guard only turns its answer into an address (#4415 review 9).
+    it('lands on not-found only when the service has nothing to demote to', async () => {
+      selectRollUp.mockReturnValue(false);
+      demoteAddressedRollUp.mockReturnValue(null);
+
+      expect(await outcome(SEGMENT, `/org/${SEGMENT}/people`)).toBe('/org/not-found');
+    });
+
+    // Salesforce ids are case-sensitive: lowercasing the address used to hand the service a
+    // different (or no) top account. Only the prefix may change case.
+    it('keeps the top account id exact when the prefix arrives in another case', async () => {
+      expect(await runGuard(`Family-${ROOT}`, `/org/Family-${ROOT}/people`)).toBe(true);
+      expect(selectRollUp).toHaveBeenCalledWith(ROOT, { admitWhilePending: true });
+    });
+
+    it('renders without a selection on the server rather than redirecting', async () => {
+      platformId = 'server';
+      selectRollUp.mockReturnValue(false);
+      expect(await runGuard(SEGMENT, `/org/${SEGMENT}/people`)).toBe(true);
+      expect(clearAccount).toHaveBeenCalled();
+    });
+
+    /**
+     * Regression guard, PR #4415 review round 1. The server validates `prefer` against
+     * `ORG_ACCOUNT_ID_PATTERN` and rejects anything else outright, so leaving roll-up mode by a Back
+     * or a concrete-organization link sent the roll-up segment as `prefer`, drew a 400, and landed a perfectly valid
+     * address on `/org/not-found`.
+     */
+    it('never offers the roll-up sentinel to the slug resolver as a preference', async () => {
+      selectedAccount.set(account({ uid: SEGMENT, accountId: SEGMENT, slug: null }));
+      resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
+
+      await runGuard('beta-llc', '/org/beta-llc/overview');
+
+      expect(resolve).toHaveBeenCalledWith('beta-llc', null);
+    });
+
+    it('still prefers a concrete SFID selection when breaking a slug tie', async () => {
+      selectedAccount.set(account({ uid: UID_A, slug: 'alpha-inc' }));
+      resolve.mockReturnValue(of(hit(UID_B, 'beta-llc')));
+
+      await runGuard('beta-llc', '/org/beta-llc/overview');
+
+      expect(resolve).toHaveBeenCalledWith('beta-llc', UID_A);
     });
   });
 });

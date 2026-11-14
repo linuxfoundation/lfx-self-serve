@@ -10,6 +10,7 @@ Key files:
 
 - `meeting-join.component.ts` — signals, join flow logic, attachment/registrant gating
 - `meeting-join.component.html` — template: badge row, content, join section, signed-out branch
+- `../services/meeting-page-data.service.ts` — page-scoped `MeetingPageDataService`: the public meeting load (`{id}-{ms}` past ids, upcoming-then-past fallback), SSR seed and TransferState, password (`?password=` or router state), not-found and error routing, `?occurrence=` and the page clock
 
 **Backend contracts:** See [Public Meetings](../backend/public-meetings.md) for the server-side M2M auth, controller, and route allowlist details.
 
@@ -19,15 +20,16 @@ Key files:
 
 ### Current behavior
 
-| Viewer                               | Meeting type                                   | What they see                                                                |
-| ------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| Anonymous                            | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                        |
-| Anonymous                            | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                        |
-| Anonymous                            | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                      |
-| Anonymous                            | Any                                            | No attachments, no members list                                              |
-| Authenticated (any)                  | Any upcoming                                   | Full content; attachments if organizer/invited/member                        |
-| Authenticated (organizer or invited) | Any upcoming                                   | Members drawer enabled                                                       |
-| Any                                  | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
+| Viewer                  | Meeting type                                   | What they see                                                                           |
+| ----------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Anonymous               | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                                   |
+| Anonymous               | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                                   |
+| Anonymous               | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                                 |
+| Anonymous               | Any                                            | No attachments, no members list                                                         |
+| Authenticated (any)     | Any upcoming                                   | Full content; attachments if organizer/invited/member                                   |
+| Authenticated organizer | Any upcoming                                   | Members drawer enabled                                                                  |
+| Authenticated invitee   | Any upcoming                                   | Members drawer only when `isMeetingAttendeeListShared`; otherwise the "N invited" count |
+| Any                     | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md)            |
 
 ### Attachment gating
 
@@ -35,7 +37,7 @@ Attachments for upcoming meetings are fetched via a separate authenticated endpo
 
 ### Members / registrants gating
 
-The "Show Members" button is only rendered for `authenticated() && (meeting.organizer || meeting.invited)`. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
+The "Show Members" button is only rendered for `authenticated() && canViewGuests()`: organizers always, and invitees only when `isMeetingAttendeeListShared(meeting)` is true — `show_meeting_attendees` is on and the meeting isn't Board or restricted, which never share their guest list even when a legacy row stores `true`. The roster fetch uses the same rule, matching `GET /api/meetings/:uid/my-meeting-registrants`, which returns `[]` to a non-organizer when the list isn't shared. When the viewer can't see the guests, the "N invited" count comes from `meeting.registrant_count` instead, which `GET /public/api/meetings/:id` sets for invitees from the query-service count endpoint. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
 
 ---
 
@@ -125,6 +127,23 @@ Members drawer available if organizer || invited
 
 Past meeting IDs are either a plain numeric ID (fallback after upcoming returns 404) or a `{meetingId}-{timestamp}` format from the occurrence. Access is governed by `checkPastMeetingAccess` — see [backend doc](../backend/public-meetings.md) for the full `full_access` tier logic.
 
+The attendance stats (attended, absent, rate) come from the participant rows when the viewer gets them. `/api/past-meetings/:uid/participants` returns rows only to organizers and the people on them, so other full-access viewers see the `participant_count`, `attended_count`, and `individual_registrants_count` the public past-meeting response carries instead.
+
+---
+
+## 🧭 Redesigned page behind `meetings-redesign`
+
+`app.routes.ts` pairs `meetings/:id`: `MeetingPageComponent` (`modules/meetings/meeting-page/`) first, behind the `meetingPageRedesignGuard` CanMatch, then this legacy page unguarded.
+
+- **Server decision.** `server.ts` evaluates `meetings-redesign` for a signed-in viewer on `/meetings/:id` and `/meetings/not-found` only (`resolveSsrFlags`), keyed like the browser's `FeatureFlagService` context, including impersonation, into `ServerRequestContext.flags`. Anonymous visitors get the default, the legacy page. The guard records its decision in TransferState (`MEETING_PAGE_REDESIGN_KEY`), and the browser's first match reuses it, so hydration never swaps pages. Later client navigations ask `FeatureFlagService`.
+- **QA override.** Outside production the guard mirrors the `lfx-feature-flag-overrides` local storage entry into a cookie of the same name, which the server-side guard reads, so an override applies to SSR from the next full load.
+- **Fallback rule.** The guard skips the page for anonymous viewers, for `?password=` or `?action=` links, and for the legacy page's navigations to its own URL. Once loaded, the page serves any meeting the viewer fully sees: upcoming, live (the live `full_access`) or ended (`{id}-{ms}` or the past fallback), organizers and hosts included. A viewer without full access, such as a signed-in password-only guest of a private meeting, and a series with no date left re-navigate the same URL with `MEETING_PAGE_LEGACY_STATE`, on the server too, and renders this page.
+- **Shared loading.** Both pages use `MeetingPageDataService` (one instance per page), and `MeetingPageComponent` hosts `MeetingDetailsBodyComponent` with a page `MeetingDetailsSource`: no dialog, no list, and another date opens at its own `/meetings/...` URL.
+- **States.** `/meetings/not-found` is paired the same way: `MeetingPageNotFoundComponent` (same copy and reasons, Go to my meetings and Contact Support) behind the guard, then the legacy page; the redirect, its history entry and the 200 status are unchanged, and the server resolves the flag for that path too. A `?occurrence=` link to a cancelled date shows the date the page falls back to under a note; a series whose every date is cancelled shows its series fields under a note while its start is still ahead of the join window, else the legacy page. `getMeetingPageCancelledLink` names the cancelled date or series and `MEETING_PAGE_CANCELLED_COPY` holds the copy.
+- **Chrome.** The page has its own sticky top bar (`MeetingPageTopBarComponent`: LF logo, the compact date, title and project once the page scrolls, My Meetings and the account menu) and footer (`MeetingPageFooterComponent`), not the app header. Outside a drawer the details body renders as a page: an `h1`, the project leading the non-sticky actions row, and the tabs and side column sticking under the top bar through `--md-head`. `--mp-offset` moves the bar below the impersonation banner.
+- **Analytics.** The page sends its own deferred Plausible pageview once per meeting it shows. Segment skips the `NavigationEnd` of a hand-off to the legacy page (`MEETING_PAGE_LEGACY_STATE`), so a fallback visit is counted once.
+- **Page flows.** As on the legacy page: Join opens Zoom by itself once, only when the join window was open at load and the URL has no `?zoom_redirect=false` or `?action=` (MD-100, MD-164), with a `Popup Blocked` toast when the browser blocks it. `Click here` after `NOT_REGISTERED_FOR_MEETING` hands the visit to the legacy page with `MEETING_PAGE_GUEST_FORM_STATE`, which opens its guest form. A cancel moves to the series' next date at `?occurrence=` and an edit to the date's new start (MD-097, MD-098), without a new history entry. The viewer's saved RSVP comes from `GET /api/meetings/:id/rsvp/me`, overlaid by answers saved on the page.
+
 ---
 
 ## 🧱 Component Structure
@@ -135,16 +154,18 @@ Key signals and their gating:
 
 | Signal               | Type                            | Gate                                                                                                                                                                              |
 | -------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `meeting`            | `Signal<Meeting & { project }>` | `toSignal` of `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                                                          |
+| `meeting`            | `Signal<Meeting & { project }>` | `MeetingPageDataService.load()`: `toSignal` of the `getPublicMeeting` / `getPublicPastMeeting` fallback chain                                                                     |
 | `authenticated`      | `WritableSignal<boolean>`       | set from `UserService`                                                                                                                                                            |
-| `password`           | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                                                                                                              |
+| `password`           | `Signal<string\|null>`          | `MeetingPageDataService.password`: the URL `?password` query param, else the composer's router state                                                                              |
 | `attachments`        | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                                                                                                     |
-| `materialFiles`      | `Signal<MeetingAttachment[]>`   | filtered from `attachments`                                                                                                                                                       |
+| `materialFiles`      | `Signal<MeetingAttachment[]>`   | filtered from `attachments`, after dropping materials scoped to other occurrences (`filterAttachmentsForOccurrence` against `currentOccurrence()`)                                |
 | `registrants`        | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited\|\|optimisticInvited) && !isPastMeeting`; empty `[]` on any other branch                               |
 | `registrantsLoading` | `WritableSignal<boolean>`       | starts `true`; set by `initializeRegistrants` around the roster fetch, cleared via `finalize` (or immediately on the no-fetch branch) so the RSVP card doesn't hang on a skeleton |
 | `fetchedJoinUrl`     | `Signal<string\|undefined>`     | `initializeFetchedJoinUrl` — triggers on guest form submission                                                                                                                    |
 
-**Registrant counts are not read from the meeting object.** `getMeetingById` / `getPublicMeeting` no longer populate `individual_registrants_count` or `committee_members_count` — those fields are omitted from the response entirely (see [GH-1731](https://github.com/linuxfoundation/lfx-self-serve/issues/1731)). The join page derives its own counts from the `registrants` roster it fetches (`totalInvitees`, `additionalRegistrantsCount`), with `reconcileOptimisticPad` reconciling an optimistic guest-add pad against the roster length once a refetch lands. See `packages/shared/src/utils/meeting.utils.ts` for the reconciliation logic and its documented count-delta heuristic limitations.
+**Occurrence-scoped materials.** A live meeting's attachments span the whole series, and each may carry an `occurrence_id` that scopes it to one date. `currentAttachments` drops those scoped to other dates (`filterAttachmentsForOccurrence` against `currentOccurrence()`), and `attachmentScopes` maps each remaining one to `'occurrence'` or `'series'` so the badges read a value rather than calling a method. On an upcoming recurring meeting, `attachmentOccurrence` (the shown occurrence) and `canScopeToOccurrence` (false once it is cancelled or past, where the service rejects a scope) are bound to the materials drawer's `[occurrence]` and `[canScopeToOccurrence]`: the first decides what the drawer lists and labels, the second whether it offers the scope picker and per-item switch. Reads stay on the Query Service and are filtered in the browser.
+
+**Registrant counts are not read from the meeting object.** `getMeetingById` / `getPublicMeeting` no longer populate `individual_registrants_count` or `committee_members_count` — those fields are omitted from the response entirely (see [GH-1731](https://github.com/linuxfoundation/lfx-self-serve/issues/1731)). The join page derives its own counts from the `registrants` roster it fetches (`totalInvitees`, `additionalRegistrantsCount`). The one exception is an invitee who can't see the guests: `totalInvitees` then reads `registrant_count`, which the response sets for invitees. `reconcileOptimisticPad` reconciles an optimistic guest-add pad against the roster length once a refetch lands. See `packages/shared/src/utils/meeting.utils.ts` for the reconciliation logic and its documented count-delta heuristic limitations.
 
 **Template structure:**
 
@@ -177,6 +198,7 @@ Key signals and their gating:
 - Validates join-time window (`isWithinJoinWindow`).
 - For restricted meetings: `restrictedMeetingCheck` looks up the registrant by email then username. Returns the registrant's stored email for the upstream join-link call.
 - Returns `{ link: string }` — the Zoom join URL.
+- **While impersonating**, the viewer joins as themselves, never as the impersonation target: the server ignores the body `email` and resolves the real session's email and username (`getRealEmail` / `getRealUsername`). On the client, `UserService.meetingJoinIdentity` supplies the email sent in the body and the display name (`uname`/`un`) that `buildJoinUrlWithParams` appends to the link — the operator's while impersonating, the signed-in user's otherwise. Don't pass `UserService.user()` to those, since it is the target during impersonation.
 
 ### GET `/public/api/meetings/past/:id`
 

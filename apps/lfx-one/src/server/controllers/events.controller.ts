@@ -7,9 +7,10 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
-import { parseOffsetPagination } from '../helpers/validation.helper';
+import { getValidatedIsoDateQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
+import { VisaLetterService } from '../services/visa-letter.service';
 import {
   DEFAULT_EVENTS_PAGE_SIZE,
   MAX_EVENTS_PAGE_SIZE,
@@ -37,6 +38,7 @@ import { getEffectiveEmail, getEffectiveName } from '../utils/auth-helper';
 export class EventsController {
   private readonly eventsService = new EventsService();
   private readonly certificateService = new CertificateService();
+  private readonly visaLetterService = new VisaLetterService();
   private readonly personaDetectionService = new PersonaDetectionService();
 
   /**
@@ -69,12 +71,10 @@ export class EventsController {
       const status = rawMyEventStatus && VALID_MY_EVENT_STATUS_VALUES.has(rawMyEventStatus) ? rawMyEventStatus : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
       const registeredOnly = req.query['registeredOnly'] === 'true';
-      const startDateFrom = req.query['startDateFrom'] ? String(req.query['startDateFrom']) : undefined;
-      const startDateTo = req.query['startDateTo'] ? String(req.query['startDateTo']) : undefined;
+      const startDateFrom = getValidatedIsoDateQueryParam(req, 'startDateFrom', 'get_my_events');
+      const startDateTo = getValidatedIsoDateQueryParam(req, 'startDateTo', 'get_my_events');
       const country = req.query['country'] ? String(req.query['country']) : undefined;
       const isVisaRequestAccepted = req.query['isVisaRequestAccepted'] === 'true' ? true : undefined;
-      const isTravelFundRequestAccepted = req.query['isTravelFundRequestAccepted'] === 'true' ? true : undefined;
-      const excludePastTravelFundDeadline = req.query['excludePastTravelFundDeadline'] === 'true' ? true : undefined;
 
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
@@ -84,11 +84,9 @@ export class EventsController {
         isPast = false;
       }
 
-      // For upcoming events, fetch affiliated project slugs server-side from the persona service.
-      // Slugs are used because PROJECT_SLUG is the shared key between the persona service and datalake.
-      // This ensures client-supplied values cannot be used to access events from arbitrary projects.
+      // Only discovery needs affiliations; resolve slugs server-side rather than trusting client scope.
       let affiliatedProjectSlugs: string[] | undefined;
-      if (isPast === false) {
+      if (isPast === false && !registeredOnly) {
         affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
       }
 
@@ -109,8 +107,6 @@ export class EventsController {
         country,
         affiliatedProjectSlugs,
         isVisaRequestAccepted,
-        isTravelFundRequestAccepted,
-        excludePastTravelFundDeadline,
       });
 
       logger.success(req, 'get_my_events', startTime, {
@@ -212,15 +208,17 @@ export class EventsController {
         isPast = false;
       }
 
-      // For upcoming events, fetch affiliated project slugs server-side from the persona service.
+      const registeredOnly = req.query['registeredOnly'] === 'true';
+      // Affiliated discovery is unnecessary for My Registrations and Past.
       let affiliatedProjectSlugs: string[] | undefined;
-      if (isPast === false) {
+      if (isPast === false && !registeredOnly) {
         affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
       }
 
       const options: GetEventOrganizationsOptions = {
         projectName: req.query['projectName'] ? String(req.query['projectName']) : undefined,
         isPast,
+        registeredOnly,
         affiliatedProjectSlugs,
       };
 
@@ -228,6 +226,50 @@ export class EventsController {
 
       logger.success(req, 'get_event_organizations', startTime, {
         result_count: response.data.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/events/travel-fund-events
+   * Get upcoming events accepting travel fund applications (the same list for every user)
+   * Query params: eventId (string), searchQuery (string), startDateFrom (ISO), startDateTo (ISO), country (string),
+   *               pageSize (number), offset (number)
+   * Invalid date filters return 400 before querying events.
+   */
+  public async getTravelFundEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_travel_fund_events', {
+      has_query: Object.keys(req.query).length > 0,
+    });
+
+    try {
+      if (!getEffectiveEmail(req)) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'get_travel_fund_events',
+        });
+      }
+
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
+      const startDateFrom = getValidatedIsoDateQueryParam(req, 'startDateFrom', 'get_travel_fund_events');
+      const startDateTo = getValidatedIsoDateQueryParam(req, 'startDateTo', 'get_travel_fund_events');
+
+      const response = await this.eventsService.getTravelFundEvents(req, {
+        eventId: req.query['eventId'] ? String(req.query['eventId']) : undefined,
+        searchQuery: req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined,
+        startDateFrom,
+        startDateTo,
+        country: req.query['country'] ? String(req.query['country']) : undefined,
+        pageSize,
+        offset,
+      });
+
+      logger.success(req, 'get_travel_fund_events', startTime, {
+        result_count: response.data.length,
+        total: response.total,
       });
 
       res.json(response);
@@ -323,6 +365,40 @@ export class EventsController {
   }
 
   /**
+   * GET /api/events/visa-letter
+   * Download the authenticated user's issued visa support letter as a PDF
+   * Query params: eventId (string, required)
+   */
+  public async getVisaLetter(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
+
+    const startTime = logger.startOperation(req, 'get_visa_letter', { event_id: eventId });
+
+    try {
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_visa_letter',
+          service: 'events_controller',
+          path: req.path,
+        });
+      }
+
+      const { pdf, fileName } = await this.visaLetterService.generateVisaLetter(req, eventId);
+
+      logger.success(req, 'get_visa_letter', startTime, { event_id: eventId });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', contentDispositionAttachment(fileName));
+      res.setHeader('Content-Length', pdf.length);
+      // The letter carries passport details, so keep it out of shared and browser caches.
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/events/search-organizations
    * Search organizations by name via the API Gateway organization-service.
    * Query params: name (string, required)
@@ -379,6 +455,13 @@ export class EventsController {
         throw ServiceValidationError.forField('termsAccepted', 'termsAccepted must be true', { operation: 'submit_visa_request_application' });
       }
 
+      // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'visa'))) {
+        throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for a visa letter for this event', {
+          operation: 'submit_visa_request_application',
+        });
+      }
+
       // Overwrite client-provided email with session email for data integrity
       payload.applicantInfo.email = userEmail;
 
@@ -420,6 +503,13 @@ export class EventsController {
 
       if (!payload?.expenses) {
         throw ServiceValidationError.forField('expenses', 'expenses is required', { operation: 'submit_travel_fund_application' });
+      }
+
+      // Enforce the step 1 event picker rules server-side; the client-supplied eventId is not trusted.
+      if (!(await this.eventsService.isEligibleForEventRequest(req, userEmail, payload.eventId, 'travel-fund'))) {
+        throw ServiceValidationError.forField('eventId', 'You are not eligible to apply for travel funding for this event', {
+          operation: 'submit_travel_fund_application',
+        });
       }
 
       // Overwrite client-provided email with session email for data integrity

@@ -39,4 +39,12 @@ describe('MenteeBeforeYouApplyComponent', () => {
 
     expect(component.remaining()).toBe(0);
   });
+
+  it('marks every eligibility and compliance confirmation as required', () => {
+    const element = fixture.nativeElement as HTMLElement;
+
+    for (const row of ['age-eligible', 'work-authorized', 'no-duplicate-profile', 'compliance']) {
+      expect(element.querySelector(`#mentorship-mentee-apply-${row}-text .text-red-500`)?.textContent?.trim()).toBe('*');
+    }
+  });
 });

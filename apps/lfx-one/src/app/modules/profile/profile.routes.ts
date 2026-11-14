@@ -5,8 +5,6 @@ import { inject } from '@angular/core';
 import { Router, Routes } from '@angular/router';
 import { ACCOUNT_SETTINGS_SECTIONS, PROFILE_SETTINGS_PATH } from '@lfx-one/shared/constants';
 
-import { myClasEnabledGuard } from '@app/shared/guards/my-clas-enabled.guard';
-
 export const PROFILE_ROUTES: Routes = [
   {
     path: '',
@@ -36,11 +34,10 @@ export const PROFILE_ROUTES: Routes = [
         loadComponent: () => import('./individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
       },
 
-      // CLAs tab — read-only EasyCLA agreements, dark-launched behind `my-clas-enabled` (CanMatch).
+      // CLAs tab — EasyCLA agreements.
       {
         path: 'clas',
         title: 'CLAs',
-        canMatch: [myClasEnabledGuard],
         loadComponent: () => import('./clas/profile-clas.component').then((m) => m.ProfileClasComponent),
       },
 
@@ -76,6 +73,13 @@ export const PROFILE_ROUTES: Routes = [
         path: 'email',
         redirectTo: ({ queryParams }) =>
           inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS }),
+      },
+      // Section alias for old openprofile.dev links (ID-1147), which also land on password/email above: a path
+      // survives the server-side login returnTo, where a #fragment would not.
+      {
+        path: 'developer-settings',
+        redirectTo: ({ queryParams }) =>
+          inject(Router).createUrlTree([PROFILE_SETTINGS_PATH], { queryParams, fragment: ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS }),
       },
       // Unlike password/email above, this isn't a legacy redirect — profile.controller.ts's
       // Flow C flows emit returnTo=/profile/emails as their live landing path, so this route

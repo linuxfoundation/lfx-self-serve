@@ -36,6 +36,7 @@ interface Rendered {
   fixture: ComponentFixture<OrgGroupsComponent>;
   navigate: ReturnType<typeof vi.fn>;
   selectedAccount: WritableSignal<Account>;
+  personDrawerClose: ReturnType<typeof vi.fn>;
 }
 
 // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
@@ -55,7 +56,8 @@ function personDrawerStub() {
     loading: signal(false),
     error: signal(false),
     emailError: signal(false),
-    identityUnavailable: signal(false),
+    emailsLoading: signal(false),
+    companyEmailsUnavailableReason: signal(null),
     companyEmailsResolved: signal(false),
     detail: signal(null),
     companyEmails: signal([]),
@@ -90,7 +92,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
-      // lfxOpenIntercom (the empty state's contact-support link) injects the app-root MessageService.
+      // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
       {
         provide: OrgLensEmptyStateService,
@@ -127,10 +129,14 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
 
   const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true) as unknown as ReturnType<typeof vi.fn>;
 
+  // The same stub instance the providers array above registers via useValue — retrieved through DI
+  // rather than kept from a local variable, so this stays correct if the registration is refactored.
+  const personDrawerClose = (TestBed.inject(PersonDetailDrawerService) as unknown as ReturnType<typeof personDrawerStub>).close;
+
   const fixture = TestBed.createComponent(OrgGroupsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, selectedAccount };
+  return { fixture, navigate, selectedAccount, personDrawerClose };
 }
 
 function emptyGroupsResponse(): OrgLensGroupsResponse {
@@ -180,7 +186,7 @@ function renderedItemUids(fixture: ComponentFixture<OrgGroupsComponent>): string
   );
 }
 
-/** filterForm/typeOptions are `protected` — reach in via a narrow cast, mirroring the repo's existing spec convention (see brand-kit-form.component.spec.ts). */
+/** filterForm/typeOptions are `protected` — reach in via a narrow cast, mirroring the repo's existing spec convention (see mktg-agent-run.component.spec.ts). */
 function filterForm(fixture: ComponentFixture<OrgGroupsComponent>): {
   get(key: string): { setValue(v: string): void } | null;
   reset(v: Record<string, string>): void;
@@ -561,6 +567,21 @@ describe('OrgGroupsComponent', () => {
     await flushFilterChange(fixture);
 
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
+  });
+
+  // PersonDetailDrawerService is root-scoped and keeps its own active context across an org switch —
+  // closing only the seat-holders drawer (the test above) leaves the stacked person-detail drawer, if
+  // it was open, still showing the previous org's person. Doesn't open the stacked drawer for real
+  // (covered by group-seat-holders-drawer.component.spec.ts); asserts the org-switch subscription
+  // calls close() unconditionally, and not on first load (the skip(1) guard).
+  it('closes the stacked person-detail drawer when the selected org switches, not on first load', async () => {
+    const { fixture, selectedAccount, personDrawerClose } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+    expect(personDrawerClose).not.toHaveBeenCalled();
+
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2', slug: 'vendor-corp' });
+    await flushFilterChange(fixture);
+
+    expect(personDrawerClose).toHaveBeenCalledTimes(1);
   });
 
   // WCAG 2.5.3 Label in Name: the trigger's only visible text is the seat count, so its accessible

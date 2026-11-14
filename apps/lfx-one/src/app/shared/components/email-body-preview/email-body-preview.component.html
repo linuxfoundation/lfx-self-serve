@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (hasBody()) {
+  <!--
+    sandbox grants popups and nothing else: no allow-scripts, no allow-same-origin. The component's
+    docstring explains why that pair is what makes the srcdoc bypass sound, and why neither may be
+    added. `referrerpolicy` keeps this app's URL — which carries the project and brief ids — out of
+    the Referer header of any request the framed document makes.
+  -->
+  <iframe
+    [srcdoc]="srcdoc()"
+    [style.height.px]="heightPx()"
+    sandbox="allow-popups allow-popups-to-escape-sandbox"
+    referrerpolicy="no-referrer"
+    loading="lazy"
+    title="Email body preview"
+    class="block w-full border-0 bg-white"
+    [attr.data-testid]="testId() || null"></iframe>
+} @else {
+  <div class="px-4 py-4 text-sm text-gray-400" [attr.data-testid]="testId() || null">{{ emptyText() }}</div>
+}

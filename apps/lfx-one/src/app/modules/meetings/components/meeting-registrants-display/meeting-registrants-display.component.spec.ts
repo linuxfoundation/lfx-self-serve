@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { FormGroup } from '@angular/forms';
-import { PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { FormControl, FormGroup } from '@angular/forms';
+import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrantWithState, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -87,5 +88,501 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
     // to the meeting's own count meanwhile. An emit here would overwrite that fallback with a zero and
     // state, as a fact, that nobody attended.
     expect(emitted).toEqual([]);
+  });
+});
+
+describe('MeetingRegistrantsDisplayComponent — open add form on show', () => {
+  async function mount(openAddFormOnShow: boolean) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1' });
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.componentRef.setInput('showAddRegistrant', true);
+    fixture.componentRef.setInput('openAddFormOnShow', openAddFormOnShow);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  const showAddForm = (fixture: Awaited<ReturnType<typeof mount>>): boolean => fixture.componentInstance.showAddForm();
+
+  it('opens the add form once the drawer becomes visible', async () => {
+    const fixture = await mount(true);
+    expect(showAddForm(fixture)).toBe(false);
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(showAddForm(fixture)).toBe(true);
+  });
+
+  it('leaves the add form closed when not asked to open it', async () => {
+    const fixture = await mount(false);
+
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+
+    expect(showAddForm(fixture)).toBe(false);
+  });
+});
+
+const RECURRING_MEETING = { id: 'meeting-1', timezone: 'UTC', recurrence: { type: 2, repeat_interval: 1 } } as unknown as Meeting;
+const OCCURRENCE = { occurrence_id: '1893492000', start_time: '2030-01-01T10:00:00.000Z', duration: 30 } as MeetingOccurrence;
+const GUEST = { meeting_id: 'meeting-1', email: 'ada@acme-motors.example', first_name: 'Ada', last_name: 'Byron', host: false };
+
+/**
+ * Covers which dates a guest added from the drawer is invited to.
+ * @description Upstream reads a blank `occurrence` as "every occurrence", so the default must send
+ * none, and "this date only" must send the occurrence the host is showing. A one-off meeting has no
+ * dates to choose between, so it never offers the choice.
+ */
+describe('MeetingRegistrantsDisplayComponent — guest invite scope', () => {
+  let addMeetingRegistrants: ReturnType<typeof vi.fn>;
+
+  async function mount(meeting: Meeting, occurrence: MeetingOccurrence | null): Promise<MeetingRegistrantsDisplayComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () =>
+              new FormGroup({ email: new FormControl(GUEST.email), first_name: new FormControl('Ada'), last_name: new FormControl('Byron') }),
+            stripMetadata: () => ({ ...GUEST }),
+            addMeetingRegistrants,
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', meeting);
+    fixture.componentRef.setInput('occurrence', occurrence);
+    // A parent-supplied list keeps the drawer from self-fetching; the add path is the same either way.
+    fixture.componentRef.setInput('initialRegistrants', []);
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    addMeetingRegistrants = vi.fn().mockReturnValue(of({ summary: { successful: 1, failed: 0, total: 1 }, successes: [], failures: [] }));
+  });
+
+  it('invites to every occurrence by default', async () => {
+    const component = await mount(RECURRING_MEETING, OCCURRENCE);
+
+    component.onAddRegistrant();
+
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [GUEST]);
+  });
+
+  it('invites to the shown occurrence only when that is chosen', async () => {
+    const component = await mount(RECURRING_MEETING, OCCURRENCE);
+
+    component.inviteScopeForm.setValue({ scope: 'occurrence' });
+    component.onAddRegistrant();
+
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [{ ...GUEST, occurrence_id: '1893492000' }]);
+  });
+
+  it('offers no choice for a one-off meeting', async () => {
+    const component = await mount({ ...RECURRING_MEETING, recurrence: null } as Meeting, OCCURRENCE);
+
+    expect(component.scopeOccurrence()).toBeNull();
+  });
+
+  it('offers no choice when the host shows no specific occurrence', async () => {
+    const component = await mount(RECURRING_MEETING, null);
+
+    expect(component.scopeOccurrence()).toBeNull();
+  });
+});
+
+/**
+ * Covers the organizer filter and the collapsible sections of the guests drawer.
+ * @description The organizer filter keeps only host-flagged people, on both the upcoming list
+ * (parent-supplied registrants) and the past list (self-fetched participants). The member and guest
+ * sections collapse independently so a long member list doesn't bury the guests below it.
+ */
+describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsible sections', () => {
+  const registrant = (uid: string, host: boolean, type = 'direct') =>
+    ({ uid, meeting_id: 'meeting-1', email: `${uid}@acme-motors.example`, first_name: uid, last_name: 'Tester', host, type }) as unknown as MeetingRegistrant;
+
+  async function mount(options: { past?: boolean; registrants?: MeetingRegistrant[]; participants?: PastMeetingParticipant[]; organizers?: string[] }) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of(options.participants ?? [])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    const meeting = options.past ? PAST_MEETING : { id: 'meeting-1' };
+    fixture.componentRef.setInput('meeting', { ...meeting, organizers: options.organizers ?? [] });
+    fixture.componentRef.setInput('pastMeeting', !!options.past);
+    if (!options.past) {
+      fixture.componentRef.setInput('initialRegistrants', options.registrants ?? []);
+    }
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.componentInstance;
+  }
+
+  // An organizer is a host already, so the role filter treats the two as separate groups: `organizer` is the
+  // meeting's listed organizers, and `host` is host-flagged guests who are not one of them.
+  const ORGANIZER_EMAIL = 'ada@acme-motors.example';
+
+  it('lists everyone while the role filter is on "all"', async () => {
+    const component = await mount({ registrants: [registrant('ada', true), registrant('grace', false)], organizers: [ORGANIZER_EMAIL] });
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada', 'grace']);
+  });
+
+  it('keeps only listed organizers when the role filter is Organizers', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', true), registrant('grace', true), registrant('linus', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
+
+    component.organizerFilterControl.setValue('organizer');
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+  });
+
+  it('keeps only hosts who are not organizers when the role filter is Hosts', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', true), registrant('grace', true), registrant('linus', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
+
+    component.organizerFilterControl.setValue('host');
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['grace']);
+  });
+
+  it('matches an organizer by username as well as email, ignoring case', async () => {
+    const named = { ...registrant('ada', false), username: 'Ada-Tester' } as MeetingRegistrant;
+    const component = await mount({ registrants: [named, registrant('grace', false)], organizers: ['ada-tester'] });
+
+    component.organizerFilterControl.setValue('organizer');
+
+    expect(component.filteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+  });
+
+  it('labels a listed organizer as an organizer even when their host flag is off', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', false), registrant('grace', true), registrant('linus', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
+
+    const roles = component['guestRoles']();
+
+    expect(roles.get('ada')).toBe('organizer');
+    expect(roles.get('grace')).toBe('host');
+    expect(roles.get('linus')).toBeNull();
+  });
+
+  it('applies the role filter to both the member and guest sections', async () => {
+    const component = await mount({
+      registrants: [registrant('ada', true, 'committee'), registrant('grace', false, 'committee'), registrant('linus', true), registrant('ken', false)],
+      organizers: [ORGANIZER_EMAIL],
+    });
+
+    component.organizerFilterControl.setValue('organizer');
+    expect(component.committeeFilteredRegistrants().map((r) => r.uid)).toEqual(['ada']);
+    expect(component.directFilteredRegistrants().map((r) => r.uid)).toEqual([]);
+
+    component.organizerFilterControl.setValue('host');
+    expect(component.committeeFilteredRegistrants().map((r) => r.uid)).toEqual([]);
+    expect(component.directFilteredRegistrants().map((r) => r.uid)).toEqual(['linus']);
+  });
+
+  it('splits organizers from hosts among past participants', async () => {
+    const participants = [
+      { ...participant('ada@acme-motors.example'), host: true },
+      { ...participant('grace@acme-motors.example'), host: true },
+      { ...participant('linus@acme-motors.example'), host: false },
+    ] as PastMeetingParticipant[];
+    const component = await mount({ past: true, participants, organizers: [ORGANIZER_EMAIL] });
+
+    expect(component.filteredPastParticipants()).toHaveLength(3);
+
+    component.organizerFilterControl.setValue('organizer');
+    expect(component.filteredPastParticipants().map((p) => p.email)).toEqual(['ada@acme-motors.example']);
+
+    component.organizerFilterControl.setValue('host');
+    expect(component.filteredPastParticipants().map((p) => p.email)).toEqual(['grace@acme-motors.example']);
+  });
+
+  it('starts with both sections expanded and collapses each independently', async () => {
+    const component = await mount({});
+
+    expect(component.membersCollapsed()).toBe(false);
+    expect(component.guestsCollapsed()).toBe(false);
+
+    component.toggleMembersCollapsed();
+    expect(component.membersCollapsed()).toBe(true);
+    expect(component.guestsCollapsed()).toBe(false);
+
+    component.toggleGuestsCollapsed();
+    expect(component.guestsCollapsed()).toBe(true);
+
+    component.toggleMembersCollapsed();
+    expect(component.membersCollapsed()).toBe(false);
+    expect(component.guestsCollapsed()).toBe(true);
+  });
+});
+
+describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
+  const registrant = (uid: string, host: boolean) =>
+    ({
+      uid,
+      meeting_id: 'meeting-1',
+      email: `${uid}@acme-motors.example`,
+      first_name: uid,
+      last_name: 'Tester',
+      host,
+      type: 'direct',
+    }) as unknown as MeetingRegistrant;
+
+  const success = { summary: { successful: 1, failed: 0 }, successes: [], failures: [] };
+
+  async function mount(updateMeetingRegistrants: ReturnType<typeof vi.fn>, registrants: MeetingRegistrant[]) {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            // The real builder, so these tests see the body that is actually sent.
+            getChangedFields: (guest: MeetingRegistrantWithState) => MeetingService.prototype.getChangedFields.call({}, guest),
+            updateMeetingRegistrants,
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingRegistrantsDisplayComponent, { set: { template: '', imports: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1' });
+    fixture.componentRef.setInput('initialRegistrants', registrants);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture.componentInstance;
+  }
+
+  it('sends the new host flag for just that guest', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    const component = await mount(update, [registrant('guest-a', false), registrant('guest-b', false)]);
+
+    component.onToggleHost(registrant('guest-b', false));
+
+    expect(update).toHaveBeenCalledTimes(1);
+    const [meetingId, updates] = update.mock.calls[0];
+    expect(meetingId).toBe('meeting-1');
+    expect(updates).toHaveLength(1);
+    expect(updates[0].uid).toBe('guest-b');
+    expect(updates[0].changes).toMatchObject({ meeting_id: 'meeting-1', email: 'guest-b@acme-motors.example', first_name: 'guest-b', host: true });
+  });
+
+  it('sends an occurrence-scoped guest back with the scope it already has', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    // The query-service index spells the scope `occurrence` and never `occurrence_id`.
+    const scoped = { ...registrant('guest-a', false), occurrence: '1700000000' } as unknown as MeetingRegistrant;
+    const component = await mount(update, [scoped]);
+
+    component.onToggleHost(scoped);
+
+    expect(update.mock.calls[0][1][0].changes.occurrence_id).toBe('1700000000');
+  });
+
+  it('names the host toggle after the email when the guest has no name', async () => {
+    const nameless = { ...registrant('guest-a', false), first_name: '', last_name: '' } as MeetingRegistrant;
+    const namelessHost = { ...registrant('guest-b', true), first_name: '', last_name: '' } as MeetingRegistrant;
+    const component = await mount(vi.fn(), [nameless, namelessHost, registrant('guest-c', false)]);
+
+    const labels = component['hostToggleLabels']();
+
+    expect(labels.get('guest-a')).toBe('Make guest-a@acme-motors.example a meeting host');
+    expect(labels.get('guest-b')).toBe('Remove guest-b@acme-motors.example as meeting host');
+    expect(labels.get('guest-c')).toBe('Make guest-c Tester a meeting host');
+  });
+
+  it('shows the change at once and lists hosts first', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    const component = await mount(update, [registrant('guest-a', false), registrant('guest-b', false)]);
+
+    component.onToggleHost(registrant('guest-b', false));
+
+    expect(component.registrants().map((r) => [r.uid, r.host])).toEqual([
+      ['guest-b', true],
+      ['guest-a', false],
+    ]);
+  });
+
+  it('asks the owner of the list to reload after a successful change', async () => {
+    const update = vi.fn().mockReturnValue(of(success));
+    const component = await mount(update, [registrant('guest-a', false)]);
+    const reload = vi.fn();
+    component.refreshRequested.subscribe(reload);
+
+    component.onToggleHost(registrant('guest-a', false));
+
+    expect(reload).toHaveBeenCalledWith(0);
+  });
+
+  it('does not ask for a reload when the update fails', async () => {
+    const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [] }));
+    const component = await mount(update, [registrant('guest-a', false)]);
+    const reload = vi.fn();
+    component.refreshRequested.subscribe(reload);
+
+    component.onToggleHost(registrant('guest-a', false));
+
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('leaves the list alone when the update fails', async () => {
+    const update = vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 1 }, successes: [], failures: [{ error: { message: 'nope' } }] }));
+    const component = await mount(update, [registrant('guest-a', false)]);
+
+    component.onToggleHost(registrant('guest-a', false));
+
+    expect(component.registrants()[0].host).toBe(false);
+  });
+
+  it('leaves the list alone when the request errors', async () => {
+    const update = vi.fn().mockReturnValue(throwError(() => new Error('network')));
+    const component = await mount(update, [registrant('guest-a', false)]);
+
+    component.onToggleHost(registrant('guest-a', false));
+
+    expect(component.registrants()[0].host).toBe(false);
+  });
+
+  it('ignores a guest the server has not confirmed yet', async () => {
+    const update = vi.fn();
+    const component = await mount(update, []);
+
+    component.onToggleHost(registrant('optimistic-1', false));
+
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', () => {
+  const registrant = (overrides: Partial<MeetingRegistrant>): MeetingRegistrant =>
+    ({
+      uid: 'r-1',
+      email: 'secret@acme-motors.example',
+      first_name: 'Ada',
+      last_name: 'Byron',
+      type: 'direct',
+      invite_accepted: null,
+      rsvp: null,
+      ...overrides,
+    }) as MeetingRegistrant;
+
+  async function mount(registrants: MeetingRegistrant[]) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            getPastMeetingParticipants: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', { id: 'meeting-1', is_invite_responses_enabled: true });
+    fixture.componentRef.setInput('initialRegistrants', registrants);
+    fixture.componentRef.setInput('showAddRegistrant', true);
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  const text = (fixture: Awaited<ReturnType<typeof mount>>, testId: string): string[] =>
+    Array.from((fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${testId}"]`)).map((el) => (el.textContent ?? '').trim());
+
+  it('shows a non-empty name for a registrant with no first or last name, without revealing their email', async () => {
+    const fixture = await mount([registrant({ uid: 'blank', first_name: '', last_name: '' })]);
+
+    expect(text(fixture, 'registrant-display-name')).toEqual(['Guest']);
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('secret@acme-motors.example');
+  });
+
+  it('labels an invite decline differently from an RSVP decline', async () => {
+    const fixture = await mount([
+      registrant({ uid: 'invite', invite_accepted: false }),
+      registrant({ uid: 'rsvp', invite_accepted: null, rsvp: { response_type: 'declined' } as MeetingRegistrant['rsvp'] }),
+    ]);
+
+    expect(text(fixture, 'registrant-status-label').sort()).toEqual(['Declined', 'Invite declined']);
+  });
+
+  it('offers the overflow menu the same actions as the desktop buttons', async () => {
+    const fixture = await mount([registrant({ uid: 'r-1' })]);
+    const component = fixture.componentInstance as unknown as {
+      buildRowActionMenuItems: (r: MeetingRegistrant) => { label: string }[];
+    };
+
+    const desktopButtons = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '[data-testid^="registrant-display-resend-"], [data-testid^="registrant-display-host-toggle-"], [data-testid^="registrant-display-remove-"]'
+    );
+    const menuLabels = component.buildRowActionMenuItems(registrant({ uid: 'r-1' })).map((item) => item.label);
+
+    expect(desktopButtons.length).toBe(3);
+    expect(menuLabels).toEqual(['Resend invite', 'Make host', 'Remove']);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="registrant-display-actions-r-1"]')).not.toBeNull();
   });
 });

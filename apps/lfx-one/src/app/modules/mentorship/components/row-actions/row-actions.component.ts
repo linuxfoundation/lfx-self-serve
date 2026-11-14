@@ -1,21 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MentorshipRowAction } from '@lfx-one/shared/interfaces';
 import { MenuItem } from 'primeng/api';
 
-import { MentorshipComingSoonService } from '../../services/mentorship-coming-soon.service';
-
 /**
  * The trailing row-actions cell shared by the program-detail people tables — an
  * ellipsis trigger and its popup menu, or an em dash when a row has no action left.
  *
- * The tabs pass resolved labels and icons rather than their own status unions, which
- * differ. Every action currently raises the shared "coming soon" toast, so the command
- * lives here; when the write endpoints land this gains an output and the tabs handle it.
+ * The tab passes resolved actions and handles the one picked, which `actionSelect`
+ * hands back with its `value`, so the menu stays free of any tab's action union.
  */
 @Component({
   selector: 'lfx-mentorship-row-actions',
@@ -24,17 +21,20 @@ import { MentorshipComingSoonService } from '../../services/mentorship-coming-so
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RowActionsComponent {
-  private readonly comingSoon = inject(MentorshipComingSoonService);
-
   public readonly personName = input.required<string>();
   public readonly actions = input.required<MentorshipRowAction[]>();
   public readonly testId = input.required<string>();
 
+  public readonly actionSelect = output<MentorshipRowAction>();
+
   protected readonly menuItems = computed<MenuItem[]>(() =>
-    this.actions().map((action) => ({
-      label: action.label,
-      icon: action.icon,
-      command: () => this.comingSoon.notify(`${action.label} ${this.personName()}`),
-    }))
+    this.actions().map((action) =>
+      // A link entry renders as an anchor, so the browser opens it in a new tab, leaving the table in place (a `mailto:`
+      // goes to the mail handler, e.g. a Gmail draft). Always set: PrimeNG binds `target` as a property, so an unset one
+      // becomes `target="undefined"`.
+      action.url
+        ? { label: action.label, icon: action.icon, url: action.url, target: '_blank' }
+        : { label: action.label, icon: action.icon, command: () => this.actionSelect.emit(action) }
+    )
   );
 }

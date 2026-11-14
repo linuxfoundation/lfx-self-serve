@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { SocialListeningAnalyticsParams } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,7 +16,7 @@ vi.mock('@lfx-one/shared/constants', async (importOriginal) => ({
   MENTION_IDS_MAX_VALUES: 500,
   MENTION_READ_IDS_MAX_VALUES: 500,
   MENTION_TOP_TAGS_LIMIT: 10,
-  VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800 },
+  VALKEY_CACHE: { SOCIAL_LISTENING_TTL_SECONDS: 1800, SOCIAL_LISTENING_ANALYTICS_TTL_SECONDS: 300 },
 }));
 
 // The params helper pulls in the whole shared validation surface; only its bounds and the token codec matter here.
@@ -39,6 +40,7 @@ vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => (
 vi.mock('./valkey.service', () => ({ withSocialListeningCache }));
 
 const { SocialListeningService } = await import('./social-listening.service');
+const { logger } = await import('./logger.service');
 
 const req = {} as Request;
 
@@ -581,127 +583,232 @@ describe('option queries', () => {
 });
 
 describe('analytics', () => {
-  it('shifts a month-aligned window back by whole months', async () => {
-    // February is 28 days; the comparison window must be all of January, not 28 days of it.
-    await service().getAnalyticsOverview(req, { foundationSlug: 'cncf', startDate: '2026-02-01', endDate: '2026-03-01' });
+  const analyticsScope: SocialListeningAnalyticsParams = { foundationSlug: 'cncf', periodKey: 'ytd' };
+  const panels = [
+    {
+      method: 'getAnalyticsOverview',
+      relation: 'OVERVIEW',
+      resource: 'overview',
+      suffix: 'LIMIT 1',
+    },
+    {
+      method: 'getAnalyticsOverTime',
+      relation: 'OVER_TIME',
+      resource: 'over-time',
+      suffix: 'AND SOURCE_PROJECT_ID IS NOT NULL AND SOURCE_PROJECT_NAME IS NOT NULL ORDER BY BUCKET_START_DATE, SOURCE_PROJECT_NAME',
+    },
+    {
+      method: 'getAnalyticsPlatformDistribution',
+      relation: 'PLATFORM_DISTRIBUTION',
+      resource: 'platform-distribution',
+      suffix: 'ORDER BY MENTIONS_COUNT DESC, SOURCE_PLATFORM',
+    },
+    {
+      method: 'getAnalyticsSentimentDistribution',
+      relation: 'SENTIMENT_DISTRIBUTION',
+      resource: 'sentiment-distribution',
+      suffix: 'ORDER BY MENTION_COUNT DESC, SENTIMENT',
+    },
+    {
+      method: 'getAnalyticsTopProjects',
+      relation: 'TOP_PROJECTS',
+      resource: 'top-projects',
+      suffix: 'AND PROJECT_RANK <= ? ORDER BY PROJECT_RANK',
+    },
+  ] as const;
 
-    const { binds } = lastCall();
-    // Base CTE spans previous-start → current-end, then the two window ranges.
-    expect(binds).toEqual(['cncf', '2026-01-01', '2026-03-01', '2026-02-01', '2026-03-01', '2026-01-01', '2026-02-01']);
+  /** Model the real read-through boundary: only a fulfilled fetcher writes an entry. */
+  function useReadThroughCache(): Map<string, unknown> {
+    const entries = new Map<string, unknown>();
+    withSocialListeningCache.mockImplementation(
+      async (slug: string, resource: string, discriminator: readonly unknown[], _ttl: number, fetcher: () => Promise<unknown>) => {
+        const key = JSON.stringify([slug, resource, discriminator]);
+        if (entries.has(key)) {
+          return entries.get(key);
+        }
+        const result = await fetcher();
+        entries.set(key, result);
+        return result;
+      }
+    );
+    return entries;
+  }
+
+  it.each(panels)('$method queries governed relations with aligned scope binds and the dedicated TTL', async (panel) => {
+    await service()[panel.method](req, analyticsScope);
+
+    const { sql, binds } = lastCall();
+    const expectedBinds = ['cncf', 'ytd', 'all', 'all', ...(panel.method === 'getAnalyticsTopProjects' ? [5] : [])];
+    expect(sql).toContain(`FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_LISTENING_ANALYTICS_${panel.relation}`);
+    expect(normalize(sql)).toContain('WHERE PROJECT_SLUG = ? AND PERIOD_KEY = ? AND SOURCE_PROJECT_SCOPE = ? AND PLATFORM_SCOPE = ?');
+    expect(normalize(sql)).toContain(panel.suffix);
+    expect(binds).toEqual(expectedBinds);
+    expect(sql.match(/\?/g)).toHaveLength(expectedBinds.length);
+    expect(withSocialListeningCache).toHaveBeenLastCalledWith('cncf', `governed-analytics-${panel.resource}`, expectedBinds, 300, expect.any(Function));
   });
 
-  it('shifts a multi-month window back by its own month span', async () => {
-    await service().getAnalyticsOverview(req, { foundationSlug: 'cncf', startDate: '2026-01-01', endDate: '2026-04-01' });
+  it.each(panels)('$method binds opaque scope values without putting them or stale content filters in SQL', async (panel) => {
+    const params = {
+      foundationSlug: "cncf' OR 1=1 --",
+      periodKey: "2026-08' OR 1=1 --",
+      sourceProjectId: "project' OR 1=1 --",
+      platform: "Reddit' OR 1=1 --",
+      sentiment: 'negative',
+      search: 'mesh',
+      keywords: ['Kubernetes'],
+      startDate: '2026-01-01',
+      endDate: '2026-02-01',
+    };
+    await service()[panel.method](req, params);
 
-    expect(lastCall().binds).toEqual(['cncf', '2025-10-01', '2026-04-01', '2026-01-01', '2026-04-01', '2025-10-01', '2026-01-01']);
+    const { sql, binds } = lastCall();
+    expect(binds).toEqual([
+      params.foundationSlug,
+      params.periodKey,
+      params.sourceProjectId,
+      params.platform.toLowerCase(),
+      ...(panel.method === 'getAnalyticsTopProjects' ? [5] : []),
+    ]);
+    expect(sql.match(/\?/g)).toHaveLength(binds.length);
+    for (const value of [params.foundationSlug, params.periodKey, params.sourceProjectId, params.platform, params.search, params.keywords[0]]) {
+      expect(sql).not.toContain(value);
+    }
+    expect(sql).not.toMatch(/SOCIAL_LISTENING_FEED|MENTION_TS|ILIKE|COUNT\(|SUM\(|ROUND\(|GROUP BY/);
   });
 
-  it('falls back to a day shift when the window is not month-aligned', async () => {
-    await service().getAnalyticsOverview(req, { foundationSlug: 'cncf', startDate: '2026-01-10', endDate: '2026-01-20' });
+  it.each([{ rows: [] }, {}])('never caches a missing overview, then serves and caches the newly materialized row', async (emptyResult) => {
+    const entries = useReadThroughCache();
+    const analytics = service();
+    execute.mockResolvedValue(emptyResult);
 
-    expect(lastCall().binds).toEqual(['cncf', '2025-12-31', '2026-01-20', '2026-01-10', '2026-01-20', '2025-12-31', '2026-01-10']);
-  });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(await analytics.getAnalyticsOverview(req, analyticsScope)).toEqual({
+        TOTAL_MENTIONS: 0,
+        TOTAL_MENTIONS_CHANGE_PCT: null,
+        CHILD_PROJECTS_COUNT: 0,
+        POSITIVE_SENTIMENT_PERCENT: 0,
+        NEGATIVE_SENTIMENT_PERCENT: 0,
+        POSITIVE_SENTIMENT_CHANGE_PCT: null,
+        NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+        COMPUTED_AT: null,
+      });
+      expect(entries.size).toBe(0);
+    }
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(logger.debug).toHaveBeenCalledWith(req, 'social_listening_analytics_overview', expect.any(String), { foundation_slug: 'cncf' });
+    expect(logger.warning).not.toHaveBeenCalled();
 
-  it('serves a zeroed overview when the query returns no rows', async () => {
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    const overview = await service().getAnalyticsOverview(req, SCOPE);
-
-    expect(overview).toEqual({
-      TOTAL_MENTIONS: 0,
-      TOTAL_MENTIONS_CHANGE_PCT: null,
-      CHILD_PROJECTS_COUNT: 0,
-      POSITIVE_SENTIMENT_PERCENT: 0,
-      NEGATIVE_SENTIMENT_PERCENT: 0,
-      POSITIVE_SENTIMENT_CHANGE_PCT: null,
-      NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+    execute.mockResolvedValue({
+      rows: [
+        {
+          TOTAL_MENTIONS: 37,
+          TOTAL_MENTIONS_CHANGE_PCT: null,
+          CHILD_PROJECTS_COUNT: 2,
+          POSITIVE_SENTIMENT_PERCENT: 70.3,
+          NEGATIVE_SENTIMENT_PERCENT: 8.1,
+          POSITIVE_SENTIMENT_CHANGE_PCT: null,
+          NEGATIVE_SENTIMENT_CHANGE_PCT: null,
+          COMPUTED_AT: '2026-08-01T04:00:00Z',
+        },
+      ],
     });
+    const materialized = await analytics.getAnalyticsOverview(req, analyticsScope);
+    expect(materialized.TOTAL_MENTIONS).toBe(37);
+    expect(materialized.COMPUTED_AT).toBe('2026-08-01T04:00:00Z');
+    expect(materialized.TOTAL_MENTIONS_CHANGE_PCT).toBeNull();
+    expect(materialized.POSITIVE_SENTIMENT_CHANGE_PCT).toBeNull();
+    expect(materialized.NEGATIVE_SENTIMENT_CHANGE_PCT).toBeNull();
+    expect(await analytics.getAnalyticsOverview(req, analyticsScope)).toEqual(materialized);
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(entries.size).toBe(1);
   });
 
-  it('never caches the zeroed overview — the fetcher rejects, so the read-through write is skipped', async () => {
-    execute.mockResolvedValue({ rows: [] });
+  it.each(panels)('$method propagates warehouse failures without caching a fallback', async (panel) => {
+    const entries = useReadThroughCache();
+    const error = new Error('warehouse unavailable');
+    execute.mockRejectedValue(error);
 
-    await service().getAnalyticsOverview(req, SCOPE);
+    await expect(service()[panel.method](req, analyticsScope)).rejects.toBe(error);
+    await expect(service()[panel.method](req, analyticsScope)).rejects.toBe(error);
+    expect(entries.size).toBe(0);
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
 
-    const fetcher = withSocialListeningCache.mock.calls.at(-1)?.at(-1) as () => Promise<unknown>;
-    await expect(fetcher()).rejects.toThrow();
+  it('propagates a cache failure instead of serving a zeroed overview', async () => {
+    const error = new Error('cache unavailable');
+    withSocialListeningCache.mockRejectedValueOnce(error);
+
+    await expect(service().getAnalyticsOverview(req, analyticsScope)).rejects.toBe(error);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it.each(panels)('$method ignores content changes but isolates every scope dimension and old live-analytics entries', async (panel) => {
+    const entries = useReadThroughCache();
+    const analytics = service();
+    execute.mockResolvedValue({ rows: [{}] });
+    const discriminator = ['cncf', 'ytd', 'all', 'all', ...(panel.method === 'getAnalyticsTopProjects' ? [5] : [])];
+    entries.set(JSON.stringify(['cncf', `analytics-${panel.resource}`, discriminator]), 'stale live value');
+
+    await analytics[panel.method](req, analyticsScope);
+    const staleClientParams = { ...analyticsScope, sentiment: 'negative', search: 'mesh' };
+    await analytics[panel.method](req, staleClientParams);
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    for (const changedScope of [
+      { ...analyticsScope, foundationSlug: 'lf' },
+      { ...analyticsScope, periodKey: 'last-3' },
+      { ...analyticsScope, sourceProjectId: 'project-1' },
+      { ...analyticsScope, platform: 'Reddit' },
+    ]) {
+      await analytics[panel.method](req, changedScope);
+    }
+    expect(execute).toHaveBeenCalledTimes(5);
+    await analytics[panel.method](req, { ...analyticsScope, platform: 'reddit' });
+    expect(execute).toHaveBeenCalledTimes(5);
+  });
+
+  it('keeps different governed panels in separate cache entries for an identical scope', async () => {
+    const entries = useReadThroughCache();
+    const analytics = service();
+    execute.mockResolvedValue({ rows: [{}] });
+
+    for (const panel of panels) {
+      await analytics[panel.method](req, analyticsScope);
+      await analytics[panel.method](req, analyticsScope);
+    }
+    expect(execute).toHaveBeenCalledTimes(5);
+    expect(entries.size).toBe(5);
   });
 
   it.each([
-    { label: 'a single month', startDate: '2026-01-01', endDate: '2026-02-01', unit: 'DAY', format: 'MON DD' },
-    { label: 'exactly the day-grain ceiling', startDate: '2026-01-01', endDate: '2026-03-04', unit: 'DAY', format: 'MON DD' },
-    { label: 'one day past the ceiling', startDate: '2026-01-01', endDate: '2026-03-05', unit: 'MONTH', format: 'MON YYYY' },
-    { label: 'a full year', startDate: '2026-01-01', endDate: '2027-01-01', unit: 'MONTH', format: 'MON YYYY' },
-  ])('buckets $label by $unit', async ({ startDate, endDate, unit, format }) => {
-    await service().getAnalyticsOverTime(req, { foundationSlug: 'cncf', startDate, endDate });
+    { limit: undefined, expected: 5 },
+    { limit: 9999, expected: 100 },
+    { limit: 0, expected: 1 },
+    { limit: -10, expected: 1 },
+    { limit: 3.9, expected: 3 },
+    { limit: NaN, expected: 1 },
+  ])('binds the bounded top-project rank for limit $limit', async ({ limit, expected }) => {
+    await service().getAnalyticsTopProjects(req, { ...analyticsScope, limit });
 
-    const normalized = normalize(lastCall().sql);
-    expect(normalized).toContain(`DATE_TRUNC('${unit}', MENTION_TS), '${format}'`);
-    // The grain is part of the cache key — a day and a month rollup of the same scope differ.
-    expect(withSocialListeningCache).toHaveBeenLastCalledWith('cncf', `analytics-over-time-${unit}`, ['cncf', startDate, endDate], 1800, expect.any(Function));
+    const { sql, binds } = lastCall();
+    expect(normalize(sql)).toContain('AND PROJECT_RANK <= ? ORDER BY PROJECT_RANK');
+    expect(sql).not.toContain('LIMIT');
+    expect(binds).toEqual(['cncf', 'ytd', 'all', 'all', expected]);
+    expect(sql.match(/\?/g)).toHaveLength(5);
+    expect(withSocialListeningCache).toHaveBeenLastCalledWith('cncf', 'governed-analytics-top-projects', binds, 300, expect.any(Function));
   });
 
-  it('defaults the top-projects cap, clamps a caller override, and keys the cache on it', async () => {
-    await service().getAnalyticsTopProjects(req, SCOPE);
-    expect(normalize(lastCall().sql)).toContain('LIMIT 5');
-    expect(withSocialListeningCache).toHaveBeenLastCalledWith(
-      'cncf',
-      'analytics-top-projects',
-      ['cncf', '2026-01-01', '2026-02-01', 5],
-      1800,
-      expect.any(Function)
-    );
+  it('isolates top-project limits but reuses an entry for overrides with the same clamped rank', async () => {
+    useReadThroughCache();
+    const analytics = service();
 
-    await service().getAnalyticsTopProjects(req, { ...SCOPE, limit: 9999 });
-    expect(normalize(lastCall().sql)).toContain('LIMIT 100');
-    expect(lastCall().sql).not.toContain('LIMIT ?');
-    expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01']);
-    expect(withSocialListeningCache).toHaveBeenLastCalledWith(
-      'cncf',
-      'analytics-top-projects',
-      ['cncf', '2026-01-01', '2026-02-01', 100],
-      1800,
-      expect.any(Function)
-    );
-  });
-
-  it('applies the feed predicate to every analytics panel, with scope binds preceding filter binds', async () => {
-    const filters = { sentiment: 'Negative', keywords: ['Kubernetes'], search: 'mesh' };
-
-    await service().getAnalyticsOverview(req, { ...SCOPE, platform: 'Reddit', ...filters });
-    // Overview's base CTE spans the previous window, so scope dates are [prevStart, endDate]; the
-    // filter binds follow, then the two window ranges.
-    expect(lastCall().binds).toEqual([
-      'cncf',
-      '2025-12-01',
-      '2026-02-01',
-      'reddit',
-      'negative',
-      'kubernetes',
-      '%mesh%',
-      '%mesh%',
-      '2026-01-01',
-      '2026-02-01',
-      '2025-12-01',
-      '2026-01-01',
-    ]);
-    expect(normalize(lastCall().sql)).toContain('WITH base AS');
-
-    for (const run of [
-      () => service().getAnalyticsOverTime(req, { ...SCOPE, ...filters }),
-      () => service().getAnalyticsPlatformDistribution(req, { ...SCOPE, ...filters }),
-      () => service().getAnalyticsSentimentDistribution(req, { ...SCOPE, ...filters }),
-      () => service().getAnalyticsTopProjects(req, { ...SCOPE, ...filters }),
-    ]) {
-      await run();
-      expect(lastCall().binds).toEqual(['cncf', '2026-01-01', '2026-02-01', 'negative', 'kubernetes', '%mesh%', '%mesh%']);
-    }
-  });
-
-  it('buckets off-list sentiment values as neutral so the distribution shares sum to 100%', async () => {
-    await service().getAnalyticsSentimentDistribution(req, SCOPE);
-
-    expect(normalize(lastCall().sql)).toContain("CASE WHEN LOWER(TRIM(SENTIMENT)) IN ('positive', 'negative') THEN LOWER(TRIM(SENTIMENT)) ELSE 'neutral' END");
+    await analytics.getAnalyticsTopProjects(req, analyticsScope);
+    await analytics.getAnalyticsTopProjects(req, { ...analyticsScope, limit: 1 });
+    await analytics.getAnalyticsTopProjects(req, { ...analyticsScope, limit: 0 });
+    await analytics.getAnalyticsTopProjects(req, { ...analyticsScope, limit: 9999 });
+    await analytics.getAnalyticsTopProjects(req, { ...analyticsScope, limit: 100 });
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute.mock.calls.map(([, binds]) => binds.at(-1))).toEqual([5, 1, 100]);
   });
 
   it('filters the tags endpoint too, aliasing the columns so the LATERAL FLATTEN join stays unambiguous', async () => {

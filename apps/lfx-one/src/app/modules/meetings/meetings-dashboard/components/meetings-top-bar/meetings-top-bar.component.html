@@ -1,79 +1,134 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-  <!-- Time Filter Pills -->
-  <lfx-filter-pills [options]="timeTabOptions" [selectedFilter]="timeFilter()" (filterChange)="onTimeTabChange($event)" data-testid="time-filter-tabs" />
+<div role="group" aria-label="Meeting time" data-testid="meeting-view-pills">
+  <lfx-card-tabs-bar [options]="meetingViewOptions" [selectedFilter]="meetingView()" (filterChange)="onMeetingViewChange($event)" />
+</div>
 
-  <!-- Pending RSVP Filter Pills (Me lens, upcoming only) -->
-  @if (showPendingRsvpFilter()) {
-    <lfx-filter-pills
-      [options]="pendingRsvpPillOptions"
-      [selectedFilter]="pendingRsvpOnly() ? 'pending' : ''"
-      (filterChange)="onPendingRsvpPillChange()"
-      data-testid="pending-rsvp-filter-pills" />
-  }
-
-  <!-- Organized by me Filter Pills (Me lens, upcoming + past) -->
-  @if (showOrganizerFilter()) {
-    <lfx-filter-pills
-      [options]="organizerPillOptions"
-      [selectedFilter]="organizerOnly() ? 'organizer' : ''"
-      (filterChange)="onOrganizerPillChange()"
-      data-testid="organizer-filter-pills" />
-  }
-
-  <!-- Search Input -->
-  <div class="flex-1">
-    <lfx-input-text
-      [form]="searchForm"
-      control="search"
-      placeholder="Search meetings..."
-      icon="fa-light fa-search"
-      styleClass="w-full"
-      size="small"
-      data-testid="meetings-search-input"></lfx-input-text>
-  </div>
-
-  <!-- Foundation Filter Dropdown -->
-  @if (showFoundationFilter()) {
-    <div class="w-full sm:w-48">
-      <lfx-select
-        [form]="searchForm"
-        control="foundationFilter"
-        size="small"
-        [options]="foundationOptions()"
-        styleClass="w-full"
-        (onChange)="onFoundationFilterChange($event.value)"
-        data-testid="foundation-filter-dropdown"></lfx-select>
+<div class="flex min-w-0 flex-col gap-4 px-5 py-4">
+  @if (showPersonalFilters()) {
+    <div class="flex min-w-0 flex-col gap-4" data-testid="personal-meeting-filters">
+      <div class="flex min-w-0 flex-wrap items-center gap-3" role="group" aria-label="Meeting response filters" data-testid="meeting-response-pills">
+        <lfx-filter-pills
+          class="min-w-0 max-w-full"
+          [options]="responseFilterOptions()"
+          [selectedFilter]="responseFilter()"
+          (filterChange)="onResponseFilterChange($event)" />
+      </div>
+      <div class="flex flex-wrap items-center gap-x-6 gap-y-3" role="group" aria-label="Additional meeting filters">
+        <lfx-checkbox
+          [form]="personalFiltersForm"
+          control="organizedByMe"
+          inputId="meetings-organized-by-me"
+          [label]="organizerLabel()"
+          data-testid="organized-by-me-checkbox" />
+        @if (responseFilter() !== 'declined') {
+          <lfx-checkbox
+            [form]="personalFiltersForm"
+            control="hideDeclined"
+            inputId="meetings-hide-declined"
+            label="Hide meetings declined for all dates"
+            data-testid="hide-declined-checkbox" />
+        }
+      </div>
     </div>
   }
 
-  <!-- Project Filter Dropdown -->
-  @if (showProjectFilter()) {
-    <div class="w-full sm:w-48">
+  <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+    <div class="min-w-0 w-full sm:w-auto sm:flex-1 sm:basis-48">
+      <lfx-input-text
+        [form]="searchForm"
+        control="search"
+        placeholder="Search meetings..."
+        icon="fa-light fa-search"
+        styleClass="w-full"
+        size="small"
+        data-testid="meetings-search-input"></lfx-input-text>
+    </div>
+
+    @if (showFoundationFilter()) {
+      <div class="min-w-0 w-full sm:w-48 sm:max-w-full">
+        <lfx-select
+          [form]="searchForm"
+          control="foundationFilter"
+          size="small"
+          [options]="foundationOptions()"
+          styleClass="w-full"
+          (onChange)="onFoundationFilterChange($event.value)"
+          data-testid="foundation-filter-dropdown"></lfx-select>
+      </div>
+    }
+
+    @if (showProjectFilter()) {
+      <div class="min-w-0 w-full sm:w-48 sm:max-w-full">
+        <lfx-select
+          [form]="searchForm"
+          control="projectFilter"
+          size="small"
+          [options]="projectOptions()"
+          styleClass="w-full"
+          (onChange)="onProjectFilterChange($event.value)"
+          data-testid="project-filter-dropdown"></lfx-select>
+      </div>
+    }
+
+    @if (showRollupFilters()) {
+      @if (rollupProjectOptions().length > 1) {
+        <div class="min-w-0 w-full sm:w-56 sm:max-w-full">
+          <lfx-multi-select
+            [form]="searchForm"
+            control="rollupProjects"
+            [options]="rollupProjectOptions()"
+            placeholder="All projects"
+            filterPlaceHolder="Search projects"
+            ariaLabel="Filter by project"
+            data-testid="rollup-project-filter"></lfx-multi-select>
+        </div>
+      }
+      @if (groupOptions().length > 0) {
+        <div class="min-w-0 w-full sm:w-56 sm:max-w-full">
+          <lfx-select
+            [form]="searchForm"
+            control="group"
+            size="small"
+            [options]="groupOptions()"
+            placeholder="All groups"
+            [filter]="true"
+            [showClear]="true"
+            styleClass="w-full"
+            (onChange)="onGroupFilterChange($event.value)"
+            ariaLabel="Filter by group"
+            data-testid="rollup-group-filter"></lfx-select>
+        </div>
+      }
+      @if (groupTypeOptions().length > 0) {
+        <div class="min-w-0 w-full sm:w-48 sm:max-w-full">
+          <lfx-select
+            [form]="searchForm"
+            control="groupType"
+            size="small"
+            [options]="groupTypeOptions()"
+            placeholder="All group types"
+            [showClear]="true"
+            styleClass="w-full"
+            (onChange)="onGroupTypeFilterChange($event.value)"
+            ariaLabel="Filter by group type"
+            data-testid="rollup-group-type-filter"></lfx-select>
+        </div>
+      }
+    }
+
+    <div class="min-w-0 w-full sm:w-64 sm:max-w-full">
       <lfx-select
         [form]="searchForm"
-        control="projectFilter"
+        control="meetingType"
         size="small"
-        [options]="projectOptions()"
+        [options]="meetingTypeOptions()"
+        placeholder="Select Type"
+        [showClear]="true"
         styleClass="w-full"
-        (onChange)="onProjectFilterChange($event.value)"
-        data-testid="project-filter-dropdown"></lfx-select>
+        (onChange)="onMeetingTypeChange($event.value)"
+        data-testid="meeting-type-filter"></lfx-select>
     </div>
-  }
-
-  <!-- Meeting Type Filter Dropdown -->
-  <div class="w-full sm:w-64">
-    <lfx-select
-      [form]="searchForm"
-      control="meetingType"
-      size="small"
-      [options]="meetingTypeOptions()"
-      placeholder="Select Type"
-      [showClear]="true"
-      styleClass="w-full"
-      (onChange)="onMeetingTypeChange($event.value)"
-      data-testid="meeting-type-filter"></lfx-select>
   </div>
 </div>

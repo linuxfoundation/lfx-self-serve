@@ -10,9 +10,13 @@ import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getPersonas = vi.fn();
+const checkProjectWriter = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
-  personaDetectionService: { getPersonas: () => getPersonas() },
+  personaDetectionService: {
+    getPersonas: () => getPersonas(),
+    checkProjectWriter: (...args: unknown[]) => checkProjectWriter(...args),
+  },
 }));
 
 const { requireExecutiveDirector } = await import('./require-executive-director.middleware');
@@ -49,6 +53,7 @@ function verdict(next: ReturnType<typeof vi.fn>): 'allow' | 'deny' {
 describe('requireExecutiveDirector', () => {
   beforeEach(() => {
     getPersonas.mockReset();
+    checkProjectWriter.mockReset();
   });
 
   it('denies a caller without the ED persona', async () => {
@@ -108,13 +113,36 @@ describe('requireExecutiveDirector', () => {
     expect(b.context?.code ?? b.code).toBe(a.context?.code ?? a.code);
   });
 
-  it('allows a root writer any foundation', async () => {
+  it('allows a root writer a foundation it also holds writer_guard on', async () => {
     getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
+    checkProjectWriter.mockResolvedValue(true);
     const next = vi.fn();
 
     await requireExecutiveDirector(buildReq({ foundationSlug: 'cncf' }), {} as Response, next as unknown as NextFunction);
 
     expect(verdict(next)).toBe('allow');
+    expect(checkProjectWriter).toHaveBeenCalledWith(expect.anything(), 'cncf');
+  });
+
+  // The ROOT check admits `global_writer`, which is withheld on Draft/Confidential projects.
+  it('denies a root writer a foundation it does not hold writer_guard on', async () => {
+    getPersonas.mockResolvedValue(edFor(['tlf'], { isRootWriter: true }));
+    checkProjectWriter.mockResolvedValue(false);
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq({ foundationSlug: 'cncf' }), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('deny');
+  });
+
+  it('allows a root writer an unscoped request without a per-project check', async () => {
+    getPersonas.mockResolvedValue(edFor([], { isRootWriter: true }));
+    const next = vi.fn();
+
+    await requireExecutiveDirector(buildReq(), {} as Response, next as unknown as NextFunction);
+
+    expect(verdict(next)).toBe('allow');
+    expect(checkProjectWriter).not.toHaveBeenCalled();
   });
 
   it('allows LF staff any foundation', async () => {

@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_HIDDEN_LEGEND_LABELS,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
   HEALTH_METRICS_EVENTS_QUERY_PARAMS,
   lfxColors,
 } from '@lfx-one/shared/constants';
@@ -47,7 +48,7 @@ import type {
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastQuery,
-  HealthMetricsEventsSectionKey,
+  HealthMetricsEventsForecastVerdictToneStyle,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -69,12 +70,13 @@ export class EventsRegistrationForecastComponent {
 
   /** The sub-nav note ("N will miss goal"); empty while a read is pending or failed. */
   public readonly countsChange = output<string>();
-  /** Fires once the event list settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /**
+   * Fires once the section settles, `true` when the foundation has no upcoming event; its height changes, moving
+   * every anchor below. A closed period gives no verdict, so its own note stands and the tab can go blank without it.
+   */
+  public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The closed-period cross-link; the L2 shell owns scrolling, so a repeat click still lands. */
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
@@ -90,6 +92,8 @@ export class EventsRegistrationForecastComponent {
   }));
   /** The model is a snapshot of now, so a completed year has nothing left to forecast. */
   protected readonly closedPeriod = computed(() => this.chrome.selectedRange() !== 'YTD');
+  /** No upcoming event to forecast; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.closedPeriod() && !this.loading() && !this.loadFailed() && this.response().events.length === 0);
   protected readonly response: Signal<HealthMetricsEventsForecast> = this.initResponse();
 
   protected readonly closedTitle = computed(() => `${getYearForRange(this.chrome.selectedRange())} is a closed period`);
@@ -97,12 +101,11 @@ export class EventsRegistrationForecastComponent {
   protected readonly forecastable = computed(() => filterHealthMetricsEventsForecastable(this.response().events));
   protected readonly eventOptions = computed<FilterPillOption[]>(() =>
     this.forecastable().map((event) => {
-      // The date is in the accessible name too, so same-named editions stay distinct to a screen reader.
-      const dateLabel = event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—';
+      // The pill shows the name only; the date stays in its tooltip and accessible name, so same-named editions stay distinct.
       return {
         id: event.eventId,
-        label: `${truncateHealthMetricsEventsPillName(event.eventName)} · ${dateLabel}`,
-        fullLabel: `${event.eventName} · ${dateLabel}`,
+        label: truncateHealthMetricsEventsPillName(event.eventName),
+        fullLabel: `${event.eventName} · ${this.formatEventDate(event)}`,
       };
     })
   );
@@ -110,6 +113,10 @@ export class EventsRegistrationForecastComponent {
   protected readonly selectedEvent = computed<HealthMetricsEventsForecastEvent | null>(() => {
     const events = this.forecastable();
     return events.find((event) => event.eventId === this.pickedEventId()) ?? events[0] ?? null;
+  });
+  protected readonly selectedDateLabel = computed(() => {
+    const event = this.selectedEvent();
+    return event ? this.formatEventDate(event) : '';
   });
 
   protected readonly curveQuery: Signal<HealthMetricsEventsForecastCurveQuery> = computed(() => ({
@@ -169,18 +176,10 @@ export class EventsRegistrationForecastComponent {
   protected readonly ratioLabel = computed(() => (this.verdict()?.ratio ?? 0).toFixed(1));
   /** A mis-entered goal can sit far above the forecast or far below it; the copy names which. */
   protected readonly goalSuspectAbove = computed(() => (this.verdict()?.ratio ?? 0) >= 1);
-  protected readonly verdictClass = computed(() => {
-    switch (this.verdict()?.tone) {
-      case 'ok':
-        return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-      case 'watch':
-        return 'border-amber-200 bg-amber-50 text-amber-800';
-      case 'act':
-        return 'border-red-200 bg-red-50 text-red-800';
-      default:
-        return 'border-gray-200 bg-gray-50 text-gray-700';
-    }
-  });
+  protected readonly verdictTone = computed<HealthMetricsEventsForecastVerdictToneStyle>(
+    () => HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES[this.verdict()?.tone ?? 'none']
+  );
+  protected readonly verdictBannerClass = computed(() => `${this.verdictTone().accentClass} ${this.verdictTone().tintClass}`.trim());
 
   protected readonly rowViews = computed(() => buildHealthMetricsEventsForecastRowViews(this.response().events));
 
@@ -243,10 +242,6 @@ export class EventsRegistrationForecastComponent {
     this.format.set(format);
   }
 
-  protected onViewPastEvents(): void {
-    this.sectionPicked.emit('past');
-  }
-
   private initResponse(): Signal<HealthMetricsEventsForecast> {
     if (!isPlatformBrowser(this.platformId)) {
       // `loading` stays at its static `true` so the serialized skeleton matches the pre-hydration DOM.
@@ -280,7 +275,7 @@ export class EventsRegistrationForecastComponent {
               this.loading.set(!foundationSeen);
               this.countsChange.emit(this.loadFailed() ? '' : buildHealthMetricsEventsForecastNote(response.events));
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(closed ? null : !this.loadFailed() && response.events.length === 0);
             })
           )
         )
@@ -388,6 +383,10 @@ export class EventsRegistrationForecastComponent {
         },
       ],
     };
+  }
+
+  private formatEventDate(event: HealthMetricsEventsForecastEvent): string {
+    return event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—';
   }
 
   private syncUrl(eventId: string | null): void {

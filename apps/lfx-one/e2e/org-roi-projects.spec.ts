@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 // Imported from the module, not the `utils` barrel: the barrel re-exports form.utils, which pulls
 // in @angular/common and fails to load outside the Angular app with a JIT compiler error.
@@ -12,6 +12,7 @@ import {
   BUBBLE_MAX_POINTS,
   DEFAULT_SELECTED_PROJECTS,
   gotoOrgRoiPage,
+  MOCK_VALUE_DRIVERS,
   MANY_PROJECT_COUNT,
   MANY_PROJECT_INPUTS,
   MANY_PROJECTS,
@@ -83,9 +84,9 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(legend).not.toContainText(QUARRY_STORE.name);
   });
 
-  test('reports the true signed value of a negative net return', async ({ page }) => {
-    // An arc cannot be negative, so the geometry is clamped — but the figure must survive that
-    // clamp intact, or a loss-making project silently reads as costless.
+  test('reports the negative net return as a total in the note, not as a list', async ({ page }) => {
+    // An arc cannot be negative, so the geometry is clamped — but the total must survive that
+    // clamp intact, or a loss-making portfolio silently reads as costless.
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
@@ -98,11 +99,16 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(note).toContainText(formatCurrency(NEGATIVE_PROJECTS_TOTAL));
     await expect(note).toContainText('cannot be sized as a slice');
 
-    const list = page.getByTestId('org-roi-projects-donut-negative-list');
+    // Loss-making projects are not listed beside the chart; their figures are in the All projects table.
+    await expect(page.getByTestId('org-roi-projects-donut-negative-list')).toHaveCount(0);
+    await expect(page.getByTestId('org-roi-projects-donut')).not.toContainText(NEGATIVE_PROJECTS[0].name);
+
+    await page.getByTestId('org-roi-projects-section-tab-table').click();
+    const table = page.getByTestId('org-roi-projects-table');
     for (const project of NEGATIVE_PROJECTS) {
-      await expect(list).toContainText(project.name);
+      await expect(table).toContainText(project.name);
       // The signed figure itself, not just the project's name.
-      await expect(list).toContainText(formatCurrency(project.profit));
+      await expect(table).toContainText(formatCurrency(project.profit));
     }
 
     // The chart still renders, sized by the profitable projects alone.
@@ -129,7 +135,7 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await expect(page.getByTestId('org-roi-projects-donut-negative-note')).toHaveCount(0);
   });
 
-  test('drops the chart but keeps the figures when no project has a positive net return', async ({ page }) => {
+  test('drops the chart but keeps the total when no project has a positive net return', async ({ page }) => {
     await stubOrgLensContext(page, { projects: ALL_LOSS_MAKING });
     await gotoOrgRoiPage(page);
 
@@ -137,20 +143,22 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
 
     await expect(page.getByTestId('org-roi-projects-donut-no-positive')).toBeVisible();
     await expect(page.getByTestId('org-roi-projects-donut-chart')).toHaveCount(0);
-    // The absence of a drawable magnitude must not take the numbers with it.
-    const list = page.getByTestId('org-roi-projects-donut-negative-list');
-    await expect(list).toContainText(KUBERNETES.name);
-    await expect(list).toContainText(formatCurrency(KUBERNETES.expenditure / 4 - KUBERNETES.expenditure));
+    // The absence of a drawable magnitude must not take the total with it.
+    const note = page.getByTestId('org-roi-projects-donut-negative-note');
+    await expect(note).toContainText(`${ALL_LOSS_MAKING.rows.length} projects have a negative net return`);
+    await expect(note).toContainText(formatCurrency(ALL_LOSS_MAKING.rows.reduce((sum, row) => sum + row.profit, 0)));
+
+    // Each project's own figures are still reported, in the table.
+    await page.getByTestId('org-roi-projects-section-tab-table').click();
+    await expect(page.getByTestId('org-roi-projects-table')).toContainText(formatCurrency(KUBERNETES.expenditure / 4 - KUBERNETES.expenditure));
   });
 
-  test('carries the modelled-cost disclosure wherever a figure derives from modelled cost', async ({ page }) => {
+  test('carries the investment disclosure wherever a figure derives from modelled cost', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
     const note = page.getByTestId('org-roi-projects-donut-modelled-cost-note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('modelled cost');
-    await expect(note).toContainText('not actual or reported compensation');
     await expect(note).toContainText('same for every organization');
     await expect(note).toContainText('No salary, payroll, or invoice data is used.');
 
@@ -224,18 +232,32 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
   });
 });
 
+/** The panel opens on All projects, so tests of the chart views switch to the comparison view first. */
+async function gotoOrgRoiProjectsBar(page: Page): Promise<void> {
+  await gotoOrgRoiPage(page);
+  await page.getByTestId('org-roi-projects-section-tab-bar').click();
+}
+
 /**
- * The projects section: four views over the same complete project set, three of them driven by one
+ * The projects section: five views over the same complete project set, three of them driven by one
  * shared selection. Every expected string is derived from the fixture through the same formatter
  * the components use.
  */
 test.describe('Org Lens ROI Metrics — projects section', () => {
-  test('opens on the comparison view with the top projects by return already selected', async ({ page }) => {
+  test('opens on the All projects table, which pages the complete set without a picker', async ({ page }) => {
     await stubOrgLensContext(page);
     await gotoOrgRoiPage(page);
 
-    const section = page.getByTestId('org-roi-projects-section');
-    await expect(section).toBeVisible();
+    await expect(page.getByTestId('org-roi-projects-section')).toBeVisible();
+    await expect(page.getByTestId('org-roi-projects-section-tab-table')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('org-roi-projects-table')).toBeVisible();
+    await expect(page.getByTestId('org-roi-project-picker')).toHaveCount(0);
+  });
+
+  test('opens the comparison view with the top projects by return already selected', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiProjectsBar(page);
+
     await expect(page.getByTestId('org-roi-projects-section-tab-bar')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('org-roi-projects-bar-chart')).toBeVisible();
 
@@ -250,7 +272,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('shares one selection across the comparison, flow and efficiency views', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     const removed = DEFAULT_SELECTED_PROJECTS[0];
     await page.getByTestId(`org-roi-project-picker-remove-prj-${removed.slug}`).click();
@@ -267,7 +289,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('applies the Top, All and None presets', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await page.getByTestId('org-roi-project-picker-none').click();
     await expect(page.getByTestId('org-roi-project-picker-empty')).toBeVisible();
@@ -285,7 +307,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('adds a project by search', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await page.locator('[data-test="org-roi-project-picker-search"]').fill(UNSELECTED_PROJECT.name);
     await expect(page.getByTestId('org-roi-project-picker-match-count')).toContainText('1 project matches.');
@@ -300,7 +322,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     // The match list is capped for readability. Reporting the capped length told a viewer
     // searching a large portfolio that 20 projects matched when hundreds did.
     await stubOrgLensContext(page, { projects: MANY_PROJECTS });
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await page.locator('[data-test="org-roi-project-picker-search"]').fill('Project');
     const label = page.getByTestId('org-roi-project-picker-match-count');
@@ -313,13 +335,13 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     // None is a choice. Restoring the default on the next payload treated it as an absence, so a
     // method switch silently put five projects back onto a deliberately cleared chart.
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await page.getByTestId('org-roi-project-picker-none').click();
     await expect(page.getByTestId('org-roi-project-picker-empty')).toBeVisible();
 
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
 
     await expect(page.getByTestId('org-roi-project-picker-empty')).toBeVisible();
     await expect(page.getByTestId('org-roi-projects-bar-empty')).toBeVisible();
@@ -339,7 +361,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
       }
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_PROJECTS) });
     });
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     const state = page.getByTestId('org-roi-projects-section-empty-state');
     await expect(state).toBeVisible();
@@ -347,8 +369,8 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await expect(state).toContainText('This section could not be loaded');
 
     // Switching method re-issues the read, which now succeeds.
-    await page.getByTestId('org-roi-assumptions-trigger').click();
-    await page.getByTestId('org-roi-assumptions-method-direct').click();
+    await page.getByTestId('org-roi-settings-trigger').click();
+    await page.getByTestId('org-roi-settings-method-direct').click();
 
     const chips = page.getByTestId('org-roi-project-picker-chips');
     await expect(chips).toBeVisible();
@@ -358,7 +380,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('does not offer an already-selected project as a search match', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     const selected = DEFAULT_SELECTED_PROJECTS[0];
     await page.locator('[data-test="org-roi-project-picker-search"]').fill(selected.name);
@@ -367,7 +389,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('states that the comparison bars use separate scales and never rescales the stack', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await expect(page.getByTestId('org-roi-projects-bar-scale-note')).toContainText('separate scales');
 
@@ -384,7 +406,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('toggles the flow view between investment and return', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-projects-section-tab-sankey').click();
 
     await expect(page.getByTestId('org-roi-projects-sankey-measure-investment')).toHaveAttribute('aria-pressed', 'true');
@@ -400,30 +422,29 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await expect(flows).not.toContainText('Code Contribution');
   });
 
-  test('carries the modelled-cost disclosure on every view that shows an investment figure', async ({ page }) => {
+  test('carries the investment disclosure on every view that shows an investment figure', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     const barNote = page.getByTestId('org-roi-projects-bar-modelled-cost-note');
-    await expect(barNote).toContainText('modelled cost');
-    await expect(barNote).toContainText('not actual or reported compensation');
+    await expect(barNote).toContainText('No salary, payroll, or invoice data is used.');
 
     await page.getByTestId('org-roi-projects-section-tab-sankey').click();
-    await expect(page.getByTestId('org-roi-projects-sankey-modelled-cost-note')).toContainText('modelled cost');
+    await expect(page.getByTestId('org-roi-projects-sankey-modelled-cost-note')).toContainText('No salary, payroll, or invoice data is used.');
     // The return flow is not derived from investment, so it does not owe the disclosure.
     await page.getByTestId('org-roi-projects-sankey-measure-return').click();
     await expect(page.getByTestId('org-roi-projects-sankey-modelled-cost-note')).toHaveCount(0);
 
     await page.getByTestId('org-roi-projects-section-tab-bubble').click();
-    await expect(page.getByTestId('org-roi-projects-bubble-modelled-cost-note')).toContainText('modelled cost');
+    await expect(page.getByTestId('org-roi-projects-bubble-modelled-cost-note')).toContainText('No salary, payroll, or invoice data is used.');
 
     await page.getByTestId('org-roi-projects-section-tab-table').click();
-    await expect(page.getByTestId('org-roi-projects-table-modelled-cost-note')).toContainText('modelled cost');
+    await expect(page.getByTestId('org-roi-projects-table-modelled-cost-note')).toContainText('No salary, payroll, or invoice data is used.');
   });
 
   test('names every chart for assistive technology and lists its values as text', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await expect(page.getByTestId('org-roi-projects-bar-chart')).toHaveAttribute('aria-label', /bar chart comparing modelled investment/i);
     await expect(page.getByTestId('org-roi-projects-bar-table')).toHaveCount(1);
@@ -439,7 +460,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('explains the logarithmic axes on the efficiency view', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-projects-section-tab-bubble').click();
 
     await expect(page.getByTestId('org-roi-projects-bubble-scale-note')).toContainText('logarithmic');
@@ -449,7 +470,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('discloses a project it had to draw at the axis floor', async ({ page }) => {
     await stubOrgLensContext(page, { projects: PROJECTS_WITH_NULL_RATIOS });
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-projects-section-tab-bubble').click();
     await page.getByTestId('org-roi-project-picker-all').click();
 
@@ -462,7 +483,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('pages the table through the complete project set', async ({ page }) => {
     await stubOrgLensContext(page, { projects: MANY_PROJECTS });
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-projects-section-tab-table').click();
 
     await expect(page.getByTestId('org-roi-projects-table-count')).toContainText(`${MANY_PROJECT_COUNT.toLocaleString('en-US')} projects`);
@@ -482,7 +503,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('sorts by a metric column and shows the direction', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-projects-section-tab-table').click();
 
     const cheapest = [...MOCK_PROJECT_INPUTS].sort((a, b) => a.expenditure - b.expenditure)[0];
@@ -497,7 +518,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('renders an undefined ratio as the no-value indicator, never as zero', async ({ page }) => {
     await stubOrgLensContext(page, { projects: PROJECTS_WITH_NULL_RATIOS });
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-projects-section-tab-table').click();
 
     const row = page.getByTestId(`org-roi-projects-table-row-${NO_INVESTMENT_PROJECT.projectId}`);
@@ -509,7 +530,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('does not offer the picker on the table, which pages the complete set', async ({ page }) => {
     await stubOrgLensContext(page);
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     await expect(page.getByTestId('org-roi-project-picker')).toBeVisible();
     await page.getByTestId('org-roi-projects-section-tab-table').click();
@@ -518,7 +539,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
 
   test('discloses how many selected projects a chart could not draw', async ({ page }) => {
     await stubOrgLensContext(page, { projects: MANY_PROJECTS });
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
     await page.getByTestId('org-roi-project-picker-all').click();
 
     // "All" is a legitimate selection on a portfolio this size, so the shortfall is disclosed
@@ -549,7 +570,7 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
         body: JSON.stringify({ code: 'FORBIDDEN', message: 'You do not have access to Org Lens data for this organization.' }),
       })
     );
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     const state = page.getByTestId('org-roi-projects-section-empty-state');
     await expect(state).toBeVisible();
@@ -564,12 +585,82 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     await page.route('**/api/orgs/*/lens/roi/projects*', (route) =>
       route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'ROLE_GRANTS_UNAVAILABLE' }) })
     );
-    await gotoOrgRoiPage(page);
+    await gotoOrgRoiProjectsBar(page);
 
     const state = page.getByTestId('org-roi-projects-section-empty-state');
     await expect(state).toBeVisible();
     await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
     await expect(state).toContainText('Access could not be verified');
     await expect(state).not.toContainText('You do not have access');
+  });
+});
+
+test.describe('Org Lens ROI Metrics — chart controls', () => {
+  test('lets the viewer choose which bars are drawn, and keeps at least one on', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiProjectsBar(page);
+
+    const chart = page.getByTestId('org-roi-projects-bar-chart');
+    const investment = page.getByTestId('org-roi-projects-bar-series-investment').getByRole('checkbox');
+    const returned = page.getByTestId('org-roi-projects-bar-series-return').getByRole('checkbox');
+
+    await expect(investment).toBeChecked();
+    await expect(returned).toBeChecked();
+    await expect(chart).toHaveAttribute('aria-label', /comparing modelled investment/);
+
+    await investment.uncheck();
+    await expect(chart).toHaveAttribute('aria-label', /Horizontal bar chart of return/);
+    // Return is now the only bar drawn, so it is locked on rather than able to clear the chart.
+    await expect(returned).toBeDisabled();
+    await expect(page.getByTestId('org-roi-projects-bar-series-hint')).toBeVisible();
+
+    await investment.check();
+    await expect(chart).toHaveAttribute('aria-label', /comparing modelled investment/);
+    await expect(returned).toBeEnabled();
+  });
+
+  test('marks break-even on the efficiency chart for the default selection and says what it means', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiProjectsBar(page);
+    await page.getByTestId('org-roi-projects-section-tab-bubble').click();
+
+    await expect(page.getByTestId('org-roi-projects-bubble-chart')).toHaveAttribute('aria-label', /A dashed line marks break-even/);
+    const note = page.getByTestId('org-roi-projects-bubble-breakeven-note');
+    await expect(note).toContainText('break-even, where investment equals return');
+    await expect(note).toContainText('both axes share one scale');
+  });
+});
+
+test.describe('Org Lens ROI Metrics — value drivers tab', () => {
+  test('draws signed bars against the average and states the overall result', async ({ page }) => {
+    await stubOrgLensContext(page);
+    await gotoOrgRoiPage(page);
+    await page.getByTestId('org-roi-projects-section-tab-drivers').click();
+
+    await expect(page.getByTestId('org-roi-value-drivers-chart')).toBeVisible();
+    await expect(page.getByTestId('org-roi-value-drivers-value-0')).toHaveText('+14.2%');
+    await expect(page.getByTestId('org-roi-value-drivers-value-4')).toHaveText('-9.7%');
+    await expect(page.getByTestId('org-roi-value-drivers-summary')).toHaveText('Based on your 12 projects.');
+    // A portfolio-wide view: the project picker belongs to the other views.
+    await expect(page.getByTestId('org-roi-project-picker-chips')).toHaveCount(0);
+  });
+
+  test('shows an empty state when the organization has no decomposition', async ({ page }) => {
+    await stubOrgLensContext(page, { valueDrivers: { ...MOCK_VALUE_DRIVERS, nProjects: 0, rows: [] } });
+    await gotoOrgRoiPage(page);
+    await page.getByTestId('org-roi-projects-section-tab-drivers').click();
+
+    await expect(page.getByTestId('org-roi-value-drivers-empty-state')).toBeVisible();
+    await expect(page.getByTestId('org-roi-value-drivers-chart')).toHaveCount(0);
+  });
+
+  test('a failed read leaves the other project views working', async ({ page }) => {
+    await stubOrgLensContext(page, { valueDriversStatus: 500 });
+    await gotoOrgRoiPage(page);
+    await page.getByTestId('org-roi-projects-section-tab-drivers').click();
+    await expect(page.getByTestId('org-roi-value-drivers-empty-state')).toBeVisible();
+
+    await page.getByTestId('org-roi-projects-section-tab-bar').click();
+    await expect(page.getByTestId('org-roi-projects-bar-chart')).toBeVisible();
   });
 });

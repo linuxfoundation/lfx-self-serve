@@ -5,11 +5,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { OrgClaGroup, OrgClaSignSelection } from '../interfaces/cla.interface';
 import {
+  orgClaCatalogueGroup,
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaIsViewOnly,
   orgClaOpenLabel,
   orgClaPreviewGroup,
+  orgClaReviewCopyFilename,
   isOrgClaSendByEmailChoice,
 } from './org-cla-view.utils';
 
@@ -136,6 +139,35 @@ describe('orgClaPreviewGroup', () => {
   });
 });
 
+describe('orgClaCatalogueGroup', () => {
+  it('heads the overview with the CLA Group id when the catalogue names neither group nor project', () => {
+    expect(orgClaCatalogueGroup({ claGroupId: 'cla-group-uuid-1', matchTypes: [], organizations: [] }).claGroupName).toBe('cla-group-uuid-1');
+  });
+});
+
+describe('orgClaIsViewOnly', () => {
+  it('is true for a signed agreement whose CLA Manager list does not name the viewer', () => {
+    expect(orgClaIsViewOnly({ signed: true, viewerIsClaManager: false })).toBe(true);
+  });
+
+  it('is false for a signed agreement the viewer manages', () => {
+    expect(orgClaIsViewOnly({ signed: true, viewerIsClaManager: true })).toBe(false);
+  });
+
+  it('is false for the unsigned preview, which also carries viewerIsClaManager false', () => {
+    const preview = orgClaPreviewGroup({
+      claGroupId: 'cla-group-uuid-1',
+      claGroupName: 'Cascade CLA',
+      projectSfid: 'a09410000182dD2AAI',
+      projectName: 'Cascade',
+      orgUid: 'org-uuid-1',
+    });
+
+    expect(preview.viewerIsClaManager).toBe(false);
+    expect(orgClaIsViewOnly(preview)).toBe(false);
+  });
+});
+
 describe('isOrgClaSendByEmailChoice', () => {
   it('recognises the send-by-email close value and not an attestation', () => {
     expect(isOrgClaSendByEmailChoice({ sendByEmail: true })).toBe(true);
@@ -161,6 +193,7 @@ describe('orgClaGroupForAddress', () => {
     status: 'signed',
     needsClaManager: false,
     claManagersCount: 0,
+    viewerIsClaManager: false,
     ...over,
   });
 
@@ -308,5 +341,17 @@ describe('orgClaGroupForAddress', () => {
 
     expect(orgClaGroupForAddress([unsigned, signed], GROUP)?.id).toBe('sig-signed');
     expect(orgClaGroupForAddress([signed, unsigned], GROUP)?.id).toBe('sig-signed');
+  });
+});
+
+describe('orgClaReviewCopyFilename', () => {
+  it('names the CLA Group, so copies for different groups can be told apart', () => {
+    expect(orgClaReviewCopyFilename('Nimbus Foundation CLA')).toBe('Nimbus Foundation CLA-ccla-review.pdf');
+  });
+
+  it('falls back to the filename the server names when the group has no name', () => {
+    expect(orgClaReviewCopyFilename(undefined)).toBe('Corporate_Contributor_License_Agreement.pdf');
+    expect(orgClaReviewCopyFilename('')).toBe('Corporate_Contributor_License_Agreement.pdf');
+    expect(orgClaReviewCopyFilename('   ')).toBe('Corporate_Contributor_License_Agreement.pdf');
   });
 });

@@ -19,6 +19,42 @@ export class SearchController {
   private cdpService: CdpService = new CdpService();
 
   /**
+   * GET /search/users/:lfid/work-experiences
+   * Returns the computed current employer ({name, id}) for any user by LFID, or null.
+   * Used to pre-fill the organization field in the add-member dialog.
+   *
+   * Auth: requires a valid session (authMiddleware, applied globally). Any authenticated user can
+   * query any LFID — a committee-admin role guard is not yet implemented in this BFF. The response
+   * is a single computed org reference (no employment dates or job titles) to limit PII exposure.
+   * TODO(LFXV2-2531): add a committee-admin/manager role check once the BFF has that middleware.
+   */
+  public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { lfid } = req.params;
+    const startTime = logger.startOperation(req, 'get_user_work_experiences', { lfid });
+
+    try {
+      if (!lfid || typeof lfid !== 'string') {
+        return next(
+          ServiceValidationError.forField('lfid', 'lfid path parameter is required', {
+            operation: 'get_user_work_experiences',
+            service: 'search_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
+      const employer: CommitteeOrganizationReference | null = currentEmployerFromWorkExperiences(workExperiences);
+
+      logger.success(req, 'get_user_work_experiences', startTime, { lfid, found: !!employer });
+
+      res.json(employer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /search/users
    * Searches for users across meeting registrants and committee members
    */
@@ -66,6 +102,34 @@ export class SearchController {
         return;
       }
 
+      // `tags` must be a single string — a repeated `tags` param arrives as an array and is
+      // forwarded upstream as OR'd tags. Committee-member search only supports the exact
+      // `email:<address>` lookup; any other tag (e.g. `committee_uid:<uid>`) would list a
+      // committee's roster regardless of its `member_visibility`.
+      if (tags !== undefined && (typeof tags !== 'string' || (type === 'committee_member' && !/^email:[^\s,]+$/.test(tags)))) {
+        const validationError = ServiceValidationError.forField('tags', 'Tags parameter must be a single email:<address> value', {
+          operation: 'search_users',
+          service: 'search_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // `name` must be a single string too — a repeated `name` param arrives as an array, which the
+      // service's committee-member name filter cannot match against.
+      if (name !== undefined && typeof name !== 'string') {
+        const validationError = ServiceValidationError.forField('name', 'Name parameter must be a single string', {
+          operation: 'search_users',
+          service: 'search_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
       // Build search parameters
       // A name typeahead asks for relevance ordering; the upstream default (`name_asc`) would hand
       // back the alphabetically first page instead (see `UserSearchParams.sort`).
@@ -84,42 +148,6 @@ export class SearchController {
       });
 
       res.json(results);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /search/users/:lfid/work-experiences
-   * Returns the computed current employer ({name, id}) for any user by LFID, or null.
-   * Used to pre-fill the organization field in the add-member dialog.
-   *
-   * Auth: requires a valid session (authMiddleware, applied globally). Any authenticated user can
-   * query any LFID — a committee-admin role guard is not yet implemented in this BFF. The response
-   * is a single computed org reference (no employment dates or job titles) to limit PII exposure.
-   * TODO(LFXV2-2531): add a committee-admin/manager role check once the BFF has that middleware.
-   */
-  public async getUserWorkExperiences(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { lfid } = req.params;
-    const startTime = logger.startOperation(req, 'get_user_work_experiences', { lfid });
-
-    try {
-      if (!lfid || typeof lfid !== 'string') {
-        return next(
-          ServiceValidationError.forField('lfid', 'lfid path parameter is required', {
-            operation: 'get_user_work_experiences',
-            service: 'search_controller',
-            path: req.path,
-          })
-        );
-      }
-
-      const workExperiences = await this.cdpService.getWorkExperiencesForUser(req, lfid);
-      const employer: CommitteeOrganizationReference | null = currentEmployerFromWorkExperiences(workExperiences);
-
-      logger.success(req, 'get_user_work_experiences', startTime, { lfid, found: !!employer });
-
-      res.json(employer);
     } catch (error) {
       next(error);
     }

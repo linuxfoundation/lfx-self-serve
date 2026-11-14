@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ARTIFACT_CONTENT_TYPE, MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import {
+  MKTG_ARTIFACT_CONTENT_TYPE,
+  MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
+  MKTG_ARTIFACT_INTAKE_MODES,
+  MKTG_ARTIFACT_PARTITION_REGEX,
+} from '@lfx-one/shared/constants';
 import {
   MktgArtifactEnvelope,
   MktgArtifactIntakeMode,
@@ -70,7 +75,13 @@ export class MktgArtifactService {
    * omitted (WARN says which reason). A storage failure is retried by the
    * next poll.
    */
-  public async persist(req: Request, spec: MktgArtifactSpec, envelope: MktgArtifactEnvelope, projectUid?: string): Promise<MktgArtifactPersistReceipt | null> {
+  public async persist(
+    req: Request,
+    spec: MktgArtifactSpec,
+    envelope: MktgArtifactEnvelope,
+    projectUid?: string,
+    options: { revisionManaged?: boolean } = {}
+  ): Promise<MktgArtifactPersistReceipt | null> {
     const operation = this.persistOperation(spec);
     const partition = await this.resolveWritablePartition(req, spec, projectUid);
     if (!partition) {
@@ -111,7 +122,7 @@ export class MktgArtifactService {
         documentBytes,
         MKTG_ARTIFACT_CONTENT_TYPE,
         'private',
-        { version: String(envelope.version), 'intake-mode': envelope.intake.mode },
+        { version: String(envelope.version), 'intake-mode': envelope.intake.mode, ...(options.revisionManaged && { 'revision-managed': 'true' }) },
         // The bytes are immutable, but their metadata is not content: when a
         // later draft of the run reproduces this document verbatim, the stored
         // labels still describe the draft that wrote it first, and — because
@@ -183,7 +194,12 @@ export class MktgArtifactService {
    * as the write path, whose bucket env var is intentionally absent in some
    * deployed environments.
    */
-  public async readLatest(req: Request, spec: MktgArtifactSpec, projectUid: string): Promise<MktgArtifactStoredResponse | null> {
+  public async readLatest(
+    req: Request,
+    spec: MktgArtifactSpec,
+    projectUid: string,
+    options: { legacyOnly?: boolean } = {}
+  ): Promise<MktgArtifactStoredResponse | null> {
     const operation = this.storedOperation(spec);
 
     // The partition uid comes from the server-resolved project — but it must
@@ -208,7 +224,7 @@ export class MktgArtifactService {
         // Non-null by the filter above.
         const keySha = extractMktgArtifactKeySha(candidate.key, prefix) as string;
         const object = await this.objectStore.getObject(req, 'marketing-os-artifacts', candidate.key);
-        if (!object) {
+        if (!object || (options.legacyOnly && object.metadata['revision-managed'] === 'true')) {
           continue;
         }
 
@@ -223,7 +239,8 @@ export class MktgArtifactService {
           continue;
         }
 
-        const intakeMode: MktgArtifactIntakeMode = object.metadata['intake-mode'] === 'conversational' ? 'conversational' : 'form';
+        const storedMode = object.metadata['intake-mode'] as MktgArtifactIntakeMode;
+        const intakeMode: MktgArtifactIntakeMode = MKTG_ARTIFACT_INTAKE_MODES.includes(storedMode) ? storedMode : 'form';
 
         logger.success(req, operation, startTime, { project: projectUid, key: candidate.key });
         return {
@@ -270,8 +287,12 @@ export class MktgArtifactService {
    * Every refusal is a WARN, never an ERROR: the caller degrades by returning
    * the validated document without a receipt, exactly like a storage outage
    * (graceful-degradation logging discipline).
+   *
+   * Public so the document store can run the SAME write boundary for an agent
+   * whose output is a structured asset stored as a revision only (nothing is
+   * written to this layer's `.md` partition for it).
    */
-  private async resolveWritablePartition(req: Request, spec: MktgArtifactSpec, projectUid?: string): Promise<string | null> {
+  public async resolveWritablePartition(req: Request, spec: MktgArtifactSpec, projectUid?: string): Promise<string | null> {
     const operation = this.persistOperation(spec);
     const uid = projectUid?.trim();
     if (!uid) {

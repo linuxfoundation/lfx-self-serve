@@ -4,19 +4,164 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CampaignPlatform,
+  GoogleCreativeEitherOrRule,
+  GoogleCreativeFieldSpec,
+  GoogleCreativeSharedCap,
+  RedditObjective,
+} from '../interfaces/campaign.interface';
+import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
+import { lfxColors } from './colors.constants';
+import {
   isCanonicalGoogleAdsResourceId,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  isCreativeAssetMimeType,
+  sniffCreativeAssetMimeType,
+  BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+  DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
+  CAMPAIGN_PLATFORMS,
+  MONITOR_PLATFORM_BUTTON_COLORS,
+  CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_SEND_STAGES,
+  CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
+  CAMPAIGN_SURVEY_STAGES,
+  CAMPAIGN_SURVEY_TYPES,
+  CAMPAIGN_EMAIL_STAGES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
+  DEFAULT_REDDIT_CALL_TO_ACTION,
+  DEFAULT_REDDIT_OBJECTIVE,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_AGE_RANGES,
+  GOOGLE_ADS_BIDDING_BOUNDS,
+  GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
+  GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
+  GOOGLE_ADS_DEVICE_LABELS,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_LANGUAGE_LABELS,
+  GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS,
+  GOOGLE_ADS_MAX_GEO_TARGETS,
+  GOOGLE_ADS_MAX_PROXIMITY_TARGETS,
+  GOOGLE_BIDDING_CPA_STRATEGIES,
+  GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
+  GOOGLE_BIDDING_ROAS_STRATEGIES,
+  GOOGLE_BIDDING_STRATEGIES,
+  GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
+  GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
+  GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES,
+  GOOGLE_ADS_MAX_SEARCH_THEME_RUNES,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_AD_EXTENSIONS,
+  GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS,
+  GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_SEARCH_THEMES,
+  GOOGLE_CHANNELS_WITH_SITELINKS,
+  GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS,
+  GOOGLE_ASSET_PLAN_SLOT_CONTROLS,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
+  GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_CPA,
+  GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
+  GOOGLE_CONVERSION_ACTION_CHANNELS,
+  GOOGLE_CREATIVE_EITHER_OR_RULES,
+  GOOGLE_CREATIVE_FIELD_SPECS,
+  GOOGLE_CREATIVE_REQUEST_KEYS,
+  GOOGLE_CREATIVE_REQUIRED_NOTICE,
+  GOOGLE_CREATIVE_SECTION_NOTICES,
+  GOOGLE_CREATIVE_SECTION_TITLES,
+  GOOGLE_CREATIVE_SHARED_CAPS,
+  GOOGLE_SEARCH_ASSETS_NOTICE,
+  MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_GEO_LIST_ENTRIES,
+  MAX_REDDIT_HEADLINE_LENGTH,
+  MICROSOFT_MAX_GEO_TARGETS,
   META_OBJECTIVE_LABELS,
   META_OBJECTIVE_PARAMS,
   META_SELECTABLE_OBJECTIVES,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_OBJECTIVE_LABELS,
+  REDDIT_OBJECTIVE_PARAMS,
+  REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOAL_LABELS,
+  REDDIT_VIDEO_GOALS,
+  TOGGLEABLE_CAMPAIGN_PLATFORMS,
   campaignToggleAction,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
   normalizeGeoTargets,
   normalizeMicrosoftGeoTargets,
+  resolveRedditOptimizationGoal,
+  googleAdsEchoed,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
+  googleAdsDecodedText,
+  googleAdsTrimSpace,
+  googleAdsWellFormed,
+  googleAdsUrlGoParseFlaw,
+  isGoogleAdsServableUrl,
+  isGoSpaceCode,
+  PAUSE_ONLY_CAMPAIGN_PLATFORMS,
+  campaignResumeWithheldForPlatform,
+  campaignPlatformMonitorable,
 } from './campaign.constants';
+
+/**
+ * The Monitoring tab's offer is decoupled from the CREATE flow's `disabled` flag, as the toggle is.
+ * X's adopted campaigns are live and spending, so its monitor shows while its create stays off.
+ */
+describe('campaignPlatformMonitorable', () => {
+  it('offers X to the Monitoring tab while X create stays disabled', () => {
+    expect(CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled).toBe(true);
+    expect(campaignPlatformMonitorable('twitter-ads')).toBe(true);
+  });
+
+  it('offers every create-enabled platform', () => {
+    for (const platform of CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)) {
+      expect(campaignPlatformMonitorable(platform.id)).toBe(true);
+    }
+  });
+
+  it('keeps X out of the create-enabled platforms the Implement tab and the picker offer', () => {
+    expect(CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id)).not.toContain('twitter-ads');
+  });
+
+  it('answers false for a platform the list does not know', () => {
+    expect(campaignPlatformMonitorable('unknown-ads' as CampaignPlatform)).toBe(false);
+  });
+});
+
+/**
+ * The toggle is decoupled from the CREATE flow's `disabled` flag. A campaign reaches this app by
+ * being created here or by being adopted, and an adopted campaign is live and spending, so it must
+ * be pausable whether or not its platform can be created. X is the case that proves it: create
+ * stays off, pause is on.
+ */
+describe('TOGGLEABLE_CAMPAIGN_PLATFORMS', () => {
+  it('is exactly the create-enabled platforms plus the adoptable ones', () => {
+    const createEnabled = CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id);
+    const expected = [...new Set<string>([...createEnabled, ...CAMPAIGN_ADOPT_PLATFORMS])].sort();
+    expect([...TOGGLEABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(expected);
+  });
+
+  it('pins the toggleable set, including X', () => {
+    expect([...TOGGLEABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
+  });
+
+  it('keeps X create disabled while its adopted campaigns are toggleable', () => {
+    expect(CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled).toBe(true);
+    expect(TOGGLEABLE_CAMPAIGN_PLATFORMS.has('twitter-ads')).toBe(true);
+  });
+});
 
 describe('campaignToggleAction', () => {
   it('offers pause for the statuses that are running upstream', () => {
@@ -47,29 +192,30 @@ describe('campaignToggleAction', () => {
   });
 
   /**
-   * Narrowed to `twitter-ads` by LFXV2-3312, which ENABLED Microsoft.
-   * `TOGGLEABLE_CAMPAIGN_PLATFORMS` is derived from `CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)`,
-   * so dropping that flag admits microsoft-ads here BY DESIGN. X stays disabled — a capability gap
-   * rather than missing plumbing — so it remains the subject and the guard still binds: make X
-   * toggleable and this goes red.
-   *
-   * Both statuses are still exercised, just both against X, so "at any status" stays true of the
-   * assertion rather than becoming a claim only the deleted line supported.
+   * A platform outside `TOGGLEABLE_CAMPAIGN_PLATFORMS` is refused at any status, because the BFF
+   * rejects it before the status is consulted. Every paid platform is toggleable now that X is
+   * (adopted X campaigns), so the subject is a platform string this app does not know at all.
    */
   it('refuses a platform this app does not offer, at any status', () => {
-    expect(campaignToggleAction('created', 'twitter-ads')).toBe('unavailable');
-    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+    expect(campaignToggleAction('created', 'tiktok-ads')).toBe('unavailable');
+    expect(campaignToggleAction('paused', 'tiktok-ads')).toBe('unavailable');
   });
 
-  /**
-   * The other half of the same derivation, and the reason the case above could be narrowed safely
-   * rather than simply deleted: Microsoft is now OFFERED, so its campaigns must be pausable. If
-   * `disabled: true` is ever restored to the shared constant, this fails — which is what stops the
-   * enablement from being silently reverted at the one site that has no other test.
-   */
-  it('offers pause and resume for microsoft-ads, which this app now enables', () => {
+  it('offers pause and resume for microsoft-ads', () => {
     expect(campaignToggleAction('created', 'microsoft-ads')).toBe('pause');
     expect(campaignToggleAction('paused', 'microsoft-ads')).toBe('resume');
+    expect(campaignResumeWithheldForPlatform('paused', 'microsoft-ads')).toBe(false);
+  });
+
+  // Every X row is adopted (X create is off) and upstream 409s ACTIVE on an adopted row, so X is
+  // pause-only: Resume is withheld rather than offered as a button whose every click fails.
+  it('offers pause but withholds resume for twitter-ads', () => {
+    expect([...PAUSE_ONLY_CAMPAIGN_PLATFORMS]).toEqual(['twitter-ads']);
+    expect(campaignToggleAction('created', 'twitter-ads')).toBe('pause');
+    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+    expect(campaignResumeWithheldForPlatform('paused', 'twitter-ads')).toBe(true);
+    expect(campaignResumeWithheldForPlatform('created', 'twitter-ads')).toBe(false);
+    expect(campaignResumeWithheldForPlatform('deleted', 'twitter-ads')).toBe(false);
   });
 
   /** Optional so the status-only question stays askable; absence is not "unsupported". */
@@ -390,6 +536,85 @@ describe('CAMPAIGN_EMAIL_TYPES', () => {
   });
 });
 
+describe('CAMPAIGN_SURVEY_TYPES', () => {
+  it('has a default id that actually exists in the list', () => {
+    // Same failure as the email default one block up: a renamed id leaves `selectedEmailStage()`
+    // undefined, the brief lookup addresses no row, and the planner looks permanently empty.
+    expect(CAMPAIGN_SURVEY_TYPES.some((t) => t.id === DEFAULT_CAMPAIGN_SURVEY_TYPE_ID)).toBe(true);
+  });
+
+  it('maps every type to a stage campaign-service enumerates', () => {
+    // The survey surface's own vocabulary. Upstream refuses a stage outside it with a 400.
+    //
+    // Spelled out BY HAND rather than derived from `CAMPAIGN_SURVEY_STAGES`: this is the copy of
+    // campaign-service's `emailstage.SurveyNames()` that an added stage has to be checked against,
+    // and deriving it from the constant under test would make the assertion true by construction
+    // while the server went on refusing the new value.
+    const upstream = new Set(['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo']);
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(upstream.has(t.stage), `${t.id} -> ${t.stage}`).toBe(true);
+    }
+  });
+
+  it('gives every type at least one keyword to rank clones by', () => {
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(t.keywords.length, t.id).toBeGreaterThan(0);
+    }
+  });
+
+  it('shares no stage with the email surface', () => {
+    // The two surfaces are separate identity spaces upstream: `(email, 'Survey Promo')` and
+    // `(survey, 'Final Countdown')` are both refused by the delivery/stage pair rule. Offering a
+    // stage on the wrong surface would offer a choice the server rejects.
+    const emailStages = new Set<string>(CAMPAIGN_EMAIL_TYPES.map((t) => t.stage));
+    for (const t of CAMPAIGN_SURVEY_TYPES) {
+      expect(emailStages.has(t.stage), `${t.stage} appears on both surfaces`).toBe(false);
+    }
+  });
+});
+
+describe('CAMPAIGN_SEND_STAGES', () => {
+  it('is exactly the email and survey vocabularies together, in that order', () => {
+    // The BFF validates a brief lookup's stage against this, so a stage missing here is a 400
+    // for a brief campaign-service would have opened.
+    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES]);
+  });
+});
+
+describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
+  it('offers one email or the full three-send series, nothing in between', () => {
+    // A series copies ONE configured workflow whose send-step count must equal the brief count,
+    // so only the length that matches it can build. A two-send option would always end in a 409.
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.map((o) => o.count)).toEqual([1, 3]);
+    for (const option of CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS) {
+      expect(option.label.trim(), String(option.count)).not.toBe('');
+      expect(option.description.trim(), String(option.count)).not.toBe('');
+      // One stage per email, every one a real survey stage, opening on the promo.
+      expect(option.stages.length, String(option.count)).toBe(option.count);
+      expect(option.stages[0]).toBe('Survey Promo');
+      for (const stage of option.stages) {
+        expect((CAMPAIGN_SURVEY_STAGES as readonly string[]).includes(stage), stage).toBe(true);
+      }
+    }
+    expect(CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS.find((o) => o.count === 3)?.stages).toEqual(['Survey Promo', 'Survey Reminder', 'Survey Closing']);
+  });
+});
+
+describe('CAMPAIGN_DELIVERY_TYPES', () => {
+  it('offers the three surfaces campaign-service accepts', () => {
+    // The dropdown IS the contract here: the BFF derives its validation set from this list, so a
+    // surface missing from it is unreachable and one that upstream does not know is a 400.
+    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey']);
+  });
+
+  it('gives every surface a label and a breadcrumb label', () => {
+    for (const d of CAMPAIGN_DELIVERY_TYPES) {
+      expect(d.label.trim(), d.id).not.toBe('');
+      expect(d.breadcrumbLabel.trim(), d.id).not.toBe('');
+    }
+  });
+});
+
 describe('isCanonicalGoogleAdsResourceId', () => {
   /**
    * The controller refuses malformed keyword ids with "must each be a positive integer id" BEFORE
@@ -430,5 +655,929 @@ describe('isCanonicalGoogleAdsResourceId', () => {
   ])('refuses %s (%s) without throwing', (value, _label) => {
     expect(() => isCanonicalGoogleAdsResourceId(value as never)).not.toThrow();
     expect(isCanonicalGoogleAdsResourceId(value as never)).toBe(false);
+  });
+});
+
+/**
+ * The Google channel catalogue is a REPRODUCTION of campaign-service's own tables — the picker is
+ * built from it, and anything it offers that upstream refuses becomes a create that fails after
+ * the budget has already been mutated. These cases pin the reproduction against the contract in
+ * `internal/platform/googleads/bidding.go` and its sibling channel files, so a table edited here
+ * without a corresponding upstream change goes red rather than shipping as a broken option.
+ *
+ * The direction matters: every assertion below is "we offer no more than upstream accepts". A set
+ * narrower than upstream's costs an operator an option; a set wider than upstream's costs them a
+ * campaign.
+ */
+describe('Google bidding catalogue', () => {
+  it('covers every channel the app can create', () => {
+    expect(Object.keys(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL).sort()).toEqual([...GOOGLE_CAMPAIGN_CHANNELS].sort());
+    expect(Object.keys(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL).sort()).toEqual([...GOOGLE_CAMPAIGN_CHANNELS].sort());
+  });
+
+  /**
+   * Set-for-set against upstream. Written out rather than derived, because a derivation would
+   * reproduce whatever mistake the constant made — these five sets genuinely disagree and the
+   * disagreements are the contract.
+   */
+  it.each([
+    ['search', ['manual-cpc', 'maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
+    ['demand-gen', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value']],
+    ['performance-max', ['maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
+    ['video', ['maximize-conversions', 'target-cpa']],
+    ['display', ['maximize-clicks', 'maximize-conversions', 'target-cpa', 'maximize-conversion-value', 'target-roas']],
+  ])('offers %s exactly the strategies campaign-service accepts', (channel, expected) => {
+    expect([...GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel as (typeof GOOGLE_CAMPAIGN_CHANNELS)[number]]]).toEqual(expected);
+  });
+
+  /**
+   * Demand Gen is the one set a reader is most likely to "complete": `demandGenBiddingStrategies`
+   * (campaign-service v1.0.31) leaves out Target ROAS because it was not probed, and
+   * `validateBiddingPlan` refuses a target ROAS there under Maximize Conversion Value too.
+   */
+  it('keeps target roas off demand gen, as a strategy and as a target', () => {
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).not.toContain('target-roas');
+    expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS]).toEqual(['demand-gen']);
+  });
+
+  /**
+   * Display's target CPA is withheld by LFX One, not refused by campaign-service's catalogue
+   * (linuxfoundation/lfx-v2-campaign-service#578): the catalogue keeps Target CPA on Display so the
+   * workaround comes out by deleting the one constant, and the constant names Display alone, since
+   * Search and Performance Max take the folded form and Demand Gen takes the standalone one.
+   */
+  it('withholds a target cpa on display alone, leaving the catalogue as upstream has it', () => {
+    expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_CPA]).toEqual(['display']);
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display).toContain('target-cpa');
+  });
+
+  /**
+   * Performance Max has no manual bidding at all upstream; Display's omission is OURS — the client's
+   * Display ad-group payload carries no bid field — so the two exclusions have different causes and
+   * are pinned separately.
+   */
+  it('omits manual cpc where it cannot be sent', () => {
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['performance-max']).not.toContain('manual-cpc');
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display).not.toContain('manual-cpc');
+    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.search).toContain('manual-cpc');
+  });
+
+  it('offers no strategy outside the accepted vocabulary', () => {
+    for (const strategies of Object.values(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL)) {
+      for (const strategy of strategies) {
+        expect(GOOGLE_BIDDING_STRATEGIES).toContain(strategy);
+      }
+    }
+  });
+
+  /**
+   * A default that is not in its own channel's accepted set would preselect an option the picker
+   * also refuses to show — the one combination guaranteed to fail the create.
+   */
+  it('defaults each channel to a strategy that channel accepts', () => {
+    for (const channel of GOOGLE_CAMPAIGN_CHANNELS) {
+      expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel]).toContain(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel]);
+    }
+  });
+
+  /** `defaultBiddingStrategy` in `internal/platform/googleads/bidding.go`, channel by channel. */
+  it.each([
+    ['search', 'manual-cpc'],
+    ['demand-gen', 'maximize-clicks'],
+    ['performance-max', 'maximize-conversions'],
+    ['video', 'maximize-conversions'],
+    ['display', 'maximize-conversions'],
+  ])('names %s default as %s', (channel, expected) => {
+    expect(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL[channel as (typeof GOOGLE_CAMPAIGN_CHANNELS)[number]]).toBe(expected);
+  });
+
+  /**
+   * Upstream REFUSES a target carried on a strategy that cannot hold it rather than dropping it, so
+   * a strategy appearing in both sets would offer both fields and make one of them fatal.
+   */
+  it('keeps the cpa and roas strategies disjoint', () => {
+    for (const strategy of GOOGLE_BIDDING_CPA_STRATEGIES) {
+      expect(GOOGLE_BIDDING_ROAS_STRATEGIES).not.toContain(strategy);
+    }
+  });
+
+  it('requires a target only on the two target-bearing spellings', () => {
+    expect([...GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES]).toEqual(['target-cpa', 'target-roas']);
+    for (const strategy of GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES) {
+      expect([...GOOGLE_BIDDING_CPA_STRATEGIES, ...GOOGLE_BIDDING_ROAS_STRATEGIES]).toContain(strategy);
+    }
+  });
+
+  /**
+   * Equal to upstream, never tighter: a bound narrower than `minCPCBid`/`maxCPCBid` (`adgroup_ad.go`)
+   * or `minTargetCPA`/`maxTargetCPA`/`minTargetROAS`/`maxTargetROAS` (`bidding.go`) would refuse a
+   * create Google would have accepted, which is the one failure mode this form must not have.
+   */
+  it('reproduces the upstream numeric bounds', () => {
+    expect(GOOGLE_ADS_BIDDING_BOUNDS.cpcBid).toEqual({ min: 0.01, max: 100_000 });
+    expect(GOOGLE_ADS_BIDDING_BOUNDS.targetCpa).toEqual({ min: 0.01, max: 1_000_000 });
+    expect(GOOGLE_ADS_BIDDING_BOUNDS.targetRoas).toEqual({ min: 0.01, max: 1000 });
+  });
+});
+
+describe('Google conversion actions', () => {
+  /**
+   * campaign-service v1.0.31 applies the list as a campaign-level custom conversion goal
+   * (`applyCampaignConversionGoal`) on every channel. Demand Gen is offered it (#5262); Performance
+   * Max is left out by choice, since its live reference campaign uses the account's goals.
+   */
+  it('admits every channel but performance max', () => {
+    expect([...GOOGLE_CONVERSION_ACTION_CHANNELS]).toEqual(['search', 'demand-gen', 'video', 'display']);
+    expect(GOOGLE_CONVERSION_ACTION_CHANNELS).not.toContain('performance-max');
+  });
+
+  it('names only real channels', () => {
+    for (const channel of GOOGLE_CONVERSION_ACTION_CHANNELS) {
+      expect(GOOGLE_CAMPAIGN_CHANNELS).toContain(channel);
+    }
+  });
+
+  /** `maxConversionActions` in `internal/platform/googleads/bidding.go`. */
+  it('caps the list where upstream caps it', () => {
+    expect(GOOGLE_ADS_MAX_CONVERSION_ACTIONS).toBe(100);
+  });
+
+  it.each([
+    ['12345', true],
+    ['1', true],
+    ['customers/8666746580/conversionActions/678', true],
+    // The resource name must be the whole value, not merely contained in it.
+    ['customers/1/conversionActions/2 extra', false],
+    ['not-an-id', false],
+    ['', false],
+    ['  12345', false],
+    ['customers/abc/conversionActions/1', false],
+    ['conversionActions/678', false],
+  ])('matches %s -> %s', (value, expected) => {
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test(value)).toBe(expected);
+  });
+
+  /**
+   * A shared `RegExp` with the `g` flag carries `lastIndex` between calls, so the same valid id
+   * alternates true/false as a list is validated entry by entry. The flag is the whole hazard —
+   * this pattern is module-level and reused, so the absence is asserted rather than assumed.
+   */
+  it('is stateless across repeated tests', () => {
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.global).toBe(false);
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
+    expect(GOOGLE_ADS_CONVERSION_ACTION_PATTERN.test('12345')).toBe(true);
+  });
+});
+
+describe('Google location caps', () => {
+  /**
+   * `maxGeoTargets` in `internal/platform/googleads/geo.go`, 500 since campaign-service v1.0.32
+   * (#515), applied to the targeted and excluded lists SEPARATELY. Written as literals so a drift
+   * in the constant fails here rather than moving every spec that reads it.
+   */
+  it('caps each geo list at 500, as upstream does', () => {
+    expect(GOOGLE_ADS_MAX_GEO_TARGETS).toBe(500);
+    expect(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS).toBe(500);
+  });
+
+  /** Upstream raised only `maxGeoTargets`; `maxProximityTargets` and Microsoft's own cap are unchanged. */
+  it('leaves the radius and Microsoft location caps where they were', () => {
+    expect(GOOGLE_ADS_MAX_PROXIMITY_TARGETS).toBe(20);
+    expect(MICROSOFT_MAX_GEO_TARGETS).toBe(30);
+  });
+
+  /**
+   * The resource bound on both geo lists must sit ABOVE both caps, or a list at its cap would be
+   * refused by the generic bound before the named refusal; the shared creative bound stays at 100.
+   */
+  it('bounds the geo lists above their caps without widening the shared list bound', () => {
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBeGreaterThan(GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS);
+    expect(MAX_GOOGLE_GEO_LIST_ENTRIES).toBe(2000);
+    expect(MAX_GOOGLE_CREATIVE_LIST_ENTRIES).toBe(100);
+  });
+});
+
+describe('Google channel enums and creative catalogue', () => {
+  /**
+   * The monitoring GAQL filters `campaign.advertising_channel_type` with these literals, and the
+   * create path sends the matching channel — so a wrong spelling here does not fail loudly, it
+   * silently drops that channel's campaigns out of every metrics read.
+   */
+  it('mirrors the advertising channel type each create sends', () => {
+    expect(GOOGLE_ADS_CHANNEL_TYPE_ENUMS).toEqual({
+      search: 'SEARCH',
+      'demand-gen': 'DEMAND_GEN',
+      'performance-max': 'PERFORMANCE_MAX',
+      video: 'VIDEO',
+      display: 'DISPLAY',
+    });
+  });
+
+  /**
+   * The Google Ads API cannot create a Video campaign at all, so Video collects no creative: offering
+   * one would build a form whose only possible outcome is a refusal. Search collects its campaign
+   * assets (#5262); its ad copy stays the shared headline/description arrays.
+   */
+  it('collects a creative for the four channels that carry one, and never for Video', () => {
+    expect([...GOOGLE_CHANNELS_WITH_CREATIVE]).toEqual(['demand-gen', 'performance-max', 'display', 'search']);
+    expect(GOOGLE_CHANNELS_WITH_CREATIVE).not.toContain('video');
+  });
+
+  it('gives each of those channels a spec, a request key and a section title', () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      expect(GOOGLE_CREATIVE_FIELD_SPECS[channel].length).toBeGreaterThan(0);
+      expect(GOOGLE_CREATIVE_REQUEST_KEYS[channel]).toBeTruthy();
+      expect(GOOGLE_CREATIVE_SECTION_TITLES[channel]).toBeTruthy();
+    }
+  });
+
+  /** campaign-service's own envelope spelling, which has nothing to do with the channel's wire value. */
+  it('names the request keys campaign-service reads', () => {
+    expect(GOOGLE_CREATIVE_REQUEST_KEYS).toEqual({
+      'demand-gen': 'demandGenCreative',
+      'performance-max': 'performanceMaxCreative',
+      display: 'displayCreative',
+      search: 'searchAssets',
+    });
+  });
+
+  /**
+   * The section headings spell the channel the way its own checkbox does — deliberately NOT the
+   * reporting shorthand in `GOOGLE_CAMPAIGN_CHANNEL_LABELS` (`DG Display`, `PMax`), so the section
+   * a user opens is named the same as the box they ticked to open it.
+   */
+  it('titles each section the way its checkbox reads', () => {
+    expect(GOOGLE_CREATIVE_SECTION_TITLES).toEqual({
+      'demand-gen': 'Demand Gen',
+      'performance-max': 'Performance Max',
+      display: 'Display',
+      search: 'Search',
+    });
+  });
+
+  it('never states a minimum above its own maximum', () => {
+    for (const specs of Object.values(GOOGLE_CREATIVE_FIELD_SPECS)) {
+      for (const spec of specs) {
+        const { min, max } = spec as { min?: number; max?: number };
+        if (min !== undefined && max !== undefined) {
+          expect(min).toBeLessThanOrEqual(max);
+        }
+      }
+    }
+  });
+
+  /**
+   * The counts that differ between channels under the SAME field name — the trap the catalogue
+   * exists to close. Performance Max needs three headlines and two descriptions where the other two
+   * channels need one of each; a shared number would make a valid PMax form impossible to fill or a
+   * valid Demand Gen form impossible to submit.
+   */
+  it.each([
+    ['demand-gen', 'headlines', 1, 5],
+    ['performance-max', 'headlines', 3, 15],
+    ['display', 'headlines', 1, 5],
+    ['demand-gen', 'descriptions', 1, 5],
+    ['performance-max', 'descriptions', 2, 5],
+    ['display', 'descriptions', 1, 5],
+  ])('bounds %s %s at %i..%i', (channel, control, min, max) => {
+    const spec = GOOGLE_CREATIVE_FIELD_SPECS[channel as (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number]].find((f) => f.control === control) as {
+      min?: number;
+      max?: number;
+    };
+    expect(spec.min).toBe(min);
+    expect(spec.max).toBe(max);
+  });
+
+  /**
+   * `longHeadline` is a LIST on Performance Max and a SINGLE STRING on Display — same word, two
+   * shapes. This is why the spec carries `kind` instead of letting a caller infer the shape from
+   * the name, and reading the wrong one puts an array where upstream expects a string.
+   */
+  it('keeps the long headline shapes apart', () => {
+    const pmax = GOOGLE_CREATIVE_FIELD_SPECS['performance-max'].find((f) => f.control === 'longHeadlines');
+    const display = GOOGLE_CREATIVE_FIELD_SPECS.display.find((f) => f.control === 'longHeadline');
+    expect(pmax?.kind).toBe('list');
+    expect(display?.kind).toBe('text');
+  });
+
+  /**
+   * The scalar counterpart of `min`, and the exact set campaign-service refuses a non-empty
+   * creative without: a business name on all three (`demandgen_creative.go`, `pmax_creative.go`,
+   * `display_creative.go`), plus the responsive display ad's single long headline. Marking one
+   * more than that set would refuse a creative Google takes.
+   */
+  it('marks exactly the fields upstream requires once a creative is started', () => {
+    const required = Object.fromEntries(
+      GOOGLE_CHANNELS_WITH_CREATIVE.map((channel) => [
+        channel,
+        (GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[]).filter((f) => f.requiredOnce === true).map((f) => f.control),
+      ])
+    );
+    expect(required).toEqual({
+      'demand-gen': ['businessName'],
+      'performance-max': ['businessName'],
+      display: ['longHeadline', 'businessName'],
+      search: [],
+    });
+  });
+
+  /** `requiredOnce` is the scalar rule; a list states its floor as `min`, which counts entries. */
+  it('never marks a list field required-once', () => {
+    for (const specs of Object.values(GOOGLE_CREATIVE_FIELD_SPECS)) {
+      for (const spec of specs as readonly GoogleCreativeFieldSpec[]) {
+        if (spec.requiredOnce === true) expect(spec.kind).toBe('text');
+      }
+    }
+  });
+
+  /**
+   * Demand Gen requires a marketing image OR a square one; Performance Max and Display require both
+   * separately (#4848) and so carry no rule. An empty list there is the point, not an omission — a
+   * rule would duplicate the two `min: 1` entries and read as an either-or.
+   */
+  it('states the marketing-image either-or only where upstream states it', () => {
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES['demand-gen'].map((r) => r.controls)).toEqual([['marketingImages', 'squareMarketingImages']]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.display).toEqual([]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES['performance-max']).toEqual([]);
+    expect(GOOGLE_CREATIVE_EITHER_OR_RULES.search).toEqual([]);
+  });
+
+  /** The independent requirement on Performance Max and Display, which is what makes their empty rule lists correct. */
+  it.each(['performance-max', 'display'] as const)('requires both %s marketing arrays separately', (channel) => {
+    const specs = GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[];
+    expect(specs.find((f) => f.control === 'marketingImages')?.min).toBe(1);
+    expect(specs.find((f) => f.control === 'squareMarketingImages')?.min).toBe(1);
+  });
+
+  /** Demand Gen's pair is reciprocal, so neither member carries a floor of its own. */
+  it('puts no floor on either Demand Gen marketing array', () => {
+    const specs = GOOGLE_CREATIVE_FIELD_SPECS['demand-gen'] as readonly GoogleCreativeFieldSpec[];
+    expect(specs.find((f) => f.control === 'marketingImages')?.min).toBeUndefined();
+    expect(specs.find((f) => f.control === 'squareMarketingImages')?.min).toBeUndefined();
+  });
+
+  /**
+   * The shared ceilings upstream refuses (#4848): Demand Gen's four marketing shapes and Performance
+   * Max's three at 20, Display's two at 15, and Display's two logo arrays at 5.
+   */
+  it('states the shared image ceilings upstream enforces', () => {
+    const shape = (channel: keyof typeof GOOGLE_CREATIVE_SHARED_CAPS) =>
+      (GOOGLE_CREATIVE_SHARED_CAPS[channel] as readonly GoogleCreativeSharedCap[]).map((cap) => [[...cap.controls].sort(), cap.max]);
+    expect(shape('demand-gen')).toEqual([[['marketingImages', 'portraitImages', 'squareMarketingImages', 'tallPortraitImages'], 20]]);
+    expect(shape('performance-max')).toEqual([[['marketingImages', 'portraitImages', 'squareMarketingImages'], 20]]);
+    expect(shape('display')).toEqual([
+      [['marketingImages', 'squareMarketingImages'], 15],
+      [['logoImages', 'squareLogoImages'], 5],
+    ]);
+    expect(shape('search')).toEqual([[['adImages', 'landscapeAdImages'], 20]]);
+  });
+
+  /**
+   * campaign-service v1.0.35 `search_assets.go` (#477, #538): `searchImageSlots`' three rows and the caps
+   * beside them, and a 25-wide business name. None is required, so nothing carries `min` or
+   * `requiredOnce`: `validateSearchAssets` accepts any one of the four alone.
+   */
+  it('states the Search assets exactly as campaign-service v1.0.35 slots and caps them', () => {
+    expect(GOOGLE_CREATIVE_FIELD_SPECS.search).toEqual([
+      { control: 'businessName', label: 'Business name', kind: 'text', width: 25, hint: 'Optional.' },
+      expect.objectContaining({ control: 'adImages', kind: 'list', max: 20, image: { ratioW: 1, ratioH: 1, minWidth: 300, minHeight: 300 } }),
+      expect.objectContaining({ control: 'landscapeAdImages', kind: 'list', max: 20, image: { ratioW: 191, ratioH: 100, minWidth: 600, minHeight: 314 } }),
+      expect.objectContaining({ control: 'businessLogoImages', kind: 'list', max: 1, image: { ratioW: 1, ratioH: 1, minWidth: 128, minHeight: 128 } }),
+    ]);
+    for (const field of GOOGLE_CREATIVE_FIELD_SPECS.search as readonly GoogleCreativeFieldSpec[]) {
+      expect(field.min).toBeUndefined();
+      expect(field.requiredOnce).toBeUndefined();
+    }
+    // The asset plan names Search's slots by the request's own keys (`searchCatalog`, `slot_catalog.go`).
+    expect(GOOGLE_ASSET_PLAN_SLOT_CONTROLS.search).toEqual({
+      adImages: 'adImages',
+      landscapeAdImages: 'landscapeAdImages',
+      businessLogoImages: 'businessLogoImages',
+    });
+  });
+
+  /** Search serves on its ads with its assets empty, so it alone gets the optional line instead of the empty-shell one. */
+  it('warns of an empty shell on every creative section but Search', () => {
+    expect([...GOOGLE_CHANNELS_SERVING_WITHOUT_CREATIVE]).toEqual(['search']);
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const expected = channel === 'search' ? GOOGLE_SEARCH_ASSETS_NOTICE : GOOGLE_CREATIVE_REQUIRED_NOTICE;
+      expect(GOOGLE_CREATIVE_SECTION_NOTICES[channel]).toBe(expected);
+    }
+  });
+
+  /**
+   * Every member is an image field of its own channel whose own `max` equals the group's, so a
+   * single field over the ceiling is named by that field's own message before the group's.
+   */
+  it('points every shared ceiling at image fields capped at the same number', () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const specs = GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[];
+      for (const cap of GOOGLE_CREATIVE_SHARED_CAPS[channel] as readonly GoogleCreativeSharedCap[]) {
+        expect(cap.controls.length).toBeGreaterThan(1);
+        for (const control of cap.controls) {
+          const field = specs.find((f) => f.control === control);
+          expect(field?.image).toBeDefined();
+          expect(field?.max).toBe(cap.max);
+        }
+      }
+    }
+  });
+
+  /** Every rule names fields that exist on its own channel, and names at least two of them. */
+  it('points every either-or rule at real list fields of its channel', () => {
+    for (const channel of GOOGLE_CHANNELS_WITH_CREATIVE) {
+      const lists = (GOOGLE_CREATIVE_FIELD_SPECS[channel] as readonly GoogleCreativeFieldSpec[]).filter((f) => f.kind === 'list').map((f) => f.control);
+      for (const rule of GOOGLE_CREATIVE_EITHER_OR_RULES[channel] as readonly GoogleCreativeEitherOrRule[]) {
+        expect(rule.controls.length).toBeGreaterThan(1);
+        for (const control of rule.controls) expect(lists).toContain(control);
+      }
+    }
+  });
+});
+
+/**
+ * Guards on the Reddit values copied from lfx-v2-campaign-service rather than derived here. They
+ * cannot detect upstream drift — only a re-capture does that — but they do pin the invariants
+ * upstream states about its own tables, so a careless edit on this side fails here instead of as
+ * an opaque Reddit 400 at create time.
+ */
+describe('Reddit promoted-post contract', () => {
+  /** Upstream requires this of `defaultRedditCTA`, and a default outside the list is unsendable. */
+  it('keeps the default call to action inside the accepted set', () => {
+    expect(REDDIT_CALL_TO_ACTIONS).toContain(DEFAULT_REDDIT_CALL_TO_ACTION);
+  });
+
+  /**
+   * Upstream keys its CTA table on the UPPER-CASED label for case-insensitive lookup, so two
+   * labels differing only in case would be one entry there and two rows in any control built from
+   * this list. Checking the upper-cased forms catches that; checking the labels alone would not.
+   */
+  it('gives every call to action a distinct case-insensitive label', () => {
+    const upper = REDDIT_CALL_TO_ACTIONS.map((cta) => cta.toUpperCase());
+    expect(new Set(upper).size).toBe(REDDIT_CALL_TO_ACTIONS.length);
+  });
+
+  /** Reddit matches the label exactly once case is folded; a padded one is rejected. */
+  it('sends every call to action trimmed and non-empty', () => {
+    for (const cta of REDDIT_CALL_TO_ACTIONS) {
+      expect(cta).toBe(cta.trim());
+      expect(cta.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * The headline cap is `maxRedditHeadlineRunes` upstream, and the only failure mode that matters
+   * is refusing a headline Reddit would have accepted — so an accidental edit DOWNWARD is the one
+   * to catch. Pinned by value because the value is copied, not derived.
+   */
+  it('keeps the headline cap at the length upstream enforces', () => {
+    expect(MAX_REDDIT_HEADLINE_LENGTH).toBe(300);
+  });
+
+  /**
+   * Pinned as a whole set, not by count: Reddit has no bare `VIDEO_VIEWS` goal, so a video-view
+   * campaign must name one of exactly these, and upstream rejects anything else before it creates.
+   */
+  it('offers exactly the video goals upstream accepts', () => {
+    expect([...REDDIT_VIDEO_GOALS]).toEqual(['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S']);
+  });
+
+  /** Every goal the picker offers has a readable name, and nothing else does. */
+  it('labels exactly the video goals upstream accepts', () => {
+    expect(Object.keys(REDDIT_VIDEO_GOAL_LABELS)).toEqual([...REDDIT_VIDEO_GOALS]);
+  });
+
+  /**
+   * The picker's set is a SUBSET of `RedditObjective`, never a value outside it.
+   *
+   * `REDDIT_OBJECTIVE_LABELS` is typed total over `RedditObjective`, so its keys are that type at
+   * runtime — an objective added to the picker without being added to the union would have no
+   * label here, and the control would render a blank row. The types catch that on the constant
+   * itself; this catches it after a cast, which is how the picker list is written.
+   */
+  it('offers only objectives the request type admits', () => {
+    for (const objective of REDDIT_SELECTABLE_OBJECTIVES) {
+      expect(Object.keys(REDDIT_OBJECTIVE_LABELS)).toContain(objective);
+    }
+  });
+
+  /**
+   * And the default is one of them. It seeds the control on a fresh campaign, so a default outside
+   * the picker's set would open every new Reddit campaign on a value shown as
+   * "(no longer available)" and disabled — unchangeable except by picking something else.
+   */
+  it('seeds the picker with an objective the picker offers', () => {
+    expect([...REDDIT_SELECTABLE_OBJECTIVES]).toContain(DEFAULT_REDDIT_OBJECTIVE);
+  });
+});
+
+/**
+ * One case per branch of the resolution step in `Client.CreateCampaign` upstream
+ * (`lfx-v2-campaign-service`, `internal/platform/reddit/client.go`), named for the branch it pins
+ * rather than for the rule they add up to — a branch dropped in a future edit then shows up as an
+ * absent test instead of hiding inside a passing one (#3449).
+ */
+describe('resolveRedditOptimizationGoal', () => {
+  /**
+   * The three static goals, pinned by value against upstream's `redditObjectiveParams`. Pinned
+   * rather than derived: the table is a hand-maintained copy, and a test that read the same table
+   * the resolver reads would certify whatever the table happened to say.
+   */
+  it.each([
+    ['awareness', 'IMPRESSIONS'],
+    ['traffic', 'CLICKS'],
+    ['conversions', 'PURCHASE'],
+  ] as const)('sends the static goal upstream carries for %s', (objective, goal) => {
+    expect(resolveRedditOptimizationGoal(objective)).toBe(goal);
+  });
+
+  /**
+   * The bug this function exists for: `video_views` used to carry a baked-in `VIDEO_VIEWS`, which
+   * is not a goal Reddit has. The table must stay silent so the goal can only come from the
+   * request.
+   */
+  it('leaves video_views without a static goal in the table', () => {
+    expect(REDDIT_OBJECTIVE_PARAMS.video_views.optimizationGoal).toBeUndefined();
+  });
+
+  /**
+   * The tripwire for the resolver's `as string` cast. The value pins above cover only the three
+   * objectives named today; this walks the table itself, so a new objective added without a goal
+   * fails here instead of silently resolving to `undefined` through the cast (#3504).
+   */
+  it('carries a static goal on every objective except video_views', () => {
+    const goalless = Object.entries(REDDIT_OBJECTIVE_PARAMS)
+      .filter(([objective, params]) => objective !== 'video_views' && !params.optimizationGoal)
+      .map(([objective]) => objective);
+
+    expect(goalless).toEqual([]);
+  });
+
+  /** Upstream trims and upper-cases before testing membership, so a lowercase goal is accepted. */
+  it.each(['VIDEO_VIEW_6S', 'video_view_15s', '  VIDEO_VIEW_6S  '])('resolves video_views from the request goal %s', (videoGoal) => {
+    expect(resolveRedditOptimizationGoal('video_views', videoGoal)).toBe(videoGoal.trim().toUpperCase());
+  });
+
+  /**
+   * Empty and absent are the live cases, not exotic ones: nothing in the Implementation tab
+   * collects a video goal yet, so every `video_views` request that reaches either creator today
+   * arrives without one. Refusing is the whole point — the alternative is a PAUSED campaign
+   * orphaned by a rejection at the ad group.
+   */
+  it.each([undefined, '', '   ', 'VIDEO_VIEWS', 'VIDEO_VIEW_30S'])('refuses video_views carrying the goal %s', (videoGoal) => {
+    expect(() => resolveRedditOptimizationGoal('video_views', videoGoal)).toThrow(/must be one of VIDEO_VIEW_6S, VIDEO_VIEW_15S/);
+  });
+
+  /**
+   * Reached only after a runtime widening — `POST /api/campaigns/create` forwards `redditConfig` without
+   * validating `objective`, so the compiler's guarantee does not hold at this boundary.
+   */
+  it('refuses an objective outside the table', () => {
+    expect(() => resolveRedditOptimizationGoal('reach' as RedditObjective)).toThrow(/Unsupported Reddit objective: reach/);
+  });
+
+  /**
+   * The table is a plain object literal, so these five resolve to inherited `Object.prototype`
+   * members — every one truthy, which is exactly what the previous `!objParams` test asked for.
+   * Each then carried no `optimizationGoal`, so the resolver returned `undefined` through its cast
+   * and the caller sent a campaign POST missing `objective`, `bid_type` and `optimization_goal`
+   * rather than refusing before the call. Pinned by name because the guard that fixes it,
+   * `Object.hasOwn`, is easy to "simplify" back into a truthiness test (#3504).
+   */
+  it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses the inherited prototype key %s', (objective) => {
+    expect(() => resolveRedditOptimizationGoal(objective as RedditObjective)).toThrow(`Unsupported Reddit objective: ${objective}`);
+  });
+});
+
+describe('Google Ads language tables', () => {
+  /**
+   * The two maps share no type-level key constraint — `GOOGLE_ADS_LANGUAGE_MAP` is a plain
+   * `Record<string, string>` so it stays a line-for-line mirror of upstream's `languageConstants` —
+   * so this is what ties them. A code in the map and not the labels would be a language upstream
+   * accepts that the picker never offers; the reverse would offer one with no constant id behind it.
+   */
+  it('labels exactly the codes the language map carries', () => {
+    expect(Object.keys(GOOGLE_ADS_LANGUAGE_LABELS).sort()).toEqual(Object.keys(GOOGLE_ADS_LANGUAGE_MAP).sort());
+  });
+});
+
+/** Go's `strings.TrimSpace` and `strings.ToLower`, the two rules upstream's callout checks use. */
+describe('Google Ads string rules', () => {
+  it.each([
+    ['ASCII space and tabs', ' \tFree\n', 'Free'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 'Free'],
+    ['no-break and line separators', '\u00a0Free\u2028', 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', '\ufeffFree'],
+  ])('trims %s as Go does', (_label, input, expected) => {
+    expect(googleAdsTrimSpace(input)).toBe(expected);
+  });
+
+  it("matches Go's `unicode.IsSpace` on every UTF-16 code unit", () => {
+    // `\t`–`\r`, U+0085 and category Z: Go's set, written as a regex only here, as the reference.
+    const goSpace = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+    const mismatches: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      if (isGoSpaceCode(code) !== goSpace.test(String.fromCharCode(code))) mismatches.push(code);
+    }
+
+    expect(mismatches).toEqual([]);
+  });
+
+  it.each([
+    ['a lone high surrogate', 'a\ud800b', 'a\ufffdb'],
+    ['a lone low surrogate', 'a\udc00b', 'a\ufffdb'],
+    ['a high surrogate at the end', 'ab\ud801', 'ab\ufffd'],
+    ['two lone surrogates in a row', '\udc00\ud800', '\ufffd\ufffd'],
+    ['a reversed pair', '\ude00\ud83d', '\ufffd\ufffd'],
+  ])("replaces %s with U+FFFD as Go's JSON decoder does", (_label, input, expected) => {
+    expect(googleAdsWellFormed(input)).toBe(expected);
+  });
+
+  it('keeps well-formed text, astral characters included, as the same string', () => {
+    const text = 'Labs \u{1F600} \u00e9';
+    expect(googleAdsWellFormed(text)).toBe(text);
+  });
+
+  it('reads two different lone surrogates as the same text, as upstream does', () => {
+    expect(googleAdsDecodedText(' Talks\ud800 ')).toBe(googleAdsDecodedText('Talks\ud801'));
+    expect(googleAdsDecodedText(' Talks\ud800 ')).toBe('Talks\ufffd');
+  });
+
+  it('trims a long interior whitespace run in linear time', () => {
+    // A `[ws]+$` regex backtracks quadratically here: 40,000 spaces took about 2.5 s.
+    const text = `x${' '.repeat(1_000_000)}x`;
+    const started = Date.now();
+
+    expect(googleAdsTrimSpace(` ${text} `)).toBe(text);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it.each([
+    ['short text, unchanged', 'Free shipping', 'Free shipping'],
+    ['long text, cut at 32 code points', 'A'.repeat(40), `${'A'.repeat(32)}…`],
+    ['an emoji at the cut, kept whole', `${'A'.repeat(31)}🎉🎉`, `${'A'.repeat(31)}🎉…`],
+  ])('echoes %s', (_label, input, expected) => {
+    expect(googleAdsEchoed(input)).toBe(expected);
+  });
+
+  // The extension bound the brief generator and the brief restore both call, so a callout or a
+  // sitelink label arriving from a model response or from an opaque stored row is held to the
+  // same rule the editor's own add-guard applies.
+  it.each([
+    ['a non-string', 42, 25, ''],
+    ['text inside the cap, trimmed', '  Free Admission  ', 25, 'Free Admission'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 25, 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', 25, '\ufeffFree'],
+    // Counted in runes, not UTF-16 units: `.slice(0, 3)` would cut this after the lone high
+    // surrogate of the second emoji and leave an unpaired one behind.
+    ['astral characters, counted as runes', '🎉🎉🎉🎉', 3, '🎉🎉🎉'],
+    // The cut lands immediately after a space, and a trailing space is a difference upstream's
+    // own duplicate check sees — so the bound re-trims after cutting.
+    ['a cut that lands on a space', 'Free Admission Today', 5, 'Free'],
+  ])('bounds %s', (_label, value, maxRunes, expected) => {
+    expect(googleAdsBoundExtensionText(value, maxRunes)).toBe(expected);
+  });
+
+  it.each([
+    ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
+    ['a dotted capital I, to a plain i', 'İnfo', 'info'],
+    ['ASCII', 'Free Shipping', 'free shipping'],
+  ])('lower-cases %s as Go does', (_label, input, expected) => {
+    expect(googleAdsToLower(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register?utm=a&b=c#top', false],
+    ['an uppercase scheme', 'HTTPS://events.example.org/', false],
+    ['a valid percent escape', 'https://events.example.org/a%20b', false],
+    ['a semicolon in the fragment, which is not the query', 'https://events.example.org/#a;b', false],
+    ['a semicolon in the query', 'https://events.example.org/?a=1;b=2', true],
+    ['a stray percent sign', 'https://events.example.org/50%off', true],
+    ['a percent sign with one hex digit', 'https://events.example.org/?q=%2', true],
+    ['no `//` after the scheme', 'https:events.example.org', true],
+    ['backslashes for slashes', 'https:\\\\events.example.org', true],
+    // Found by running Go's `url.Parse` and this helper over the same generated corpus.
+    ['a newline inside the host, which `new URL()` deletes', 'https://exa\nmple.org/path', true],
+    ['a tab inside the path', 'https://events.example.org/pa\tth', true],
+    ['a C0 control in the query', 'https://events.example.org/?a=\u0001', true],
+    ['DEL in the path', 'https://events.example.org/a\u007fb', true],
+    ['a control character in the fragment, which Go cuts off before checking', 'https://events.example.org/#a\u0001b', false],
+    ['a backslash inside the authority', 'https://events.example.org\\path', true],
+    ['a backslash in the path, which both parsers accept', 'https://events.example.org/a\\b', false],
+    ['a brace in the host', 'https://{events.example.org/', true],
+    ['a backtick in the host', 'https://ev`ents.example.org/', true],
+    ['a percent escape in the host', 'https://ev%41nts.example.org/', true],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', true],
+    ['an empty authority', 'https:///register', true],
+  ])("flags %s as Go's parser would", (_label, url, expected) => {
+    expect(googleAdsUrlGoParseFlaw(url)).toBe(expected);
+  });
+});
+
+/**
+ * Every Monitor tab platform button's SELECTED colours must clear WCAG AA (4.5:1) for its 12px
+ * label. Recomputed from the hex values, so a brand-colour change that breaks AA fails here.
+ */
+describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
+  function luminance(hex: string): number {
+    const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function contrast(a: string, b: string): number {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  it.each(Object.entries(MONITOR_PLATFORM_BUTTON_COLORS))('%s clears 4.5:1, with a text class that renders its foreground', (_platform, colors) => {
+    expect(contrast(colors.background, colors.foreground)).toBeGreaterThanOrEqual(4.5);
+    expect(colors.textClass).toBe(colors.foreground === lfxColors.white ? 'text-white' : 'text-gray-950');
+    expect(colors.foreground === lfxColors.white || colors.foreground === lfxColors.gray[950]).toBe(true);
+  });
+
+  it('covers every platform the Monitor tab offers', () => {
+    expect(Object.keys(MONITOR_PLATFORM_BUTTON_COLORS).sort()).toEqual(['google', 'hubspot', 'linkedin', 'meta', 'microsoft', 'reddit', 'twitter']);
+  });
+});
+
+describe('Google Ads campaign criteria vocabularies', () => {
+  it('mirrors the two device vocabularies upstream accepts, and labels every device', () => {
+    // `deviceTypes` and `demandGenDeviceTypes`: the same three, and Demand Gen adds CONNECTED_TV.
+    expect([...GOOGLE_ADS_DEVICES]).toEqual(['MOBILE', 'DESKTOP', 'TABLET']);
+    expect([...GOOGLE_ADS_DEMAND_GEN_DEVICES]).toEqual([...GOOGLE_ADS_DEVICES, 'CONNECTED_TV']);
+    expect(Object.keys(GOOGLE_ADS_DEVICE_LABELS)).toEqual([...GOOGLE_ADS_DEMAND_GEN_DEVICES]);
+  });
+
+  it('accepts both spellings of every age range, since upstream resolves them to the same enum', () => {
+    // `ageRangeTypes` carries the friendly spelling and Google's own `AGE_RANGE_*` name for each
+    // range deliberately. A friendly spelling without its enum twin — or an enum name that resolved
+    // somewhere else — would refuse here what upstream accepts.
+    for (const range of GOOGLE_ADS_AGE_RANGES) {
+      const enumName = GOOGLE_ADS_AGE_RANGE_MAP[range as keyof typeof GOOGLE_ADS_AGE_RANGE_MAP];
+
+      expect(enumName).toMatch(/^AGE_RANGE_/);
+      expect(GOOGLE_ADS_AGE_RANGE_MAP[enumName]).toBe(enumName);
+    }
+  });
+
+  it('offers only the friendly spellings in a refusal, so a message is not both halves of the map', () => {
+    expect(GOOGLE_ADS_AGE_RANGES).toEqual(['18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'UNDETERMINED']);
+  });
+
+  it('keeps UNDETERMINED in both vocabularies, since it is an ordinary member of each', () => {
+    // Not a placeholder for "unset": excluding it is how a campaign skips the users Google could
+    // not classify, which is a real targeting choice and one Google accepts on both criteria.
+    expect(GOOGLE_ADS_AGE_RANGES).toContain('UNDETERMINED');
+    expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
+  });
+
+  it('fences devices and demographics from two separate lists, which differ on demand gen and performance max', () => {
+    // Separate constants because `validateCriteriaPlan` fences them in separate branches. Demand
+    // Gen (linuxfoundation/lfx-v2-campaign-service#474) and Performance Max (linuxfoundation/lfx-v2-campaign-service#500) take device exclusions and refuse demographic exclusions.
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS]).toEqual([...GOOGLE_CAMPAIGN_CHANNELS]);
+    expect([...GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY]).toEqual(['demand-gen', 'performance-max']);
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
+  });
+
+  it('fences sitelinks, callouts and snippets, and the other extensions apart, as upstream does', () => {
+    // `validateAssetPlan` (v1.0.31) takes sitelinks alone on Demand Gen (linuxfoundation/lfx-v2-campaign-service#474) and refuses every
+    // other extension list there.
+    expect([...GOOGLE_CHANNELS_WITH_SITELINKS]).toEqual(['search', 'demand-gen', 'performance-max']);
+    // Performance Max takes sitelinks, callouts and structured snippets (linuxfoundation/lfx-v2-campaign-service#461) and refuses calls,
+    // promotions, prices and lead forms ("supported on Search campaigns only").
+    expect([...GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS]).toEqual(['search', 'performance-max']);
+    expect([...GOOGLE_CHANNELS_WITH_AD_EXTENSIONS]).toEqual(['search']);
+  });
+
+  it('takes search themes on performance max alone, up to 50 of 80 runes each', () => {
+    // `validatePerformanceMaxSignals` (v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): asset group signals, and only Performance Max
+    // has asset groups. `maxSearchThemes` and `maxSearchThemeRunes` in `pmax_signals.go`.
+    expect([...GOOGLE_CHANNELS_WITH_SEARCH_THEMES]).toEqual(['performance-max']);
+    expect(GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES).toBe(50);
+    expect(GOOGLE_ADS_MAX_SEARCH_THEME_RUNES).toBe(80);
+  });
+
+  it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
+    expect(GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS).toBe(20);
+  });
+});
+
+describe('creative-asset upload allowlist', () => {
+  // campaign-service's `upload-creative-asset` content_type enum; anything else is refused upstream.
+  it('admits exactly PNG and JPEG', () => {
+    expect([...CREATIVE_ASSET_MIME_TYPES]).toEqual(['image/png', 'image/jpeg']);
+    expect(isCreativeAssetMimeType('image/png')).toBe(true);
+    expect(isCreativeAssetMimeType('image/jpeg')).toBe(true);
+    for (const other of ['image/gif', 'image/webp', 'image/jpg', 'IMAGE/PNG', '', undefined, 42]) {
+      expect(isCreativeAssetMimeType(other)).toBe(false);
+    }
+  });
+
+  // Below campaign-service's own 30 MiB decoded ceiling, so nothing this app sends is refused there for size.
+  it('bounds an upload at 10 MiB, inside the upstream 30 MiB ceiling', () => {
+    expect(CREATIVE_ASSET_MAX_BYTES).toBe(10 * 1024 * 1024);
+    expect(CREATIVE_ASSET_MAX_BYTES).toBeLessThan(30 * 1024 * 1024);
+  });
+
+  it('sniffs the PNG signature and the JPEG SOI marker, and nothing else', () => {
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))).toBe('image/png');
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    // A truncated PNG signature, a GIF and an empty body are not images this upload accepts.
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new TextEncoder().encode('GIF89a'))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new Uint8Array())).toBeNull();
+    // Only a real byte buffer is read: a request body tampered into an array or a string whose
+    // indexes spell a PNG signature is not an image (CodeQL type confusion).
+    expect(sniffCreativeAssetMimeType([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toBeNull();
+    expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
+    expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
+  });
+});
+
+describe('budget-writable platforms (#3299)', () => {
+  // campaign-service's `update-campaign-budget` serves Google, LinkedIn, Meta, Microsoft, Reddit
+  // and X (docs/api-catalog.md); every other platform is a 400 upstream.
+  it('includes X alongside the other five platforms campaign-service writes budgets on', () => {
+    expect([...BUDGET_WRITABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
+  });
+
+  // X budgets are written as a daily amount only: a `lifetime` request is always a 409 upstream.
+  it('marks X, and only X, as daily-only', () => {
+    expect([...DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS]).toEqual(['twitter-ads']);
+  });
+
+  it('never marks a platform daily-only that it cannot write a budget on', () => {
+    for (const platform of DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS) {
+      expect(BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(platform)).toBe(true);
+    }
+  });
+});
+
+/**
+ * The accept set the editor's add guard, the brief-restore path and the sitelink generator all
+ * share, and whose refusals `describeDestinationUrl` (`campaign.controller.ts`) reports by name.
+ *
+ * It existed as three hand-written copies before, and the third had drifted to a scheme check
+ * alone — so these cases pin the set itself rather than any one tier's use of it.
+ */
+describe('isGoogleAdsServableUrl', () => {
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register', true],
+    ['a plain http URL, which four of five platforms accept', 'http://events.example.org/register', true],
+    ['a URL with an ordinary & query', 'https://events.example.org/r?a=1&b=2', true],
+    ['an empty string', '', false],
+    ['a relative path', '/register', false],
+    ['an unparseable value', 'not a url', false],
+    ['a javascript: destination', 'javascript:alert(1)', false],
+    ['a mailto: destination', 'mailto:hello@example.org', false],
+    ['a URL with no hostname', 'https:///register', false],
+    ['embedded credentials', 'https://user:pw@events.example.org/', false],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', false],
+    ['no // after the scheme', 'https:events.example.org/register', false],
+    ['a `;` separating query parameters', 'https://events.example.org/r?a=1;b=2', false],
+    ['a stray `%` that is not an escape', 'https://events.example.org/r?q=100%', false],
+    ['a backslash in the authority', 'https://events.example.org\\evil/', false],
+  ])('judges %s', (_label, url, expected) => {
+    expect(isGoogleAdsServableUrl(url)).toBe(expected);
+  });
+
+  /**
+   * The contract the docblock states: the argument must ALREADY be trimmed, with
+   * `googleAdsTrimSpace` rather than `String.prototype.trim`. The two disagree on U+0085 and
+   * U+FEFF, and the trimmed value is the one the caller goes on to store — so trimming inside
+   * would judge a string no caller keeps.
+   */
+  it('refuses an untrimmed value rather than trimming it', () => {
+    const url = 'https://events.example.org/register';
+    expect(isGoogleAdsServableUrl(` ${url} `)).toBe(false);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(` ${url} `))).toBe(true);
+    // U+0085 is whitespace to Go and not to `String.prototype.trim`, which is why callers must use
+    // `googleAdsTrimSpace`: `.trim()` would leave it in and this would still refuse.
+    expect(`\u0085${url}`.trim()).toBe(`\u0085${url}`);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(`\u0085${url}`))).toBe(true);
+  });
+});
+
+describe('GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS', () => {
+  // #4833: the grid matches each rule's members against the form counts, which are keyed the way
+  // `googlePlanSlotKeysFor` builds them. A member that drifts from the slot table would read as never
+  // filled, and the "still need an image" count would quietly regress for that channel.
+  const planSlotKeys = GOOGLE_CHANNELS_WITH_CREATIVE.flatMap((channel) =>
+    Object.keys(GOOGLE_ASSET_PLAN_SLOT_CONTROLS[channel]).map((slot) => `google-ads/${GOOGLE_ADS_CHANNEL_TYPE_ENUMS[channel]}/${slot}`)
+  );
+
+  it.each(Object.entries(GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS))('every member of the %s rule is a mapped plan slot of that channel', (rule, members) => {
+    expect(members.length).toBeGreaterThan(1);
+    for (const member of members) {
+      expect(member.startsWith(`${rule}/`)).toBe(true);
+      expect(planSlotKeys).toContain(member);
+    }
+  });
+
+  it('has a rule for Demand Gen and Display, and none for Performance Max', () => {
+    expect(Object.keys(GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS).sort()).toEqual(['google-ads/DEMAND_GEN', 'google-ads/DISPLAY']);
   });
 });

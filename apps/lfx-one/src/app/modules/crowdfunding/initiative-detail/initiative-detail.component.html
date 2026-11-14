@@ -3,12 +3,13 @@
 
 <div class="flex flex-col gap-5 p-8" data-testid="initiative-detail">
   <lfx-button
-    label="Back to My Initiatives"
+    label="Back to Initiatives"
     icon="fa-light fa-chevron-left"
     severity="secondary"
     size="small"
     [text]="true"
-    routerLink="/crowdfunding/initiatives"
+    [routerLink]="backLink"
+    [queryParams]="backQueryParams"
     styleClass="self-start"
     data-testid="initiative-detail-back-btn" />
 
@@ -18,8 +19,11 @@
     <lfx-initiative-detail-header
       [initiative]="detail"
       [activeTab]="activeTab()"
+      [canEditAttribution]="canEditAttribution()"
+      [showCreator]="isLensPage"
       (tabChange)="activeTab.set($event)"
       (settingsClick)="settingsDrawerVisible.set(true)"
+      (editAttributionClick)="openEditAttribution(detail)"
       (statusChange)="onStatusChange($event)" />
 
     <lfx-initiative-settings-drawer [initiative]="detail" [(visible)]="settingsDrawerVisible" (initiativeSaved)="onInitiativeSaved($event)" />
@@ -28,6 +32,33 @@
       <lfx-initiative-overview [initiative]="detail" (viewAllFinancials)="activeTab.set('financials')" />
     } @else {
       <lfx-initiative-financials [initiative]="detail" />
+    }
+  } @else {
+    @switch (loadError()) {
+      @case ('not-found') {
+        <lfx-empty-state
+          icon="fa-light fa-magnifying-glass"
+          title="Initiative not found"
+          subtitle="This initiative doesn't exist. The link may be out of date, or the initiative was renamed or deleted."
+          data-testid="initiative-detail-error-not-found" />
+      }
+      @case ('forbidden') {
+        <lfx-empty-state
+          icon="fa-light fa-lock"
+          title="You don't have access to this initiative"
+          subtitle="Only its creator and writers on the project or organization it's attributed to can manage it."
+          data-testid="initiative-detail-error-forbidden" />
+      }
+      @default {
+        <lfx-empty-state
+          icon="fa-light fa-triangle-exclamation"
+          title="Initiative couldn't be loaded"
+          subtitle="LFX Crowdfunding is unavailable right now. Try again in a moment."
+          ctaLabel="Try again"
+          ctaIcon="fa-light fa-rotate-right"
+          (ctaClick)="onRetry()"
+          data-testid="initiative-detail-error-unavailable" />
+      }
     }
   }
 </div>

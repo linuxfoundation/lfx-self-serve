@@ -6,11 +6,11 @@ import '@angular/compiler';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { CCLA_SIGN_COPY } from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_NOT_STARTED_COPY, ORG_CLA_REVIEW_COPY_FAILURE } from '@lfx-one/shared/constants';
 import type { OrgClaSignHandoffDialogData, OrgClaSignResponse } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaSignHandoffComponent } from './org-easycla-sign-handoff.component';
@@ -24,6 +24,7 @@ import { OrgEasyclaSignHandoffComponent } from './org-easycla-sign-handoff.compo
  */
 describe('OrgEasyclaSignHandoffComponent', () => {
   const requestCorporateSignature = vi.fn();
+  const getCclaPreview = vi.fn();
   const close = vi.fn();
   // Assignment goes through a spy so the ordering of close-then-navigate is observable, not just
   // the final value.
@@ -64,7 +65,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: config },
-        { provide: OrgLensClaService, useValue: { requestCorporateSignature } },
+        { provide: OrgLensClaService, useValue: { requestCorporateSignature, getCclaPreview } },
         // Only `location` is swapped. TestBed renders through DOCUMENT, so replacing it wholesale
         // breaks the fixture; jsdom also refuses a direct `document.location` assignment. Methods
         // are bound to the real document — called on the proxy they would fail on internal slots.
@@ -102,6 +103,7 @@ describe('OrgEasyclaSignHandoffComponent', () => {
 
   beforeEach(() => {
     requestCorporateSignature.mockReset();
+    getCclaPreview.mockReset();
     close.mockClear();
     // Reset, not clear: one case installs an implementation that reads the stash mid-navigation, and
     // leaving it in place would have it run for every later case.
@@ -265,20 +267,6 @@ describe('OrgEasyclaSignHandoffComponent', () => {
     expect(shown).not.toContain('Http failure response');
   });
 
-  // By the time this state is reached the agreement and its DocuSign envelope exist upstream, and
-  // the address on screen is the only way anyone reaches them. A back-out here would strand a real
-  // agreement that this application cannot cancel or reuse, so the state offers no way back.
-  it('offers no way out of an open session except continuing to sign it', async () => {
-    requestCorporateSignature.mockReturnValue(of(response));
-
-    const fixture = await render();
-
-    expect(testid(fixture, 'org-easycla-sign-cancel')).toBeNull();
-    expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
-    expect(testid(fixture, 'org-easycla-sign-review')).not.toBeNull();
-    expect(close).not.toHaveBeenCalled();
-  });
-
   it('fails closed when it is opened without a selection', async () => {
     const fixture = await renderWith(undefined);
 
@@ -287,12 +275,16 @@ describe('OrgEasyclaSignHandoffComponent', () => {
   });
 
   /**
-   * The signing request runs while this dialog is on screen, and it is the call that creates both
-   * the signature record and the DocuSign envelope. Dismissing the dialog destroys the component
-   * and its subscription, so the address that comes back is discarded and the envelope is left
-   * with nobody holding it. Neither exit is available until there is something to lose.
+   * Sealed only while the signing request is in flight, so a back-out and an immediate restart
+   * cannot race two requests that each create a signature record. Once the request settles the
+   * signatory can leave (#3756): the CLA service reuses the unsigned record on the next request.
    */
-  describe('while the signing request is in flight', () => {
+  describe('dismissing the dialog', () => {
+    const settled: [string, () => Observable<OrgClaSignResponse>][] = [
+      ['open', () => of(response)],
+      ['failed', () => throwError(() => bffError(500, { error: 'nope' }))],
+    ];
+
     it('cannot be dismissed by the in-content close control while preparing', async () => {
       requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
 
@@ -301,26 +293,11 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
     });
 
-    // Still sealed on success, not just in flight. The envelope exists by then and the address on
-    // screen is the only copy, so an Escape here abandons a real agreement — and `ready` waits for
-    // a person, where the request itself usually answers in under a second. Sealing only the
-    // in-flight window would close the smaller of the two holes.
-    it('still cannot be dismissed once the session is open', async () => {
-      requestCorporateSignature.mockReturnValue(of(response));
+    it.each(settled)('can be dismissed by the close control once the session is %s', async (_state, source) => {
+      requestCorporateSignature.mockReturnValue(source());
 
       const fixture = await render();
 
-      expect(testid(fixture, 'org-easycla-sign-handoff-close')).toBeNull();
-    });
-
-    // The one dismissible state: no envelope to strand, and trapping someone in a dialog that
-    // reports a failure would leave them no way out at all.
-    it('can be dismissed once it reaches failed', async () => {
-      requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
-
-      const fixture = await render();
-
-      expect(testid(fixture, 'org-easycla-sign-handoff-close')).not.toBeNull();
       (testid(fixture, 'org-easycla-sign-handoff-close') as HTMLButtonElement).click();
       expect(close).toHaveBeenCalledWith(null);
     });
@@ -330,11 +307,8 @@ describe('OrgEasyclaSignHandoffComponent', () => {
         globalThis.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       }
 
-      it.each([
-        ['in flight', () => new Observable<OrgClaSignResponse>(() => undefined)],
-        ['open', () => of(response)],
-      ])('does not leave a session that is %s', async (_state, source) => {
-        requestCorporateSignature.mockReturnValue(source());
+      it('does not leave a session that is in flight', async () => {
+        requestCorporateSignature.mockReturnValue(new Observable<OrgClaSignResponse>(() => undefined));
 
         await render();
         pressEscape();
@@ -342,8 +316,8 @@ describe('OrgEasyclaSignHandoffComponent', () => {
         expect(close).not.toHaveBeenCalled();
       });
 
-      it('leaves a failure', async () => {
-        requestCorporateSignature.mockReturnValue(throwError(() => bffError(500, { error: 'nope' })));
+      it.each(settled)('leaves a session that is %s', async (_state, source) => {
+        requestCorporateSignature.mockReturnValue(source());
 
         await render();
         pressEscape();
@@ -394,6 +368,139 @@ describe('OrgEasyclaSignHandoffComponent', () => {
       const fixture = await render();
 
       expect(testid(fixture, 'org-easycla-sign-failed')?.getAttribute('role')).toBe('alert');
+    });
+  });
+
+  describe('the review copy', () => {
+    function stubBlobUrls(): { createObjectURL: ReturnType<typeof vi.fn>; revokeObjectURL: ReturnType<typeof vi.fn>; restore: () => void } {
+      const createObjectURL = vi.fn(() => 'blob:review-copy');
+      const revokeObjectURL = vi.fn();
+      const originalCreate = URL.createObjectURL;
+      const originalRevoke = URL.revokeObjectURL;
+      URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
+      URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL;
+      return {
+        createObjectURL,
+        revokeObjectURL,
+        restore: () => {
+          URL.createObjectURL = originalCreate;
+          URL.revokeObjectURL = originalRevoke;
+        },
+      };
+    }
+
+    async function downloadAndCaptureName(dialogData: OrgClaSignHandoffDialogData): Promise<string | undefined> {
+      let savedName: string | undefined;
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        savedName = this.download;
+      });
+      const urls = stubBlobUrls();
+      requestCorporateSignature.mockReturnValue(of(response));
+      getCclaPreview.mockReturnValue(of(new Blob(['%PDF-1.4'], { type: 'application/pdf' })));
+
+      try {
+        const fixture = await renderWith(dialogData);
+        testid(fixture, 'org-easycla-sign-review-copy')?.click();
+        await fixture.whenStable();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(urls.revokeObjectURL).toHaveBeenCalledWith('blob:review-copy');
+      } finally {
+        clickSpy.mockRestore();
+        urls.restore();
+      }
+      return savedName;
+    }
+
+    it('sits after the ready copy and before Review and Sign', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+
+      const fixture = await render();
+      const control = testid(fixture, 'org-easycla-sign-review-copy');
+      const review = testid(fixture, 'org-easycla-sign-review');
+
+      expect(control?.textContent?.replace(/\s+/g, ' ').trim()).toBe(ORG_CLA_NOT_STARTED_COPY.downloadLabel);
+      expect(control && review && control.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it.each([
+      ['preparing', () => new Observable<OrgClaSignResponse>(() => undefined)],
+      ['failed', () => throwError(() => bffError(500, { error: 'nope' }))],
+    ])('is not offered while %s', async (_state, source) => {
+      requestCorporateSignature.mockReturnValue(source());
+
+      const fixture = await render();
+
+      expect(testid(fixture, 'org-easycla-sign-review-copy')).toBeNull();
+    });
+
+    it('fetches the copy for this organization and CLA Group, not the prepared envelope', async () => {
+      await downloadAndCaptureName(data);
+
+      expect(getCclaPreview).toHaveBeenCalledWith(data.orgUid, data.claGroupId);
+      expect(setHref).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+    });
+
+    it('saves under the CLA Group name when the dialog was given one', async () => {
+      expect(await downloadAndCaptureName({ ...data, claGroupName: 'Nimbus Foundation CLA' })).toBe('Nimbus_Foundation_CLA-ccla-review.pdf');
+    });
+
+    it('saves under the fixed filename when the dialog was given no name', async () => {
+      expect(await downloadAndCaptureName(data)).toBe('Corporate_Contributor_License_Agreement.pdf');
+    });
+
+    it('is busy while the copy downloads, and cannot be started twice', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+      const preview$ = new Subject<Blob>();
+      getCclaPreview.mockReturnValue(preview$.asObservable());
+
+      const fixture = await render();
+      const control = testid(fixture, 'org-easycla-sign-review-copy') as HTMLButtonElement;
+      control.click();
+      fixture.detectChanges();
+
+      expect(control.getAttribute('aria-busy')).toBe('true');
+      expect(control.disabled).toBe(true);
+      fixture.componentInstance['onReviewCopyDownload']();
+      expect(getCclaPreview).toHaveBeenCalledTimes(1);
+
+      preview$.error({ status: 404 });
+      fixture.detectChanges();
+      expect(control.getAttribute('aria-busy')).toBe('false');
+    });
+
+    it('reports a refusal on the step and leaves Review and Sign available', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+      getCclaPreview.mockReturnValue(throwError(() => ({ status: 400 })));
+
+      const fixture = await render();
+      testid(fixture, 'org-easycla-sign-review-copy')?.click();
+      fixture.detectChanges();
+
+      expect(testid(fixture, 'org-easycla-sign-review-copy-error')?.textContent?.trim()).toBe(ORG_CLA_REVIEW_COPY_FAILURE.detail);
+      expect(testid(fixture, 'org-easycla-sign-review-copy-error')?.getAttribute('role')).toBe('alert');
+      expect(testid(fixture, 'org-easycla-sign-ready')).not.toBeNull();
+      expect(testid(fixture, 'org-easycla-sign-failed')).toBeNull();
+      expect(testid(fixture, 'org-easycla-sign-handoff-heading')?.textContent).toBe(CCLA_SIGN_COPY.ready.header);
+
+      testid(fixture, 'org-easycla-sign-review')?.querySelector('button')?.click();
+      expect(setHref).toHaveBeenCalledWith(response.signUrl);
+    });
+
+    it('clears the refusal when the signatory tries again', async () => {
+      requestCorporateSignature.mockReturnValue(of(response));
+      getCclaPreview.mockReturnValue(throwError(() => ({ status: 400 })));
+
+      const fixture = await render();
+      testid(fixture, 'org-easycla-sign-review-copy')?.click();
+      fixture.detectChanges();
+      expect(testid(fixture, 'org-easycla-sign-review-copy-error')).not.toBeNull();
+
+      getCclaPreview.mockReturnValue(new Observable<Blob>(() => undefined));
+      testid(fixture, 'org-easycla-sign-review-copy')?.click();
+      fixture.detectChanges();
+
+      expect(testid(fixture, 'org-easycla-sign-review-copy-error')).toBeNull();
     });
   });
 

@@ -5,7 +5,9 @@ import { afterNextRender, DestroyRef, inject, Injectable } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { environment } from '@environments/environment';
+import { MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { LfxSegmentAnalytics } from '@lfx-one/shared/interfaces';
+import { buildSegmentPageEvent, sanitizeSegmentEvent } from '@lfx-one/shared/utils';
 import { afterRouterTitleApplied } from '@shared/utils/document-title.util';
 import { filter } from 'rxjs';
 
@@ -21,6 +23,7 @@ export class SegmentService {
   private readonly destroyRef = inject(DestroyRef);
 
   private scriptLoaded = false;
+  private initStarted = false;
   private analyticsReady = false;
   private analytics?: LfxSegmentAnalytics;
   private identifyQueue: { user: unknown }[] = [];
@@ -126,7 +129,12 @@ export class SegmentService {
   }
 
   /**
-   * Wait for analytics object to be available and initialize it
+   * Wait for analytics object to be available and initialize it in protected mode.
+   * Every event — including the wrapper's automatic initial page — passes through
+   * `sanitizeSegmentEvent` before delivery, so URL secrets such as meeting passcodes never reach
+   * Segment (linuxfoundation/lfx-self-serve-ops#49). Fails closed: an artifact without protected
+   * init, or a rejected protected init, leaves Segment disabled for this tab with no fallback to
+   * the unprotected `init()` and no retry.
    */
   private async waitForAnalytics(): Promise<void> {
     const maxAttempts = 100; // 10 seconds max wait
@@ -134,19 +142,31 @@ export class SegmentService {
 
     while (attempts < maxAttempts) {
       if (window?.LfxAnalytics?.LfxSegmentsAnalytics) {
-        this.analytics = window.LfxAnalytics.LfxSegmentsAnalytics.getInstance();
-
-        try {
-          await this.analytics.init();
-          this.analyticsReady = true;
-
-          // Process any queued identify calls
-          this.processIdentifyQueue();
-          return;
-        } catch (error) {
-          console.error('Error initializing LfxSegmentsAnalytics:', error);
+        if (this.initStarted) {
           return;
         }
+        this.initStarted = true;
+
+        const analytics = window.LfxAnalytics.LfxSegmentsAnalytics.getInstance();
+        if (typeof analytics.initWithEventSanitizer !== 'function') {
+          console.error('LfxSegmentsAnalytics does not support protected initialization; Segment tracking disabled');
+          return;
+        }
+
+        try {
+          await analytics.initWithEventSanitizer(sanitizeSegmentEvent);
+        } catch {
+          // The raw error is not logged: it may carry event payloads or URLs.
+          console.error('LfxSegmentsAnalytics protected initialization failed; Segment tracking disabled');
+          return;
+        }
+
+        this.analytics = analytics;
+        this.analyticsReady = true;
+
+        // Process any queued identify calls
+        this.processIdentifyQueue();
+        return;
       }
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -175,19 +195,19 @@ export class SegmentService {
     this.router.events
       .pipe(
         filter((event) => event instanceof NavigationEnd),
+        // The meeting page re-renders a visit it can't serve as the legacy page at the same URL; that visit was already counted.
+        filter(() => !this.router.lastSuccessfulNavigation?.extras.state?.[MEETING_PAGE_LEGACY_STATE]),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((event: NavigationEnd) => {
         if (typeof window === 'undefined' || typeof document === 'undefined') {
           return;
         }
-        const pageName = event.urlAfterRedirects.split('/').pop() || 'Home';
         afterRouterTitleApplied(() => {
-          this.trackPage(pageName, {
-            path: event.urlAfterRedirects,
-            url: window.location.href,
-            title: document.title,
-          });
+          // Explicit sanitized fields (including empty search/referrer) keep the SDK from
+          // defaulting them to the raw browser location.
+          const { name, ...properties } = buildSegmentPageEvent(event.urlAfterRedirects, window.location.href, document.title, document.referrer);
+          this.trackPage(name, properties);
         });
       });
   }

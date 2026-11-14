@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Committee, CommitteeMember, CommitteeMemberVotingStatus, MeetingCommittee } from '@lfx-one/shared';
@@ -8,7 +9,7 @@ import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { syncShowMeetingAttendeesLock } from '@lfx-one/shared/utils';
 import { merge, Observable, of, Subject, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingCommitteeManagerComponent } from './meeting-committee-manager.component';
 
@@ -130,11 +131,15 @@ async function mount(
   fixture.componentInstance.committeeMembersChange.subscribe((value) => emissions.push(value));
 
   const resolved: string[][] = [];
-  fixture.componentInstance.committeeMembersResolvedChange.subscribe((value) => resolved.push(value));
+  const reports: (string[] | null)[] = [];
+  fixture.componentInstance.committeeMembersResolvedChange.subscribe((value) => {
+    reports.push(value);
+    if (value !== null) resolved.push(value);
+  });
 
   await fixture.whenStable();
 
-  return { component: fixture.componentInstance, emissions, resolved, fixture };
+  return { component: fixture.componentInstance, emissions, resolved, reports, fixture };
 }
 
 /**
@@ -146,6 +151,27 @@ async function mount(
  * and both would delete a saved roster.
  */
 describe('MeetingCommitteeManagerComponent — committee member emissions', () => {
+  it('does not leave phantom pending coverage when an empty picker unmounts before options load', async () => {
+    const options = new Subject<Committee[]>();
+    const { component, reports, emissions, fixture } = await mount([], {}, options);
+    expect(component.committeesLoading()).toBe(true);
+    expect(reports).toEqual([]);
+    expect(emissions).toEqual([]);
+    fixture.destroy();
+    options.next([BOARD]);
+    options.complete();
+    expect(reports).toEqual([]);
+  });
+
+  it('still invalidates coverage while reconciling removal of the last selected group', async () => {
+    const { component, reports, fixture } = await mount([{ uid: BOARD.uid }], { [BOARD.uid]: of([]) });
+    expect(reports.at(-1)).toEqual([BOARD.uid]);
+    component.committeeForm.get('committees')!.setValue([]);
+    await fixture.whenStable();
+    expect(reports.at(-2)).toBeNull();
+    expect(reports.at(-1)).toEqual([]);
+  });
+
   it('stays silent until the members of a saved group have landed', async () => {
     const board = new Subject<CommitteeMember[]>();
     const { emissions, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], { [BOARD.uid]: board });
@@ -161,6 +187,29 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
 
     expect(emissions).toHaveLength(1);
     expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
+  });
+
+  it('requires a complete roster and withholds reconciliation until a stopped scan is retried successfully', async () => {
+    const failure = new HttpErrorResponse({ status: 502, error: { code: 'QUERY_SERVICE_PAGINATION_LIMIT' } });
+    const responses: Record<string, Observable<CommitteeMember[]>> = { [BOARD.uid]: throwError(() => failure) };
+    const { component, emissions, resolved, fixture } = await mount([{ uid: BOARD.uid } as MeetingCommittee], responses);
+    const getMembers = vi.mocked(TestBed.inject(CommitteeService).getCommitteeMembers);
+
+    expect(getMembers.mock.calls[0][1]?.get('require_complete')).toBe('true');
+    expect(component.membersFetchError()).toBe(true);
+    expect(emissions).toEqual([]);
+    expect(resolved).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-members-retry"]')).toBeTruthy();
+
+    responses[BOARD.uid] = of([member(BOARD.uid, 'chair@example.com')]);
+    component.retryCommitteeMembers();
+    await fixture.whenStable();
+
+    expect(getMembers.mock.calls.at(-1)?.[1]?.get('require_complete')).toBe('true');
+    expect(component.membersFetchError()).toBe(false);
+    expect(emissions).toHaveLength(1);
+    expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
+    expect(resolved).toEqual([[BOARD.uid]]);
   });
 
   it('never emits when a member fetch fails', async () => {
@@ -205,6 +254,27 @@ describe('MeetingCommitteeManagerComponent — committee member emissions', () =
     expect(emissions).toHaveLength(1);
     expect(emissions[0].map((entry) => entry.email)).toEqual(['chair@example.com']);
     expect(resolved.at(-1)).toEqual([BOARD.uid]);
+  });
+
+  it('invalidates prior coverage during a retry and identifies pagination-limit recovery', async () => {
+    const responses: Record<string, Observable<CommitteeMember[]>> = {
+      [BOARD.uid]: throwError(() => new HttpErrorResponse({ status: 502, error: { code: 'QUERY_SERVICE_PAGINATION_LIMIT' } })),
+    };
+    const { component, reports, emissions, fixture } = await mount([{ uid: BOARD.uid }], responses);
+    expect(reports.at(-1)).toBeNull();
+    expect(component.membersPaginationLimit()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="meeting-committee-members-limit"]')?.textContent).toContain('remove the group');
+    const retry = new Subject<CommitteeMember[]>();
+    responses[BOARD.uid] = retry;
+    component.retryCommitteeMembers();
+    await fixture.whenStable();
+    expect(reports.at(-1)).toBeNull();
+    expect(emissions).toEqual([]);
+    retry.next([]);
+    retry.complete();
+    await fixture.whenStable();
+    expect(reports.at(-1)).toEqual([BOARD.uid]);
+    expect(component.membersPaginationLimit()).toBe(false);
   });
 
   it('offers that retry in the banner itself', async () => {
@@ -437,7 +507,9 @@ describe('MeetingCommitteeManagerComponent — reported member coverage', () => 
     const { component, fixture } = await mount([], { [BOARD.uid]: board });
 
     const order: string[] = [];
-    component.committeeMembersResolvedChange.subscribe(() => order.push('resolved'));
+    component.committeeMembersResolvedChange.subscribe((value) => {
+      if (value !== null) order.push('resolved');
+    });
     component.committeeMembersChange.subscribe(() => order.push('members'));
 
     component.committeeForm.get('committees')?.setValue([BOARD.uid]);
@@ -835,6 +907,16 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
+  it('applies the committee preference on a restricted meeting only under the composer v2 rule', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    fixture.componentRef.setInput('allowRestrictedAttendees', true);
+    component.form().get('restricted')?.setValue(true);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
   it('does not reapply the committee preference when switching between unlocked types', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
@@ -1169,5 +1251,69 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     // The lock withheld nothing on the way in, so the unlock has nothing to restore — a round
     // trip through Board must not silently re-enable a toggle the organizer switched off.
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — selected group chips', () => {
+  const OTHER = { ...BOARD, uid: 'committee-tac', name: 'Technical Advisory Committee', category: 'Technical' } as Committee;
+
+  it('names each picked group from the options and drops one on remove', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD, OTHER]);
+    component.committeeForm.get('committees')?.setValue([BOARD.uid, OTHER.uid]);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeChips()).toEqual([
+      { uid: BOARD.uid, name: 'Board' },
+      { uid: OTHER.uid, name: 'Technical Advisory Committee' },
+    ]);
+
+    component.removeCommittee(BOARD.uid);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeIds()).toEqual([OTHER.uid]);
+    expect(component.selectedCommitteeChips().map((chip) => chip.uid)).toEqual([OTHER.uid]);
+  });
+
+  it('falls back to the uid when a picked group is in neither the options nor the saved list', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    component.committeeForm.get('committees')?.setValue(['committee-unknown']);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeChips()).toEqual([{ uid: 'committee-unknown', name: 'committee-unknown' }]);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — layout switches by width and surface', () => {
+  const mockViewport = (wide: boolean): void => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: (query: string) => ({ matches: wide, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }),
+    });
+  };
+  const flags = async (wide: boolean, composerLayout: boolean, groupChips: boolean) => {
+    mockViewport(wide);
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    fixture.componentRef.setInput('composerLayout', composerLayout);
+    fixture.componentRef.setInput('groupChips', groupChips);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { chips: component['showGroupChips'](), radios: component['showRemovalRadios']() };
+  };
+
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it('uses chips and removal radios only in the guests step at lg and up', async () => {
+    expect(await flags(true, true, true)).toEqual({ chips: true, radios: true });
+  });
+
+  it('keeps quick create on the dropdown and in-field picks even on a wide window', async () => {
+    expect(await flags(true, true, false)).toEqual({ chips: false, radios: false });
+  });
+
+  it('falls back to the stacked layout below lg', async () => {
+    expect(await flags(false, true, true)).toEqual({ chips: false, radios: false });
   });
 });

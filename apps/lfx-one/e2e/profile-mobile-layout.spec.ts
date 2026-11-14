@@ -12,10 +12,10 @@
  * (390 - 300px gutter - 40px page padding).
  *
  * The breakpoint moved from `lg` (1024px) to `2xl` (1440px) in a LFXV2-3285 follow-up: the hub
- * spends 704px on fixed chrome before any content — 348px left sidebar (lg:ml-[348px] on <main>,
- * unrelated and unchanged by this follow-up) + 300px rail + 56px page padding (md:px-8, which is
+ * spends 644px on fixed chrome before any content — 288px left navbar (lg:ml-[288px] on <main>,
+ * unrelated to this follow-up) + 300px rail + 56px page padding (md:px-8, which is
  * 2rem per side at this app's 14px root — not the 64px a 16px-root assumption would give). At `lg`
- * that left a 320px content column, narrower than the rail beside it; at `2xl` it leaves 736px.
+ * that leaves a 380px content column, narrower than the rail beside it; at `2xl` it leaves 796px.
  * Keeping the inline card until `2xl` also covers iPad landscape and split-screen laptop windows.
  *
  * The existing profile specs (profile-edit-drawer.spec.ts, profile-visibility-drawer.spec.ts) pass
@@ -40,10 +40,11 @@
  * document.documentElement.clientWidth rather than the device viewport width, since desktop
  * projects render a classic scrollbar that mobile-emulated overlay scrollbars don't.
  *
- * The content-width expectation has to account for two more things once the viewport crosses `lg`
- * (1024px, the *sidebar's own*, unrelated breakpoint): the 348px left sidebar starts reserving space
- * via <main>'s lg:ml-[348px], and the content column itself is capped at max-w-[1024px] on the inner
- * wrapper in profile-layout.component.html, so it stops growing well before `2xl`.
+ * The content-width expectation has to account for two more things: the left navbar's gutter on
+ * <main> (288px docked open, 56px on its rail — from `lg` up on a touch device, at every width on a
+ * non-touch one, so it is read off <main> rather than derived from the viewport), and the content
+ * column's own max-w-[1024px] cap on the inner wrapper in profile-layout.component.html, which stops
+ * it growing well before `2xl`.
  *
  * A separate desktop-control test above 2xl (TWO_XL_BREAKPOINT + 40, not exactly 1440px — see the
  * DESKTOP_VIEWPORT comment for why) asserts the OPPOSITE of the main matrix — the rail wrapper IS
@@ -79,17 +80,12 @@ const MD_BREAKPOINT = 768;
 const PAGE_PADDING_REM_BELOW_MD = 2.5; // px-5 = 1.25rem per side x 2
 const PAGE_PADDING_REM_AT_MD = 4; // md:px-8 = 2rem per side x 2
 
-// The sidebar's own breakpoint (unrelated to the profile-rail breakpoint this follow-up moves) —
-// <main> picks up lg:ml-[348px] here, which the content-width expectation below must account for.
-const LG_BREAKPOINT = 1024;
-const SIDEBAR_WIDTH = 348;
-
 // The profile-panel-rail breakpoint this follow-up moves from lg (1024px) to 2xl (1440px, per
 // apps/lfx-one/tailwind.config.js). Below this, the rail renders inline; at and above it, fixed.
 const TWO_XL_BREAKPOINT = 1440;
 
 // max-w-[1024px] on the inner content wrapper in profile-layout.component.html — the content
-// column stops growing here even once the sidebar's 348px and the page padding are accounted for.
+// column stops growing here even once the navbar's 288px and the page padding are accounted for.
 const CONTENT_MAX = 1024;
 
 // Sub-2xl matrix: narrow phone, the mobile-chrome project's own size (Pixel 5), a landscape-phone
@@ -140,18 +136,18 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// Neutralize the Osano consent overlay, which otherwise intercepts pointer events and can affect
+// Neutralize the Transcend consent overlay, which otherwise intercepts pointer events and can affect
 // layout measurements. Registered via addInitScript so it applies before page scripts run (mirrors
 // profile-edit-drawer.spec.ts / me-profile-nav.spec.ts).
 async function suppressCookieBanner(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const hide = (): void => {
-      if (document.getElementById('e2e-hide-osano')) {
+      if (document.getElementById('e2e-hide-transcend')) {
         return;
       }
       const style = document.createElement('style');
-      style.id = 'e2e-hide-osano';
-      style.textContent = '.osano-cm-window { display: none !important; pointer-events: none !important; }';
+      style.id = 'e2e-hide-transcend';
+      style.textContent = '#transcend-consent-manager { display: none !important; pointer-events: none !important; }';
       (document.head ?? document.documentElement).appendChild(style);
     };
     if (document.readyState === 'loading') {
@@ -202,11 +198,11 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         // an unconditional right gutter reserved for a rail that, below 2xl, no longer renders as a
         // fixed overlay. Page padding is px-5 below md, md:px-8 at md and up — derived from rem times
         // the real root font-size, not the 40px/64px a 16px-root assumption would give (35px/56px
-        // here). Once the viewport crosses lg (the sidebar's own, unrelated breakpoint), the 348px
-        // sidebar also reserves space, and the content column stops growing past max-w-[1024px]
-        // regardless.
+        // here). The left navbar's gutter on <main> also reserves space — its width depends on the
+        // device (touch: none below lg) and the collapse state, so it is read off the element — and
+        // the content column stops growing past max-w-[1024px] regardless.
         //
-        // Whether md:/lg: are actually active is read via matchMedia rather than compared against
+        // Whether md: is actually active is read via matchMedia rather than compared against
         // clientWidth or vp.width: the matrix's own tablet viewport (768px) sits exactly on
         // MD_BREAKPOINT, and browser engines don't agree on which viewport metric a min-width query
         // resolves against when a classic scrollbar is present — Chromium tracks clientWidth (scrollbar
@@ -214,15 +210,9 @@ test.describe('Profile & Account hub — mobile/tablet/laptop layout (LFXV2-3285
         // scrollbar-inclusive viewport, so a clientWidth-threshold comparison can read "below md" at
         // exactly 768px in Firefox while the browser's own CSS has already applied md:px-8. Asking the
         // engine directly sidesteps the disagreement entirely.
-        const { isMdActive, isLgActive } = await page.evaluate(
-          ([md, lg]) => ({
-            isMdActive: window.matchMedia(`(min-width: ${md}px)`).matches,
-            isLgActive: window.matchMedia(`(min-width: ${lg}px)`).matches,
-          }),
-          [MD_BREAKPOINT, LG_BREAKPOINT]
-        );
+        const isMdActive = await page.evaluate((md) => window.matchMedia(`(min-width: ${md}px)`).matches, MD_BREAKPOINT);
         const pagePadding = (isMdActive ? PAGE_PADDING_REM_AT_MD : PAGE_PADDING_REM_BELOW_MD) * rootFontSize;
-        const sidebar = isLgActive ? SIDEBAR_WIDTH : 0;
+        const sidebar = await page.getByTestId('main-content').evaluate((el) => parseFloat(getComputedStyle(el).marginLeft) || 0);
         const expectedContentWidth = Math.min(CONTENT_MAX, overflow.clientWidth - sidebar - pagePadding);
         const contentBox = await content.boundingBox();
         expect(contentBox, 'content column should have a bounding box').not.toBeNull();

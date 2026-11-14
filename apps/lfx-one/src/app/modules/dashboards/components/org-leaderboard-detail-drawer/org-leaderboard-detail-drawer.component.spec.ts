@@ -76,13 +76,14 @@ describe('OrgLeaderboardDetailDrawerComponent', () => {
     fixture.componentRef.setInput('projectSlug', SLUG);
     fixture.componentRef.setInput('orgUid', ORG_UID);
     fixture.componentRef.setInput('range', '1y');
+    fixture.componentRef.setInput('orgScope', 'insights');
     await fixture.whenStable();
   });
 
   it('requests the breakdown with the arguments in the order the endpoint takes them', async () => {
     await open();
 
-    expect(getLeaderboardBreakdown).toHaveBeenCalledWith(ORG_UID, SLUG, 'ecosystem', SUBJECT, '1y');
+    expect(getLeaderboardBreakdown).toHaveBeenCalledWith(ORG_UID, SLUG, 'ecosystem', SUBJECT, '1y', 'insights');
   });
 
   it('spends no request while it is closed', async () => {
@@ -96,8 +97,16 @@ describe('OrgLeaderboardDetailDrawerComponent', () => {
     await open('1y');
     await open('2y');
 
-    expect(getLeaderboardBreakdown).toHaveBeenLastCalledWith(ORG_UID, SLUG, 'ecosystem', SUBJECT, '2y');
+    expect(getLeaderboardBreakdown).toHaveBeenLastCalledWith(ORG_UID, SLUG, 'ecosystem', SUBJECT, '2y', 'insights');
     expect(getLeaderboardBreakdown).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-requests when the organization scope changes while open, since it decides which row is the viewing organization', async () => {
+    await open('1y');
+    fixture.componentRef.setInput('orgScope', 'all');
+    await fixture.whenStable();
+
+    expect(getLeaderboardBreakdown).toHaveBeenLastCalledWith(ORG_UID, SLUG, 'ecosystem', SUBJECT, '1y', 'all');
   });
 
   /**

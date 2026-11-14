@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { Committee, CommitteeMember, GroupsEngagementStats } from '../interfaces';
 import { FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL } from '../constants/committees.constants';
@@ -19,12 +20,21 @@ import { CommitteeMemberRole } from '../enums/committee-member.enum';
 import {
   buildCommitteeCreateQueryParams,
   buildEngagementStatCards,
+  buildParentCommitteeOptions,
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRouteIdMatches,
+  getCommitteeMailingListLink,
   countVotingReps,
+  getEditableCommitteeCategories,
+  getGroupCommands,
+  getGroupEditLink,
+  getSelectableCommitteeCategories,
   groupCommitteesByFoundation,
   resolveCommitteeMemberPermission,
   resolveGroupsCardRoleSeverity,
+  resolveJoinModeSeverity,
+  resolveTypeDisplay,
 } from './committee.utils';
 
 /** Minimal committee builder — only the fields the resolver reads. */
@@ -135,6 +145,19 @@ describe('buildCommitteeCreateQueryParams', () => {
   });
 });
 
+describe('getSelectableCommitteeCategories', () => {
+  const values = (persona: Parameters<typeof getSelectableCommitteeCategories>[0]) => getSelectableCommitteeCategories(persona).map((c) => c.value);
+
+  it('restricts Maintainers but still lets them create Newsletter groups', () => {
+    expect(values('maintainer')).toContain('Newsletter');
+    expect(values('maintainer')).not.toContain('Board');
+  });
+
+  it('offers every category to other personas', () => {
+    expect(values('executive-director')).toEqual(expect.arrayContaining(['Board', 'Newsletter']));
+  });
+});
+
 describe('committeeRouteIdMatches', () => {
   const uid = '7cad5a8d-19d0-41a4-81a6-043453daf9ee';
 
@@ -177,6 +200,28 @@ describe('canManageCommitteeMembers', () => {
   });
 });
 
+describe('canViewCommitteeRoster', () => {
+  it('is true for any caller when visibility is basic_profile', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.BASIC_PROFILE }))).toBe(true);
+  });
+
+  it('is false for a non-manager when visibility is hidden or unset (fail-closed)', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN }))).toBe(false);
+    expect(canViewCommitteeRoster(committee())).toBe(false);
+    expect(canViewCommitteeRoster(committee({ member_visibility: 'everyone' as CommitteeMemberVisibility }))).toBe(false);
+  });
+
+  it('is true for a writer or auditor when visibility is hidden', () => {
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN, writer: true }))).toBe(true);
+    expect(canViewCommitteeRoster(committee({ member_visibility: CommitteeMemberVisibility.HIDDEN, auditor: true }))).toBe(true);
+  });
+
+  it('is false for a null committee', () => {
+    expect(canViewCommitteeRoster(null)).toBe(false);
+    expect(canViewCommitteeRoster(undefined)).toBe(false);
+  });
+});
+
 describe('resolveGroupsCardRoleSeverity', () => {
   it('maps Chair to info', () => {
     expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.CHAIR)).toBe('info');
@@ -194,6 +239,25 @@ describe('resolveGroupsCardRoleSeverity', () => {
     expect(resolveGroupsCardRoleSeverity(CommitteeMemberRole.SECRETARY)).toBe('secondary');
     expect(resolveGroupsCardRoleSeverity('Member')).toBe('secondary');
     expect(resolveGroupsCardRoleSeverity(undefined)).toBe('secondary');
+  });
+});
+
+describe('resolveJoinModeSeverity', () => {
+  it('maps open to success', () => {
+    expect(resolveJoinModeSeverity('open')).toBe('success');
+  });
+
+  it('maps application to info', () => {
+    expect(resolveJoinModeSeverity('application')).toBe('info');
+  });
+
+  it('maps invite_only to warn', () => {
+    expect(resolveJoinModeSeverity('invite_only')).toBe('warn');
+  });
+
+  it('maps closed and undefined to secondary', () => {
+    expect(resolveJoinModeSeverity('closed')).toBe('secondary');
+    expect(resolveJoinModeSeverity(undefined)).toBe('secondary');
   });
 });
 
@@ -549,5 +613,127 @@ describe('buildEngagementStatCards', () => {
     expect(cards[0]).toMatchObject({ label: 'Active Members', value: 12 });
     expect(cards[0].subLine).toMatch(/^Updated /);
     expect(cards[0].subLine).not.toContain('across');
+  });
+});
+
+describe('resolveTypeDisplay', () => {
+  it('returns "SIG | {category}" for a SIG with a category', () => {
+    const result = resolveTypeDisplay({
+      behavioralClass: 'special-interest-group',
+      category: 'Marketing Mailing List',
+      classDisplay: { label: 'Special Interest Group' },
+    });
+    expect(result).toBe('SIG | Marketing Mailing List');
+  });
+
+  it('falls back to the class label for a SIG without a category', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'special-interest-group', classDisplay: { label: 'Special Interest Group' } });
+    expect(result).toBe('Special Interest Group');
+  });
+
+  it('returns the class label for a non-SIG behavioral class', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything', classDisplay: { label: 'Working Groups' } });
+    expect(result).toBe('Working Groups');
+  });
+
+  it('returns "Other" when classDisplay is absent', () => {
+    const result = resolveTypeDisplay({ behavioralClass: 'working-group', category: 'Anything' });
+    expect(result).toBe('Other');
+  });
+});
+
+describe('getCommitteeMailingListLink', () => {
+  const list = (uid: string, name: string) => ({ uid, group_name: name });
+
+  it('is null when no mailing lists were enriched onto the committee', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false })).toBeNull();
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, mailing_lists: [] })).toBeNull();
+  });
+
+  it("links a single list to its detail page using the committee's tier and project slug", () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, project_slug: 'synthetic-proj', mailing_lists: [list('ml-1', 'dev')] })).toEqual({
+      commands: ['/', 'project', 'mailing-lists', 'ml-1'],
+      queryParams: { project: 'synthetic-proj' },
+      target: 'list',
+      label: 'dev',
+    });
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'dev')] })?.commands).toEqual([
+      '/',
+      'foundation',
+      'mailing-lists',
+      'ml-1',
+    ]);
+  });
+
+  it('labels with the title, then group name, and is null when the name is unknown', () => {
+    const label = (ml: { uid: string; group_name: string; title?: string }) =>
+      getCommitteeMailingListLink({ uid: 'c1', is_foundation: false, mailing_lists: [ml] })?.label;
+    expect(label({ uid: 'ml-1', group_name: 'dev', title: 'Developers' })).toBe('Developers');
+    expect(label({ uid: 'ml-1', group_name: 'dev', title: '' })).toBe('dev');
+    expect(label({ uid: 'ml-1', group_name: '' })).toBeNull();
+  });
+
+  it('links several lists to the group page', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', is_foundation: true, mailing_lists: [list('ml-1', 'a'), list('ml-2', 'b')] })).toEqual({
+      commands: ['/', 'foundation', 'groups', 'c1'],
+      queryParams: null,
+      target: 'group',
+      label: '2 mailing lists',
+    });
+  });
+
+  it('falls back to the flat paths when the tier is unknown', () => {
+    expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('ml-1', 'dev')] })?.commands).toEqual(['/mailing-lists', 'ml-1']);
+    expect(getCommitteeMailingListLink({ uid: 'c1', mailing_lists: [list('a', 'a'), list('b', 'b')] })?.commands).toEqual(['/groups', 'c1']);
+  });
+});
+
+describe('getEditableCommitteeCategories', () => {
+  it('returns the persona set unchanged when the current category is already in it', () => {
+    expect(getEditableCommitteeCategories('board-member', 'Board')).toEqual(getSelectableCommitteeCategories('board-member'));
+  });
+
+  it('prepends the current category when the persona set excludes it', () => {
+    const options = getEditableCommitteeCategories('maintainer', 'Board');
+
+    expect(options[0]).toEqual({ label: 'Board', value: 'Board' });
+    expect(options).toHaveLength(getSelectableCommitteeCategories('maintainer').length + 1);
+  });
+
+  it('adds nothing when there is no current category', () => {
+    expect(getEditableCommitteeCategories('maintainer', undefined)).toEqual(getSelectableCommitteeCategories('maintainer'));
+  });
+});
+
+describe('buildParentCommitteeOptions', () => {
+  const groups = [
+    { uid: 'a', name: 'A' },
+    { uid: 'b', name: 'B', parent_uid: 'a' },
+    { uid: 'c', name: 'C' },
+  ] as Committee[];
+
+  it('leads with the null "No Parent" choice and keeps only top-level groups', () => {
+    expect(buildParentCommitteeOptions(groups, undefined, 'Group')).toEqual([
+      { label: 'No Parent Group', value: null },
+      { label: 'A', value: 'a' },
+      { label: 'C', value: 'c' },
+    ]);
+  });
+
+  it('excludes the group being edited', () => {
+    expect(buildParentCommitteeOptions(groups, 'a', 'Group').map((option) => option.value)).toEqual([null, 'c']);
+  });
+});
+
+describe('getGroupEditLink', () => {
+  it('uses the tier-aware route and carries the project slug', () => {
+    const link = getGroupEditLink({ uid: 'g-1', is_foundation: false, project_slug: 'kubernetes' });
+
+    expect(link.commands).toEqual(getGroupCommands({ uid: 'g-1', is_foundation: false }, 'edit'));
+    expect(link.queryParams).toEqual({ project: 'kubernetes' });
+  });
+
+  it('falls back to the flat edit path with no query params for an unenriched payload', () => {
+    expect(getGroupEditLink({ uid: 'g-1' })).toEqual({ commands: ['/groups', 'g-1', 'edit'], queryParams: {} });
   });
 });

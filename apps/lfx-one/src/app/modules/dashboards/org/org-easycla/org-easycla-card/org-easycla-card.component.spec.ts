@@ -22,6 +22,7 @@ describe('OrgEasyclaCardComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: false,
       ...overrides,
     };
   }
@@ -50,6 +51,36 @@ describe('OrgEasyclaCardComponent', () => {
   function allText(fixture: ComponentFixture<OrgEasyclaCardComponent>, id: string): string[] {
     return Array.from(fixture.nativeElement.querySelectorAll(`[data-testid="${id}"]`)).map((el) => (el as HTMLElement).textContent?.trim() ?? '');
   }
+
+  describe('view only', () => {
+    function viewOnlyPill(fixture: ComponentFixture<OrgEasyclaCardComponent>): HTMLElement | null {
+      return fixture.nativeElement.querySelector('[data-testid="org-easycla-card-view-only"]');
+    }
+
+    it('marks a signed CCLA the viewer is not a CLA Manager of', async () => {
+      const fixture = await render(claGroup({ viewerIsClaManager: false }));
+
+      expect(viewOnlyPill(fixture)?.textContent?.trim()).toBe('View only');
+    });
+
+    it('leaves a CCLA the viewer manages unmarked', async () => {
+      const fixture = await render(claGroup({ viewerIsClaManager: true }));
+
+      expect(viewOnlyPill(fixture)).toBeNull();
+    });
+
+    it('leaves an unsigned agreement unmarked, since anyone may start signing it', async () => {
+      const fixture = await render(claGroup({ signed: false, status: 'not-started', viewerIsClaManager: false }));
+
+      expect(viewOnlyPill(fixture)).toBeNull();
+    });
+
+    it('marks a signed agreement that is also sanctioned, which is no less read-only', async () => {
+      const fixture = await render(claGroup({ status: 'sanctioned', viewerIsClaManager: false }));
+
+      expect(viewOnlyPill(fixture)).not.toBeNull();
+    });
+  });
 
   describe('identity', () => {
     it('names the CLA Group', async () => {
@@ -191,11 +222,11 @@ describe('OrgEasyclaCardComponent', () => {
       expect(textOf(fixture, 'org-easycla-card-status')).toContain('Signed');
     });
 
-    it('reads as sanctioned when the signing entity is flagged', async () => {
+    it('shows no status pill when the signing entity is flagged', async () => {
       const fixture = await render(claGroup({ status: 'sanctioned' }));
 
-      expect(textOf(fixture, 'org-easycla-card-status')).toContain('Sanctioned');
-      expect(textOf(fixture, 'org-easycla-card-status')).not.toContain('Signed');
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-status"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Sanctioned');
     });
 
     // The word matters more than the styling here: an unsigned agreement described as signed
@@ -209,24 +240,10 @@ describe('OrgEasyclaCardComponent', () => {
   });
 
   describe('needs a CLA manager', () => {
-    it('flags an agreement with no CLA manager', async () => {
+    it('carries no indicator for an agreement with no CLA manager', async () => {
       const fixture = await render(claGroup({ needsClaManager: true, claManagersCount: 0 }));
 
-      expect(textOf(fixture, 'org-easycla-card-needs-manager')).toContain('Needs a CLA Manager');
-    });
-
-    it('does not flag a managed agreement', async () => {
-      const fixture = await render(claGroup({ needsClaManager: false }));
-
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-needs-manager"]')).toBeNull();
-    });
-
-    // Rendered from the flag alone. Re-deriving it from the count here would be a second
-    // definition of the same condition, free to drift from the producer's.
-    it('follows the flag rather than the manager count', async () => {
-      const fixture = await render(claGroup({ needsClaManager: false, claManagersCount: 0 }));
-
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-card-needs-manager"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Needs a CLA Manager');
     });
   });
 

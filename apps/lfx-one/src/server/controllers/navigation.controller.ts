@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NAV_LENSES } from '@lfx-one/shared/constants';
+import {
+  FAVORITE_PROJECTS_MAX_VALUES,
+  FAVORITE_PROJECTS_PREFERENCE_APP_NAME,
+  FAVORITE_PROJECTS_PREFERENCE_NAME,
+  FAVORITE_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH,
+  NAV_LENSES,
+} from '@lfx-one/shared/constants';
 import { NavLens } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -11,6 +17,10 @@ import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { NavigationService } from '../services/navigation.service';
 import { OrgNavigationService } from '../services/org-navigation.service';
+import { UserPreferenceService } from '../services/user-preference.service';
+import { isImpersonating } from '../utils/auth-helper';
+
+import type { PreferenceReadResponse, PreferenceUpsertRequest } from '@lfx-one/shared/interfaces';
 
 function isNavLens(value: string | undefined): value is NavLens {
   return !!value && NAV_LENSES.includes(value as NavLens);
@@ -19,10 +29,12 @@ function isNavLens(value: string | undefined): value is NavLens {
 export class NavigationController {
   private readonly navigationService: NavigationService;
   private readonly orgNavigationService: OrgNavigationService;
+  private readonly userPreferenceService: UserPreferenceService;
 
   public constructor() {
     this.navigationService = new NavigationService();
     this.orgNavigationService = new OrgNavigationService();
+    this.userPreferenceService = new UserPreferenceService();
   }
 
   public async getLensItems(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -42,8 +54,9 @@ export class NavigationController {
       const pageToken = getStringQueryParam(req, 'page_token');
       const name = getStringQueryParam(req, 'name');
       const selectedUid = this.sanitizeSelectedUid(req, getStringQueryParam(req, 'selected_uid'), 'get_lens_items');
+      const favoritedUids = this.sanitizeFavoritedUids(req, getStringQueryParam(req, 'favorited_uids'), 'get_lens_items');
 
-      const result = await this.navigationService.getLensItems(req, { lens, pageToken, name, selectedUid });
+      const result = await this.navigationService.getLensItems(req, { lens, pageToken, name, selectedUid, favoritedUids });
 
       logger.success(req, 'get_lens_items', startTime, {
         lens: result.lens,
@@ -75,12 +88,23 @@ export class NavigationController {
         });
       }
 
-      const result = await this.orgNavigationService.getOrgItems(req, { pageToken, name, selectedUid });
+      // M3: the CLA-only half is complete in one answer, so it has no continuation page.
+      const claOnly = getStringQueryParam(req, 'cla_only') === '1';
+      if (claOnly && pageToken) {
+        throw ServiceValidationError.forField('cla_only', 'page_token and cla_only are mutually exclusive', {
+          operation: 'get_org_items',
+          service: 'navigation_controller',
+          path: req.path,
+        });
+      }
+
+      const result = await this.orgNavigationService.getOrgItems(req, { pageToken, name, selectedUid, claOnly });
 
       logger.success(req, 'get_org_items', startTime, {
         has_search: !!name?.trim(),
         has_page_token: !!pageToken,
         has_selected_uid: !!selectedUid,
+        cla_only: claOnly,
         item_count: result.items.length,
         has_next_page: !!result.next_page_token,
         upstream_failed: result.upstream_failed,
@@ -93,11 +117,128 @@ export class NavigationController {
     }
   }
 
+  /**
+   * GET /api/nav/favorite-projects — the current user's favorited foundation/project uids (GH-2995).
+   * A single global preference, unlike Social Listening's per-foundation family — no `:name` param.
+   */
+  public async getFavoriteProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_favorite_projects';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      // The API Gateway token always resolves the impersonator's profile — during impersonation
+      // answer "no favorites" so the target-scoped selector never renders the impersonator's state.
+      if (isImpersonating(req)) {
+        logger.success(req, operation, startTime, { impersonating: true });
+        const response: PreferenceReadResponse = { name: FAVORITE_PROJECTS_PREFERENCE_NAME, value: null };
+        res.json(response);
+        return;
+      }
+
+      const value = await this.userPreferenceService.getPreference(req, FAVORITE_PROJECTS_PREFERENCE_APP_NAME, FAVORITE_PROJECTS_PREFERENCE_NAME);
+
+      logger.success(req, operation, startTime, { found: value !== null });
+
+      const response: PreferenceReadResponse = { name: FAVORITE_PROJECTS_PREFERENCE_NAME, value };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PUT /api/nav/favorite-projects — upsert the current user's favorited uids. Body: `{ value: string }` (stringified JSON array of uids). */
+  public async upsertFavoriteProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'upsert_favorite_projects';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const value = this.parseFavoriteProjectsValue(req, operation);
+      await this.userPreferenceService.upsertPreference(req, FAVORITE_PROJECTS_PREFERENCE_APP_NAME, FAVORITE_PROJECTS_PREFERENCE_NAME, value);
+
+      logger.success(req, operation, startTime);
+
+      const response: PreferenceReadResponse = { name: FAVORITE_PROJECTS_PREFERENCE_NAME, value };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** DELETE /api/nav/favorite-projects — clears the current user's favorites. Idempotent: deleting an absent preference succeeds with `value: null`. */
+  public async deleteFavoriteProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'delete_favorite_projects';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      await this.userPreferenceService.deletePreference(req, FAVORITE_PROJECTS_PREFERENCE_APP_NAME, FAVORITE_PROJECTS_PREFERENCE_NAME);
+
+      logger.success(req, operation, startTime);
+
+      const response: PreferenceReadResponse = { name: FAVORITE_PROJECTS_PREFERENCE_NAME, value: null };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  private parseFavoriteProjectsValue(req: Request, operation: string): string {
+    const body = req.body as PreferenceUpsertRequest | undefined;
+
+    if (typeof body?.value !== 'string') {
+      throw ServiceValidationError.forField('value', 'Request body must be { value: string }', { operation });
+    }
+
+    if (body.value.length > FAVORITE_PROJECTS_PREFERENCE_VALUE_MAX_LENGTH) {
+      throw ServiceValidationError.forField('value', 'value exceeds the maximum allowed size', { operation });
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body.value);
+    } catch {
+      throw ServiceValidationError.forField('value', 'value must be valid JSON', { operation });
+    }
+
+    if (!Array.isArray(parsed) || parsed.length > FAVORITE_PROJECTS_MAX_VALUES || !parsed.every((uid) => typeof uid === 'string' && uid.length > 0)) {
+      throw ServiceValidationError.forField('value', `value must be a JSON array of up to ${FAVORITE_PROJECTS_MAX_VALUES} non-empty uid strings`, {
+        operation,
+      });
+    }
+
+    return body.value;
+  }
+
   /** Fail closed on allowlist rejection — log warning and drop the pin hint rather than passing an unsafe uid downstream. */
   private sanitizeSelectedUid(req: Request, selectedUid: string | undefined, operation: string): string | undefined {
     if (!selectedUid) return undefined;
     if (isFilterSafeIdentifier(selectedUid)) return selectedUid;
     logger.warning(req, operation, 'Refusing selected_uid outside filter-safe allowlist', { uid_length: selectedUid.length });
     return undefined;
+  }
+
+  /**
+   * Comma-separated favorited uids (GH-3453) — same allowlist as `selected_uid`, capped at the
+   * favorites limit. Unsafe entries are dropped, not the whole list. De-duplicated before the cap
+   * so repeats of one uid can't both waste the cap and reach `fetchItemsByUids` twice across
+   * separate batches, which would otherwise push duplicate rows into the response (GH-3456 review).
+   */
+  private sanitizeFavoritedUids(req: Request, raw: string | undefined, operation: string): string[] | undefined {
+    if (!raw) return undefined;
+    const candidates = [
+      ...new Set(
+        raw
+          .split(',')
+          .map((uid) => uid.trim())
+          .filter((uid) => uid.length > 0)
+      ),
+    ].slice(0, FAVORITE_PROJECTS_MAX_VALUES);
+    const safe = candidates.filter((uid) => isFilterSafeIdentifier(uid));
+    if (safe.length < candidates.length) {
+      logger.warning(req, operation, 'Dropped favorited_uids entries outside filter-safe allowlist', {
+        requested: candidates.length,
+        accepted: safe.length,
+      });
+    }
+    return safe.length > 0 ? safe : undefined;
   }
 }

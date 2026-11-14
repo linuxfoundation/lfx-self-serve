@@ -24,7 +24,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -39,7 +39,8 @@ const STATUS_DROPDOWN = `[data-test="mentee-tasks-status-dropdown-${TASK_ID}"]`;
 /** Shape of the synthetic task the applications stub serves. */
 interface StubTask {
   status: string;
-  submitFile: string | null;
+  submitFile: 'required' | null;
+  hasFile?: boolean;
 }
 
 /** The one synthetic accepted application, carrying the one non-prerequisite task in the given state. */
@@ -60,6 +61,7 @@ function acceptedApplication(task: StubTask) {
         category: 'non_prerequisite',
         status: task.status,
         submitFile: task.submitFile,
+        hasFile: task.hasFile ?? false,
         updatedOn: '2026-06-02T10:00:00Z',
       },
     ],
@@ -110,10 +112,6 @@ async function openTasksTab(page: Page): Promise<void> {
 }
 
 test.describe('Mentee My Tasks — status change', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('starting a to-do task saves In Progress, toasts success and re-reads the tasks', async ({ page }) => {
     let releaseRead!: () => void;
     const heldRead = new Promise<void>((resolve) => (releaseRead = resolve));

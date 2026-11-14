@@ -6,13 +6,20 @@ import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensFoundationsService } from '@services/org-lens-foundations.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PlausibleService } from '@services/plausible.service';
 import { catchError, combineLatest, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
-import { ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE, ORG_LENS_FOUNDATIONS_INITIAL_STATE } from '@lfx-one/shared/constants';
+import {
+  ORG_COMMITS_DEFINITION,
+  ORG_LENS_FOUNDATIONS_EMPTY_RESPONSE,
+  ORG_LENS_FOUNDATIONS_INITIAL_STATE,
+  ORG_LF_MAINTAINER_ROLES_LABEL,
+  ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION,
+} from '@lfx-one/shared/constants';
 import type { OrgLensFoundationRow, OrgLensFoundationsAndProjectsResponse, OrgLensFoundationsSectionState } from '@lfx-one/shared/interfaces';
 
 import { FoundationRowComponent } from './components/foundation-row.component';
@@ -21,7 +28,7 @@ import { FoundationsStatStripComponent } from './components/foundations-stat-str
 /** Parent for Org Lens "Foundations and Projects" — owns fetch keyed on selected org, status signal, row expansion, retry, and first-render telemetry. */
 @Component({
   selector: 'lfx-org-overview-foundations-and-projects',
-  imports: [DecimalPipe, FoundationRowComponent, FoundationsStatStripComponent, RouterLink, SkeletonModule],
+  imports: [DecimalPipe, FoundationRowComponent, FoundationsStatStripComponent, RouterLink, SkeletonModule, TooltipModule],
   templateUrl: './org-overview-foundations-and-projects.component.html',
   styleUrls: ['./org-overview-foundations-and-projects.component.scss'],
 })
@@ -38,6 +45,10 @@ export class OrgOverviewFoundationsAndProjectsComponent {
 
   // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
   protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
+
+  protected readonly commitsDefinition = ORG_COMMITS_DEFINITION;
+  protected readonly maintainerRolesLabel = ORG_LF_MAINTAINER_ROLES_LABEL;
+  protected readonly maintainerRolesDefinition = ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION;
 
   protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
 

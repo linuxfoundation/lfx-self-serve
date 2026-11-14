@@ -3,7 +3,7 @@
 
 import { expect, test } from '@playwright/test';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { mockEventRoutes } from './helpers/events-mock.helper';
+import { mockEventRoutes, TRAVEL_FUND_DEEP_LINK_PARAMS, VISA_DEEP_LINK_PARAMS } from './helpers/events-mock.helper';
 import { DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -32,7 +32,7 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
   });
 
   test('opens the visa dialog on the Terms step and strips ?event= once matched', async ({ page }) => {
-    await mockEventRoutes(page, { matchedEvent: MATCHED_EVENT });
+    await mockEventRoutes(page, { matchedEvent: MATCHED_EVENT, matchParams: VISA_DEEP_LINK_PARAMS });
     await page.goto(`/events?tab=visa-letters&event=${MATCHED_EVENT.id}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 
@@ -45,7 +45,7 @@ test.describe('My Events — Visa/Travel-Fund Request Deep Link', () => {
   });
 
   test('opens the travel-funding dialog on the Terms step when the event matches', async ({ page }) => {
-    await mockEventRoutes(page, { matchedEvent: MATCHED_EVENT });
+    await mockEventRoutes(page, { matchedEvent: MATCHED_EVENT, matchParams: TRAVEL_FUND_DEEP_LINK_PARAMS });
     await page.goto(`/events?tab=travel-funding&event=${MATCHED_EVENT.id}`, { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
 

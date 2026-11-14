@@ -40,7 +40,6 @@ import {
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
   FORMATION_SYSTEM_ACTOR_USERNAME,
-  FORMATION_TEAM_NAME,
   NATS_CONFIG,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
@@ -75,6 +74,7 @@ import {
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { checkFormationTeamMembership } from '../helpers/formation-team.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { BatchDeadlineExceededError, settleInBatches } from '../helpers/settle-in-batches.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
@@ -187,7 +187,7 @@ export class FormationService {
       // failure of the project GET itself (which the access-less read would hit identically) fails
       // the load.
       this.projectService.getProjectById(req, uid, true),
-      this.checkFormationTeamMembership(req),
+      checkFormationTeamMembership(this.accessCheckService, req),
       resolveRootProjectUid(req, this.natsService),
       // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
       // reads it from project settings but doesn't return it) — read it from the same source the
@@ -251,6 +251,8 @@ export class FormationService {
       // The gateway's `set_item_status` rule ANDs `writer_guard` with `member` on `team:formation`
       // (GH-2705) — mirror the full pair so status controls are hidden from callers it would 403.
       can_set_status: project.writer === true && isFormationTeamMember,
+      // Same pair as can_set_status: the formation-record edit (#5134) is gated on writer_guard AND team:formation membership.
+      can_edit_record: project.writer === true && isFormationTeamMember,
     };
   }
 
@@ -763,7 +765,7 @@ export class FormationService {
     // per-project writer fan-out below instead of adding a serial round trip, and skipped
     // entirely when there is no row to stamp (the overwhelmingly common dashboard load has no
     // open formation items) (GH-2705).
-    const teamMembershipPromise = openItems.length > 0 ? this.checkFormationTeamMembership(req) : Promise.resolve(false);
+    const teamMembershipPromise = openItems.length > 0 ? checkFormationTeamMembership(this.accessCheckService, req) : Promise.resolve(false);
     const CAN_WRITE_LOOKUP_CONCURRENCY = 10;
     for (let i = 0; i < distinctProjectUids.length; i += CAN_WRITE_LOOKUP_CONCURRENCY) {
       const batch = distinctProjectUids.slice(i, i + CAN_WRITE_LOOKUP_CONCURRENCY);
@@ -954,7 +956,8 @@ export class FormationService {
    * short {@link FormationSubStage} key, so that one field needs the `normalizeFormationSubStage`
    * mapping below (GH-2366) — everything else is ROOT collapse and the subStage/search filters.
    * `search` matches on `project_name`. Rows the caller can't read are simply absent from
-   * `/query/resources` (per-row `auditor` enforcement upstream), so no additional access filtering
+   * `/query/resources` (per-row enforcement upstream, on the relation each indexed formation document
+   * names), so no additional access filtering
    * is needed here.
    *
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
@@ -1270,17 +1273,6 @@ export class FormationService {
       next_gate_item: null,
       assignees: row.assignees ?? [],
     };
-  }
-
-  /**
-   * Whether the caller is a `member` of `team:formation` (GH-2705) — the second, caller-scoped
-   * check the gateway's `set_item_status` rule runs (no resource in the object: the question is
-   * "is this person on the formation team", not what they hold on any project). Fail-closed:
-   * `checkSingleAccess` degrades to `false` on an access-check failure, so an FGA outage hides
-   * status controls rather than offering writes that can only 403.
-   */
-  private async checkFormationTeamMembership(req: Request): Promise<boolean> {
-    return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
   }
 
   /**

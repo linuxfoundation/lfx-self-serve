@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
+import { CdpIdentityType, EmailVerificationCallbackStatus, EmailVerificationStatus, IdentityProvider, IdentityProviderOption, ProfileTab } from '../interfaces';
 
 /**
  * sessionStorage key for a profile-edit form interrupted by a Flow C
@@ -11,6 +11,10 @@ import { CdpIdentityType, IdentityProvider, IdentityProviderOption, ProfileTab }
  * layout, the profile-edit dialog, and the settings feature.
  */
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
+
+/** Opaque one-shot handle for an already-linked callback's private support context; never an email. */
+export const EMAIL_LINKED_SUPPORT_CONTEXT_PARAM = 'email_support_context';
+export const EMAIL_LINKED_SUPPORT_HANDLE_PATTERN = /^[a-f0-9]{64}$/;
 
 /**
  * sessionStorage key for the one-shot Linux.com forward re-auth redirect guard.
@@ -29,10 +33,9 @@ export const PROFILE_BIO_MAX_LENGTH = 2000;
 
 /**
  * Sentinel accepted by the meeting-service `preferred_email.set` RPC in place of an address to
- * clear the meeting-invitation override, so invitations follow whatever the primary email is.
- * Must stay in sync with `primaryEmailSentinel` in lfx-v2-meeting-service; the upstream match
- * is case-insensitive. Sending the literal primary address instead would pin an explicit
- * override that no longer follows a later primary-email change.
+ * clear the meeting-invitation override. Must stay in sync with `primaryEmailSentinel` in
+ * lfx-v2-meeting-service; the upstream match is case-insensitive. The UI no longer sends it:
+ * invitations stick to an address, so it always pins a literal one (#3983).
  */
 export const MEETING_INVITE_PRIMARY_SENTINEL = 'primary';
 
@@ -50,6 +53,7 @@ export const PROFILE_TABS: ProfileTab[] = [
   { id: 'attribution', label: 'Work history & Affiliations', route: 'attributions' },
   { id: 'identities', label: 'Identities', route: 'identities' },
   { id: 'individual-enrollment', label: 'Individual Enrollment', route: 'individual-enrollment' },
+  { id: 'clas', label: 'CLAs', route: 'clas' },
   { id: 'transactions', label: 'Transactions', route: 'transactions' },
   { id: 'settings', label: 'Settings', route: 'settings' },
 ];
@@ -103,6 +107,7 @@ export const YEAR_OPTIONS: { label: string; value: string }[] = Array.from({ len
  */
 export const IDENTITY_PROVIDER_OPTIONS: IdentityProviderOption[] = [
   { id: 'github', name: 'GitHub', description: 'Connect your GitHub account for code contributions', icon: 'fa-brands fa-github' },
+  { id: 'gitlab', name: 'GitLab', description: 'Connect your GitLab account for code contributions', icon: 'fa-brands fa-gitlab' },
   { id: 'linkedin', name: 'LinkedIn', description: 'Connect your LinkedIn account for employer recognition', icon: 'fa-brands fa-linkedin' },
   { id: 'google', name: 'Google', description: 'Connect your Google account to verify your email', icon: 'fa-brands fa-google' },
   { id: 'email', name: 'Email', description: 'Add an email address for notifications and attribution', icon: 'fa-light fa-envelope' },
@@ -133,6 +138,21 @@ export const CDP_TO_AUTH0_PROVIDER_MAP: Record<string, string> = Object.fromEntr
 );
 
 /**
+ * Auth0 connection name of the generic OAuth2 social connection that links
+ * GitLab accounts (#4187). Its reverse-map entry above supplies the
+ * `connection=gitlab` sent to Auth0 when connecting.
+ */
+export const GITLAB_AUTH0_CONNECTION = 'gitlab';
+
+/**
+ * Auth0 provider of identities linked through the GitLab connection. `oauth2`
+ * is the generic strategy shared by any custom social connection, so only the
+ * connection name identifies GitLab; unlinking needs this provider, not the
+ * connection name.
+ */
+export const GITLAB_AUTH0_PROVIDER = 'oauth2';
+
+/**
  * Default mapping from CDP platform → identity type, used when LFX One POSTs
  * new identities to CDP from auth-service (where the value's shape is known
  * because we control it — Auth0 always gives us email for LinkedIn, nickname
@@ -155,15 +175,24 @@ export const CDP_PLATFORM_TO_TYPE_MAP: Readonly<Record<string, CdpIdentityType |
  * profile identities UI and syncing to CDP from auth-service. Applied AFTER
  * the `custom → email` remap in cdp.service.ts, so email-style entries appear
  * here as `email + email`. LFID is handled by a dedicated auto-verify branch
- * and intentionally excluded from this allowlist.
+ * and intentionally excluded from this allowlist. Combos surfaced only when the
+ * user has linked the account live in `AUTH0_LINKED_ONLY_IDENTITY_COMBOS`.
  */
 export const CDP_DISPLAYABLE_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']);
+
+/**
+ * (platform, type) combos shown in the profile identities UI only when backed
+ * by an identity linked in auth-service. CDP-only rows for these combos stay
+ * hidden, so they are never offered for verification (Product decision, #4190).
+ */
+export const AUTH0_LINKED_ONLY_IDENTITY_COMBOS: ReadonlySet<string> = new Set(['gitlab+username']);
 
 /**
  * CDP platform to icon class mapping
  */
 export const CDP_PLATFORM_ICONS: Record<string, string> = {
   github: 'fa-brands fa-github',
+  gitlab: 'fa-brands fa-gitlab',
   google: 'fa-brands fa-google',
   linkedin: 'fa-brands fa-linkedin',
   email: 'fa-light fa-envelope',
@@ -188,11 +217,99 @@ export const IDENTITY_PROVIDER_LABELS: Record<IdentityProvider, string> = {
 export const LFX_ONE_WORK_EXPERIENCE_SOURCE = 'lfxOne';
 
 /**
- * Generic, non-identifying message returned when an email is already linked to
- * another account. Intentionally never names the owning account — surfacing the
- * owning LFID would enable account enumeration.
+ * Generic, non-identifying message returned when, after a correct code, OTP verification or the
+ * identity link reports the email is already linked. Intentionally never names the owning
+ * account — surfacing the owning LFID would enable account enumeration — and never asserts
+ * "another account", since the upstream conflict alone does not prove that. Keeps the "already linked" marker the dialogs' support-link classifier
+ * (`isIdentityAlreadyLinkedError`) matches.
  */
-export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to another account';
+export const EMAIL_ALREADY_LINKED_MESSAGE = 'This email is already linked to an LFX account. Contact support if you need help.';
+
+/** Successful no-op status: the proven address is already connected to the caller's own account. */
+export const EMAIL_ALREADY_CONNECTED_STATUS: EmailVerificationStatus = 'already_connected';
+
+/** Shared toast heading for an address already connected to the caller's account. */
+export const EMAIL_ALREADY_CONNECTED_SUMMARY = 'Already connected';
+
+/**
+ * Success copy for an address already connected to the caller's account. Deliberately avoids the
+ * "already linked" markers, so it can never trigger the linked-to-another-account support link.
+ */
+export const EMAIL_ALREADY_CONNECTED_MESSAGE = 'This email is already connected to your account.';
+
+/**
+ * Social callback `success` marker: the reconnected social identity resolved to the caller's own
+ * account (same subject), so the callback returned without linking, verifying, or syncing anything.
+ * A UI notice only — never proof of verification or ownership.
+ */
+export const IDENTITY_ALREADY_CONNECTED_STATUS = 'identity_already_connected';
+
+/** Shared toast heading for a social identity already connected to the caller's account. */
+export const IDENTITY_ALREADY_CONNECTED_SUMMARY = 'Already connected';
+
+/**
+ * Success copy for a social identity already connected to the caller's account. Deliberately avoids
+ * the "already linked" markers, so it can never trigger the linked-to-another-account support link.
+ */
+export const IDENTITY_ALREADY_CONNECTED_MESSAGE = 'This identity is already connected to your account.';
+
+/** Query parameter carrying the pending-email outcome on the Flow C authorization-success redirect. */
+export const EMAIL_CALLBACK_STATUS_PARAM = 'email_status';
+
+/** Flow C callback outcome: a replayed pending email verification did not finish. */
+export const EMAIL_CALLBACK_RETRY_REQUIRED_STATUS: EmailVerificationCallbackStatus = 'retry_required';
+
+/** Flow C callback outcome: the replayed code was correct, but the address is already linked to an LFX account. */
+export const EMAIL_CALLBACK_ALREADY_LINKED_STATUS: EmailVerificationCallbackStatus = 'already_linked';
+
+/** PrimeNG toast key for the sticky already-linked notice that carries a pre-filled Contact support action. */
+export const EMAIL_LINKED_SUPPORT_TOAST_KEY = 'email-linked-support';
+
+/** Title of the already-linked notice shown on the Settings code step and after the Flow C callback. */
+export const EMAIL_LINKED_SUPPORT_TITLE = 'Email already linked';
+
+/** Fixed guidance for a pending email verification that did not finish during the Flow C callback. */
+export const EMAIL_CALLBACK_RETRY_MESSAGE =
+  'Email verification did not finish. Return to Email Settings or Identities and request a new verification code to try again.';
+
+/** Enumeration-safe response shared by accepted and already-linked send-code requests. */
+export const EMAIL_VERIFICATION_SENT_MESSAGE = 'If this address can be added to your account, a verification code has been sent.';
+
+/** Resends allowed on the code step before Resend is replaced by a Contact support action. */
+export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
+
+/** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
+export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
+
+/** Standalone code-step hint shown alongside a secondary Contact support action. */
+export const EMAIL_CODE_NOT_RECEIVED_HINT = 'Check the email address above and your spam or junk folder.';
+
+/** Heading for the support-first state after the allowed successful resend. */
+export const EMAIL_RESEND_SUPPORT_TITLE = 'Still waiting for your code?';
+
+/** Escalation guidance that makes no delivery-time promise and preserves late-code entry. */
+export const EMAIL_RESEND_SUPPORT_MESSAGE = "If it hasn't arrived, contact support for help. You can still enter the code here if it arrives later.";
+
+/** Retryable, non-identifying error shown when a resend request fails. */
+export const EMAIL_RESEND_FAILED_MESSAGE = "We couldn't request another code. Please try again.";
+
+/** Generic error code for wrong, expired or otherwise failed OTP verification (not outages or proven conflicts). */
+export const EMAIL_VERIFICATION_FAILED_ERROR = 'verification_failed';
+
+/** Non-identifying guidance for wrong, expired or otherwise failed OTP verification; proven conflicts use EMAIL_ALREADY_LINKED_MESSAGE. */
+export const EMAIL_VERIFICATION_FAILED_MESSAGE = 'Verification failed. Please try again or request a new code.';
+
+/** Minimum upstream-to-response duration for send-code replies and non-outage OTP failures. */
+export const EMAIL_VERIFICATION_MIN_RESPONSE_MS = 1500;
+
+/** Send-code rate-limit window shared by the per-user and per-target limiters. */
+export const EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+
+/** Requests one user may make per window, per pod. */
+export const EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX = 120;
+
+/** Requests one normalized email address may receive per window, per pod. */
+export const EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX = 20;
 
 /**
  * Path/fragment vocabulary for the Flow C `returnTo` contract and the Settings page's TOC
@@ -204,6 +321,7 @@ export const PROFILE_SETTINGS_PATH = '/profile/settings';
 export const PROFILE_EMAIL_PATH = '/profile/email';
 export const PROFILE_EMAILS_PATH = '/profile/emails';
 export const PROFILE_PASSWORD_PATH = '/profile/password';
+export const PROFILE_DEVELOPER_SETTINGS_PATH = '/profile/developer-settings';
 
 /**
  * AccountSettingsComponent's TOC section ids, doubling as the DOM element ids the deep-link

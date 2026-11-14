@@ -557,7 +557,7 @@ test.describe('Org Project Detail — hero health popup', () => {
     await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
     await expect(page.getByTestId('project-detail-health-badge')).toHaveAttribute(
       'aria-label',
-      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+      'Health: Healthy, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
   });
 

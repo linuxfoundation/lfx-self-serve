@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys). */
+/** Names of the Org Lens empty states shipped in spec 053 phase 1 (`ORG_LENS_EMPTY_STATE_COPY` keys), plus `affiliated-no-grant` (#4225). */
 export type OrgLensEmptyStateName =
   | 'no-organization'
   | 'no-access'
@@ -10,6 +10,7 @@ export type OrgLensEmptyStateName =
   | 'could-not-load'
   | 'staff-check-failed'
   | 'contractor-no-grant'
+  | 'affiliated-no-grant'
   | 'section-empty'
   | 'section-could-not-load'
   | 'section-no-access'
@@ -36,8 +37,11 @@ export type OrgLensLookupBlocker = Extract<OrgLensEmptyStateName, 'could-not-loa
  */
 export type OrgLensSectionOutcome = 'records' | 'empty' | 'denied' | 'unverifiable' | 'failed';
 
+/** `OrgLensSectionOutcome` minus `empty` — what a section's error-classification reduces to (never `empty`, which only `sectionEmptyState` assigns from a 0-count response). */
+export type OrgLensSectionErrorOutcome = Exclude<OrgLensSectionOutcome, 'empty'>;
+
 /** What the primary / secondary control does when it is not a plain link. */
-export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters' | 'contact-support';
+export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters';
 
 export interface OrgLensEmptyStateAction {
   label: string;
@@ -45,7 +49,7 @@ export interface OrgLensEmptyStateAction {
   href?: string;
   /** In-app route — rendered as a router link. */
   route?: string[];
-  /** `retry` / `reset-filters` emit the component's outputs; `contact-support` opens the support messenger; `org-list` renders the caller's own organizations (`values.orgList`) as the control, each row emitting `orgSelected`. */
+  /** `retry` / `reset-filters` emit the component's outputs; `org-list` renders the caller's own organizations (`values.orgList`) as the control, each row emitting `orgSelected`. */
   action?: OrgLensEmptyStateActionKind;
 }
 

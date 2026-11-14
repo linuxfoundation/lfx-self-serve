@@ -70,7 +70,7 @@ export const parseISODateString = (dateString: string | null | undefined): Date 
   return new Date(dateString);
 };
 
-/** Shape guard shared by {@link parseLocalDateString} and {@link tryParseLocalDateString} — keep the two in sync by referencing this rather than restating the pattern. */
+/** Shape guard shared by {@link parseLocalDateString}, {@link tryParseLocalDateString}, and {@link isLocalDateOnlyString} — keep them in sync by referencing this rather than restating the pattern. */
 const LOCAL_DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -100,10 +100,15 @@ export const parseLocalDateString = (dateString: string): Date => {
  * cannot fail on — a malformed value comes back as `null` instead of throwing.
  */
 export function tryParseLocalDateString(dateString: string | null | undefined): Date | null {
-  if (!dateString || !LOCAL_DATE_ONLY_PATTERN.test(dateString)) {
+  if (!isLocalDateOnlyString(dateString)) {
     return null;
   }
   return parseLocalDateString(dateString);
+}
+
+/** True when `value` is exactly a `YYYY-MM-DD` date-only string (shape check only; no calendar validation). */
+export function isLocalDateOnlyString(value: unknown): value is string {
+  return typeof value === 'string' && LOCAL_DATE_ONLY_PATTERN.test(value);
 }
 
 /**
@@ -316,16 +321,21 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
   if (Number.isNaN(date.getTime())) return '';
 
   try {
-    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   } catch {
-    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   }
+}
+
+/** Zones at a zero offset with no abbreviation (e.g. Europe/Lisbon in winter) format as "GMT+0"; say "UTC" instead. */
+function readableZeroOffset(formatted: string): string {
+  return formatted.replace(/ GMT[+-]0$/, ' UTC');
 }
 
 /**
  * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
  * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
- * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * provides the full zone name for the hover tooltip, even when formatVoteDeadline normalizes a zero-offset label to UTC.
  * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
  */
 export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {
@@ -497,6 +507,103 @@ export function getTimezoneByValue(value: string): TimezoneOption | undefined {
 }
 
 /**
+ * The browser's own timezone, as one of the {@link TIMEZONES} picker options.
+ * @description Read from `Intl`, which reports the operating system's zone setting (pass `reportedZone` to
+ * supply it instead, e.g. in tests). Matched in three passes, most exact first:
+ * 1. the zone itself;
+ * 2. the same zone under another name — engines may report a legacy alias (`Asia/Calcutta` for
+ *    `Asia/Kolkata`), so both sides are compared in the engine's canonical form;
+ * 3. a listed zone that keeps the same wall-clock time all year (Lisbon → London). Offsets are compared
+ *    daily across the current year and on both sides of each of the reported zone's clock changes, located
+ *    to the minute, so a zone whose DST starts or ends on a different day or hour does not match — a
+ *    single "current offset" check would pair zones that drift apart for part of the year.
+ * Returns `null` when no zone is reported or nothing matches, so a caller can leave the field empty
+ * rather than guess.
+ */
+export function detectBrowserTimezoneOption(now: Date = new Date(), reportedZone?: string): string | null {
+  try {
+    const detected = reportedZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    if (!detected) {
+      return null;
+    }
+
+    const canonical = (zone: string): string | null => {
+      try {
+        return new Intl.DateTimeFormat('en-US', { timeZone: zone }).resolvedOptions().timeZone;
+      } catch {
+        return null;
+      }
+    };
+    const detectedCanonical = canonical(detected);
+
+    const sameZone =
+      TIMEZONES.find((tz) => tz.value === detected) ?? TIMEZONES.find((tz) => detectedCanonical !== null && canonical(tz.value) === detectedCanonical);
+
+    if (sameZone) {
+      return sameZone.value;
+    }
+
+    return findSameWallClockZone(detected, now.getUTCFullYear());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pass 3 of {@link detectBrowserTimezoneOption}: the first of `candidates` whose UTC offset equals `zone`'s at
+ * every probe instant of `year` — noon UTC daily, plus one minute before and at each of `zone`'s clock changes
+ * (located to the minute). Candidates are checked lazily and drop out at their first mismatch, so the full set
+ * of probes only runs for zones that already agree on the first ones.
+ * @param candidates zone ids to try, in order; defaults to the {@link TIMEZONES} picker options.
+ * @param offsetAt UTC offset (ms) of a zone at an instant; defaults to the runtime's tzdata. Injectable so the
+ * matching can be tested against fixed transitions rather than whatever tzdata the runtime ships.
+ */
+export function findSameWallClockZone(
+  zone: string,
+  year: number,
+  candidates: readonly string[] = TIMEZONES.map((tz) => tz.value),
+  offsetAt: (zone: string, time: number) => number = (target, time) => getTimezoneOffset(target, new Date(time))
+): string | null {
+  const minute = 60 * 1000;
+  const days = Array.from({ length: 366 }, (_, index) => Date.UTC(year, 0, 1 + index, 12)).filter((time) => new Date(time).getUTCFullYear() === year);
+  const zoneOffsetAt = (time: number): number => offsetAt(zone, time);
+  const probes: number[] = [];
+  let previousOffset = zoneOffsetAt(days[0]);
+
+  if (Number.isNaN(previousOffset)) {
+    return null;
+  }
+
+  probes.push(days[0]);
+  for (let index = 1; index < days.length; index++) {
+    const offset = zoneOffsetAt(days[index]);
+    probes.push(days[index]);
+
+    if (offset !== previousOffset) {
+      // Narrow the change down to the minute, then probe just before it and at it.
+      let low = days[index - 1];
+      let high = days[index];
+      while (high - low > minute) {
+        const middle = low + Math.floor((high - low) / 2 / minute) * minute;
+        if (zoneOffsetAt(middle) === previousOffset) {
+          low = middle;
+        } else {
+          high = middle;
+        }
+      }
+      probes.push(high - minute, high);
+    }
+
+    previousOffset = offset;
+  }
+
+  const expected = probes.map(zoneOffsetAt);
+
+  return candidates.find((candidate) => probes.every((time, index) => offsetAt(candidate, time) === expected[index])) ?? null;
+}
+
+/**
  * Helper function to get user's current timezone
  */
 export function getUserTimezone(): string {
@@ -504,6 +611,24 @@ export function getUserTimezone(): string {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch {
     return 'UTC';
+  }
+}
+
+/**
+ * Short zone abbreviation for an instant in a timezone (e.g. `PST`, `PDT`), resolved for that
+ * instant so DST is honoured. Zones without a locale abbreviation come back as `GMT+1`-style.
+ * Falls back to the zone id when the zone is invalid and to '' when the date is invalid.
+ */
+export function getTimezoneAbbreviation(isoDate: string, timeZone: string): string {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) {
+    return '';
+  }
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(date);
+    return parts.find((part) => part.type === 'timeZoneName')?.value ?? timeZone;
+  } catch {
+    return timeZone;
   }
 }
 
@@ -549,6 +674,31 @@ export function compareDateTimesInTimezone(dateTime1: string | Date, dateTime2: 
     const date2 = typeof dateTime2 === 'string' ? new Date(dateTime2) : dateTime2;
     return date1.getTime() - date2.getTime();
   }
+}
+
+/**
+ * Whether two ISO datetime strings fall in the same minute (seconds and milliseconds ignored).
+ * @description Tells a genuine edit from round-tripping noise: a stored value's seconds/ms and a
+ * freshly-combined date+time value's zeroed seconds should not count as a change, but any
+ * difference of a full minute or more -- the smallest increment a time picker supports -- should.
+ * A plain `<= 60_000` millisecond tolerance is the wrong shape for this: it also accepts a genuine
+ * one-minute edit (exactly 60000ms), silently discarding it.
+ *
+ * Truncates in UTC (`setUTCSeconds`), not local time (`setSeconds`): local truncation reads and
+ * reconstructs through the host's wall-clock fields, and during a DST fall-back the repeated local
+ * hour makes two UTC instants a full hour apart reconstruct to the same result -- not the
+ * sub-minute noise this is meant to absorb. UTC has no repeated or skipped hours, so truncating
+ * there can never collapse two genuinely different minutes together.
+ * @param a First ISO datetime string
+ * @param b Second ISO datetime string
+ */
+export function isSameMinute(a: string, b: string): boolean {
+  const toMinuteEpoch = (iso: string): number => {
+    const date = new Date(iso);
+    date.setUTCSeconds(0, 0);
+    return date.getTime();
+  };
+  return toMinuteEpoch(a) === toMinuteEpoch(b);
 }
 
 /**

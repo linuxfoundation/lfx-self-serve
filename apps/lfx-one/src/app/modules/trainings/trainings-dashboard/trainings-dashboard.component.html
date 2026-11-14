@@ -3,10 +3,12 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="trainings-dashboard">
   <!-- Page Header -->
-  <div class="mb-6">
-    <h1 class="font-display font-light text-2xl" data-testid="trainings-title">Training &amp; Certifications</h1>
-    <p class="mt-1 text-sm text-gray-500" data-testid="trainings-subtitle">{{ subtitle }}</p>
-  </div>
+  <lfx-page-header
+    class="mb-6"
+    title="Training & Certifications"
+    [description]="subtitle"
+    titleTestId="trainings-title"
+    descriptionTestId="trainings-subtitle" />
 
   <!-- Two-column layout -->
   <div class="flex flex-col lg:flex-row gap-6 items-start" data-testid="trainings-layout">

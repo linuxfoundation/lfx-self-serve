@@ -1,19 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
-import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
+import { inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import {
   LINKEDIN_PROFILE_PATTERN,
   MEETING_DETAIL_CACHE_TTL_MS,
   MEETING_PASSWORD_HEADER,
+  MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
+  MEETING_REMOVAL_SOURCE_HEADER,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
+  RECENTLY_CREATED_MEETING_WINDOW_MS,
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
+  AttachmentScopeOverrides,
   BatchRegistrantOperationResponse,
+  CancelMeetingOccurrenceRequest,
   CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
@@ -25,9 +30,15 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingAttachmentChangeInput,
+  MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
+  MeetingProjectQueryOptions,
+  MeetingRollupFilterOptions,
   MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
+  MeetingRemovalSource,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -41,28 +52,71 @@ import {
   PresignAttachmentRequest,
   PresignAttachmentResponse,
   PublicMeetingOccurrencesResponse,
-  PublicMeetingProject,
+  PublicMeetingResponse,
   PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
   PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
   ReconcilePastMeetingParticipantsResponse,
   UpdateMeetingAttachmentRequest,
+  UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
+import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
+import { catchError, concatMap, from, identity, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
+
+import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
 })
 export class MeetingService {
   public meeting: WritableSignal<Meeting | null> = signal(null);
+  private readonly removedRegistrationIds: WritableSignal<ReadonlySet<string>> = signal(new Set<string>());
+  /**
+   * Meetings the viewer has removed themselves from in this session.
+   * @description Lives here rather than on the card or page so it outlasts both: the list refetch that follows a
+   * removal destroys the cards, and a page that stays mounted across meeting ids would otherwise carry one
+   * meeting's removal over to the next. It bridges the query-service indexing lag, during which a refetch can
+   * still report `invited: true`.
+   */
+  public readonly removedRegistrationMeetingIds: Signal<ReadonlySet<string>> = this.removedRegistrationIds.asReadonly();
+  /** Registrant uids removed with each entry of {@link removedRegistrationMeetingIds}, to tell a re-invite from index lag. */
+  private readonly removedSelfRegistrantUids = new Map<string, ReadonlySet<string>>();
+
+  private readonly attachmentScopeOverridesState: WritableSignal<AttachmentScopeOverrides> = signal(new Map<string, string>());
+  /**
+   * Attachment scope changes saved in this session that a read may not show yet, keyed by attachment uid.
+   * @description Lives here so every card, page and drawer showing the meeting's materials sees a change the moment it
+   * is saved, rather than after the next refetch: reads come from the query service, which indexes asynchronously and
+   * can still return the old scope. An entry holds the last scope saved for that attachment and stays for the session: each
+   * card keeps its own fetched list and only the one that saved refetches, so dropping an entry when one read agreed with it
+   * would send the other cards back to their stale snapshot. A later change to the same attachment replaces the entry. The
+   * cost is that a change made by someone else mid-session stays hidden on that attachment until the page reloads.
+   */
+  public readonly attachmentScopeOverrides: Signal<AttachmentScopeOverrides> = this.attachmentScopeOverridesState.asReadonly();
+
+  private readonly attachmentChangesState: WritableSignal<MeetingAttachmentChangesByMeeting> = signal(new Map());
+  /**
+   * Attachments added to and removed from live meetings in this session that a read may not show yet, keyed by meeting id.
+   * @description Lives here for the same reason as {@link attachmentScopeOverrides}: every card and page showing the
+   * meeting's materials sees a save the moment it lands, rather than after a refetch the query service may not have caught
+   * up with. Entries stay for the session, because each card keeps its own fetched list and dropping an entry once one read
+   * agreed with it would send the other cards back to their stale snapshot. The cost is that an attachment someone else
+   * removes mid-session stays listed here until the page reloads.
+   */
+  public readonly attachmentChanges: Signal<MeetingAttachmentChangesByMeeting> = this.attachmentChangesState.asReadonly();
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
   private readonly meetingDetailCache = new Map<string, { observable: Observable<Meeting>; cachedAt: number }>();
+  /**
+   * Meeting ids this client created within `RECENTLY_CREATED_MEETING_WINDOW_MS`, keyed to the
+   * create timestamp — see `getMeetingDetail` for why only these ids get `retryPropagationLag`.
+   */
+  private readonly recentlyCreatedMeetingIds = new Map<string, number>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -103,9 +157,9 @@ export class MeetingService {
     return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
-  /** Fetches meeting count scoped to a committee. */
+  /** Fetches count of meetings scoped to a committee that haven't started yet. */
   public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`);
+    return this.getCountByTag('/api/meetings/count', `committee_uid:${committeeId}`, this.upcomingDateFilterParams());
   }
 
   /** Fetches upcoming meetings scoped to a committee. */
@@ -131,12 +185,27 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
-  public getMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/meetings/count', `project_uid:${uid}`);
+  /** Fetches count of meetings scoped to a project (and, with `includeSubProjects`, its sub-projects) that haven't started yet. */
+  public getMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
+    return this.getCount('/api/meetings/count', this.projectScopeParams(uid, options), this.upcomingDateFilterParams());
   }
 
-  public getPastMeetingsCountByProject(uid: string): Observable<number> {
-    return this.getCountByTag('/api/past-meetings/count', `project_uid:${uid}`);
+  public getPastMeetingsCountByProject(uid: string, options: MeetingProjectQueryOptions = {}): Observable<number> {
+    return this.getCount('/api/past-meetings/count', this.projectScopeParams(uid, options));
+  }
+
+  /**
+   * Options for the roll-up filters of a foundation or parent project's meetings list: the projects in
+   * its tree and their groups. An error yields no options, so the list still loads without the filters.
+   */
+  public getRollupFilterOptions(rootUid: string): Observable<MeetingRollupFilterOptions> {
+    const params = new HttpParams().set('root_project_uid', rootUid);
+    return this.http.get<MeetingRollupFilterOptions>('/api/meetings/rollup-filters', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load meeting roll-up filter options:', error);
+        return of({ projects: [], groups: [], complete: false });
+      })
+    );
   }
 
   public getRecentMeetingsByProject(uid: string): Observable<Meeting[]> {
@@ -148,13 +217,27 @@ export class MeetingService {
 
     // TODO: Add filter for upcoming meetings
 
-    return this.getMeetings(params).pipe(map((response) => response.data));
+    // Log and rethrow so MyMeetingsComponent can show its error + Retry state (#4964).
+    return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
+      map((response) => response.data),
+      catchError((error) => {
+        console.error('Failed to load project meetings:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getPastMeetingsByProject(uid: string): Observable<PastMeeting[]> {
     const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
 
-    return this.getPastMeetings(params).pipe(map((response) => response.data));
+    // Log and rethrow so MyMeetingsComponent can show its error + Retry state (#4964).
+    return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(
+      map((response) => response.data),
+      catchError((error) => {
+        console.error('Failed to load past project meetings:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public getMeetingsByProjectPaginated(
@@ -162,9 +245,10 @@ export class MeetingService {
     orderBy?: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<Meeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    let params = this.projectScopeParams(uid, options);
     if (orderBy) {
       params = params.set('order', orderBy);
     }
@@ -186,9 +270,15 @@ export class MeetingService {
     uid: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    includeViewerAttendance = false,
+    options: MeetingProjectQueryOptions = {}
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    let params = this.projectScopeParams(uid, options).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
+    if (includeViewerAttendance) {
+      params = params.set('include_viewer_attendance', 'true');
+    }
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
@@ -218,6 +308,16 @@ export class MeetingService {
    * the new `request$` rather than invalidating — callers already subscribed to the prior
    * `shareReplay(1)` observable continue to completion with the old payload, so racing
    * `skipCache` callers can still observe a stale result.
+   *
+   * `retryPropagationLag` sits closest to the source, ahead of the cache-eviction `tap` and the
+   * logging `catchError`, so a transient 403/404 right after a create (#501) is retried silently
+   * and only a terminal failure reaches those. Both the writerGuard's `meetings` probe and this
+   * page's edit-mode load go through this one method, so retrying here fixes the race for both.
+   *
+   * The retry only applies when `id` is in `recentlyCreatedMeetingIds` within
+   * `RECENTLY_CREATED_MEETING_WINDOW_MS` of `createMeeting` succeeding for it — every other read
+   * (an unrelated meeting, or this same id once the window has passed) fails on the first 403/404
+   * exactly as before, so a genuine permission loss or deleted meeting still surfaces immediately.
    */
   public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);
@@ -227,7 +327,10 @@ export class MeetingService {
     if (cached) {
       this.meetingDetailCache.delete(id);
     }
+    const createdAt = this.recentlyCreatedMeetingIds.get(id);
+    const isRecentlyCreated = createdAt !== undefined && Date.now() - createdAt < RECENTLY_CREATED_MEETING_WINDOW_MS;
     const request$ = this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
+      isRecentlyCreated ? retryPropagationLag() : identity,
       tap({ error: () => this.meetingDetailCache.delete(id) }),
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
@@ -240,13 +343,14 @@ export class MeetingService {
     return request$;
   }
 
-  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
-    let params = new HttpParams();
-    if (password) {
-      params = params.set('password', password);
-    }
+  /**
+   * The password gates private/restricted meetings server-side; it travels in a request header so
+   * it never appears in the request URL (which Datadog RUM records with trackResources).
+   */
+  public getPublicMeeting(id: string, password: string | null): Observable<PublicMeetingResponse> {
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
 
-    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { params }).pipe(
+    return this.http.get<PublicMeetingResponse>(`/public/api/meetings/${id}`, { headers }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);
@@ -287,13 +391,10 @@ export class MeetingService {
     password: string | null,
     body?: { email?: string; name?: string; organization?: string }
   ): Observable<MeetingJoinURL> {
-    let params = new HttpParams();
+    // Header, not query string — see getPublicMeeting.
+    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
 
-    if (password) {
-      params = params.set('password', password);
-    }
-
-    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { params }).pipe(
+    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { headers }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting join url ${id}:`, error);
         return throwError(() => error);
@@ -304,6 +405,10 @@ export class MeetingService {
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {
     return this.http.post<Meeting>('/api/meetings', meeting).pipe(
       take(1),
+      tap((created) => {
+        this.pruneExpiredRecentlyCreatedMeetingIds();
+        this.recentlyCreatedMeetingIds.set(created.id, Date.now());
+      }),
       catchError((error) => {
         console.error('Failed to create meeting:', error);
         return throwError(() => error);
@@ -311,12 +416,8 @@ export class MeetingService {
     );
   }
 
-  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<void> {
-    let params = new HttpParams();
-    if (editType) {
-      params = params.set('editType', editType);
-    }
-    return this.http.put<void>(`/api/meetings/${id}`, meeting, { params }).pipe(
+  public updateMeeting(id: string, meeting: UpdateMeetingRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${id}`, meeting).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(id)),
       catchError((error) => {
@@ -341,14 +442,49 @@ export class MeetingService {
     );
   }
 
-  public cancelOccurrence(meetingId: string, occurrenceId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(
+  public cancelOccurrence(meetingId: string, occurrenceId: string, note?: string): Observable<void> {
+    const body: CancelMeetingOccurrenceRequest | undefined = note ? { note } : undefined;
+    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`, { body }).pipe(
+      take(1),
+      tap(() => this.meetingDetailCache.delete(meetingId))
+    );
+  }
+
+  public updateOccurrence(meetingId: string, occurrenceId: string, payload: UpdateMeetingOccurrenceRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${encodeURIComponent(meetingId)}/occurrences/${encodeURIComponent(occurrenceId)}`, payload).pipe(
       take(1),
       tap(() => this.meetingDetailCache.delete(meetingId))
     );
   }
 
   // ─── Meeting Attachment Methods ───────────────────────────────────────────
+
+  /** Records scope changes that saved, so they show everywhere at once. `occurrence_id` absent means all occurrences. */
+  public recordAttachmentScopeChanges(changes: { uid: string; occurrence_id?: string }[]): void {
+    if (changes.length === 0) return;
+    this.attachmentScopeOverridesState.update((current) => {
+      const next = new Map(current);
+      changes.forEach((change) => next.set(change.uid, change.occurrence_id ?? ''));
+      return next;
+    });
+  }
+
+  public recordAttachmentChanges(meetingId: string, changes: MeetingAttachmentChangeInput): void {
+    const added = changes.added ?? [];
+    const deletedUids = changes.deletedUids ?? [];
+    if (added.length === 0 && deletedUids.length === 0) return;
+    this.attachmentChangesState.update((current) => {
+      const existing = current.get(meetingId);
+      const deleted = new Set([...(existing?.deletedUids ?? []), ...deletedUids]);
+      const next = new Map(current);
+      next.set(meetingId, {
+        // A deleted attachment must not come back from an earlier addition in the same session.
+        added: [...(existing?.added ?? []), ...added].filter((attachment) => !deleted.has(attachment.uid)),
+        deletedUids: deleted,
+      });
+      return next;
+    });
+  }
 
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
@@ -366,7 +502,11 @@ export class MeetingService {
   }
 
   public deleteMeetingAttachment(meetingId: string, attachmentId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(take(1));
+    // Recorded here, not by each caller, so a delete from the drawer or the meeting editor never leaves an earlier addition listed.
+    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(
+      take(1),
+      tap(() => this.recordAttachmentChanges(meetingId, { deletedUids: [attachmentId] }))
+    );
   }
 
   public presignMeetingAttachment(meetingId: string, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
@@ -391,6 +531,10 @@ export class MeetingService {
 
     if (presignData.description) {
       params = params.set('description', presignData.description);
+    }
+
+    if (presignData.occurrence_id) {
+      params = params.set('occurrence_id', presignData.occurrence_id);
     }
 
     return this.http
@@ -436,6 +580,7 @@ export class MeetingService {
    *   `committee_uid` from the upstream v1 SFID to the v2 UID. It costs the BFF a per-committee
    *   fan-out to the committee service, so it stays opt-in for the callers that actually need group
    *   attribution: the composer's Guests list, and the registrants display's group filter.
+   * @param allDatesOnly - Without a resolved occurrence, attach only series-wide (`all`) RSVPs
    */
   public getMeetingRegistrants(
     meetingUid: string,
@@ -443,7 +588,8 @@ export class MeetingService {
     occurrenceId?: string,
     failOnPartial: boolean = false,
     committeeUid?: string,
-    includeCommittee: boolean = false
+    includeCommittee: boolean = false,
+    allDatesOnly: boolean = false
   ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
@@ -458,15 +604,30 @@ export class MeetingService {
     if (includeCommittee) {
       params = params.set('include_committee', 'true');
     }
+    if (allDatesOnly) {
+      params = params.set('rsvp_scope', 'all');
+    }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
   // Callers decide how to handle failures — the join page must distinguish a failed refetch from a
   // genuinely empty roster (see reconcileOptimisticPad), so this does not swallow errors to `[]`.
-  public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false, occurrenceId?: string): Observable<MeetingRegistrant[]> {
+  public getMyMeetingRegistrants(
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string,
+    preview: boolean = false,
+    allDatesOnly: boolean = false
+  ): Observable<MeetingRegistrant[]> {
     let params = new HttpParams().set('include_rsvp', includeRsvp.toString());
     if (occurrenceId) {
       params = params.set('occurrence_id', occurrenceId);
+    }
+    if (preview) {
+      params = params.set('preview', 'true');
+    }
+    if (allDatesOnly) {
+      params = params.set('rsvp_scope', 'all');
     }
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params });
   }
@@ -599,7 +760,9 @@ export class MeetingService {
     meetingUid: string,
     registrantData: CreateMeetingRegistrantRequest[]
   ): Observable<BatchRegistrantOperationResponse<MeetingRegistrant>> {
-    return this.http.post<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, registrantData).pipe(
+    return this.sendRegistrantBatchInChunks(registrantData, (chunk) =>
+      this.http.post<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, chunk)
+    ).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to add registrants to meeting ${meetingUid}:`, error);
@@ -612,7 +775,9 @@ export class MeetingService {
     meetingUid: string,
     updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[]
   ): Observable<BatchRegistrantOperationResponse<MeetingRegistrant>> {
-    return this.http.put<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, updateData).pipe(
+    return this.sendRegistrantBatchInChunks(updateData, (chunk) =>
+      this.http.put<BatchRegistrantOperationResponse<MeetingRegistrant>>(`/api/meetings/${meetingUid}/registrants`, chunk)
+    ).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to update registrants in meeting ${meetingUid}:`, error);
@@ -622,10 +787,51 @@ export class MeetingService {
   }
 
   public deleteMeetingRegistrants(meetingUid: string, registrantUids: string[]): Observable<BatchRegistrantOperationResponse<string>> {
-    return this.http.delete<BatchRegistrantOperationResponse<string>>(`/api/meetings/${meetingUid}/registrants`, { body: registrantUids }).pipe(
+    return this.sendRegistrantBatchInChunks(registrantUids, (chunk) =>
+      this.http.delete<BatchRegistrantOperationResponse<string>>(`/api/meetings/${meetingUid}/registrants`, { body: chunk })
+    ).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to delete registrants from meeting ${meetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public markRegistrationRemoved(meetingUid: string, registrantUids: readonly string[] = []): void {
+    this.rememberRemovedRegistrants(meetingUid, registrantUids);
+    this.removedRegistrationIds.update((ids) => new Set(ids).add(meetingUid));
+  }
+
+  /** Adds to the viewer's removed registrant uids, so a retry that finishes a partial removal still knows the earlier ones. */
+  public rememberRemovedRegistrants(meetingUid: string, registrantUids: readonly string[]): void {
+    const known = this.removedSelfRegistrantUids.get(meetingUid) ?? [];
+    this.removedSelfRegistrantUids.set(meetingUid, new Set([...known, ...registrantUids]));
+  }
+
+  /** Clears a removal once the viewer is listed under a registrant uid other than the removed ones, as after a re-invite. */
+  public clearRemovalIfReinvited(meetingUid: string, selfRegistrantUids: readonly string[]): void {
+    const removed = this.removedSelfRegistrantUids.get(meetingUid);
+    if (!removed?.size || !this.removedRegistrationIds().has(meetingUid)) return;
+    if (selfRegistrantUids.some((uid) => !removed.has(uid))) this.clearRemovedRegistration(meetingUid);
+  }
+
+  /** Lifts the active removal; the removed registrant uids stay, so a later removal still knows them. */
+  public clearRemovedRegistration(meetingUid: string): void {
+    this.removedRegistrationIds.update((ids) => {
+      const next = new Set(ids);
+      next.delete(meetingUid);
+      return next;
+    });
+  }
+
+  public removeMyMeetingRegistration(meetingUid: string, source: MeetingRemovalSource): Observable<MeetingRegistrationRemovalResult> {
+    const headers = new HttpHeaders({ [MEETING_REMOVAL_SOURCE_HEADER]: source });
+
+    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`, { headers }).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);
         return throwError(() => error);
       })
     );
@@ -671,9 +877,18 @@ export class MeetingService {
       host: registrant.host || false,
       job_title: registrant.job_title || null,
       org_name: registrant.org_name || null,
-      occurrence_id: registrant.occurrence_id || null,
-      avatar_url: registrant.avatar_url || null,
-      username: registrant.username || null,
+      // A listed guest comes from the query-service index, which spells the scope `occurrence` and never
+      // `occurrence_id`. Falling back to it sends the stored scope back as it is, so an update that only
+      // means to change something else (the host flag) can't leave an occurrence-scoped guest unscoped.
+      occurrence_id: registrant.occurrence_id || (registrant as MeetingRegistrantWithState & { occurrence?: string }).occurrence || null,
+      // `user_id` and `username` have to go back exactly as stored: ITX compares an update's values with the
+      // stored ones and rejects any difference, and a blank counts as one for a guest linked to an LF user. It
+      // checks `user_id` first, so a missing `username` only surfaces once `user_id` is right. The index record
+      // carries both; a guest with no link has neither, and sends neither. The meeting service maps ITX's
+      // `NONE` placeholder for a blank `user_id` to empty.
+      ...(registrant.user_id ? { user_id: registrant.user_id } : {}),
+      ...(registrant.username ? { username: registrant.username } : {}),
+      // `avatar_url` is not sent: it is derived from the linked user and ITX does not compare it.
       linkedin_profile: registrant.linkedin_profile || null,
     };
   }
@@ -710,6 +925,23 @@ export class MeetingService {
     );
   }
 
+  /**
+   * Resends the invitation to the signed-in user's own registration; the server resolves which registrant that is.
+   * Pass the occurrence being viewed so the server picks the registration that fits it: a person's registrations can
+   * be scoped to one occurrence or cover the whole series.
+   */
+  public resendMyMeetingInvitation(meetingUid: string, occurrenceId?: string | null): Observable<{ message: string }> {
+    const body = occurrenceId ? { occurrence_id: occurrenceId } : {};
+
+    return this.http.post<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self/resend`, body).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to resend meeting invitation to current user for meeting ${meetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   public createMeetingRsvp(meetingUid: string, request: CreateMeetingRsvpRequest): Observable<MeetingRsvp> {
     return this.http.post<MeetingRsvp>(`/api/meetings/${meetingUid}/rsvp`, request).pipe(
       take(1),
@@ -724,8 +956,13 @@ export class MeetingService {
     return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvp`);
   }
 
-  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
-    const options = occurrenceId ? { params: { occurrenceId } } : {};
+  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
+    const options: { params?: Record<string, string> } = {};
+    if (occurrenceId) {
+      options.params = { occurrenceId };
+    } else if (allDatesOnly) {
+      options.params = { rsvp_scope: 'all' };
+    }
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
@@ -761,6 +998,16 @@ export class MeetingService {
     }
   }
 
+  // Opportunistic sweep on insert, mirroring pruneExpiredMeetingDetailCache above.
+  private pruneExpiredRecentlyCreatedMeetingIds(): void {
+    const now = Date.now();
+    for (const [key, createdAt] of this.recentlyCreatedMeetingIds) {
+      if (now - createdAt >= RECENTLY_CREATED_MEETING_WINDOW_MS) {
+        this.recentlyCreatedMeetingIds.delete(key);
+      }
+    }
+  }
+
   private pruneExpiredPastMeetingRecordingCache(): void {
     const now = Date.now();
     for (const [key, entry] of this.pastMeetingRecordingCache) {
@@ -770,14 +1017,120 @@ export class MeetingService {
     }
   }
 
-  private getCountByTag(endpoint: string, tag: string): Observable<number> {
-    const params = new HttpParams().set('tags', tag);
+  /**
+   * date_field/date_from are query-service's own `/query/resources/count` params (passed through
+   * verbatim by the server), used here to exclude meetings that have already started from an
+   * "upcoming" count — otherwise the count includes every meeting ever tagged to the project/committee,
+   * regardless of how far in the past it started (see linuxfoundation/lfx-self-serve-ops#1313).
+   *
+   * date_field must be the bare field name — query-service's applyCommonFields (cmd/service/converters.go)
+   * always prepends "data." itself, so sending an already-prefixed name double-prefixes and matches nothing.
+   *
+   * Known gap: this filters on the series' root `start_time`, which for a recurring meeting is the
+   * original series start date, not the next/current occurrence `hasMeetingEnded()` (the list's own
+   * filter) checks. A recurring meeting whose series began in the past but still has future occurrences
+   * is wrongly excluded here. There's no indexed field today that cleanly supports occurrence-aware
+   * filtering on the count endpoint — tracked as linuxfoundation/lfx-self-serve-ops#1471.
+   */
+  private upcomingDateFilterParams(): Record<string, string> {
+    return { date_field: 'start_time', date_from: new Date().toISOString() };
+  }
+
+  private getCountByTag(endpoint: string, tag: string, extraParams?: Record<string, string>): Observable<number> {
+    return this.getCount(endpoint, new HttpParams().set('tags', tag), extraParams);
+  }
+
+  private getCount(endpoint: string, scopeParams: HttpParams, extraParams?: Record<string, string>): Observable<number> {
+    let params = scopeParams;
+    for (const [key, value] of Object.entries(extraParams ?? {})) {
+      params = params.set(key, value);
+    }
     return this.http.get<QueryServiceCountResponse>(endpoint, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load count from ${endpoint}:`, error);
         return of({ count: 0 });
       }),
       map((response) => response.count)
+    );
+  }
+
+  /**
+   * Scopes a project meetings query: the project alone (`tags=project_uid:`), or, with
+   * `includeSubProjects`, the project and every project beneath it (`root_project_uid`, resolved
+   * server-side under the caller's own access) narrowed by any roll-up filters. `pageSize` is passed
+   * through as `page_size`.
+   */
+  private projectScopeParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    let params = options.includeSubProjects ? this.rollupFilterParams(uid, options) : new HttpParams().set('tags', `project_uid:${uid}`);
+    if (options.pageSize) {
+      params = params.set('page_size', String(options.pageSize));
+    }
+    return params;
+  }
+
+  /** `root_project_uid` plus the roll-up filters that are set (project subset, group, group type). */
+  private rollupFilterParams(uid: string, options: MeetingProjectQueryOptions): HttpParams {
+    let params = new HttpParams().set('root_project_uid', uid);
+    if (options.projectUids?.length) {
+      params = params.set('project_uids', options.projectUids.join(','));
+    }
+    if (options.committeeUid) {
+      params = params.set('committee_uid', options.committeeUid);
+    }
+    if (options.groupType) {
+      params = params.set('group_type', options.groupType);
+    }
+    return params;
+  }
+
+  /**
+   * Sends a registrant batch in requests of at most MEETING_REGISTRANT_CLIENT_CHUNK_SIZE items, one after
+   * another, and merges the responses. A batch that fits in one request is sent as-is, so its errors reach
+   * the caller exactly as before.
+   * @description Sequential so the client never multiplies the BFF's per-request concurrency bound.
+   * Smaller chunks reduce serial upstream rounds and timeout risk; they do not enforce an ingress
+   * deadline. When every item of a chunk fails the BFF answers 400 with the per-item results in the
+   * body, so that body is merged like any other response and the remaining chunks are still sent — as a
+   * single request would have attempted them. Any other error on the first request (a 403, a validation
+   * 400) rethrows, which callers already handle; on a later request it reports that chunk's items as
+   * failures and keeps the chunks that already landed, so a partial save is counted as one.
+   */
+  private sendRegistrantBatchInChunks<I, T>(
+    items: I[],
+    send: (chunk: I[]) => Observable<BatchRegistrantOperationResponse<T>>
+  ): Observable<BatchRegistrantOperationResponse<T>> {
+    if (items.length <= MEETING_REGISTRANT_CLIENT_CHUNK_SIZE) {
+      return send(items);
+    }
+
+    const chunks: I[][] = [];
+    for (let i = 0; i < items.length; i += MEETING_REGISTRANT_CLIENT_CHUNK_SIZE) {
+      chunks.push(items.slice(i, i + MEETING_REGISTRANT_CLIENT_CHUNK_SIZE));
+    }
+
+    return from(chunks).pipe(
+      concatMap((chunk, index) =>
+        send(chunk).pipe(
+          catchError((error: unknown) => {
+            if (error instanceof HttpErrorResponse && isBatchRegistrantOperationResponse<T>(error.error)) {
+              return of(error.error);
+            }
+
+            if (index === 0) {
+              return throwError(() => error);
+            }
+
+            const failed: BatchRegistrantOperationResponse<T> = {
+              successes: [],
+              failures: chunk.map((input) => ({ input, error: { message: extractErrorMessage(error, 'Request failed') } })),
+              summary: { total: chunk.length, successful: 0, failed: chunk.length },
+            };
+            return of(failed);
+          })
+        )
+      ),
+      toArray(),
+      map((responses) => mergeBatchRegistrantResponses(responses))
     );
   }
 }

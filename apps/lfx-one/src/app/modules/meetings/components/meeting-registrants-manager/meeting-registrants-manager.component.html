@@ -39,7 +39,8 @@
         [form]="form()"
         [savedAttendeeVisibility]="savedAttendeeVisibility()"
         [committeeContext]="committeeContext()"
-        (committeeMembersChange)="onCommitteeMembersChange($event)">
+        (committeeMembersChange)="onCommitteeMembersChange($event)"
+        (committeeMembersResolvedChange)="committeeMembersResolvedChange.emit($event)">
       </lfx-meeting-committee-manager>
 
       <!-- Show Meeting Attendees Toggle -->
@@ -124,7 +125,11 @@
         @if (!loading() && filteredRegistrants().length > 0) {
           <div class="flex flex-col gap-2 max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg p-3" data-testid="registrants-list">
             @for (registrant of filteredRegistrants(); track registrant.uid ?? registrant.tempId) {
-              <lfx-registrant-card [registrant]="registrant" (onValidSave)="handleRegistrantUpdate($event)" (onDelete)="handleRegistrantDelete($event)">
+              <lfx-registrant-card
+                [registrant]="registrant"
+                (onValidSave)="handleRegistrantUpdate($event)"
+                (onDelete)="handleRegistrantDelete($event)"
+                (onResend)="handleRegistrantResend($event)">
               </lfx-registrant-card>
             }
           </div>

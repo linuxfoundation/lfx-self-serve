@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { emailsEqual, isMeetingInvitePrimarySentinel, isValidEmail, maskEmailForLogs, parseEmailList, redactEmailAddresses } from './email.utils';
+import {
+  emailsEqual,
+  isMailtoSafeEmail,
+  isMeetingInvitePrimarySentinel,
+  isValidEmail,
+  maskEmailForDisplay,
+  maskEmailForLogs,
+  parseEmailList,
+  redactEmailAddresses,
+} from './email.utils';
 
 describe('isValidEmail', () => {
   it('accepts a well-formed address', () => {
@@ -21,6 +30,29 @@ describe('isValidEmail', () => {
   it('rejects null and undefined', () => {
     expect(isValidEmail(null)).toBe(false);
     expect(isValidEmail(undefined)).toBe(false);
+  });
+});
+
+describe('isMailtoSafeEmail', () => {
+  it.each([['alice@example.com'], ['first.last+tag@mail.corp.example'], ['a_b-c@sub-domain.example.org']])('accepts %p', (value) => {
+    expect(isMailtoSafeEmail(value)).toBe(true);
+  });
+
+  it.each([
+    ['a@example.com?bcc=b@example.org'],
+    ['victim@example.com%0D%0ABcc:attacker@example.com'],
+    ['a@example.com,b@example.org'],
+    ['a@example.com;b@example.org'],
+    ['a@example.com#frag'],
+    ['a@b@example.com'],
+    [' alice@example.com'],
+    ['alice@example'],
+    ['alice@.example.com'],
+    [''],
+    [null],
+    [undefined],
+  ])('rejects %p', (value) => {
+    expect(isMailtoSafeEmail(value)).toBe(false);
   });
 });
 
@@ -140,5 +172,38 @@ describe('maskEmailForLogs', () => {
   // the log is exactly the leak the helper exists to prevent.
   it.each(['notanemail', '@example.com', 'ada@', 'ada@example@com'])('collapses non-addresses (%p)', (value) => {
     expect(maskEmailForLogs(value)).toBe('[redacted-email]');
+  });
+});
+
+describe('maskEmailForDisplay', () => {
+  it('keeps the start of the mailbox and host and the top-level domain', () => {
+    expect(maskEmailForDisplay('jane.doe+news@example.org')).toBe('ja***@exam***.org');
+  });
+
+  it('shows less of a short mailbox or host', () => {
+    expect(maskEmailForDisplay('abc@acme.test')).toBe('a***@a***.test');
+    expect(maskEmailForDisplay('ab@xy.test')).toBe('a***@x***.test');
+  });
+
+  it('shows nothing of a one-character mailbox or host', () => {
+    expect(maskEmailForDisplay('a@x.test')).toBe('***@***.test');
+    expect(maskEmailForDisplay('a@example.test')).toBe('***@exam***.test');
+  });
+
+  it('keeps only the last label of a multi-label domain', () => {
+    expect(maskEmailForDisplay('jane.doe@mail.example.test')).toBe('ja***@mail***.test');
+  });
+
+  it('lowercases the domain and trims whitespace', () => {
+    expect(maskEmailForDisplay('  Ada@Example.COM ')).toBe('A***@exam***.com');
+  });
+
+  it('collapses anything that is not an address to ***', () => {
+    expect(maskEmailForDisplay('')).toBe('***');
+    expect(maskEmailForDisplay(null)).toBe('***');
+    expect(maskEmailForDisplay('not-an-email')).toBe('***');
+    expect(maskEmailForDisplay('a@b@example.com')).toBe('***');
+    expect(maskEmailForDisplay('@example.com')).toBe('***');
+    expect(maskEmailForDisplay('ada@localhost')).toBe('***');
   });
 });

@@ -11,6 +11,8 @@ import type {
   MyEventsResponse,
   EventsResponse,
   MyEventOrganizationsResponse,
+  MyEventsUpcomingView,
+  MyEventStatus,
   TagSeverity,
   TravelFundRequestsResponse,
   VisaRequestsResponse,
@@ -44,6 +46,12 @@ export const MY_EVENT_STATUS = {
   NOT_REGISTERED: 'Not Registered',
 } as const;
 
+/** Font Awesome icon per My Events status, shown on the table's status tag so a registration reads at a glance. */
+export const MY_EVENT_STATUS_ICON_MAP: Partial<Record<MyEventStatus, string>> = {
+  [MY_EVENT_STATUS.REGISTERED]: 'fa-light fa-circle-check',
+  [MY_EVENT_STATUS.ATTENDED]: 'fa-light fa-badge-check',
+};
+
 /**
  * EVENT_SOURCE value marking a CSV-imported (backfilled) event registration.
  *
@@ -71,6 +79,18 @@ export const EVENT_REQUEST_STATUS_SEVERITY_MAP: Partial<Record<string, TagSeveri
 };
 
 /**
+ * Snowflake label on visa rows whose letter can be downloaded. Upstream renames `letter_issued` to
+ * `Approved` today (see #2740), so this moves to `Issued` once that mapping lands.
+ */
+export const VISA_LETTER_DOWNLOADABLE_STATUS = 'Approved';
+
+/** Error code the visa letter download returns when the events team issues the letter by email */
+export const VISA_LETTER_MANUAL_ERROR_CODE = 'VISA_LETTER_MANUAL';
+
+/** Error code the visa letter download returns when upstream has not issued the letter yet */
+export const VISA_LETTER_NOT_ISSUED_ERROR_CODE = 'VISA_LETTER_NOT_ISSUED';
+
+/**
  * Status filter options for Foundation Lens events.
  * Values are raw EVENT_STATUS DB values except 'coming-soon', which is a sentinel
  * that the server maps to `IN ('Pending', 'Planned')` rather than a parameterized bind.
@@ -96,6 +116,12 @@ export const MY_EVENTS_TABS: (FilterPillOption & { id: EventTabId })[] = [
   { id: 'travel-funding', label: 'Travel Funding' },
 ];
 
+/** Upcoming-tab registration view pills in visible order. */
+export const MY_EVENTS_UPCOMING_VIEWS: (FilterPillOption & { id: MyEventsUpcomingView })[] = [
+  { id: 'registered', label: 'My Registrations' },
+  { id: 'all', label: 'All Events' },
+];
+
 /** Default tab for the My Events dashboard when `?tab=` is absent or invalid. */
 export const DEFAULT_MY_EVENTS_TAB_ID: EventTabId = 'upcoming';
 /** Derived from MY_EVENTS_TABS; used to validate `?tab=` query-param input. */
@@ -116,6 +142,12 @@ export const DEFAULT_EVENT_SORT_FIELD = 'EVENT_START_DATE';
 export const VALID_EVENT_SORT_ORDERS: readonly string[] = ['ASC', 'DESC'];
 export const DEFAULT_EVENTS_PAGE_SIZE = 10;
 export const MAX_EVENTS_PAGE_SIZE = 100;
+
+/** Snowflake tables the event request lists read. Interpolated into SQL, so never derive one from request input. */
+export const EVENT_REQUEST_SOURCE_TABLES = {
+  VISA_LETTERS: 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS',
+  TRAVEL_FUNDING: 'ANALYTICS.PLATINUM_LFX_ONE.TRAVEL_FUND_REQUESTS',
+} as const;
 
 export const EMPTY_MY_EVENTS_RESPONSE: MyEventsResponse = { data: [], total: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE, offset: 0 };
 export const EMPTY_EVENTS_RESPONSE: EventsResponse = { data: [], total: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE, offset: 0 };
@@ -143,3 +175,8 @@ export const TRAVEL_FUND_STEP_ORDER: TravelFundStep[] = ['select-event', 'terms'
 export const VIS_REQUEST_STEP_ORDER: VisaRequestStep[] = ['select-event', 'terms', 'apply'];
 
 export const EVENT_SELECTION_PAGE_SIZE = 12;
+
+// Per-event travel fund signals (Snowflake aggregates), shared by the picker list and the submit-time eligibility check.
+export const TRAVEL_FUND_OFFERED_AGG = 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED)';
+export const TRAVEL_FUND_OPEN_ENDED_AGG = 'BOOLOR_AGG(IS_TRAVEL_FUND_ACCEPTED AND TRAVEL_FUND_END_TS IS NULL)';
+export const TRAVEL_FUND_LATEST_DEADLINE_AGG = 'MAX(IFF(IS_TRAVEL_FUND_ACCEPTED, TRAVEL_FUND_END_TS, NULL))';

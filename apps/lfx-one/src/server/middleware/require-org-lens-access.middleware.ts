@@ -1,9 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ORG_LENS_ROLL_UP_READ_METHODS } from '@lfx-one/shared/constants';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { NextFunction, Request, Response } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
+import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 
 /**
@@ -23,6 +27,16 @@ import { assertOrgUid } from '../helpers/org-uid.helper';
 export async function requireOrgLensAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const orgUid = req.params['orgUid'];
+    if (isOrgRollUpSegment(orgUid)) {
+      if (!ORG_LENS_ROLL_UP_READ_METHODS.includes(req.method)) {
+        throw ServiceValidationError.forField('orgUid', 'A roll-up is read-only; choose a single organization to make changes', {
+          operation: 'require_org_lens_access',
+        });
+      }
+      await resolveOrgLensRollUp(req, orgUid, 'require_org_lens_access');
+      next();
+      return;
+    }
     assertOrgUid(orgUid, 'require_org_lens_access');
     await assertOrgLensRead(req, orgUid, 'require_org_lens_access');
     next();

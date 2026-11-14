@@ -1,0 +1,86 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<!-- The book's root: a plain block of frames at the sheet's edge (the print frame picks the US Letter setup by lfx-mktg-portrait). -->
+<div class="lfx-brand-kit-portrait lfx-mktg-portrait" [attr.data-revision]="v.versionLabel" data-testid="mktg-brand-kit-print">
+  <!-- One frame per plan page, in the mock's order. -->
+  @for (page of pages(); track page.id) {
+    @switch (page.id) {
+      @case ('cover') {
+        <lfx-mktg-portrait-cover
+          [look]="look()"
+          [book]="resolvedBook()"
+          [page]="page.number"
+          [title]="coverTitle"
+          [lede]="coverLede()"
+          [logo]="coverLogo()"
+          [stripLeft]="resolvedBook().footLeft"
+          [stripRight]="coverStripRight()" />
+      }
+      @case ('contents') {
+        <lfx-mktg-brand-kit-page-contents
+          [view]="v"
+          [brand]="brand()"
+          [look]="look()"
+          [book]="resolvedBook()"
+          [page]="page"
+          [pages]="pages()"
+          [approval]="approval()" />
+      }
+      @case ('logo-system') {
+        <lfx-mktg-brand-kit-page-logo-system [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('logo-colorways') {
+        <lfx-mktg-brand-kit-page-logo-colorways [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('logo-clear-space') {
+        <lfx-mktg-brand-kit-page-logo-clear-space [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('logo-symbol') {
+        <lfx-mktg-brand-kit-page-logo-symbol [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('logo-partnership') {
+        <lfx-mktg-brand-kit-page-logo-partnership [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('logo-watchouts') {
+        <lfx-mktg-brand-kit-page-logo-watchouts [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('color-palette') {
+        <lfx-mktg-brand-kit-page-color-palette [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('color-contrast') {
+        <lfx-mktg-brand-kit-page-color-contrast [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('type') {
+        <lfx-mktg-brand-kit-page-type [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('visual-iconography') {
+        <lfx-mktg-brand-kit-page-visual-iconography [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('visual-imagery') {
+        <lfx-mktg-brand-kit-page-visual-imagery [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('usage') {
+        <lfx-mktg-brand-kit-page-usage [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" [approval]="approval()" />
+      }
+      @case ('voice') {
+        <lfx-mktg-brand-kit-page-voice [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" />
+      }
+      @case ('sources') {
+        <lfx-mktg-brand-kit-page-sources [view]="v" [brand]="brand()" [look]="look()" [book]="resolvedBook()" [page]="page" [approval]="approval()" />
+      }
+      @case ('back-cover') {
+        <lfx-mktg-portrait-back-cover
+          [look]="look()"
+          [book]="resolvedBook()"
+          [page]="page.number"
+          [logo]="coverLogo()"
+          [line]="backCoverLine()"
+          [url]="v.host"
+          [version]="versionLine()"
+          [notice]="v.backCoverNotice" />
+      }
+    }
+  }
+</div>

@@ -145,4 +145,29 @@ export class DocumentController {
       next(error);
     }
   }
+
+  /**
+   * GET /documents/count?committee_uid=... - count the documents a group's Documents tab lists
+   */
+  public async getCommitteeDocumentCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_committee_document_count', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const { committee_uid } = req.query as Record<string, string | undefined>;
+
+      if (!committee_uid || !UID_PATTERN.test(committee_uid)) {
+        throw ServiceValidationError.forField('committee_uid', 'A valid committee_uid is required');
+      }
+
+      const count = await this.documentService.getCommitteeDocumentCount(req, committee_uid);
+
+      logger.success(req, 'get_committee_document_count', startTime, { document_count: count });
+
+      res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
 }

@@ -4,7 +4,7 @@
 <div class="flex flex-col gap-6 p-8" data-testid="recurring-donation-detail">
   <!-- Back button -->
   <lfx-button
-    label="Back to My Donations"
+    label="Back to Donations"
     icon="fa-light fa-chevron-left"
     severity="secondary"
     size="small"
@@ -18,7 +18,11 @@
   } @else if (donation(); as d) {
     <lfx-recurring-donation-initiative-header [donation]="d" />
 
-    <lfx-recurring-donation-subscription-summary [donation]="d" (cancelDonation)="onCancelDonation()" />
+    <lfx-recurring-donation-subscription-summary
+      [donation]="d"
+      [anonymitySaving]="anonymitySaving()"
+      (cancelDonation)="onCancelDonation()"
+      (toggleAnonymity)="onToggleAnonymity()" />
 
     <lfx-recurring-donation-charge-history [chargeHistory]="chargeHistory()" [hasMore]="chargeHistoryHasMore()" (loadMore)="onLoadMore()" />
   } @else {

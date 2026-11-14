@@ -2,59 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  MENTORSHIP_APPLICANT_ACTIONS,
   MENTORSHIP_APPLICANT_DISPLAY_STATUSES,
   MENTORSHIP_APPLICANT_TASK_STATUSES,
-  MENTORSHIP_MENTEE_ACTIONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTIONS,
   MENTORSHIP_MENTEE_STATUSES,
   MENTORSHIP_MENTOR_STATUSES,
-  MENTORSHIP_PROGRAM_DETAIL_TABS,
   MENTORSHIP_PROGRAM_REVIEW_DECISIONS,
-  MENTORSHIP_PROGRAM_STATUSES,
-  MENTORSHIP_TERM_ROW_STATUSES,
   MENTORSHIP_UPSTREAM_PROGRAM_STATUSES,
 } from '../constants/mentorship.constants';
-import type { MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS } from '../constants/mentorship-mentor.constants';
-
-/**
- * Enrollment / graduation counters shown on the admin program card.
- */
-export interface MentorshipProgramStats {
-  mentors: number;
-  mentees: number;
-  graduated: number;
-}
-
-/**
- * Program status lifecycle:
- * - `open` — accepting applications / active
- * - `pending-review` — submitted, awaiting admin approval
- * - `completed` — cohort finished
- */
-export type MentorshipProgramStatus = (typeof MENTORSHIP_PROGRAM_STATUSES)[number];
-
-/** Core program fields as returned by the LFX One BFF for the mentorship admin list. */
-export interface MentorshipProgram {
-  id: string;
-  /** URL-safe identifier. `/mentorship/admin/:programId` accepts `id` (default) or `slug`. */
-  slug: string;
-  /** Program name, e.g. "GridFlow: Time-Series Ingestion Pipeline". */
-  name: string;
-  /** Foundation / project sponsoring the program, e.g. "LF Energy". */
-  projectName: string;
-  term: string;
-  status: MentorshipProgramStatus;
-  stats: MentorshipProgramStats;
-  /** Optional program logo. When absent, the card renders an initials avatar. */
-  logoUrl?: string;
-  createdOn: string;
-  updatedOn: string;
-}
-
-export type MentorshipProgramsResponse = {
-  data: MentorshipProgram[];
-  total: number;
-};
+import type { PaginatedResponse } from './api.interface';
 
 /** Wizard step keys for `/mentorship/admin/enroll`. */
 export type MentorshipEnrollStep = 'details' | 'setup' | 'prerequisites';
@@ -139,69 +95,28 @@ export interface MentorshipEnrollFieldErrors {
   termsAccepted?: string;
 }
 
-/**
- * One program a mentor has asked to join, as listed on the Become a Mentor form. Carries
- * the same `MentorshipMentorStatus` the admin Mentors tab shows for that person, since it
- * is the same fact viewed from the mentor's side.
- */
-export interface MentorshipMentorProgramRequest {
-  id: string;
-  programId: string;
-  programName: string;
-  status: MentorshipMentorStatus;
-}
-
-/**
- * Become a Mentor form state. Name, email, and avatar are not here — they come from the
- * signed-in LFX account. `resumeFileName` is metadata only, like the enroll wizard's
- * `logoFileName`: there is no upload endpoint yet, so the picked bytes are never sent.
- */
-export interface MentorshipMentorRegisterForm {
-  introduction: string;
-  skills: string[];
-  resumeFileName: string;
-  complianceAccepted: boolean;
-  termsAccepted: boolean;
-}
-
-/**
- * Field-keyed validation errors for the Become a Mentor form. Program requests have no
- * entry: applying to a program is optional, so a mentor can register a profile and pick
- * programs later.
- */
-export interface MentorshipMentorRegisterFieldErrors {
-  introduction?: string;
-  skills?: string;
-  complianceAccepted?: string;
-  termsAccepted?: string;
-}
-
 /** Linux Foundation project option for the enroll project picker. */
 export interface MentorshipLfProject {
   id: string;
   name: string;
+  /** Required by the upstream create body as `projectSlug`. */
+  slug: string;
   logoUrl?: string;
 }
 
-export type MentorshipLfProjectsResponse = {
-  data: MentorshipLfProject[];
-  total: number;
-};
+/** One lazy-load page of LF projects; `page_token` is the cursor for the next page and is left out once the list is exhausted. */
+export type MentorshipLfProjectsResponse = PaginatedResponse<MentorshipLfProject>;
 
-/** LFX user option surfaced in the admin Mentors tab "invite mentor" picker. */
-export interface MentorshipInvitableUser {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
+/** Query of `GET /api/mentorship/lf-projects`, the enroll wizard's project picker. */
+export interface MentorshipLfProjectsQuery {
+  search?: string;
+  pageToken?: string;
+  limit?: number;
+  /** Only this project's direct sub-projects: the Foundation lens wizard offers its foundation's sub-projects (lfx-mentorship#398). */
+  parentUid?: string;
 }
 
-export type MentorshipInvitableUsersResponse = {
-  data: MentorshipInvitableUser[];
-  total: number;
-};
-
-/** Result of the mock unique-name check. */
+/** Result of the program-name availability lookup. */
 export interface MentorshipNameAvailability {
   available: boolean;
 }
@@ -224,40 +139,26 @@ export interface MentorshipCiiBadge {
 
 export type MentorshipCiiLookupStatus = 'idle' | 'loading' | 'valid' | 'invalid' | 'unavailable';
 
-/** Admin program-detail underline tabs. */
-export type MentorshipProgramDetailTab = (typeof MENTORSHIP_PROGRAM_DETAIL_TABS)[number]['value'];
-
-/** Count badges shown next to each program-detail tab label. */
-export interface MentorshipProgramTabCounts {
-  mentees: number;
-  applicants: number;
-  mentors: number;
-  terms: number;
-}
-
 /** Mentor lifecycle on the Mentors tab. No `graduated` (mentors don't graduate). */
 export type MentorshipMentorStatus = (typeof MENTORSHIP_MENTOR_STATUSES)[number];
 
-/** Mentee lifecycle on the Current Mentees / Applicants tabs. Adds `graduated`. */
+/** Mentee lifecycle on the Current Mentees / Past Mentees tabs. An accepted mentee is `accepted` (a mentor is `approved`), and only mentees reach `graduated`. */
 export type MentorshipMenteeStatus = (typeof MENTORSHIP_MENTEE_STATUSES)[number];
 
+/** A page on the public mentorship site: a program's, or a mentee's or mentor's public profile. */
+export type MentorshipPublicPage = 'programs' | 'mentees' | 'mentors';
+
 /** Shared row fields consumed by the admin program-detail people tables. */
-interface MentorshipProgramPersonBase {
+export interface MentorshipProgramPersonBase {
   id: string;
   name: string;
   email: string;
   avatarUrl?: string;
+  /** Upstream user id, which keys the person's public page; absent when upstream sent no UUID. */
+  userId?: string;
 }
 
-/** Mentor row on the Mentors tab. */
-export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
-  status: MentorshipMentorStatus;
-  /** ISO `YYYY-MM-DD` invitation date. */
-  invitedOn?: string;
-  profileCreated?: boolean;
-}
-
-/** Mentee row on the Current Mentees / Past Mentees / Applicants tabs. */
+/** Mentee row on the admin Past Mentees tab and the mentor program-detail tables. */
 export interface MentorshipProgramMentee extends MentorshipProgramPersonBase, MentorshipApplicationProgress {
   termName: string;
   /** Reviewer note shared with the program's admins and mentors. */
@@ -316,7 +217,7 @@ export interface MentorshipTaskFormDialogData {
  * Value emitted by the task-form dialog on save. `taskId` is present in edit mode so
  * the caller can route the write to `PUT` vs. `POST`; `assignedMenteeIds` carries the
  * single preselected id in single-mentee mode and every checked id in multi mode.
- * `status` is only present in edit mode (create defaults to `pending` at the server).
+ * `status` is only present in edit mode (upstream creates a task as `incomplete`, which reads as pending).
  */
 export interface MentorshipTaskFormValue {
   taskId?: string;
@@ -328,17 +229,14 @@ export interface MentorshipTaskFormValue {
   status?: MentorshipApplicantTaskStatus;
 }
 
-/** Row action on the Current Mentees tab. Each maps to a terminal mentee status. */
-export type MentorshipMenteeAction = (typeof MENTORSHIP_MENTEE_ACTIONS)[number];
+/** Row action on the admin Current Mentees tab. */
+export type MentorshipCurrentMenteeAction = (typeof MENTORSHIP_CURRENT_MENTEE_ACTIONS)[number];
 
 /**
- * Status as shown on the Applicants tab. `applied` and `tasks-completed` are both the
+ * Status as shown on the admin Current Mentees and mentor Applicants tables. `applied` and `tasks-completed` are both the
  * `pending` wire status, split by whether every prerequisite task has been submitted.
  */
 export type MentorshipApplicantDisplayStatus = (typeof MENTORSHIP_APPLICANT_DISPLAY_STATUSES)[number];
-
-/** Row action on the Applicants tab. Each maps to the same-named application status. */
-export type MentorshipApplicantAction = (typeof MENTORSHIP_APPLICANT_ACTIONS)[number];
 
 /**
  * The stored status of an application plus the prerequisite progress that splits its
@@ -364,16 +262,20 @@ export interface MentorshipApplicantOtherApplication extends MentorshipApplicati
 export interface MentorshipNoteRequest {
   personId: string;
   personName: string;
+  /** The note the row arrived with, for a tab whose rows the page does not hold. */
+  note?: string;
 }
 
 /**
  * One entry in a program-detail row's action menu, already resolved to what the menu
- * renders. The tabs' action unions differ, so they map their own labels and icons and
- * hand over this shape rather than the status the action came from.
+ * renders. `value` is the action key the menu hands back when the entry is picked.
  */
 export interface MentorshipRowAction {
+  value: string;
   label: string;
   icon: string;
+  /** When set, the entry is a link to this URL (e.g. a `mailto:`) and is not handed back on pick. */
+  url?: string;
 }
 
 /** Display fields for a row's reviewer-note line, resolved from the session's drafts. */
@@ -400,7 +302,7 @@ export interface MentorshipApplicantTask {
   updatedOn: string;
   /** ISO `YYYY-MM-DD` when set; omitted for prerequisite tasks with no fixed due date. */
   dueOn?: string;
-  /** Whether the mentee uploaded a file the admin can view or download. */
+  /** Whether the mentee uploaded a file, which the admin or mentor downloads through `GET /api/mentorship/tasks/:taskId/file`. */
   hasSubmission?: boolean;
   /**
    * Whether completing this task requires the mentee to upload a file. Set by the
@@ -410,6 +312,38 @@ export interface MentorshipApplicantTask {
   requiresFileSubmission?: boolean;
 }
 
+/**
+ * Body of `POST /api/mentorship/tasks`, from the admin and mentor program details: one task, created once for each accepted
+ * mentee's application. `dueDate` is a date-only `YYYY-MM-DD`. The assignee, term and owner come from upstream, never from the browser.
+ */
+export interface MentorshipTaskCreateRequest {
+  applicationIds: string[];
+  name: string;
+  description: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+}
+
+/** Response of `POST /api/mentorship/tasks`: the application ids whose task was created, and those whose was not. */
+export interface MentorshipTaskCreateResponse {
+  created: string[];
+  failed: string[];
+}
+
+/**
+ * Body of `PATCH /api/mentorship/tasks/:taskId`, from the admin and mentor program details. Every field is optional and an absent one
+ * is left unchanged, but at least one is required: the status select sends `status` alone, the edit dialog sends whichever fields it
+ * changed. `dueDate` is a date-only `YYYY-MM-DD`, and an empty string clears it. `requiresFileSubmission` turns the mentee's file
+ * requirement on or off.
+ */
+export interface MentorshipTaskUpdate {
+  name?: string;
+  description?: string;
+  dueDate?: string;
+  requiresFileSubmission?: boolean;
+  status?: MentorshipApplicantTaskStatus;
+}
+
 /** Resolved display fields for one row in the applicant tasks sub-table. */
 export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   statusLabel: string;
@@ -417,158 +351,17 @@ export interface MentorshipApplicantTaskRow extends MentorshipApplicantTask {
   createdLabel: string;
   dueLabel: string;
   updatedLabel: string;
-  canView: boolean;
   canDownload: boolean;
 }
 
-/** Applicant row on the Applicants tab — a mentee row plus its application metadata. */
+/** Application row on the admin mentee tabs — a mentee row plus its application metadata. */
 export interface MentorshipProgramApplicant extends MentorshipProgramMentee {
+  /** Id of the application's term. The mentee tabs split on it, since two of a program's terms can share a name. */
+  termId: string;
   /** ISO `YYYY-MM-DD` dates behind the Application Dates column. */
   createdOn: string;
   updatedOn: string;
   otherApplications?: MentorshipApplicantOtherApplication[];
-}
-
-/** Term lifecycle on the admin program-detail Terms tab. */
-export type MentorshipTermRowStatus = (typeof MENTORSHIP_TERM_ROW_STATUSES)[number];
-
-/** Term row on the admin program-detail Terms tab. */
-export interface MentorshipProgramTermRow {
-  id: string;
-  name: string;
-  status: MentorshipTermRowStatus;
-  pending: number;
-  declined: number;
-  accepted: number;
-  graduated: number;
-  startDate: string;
-  endDate: string;
-  applicationStartDate: string;
-  applicationEndDate: string;
-}
-
-/** Tab lists returned with a program-detail payload. */
-export interface MentorshipProgramLists {
-  mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
-  mentors: MentorshipProgramMentor[];
-  terms: MentorshipProgramTermRow[];
-}
-
-/** Full admin program-detail payload from `GET /api/mentorship/programs/:slug`. */
-export interface MentorshipProgramDetail extends MentorshipProgramLists {
-  program: MentorshipProgram;
-  tabCounts: MentorshipProgramTabCounts;
-}
-
-/** Counters shown on the mentor My Programs card. */
-export interface MentorshipMentorProgramStats {
-  mentees: number;
-  tasksToReview: number;
-  applicants: number;
-}
-
-/** Term lifecycle badge on the mentor My Programs card. */
-export type MentorshipMentorProgramTermStatus = 'active-term' | 'upcoming' | 'completed';
-
-/** Program row on the mentor My Programs list. */
-export interface MentorshipMentorProgram {
-  id: string;
-  slug: string;
-  name: string;
-  projectName: string;
-  term: string;
-  termStatus: MentorshipMentorProgramTermStatus;
-  stats: MentorshipMentorProgramStats;
-  logoUrl?: string;
-  /** ISO `YYYY-MM-DD` term bounds, shown on the mentor program-detail page subtitle. */
-  termStartDate?: string;
-  termEndDate?: string;
-}
-
-export type MentorshipMentorProgramsResponse = {
-  data: MentorshipMentorProgram[];
-  total: number;
-};
-
-export type MentorshipMentorProgramDetailTab = (typeof MENTORSHIP_MENTOR_PROGRAM_DETAIL_TABS)[number]['value'];
-
-/**
- * One mentee task on the mentor program-detail Tasks tab. Flattened from current
- * mentees' assigned `tasks` where status is `submitted` (awaiting review) or
- * `completed` (approved). Pending / in-progress work is not listed here.
- */
-export type MentorshipMentorTaskReviewStatus = Extract<MentorshipApplicantTaskStatus, 'submitted' | 'completed'>;
-
-export interface MentorshipMentorReviewTask {
-  id: string;
-  menteeId: string;
-  menteeName: string;
-  menteeEmail: string;
-  avatarUrl?: string;
-  taskName: string;
-  description: string;
-  status: MentorshipMentorTaskReviewStatus;
-  termName: string;
-  updatedOn: string;
-  hasSubmission: boolean;
-}
-
-/**
- * Count badges shown next to each mentor program-detail tab label. `tasks` is the
- * number of current-mentee tasks with status `submitted` (Awaiting Review).
- */
-export interface MentorshipMentorProgramTabCounts {
-  tasks: number;
-  mentees: number;
-  applicants: number;
-}
-
-/** Tab lists returned with a mentor program-detail payload. No Mentors/Terms tabs on this side. */
-export interface MentorshipMentorProgramLists {
-  mentees: MentorshipProgramMentee[];
-  applicants: MentorshipProgramApplicant[];
-}
-
-/** Full mentor program-detail payload from `GET /api/mentorship/mentor/programs/:programId`. */
-export interface MentorshipMentorProgramDetail extends MentorshipMentorProgramLists {
-  program: MentorshipMentorProgram;
-  tabCounts: MentorshipMentorProgramTabCounts;
-}
-
-/** Underline tabs on `/mentorship/mentor/programs`. */
-export type MentorshipMentorPageTab = 'programs' | 'profile';
-
-/** Mentoring history entry lifecycle on `/mentorship/mentor/profile`. */
-export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
-
-/** One row on the Mentoring History section of the mentor profile page. */
-export interface MentorshipMentoringHistoryEntry {
-  id: string;
-  /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
-  programName: string;
-  /** Term the mentor supported, e.g. "Fall 2026". */
-  term: string;
-  /** Number of mentees the mentor supported during the term. */
-  menteesCount: number;
-  status: MentorshipMentoringHistoryStatus;
-}
-
-/** Mentor's own profile detail fields on `/mentorship/mentor/profile`. */
-export interface MentorshipMentorProfileDetails {
-  /** Rich-text HTML or plain text authored on the Become a Mentor form. */
-  aboutMe: string;
-  skills: string[];
-  /** Optional resume file name, matching the picker on the register form. */
-  resumeFileName?: string;
-  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
-  resumeUrl?: string;
-}
-
-/** Full response body from `GET /api/mentorship/mentor/profile`. */
-export interface MentorshipMentorProfileResponse {
-  profile: MentorshipMentorProfileDetails;
-  history: MentorshipMentoringHistoryEntry[];
 }
 
 // -- Program review (approver approve/reject email link) ---------------------
@@ -586,8 +379,8 @@ export type MentorshipProgramDecisionStatus = Extract<MentorshipUpstreamProgramS
 export type MentorshipProgramReviewDecision = (typeof MENTORSHIP_PROGRAM_REVIEW_DECISIONS)[number];
 
 /**
- * The upstream program fields the BFF reads: program review reads the id, name and status, and the
- * mentee apply page reads the name and project name.
+ * The upstream program fields the BFF reads: a program-review decision reads the id, name and
+ * status, and the mentee apply page reads the name and project name.
  */
 export interface MentorshipUpstreamProgram {
   id: string;
@@ -603,37 +396,76 @@ export interface MentorshipUpstreamProgramDecisionRequest {
 }
 
 /**
- * Response body from `GET /api/mentorship/program-review/:programId` and
- * `POST /api/mentorship/program-review/:programId/decision`: the subset of
- * `MentorshipUpstreamProgram` the page receives. Status values and their lifecycle are documented
- * on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
+ * Upstream `GET /mentorship/v1/programs/{id}/catalog`: the program as its public page shows it.
+ * Only the fields the review page reads are listed; upstream omits an unset optional field.
  */
-export type MentorshipProgramReview = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
+export interface MentorshipUpstreamProgramCatalog extends MentorshipUpstreamProgram {
+  description?: string;
+  logo_url?: string;
+  repo_link?: string;
+  code_of_conduct?: string;
+  cii_project_id?: string;
+  skills?: string[] | null;
+}
+
+/**
+ * Response body from `GET /api/mentorship/program-review/:programId`: the program as the reviewer
+ * sees it, whatever its status. `hasDetails` is `false` when only its status, name and project are
+ * known. Status values and their lifecycle are documented on `MENTORSHIP_UPSTREAM_PROGRAM_STATUSES`.
+ * Links are `null` unless they are http(s) URLs, and the CII id is `null` unless it is numeric, so
+ * the page can bind them as they are.
+ */
+export interface MentorshipProgramReview {
+  id: string;
+  name: string;
+  status: MentorshipUpstreamProgramStatus;
+  projectName: string | null;
+  /** Rich-editor HTML; the page sanitizes it before rendering. */
+  description: string | null;
+  logoUrl: string | null;
+  repoUrl: string | null;
+  codeOfConductUrl: string | null;
+  ciiProjectId: string | null;
+  skills: string[];
+  /**
+   * `false` when upstream's catalog does not serve the program (it serves only pending and published
+   * ones), so only its status, name and project are known; the page then leaves out the details.
+   */
+  hasDetails: boolean;
+}
+
+/** Response body from `POST /api/mentorship/program-review/:programId/decision`: the status the decision recorded. */
+export type MentorshipProgramDecisionResult = Pick<MentorshipUpstreamProgram, 'id' | 'name' | 'status'>;
 
 /** Request body for `POST /api/mentorship/program-review/:programId/decision`. */
 export interface MentorshipProgramDecisionRequest {
   decision: MentorshipProgramReviewDecision;
 }
 
-/**
- * What the program-review page shows. `already-decided` covers a program that is no
- * longer `pending`, whether the page found it that way or the POST got a 409.
- */
-export type MentorshipProgramReviewState =
-  | 'loading'
-  | 'confirm'
-  | 'submitting'
-  | 'success'
-  | 'already-decided'
-  | 'forbidden'
-  | 'not-found'
-  | 'invalid-link'
-  | 'error';
+/** What the program-review page shows. `ready` renders the program, whatever its status. */
+export type MentorshipProgramReviewState = 'loading' | 'ready' | 'forbidden' | 'not-found' | 'invalid-link' | 'error';
 
 /** The program-review page's current state and the program it is showing, when known. */
 export interface MentorshipProgramReviewView {
   state: MentorshipProgramReviewState;
   program: MentorshipProgramReview | null;
+}
+
+/** The review card's step for a pending program: the Approve / Reject choice, or confirming a reject. */
+export type MentorshipProgramReviewStep = 'choosing' | 'rejecting';
+
+/**
+ * A note the review card shows after a decision did not go through: `conflict` when another
+ * reviewer decided first (409) and the page read the status they recorded, `stale` when another
+ * reviewer decided first but that status could not be read yet, and `failed` when the decision was
+ * not recorded and can be retried.
+ */
+export type MentorshipProgramReviewNotice = 'conflict' | 'failed' | 'stale';
+
+/** How a submitted decision settled: the view to show and the note to show with it. */
+export interface MentorshipProgramReviewOutcome {
+  view: MentorshipProgramReviewView;
+  notice: MentorshipProgramReviewNotice | null;
 }
 
 /** The program id and decision read from a program-review link. */
@@ -642,8 +474,234 @@ export interface MentorshipProgramReviewLink {
   decision: MentorshipProgramReviewDecision | null;
 }
 
-/** What the program-review confirm card renders: the loaded program and the decision to confirm. */
-export interface MentorshipProgramReviewConfirmation {
-  program: MentorshipProgramReview;
-  decision: MentorshipProgramReviewDecision;
+/** How a failed mentor or mentee registration submit is shown. */
+export type MentorshipRegisterSubmitFailureKind = 'field-errors' | 'profile-exists' | 'read-only' | 'conflict' | 'ineligible' | 'error';
+
+/** Result of `mapMentorshipRegisterFailure`: banner copy plus, for 'field-errors', the mapped field errors. */
+export interface MentorshipRegisterSubmitFailure<TFieldErrors extends object> {
+  kind: MentorshipRegisterSubmitFailureKind;
+  /** Banner / toast copy. For 'field-errors' this is the first field message. */
+  message: string;
+  /** Present only for kind 'field-errors'; contains only keys listed in the caller's `fieldKeys`. */
+  fieldErrors?: TFieldErrors;
+}
+
+/** What differs between the mentor and mentee register pages when a save fails. */
+export interface MentorshipRegisterFailureOptions<TFieldErrors extends object> {
+  /** The code the BFF puts on its 409 when the profile already exists. */
+  profileExistsCode: string;
+  profileExistsMessage: string;
+  /** The form fields a server 400 can name; any other field in `errors[]` is ignored. */
+  fieldKeys: readonly (keyof TFieldErrors)[];
+  /** Copy for a 422. Without it a 422 gets the fallback message, since the page has no eligibility statements to point at. */
+  ineligibleMessage?: string;
+}
+
+// -- Admin enroll: create a program -------------------------------------------
+
+/**
+ * One term in the create body. No `id` (upstream generates it) and dates are date-only `YYYY-MM-DD`, which upstream stores
+ * at 00:00 UTC. Upstream needs `endDate` after `startDate`, and `applicationEndDate` strictly after `applicationStartDate`
+ * (a same-day window is refused) and no later than the end of the `endDate` month; the window may run into the term.
+ */
+export interface MentorshipEnrollCreateTerm {
+  name: string;
+  startDate: string;
+  endDate: string;
+  applicationStartDate: string;
+  applicationEndDate: string;
+}
+
+/** One prerequisite in the create body. `dueDate` is a date-only `YYYY-MM-DD` or `null`. */
+export interface MentorshipEnrollCreatePrerequisite {
+  name: string;
+  description: string;
+  /** Whether the admin picked this prerequisite. Upstream saves only `true` items and drops a `false` one without an error. */
+  required: boolean;
+  requireFile: boolean;
+  dueDate: string | null;
+  /** `false` for a standard prerequisite, `true` for one the admin wrote. A missing flag is read as `false`. */
+  custom: boolean;
+}
+
+/**
+ * Request body for `POST /api/mentorship/admin/programs`, sent on to upstream `POST /mentorship/v1/programs` as is. It has no
+ * `status`, `logoUrl` or term `id`: upstream sets the status to `pending`, and the logo goes up in a second call.
+ */
+export interface MentorshipEnrollCreateRequest {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  projectLogoUrl?: string;
+  name: string;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl?: string;
+  codeOfConductUrl?: string;
+  ciiProjectId?: string;
+  /** The wizard's Technologies, joined with `', '`. Upstream keeps it apart from `skills`. */
+  industry?: string;
+  skills: string[];
+  terms: MentorshipEnrollCreateTerm[];
+  prerequisites: MentorshipEnrollCreatePrerequisite[];
+  termsAccepted: true;
+}
+
+/**
+ * A saved open term in the edit wizard. `term` is the term as the wizard holds it, its term dates moved to the first of their month
+ * for the month pickers; `stored` holds the dates upstream has, which Update sends back as they are while the admin leaves the
+ * term's dates alone, so an edit elsewhere never moves them.
+ */
+export interface MentorshipEnrollSavedTerm {
+  term: MentorshipProgramTerm;
+  stored: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>;
+}
+
+/** One open term in the update body: `id` names a saved open term to change, and a term without one is created. */
+export interface MentorshipEnrollUpdateTerm extends MentorshipEnrollCreateTerm {
+  id?: string;
+}
+
+/**
+ * Request body for `PATCH /api/mentorship/admin/programs/:programId`: the create body's program fields, without terms acceptance,
+ * and `terms` as the program's full set of open terms. An open term left out is deleted, and closed terms are never sent; a
+ * program with no open terms leaves `terms` out. The logo goes through its own route.
+ */
+export type MentorshipEnrollUpdateRequest = Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> & { terms?: MentorshipEnrollUpdateTerm[] };
+
+/**
+ * One prerequisite as upstream stores it in a program's `task_templates`. `submitFile` is `'required'` when the mentee must attach a file,
+ * and `custom` is `true` for one the admin wrote rather than a standard one.
+ */
+export interface MentorshipUpstreamTaskTemplate {
+  name: string;
+  description: string;
+  submitFile: 'required' | null;
+  dueDate: string | null;
+  custom: boolean;
+}
+
+/** One open term in the upstream program update: RFC 3339 instants in UTC, and `id` only for a saved term. */
+export interface MentorshipUpstreamOpenTerm {
+  id?: string;
+  name: string;
+  start_date_time: string;
+  end_date_time: string;
+  application_start_date: string;
+  application_end_date: string;
+}
+
+/**
+ * Upstream body for `PATCH /mentorship/v1/programs/{id}`, a partial merge with snake_case keys. Every optional text field is
+ * sent, `''` when blank, so an admin can clear it. `terms`, when sent, replaces the program's open terms in the same transaction.
+ */
+export interface MentorshipUpstreamProgramUpdate {
+  name: string;
+  description: string;
+  repo_link: string;
+  website_url: string;
+  code_of_conduct: string;
+  cii_project_id: string;
+  industry: string;
+  skills: string[];
+  task_templates: MentorshipUpstreamTaskTemplate[];
+  project_uid: string;
+  project_slug: string;
+  project_name: string;
+  project_logo_url: string;
+  terms?: MentorshipUpstreamOpenTerm[];
+}
+
+/**
+ * What the program looked like when the edit wizard opened. Validation compares against it, so a date the program already had
+ * stays valid after it has passed.
+ */
+export interface MentorshipEnrollEditBaseline {
+  terms: MentorshipProgramTerm[];
+  prerequisites: MentorshipPrerequisite[];
+}
+
+/** Response from `POST /api/mentorship/admin/programs`: what the wizard keeps so a failed logo upload can retry without a second create. */
+export interface MentorshipEnrollProgramRef {
+  id: string;
+  /** Falls back to `id` when upstream returns no slug. */
+  slug: string;
+  status: string;
+}
+
+/** Response from `POST /api/mentorship/admin/programs/:programId/logo`. */
+export interface MentorshipProgramLogoUploadResult {
+  logoUrl: string;
+}
+
+/**
+ * The calls one Submit makes, in order. There is no review step: create already leaves the program `pending`. An edit's Update
+ * makes `update` (the program fields and its open terms in one call), then `logo`.
+ */
+export type MentorshipEnrollSubmitStep = 'create' | 'update' | 'logo';
+
+export type MentorshipEnrollSubmitPhase = 'idle' | 'creating' | 'updating' | 'uploading-logo' | 'failed' | 'done';
+
+/** Shown in the wizard after a failed submit. `step` says which write failed; `message` is the banner text. */
+export interface MentorshipEnrollSubmitFailure {
+  step: MentorshipEnrollSubmitStep;
+  message: string;
+}
+
+/** The upstream fields the BFF reads from the program a create returns. */
+export interface MentorshipUpstreamCreatedProgram {
+  id: string;
+  slug?: string;
+  status: string;
+}
+
+/** Upstream body from `POST /mentorship/v1/programs/{id}/logo-upload`. */
+export interface MentorshipUpstreamLogoUpload {
+  public_url: string;
+  filename: string;
+  content_type: string;
+  size: number;
+}
+
+/**
+ * Upstream body from `GET /mentorship/v1/programs/{id}/enroll-template`. Upstream omits an empty `prerequisites`, and a
+ * prerequisite's `description`, `submitFile` and `dueDate` are `null` when unset.
+ */
+export interface MentorshipUpstreamEnrollTemplate {
+  program: {
+    id: string;
+    name: string;
+    description?: string | null;
+    repo_link?: string | null;
+    website_url?: string | null;
+    code_of_conduct?: string | null;
+    cii_project_id?: string | null;
+    /** Comma-separated Technologies. */
+    industry?: string | null;
+    project_uid?: string | null;
+    project_slug?: string | null;
+    project_name?: string | null;
+    project_logo_url?: string | null;
+    logo_url?: string | null;
+  };
+  skills?: string[] | null;
+  /** The program's stored task templates, passed through as they are, so their keys are camelCase unlike `program`'s. */
+  prerequisites?: { name: string; description?: string | null; submitFile?: string | null; dueDate?: string | null; custom?: boolean | null }[] | null;
+}
+
+/** Response from `GET /api/mentorship/admin/programs/:programId/enroll-template`: what the wizard copies from an existing program. */
+export interface MentorshipEnrollImport {
+  name: string;
+  /** `null` when the template has no project uid. */
+  project: MentorshipLfProject | null;
+  description: string;
+  repositoryUrl: string;
+  websiteUrl: string;
+  codeOfConductUrl: string;
+  ciiProjectId: string;
+  technologies: string[];
+  skills: string[];
+  prerequisites: MentorshipPrerequisite[];
+  /** The program's current logo, `''` when it has none. Import leaves it out; the edit wizard shows it. */
+  logoUrl: string;
 }

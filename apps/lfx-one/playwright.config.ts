@@ -5,7 +5,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 // Load environment variables from .env file
 try {
-  process.loadEnvFile();
+  // The app's older Node type declarations do not include this Node 22 API yet.
+  (process as NodeJS.Process & { loadEnvFile: () => void }).loadEnvFile();
 } catch (err) {
   if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
     console.warn('[loadenvfile] failed to load .env:', err);
@@ -70,11 +71,11 @@ export default defineConfig({
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
+  forbidOnly: !!process.env['CI'],
   /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env['CI'] ? 2 : 0,
   /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env['CI'] ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
   /* Global setup */
@@ -111,6 +112,15 @@ export default defineConfig({
         navigationTimeout: 45000, // Increased from default 30s
       },
     },
+    {
+      name: 'webkit',
+      testMatch: '**/mktg-os-*.spec.ts',
+      use: {
+        ...devices['Desktop Safari'],
+        storageState: 'playwright/.auth/user.json',
+      },
+      workers: 1,
+    },
     /* Test against mobile viewports. */
     {
       name: 'mobile-chrome',
@@ -144,9 +154,10 @@ export default defineConfig({
         // src/app/modules/docs/generated/docs-manifest, which is gitignored. Calling `ng serve`
         // alone works on a machine that has built before and cannot compile on a clean checkout —
         // so the suite would fail to launch in CI while passing locally.
-        command: `yarn docs:build && yarn ng serve --port ${E2E_LAUNCH_PORT}`,
+        // SSR API reads use PORT (4000 by default), so it must match the dev server's actual listener.
+        command: `yarn docs:build && PORT=${E2E_LAUNCH_PORT} yarn ng serve --port ${E2E_LAUNCH_PORT}`,
         url: E2E_BASE_URL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: !process.env['CI'],
         timeout: 120000,
       },
 });

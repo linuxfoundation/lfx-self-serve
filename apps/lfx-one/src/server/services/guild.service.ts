@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { GuildSessionEvent, MktgChatMessage } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENT_INTAKES, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED, MKTG_RAW_EVENTS_MAX_PAGES } from '@lfx-one/shared/constants';
+import { GuildSessionEvent, GuildRawEventsPage, MktgChatMessage, MktgRunOutcomeSource, MktgFailedRunOutcome } from '@lfx-one/shared/interfaces';
+import { mktgRunFailureFromPayloads } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -9,6 +11,13 @@ import { logger } from './logger.service';
 
 /** Default Guild API base URL when GUILD_API_URL is not set. */
 const GUILD_DEFAULT_API_URL = 'https://app.guild.ai';
+
+// Default Guild workspace when GUILD_WORKSPACE_OWNER / GUILD_WORKSPACE_NAME are
+// unset. These are the LF Marketing OS workspace identifiers — not secrets — so
+// only GUILD_API_KEY needs configuring. Set the env vars to point at a different
+// workspace.
+const GUILD_DEFAULT_WORKSPACE_OWNER = 'linux-foundation';
+const GUILD_DEFAULT_WORKSPACE_NAME = 'marketing-os';
 
 /** Outbound request timeout for Guild API calls. */
 const GUILD_REQUEST_TIMEOUT_MS = 30_000;
@@ -22,9 +31,8 @@ const GUILD_EVENT_TYPES = 'trigger_message,agent_notification_message,user_messa
 // per-viewer timestamp localization deferred to LFXAI-99.
 const GUILD_HISTORY_LIMIT = 100;
 
-// Max raw events fetched when scanning a session for the Brand Kit output
-// envelope. Raw mode includes system events (llm_start/llm_done, task events),
-// which are far chattier than chat history — hence the higher cap.
+// Raw events per offset page when scanning a session for agent output.
+// System events are chattier than chat history; the shared page cap bounds reads.
 const GUILD_RAW_EVENTS_LIMIT = 500;
 
 // Leading `@mention` prefix — matches an @handle followed by whitespace OR the
@@ -36,9 +44,20 @@ const MENTION_PREFIX_RE = /^@[a-zA-Z0-9_-]+(?:\s+|$)/;
  *
  * Auth is `Basic base64(GUILD_API_KEY)` — a server-side credential that must
  * never reach the browser. All methods fail with a clear 500 when the Guild
- * credentials/workspace are not configured.
+ * API key is not configured. The workspace owner/name default to the LF
+ * Marketing OS workspace, so only the key is required.
  */
 export class GuildService {
+  // Share the controller's event read with the outcome adapter, only for this
+  // request. Never cache sessions across users or polls.
+  private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
+
+  // Single-flight (request coalescing): concurrent polls of one session share
+  // ONE in-flight paged read instead of each pulling every page. The entry is
+  // deleted when the read settles, so a rejection is never cached. Per process
+  // only: pods do not share it, and nothing is kept once the read settles.
+  private static readonly inFlightRawReads = new Map<string, Promise<string[]>>();
+
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
     return (process.env['GUILD_API_URL'] || GUILD_DEFAULT_API_URL).replace(/\/+$/, '');
@@ -49,11 +68,11 @@ export class GuildService {
   }
 
   private get owner(): string {
-    return process.env['GUILD_WORKSPACE_OWNER'] || '';
+    return process.env['GUILD_WORKSPACE_OWNER'] || GUILD_DEFAULT_WORKSPACE_OWNER;
   }
 
   private get workspace(): string {
-    return process.env['GUILD_WORKSPACE_NAME'] || '';
+    return process.env['GUILD_WORKSPACE_NAME'] || GUILD_DEFAULT_WORKSPACE_NAME;
   }
 
   /**
@@ -84,9 +103,14 @@ export class GuildService {
    * ride a typed payload, so `agent_id` is the ONLY routing and dropping it
    * would silently create an unrouted session. For the same reason a
    * structured input without a handle is rejected outright.
+   *
+   * Text routing puts `@handle` on its own line by default so exact intake
+   * header lines remain intact. `mentionOnOwnLine: false` explicitly opts
+   * out for a caller needing the legacy same-line format; mention routing
+   * reads either format the same.
    */
-  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string }): Promise<string> {
-    this.assertConfigured('guild_create_session', { requireWorkspace: true });
+  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string; mentionOnOwnLine?: boolean }): Promise<string> {
+    this.assertConfigured('guild_create_session');
 
     if (params.agentInput === undefined && params.message === undefined) {
       throw new MicroserviceError('Guild session creation requires a message or a structured agent input.', 500, 'guild_invalid_session_input', {
@@ -104,7 +128,10 @@ export class GuildService {
       });
     }
 
-    const agentInput: object = params.agentInput ?? { type: 'text', text: this.applyRouting(params.message ?? '', params.handle) };
+    const agentInput: object = params.agentInput ?? {
+      type: 'text',
+      text: this.applyRouting(params.message ?? '', params.handle, params.mentionOnOwnLine === false ? ' ' : '\n'),
+    };
     const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
     const body: Record<string, unknown> = {
@@ -141,6 +168,19 @@ export class GuildService {
     }
 
     return data.id;
+  }
+
+  /** Best-effort stop after an explicit discard; tracking stays closed even if Guild is unavailable. */
+  public async interruptSession(req: Request, sessionId: string): Promise<void> {
+    const operation = 'guild_interrupt_session';
+    try {
+      this.assertConfigured(operation);
+      // Mirrors `guild session interrupt <id>`: POST /sessions/{id}/interrupt with an empty body — @guildai/cli src/commands/session/interrupt.ts.
+      const response = await this.fetchGuild(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, { method: 'POST', body: '{}' }, operation);
+      if (!response.ok) logger.warning(req, operation, 'Discarded session could not be interrupted', { session_id: sessionId, status: response.status });
+    } catch (err) {
+      logger.warning(req, operation, 'Discarded session could not be interrupted', { session_id: sessionId, err });
+    }
   }
 
   /**
@@ -193,43 +233,119 @@ export class GuildService {
    * for the contract envelope; this method makes no shape assumptions beyond
    * `{ items: [...] }` with an optional `type` per item.
    *
-   * User-originated events (`user_message`, `trigger_message`) are EXCLUDED:
-   * intake answers are echoed verbatim into the trigger message, so a caller
-   * could otherwise plant a schema-valid envelope in an answer and have it
-   * selected as the agent's output. The authoritative envelope only ever rides
+   * User-originated CONTENT (`user_message`, `trigger_message`) is excluded:
+   * intake answers could plant an envelope, so only a content-free queued-turn
+   * marker survives. Only a page-cap overflow carries an incomplete-page marker,
+   * so completion consumers cannot settle a turn from an incomplete history.
+   * The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
+   *
+   * Guild serves events OLDEST-first, so the receipt and the root envelope sit
+   * on the last page: the page loop is offset pagination bounded by the server's
+   * `pagination.total_count` under the explicit absolute cap
+   * `MKTG_RAW_EVENTS_MAX_PAGES` (never a fixed page count), with the `has_more`
+   * rule as the fallback when the total is absent. Concurrent calls for one
+   * session share one read (see `inFlightRawReads`).
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
     this.assertConfigured('guild_get_raw_events');
 
-    const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}`;
+    let read = GuildService.inFlightRawReads.get(sessionId);
+    if (!read) {
+      read = this.readRawEventPayloads(req, sessionId).finally(() => GuildService.inFlightRawReads.delete(sessionId));
+      GuildService.inFlightRawReads.set(sessionId, read);
+    }
+    const payloads = await read;
+    GuildService.resultPayloads.set(req, { sessionId, payloads });
+    return payloads;
+  }
 
+  /** Local readiness only, before committing a comments reservation; no external request. */
+  public preflight(operation: string): void {
+    this.assertConfigured(operation);
+  }
+
+  /** One best-effort outcome step, after authorization and before result logging/persistence. */
+  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(
+    req: Request,
+    sessionId: string,
+    result: T,
+    resultEndpoint?: string
+  ): Promise<T | MktgFailedRunOutcome> {
+    if (result.status === 'ready' || result.status === 'refused' || result.status === 'failed') return result;
+    if (result.status !== 'pending' && result.status !== 'questions') return result;
+    // Internal document reconciliation supplies its catalog endpoint without changing the visiting Request.
+    const endpoint = resultEndpoint ?? (req.originalUrl ?? req.path ?? '').split('?')[0];
+    if (!Object.values(MKTG_AGENT_INTAKES).some((intake) => intake.endpoints.result === endpoint || intake.endpoints.result === `/api/mktg-agents${endpoint}`))
+      return result;
+    try {
+      const id = sessionId.trim();
+      const recorded = GuildService.resultPayloads.get(req);
+      const payloads = recorded?.sessionId === id ? recorded.payloads : await this.getRawEventPayloads(req, id);
+      const failure = mktgRunFailureFromPayloads(payloads);
+      // No metadata probe: the session status vocabulary is not independently verified.
+      // An aged error with only teardown is evidence; recovering runs incur no extra read.
+      return failure ? { ...result, status: 'failed', failure } : result;
+    } catch (error) {
+      logger.warning(req, 'mktg_run_failure_lookup', 'Could not check the Guild outcome; keeping the current result', { err: error });
+      return result;
+    }
+  }
+
+  /** The paged read behind `getRawEventPayloads`; one in flight per session. */
+  private async readRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
     logger.debug(req, 'guild_get_raw_events', 'Fetching raw Guild session events', {});
-
-    const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
-    await this.assertOk(response, 'guild_get_raw_events', path);
-
-    const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
-    const rawItems = data.items || [];
-    const items = rawItems.filter((item) => item?.type !== 'user_message' && item?.type !== 'trigger_message');
+    const rawItems: Partial<GuildSessionEvent>[] = [];
+    const ids = new Set<string>();
+    let totalCount: number | undefined;
+    let hasMore = false;
+    for (let page = 0; page < MKTG_RAW_EVENTS_MAX_PAGES; page++) {
+      const offset = page * GUILD_RAW_EVENTS_LIMIT;
+      const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}&offset=${offset}`;
+      const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
+      await this.assertOk(response, 'guild_get_raw_events', path);
+      const data = (await response.json()) as GuildRawEventsPage;
+      const pageItems = data.items ?? [];
+      for (const item of pageItems) {
+        const id = item?.id;
+        if (typeof id === 'string' && id) {
+          if (ids.has(id)) continue;
+          ids.add(id);
+        }
+        rawItems.push(item);
+      }
+      const total = data.pagination?.total_count;
+      if (page === 0 && typeof total === 'number' && Number.isFinite(total)) totalCount = total;
+      // Sized from the server's total when it is given; otherwise a full page
+      // without legacy pagination metadata is conservatively incomplete.
+      hasMore =
+        totalCount !== undefined
+          ? offset + GUILD_RAW_EVENTS_LIMIT < totalCount
+          : pageItems.length >= GUILD_RAW_EVENTS_LIMIT && data.pagination?.has_more !== false;
+      if (!hasMore) break;
+    }
+    // Retain only the timing of queued turns, never their caller-controlled content.
+    const items = rawItems.map((item) =>
+      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
+    );
 
     // Last-valid-wins selection downstream depends on chronological order —
     // normalize it here instead of trusting the API's ordering.
     const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
 
-    // Truncation guard: a full page means the session may have more events than
-    // the cap, so the terminal envelope could be missing (or a stale draft could
-    // win). Surface it loudly; pagination is a follow-up if real sessions hit it.
-    // The limit applies to the UNFILTERED response — check the raw count, or a
-    // full page would slip under the threshold after user-event filtering.
-    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
-      logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', {
+    if (hasMore) {
+      logger.warning(req, 'guild_get_raw_events', `Raw events truncated at ${MKTG_RAW_EVENTS_MAX_PAGES} pages`, {
         count: rawItems.length,
         limit: GUILD_RAW_EVENTS_LIMIT,
+        pages: MKTG_RAW_EVENTS_MAX_PAGES,
       });
     }
 
-    return sorted.map((item) => JSON.stringify(item));
+    const payloads = sorted.map((item) => JSON.stringify(item));
+    if (hasMore) {
+      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
+    }
+    return payloads;
   }
 
   /**
@@ -297,14 +413,16 @@ export class GuildService {
    * Prepend the `@handle` routing prefix when targeting a specific agent.
    * Any client-supplied leading `@mention` is stripped first so routing is
    * driven only by the catalog handle, never by text the user typed.
+   * `separator` defaults to a line break, keeping the first message line
+   * intact for both initial intake and answers follow-up turns.
    */
-  private applyRouting(message: string, handle?: string): string {
+  private applyRouting(message: string, handle?: string, separator = '\n'): string {
     const cleaned = message.replace(MENTION_PREFIX_RE, '').trim();
     if (!handle) {
       return cleaned;
     }
-    // Avoid a trailing space when the message was a mention only (cleaned empty).
-    return cleaned ? `@${handle} ${cleaned}` : `@${handle}`;
+    // Avoid a trailing separator when the message was a mention only (cleaned empty).
+    return cleaned ? `@${handle}${separator}${cleaned}` : `@${handle}`;
   }
 
   /**
@@ -342,21 +460,14 @@ export class GuildService {
     }
   }
 
-  /** Throw a clear 500 when required Guild configuration is missing. */
-  private assertConfigured(operation: string, options: { requireWorkspace?: boolean } = {}): void {
-    const missing: string[] = [];
+  /**
+   * Throw a clear 500 when the Guild API key is missing. The workspace
+   * owner/name default to the LF Marketing OS workspace (see the getters), so
+   * the key is the only required value.
+   */
+  private assertConfigured(operation: string): void {
     if (!this.apiKey) {
-      missing.push('GUILD_API_KEY');
-    }
-    if (options.requireWorkspace && !this.owner) {
-      missing.push('GUILD_WORKSPACE_OWNER');
-    }
-    if (options.requireWorkspace && !this.workspace) {
-      missing.push('GUILD_WORKSPACE_NAME');
-    }
-
-    if (missing.length > 0) {
-      throw new MicroserviceError(`Guild API is not configured. Missing environment variables: ${missing.join(', ')}.`, 500, 'guild_not_configured', {
+      throw new MicroserviceError('Guild API is not configured. Missing environment variable: GUILD_API_KEY.', 500, 'guild_not_configured', {
         service: 'guild',
         operation,
       });
@@ -393,6 +504,11 @@ function toEpoch(value: string): number {
  * Guild wraps the original trigger input in JSON (sometimes inside a ```json
  * markdown block, sometimes double-serialized). Ported from guild_embed's
  * history route. Falls back to the raw string when nothing parses.
+ *
+ * The content is user-authored and unbounded, so the ```json block is located
+ * with `indexOf` (linear in the subject length) rather than a regex, whose
+ * backtracking was cubic on an unclosed fence (CWE-1333,
+ * linuxfoundation/lfx-self-serve-ops#53).
  */
 function extractTriggerMessageText(data: string): string {
   if (!data) {
@@ -422,12 +538,22 @@ function extractTriggerMessageText(data: string): string {
     return null;
   };
 
-  // 1. JSON inside a markdown code block.
-  const jsonMatch = data.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch && jsonMatch[1]) {
-    const fromBlock = parseInput(jsonMatch[1].trim());
-    if (fromBlock !== null) {
-      return fromBlock;
+  // 1. JSON inside a markdown code block: the first ```json fence and the next
+  // ``` after it, the same block the former lazy regex captured.
+  const fenceOpen = '```json';
+  const fenceClose = '```';
+  const open = data.indexOf(fenceOpen);
+  if (open >= 0) {
+    const blockStart = open + fenceOpen.length;
+    const close = data.indexOf(fenceClose, blockStart);
+    if (close >= 0) {
+      const block = data.slice(blockStart, close).trim();
+      if (block) {
+        const fromBlock = parseInput(block);
+        if (fromBlock !== null) {
+          return fromBlock;
+        }
+      }
     }
   }
 

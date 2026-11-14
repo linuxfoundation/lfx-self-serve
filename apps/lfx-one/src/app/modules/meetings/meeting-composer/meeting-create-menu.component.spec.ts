@@ -222,7 +222,7 @@ describe('MeetingCreateMenuComponent', () => {
       await mount();
 
       expect(menuItems()).toHaveLength(1);
-      expect(menuItems()[0].label).toBe('Quick start');
+      expect(menuItems()[0].label).toBe('Quick start / Templates');
     });
 
     it('closes the type rows with a separator and the Advanced row', async () => {

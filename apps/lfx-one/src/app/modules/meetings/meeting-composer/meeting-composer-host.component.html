@@ -5,61 +5,16 @@
   <lfx-quick-create-dialog (create)="onSubmit()" (switchToAdvanced)="onSwitchToAdvanced()" />
 }
 
-<!-- Post-create toast (GH-1461): creating no longer navigates, so this is the way back to the meeting -->
-<p-toast [key]="toastKey" [position]="toastPosition">
-  <ng-template let-message pTemplate="message">
-    <div class="flex w-full items-start gap-3" data-testid="meeting-composer-toast">
-      <i class="fa-light fa-circle-check mt-0.5 shrink-0 text-xl text-emerald-500" aria-hidden="true"></i>
-      <div class="flex min-w-0 flex-1 flex-col gap-1">
-        <span class="text-sm font-semibold text-gray-900">{{ message.summary }}</span>
-        <span class="break-words text-xs text-gray-600">{{ message.detail }}</span>
-        <!-- `MEETING_COMPOSER_TOAST_KEY` is exported, so a message could reach this template without the data the actions need -->
-        @if (message.data; as toastData) {
-          @let editBlockedReason = editFromToastBlockedReason();
-
-          <div class="mt-1 flex items-center gap-3">
-            <!-- `aria-disabled` rather than `disabled`, matching the rail: a focusable control that explains
-                 itself beats an unreachable one, which would leave a screen-reader user no way to hear why
-                 nothing happened.
-                 The reason rides on `aria-label`/`title` rather than an sr-only child, because PrimeNG's
-                 toast item is an `aria-atomic` live region — adding or removing a child re-announces the
-                 whole toast. `onEditCreatedMeeting` is the real guard. -->
-            <button
-              type="button"
-              class="inline-flex items-center gap-1 text-xs font-medium"
-              [ngClass]="editBlockedReason ? 'cursor-not-allowed text-gray-600' : 'text-blue-700 hover:text-blue-800 hover:underline'"
-              [attr.aria-disabled]="editBlockedReason ? 'true' : null"
-              [attr.aria-label]="editBlockedReason ? 'Edit meeting — ' + editBlockedReason : null"
-              [attr.title]="editBlockedReason"
-              data-testid="meeting-composer-toast-edit"
-              (click)="onEditCreatedMeeting(toastData)">
-              <i class="fa-light fa-pen text-[10px]" aria-hidden="true"></i>
-              <span>Edit meeting</span>
-            </button>
-            <a
-              [routerLink]="toastData.meetingUrl"
-              [state]="toastData.meetingLinkState"
-              class="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 hover:underline"
-              data-testid="meeting-composer-toast-details"
-              (click)="onDismissToast()">
-              <i class="fa-light fa-arrow-up-right-from-square text-[10px]" aria-hidden="true"></i>
-              <span>View meeting</span>
-            </a>
-          </div>
-        }
-      </div>
-    </div>
-  </ng-template>
-</p-toast>
-
 <!-- Meeting composer drawer (GH-1452) -->
 <!-- `blockScroll` is on because the page behind a modal drawer must not move: PrimeNG appends overlays
      (the agenda popovers, the selects) to `body` and positions them in document coordinates, so a
      background scroll slides them off their anchor, which stays put inside the fixed drawer. -->
-<!-- The three dismissal controls are bound to `submitting()` rather than left at their PrimeNG defaults.
-     `submit()` snapshots the meeting payload before the request and the success handler closes the composer
-     unconditionally, so a backdrop click, an Escape or the X mid-save would either drop edits made after the
-     snapshot or read as a cancel that did not cancel anything. They come back the moment the save settles. -->
+<!-- A backdrop click never closes the composer: a stray click outside the drawer would throw away a
+     half-filled meeting, so only the X, Cancel or Escape close it. Those are bound to `submitting()` rather than
+     left at their PrimeNG defaults: `submit()` snapshots the meeting payload before the request and the success
+     handler closes the composer unconditionally, so an Escape or the X mid-save would either drop edits made
+     after the snapshot or read as a cancel that did not cancel anything. They come back once the save settles. -->
+<!-- Width: 90% of the window, capped at 1440px, never narrower than 1200px unless the window itself is. -->
 <p-drawer
   [visible]="composer.isOpen() && !composer.isQuickCreate()"
   (visibleChange)="onVisibleChange($event)"
@@ -67,9 +22,9 @@
   [modal]="true"
   [blockScroll]="true"
   [showCloseIcon]="!formService.submitting()"
-  [dismissible]="!formService.submitting()"
+  [dismissible]="false"
   [closeOnEscape]="!formService.submitting()"
-  styleClass="w-[1200px] max-w-full [&_.p-drawer-content]:py-0 [&_.p-drawer-header]:items-center [&_.p-drawer-header]:border-b [&_.p-drawer-header]:border-gray-200 [&_.p-drawer-footer]:border-t [&_.p-drawer-footer]:border-gray-200 [&_.p-drawer-footer]:pt-3">
+  styleClass="w-[min(90vw,1440px)] min-w-[min(1200px,100vw)] max-w-full [&_.p-drawer-content]:py-0 [&_.p-drawer-header]:items-center [&_.p-drawer-header]:py-3 [&_.p-drawer-header]:border-b [&_.p-drawer-header]:border-gray-200 [&_.p-drawer-footer]:border-t [&_.p-drawer-footer]:border-gray-200 [&_.p-drawer-footer]:pt-3">
   <ng-template #header>
     <div class="flex min-w-0 flex-col justify-center" data-testid="meeting-composer-header">
       <span class="truncate text-xl font-semibold text-gray-900">
@@ -77,6 +32,36 @@
       </span>
       @if (isEditMode() && formService.meeting(); as meeting) {
         <span class="truncate text-sm text-gray-500">{{ meeting.title }}</span>
+      }
+
+      <!-- Says which part of a recurring meeting this save changes. A recurring series has two edit scopes
+           and the drawer looks much the same for both, so without it nothing on screen tells the organizer
+           whether moving the time moves one occurrence or every one of them. In the header so it stays in
+           view whichever section is open. -->
+      @if (editScope(); as scope) {
+        <lfx-message
+          severity="info"
+          size="small"
+          icon="fa-light fa-circle-info"
+          styleClass="mt-2 w-fit max-w-full"
+          [attr.data-testid]="scope.kind === 'occurrence' ? 'meeting-composer-scope-occurrence' : 'meeting-composer-scope-series'">
+          <ng-template #content>
+            <span class="text-xs">
+              @if (scope.kind === 'occurrence') {
+                You're editing a single occurrence: <span class="font-semibold">{{ scope.label }}</span> ·
+                <button
+                  type="button"
+                  class="font-medium underline hover:no-underline"
+                  data-testid="meeting-composer-scope-edit-series"
+                  (click)="onEditSeriesInstead()">
+                  Edit the entire series (discards changes here)
+                </button>
+              } @else {
+                You're editing the <span class="font-semibold">entire series</span> — changes apply to every upcoming occurrence.
+              }
+            </span>
+          </ng-template>
+        </lfx-message>
       }
     </div>
   </ng-template>
@@ -103,10 +88,13 @@
            nearest named one — rounding up would leave the rail collapsed across the whole 820–1023px band
            the issue asks it to occupy.
            The column is hidden when the edit-mode fetch failed: there is no form behind the rail, so every row
-           would report empty and clicking one would swap a section the organizer can't see. -->
+           would report empty and clicking one would swap a section the organizer can't see.
+           `-ml-3.5 pl-3.5` (and the matching width) widen the scroll box into the drawer's own padding without
+           moving its content, so the stepper rows can bleed past the preview card's edges without being
+           clipped by `overflow-y-auto`. -->
       @if (!formService.meetingLoadFailed()) {
         <div
-          class="hidden w-[286px] shrink-0 flex-col gap-4 overflow-y-auto py-5 min-[820px]:flex min-[820px]:border-r min-[820px]:border-gray-200 min-[820px]:pr-6">
+          class="-ml-3.5 hidden w-[calc(286px+0.875rem)] shrink-0 flex-col gap-4 overflow-y-auto py-5 pl-3.5 min-[820px]:flex min-[820px]:border-r min-[820px]:border-gray-200 min-[820px]:pr-6">
           <lfx-meeting-composer-rail />
 
           @if (!isEditMode()) {
@@ -160,7 +148,7 @@
             data-testid="meeting-composer-compact-progress">
             <div class="flex items-center gap-2">
               @if (!isEditMode()) {
-                <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections.length }}</span>
+                <span class="text-xs font-medium text-gray-500">Step {{ activeIndex() + 1 }} of {{ sections().length }}</span>
               }
               <span class="truncate text-sm font-semibold text-gray-900">{{ activeSectionLabel() }}</span>
 
@@ -177,20 +165,57 @@
 
           @switch (composer.activeSection()) {
             @case ('details-access') {
-              <lfx-composer-details-access [form]="formService.form()" />
+              <lfx-composer-details-access
+                [form]="formService.form()"
+                [showTypeSelect]="!isOccurrenceEdit()"
+                [showOrganizer]="!isOccurrenceEdit()"
+                [showAccess]="!isOccurrenceEdit()" />
             }
             @case ('date-schedule') {
-              <lfx-composer-date-schedule [form]="formService.form()" />
+              <lfx-composer-date-schedule [form]="formService.form()" [showEarlyJoin]="!isOccurrenceEdit()" [showSeriesSchedule]="!isOccurrenceEdit()" />
             }
             @case ('platform-features') {
               <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="onGoToTitleSection()" />
             }
             @case ('guests') {
-              <lfx-composer-guests [form]="formService.form()" />
+              <!-- Grows to fill the column so the invited card can take the remaining height -->
+              <lfx-composer-guests class="flex flex-1 flex-col" [form]="formService.form()" />
             }
             @case ('agenda-resources') {
-              <lfx-composer-agenda-resources [form]="formService.form()" />
+              <lfx-composer-agenda-resources [form]="formService.form()" [showResources]="!isOccurrenceEdit()" />
             }
+          }
+
+          <!-- Names what the occurrence edit leaves out of this section, so a missing field reads as a series
+               setting rather than as something the composer lost. -->
+          @if (isOccurrenceEdit()) {
+            <p class="flex items-start gap-2 border-t border-gray-200 pt-4 text-xs text-gray-500" data-testid="meeting-composer-series-fields-note">
+              <i class="fa-light fa-circle-info mt-0.5 shrink-0" aria-hidden="true"></i>
+              <span>
+                @switch (composer.activeSection()) {
+                  @case ('details-access') {
+                    Meeting type, organizer, visibility and join restriction apply to every occurrence, so they're not shown here.
+                  }
+                  @case ('date-schedule') {
+                    Timezone, early join and how often the meeting repeats apply to every occurrence, so they're not shown here.
+                  }
+                  @case ('guests') {
+                    Guests invited to every occurrence, groups, and who can see the guest list belong to the series, so they can't be changed here.
+                  }
+                  @case ('agenda-resources') {
+                    Documents and links are shared by every occurrence, so they're not shown here.
+                  }
+                }
+                To change them,
+                <button
+                  type="button"
+                  class="font-medium text-blue-700 hover:underline"
+                  data-testid="meeting-composer-series-fields-edit-series"
+                  (click)="onEditSeriesInstead()">
+                  edit the entire series</button
+                >.
+              </span>
+            </p>
           }
         </div>
       }

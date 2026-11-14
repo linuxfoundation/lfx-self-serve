@@ -2,10 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentor-page">
-  <div class="flex flex-col gap-6 mt-3">
-    <header>
-      <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentor-page-title">{{ title() }}</h1>
-    </header>
+  <div class="flex flex-col gap-6">
+    <lfx-page-header [title]="title()" titleTestId="mentorship-mentor-page-title" />
 
     <div
       role="tablist"

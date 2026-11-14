@@ -1,42 +1,49 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
+  AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   FORMATION_ENABLED_FLAG,
   GATEWAZE_EMBED_ENABLED_FLAG,
   GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
   GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
-  MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
-  ORG_LENS_CLA_M3_ENABLED_FLAG,
-  ORG_LENS_ROI_ENABLED_FLAG,
+  CF_ORG_DONATIONS_FLAG,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
+  MENTORSHIP_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarNavService } from './sidebar-nav.service';
 
 describe('SidebarNavService', () => {
   const activeLens = signal<Lens>('foundation');
+  // The mobile drawer's previewed lens (#4208); the menu follows it while set, otherwise the active lens.
+  const menuLensPreview = signal<Lens | null>(null);
   const mktgOsEnabled = signal(false);
-  const orgEasyclaEnabled = signal(false);
-  const orgRoiEnabled = signal(false);
-  const orgSegment = signal<string | null>(null);
+  const cfOrgDonationsEnabled = signal(false);
   const mentorshipEnabled = signal(false);
+  const lfStaff = signal(false);
+  const impersonating = signal(false);
+  const orgSegment = signal<string | null>(null);
+  const akritesEnabled = signal(false);
   const formationEnabled = signal(false);
   const activeProjectStage = signal<string | null>(null);
   const activeProjectStageResolved = signal(true);
@@ -46,9 +53,21 @@ describe('SidebarNavService', () => {
   const isAuditor = signal(false);
   const gatewazeEmbedEnabled = signal(false);
   const canWrite = signal(false);
+  const selectedOrgUid = signal<string | null>(null);
+  const orgWriterSet = signal(new Set<string>());
+  const claManagerOrgSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
+  const personaLoaded = signal(true);
+  const personaLookupFailed = signal(false);
+  const marketingOpsEnabled = signal(false);
+  const authenticated = signal(false);
+  const writerGrantsResolved = signal(true);
+  const grantsByScope = signal<ReadonlyMap<string | null, { isCampaignManager: boolean; isMarketingAuditor: boolean }>>(new Map());
+  const writerLookupFailed = signal(false);
+  let retrySummary = vi.fn((): Observable<void> => of(undefined));
+  let refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -62,13 +81,16 @@ describe('SidebarNavService', () => {
 
   beforeEach(() => {
     activeLens.set('foundation');
+    menuLensPreview.set(null);
     selectedProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
-    orgEasyclaEnabled.set(false);
-    orgRoiEnabled.set(false);
-    orgSegment.set(null);
+    cfOrgDonationsEnabled.set(false);
     mentorshipEnabled.set(false);
+    lfStaff.set(false);
+    impersonating.set(false);
+    orgSegment.set(null);
+    akritesEnabled.set(false);
     formationEnabled.set(false);
     activeProjectStage.set(null);
     activeProjectStageResolved.set(true);
@@ -78,6 +100,18 @@ describe('SidebarNavService', () => {
     isAuditor.set(false);
     gatewazeEmbedEnabled.set(false);
     canWrite.set(false);
+    selectedOrgUid.set(null);
+    orgWriterSet.set(new Set());
+    claManagerOrgSet.set(new Set());
+    personaLoaded.set(true);
+    personaLookupFailed.set(false);
+    marketingOpsEnabled.set(false);
+    authenticated.set(false);
+    writerGrantsResolved.set(true);
+    grantsByScope.set(new Map());
+    writerLookupFailed.set(false);
+    retrySummary = vi.fn((): Observable<void> => of(undefined));
+    refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
     TestBed.configureTestingModule({
       providers: [
@@ -87,30 +121,34 @@ describe('SidebarNavService', () => {
           useValue: {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
-              if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
-              if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
+              if (key === CF_ORG_DONATIONS_FLAG) return cfOrgDonationsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
+              if (key === AKRITES_ENABLED_FLAG) return akritesEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
+              if (key === MARKETING_OPS_FGA_ENABLED_FLAG) return marketingOpsEnabled;
               return signal(false);
             }),
           },
         },
-        { provide: LensService, useValue: { activeLens } },
+        { provide: LensService, useValue: { activeLens, menuLens: computed(() => menuLensPreview() ?? activeLens()) } },
         {
           provide: PersonaService,
           useValue: {
             hasBoardRole: signal(false),
             isRootWriter: hasFullFoundationAccess,
-            isLFStaff: signal(false),
+            isLFStaff: lfStaff,
             canViewExecutiveDashboards: hasFullFoundationAccess,
             currentPersona,
-            grantsByScope: signal(new Map()),
+            grantsByScope,
             marketingGrantSlug: signal(null),
             isMarketingAuditor: signal(false),
             isCampaignManager: signal(false),
             isAuditor,
-            refreshEnrichedPersonas: vi.fn(() => of({})),
+            personaLoaded,
+            personaLookupFailed,
+            // Late-bound so a case can swap in a probe that stays in flight.
+            refreshEnrichedPersonas: (force?: boolean, slug?: string) => refreshEnrichedPersonas(force, slug),
           },
         },
         {
@@ -118,14 +156,22 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
-            canWrite,
-            activeProjectStage,
-            activeProjectStageResolved,
+            menuCanWrite: canWrite,
+            menuProjectStage: activeProjectStage,
+            menuProjectStageResolved: activeProjectStageResolved,
             formationOverviewAllowedSlug,
           },
         },
-        { provide: UserService, useValue: { authenticated: signal(false) } },
-        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false) } },
+        { provide: UserService, useValue: { authenticated, impersonating } },
+        {
+          provide: WriterGrantsService,
+          useValue: {
+            hasWriterFoundation: signal(false),
+            summaryResolved: writerGrantsResolved,
+            lookupFailed: writerLookupFailed,
+            retrySummary: (...args: []) => retrySummary(...args),
+          },
+        },
         {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
@@ -134,8 +180,40 @@ describe('SidebarNavService', () => {
         // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
         // the cases that assert the org-scoped form.
         { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
+        {
+          provide: AccountContextService,
+          useValue: {
+            selectedAccount: () => ({ accountId: '', accountName: 'Acme', uid: selectedOrgUid() }),
+            isRollUp: () => selectedOrgUid()?.startsWith('family-') ?? false,
+          },
+        },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(false),
+            writerSet: orgWriterSet,
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet: signal(new Set<string>()),
+            claManagerOrgSet,
+            claManagerLookupFailed: signal(false),
+          },
+        },
       ],
     });
+  });
+
+  it('builds the menu for the lens the mobile drawer previews, and returns to the active lens once the preview ends (#4208)', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('me');
+    const meItems = service.sidebarItems();
+
+    menuLensPreview.set('project');
+    expect(service.sidebarItems().some((item) => item.routerLink?.startsWith('/project/'))).toBe(true);
+    expect(service.sidebarItems()).not.toEqual(meItems);
+
+    menuLensPreview.set(null);
+    expect(service.sidebarItems()).toEqual(meItems);
   });
 
   it('hides Marketing OS on foundation lens when the flag is off', () => {
@@ -185,7 +263,7 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('Governance');
   });
 
-  it('keeps the project-lens Marketing OS entry between Documents and Governance', () => {
+  it('keeps the project-lens Marketing OS entry after Participating companies and before Governance', () => {
     activeLens.set('project');
     mktgOsEnabled.set(true);
 
@@ -200,8 +278,86 @@ describe('SidebarNavService', () => {
       })
     );
     expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
-    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Documents') + 1);
+    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating companies') + 1);
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
+  });
+
+  it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers', () => {
+    const service = TestBed.inject(SidebarNavService);
+
+    for (const lens of ['project', 'foundation'] as const) {
+      activeLens.set(lens);
+
+      canWrite.set(false);
+      expect(findByLink(service.sidebarItems(), `/${lens}/initiatives`)).toBeUndefined();
+
+      canWrite.set(true);
+      const items = service.sidebarItems();
+      const itemLabels = labels(items);
+      expect(findByLink(items, `/${lens}/initiatives`)).toEqual(
+        expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: `sidebar-${lens}-initiatives` })
+      );
+      // On the project lens Participating companies sits between Documents and Initiatives.
+      const anchor = lens === 'project' ? 'Participating companies' : 'Documents';
+      expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf(anchor) + 1);
+    }
+  });
+
+  it('shows Mentorship Programs right after Crowdfunding Initiatives on the project and foundation lenses only for writers', () => {
+    const service = TestBed.inject(SidebarNavService);
+    mentorshipEnabled.set(true);
+
+    for (const lens of ['project', 'foundation'] as const) {
+      activeLens.set(lens);
+
+      canWrite.set(false);
+      expect(findByLink(service.sidebarItems(), `/${lens}/mentorship`)).toBeUndefined();
+
+      canWrite.set(true);
+      const items = service.sidebarItems();
+      const itemLabels = labels(items);
+      expect(findByLink(items, `/${lens}/mentorship`)).toEqual(
+        expect.objectContaining({ label: 'Mentorship Programs', testId: `sidebar-${lens}-mentorship-programs` })
+      );
+      expect(itemLabels.indexOf('Mentorship Programs')).toBe(itemLabels.indexOf('Crowdfunding Initiatives') + 1);
+    }
+  });
+
+  it('hides Mentorship Programs on both lenses, writers included, while mentorship-enabled is off', () => {
+    const service = TestBed.inject(SidebarNavService);
+    canWrite.set(true);
+
+    for (const lens of ['project', 'foundation'] as const) {
+      activeLens.set(lens);
+      const items = service.sidebarItems();
+      expect(findByLink(items, `/${lens}/mentorship`)).toBeUndefined();
+      // Crowdfunding Initiatives keeps its place under its own canWrite gate.
+      expect(findByLink(items, `/${lens}/initiatives`)).toBeDefined();
+    }
+  });
+
+  it('shows Participating companies right after Documents on the project lens for executive directors and LF staff (non-writers too), and not on the foundation lens', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('project');
+    canWrite.set(false);
+
+    const items = service.sidebarItems();
+    const itemLabels = labels(items);
+    expect(findByLink(items, '/project/participating-orgs')).toEqual(
+      expect.objectContaining({ label: 'Participating companies', testId: 'sidebar-project-participating-orgs' })
+    );
+    expect(itemLabels.indexOf('Participating companies')).toBe(itemLabels.indexOf('Documents') + 1);
+
+    activeLens.set('foundation');
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+  });
+
+  it('hides Participating companies on the project lens from users who are not executive directors or LF staff', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('project');
+    hasFullFoundationAccess.set(false);
+
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
   it('keeps the full project-lens nav without Formation when the flag is off, even for a Formation-stage project', () => {
@@ -316,7 +472,7 @@ describe('SidebarNavService', () => {
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toBeUndefined();
+    expect(findByLink(sectionItems(items, 'Engagement'), '/formations')).toBeUndefined();
     expect(findByLink(items, '/formations')).toBeUndefined();
   });
 
@@ -325,102 +481,272 @@ describe('SidebarNavService', () => {
     formationEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagementLinks = sectionItems(items, 'My Engagement').map((item) => item.routerLink);
+    const engagementLinks = sectionItems(items, 'Engagement').map((item) => item.routerLink);
 
-    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toEqual(
-      expect.objectContaining({ label: 'My Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
+    expect(findByLink(sectionItems(items, 'Engagement'), '/formations')).toEqual(
+      expect.objectContaining({ label: 'Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
     );
     expect(engagementLinks[engagementLinks.length - 1]).toBe('/formations');
-    expect(engagementLinks.indexOf('/formations')).toBe(engagementLinks.indexOf('/documents') + 1);
-    // The section gates keep filtering independently of the new item gate.
+    expect(engagementLinks).not.toContain('/documents');
+    expect(engagementLinks.indexOf('/formations')).toBe(engagementLinks.indexOf('/surveys') + 1);
+    // The section gate keeps filtering independently of the new item gate.
     expect(labels(items)).not.toContain('Security');
-    expect(labels(items)).not.toContain('Mentorship');
   });
 
-  it('hides the Mentorship section from the Me lens while its flag is off', () => {
+  it('shows the Mentorship section on the Me lens with no flag', () => {
     activeLens.set('me');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(labels(items)).not.toContain('Mentorship');
-    expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toBeUndefined();
-  });
-
-  it('shows the Mentorship section on the Me lens when its flag is on', () => {
-    activeLens.set('me');
-    mentorshipEnabled.set(true);
-
-    const items = TestBed.inject(SidebarNavService).sidebarItems();
-
-    // Akrites stays off here: the two dark-launch gates on this lens must filter independently.
+    // Akrites stays off here: its section gate must not take Mentorship with it.
     expect(labels(items)).not.toContain('Security');
     expect(findByLink(sectionItems(items, 'Mentorship'), '/mentorship/admin')).toEqual(
       expect.objectContaining({ label: 'Admin', routerLink: '/mentorship/admin' })
     );
   });
 
-  it('hides EasyCLA from the org lens while the M3 flag is off', () => {
-    activeLens.set('org');
+  it('puts the Security section last on the Me lens when its flag is on', () => {
+    activeLens.set('me');
+    akritesEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(findByLink(items, '/org/easycla')).toBeUndefined();
-    expect(labels(sectionItems(items, 'Organization Engagement'))).not.toContain('EasyCLA');
+    expect(items[items.length - 1]).toEqual(expect.objectContaining({ label: 'Security', isSection: true }));
+    expect(findByLink(sectionItems(items, 'Security'), '/akrites')).toEqual(expect.objectContaining({ label: 'Akrites Program' }));
   });
 
-  it('puts EasyCLA between Code Contributions and Events inside Organization Engagement', () => {
+  /**
+   * Copilot on PR #4415. `orgLensPath` prefixes every item with the selected segment, so in
+   * roll-up mode Profile linked to `/org/family-{id}/profile`, where the page asks for
+   * `/api/orgs/uid/family-{id}`, the SFID validator refuses the sentinel and the caller lands on an error
+   * page. Profile is single-org by definition (#4125), so it is dropped rather than re-pointed.
+   */
+  it('drops Organization Profile in roll-up mode, and keeps every other Org Lens item', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
+    selectedOrgUid.set('family-0014100000RootAAAA');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const engagement = sectionItems(items, 'Organization Engagement');
-    const engagementLabels = labels(engagement);
 
-    // The M3 prototype nests it in the section — a top-level entry beside Memberships/Projects is wrong.
-    expect(findByLink(items, '/org/easycla')).toBeUndefined();
-    expect(findByLink(engagement, '/org/easycla')).toEqual(
-      expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/easycla', testId: 'sidebar-org-easycla' })
-    );
-    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
-    expect(engagementLabels.indexOf('Events')).toBe(engagementLabels.indexOf('EasyCLA') + 1);
+    expect(labels(items)).not.toContain('Organization Profile');
+    expect(findByLink(items, '/org/family-0014100000RootAAAA/profile')).toBeUndefined();
+    expect(labels(items)).toContain('Dashboard');
+    expect(labels(items)).toContain('Memberships');
+    expect(labels(sectionItems(items, 'Organization Engagement'))).toContain('People');
   });
 
-  it('keeps ROI after Projects while EasyCLA stays in the section when both flags are on', () => {
+  // EasyCLA is single-organization for the same reason as Profile: a corporate CLA belongs to one
+  // company, so `/org/family-{id}/easycla` could only error (#4415, Copilot).
+  it('drops EasyCLA in roll-up mode', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
-    orgRoiEnabled.set(true);
+    selectedOrgUid.set('family-0014100000RootAAAA');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('EasyCLA');
+    expect(findByLink(items, '/org/family-0014100000RootAAAA/easycla')).toBeUndefined();
+  });
+
+  // Crowdfunding Donations is single-organization too: its endpoint takes one `orgUid` (#4415, Copilot).
+  it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
+    activeLens.set('org');
+    cfOrgDonationsEnabled.set(true);
+    selectedOrgUid.set('family-0014100000RootAAAA');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('Crowdfunding Donations');
+  });
+
+  it('keeps Organization Profile for a concrete organization', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Organization Profile');
+  });
+
+  it('places EasyCLA as a top-level item directly before Organization Profile, under the org-admin divider', () => {
+    activeLens.set('org');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const itemLabels = labels(items);
-    const engagementLabels = labels(sectionItems(items, 'Organization Engagement'));
+    const easycla = findByLink(items, '/org/easycla');
 
-    // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
-    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+    expect(easycla).toEqual(
+      expect.objectContaining({ label: 'EasyCLA', icon: 'fa-light fa-file-signature', testId: 'sidebar-org-easycla', dividerBefore: true })
+    );
+    expect(easycla?.isSection).toBeFalsy();
+    expect(itemLabels.indexOf('EasyCLA')).toBe(itemLabels.indexOf('Organization Engagement') + 1);
+    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(items.find((item) => item.label === 'Organization Profile')?.dividerBefore).toBe(false);
+    expect(labels(sectionItems(items, 'Organization Engagement'))).toEqual([
+      'People',
+      'Code Contributions',
+      'Events',
+      'Training & Certification',
+      'Meetings',
+      COMMITTEE_LABEL.plural,
+    ]);
   });
 
-  // The flag-gated items are placed by looking their neighbours up by address; both sides must
-  // agree on the org-scoped form or ROI/EasyCLA silently fall to the end of their section.
-  it('addresses every Org Lens item to the selected organization and still places ROI and EasyCLA by their neighbours', () => {
+  it('opts only EasyCLA into subpath highlighting across the Org Lens tree', () => {
     activeLens.set('org');
-    orgEasyclaEnabled.set(true);
-    orgRoiEnabled.set(true);
+
+    const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
+    const optedIn = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeOnSubpaths);
+
+    expect(labels(optedIn)).toEqual(['EasyCLA']);
+  });
+
+  it('aliases only EasyCLA, to the leftover /org/easycla mount, so an addressed link still highlights there', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+
+    const flatten = (items: SidebarMenuItem[]): SidebarMenuItem[] => items.flatMap((item) => [item, ...flatten(item.items ?? [])]);
+    const aliased = flatten(TestBed.inject(SidebarNavService).sidebarItems()).filter((item) => item.activeAliases);
+
+    expect(aliased).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: '/org/acme-inc/easycla', activeAliases: ['/org/easycla'] })]);
+  });
+
+  it('keeps EasyCLA directly above Organization Profile and closes the menu with the LF Staff Only section', () => {
+    activeLens.set('org');
+    lfStaff.set(true);
+
+    const itemLabels = labels(TestBed.inject(SidebarNavService).sidebarItems());
+
+    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+    expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
+  });
+
+  describe('a CLA-only organization (M3)', () => {
+    const CLA_ONLY_UID = '0014100000ClaOnlyA';
+
+    beforeEach(() => {
+      activeLens.set('org');
+      orgSegment.set(CLA_ONLY_UID);
+      selectedOrgUid.set(CLA_ONLY_UID);
+      claManagerOrgSet.set(new Set([CLA_ONLY_UID]));
+    });
+
+    it('shows the EasyCLA item and nothing else', () => {
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+      expect(items).toEqual([expect.objectContaining({ label: 'EasyCLA', routerLink: `/org/${CLA_ONLY_UID}/easycla` })]);
+      expect(items[0].dividerBefore).toBeFalsy();
+    });
+
+    it('keeps the full org sidebar for any other selected organization', () => {
+      selectedOrgUid.set('0014100000OtherOrg');
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Dashboard');
+    });
+  });
+
+  it('addresses every Org Lens item to the selected organization, with ROI Metrics under LF Staff Only', () => {
+    activeLens.set('org');
+    lfStaff.set(true);
     orgSegment.set('acme-inc');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
     const engagement = sectionItems(items, 'Organization Engagement');
+    const lfStaffOnly = sectionItems(items, 'LF Staff Only');
     const itemLabels = labels(items);
-    const engagementLabels = labels(engagement);
 
     expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
-    expect(findByLink(items, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
+    expect(findByLink(lfStaffOnly, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
     expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
     // Phase 2 (lfx-self-serve#2743): EasyCLA is addressed like every other Org Lens item.
-    expect(findByLink(engagement, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
-    const orgLinks = [...items, ...engagement].map((item) => item.routerLink).filter((link): link is string => !!link);
+    expect(findByLink(items, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
+    const orgLinks = [...items, ...engagement, ...lfStaffOnly].map((item) => item.routerLink).filter((link): link is string => !!link);
     expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
-    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+    expect(itemLabels[itemLabels.length - 1]).toBe('LF Staff Only');
+    expect(itemLabels.indexOf('Organization Profile')).toBe(itemLabels.indexOf('EasyCLA') + 1);
+  });
+
+  // lfx-self-serve-ops#1219: only the pages with an organization scope picker carry it; the Dashboard always shows the default.
+  it('carries the organization scope and the team members pick to Projects, People and Code Contributions, and not to the Dashboard', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const engagement = sectionItems(items, 'Organization Engagement');
+
+    expect(findByLink(items, '/org/acme-inc/overview')?.carryQueryParams).toBeUndefined();
+    expect(findByLink(items, '/org/acme-inc/projects')?.carryQueryParams).toEqual(['orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/org/acme-inc/people')?.carryQueryParams).toEqual(['range', 'participation', 'orgScope', 'teamMembers']);
+    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).toEqual(['range', 'orgScope', 'teamMembers']);
+  });
+
+  // lfx-self-serve#4598: Counted by and Count carry between People and Events only; each page opts in on both ends.
+  it('carries the range, Counted by and Count between People and Events, and not to Code Contributions', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+
+    const engagement = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Organization Engagement');
+
+    expect(findByLink(engagement, '/org/acme-inc/events')?.carryQueryParams).toEqual(['range', 'participation']);
+    expect(findByLink(engagement, '/org/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
+  });
+
+  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected organization', () => {
+    const orgUid = '001000000000000AAA';
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set(orgUid);
+    const service = TestBed.inject(SidebarNavService);
+
+    orgWriterSet.set(new Set(['001000000000000BBB']));
+    expect(findByLink(service.sidebarItems(), '/org/acme-inc/initiatives')).toBeUndefined();
+
+    orgWriterSet.set(new Set([orgUid]));
+    const items = service.sidebarItems();
+    const itemLabels = labels(items);
+    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(
+      expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
+    );
+    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Projects') + 1);
+  });
+
+  describe('the LF Staff Only section', () => {
+    const ROI_LINK = '/org/acme-inc/roi';
+
+    beforeEach(() => {
+      activeLens.set('org');
+      orgSegment.set('acme-inc');
+    });
+
+    it('is shown to LF staff, closing the menu with ROI Metrics inside', () => {
+      lfStaff.set(true);
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+      expect(items[items.length - 1]).toEqual(expect.objectContaining({ label: 'LF Staff Only', isSection: true }));
+      expect(findByLink(sectionItems(items, 'LF Staff Only'), ROI_LINK)).toEqual(expect.objectContaining({ label: 'ROI Metrics' }));
+    });
+
+    it('is hidden from callers who are not LF staff', () => {
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
+    });
+
+    it('is hidden from a session acting as another user, even when that user is LF staff', () => {
+      lfStaff.set(true);
+      impersonating.set(true);
+
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
+    });
+  });
+
+  it('shows Donations right after Projects on the org lens with the flag on, without a writer grant (#415)', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set('001000000000000AAA');
+    const service = TestBed.inject(SidebarNavService);
+
+    expect(findByLink(service.sidebarItems(), '/org/acme-inc/donations')).toBeUndefined();
+
+    cfOrgDonationsEnabled.set(true);
+    const items = service.sidebarItems();
+    expect(findByLink(items, '/org/acme-inc/donations')).toEqual(expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' }));
+    expect(findByLink(items, '/org/acme-inc/initiatives')).toBeUndefined();
+    expect(labels(items).indexOf('Crowdfunding Donations')).toBe(labels(items).indexOf('Projects') + 1);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
@@ -535,7 +861,7 @@ describe('SidebarNavService', () => {
     });
   });
 
-  describe('project-lens Communications (Gatewaze embed pilot)', () => {
+  describe('project-lens Newsletters (Gatewaze embed pilot)', () => {
     beforeEach(() => {
       activeLens.set('project');
       // The embed is gated on tenant as well as flag — Gatewaze serves one tenant's content, so
@@ -543,17 +869,26 @@ describe('SidebarNavService', () => {
       selectedProject.set({ slug: 'agentic-ai-foundation' } as never);
     });
 
+    it('lists Newsletters directly after Mailing Lists, with no Communications section', () => {
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
+      const itemLabels = labels(items);
+
+      expect(itemLabels).not.toContain('Communications');
+      expect(itemLabels.indexOf('Newsletters')).toBe(itemLabels.indexOf(MAILING_LIST_LABEL.plural) + 1);
+      expect(findByLink(items, '/project/newsletters')).toEqual(expect.objectContaining({ testId: 'sidebar-project-newsletters' }));
+    });
+
     it("points Newsletters at LFX's own page when the embed flag is off", () => {
       // The embed's routes only MATCH while the flag is on — linking to them unconditionally sent
       // every ED and writer to the dashboard and took LFX's newsletters page out of the sidebar.
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(findByLink(items, '/project/newsletters')).toBeDefined();
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
     });
 
     it('offers no Broadcasts entry when the embed flag is off, since LFX has no such page', () => {
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(labels(items)).not.toContain('Broadcasts');
     });
@@ -564,7 +899,7 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
       selectedProject.set({ slug: 'tlf' } as never);
 
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(findByLink(items, '/project/newsletters')).toBeDefined();
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
@@ -578,7 +913,7 @@ describe('SidebarNavService', () => {
       selectedFoundation.set({ slug: 'agentic-ai-foundation' } as never);
       selectedProject.set({ slug: 'tlf' } as never);
 
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(findByLink(items, '/project/newsletters')).toBeDefined();
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
@@ -589,7 +924,7 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
       selectedProject.set(null as never);
 
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeUndefined();
     });
@@ -597,46 +932,46 @@ describe('SidebarNavService', () => {
     it('points Newsletters at the embed and adds Broadcasts when the flag is on', () => {
       gatewazeEmbedEnabled.set(true);
 
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
       // Broadcasts is out of pilot scope (#2260/#2261), so the embed being on must not add it.
       expect(items.some((i) => i.label === 'Broadcasts')).toBe(false);
     });
 
-    it('hides the section from a non-ED without write access, even with the flag on', () => {
+    it('hides Newsletters from a non-ED without write access, even with the flag on', () => {
       // The flag decides where the links POINT, never who may see them — both mounts are guarded by
       // newsletterAccessGuard, so a widened sidebar would only ever offer a dead end.
       currentPersona.set('contributor');
       gatewazeEmbedEnabled.set(true);
 
-      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Newsletters');
     });
 
     it('keeps the persona gate when the flag is off', () => {
       currentPersona.set('contributor');
 
-      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Newsletters');
     });
 
-    it('shows the section to a non-ED who has write access — the other half of the gate', () => {
+    it('shows Newsletters to a non-ED who has write access — the other half of the gate', () => {
       // canSeeNewsletters() is ED *or* canWrite(); every other positive case here goes through the
       // ED branch, so without this the writer half is never exercised.
       currentPersona.set('contributor');
       canWrite.set(true);
       gatewazeEmbedEnabled.set(true);
 
-      const items = sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Communications');
+      const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Newsletters');
       expect(findByLink(items, GW_EMBED_PROJECT_NEWSLETTERS_LINK)).toBeDefined();
     });
 
-    it('shows the section to an ED with the flag on', () => {
+    it('shows Newsletters to an ED with the flag on', () => {
       currentPersona.set('executive-director');
       gatewazeEmbedEnabled.set(true);
 
-      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Communications');
+      expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Newsletters');
     });
 
     it('leaves the Foundation Lens gate untouched', () => {
@@ -645,6 +980,378 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+  });
+
+  describe('sidebarItemsPending', () => {
+    it('is pending until persona detection has loaded', () => {
+      personaLoaded.set(false);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.sidebarItemsPending()).toBe(true);
+      personaLoaded.set(true);
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('waits for the writer grants on the foundation lens only', () => {
+      writerGrantsResolved.set(false);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.sidebarItemsPending()).toBe(true);
+      activeLens.set('me');
+      expect(service.sidebarItemsPending()).toBe(false);
+      activeLens.set('foundation');
+      writerGrantsResolved.set(true);
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('reports a failed writer lookup on the foundation lens, and retry reruns it before settling', () => {
+      writerLookupFailed.set(true);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.menuLookupFailed()).toBe(true);
+      activeLens.set('me');
+      expect(service.menuLookupFailed()).toBe(false);
+      activeLens.set('foundation');
+
+      const summary = new Subject<void>();
+      retrySummary = vi.fn(() => summary);
+      service.retryMenuLookups();
+      expect(retrySummary).toHaveBeenCalledTimes(1);
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      writerLookupFailed.set(false);
+      summary.next();
+      summary.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('waits for the foundation-lens auditor probe until it settles', () => {
+      const probe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => probe);
+      authenticated.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      probe.next({});
+      probe.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('waits for the scoped marketing-grant probe of the selected foundation', () => {
+      const probe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => probe);
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // The same stubbed probe also answers the foundation-lens auditor probe, which waits for completion.
+      probe.next({});
+      probe.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('reports a failed lookup, and holds the menu pending while a retry refresh runs', () => {
+      personaLookupFailed.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      expect(service.menuLookupFailed()).toBe(true);
+
+      const retry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => retry);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // A second click while it runs doesn't stack another refresh.
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+
+      personaLookupFailed.set(false);
+      retry.next({});
+      retry.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('flags a failed scoped marketing probe on its own, and a scoped retry re-runs only the scoped request', () => {
+      const firstScoped = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => (slug ? firstScoped : of({})));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      // The scoped probe fails while the root lookup is fine.
+      firstScoped.next(null);
+      firstScoped.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // The scoped answer also refreshes personas and ROOT grants, so no parallel ROOT-only request runs:
+      // its ROOT-only marketing grants would otherwise land over the scoped ones.
+      const scoped = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => scoped);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+      expect(refreshEnrichedPersonas).toHaveBeenCalledWith(false, 'cncf');
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      scoped.next({ error: null });
+      scoped.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('keeps a late retry result for a previous scope from overwriting the selected scope', () => {
+      const failingCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? failingCncf : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      failingCncf.next(null);
+      failingCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf is still running when the user switches to aaif, whose probe succeeds.
+      const retryCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? retryCncf : of({ error: null })
+      );
+      service.retryMenuLookups();
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(false);
+
+      // cncf's late failure lands — aaif stays clean.
+      retryCncf.next(null);
+      retryCncf.complete();
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('flags a scoped probe whose answer arrived but whose grant checks could not be verified', () => {
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug ? of({ error: null, marketingGrantCheckFailed: true }) : of({})
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry: the checks answer this time.
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({ error: null, marketingGrantCheckFailed: false }));
+      service.retryMenuLookups();
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it("hides the previous scope's marketing grant while the new scope's probe is in flight", () => {
+      // A campaign_manager-only viewer: no ED persona, no executive dashboards.
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([['cncf', { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      expect(showsCampaigns()).toBe(true);
+
+      // Switch to aaif (no grant) while its probe is still in flight.
+      const aaifProbe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => aaifProbe);
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(false);
+
+      aaifProbe.next({ error: null });
+      aaifProbe.complete();
+      expect(showsCampaigns()).toBe(false);
+    });
+
+    it("keeps showing a ROOT marketing grant while the new scope's probe is in flight", () => {
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([[null, { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      expect(showsCampaigns()).toBe(true);
+
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => new Subject<unknown>());
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(true);
+    });
+
+    it('reports a running retry only for the scope it started on', () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const retry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => retry);
+      service.retryMenuLookups();
+      expect(service.menuRetryPending()).toBe(true);
+
+      selectedFoundation.set({ slug: 'aaif' });
+      expect(service.menuRetryPending()).toBe(false);
+
+      selectedFoundation.set({ slug: 'cncf' });
+      expect(service.menuRetryPending()).toBe(true);
+      retry.next({});
+      retry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
+    it("doesn't hold another scope's menu pending or block its retry while an older scope's retry runs", () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const cncfRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => cncfRetry);
+      service.retryMenuLookups();
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // Switch to aaif: its menu isn't held by cncf's retry, and it can retry on its own.
+      selectedFoundation.set({ slug: 'aaif' });
+      expect(service.sidebarItemsPending()).toBe(false);
+      const aaifRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => aaifRetry);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalled();
+      expect(service.menuRetryPending()).toBe(true);
+
+      // cncf's retry settles late: it must not end aaif's.
+      cncfRetry.next({});
+      cncfRetry.complete();
+      expect(service.menuRetryPending()).toBe(true);
+      aaifRetry.next({});
+      aaifRetry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
+    it('keeps a grant already confirmed for the scope on screen while its probe re-runs (A → B → A)', () => {
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([['cncf', { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+
+      // Back to cncf with its probe in flight: the cached cncf grant still counts.
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => new Subject<unknown>());
+      selectedFoundation.set({ slug: 'cncf' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(true);
+    });
+
+    it('keeps a retry pending for its own scope after another scope starts and finishes one', () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const cncfRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => cncfRetry);
+      service.retryMenuLookups();
+
+      selectedFoundation.set({ slug: 'aaif' });
+      refreshEnrichedPersonas = vi.fn(() => of({}));
+      service.retryMenuLookups();
+
+      // Back on cncf: its run is still in flight, so it reads pending and a second click doesn't stack.
+      selectedFoundation.set({ slug: 'cncf' });
+      expect(service.menuRetryPending()).toBe(true);
+      refreshEnrichedPersonas = vi.fn(() => of({}));
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).not.toHaveBeenCalled();
+      cncfRetry.next({});
+      cncfRetry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
+    it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? of(null) : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf: its scoped probe succeeds at once, the root refresh stays pending.
+      const root = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => {
+        if (!slug) return root;
+        return of({ error: null });
+      });
+      service.retryMenuLookups();
+
+      // cncf → aaif → cncf: the newer automatic cncf probe fails.
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? of(null) : of({ error: null })
+      );
+      selectedFoundation.set({ slug: 'cncf' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // The older retry settles last — its success must not clear the newer failure.
+      root.next({});
+      root.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+    });
+
+    it("keeps a late successful retry for a previous scope from clearing the selected scope's failure", () => {
+      const failingCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? failingCncf : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      failingCncf.next(null);
+      failingCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf is still running when the user switches to aaif, whose own probe fails.
+      const retryCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => {
+        if (slug === 'cncf') return retryCncf;
+        return slug === 'aaif' ? of(null) : of({ error: null });
+      });
+      service.retryMenuLookups();
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // cncf's late success lands — aaif keeps its retryable error.
+      retryCncf.next({ error: null });
+      retryCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
     });
   });
 });

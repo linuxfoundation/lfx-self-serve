@@ -12,6 +12,7 @@ import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
   OrgCanonicalRecord,
+  OrgRollUpSetResponse,
   OrgUpdateRequest,
   RoleGrantsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -21,6 +22,8 @@ import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
+import { OrgAffiliationService } from '../services/org-affiliation.service';
+import { OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
@@ -32,12 +35,16 @@ export class OrgIdentityController {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly orgLensAddressesService: OrgLensAddressesService;
   private readonly orgSlugResolver: OrgSlugResolverService;
+  private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
+  private readonly affiliation: OrgAffiliationService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.orgLensAddressesService = new OrgLensAddressesService();
-    this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy);
+    this.claOnlyOrgs = new OrgClaOnlyOrgsService();
+    this.affiliation = new OrgAffiliationService();
+    this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy, this.claOnlyOrgs);
   }
 
   /** `GET /api/orgs/me/role-grants` — caller's writer/auditor uid sets (contracts/bff-org-role-grants.md). */
@@ -56,11 +63,23 @@ export class OrgIdentityController {
 
       // Spec 053: the viewer's explicit Retry asks for a recompute — skip the cache read, still write.
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
+      const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
+      // Both run only for a caller who holds nothing, and neither can throw — a failed lookup reports
+      // itself on the wire so the client can say "unknown" instead of asserting something wrong.
+      const [claManagerOrgs, affiliation] = await Promise.all([
+        this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants),
+        this.affiliation.getRoleGrantAffiliation(req, grants),
+      ]);
+      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
         auditor_count: result.auditors.length,
+        cla_manager_org_count: result.claManagerOrgs?.length ?? 0,
+        cla_manager_lookup: result.claManagerLookup,
+        affiliation_lookup: result.affiliation?.lookup,
+        affiliation_has_employer: result.affiliation?.hasEmployer,
+        affiliation_employer_is_member: result.affiliation?.employerIsMember,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });
@@ -72,6 +91,35 @@ export class OrgIdentityController {
       if (result.correlationId) {
         res.setHeader(ORG_ROLE_GRANTS_CORRELATION_HEADER, result.correlationId);
       }
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async getRollUpSet(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_roll_up_set');
+
+    try {
+      const username = getEffectiveUsername(req);
+      if (!username) {
+        throw ServiceValidationError.forField('username', 'Authenticated username is required', {
+          operation: 'get_org_roll_up_set',
+          service: 'org_identity_controller',
+          path: req.path,
+        });
+      }
+
+      const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
+      const result: OrgRollUpSetResponse = await this.orgRoleGrantsService.getRollUpSet(req, username, bypassCache);
+
+      logger.success(req, 'get_org_roll_up_set', startTime, {
+        family_count: result.families.length,
+        org_count: result.families.reduce((total, family) => total + family.orgs.length, 0),
+        lookup_outcome: result.lookupOutcome,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
       res.json(result);
     } catch (error) {
       next(error);
@@ -101,7 +149,13 @@ export class OrgIdentityController {
 
       const cache = resolution.cache;
       if (resolution.outcome === 'hit') {
-        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'hit', cache, uid: resolution.org.uid });
+        logger.success(req, 'resolve_org_segment', startTime, {
+          segment_kind: segmentKind,
+          outcome: 'hit',
+          cache,
+          uid: resolution.org.uid,
+          cla_only: resolution.org.claOnly === true,
+        });
         res.json(resolution.org);
         return;
       }

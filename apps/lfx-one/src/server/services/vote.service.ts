@@ -1,30 +1,81 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT, VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
+import {
+  MIN_VIABLE_REQUEST_BUDGET_MS,
+  VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT,
+  VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
+  VOTE_REMINDER_INACTIVE,
+  VOTE_REMINDER_PRECHECK_FAILED,
+  VOTE_REMINDER_SELECTION_STALE,
+  VOTE_SEND_BALLOTS_BATCH_SIZE,
+  VOTE_SUMMARY_NOT_ENDED,
+  VOTE_SUMMARY_PRECHECK_FAILED,
+  VOTE_SUMMARY_SEND_FAILED,
+  VOTE_VOTERS_DRAFT,
+} from '@lfx-one/shared/constants';
+import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
   EnableVoteResponse,
+  ExtendVoteRequest,
   IndexedVote,
   IndexedVoteResponse,
+  MyVoteBallot,
   MyVoteResponse,
+  MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  SendVoteBallotsResponse,
+  SendVoteReminderResponse,
+  SendVoteSummaryResponse,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
   Vote,
+  VoteLinkBallot,
+  VoteLinkBallotRequest,
+  VoteLinkResponseRequest,
+  VoteListResponse,
+  VoteReminderRecipient,
+  VoteResponseDetail,
+  VoteStatusCounts,
+  VoteSummary,
+  VoteParticipationVoter,
+  VoteSummaryEmailContext,
+  VoteSummaryPreviewResponse,
+  VoteSummaryRecipient,
+  VoteSummaryRecipientOutcome,
+  VoteSummaryRecipientResult,
   VoteResultsResponse,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
-import { compareVotesByRecency, computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import {
+  compareVotesByRecency,
+  computeIsFoundation,
+  computeResultPercentage,
+  countVotesByStatus,
+  isVoteClosingSoon,
+  normalizePollStatus,
+  partitionVoteSummaryRecipients,
+  sortCommentResponsesByRecency,
+  sortCommentResponsesByText,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { VOTE_SUMMARY_EMAIL_CONCURRENCY } from '../constants';
 
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { fetchCurrentUserVoteResponses, getParentVoteId } from '../helpers/vote-response.helper';
+import { renderVoteSummaryEmail } from '../helpers/vote-summary-email.helper';
+import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { isImpersonating } from '../utils/auth-helper';
+import { AccessCheckService } from './access-check.service';
+import { EmailService } from './email.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -137,10 +188,13 @@ export class VoteService {
 
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
+  private readonly accessCheckService = new AccessCheckService();
+  private readonly emailService: EmailService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.projectService = new ProjectService();
+    this.emailService = new EmailService();
   }
 
   /**
@@ -151,8 +205,9 @@ export class VoteService {
    * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
    * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
    * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
-   * drained set upstream, so the sorted set is exactly the filtered set and ordering holds across
-   * pagination and filters. Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
+   * drained set upstream, except a recognized `status:<PollStatus>` filter: that predicate runs
+   * locally with the same status normalization as the summary and the status-tab counts (#3687). Ordering holds across pagination and filters.
+   * Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
    * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
    * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
    * surface it on page 1 when more than a page of active votes exists). Accepted: tier-2's
@@ -162,14 +217,17 @@ export class VoteService {
    * `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the
    * caller discards them.
    */
-  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<VoteListResponse> {
     const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
+    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, closing_soon: closingSoon, ...upstreamParams } = query;
+    if (closingSoon !== undefined && closingSoon !== 'true' && closingSoon !== 'false') {
+      throw ServiceValidationError.forField('closing_soon', 'Expected a single true or false value', { operation: 'get_votes', service: 'vote_service' });
+    }
 
     // Unscoped calls drain the entire vote index and re-sort per request (GH-1558 review) — every
     // first-party caller narrows, so log the unscoped path to make a stray caller visible before it
@@ -178,21 +236,9 @@ export class VoteService {
       logger.debug(req, 'get_votes', 'Unscoped vote list request drains the full vote index');
     }
 
-    // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
-    // a later page failing must surface as an error, not a 200 with votes silently missing.
-    const drained = await fetchAllQueryResources<IndexedVote>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...upstreamParams,
-          type: 'vote',
-          page_size: VoteService.voteListUpstreamPageSize,
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
-    );
-
-    const sorted = drained.map((vote) => this.normalizeIndexedVote(req, vote)).sort(compareVotesByRecency);
+    const scoped = await this.fetchScopedIndexedVotes(req, upstreamParams);
+    const nowMs = Date.now();
+    const sorted = (closingSoon === 'true' ? scoped.filter((vote) => isVoteClosingSoon(vote, nowMs)) : scoped).sort(compareVotesByRecency);
 
     const pageSize = this.parseVoteListPageSize(rawPageSize);
     const offset = this.parseVoteListOffset(rawPageToken);
@@ -200,7 +246,10 @@ export class VoteService {
     // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
     // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
     // Runs on the returned slice only, not the full drained set.
-    const votes = includeProject ? await this.enrichWithProjectMetadata(req, page) : page;
+    const enriched = includeProject ? await this.enrichWithProjectMetadata(req, page) : page;
+    // Resolve the row's vote relation, not the active project's writer flag: committee writers
+    // can manage a vote too. The existing batch helper defaults failed checks to false.
+    const votes = await this.accessCheckService.addAccessToResources(req, enriched, 'vote');
 
     const nextOffset = offset + pageSize;
     const pageToken = nextOffset < sorted.length ? `offset:${nextOffset}` : undefined;
@@ -211,7 +260,29 @@ export class VoteService {
       has_more_pages: !!pageToken,
     });
 
-    return { data: votes, page_token: pageToken };
+    return { data: votes, page_token: pageToken, ...(closingSoon === 'true' && { total_records: sorted.length }) };
+  }
+
+  /** Complete management scope; no personal participation lookup or project enrichment. */
+  public async getVotesSummary(req: Request, parent: string, group?: string): Promise<VoteSummary> {
+    const votes = await this.fetchScopedIndexedVotes(req, { parent, ...(group && { filters: [`committee_name:${group}`] }) });
+    const nowMs = Date.now();
+    return {
+      active_votes: votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE).length,
+      closing_soon: votes.filter((vote) => isVoteClosingSoon(vote, nowMs)).length,
+      as_of: new Date(nowMs).toISOString(),
+    };
+  }
+
+  /**
+   * Per-status totals for the votes table's status tabs (#3687) over the complete management scope,
+   * narrowed by the same `name` search and Group filter the list sends. One drain replaces a count
+   * request per tab, and bucketing with `countVotesByStatus` keeps each count equal to its tab's
+   * normalized list total. No project enrichment: only `status` is read.
+   */
+  public async getVoteStatusCounts(req: Request, parent: string, name?: string, group?: string): Promise<VoteStatusCounts> {
+    const votes = await this.fetchScopedIndexedVotes(req, { parent, ...(name && { name }), ...(group && { filters: [`committee_name:${group}`] }) });
+    return countVotesByStatus(votes);
   }
 
   /**
@@ -265,6 +336,16 @@ export class VoteService {
       query_params: Object.keys(query),
     });
 
+    // Status filters accept legacy mixed-case statuses (as the summary and status-tab counts do);
+    // an exact upstream count would miss them.
+    if (this.getRecognizedStatusFilter(query)) {
+      // Count is scope-wide even if a caller supplies list pagination parameters.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { page_size: _pageSize, page_token: _pageToken, ...scope } = query;
+      const votes = await this.fetchScopedIndexedVotes(req, scope);
+      return votes.length;
+    }
+
     const params = {
       ...query,
       type: 'vote',
@@ -279,8 +360,8 @@ export class VoteService {
    * Fetches a single vote by UID. `includeProject` enriches the payload with the vote's project fields
    * (slug/name/is_foundation) so clients can reconcile project context from the vote itself.
    */
-  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
-    const { includeProject = false } = options;
+  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean; includeWriter?: boolean } = {}): Promise<Vote> {
+    const { includeProject = false, includeWriter = false } = options;
     logger.debug(req, 'get_vote_by_id', 'Fetching vote by ID', {
       vote_uid: voteUid,
     });
@@ -305,11 +386,19 @@ export class VoteService {
       }
     }
 
+    // Additive `writer` flag (vote#writer) so the presenter guard and entry points share one source of truth.
+    // Opt-in: server-internal callers (reminders, voters, summary) skip the extra FGA lookup. The lookup is strict: an
+    // access-check outage propagates (the presenter guard shows its error path) instead of reading as `writer: false`,
+    // which would send an authorized chair to Access Denied.
+    const result = includeWriter
+      ? { ...vote, writer: await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'vote', id: vote.uid, access: 'writer' }) }
+      : vote;
+
     logger.debug(req, 'get_vote_by_id', 'Completed vote fetch', {
       vote_uid: voteUid,
     });
 
-    return vote;
+    return result;
   }
 
   /**
@@ -339,6 +428,39 @@ export class VoteService {
     const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'PUT', undefined, voteData);
 
     return vote;
+  }
+
+  /**
+   * Extends a vote's deadline via the dedicated extend_vote upstream endpoint — unlike updateVote,
+   * this is permitted on an active vote (see linuxfoundation/lfx-v2-voting-service's extend_vote design).
+   */
+  public async extendVote(req: Request, voteUid: string, data: ExtendVoteRequest): Promise<Vote> {
+    const sanitizedPayload = logger.sanitize({ data });
+    logger.debug(req, 'extend_vote', 'Extending vote deadline', { vote_uid: voteUid, ...sanitizedPayload });
+
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(
+      req,
+      'LFX_V2_SERVICE',
+      `/votes/${this.encodeVoteUid(voteUid)}/extend`,
+      'POST',
+      undefined,
+      data
+    );
+
+    return vote;
+  }
+
+  /**
+   * Ends an active vote now via the dedicated end_vote upstream endpoint (voting-service v0.3.16): `end_time` is kept and
+   * `early_end_time` is stamped; ending an already ended vote is a 2xx no-op, a vote that has not started is a 409, and a vote
+   * past its scheduled end is a 400. Never faked with extend. The caller must hold `vote#writer`, re-checked here before the
+   * proxy call (the gateway enforces it again upstream).
+   */
+  public async endVote(req: Request, voteUid: string): Promise<Vote> {
+    await assertVoteWrite(req, voteUid, 'end_vote');
+    logger.debug(req, 'end_vote', 'Ending vote now', { vote_uid: voteUid });
+
+    return this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/end`, 'POST');
   }
 
   /**
@@ -411,38 +533,82 @@ export class VoteService {
 
   /**
    * Fetches aggregated vote results for a given vote.
+   * On a vote that is not explicitly named (#3916), totals, the abstention count and comments are
+   * held until the vote has ended, and comments are returned as text only, in text order. The vote
+   * is loaded alongside the results so a failed lookup fails the request rather than leaking
+   * un-held results.
+   *
+   * A caller without `vote#writer` (`options.canWrite === false`, #4330) only gets results for an
+   * ended vote they were invited to and not removed from — anything else is a 403 before upstream
+   * results are fetched — and always gets comments as text only, in text order.
    */
-  public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
-    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
+  public async getVoteResults(req: Request, voteUid: string, options: { canWrite: boolean }): Promise<VoteResultsResponse> {
+    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid, can_write: options.canWrite });
 
-    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(
-      req,
-      'LFX_V2_SERVICE',
-      `/votes/${this.encodeVoteUid(voteUid)}/results`,
-      'GET'
-    );
+    const path = `/votes/${this.encodeVoteUid(voteUid)}/results`;
+    let vote: Vote;
+    let results: VoteResultsResponse;
+    if (options.canWrite) {
+      [vote, results] = await Promise.all([
+        this.getVoteById(req, voteUid),
+        this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET'),
+      ]);
+    } else {
+      vote = await this.getVoteById(req, voteUid);
+      await this.assertVoterCanReadResults(req, voteUid, vote);
+      results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', path, 'GET');
+    }
 
     // The API client maps an empty response body to null; a 200 with no payload is anomalous
     // (the upstream results contract always returns a body), so fail loudly — passing null
-    // through would emit a 200 that the results drawer renders as a genuine zero-response vote
+    // through would emit a 200 that the vote detail page renders as a genuine zero-response vote
     // ("No responses yet") instead of its error state.
     if (!results) {
       throw new MicroserviceError('Vote results response body was empty', 502, 'VOTE_RESULTS_EMPTY', {
         operation: 'get_vote_results',
         service: 'vote_service',
-        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+        path,
       });
     }
 
-    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's
-    // responses at the most recent N to keep the payload linear in prompt count rather than
-    // electorate size (defense against multi-MB payloads on large votes). The pre-cap count is
-    // reported via total_responses so the UI can disclose truncation.
+    // Fail closed: upstream always serializes the flag, so a missing value is treated as pseudo-anonymous (#3911).
+    const pseudoAnonymous = vote.pseudo_anonymity !== false;
+    if (pseudoAnonymous) {
+      if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+        return this.toHeldVoteResults(req, voteUid, results);
+      }
+
+      // Never infer "not held" from upstream: an ended vote with questions but no per-question
+      // results means upstream is still holding, and must not render as a zero-response vote.
+      if (results.results_held === true || (!results.poll_results?.length && (vote.poll_questions?.length ?? 0) > 0)) {
+        logger.warning(req, 'get_vote_results', 'Upstream is still holding results for an ended pseudo-anonymous vote', {
+          vote_uid: voteUid,
+          upstream_results_held: results.results_held === true,
+        });
+        return this.toHeldVoteResults(req, voteUid, results);
+      }
+    }
+
+    // Aggregate bound: the upstream results contract has no pagination, so cap each prompt's responses
+    // at N to keep the payload linear in prompt count rather than electorate size (defense against multi-MB
+    // payloads). Named votes keep the most recent N; pseudo-anonymous votes keep the first N in comment-text
+    // order. The pre-cap count is reported via total_responses so the UI can disclose truncation.
     for (const commentResult of results?.comment_results ?? []) {
       // Normalize to an array before touching length — this loop is the single aggregation point for
       // comment results, so it is the cheapest place to stay robust if `responses` is ever missing (deploy-order skew).
       const responses = commentResult.responses ?? [];
       commentResult.total_responses = responses.length;
+      // A non-writer gets the same text-only payload on a named vote too (#4330): only vote managers
+      // may see who wrote each comment, so the identity is stripped here rather than in the browser.
+      if (pseudoAnonymous || !options.canWrite) {
+        // Text only: `vote_id` equals the vote_response uid other endpoints expose, and
+        // `vote_creation_time` / `abstained` (or recency order) could re-link a comment to its author.
+        commentResult.responses = sortCommentResponsesByText(responses.map((response) => ({ comment_text: response.comment_text }))).slice(
+          0,
+          VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT
+        );
+        continue;
+      }
       commentResult.responses =
         responses.length > VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT
           ? sortCommentResponsesByRecency(responses).slice(0, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT)
@@ -451,8 +617,10 @@ export class VoteService {
 
     logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
       vote_uid: voteUid,
+      can_write: options.canWrite,
       num_poll_results: results?.poll_results?.length ?? 0,
       num_votes_cast: results?.num_votes_cast,
+      results_held: false,
     });
 
     return results;
@@ -483,21 +651,8 @@ export class VoteService {
       req,
       operation: 'create_vote_response_poll',
       pollFn: async () => {
-        // Known gap (GH #2985): filter_grants=direct never matches email-only invitees (the voting
-        // service emits no invitee FGA tuple for them), so this poll always times out for those
-        // users — see fetchCurrentUserVoteResponses.
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          {
-            type: 'vote_response',
-            filter_grants: 'direct',
-            filters: [`vote_uid:${payload.vote_uid}`],
-          }
-        );
-        return resources.some((r) => r.data.uid === payload.vote_response_uid && r.data.vote_status === IndexedVoteResponseStatus.RESPONDED);
+        const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`uid:${payload.vote_response_uid}`] });
+        return responses.some((row) => row.uid === payload.vote_response_uid && row.vote_status === IndexedVoteResponseStatus.RESPONDED);
       },
       maxRetries: 5,
       retryDelayMs: 1000,
@@ -512,32 +667,495 @@ export class VoteService {
     }
   }
 
+  /**
+   * Changes the caller's own submitted ballot via PUT /vote_responses/{uid} using the user's bearer token (#4723).
+   * @description The response uid comes only from the caller's identity-matched row (`getMyVoteResponse`), never from
+   * the client, so a caller cannot target another voter's ballot. Upstream 409 (the vote makes ballots final) and 400
+   * (the vote ended) propagate unchanged.
+   */
+  public async updateMyVoteResponse(req: Request, voteUid: string, payload: UpdateMyVoteResponseRequest): Promise<void> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) {
+      throw new ResourceNotFoundError('Vote ballot', voteUid, {
+        operation: 'update_my_vote_response',
+        service: 'vote_service',
+      });
+    }
+
+    const path = `/vote_responses/${encodeURIComponent(row.uid)}`;
+    logger.debug(req, 'update_my_vote_response', 'Updating own vote response', {
+      vote_uid: voteUid,
+      vote_response_uid: row.uid,
+      abstain: payload.abstain,
+      answer_count: payload.user_vote_content?.length ?? 0,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', path, 'PUT', undefined, payload);
+
+    logger.debug(req, 'update_my_vote_response', 'Ballot update accepted by upstream voting service', {
+      vote_uid: voteUid,
+      vote_response_uid: row.uid,
+    });
+  }
+
+  // ============================================
+  // Reminders (#3769)
+  // ============================================
+
+  /**
+   * Lists the eligible voters who have not voted on a vote yet — the recipients a manager can
+   * remind. Includes both current and legacy parent keys, returning an identity-only projection.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   * Eligibility is indexed and eventually consistent; the send rechecks it but cannot atomically
+   * exclude a ballot cast concurrently with upstream queuing.
+   */
+  public async getVoteReminderRecipients(req: Request, voteUid: string): Promise<VoteReminderRecipient[]> {
+    logger.debug(req, 'get_vote_reminder_recipients', 'Fetching vote_response rows for reminder recipients', { vote_uid: voteUid });
+
+    const vote = await this.getVoteById(req, voteUid);
+    const deadline = Date.parse(vote.end_time);
+    if (normalizePollStatus(vote.status) !== PollStatus.ACTIVE || !Number.isFinite(deadline) || deadline <= Date.now()) {
+      throw new ConflictError('This vote is no longer active.', VOTE_REMINDER_INACTIVE, {
+        operation: 'get_vote_reminder_recipients',
+        service: 'vote_service',
+      });
+    }
+
+    const rows = await this.fetchVoteResponseRows(req, voteUid);
+
+    const seen = new Set<string>();
+    const recipients = rows
+      .filter(
+        (row): row is IndexedVoteResponse & { uid: string } =>
+          getParentVoteId(row) === voteUid &&
+          row.vote_status === IndexedVoteResponseStatus.AWAITING_RESPONSE &&
+          !row.vote_creation_time &&
+          row.voter_removed !== true &&
+          !!row.uid
+      )
+      .filter((row) => {
+        if (seen.has(row.uid)) return false;
+        seen.add(row.uid);
+        return true;
+      })
+      .map((row) => ({
+        uid: row.uid,
+        user_name: row.user_name,
+        user_email: row.user_email,
+        user_org_name: row.user_org_name,
+        user_role: row.user_role,
+        user_voting_status: row.user_voting_status,
+      }))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+
+    logger.debug(req, 'get_vote_reminder_recipients', 'Filtered reminder recipients', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      recipient_count: recipients.length,
+    });
+
+    return recipients;
+  }
+
+  /**
+   * Lists every invited voter on a vote, sorted by name (#3911). Named votes get each voter's
+   * participation status and current ballot; votes not explicitly named get a participation-only
+   * projection (#3916) with no `uid`, ballot content, abstention, submission time or contact details.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   * Draft or unrecognized-status votes (409) are refused before any `vote_response` row is read.
+   */
+  public async getVoteVoters(req: Request, voteUid: string): Promise<VoteVoter[] | VoteParticipationVoter[]> {
+    logger.debug(req, 'get_vote_voters', 'Fetching vote_response rows for the voter list', { vote_uid: voteUid });
+
+    const vote = await this.getVoteById(req, voteUid);
+    const status = normalizePollStatus(vote.status);
+    if (status !== PollStatus.ACTIVE && status !== PollStatus.ENDED) {
+      throw new ConflictError('This vote is still a draft.', VOTE_VOTERS_DRAFT, {
+        operation: 'get_vote_voters',
+        service: 'vote_service',
+      });
+    }
+
+    const rows = await this.fetchVoteResponseRows(req, voteUid);
+
+    const seen = new Set<string>();
+    const invited = rows
+      .filter((row): row is IndexedVoteResponse & { uid: string } => getParentVoteId(row) === voteUid && row.voter_removed !== true && !!row.uid)
+      .filter((row) => {
+        if (seen.has(row.uid)) return false;
+        seen.add(row.uid);
+        return true;
+      });
+
+    // Fail closed: upstream always serializes the flag, so a missing value is treated as pseudo-anonymous.
+    const participationOnly = vote.pseudo_anonymity !== false;
+    const byName = (a: { user_name?: string }, b: { user_name?: string }) => (a.user_name ?? '').localeCompare(b.user_name ?? '');
+    const voters = participationOnly
+      ? invited.map((row) => this.toVoteParticipationVoter(row)).sort(byName)
+      : invited.map((row) => this.toVoteVoter(row)).sort(byName);
+
+    logger.debug(req, 'get_vote_voters', 'Mapped vote voters', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      voter_count: voters.length,
+      participation_only: participationOnly,
+    });
+
+    return voters;
+  }
+
+  /**
+   * Resends the vote email to the given recipients via POST /votes/{uid}/bulk_resend, with the
+   * user's bearer token (no M2M) — the gateway enforces `vote:{uid}#writer`. The
+   * caller is writer-checked before reading identities. A stale selection rejects the whole batch
+   * rather than silently sending to a different set. Upstream still validates membership/state.
+   */
+  public async sendVoteReminders(req: Request, voteUid: string, recipientIds: string[]): Promise<SendVoteReminderResponse> {
+    try {
+      await assertVoteWrite(req, voteUid, 'send_vote_reminders');
+      const recipients = await this.getVoteReminderRecipients(req, voteUid);
+      const eligibleIds = new Set(recipients.map((recipient) => recipient.uid));
+      if (recipientIds.some((id) => !eligibleIds.has(id))) {
+        throw new ConflictError('The selected voters have changed. Refresh the voter list before sending.', VOTE_REMINDER_SELECTION_STALE, {
+          operation: 'send_vote_reminders',
+          service: 'vote_service',
+        });
+      }
+    } catch (error) {
+      // Keep the existing actionable permission, validation, rate-limit and state-conflict replies.
+      if (
+        error instanceof BaseApiError &&
+        ([400, 403, 429].includes(error.statusCode) || error.code === VOTE_REMINDER_INACTIVE || error.code === VOTE_REMINDER_SELECTION_STALE)
+      ) {
+        throw error;
+      }
+      // Only these checks are known not to have sent anything. Never mark a bulk_resend failure this way.
+      throw new MicroserviceError(
+        'No reminders were sent because the pre-send checks failed. Please try again.',
+        error instanceof BaseApiError ? error.statusCode : 500,
+        VOTE_REMINDER_PRECHECK_FAILED,
+        {
+          operation: 'send_vote_reminders',
+          service: 'vote_service',
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
+    }
+
+    logger.debug(req, 'send_vote_reminders', 'Resending vote email to recipients', {
+      vote_uid: voteUid,
+      recipient_count: recipientIds.length,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/bulk_resend`, 'POST', undefined, {
+      recipient_ids: recipientIds,
+    });
+
+    return { recipient_count: recipientIds.length };
+  }
+
+  // ============================================
+  // Personalized vote links (#4363)
+  // ============================================
+
+  /**
+   * Emails every eligible non-responder a personalized ballot link via POST /votes/{uid}/bulk_resend with
+   * `personalized_links: true`, using the manager's bearer token (the gateway enforces `vote:{uid}#writer`).
+   * Recipients are re-resolved server-side from the index (awaiting, not removed) so the client never chooses them.
+   * Sent in batches because ITX rejects a whole call when any recipient is invalid; a validation-rejected batch counts as
+   * skipped and the rest still go out; a timeout/5xx stops the run (the batch may already be queued) and the unsent
+   * remainder counts as skipped. Throws only when nothing could be sent. Logs counts only.
+   */
+  public async sendVoteBallots(req: Request, voteUid: string): Promise<SendVoteBallotsResponse> {
+    await assertVoteWrite(req, voteUid, 'send_vote_ballots');
+
+    const recipients = await this.getVoteReminderRecipients(req, voteUid);
+    const recipientIds = recipients.map((recipient) => recipient.uid);
+    if (recipientIds.length === 0) {
+      return { sent: 0, skipped: 0 };
+    }
+
+    let sent = 0;
+    let skipped = 0;
+    let firstError: unknown;
+
+    for (let start = 0; start < recipientIds.length; start += VOTE_SEND_BALLOTS_BATCH_SIZE) {
+      const batch = recipientIds.slice(start, start + VOTE_SEND_BALLOTS_BATCH_SIZE);
+      try {
+        await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/bulk_resend`, 'POST', undefined, {
+          recipient_ids: batch,
+          personalized_links: true,
+        });
+        sent += batch.length;
+      } catch (error) {
+        firstError ??= error;
+        logger.warning(req, 'send_vote_ballots', 'bulk_resend batch failed', { vote_uid: voteUid, batch_size: batch.length });
+        const rejected =
+          error instanceof BaseApiError && error.statusCode >= 400 && error.statusCode < 500 && error.statusCode !== 408 && error.statusCode !== 429;
+        if (rejected) {
+          // ITX validation rejection: nothing in this batch was queued, so the remaining batches can still go out.
+          skipped += batch.length;
+          continue;
+        }
+        // Timeout, rate limit or 5xx: the batch may already have been queued, so stop here rather than risk double sends.
+        skipped += recipientIds.length - start;
+        break;
+      }
+    }
+
+    if (sent === 0 && firstError) {
+      throw firstError;
+    }
+
+    return { sent, skipped };
+  }
+
+  /**
+   * Reads the ballot for a vote link token via POST /vote_links/ballot. The token is the only credential: no user or
+   * M2M bearer is sent (an empty `bearerToken` option overrides `req.bearerToken`, which the optional-auth
+   * `/public/api` surface may have populated for a signed-in visitor). Nothing is cached; the body is never logged.
+   */
+  public async getVoteLinkBallot(req: Request, body: VoteLinkBallotRequest): Promise<VoteLinkBallot> {
+    return this.microserviceProxy.proxyRequest<VoteLinkBallot>(req, 'LFX_V2_SERVICE', '/vote_links/ballot', 'POST', undefined, body, undefined, {
+      bearerToken: '',
+    });
+  }
+
+  /** Submits (POST) or updates (PUT) a ballot by vote link token. 204 on success; same no-bearer rule as the ballot read. */
+  public async submitVoteLinkResponse(req: Request, method: 'POST' | 'PUT', body: VoteLinkResponseRequest): Promise<void> {
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_links/responses', method, undefined, body, undefined, { bearerToken: '' });
+  }
+
+  /**
+   * Lists every invited voter on a vote, for the on-demand close summary (#3662). Unlike
+   * `getVoteVoters`, not gated on `pseudo_anonymity` or ballot content — only identity fields are
+   * read, and the summary email carries aggregate results only, never a ballot.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   */
+  public async getVoteSummaryRecipients(req: Request, voteUid: string): Promise<VoteSummaryRecipient[]> {
+    logger.debug(req, 'get_vote_summary_recipients', 'Fetching vote_response rows for the summary recipient list', { vote_uid: voteUid });
+
+    const rows = await this.fetchVoteResponseRows(req, voteUid);
+
+    const seen = new Set<string>();
+    const recipients = rows
+      .filter((row): row is IndexedVoteResponse & { uid: string } => getParentVoteId(row) === voteUid && row.voter_removed !== true && !!row.uid)
+      .filter((row) => {
+        if (seen.has(row.uid)) return false;
+        seen.add(row.uid);
+        return true;
+      })
+      .map((row) => ({ uid: row.uid, user_name: row.user_name, username: row.username, user_email: row.user_email }))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+
+    logger.debug(req, 'get_vote_summary_recipients', 'Mapped vote summary recipients', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      recipient_count: recipients.length,
+    });
+
+    return recipients;
+  }
+
+  /**
+   * Previews who the on-demand close summary would reach (#4830): voters ready to receive it, voters
+   * with no email address, and the unique-address counts. Uses the same partition as
+   * `sendVoteSummary`, so the preview and the send agree. Identity fields only — never ballots.
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   */
+  public async getVoteSummaryPreview(req: Request, voteUid: string): Promise<VoteSummaryPreviewResponse> {
+    const vote = await this.getVoteById(req, voteUid);
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+        operation: 'get_vote_summary_preview',
+        service: 'vote_service',
+      });
+    }
+
+    const { ready, missingEmail, uniqueEmailRecipients, sharedEmailVoterCount } = partitionVoteSummaryRecipients(
+      await this.getVoteSummaryRecipients(req, voteUid)
+    );
+
+    logger.debug(req, 'get_vote_summary_preview', 'Partitioned vote summary recipients', {
+      vote_uid: voteUid,
+      ready_count: ready.length,
+      missing_email_count: missingEmail.length,
+      unique_email_count: uniqueEmailRecipients.length,
+      shared_email_voter_count: sharedEmailVoterCount,
+    });
+
+    return {
+      ready,
+      missing_email: missingEmail,
+      unique_email_count: uniqueEmailRecipients.length,
+      shared_email_voter_count: sharedEmailVoterCount,
+    };
+  }
+
+  /**
+   * Sends the on-demand results summary to every invited voter (#3662), on demand only —
+   * never scheduled or sent automatically on close (a future ticket). Only vote writers may send
+   * it (`assertVoteWrite`), and it can only be sent once the vote has ended, so the results it
+   * carries are final. The email body is built once from the aggregate results and sent unchanged
+   * to each recipient — it never varies per voter, so it cannot disclose how any specific person
+   * voted.
+   *
+   * Counts distinct email recipients (#4689) as sent (the service returned an `email_id`), failed
+   * (confirmed not sent: rejected before sending or accepted without sending), or uncertain
+   * (transport failed, the service reported an ambiguous SMTP outcome, or an unexpected error occurred). Invited voters without
+   * an email address are counted separately as skipped; shared email addresses are attempted once.
+   * One recipient's failure never blocks the rest, so a partial send reports the counts instead of
+   * throwing. Only when every attempt was confirmed failed (nothing sent, nothing uncertain) does
+   * it throw with the known counts. Both the reply and that error's `details` carry a per-voter
+   * `recipients` outcome (#4830); voters sharing an address share its outcome. Permission, validation, rate-limit and not-ended errors keep
+   * their original responses; other failures before any email attempt become
+   * `VOTE_SUMMARY_PRECHECK_FAILED`, so retrying cannot duplicate this attempt.
+   */
+  public async sendVoteSummary(req: Request, voteUid: string): Promise<SendVoteSummaryResponse> {
+    let rendered: ReturnType<typeof renderVoteSummaryEmail>;
+    let recipients: VoteSummaryRecipient[];
+
+    try {
+      await assertVoteWrite(req, voteUid, 'send_vote_summary');
+
+      const vote = await this.getVoteById(req, voteUid);
+      if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+        throw new ConflictError('This vote has not closed yet.', VOTE_SUMMARY_NOT_ENDED, {
+          operation: 'send_vote_summary',
+          service: 'vote_service',
+        });
+      }
+
+      let results: VoteResultsResponse;
+      [results, recipients] = await Promise.all([this.getVoteResults(req, voteUid, { canWrite: true }), this.getVoteSummaryRecipients(req, voteUid)]);
+
+      rendered = renderVoteSummaryEmail(this.buildSummaryEmailContext(vote.name, results));
+    } catch (error) {
+      // Keep the existing actionable permission, validation, rate-limit and state-conflict replies.
+      if (error instanceof BaseApiError && ([400, 403, 429].includes(error.statusCode) || error.code === VOTE_SUMMARY_NOT_ENDED)) {
+        throw error;
+      }
+      // Nothing was sent yet, so a retry cannot duplicate this attempt.
+      throw new MicroserviceError(
+        'No summaries were sent because the pre-send checks failed. Please try again.',
+        error instanceof BaseApiError ? error.statusCode : 500,
+        VOTE_SUMMARY_PRECHECK_FAILED,
+        {
+          operation: 'send_vote_summary',
+          service: 'vote_service',
+          originalError: error instanceof Error ? error : undefined,
+        }
+      );
+    }
+
+    // Recipients are already deduped by response uid, so `missingEmail` is exactly the voters with no address.
+    // Voters collapsed by a shared email are not skipped: they got the same email via the sibling row.
+    const { ready, missingEmail, uniqueEmailRecipients: uniqueRecipients } = partitionVoteSummaryRecipients(recipients);
+    const skippedCount = missingEmail.length;
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let uncertainCount = 0;
+    const outcomeByEmail = new Map<string, VoteSummaryRecipientOutcome>();
+    const outcomes = await settleInBatches(uniqueRecipients, VOTE_SUMMARY_EMAIL_CONCURRENCY, (recipient) =>
+      this.emailService.sendEmail(req, { to: recipient.user_email as string, ...rendered })
+    );
+    outcomes.forEach((outcome, index) => {
+      const emailKey = (uniqueRecipients[index].user_email as string).toLowerCase();
+      // `email_id` absent on a fulfilled reply means the email service accepted but did not actually
+      // send (disabled, or the recipient was filtered) — that voter got nothing, so it counts as a
+      // failure, not a send.
+      if (outcome.status === 'fulfilled' && outcome.value.email_id) {
+        sentCount += 1;
+        outcomeByEmail.set(emailKey, 'sent');
+        return;
+      }
+
+      // Only an explicit pre-send rejection proves failure. Transport, ambiguous SMTP and unexpected
+      // errors (including malformed replies) can follow acceptance and must default to uncertain.
+      const uncertain =
+        outcome.status === 'rejected' &&
+        !(outcome.reason instanceof MicroserviceError && outcome.reason.code === 'EMAIL_SEND_FAILED' && outcome.reason.transportFailure !== true);
+      if (uncertain) {
+        uncertainCount += 1;
+      } else {
+        failedCount += 1;
+      }
+      outcomeByEmail.set(emailKey, uncertain ? 'uncertain' : 'failed');
+      logger.warning(req, 'send_vote_summary', 'Summary email was not confirmed sent to one recipient', {
+        vote_uid: voteUid,
+        recipient_uid: uniqueRecipients[index].uid,
+        outcome: uncertain ? 'uncertain' : 'failed',
+        err: outcome.status === 'rejected' ? outcome.reason : 'Email service accepted the email without sending it',
+      });
+    });
+
+    // Every ready voter's address was attempted exactly once above, so its outcome is always recorded.
+    const recipientResults: VoteSummaryRecipientResult[] = [
+      ...ready.map((recipient) => ({ ...recipient, outcome: outcomeByEmail.get((recipient.user_email as string).toLowerCase()) ?? 'uncertain' })),
+      ...missingEmail.map((recipient) => ({ ...recipient, outcome: 'skipped' as const })),
+    ];
+
+    const result: SendVoteSummaryResponse = {
+      recipient_count: sentCount,
+      failed_count: failedCount,
+      skipped_count: skippedCount,
+      uncertain_count: uncertainCount,
+      recipients: recipientResults,
+    };
+
+    if (sentCount === 0 && uncertainCount === 0 && failedCount > 0) {
+      throw new MicroserviceError('No summaries were sent. Please try again.', 502, VOTE_SUMMARY_SEND_FAILED, {
+        operation: 'send_vote_summary',
+        service: 'vote_service',
+        details: { details: result },
+      });
+    }
+
+    // Counts only — `recipients` carries names and email addresses and is never logged.
+    logger.info(req, 'send_vote_summary', 'Sent vote close summary', {
+      vote_uid: voteUid,
+      recipient_count: result.recipient_count,
+      failed_count: result.failed_count,
+      skipped_count: result.skipped_count,
+      uncertain_count: result.uncertain_count,
+    });
+
+    return result;
+  }
+
   // ============================================
   // My Votes (Me Lens)
   // ============================================
 
   /**
-   * Fetches votes the current user has been invited to.
+   * Fetches votes the current user is still invited to; removed invitations never make a ballot actionable.
    * Queries vote_response records by user_email and username using filters_or.
    */
-  public async getMyVotes(req: Request): Promise<Vote[]> {
-    // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
-    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
+  public async getMyVotes(req: Request): Promise<MyVotesResponse> {
+    let complete = true;
+    // Keep usable rows after a later-page failure, but never present them as exact counts.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, {
+      onPartial: () => {
+        complete = false;
+      },
+    });
+    const eligibleResponses = responses.filter((response) => !response.voter_removed);
 
     // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
     // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
     // legacy row would appear in Pending Actions but vanish here.
     const respondedVoteUids = new Set<string>();
-    for (const r of responses) {
+    for (const r of eligibleResponses) {
       const id = getParentVoteId(r);
       if (id && r.vote_status === IndexedVoteResponseStatus.RESPONDED) respondedVoteUids.add(id);
     }
 
     // Extract unique vote UIDs
-    const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
+    const voteUids = [...new Set(eligibleResponses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
-      return [];
+      return { votes: [], complete };
     }
 
     logger.debug(req, 'get_my_votes', 'Found user vote responses', {
@@ -551,13 +1169,20 @@ export class VoteService {
       voteUids.map(async (uid): Promise<Vote | null> => {
         try {
           const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(uid)}`, 'GET');
-          if (!vote) return vote;
+          if (!vote) {
+            complete = false;
+            return null;
+          }
           const decorated: Vote = {
             ...vote,
             response_status: respondedVoteUids.has(uid) ? VoteResponseStatus.RESPONDED : VoteResponseStatus.AWAITING_RESPONSE,
           };
           return decorated;
         } catch (error) {
+          // Stale invitations for deleted or inaccessible votes do not belong to the readable feed.
+          // Only explicit upstream 403/404 responses establish that; other failures still hide exact counts.
+          const notVisible = error instanceof MicroserviceError && (error.statusCode === 403 || error.statusCode === 404);
+          if (!notVisible) complete = false;
           logger.warning(req, 'get_my_votes', 'Failed to fetch vote details, skipping', {
             vote_uid: uid,
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -571,15 +1196,17 @@ export class VoteService {
     // comparator the project/committee list reads apply, so Me lens agrees with every other surface.
     const sorted = votes.filter((v): v is Vote => v !== null).sort(compareVotesByRecency);
 
-    return this.enrichWithProjectMetadata(req, sorted);
+    return { votes: await this.enrichWithProjectMetadata(req, sorted), complete };
   }
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
   public async getMyVoteResponse(req: Request, voteUid: string): Promise<MyVoteResponse | null> {
-    // The find guard applies the shared parent-key rule (`vote_uid || poll_id` — the same key
-    // the list surfaced this vote under) and requires a usable row id.
-    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined =>
-      rows.find((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+    // Apply the shared parent-key rule and require a usable row id. A re-invitation's current
+    // row wins over historical removed rows, regardless of query-service ordering.
+    const findMatch = (rows: IndexedVoteResponse[]): IndexedVoteResponse | undefined => {
+      const matches = rows.filter((r) => getParentVoteId(r) === voteUid && (!!r?.uid || !!r?.vote_id));
+      return matches.find((r) => !r.voter_removed) ?? matches[0];
+    };
 
     // `filters` narrows on vote_uid at the index, avoiding a full-history scan per drawer open;
     // the helper's identity `filters_or` then disjuncts the user match. Both AND together.
@@ -589,11 +1216,12 @@ export class VoteService {
     // query so a vote that surfaces in My Votes via the `getParentVoteId` fallback also resolves
     // here — otherwise the list/drawer divergence GH #2985 closed just moves one level down.
     // The query service supports a single `filters_or` group (spent on identity), so the two
-    // scoped queries run sequentially. The trigger is "no match", not "no rows": a loosely
-    // analyzed `vote_uid:` filter could return owned-but-foreign rows, and a non-empty
-    // non-match must still fall through to the legacy key.
-    if (!match) {
-      match = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+    // scoped queries run sequentially. Fall through when no current match exists: an owned
+    // foreign-vote row or a historical removed invitation must not hide a current legacy row.
+    if (!match || match.voter_removed) {
+      const legacyMatch = findMatch(await fetchCurrentUserVoteResponses(req, this.microserviceProxy, { filters: [`poll_id:${voteUid}`] }));
+      if (!legacyMatch?.voter_removed) match = legacyMatch ?? match;
+      else match ??= legacyMatch;
     }
 
     if (!match) return null;
@@ -611,12 +1239,159 @@ export class VoteService {
       logger.warning(req, 'get_my_vote_response', 'vote_response row missing uid; falling back to vote_id', { vote_uid: voteUid, vote_id: match.vote_id });
       response.uid = match.vote_id;
     }
+    // Admin Mode needs participation metadata, never a legacy index row's ballot content.
+    // Named ballot inspection uses the privacy-checked my-ballot path instead.
+    if (isImpersonating(req)) {
+      return { uid: response.uid, vote_uid: response.vote_uid, vote_status: response.vote_status, voter_removed: response.voter_removed };
+    }
     return response;
+  }
+
+  /**
+   * Reads the caller's own current ballot for a vote (#4331), or null when they have no submitted ballot.
+   * @description The response uid comes only from the identity-matched row (`getMyVoteResponse`), never from the
+   * client, so on a pseudo-anonymous vote the caller still sees only their own ballot. The ballot is read from the
+   * voting service rather than the query-service index, which omits ballot content on pseudo-anonymous votes.
+   */
+  public async getMyVoteBallot(req: Request, voteUid: string): Promise<MyVoteBallot | null> {
+    const row = await this.getMyVoteResponse(req, voteUid);
+    if (!row || row.voter_removed || row.vote_status !== IndexedVoteResponseStatus.RESPONDED) return null;
+
+    if (isImpersonating(req)) {
+      const vote = await this.getVoteById(req, voteUid);
+      if (vote.pseudo_anonymity !== false) {
+        throw new AuthorizationError('This ballot is private while impersonating a user.', {
+          code: 'IMPERSONATION_BALLOT_PRIVATE',
+          operation: 'get_my_vote_ballot',
+          service: 'vote_service',
+        });
+      }
+    }
+
+    const detail = await this.microserviceProxy.proxyRequest<VoteResponseDetail>(
+      req,
+      'LFX_V2_SERVICE',
+      `/vote_responses/${encodeURIComponent(row.uid)}`,
+      'GET'
+    );
+
+    if (!detail) {
+      throw new MicroserviceError('Vote ballot response body was empty', 502, 'VOTE_BALLOT_EMPTY', {
+        operation: 'get_my_vote_ballot',
+        service: 'vote_service',
+        path: `/vote_responses/${encodeURIComponent(row.uid)}`,
+      });
+    }
+
+    if (detail?.vote_uid && detail.vote_uid !== voteUid) {
+      logger.warning(req, 'get_my_vote_ballot', 'Vote response belongs to a different vote, returning no ballot', {
+        vote_uid: voteUid,
+        vote_response_uid: row.uid,
+      });
+      return null;
+    }
+
+    return {
+      vote_response_uid: row.uid,
+      vote_uid: voteUid,
+      abstained: detail?.abstained === true,
+      poll_answers: (detail?.poll_answers ?? []).map((answer) => ({
+        question_id: answer.question_id,
+        prompt: answer.prompt,
+        type: answer.type,
+        user_choice: answer.user_choice ?? [],
+        ranked_user_choice: answer.ranked_user_choice ?? [],
+      })),
+      comment_responses: (detail?.comment_responses ?? []).map((response) => ({ prompt_id: response.prompt_id, comment_text: response.comment_text })),
+      vote_creation_time: detail?.vote_creation_time || undefined,
+      // ITX's own answer (#4723); omitted when ITX omits it so the client can fall back to the vote's setting.
+      ...(typeof detail?.can_change_vote === 'boolean' ? { can_change_vote: detail.can_change_vote } : {}),
+    };
   }
 
   // ============================================
   // Private Helpers
   // ============================================
+
+  /** Builds the summary email's content from the aggregate results: question prompts, choice text, counts and percentages — never a per-voter breakdown. */
+  private buildSummaryEmailContext(voteTitle: string, results: VoteResultsResponse): VoteSummaryEmailContext {
+    // Privacy-held results omit the abstention count; never email incomplete totals as final results.
+    if (results.results_held === true || results.num_abstained === undefined) {
+      throw new MicroserviceError('Vote results are not available for a summary yet. Please try again.', 502, 'VOTE_RESULTS_UNAVAILABLE', {
+        operation: 'send_vote_summary',
+        service: 'vote_service',
+      });
+    }
+
+    const questions = results.poll_results.map((pollResult) => {
+      const choiceTextById = new Map(pollResult.question.choices.map((choice) => [choice.choice_id, choice.choice_text]));
+
+      // Upstream serializes both tally arrays with `omitempty` (gen/http/vote/server/types.go) — a
+      // ranked-choice question can omit `generic_choice_votes` entirely, and vice versa — so default
+      // both before reading `.length`/`.reduce`, matching the shared results builders in vote.utils.ts.
+      const genericChoiceVotes = pollResult.generic_choice_votes ?? [];
+      const rankedChoiceVotes = pollResult.ranked_choice_votes ?? [];
+
+      if (genericChoiceVotes.length > 0) {
+        return {
+          prompt: pollResult.question.prompt,
+          choices: genericChoiceVotes.map((choice) => ({
+            text: choiceTextById.get(choice.choice_id) ?? choice.choice_id,
+            vote_count: choice.vote_count,
+            percentage: `${Math.round(computeResultPercentage(choice.percentage, choice.vote_count, results.num_votes_cast || 0))}%`,
+          })),
+        };
+      }
+
+      // Ranked-choice question: no plurality tally exists, so first-choice (rank 1) counts stand
+      // in as the closest equivalent to a vote count in a plain-text summary.
+      const totalFirstChoice = rankedChoiceVotes.reduce((sum, choice) => sum + (choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0), 0);
+      return {
+        prompt: pollResult.question.prompt,
+        choices: rankedChoiceVotes.map((choice) => {
+          const firstChoiceCount = choice.rank_counts.find((rank) => rank.rank === 1)?.count ?? 0;
+          return {
+            text: `${choiceTextById.get(choice.choice_id) ?? choice.choice_id} (first-choice votes)`,
+            vote_count: firstChoiceCount,
+            percentage: totalFirstChoice > 0 ? `${Math.round((firstChoiceCount / totalFirstChoice) * 100)}%` : '0%',
+          };
+        }),
+      };
+    });
+
+    return {
+      vote_title: voteTitle,
+      num_recipients: results.num_recipients,
+      num_votes_cast: results.num_votes_cast,
+      num_abstained: results.num_abstained,
+      questions,
+    };
+  }
+
+  /**
+   * Non-writer results gate (#4330): the vote has ended, and the caller holds a `vote_response` row
+   * for it that was not removed. Runs before upstream results are fetched, so a caller who fails it
+   * never reaches the data. Mirrors the browser's `canVoterFetchVoteResults`, which never asks for
+   * results outside these conditions, so a 403 here is only visible to direct API callers.
+   */
+  private async assertVoterCanReadResults(req: Request, voteUid: string, vote: Vote): Promise<void> {
+    if (normalizePollStatus(vote.status) !== PollStatus.ENDED) {
+      throw new MicroserviceError('Results are available after the vote closes.', 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
+
+    const mine = await this.getMyVoteResponse(req, voteUid);
+    if (!mine || mine.voter_removed) {
+      throw new MicroserviceError("You do not have access to this vote's results.", 403, 'FORBIDDEN', {
+        operation: 'get_vote_results',
+        service: 'vote_service',
+        path: `/votes/${this.encodeVoteUid(voteUid)}/results`,
+      });
+    }
+  }
 
   /**
    * The enable PUT with its bounded 403-retry loop (GH-1637), shared by the standalone enable
@@ -747,10 +1522,144 @@ export class VoteService {
     });
   }
 
+  /** The first `status:<x>` filter clause whose value normalizes to a known `PollStatus`, or null. */
+  private getRecognizedStatusFilter(query: Record<string, unknown>): PollStatus | null {
+    const rawFilters = query['filters'];
+    const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+    for (const clause of filters) {
+      const status = this.parseStatusFilterClause(clause);
+      if (status) return status;
+    }
+    return null;
+  }
+
+  private parseStatusFilterClause(clause: unknown): PollStatus | undefined {
+    return typeof clause === 'string' && clause.startsWith('status:') ? normalizePollStatus(clause.slice('status:'.length)) : undefined;
+  }
+
+  /** Offset pages and totals must reject incomplete scans rather than silently undercount. */
+  private async fetchScopedIndexedVotes(req: Request, upstreamParams: Record<string, unknown>): Promise<Vote[]> {
+    const status = this.getRecognizedStatusFilter(upstreamParams);
+    const params = { ...upstreamParams };
+    if (status) {
+      // Preserve every other upstream filter, but do not discard mixed-case rows before normalization.
+      const rawFilters = params['filters'];
+      const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+      const remaining = filters.filter((clause) => this.parseStatusFilterClause(clause) !== status);
+      if (remaining.length) params['filters'] = remaining;
+      else delete params['filters'];
+    }
+    const drained = await fetchAllQueryResources<IndexedVote>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          type: 'vote',
+          page_size: VoteService.voteListUpstreamPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    const votes = drained.map((vote) => this.normalizeIndexedVote(req, vote));
+    return status ? votes.filter((vote) => normalizePollStatus(vote.status) === status) : votes;
+  }
+
+  /**
+   * Drains every `vote_response` row for a vote, under both the current and legacy parent keys.
+   * Shared by the reminder list and the voter list. failOnPartial: a truncated page set would
+   * silently leave voters out of either list.
+   */
+  private async fetchVoteResponseRows(req: Request, voteUid: string): Promise<IndexedVoteResponse[]> {
+    return fetchAllQueryResources<IndexedVoteResponse>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote_response',
+          filters_or: [`vote_uid:${voteUid}`, `poll_id:${voteUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+  }
+
+  /**
+   * Builds the held results payload for a pseudo-anonymous vote (#3916): participation counts and
+   * the deadline only. Fields are copied by allowlist so nothing else upstream returns can leak.
+   */
+  private toHeldVoteResults(req: Request, voteUid: string, results: VoteResultsResponse): VoteResultsResponse {
+    logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
+      vote_uid: voteUid,
+      num_votes_cast: results.num_votes_cast,
+      results_held: true,
+    });
+
+    return {
+      num_recipients: results.num_recipients,
+      num_votes_cast: results.num_votes_cast,
+      poll_end_time: results.poll_end_time,
+      ...(results.poll_end_time_timezone !== undefined && { poll_end_time_timezone: results.poll_end_time_timezone }),
+      poll_results: [],
+      comment_results: [],
+      results_held: true,
+    };
+  }
+
+  /** Maps a `vote_response` row on a named vote to the voter list's projection (#3911). */
+  private toVoteVoter(row: IndexedVoteResponse & { uid: string }): VoteVoter {
+    const submitted = this.isVoteResponseSubmitted(row);
+    let status = VoteVoterStatus.NOT_VOTED;
+    if (submitted) {
+      status = row.abstained === true ? VoteVoterStatus.ABSTAINED : VoteVoterStatus.VOTED;
+    }
+
+    return {
+      uid: row.uid,
+      user_name: row.user_name,
+      user_email: row.user_email,
+      username: row.username,
+      user_org_name: row.user_org_name,
+      user_role: row.user_role,
+      user_voting_status: row.user_voting_status,
+      profile_picture: row.profile_picture,
+      status,
+      submitted_at: row.vote_creation_time || undefined,
+      poll_answers: row.poll_answers?.map((answer) => ({
+        ...answer,
+        user_choice: answer.user_choice ?? [],
+        ranked_user_choice: answer.ranked_user_choice ?? [],
+      })),
+      comment_responses: row.comment_responses,
+    };
+  }
+
+  /**
+   * Maps a `vote_response` row on a pseudo-anonymous vote to a participation-only row (#3916). Fields
+   * are copied by allowlist: no `uid`, ballot content, abstention, submission time or contact details,
+   * and an abstainer counts as `responded`.
+   */
+  private toVoteParticipationVoter(row: IndexedVoteResponse): VoteParticipationVoter {
+    return {
+      user_name: row.user_name,
+      user_org_name: row.user_org_name,
+      user_role: row.user_role,
+      user_voting_status: row.user_voting_status,
+      status: this.isVoteResponseSubmitted(row) ? 'responded' : 'pending',
+    };
+  }
+
+  /**
+   * A row with a submission time, or marked `responded`, has been submitted — either one alone is
+   * enough, so a mismatch between them can't hide a ballot. ITX rewrites `vote_creation_time` on every ballot change.
+   */
+  private isVoteResponseSubmitted(row: IndexedVoteResponse): boolean {
+    return !!row.vote_creation_time || row.vote_status === IndexedVoteResponseStatus.RESPONDED;
+  }
+
   /**
    * Normalizes a vote from the query service indexer shape (vote_uid) to the
    * canonical REST shape (uid). The voting service indexes votes with `vote_uid`
    * while the REST API returns `uid` — these are the same value, different field names.
+   * Canonicalizes recognized statuses so row actions agree with normalized filtering.
    */
   private normalizeIndexedVote(req: Request, raw: IndexedVote): Vote {
     const uid = raw.uid || raw.vote_uid;
@@ -761,7 +1670,7 @@ export class VoteService {
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { vote_uid: _discard, ...rest } = raw;
-    return { ...rest, uid: uid ?? '' };
+    return { ...rest, uid: uid ?? '', status: normalizePollStatus(rest.status) ?? rest.status };
   }
 
   // encodeURIComponent leaves `.` untouched, so reject exact dot segments — otherwise

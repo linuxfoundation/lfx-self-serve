@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { MeetingOccurrence } from './meeting.interface';
+
 /**
  * Valid attachment category values
  */
@@ -27,6 +29,10 @@ export interface MeetingAttachment {
   uid: string;
   /** Meeting this attachment belongs to */
   meeting_id: string;
+  /** Occurrence this attachment is scoped to (unix start time). Absent means it applies to every occurrence of the meeting */
+  occurrence_id?: string;
+  /** Where the attachment came from. 'description' marks a link lifted from the meeting description, which always applies to every occurrence and cannot be scoped */
+  source?: string;
   /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
   type: 'file' | 'link';
   /** Category of the attachment */
@@ -117,6 +123,20 @@ export interface FileTypeDisplay {
 }
 
 /**
+ * A link attachment as the meeting details drawer lists it
+ */
+export interface MeetingMaterialLink {
+  /** Attachment uid */
+  uid: string;
+  /** Link title */
+  name: string;
+  /** Validated http(s) URL, or null when the stored link is unusable */
+  url: string | null;
+  /** Host shown under the title, without `www.`; empty when the URL is the title */
+  host: string;
+}
+
+/**
  * Request body for creating a link-type attachment
  */
 export interface CreateLinkAttachmentRequest {
@@ -130,6 +150,8 @@ export interface CreateLinkAttachmentRequest {
   description?: string;
   /** External URL to link */
   link: string;
+  /** Scope the attachment to one occurrence. Omit for all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -145,6 +167,8 @@ export interface CreateFileAttachmentRequest {
   name: string;
   /** Optional description */
   description?: string;
+  /** Scope the attachment to one occurrence. Omit for all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -168,6 +192,8 @@ export interface UpdateMeetingAttachmentRequest {
   description?: string;
   /** External URL (for link type) */
   link?: string;
+  /** Occurrence to scope the attachment to. The update replaces the scope, so omitting it makes the attachment apply to all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -184,6 +210,8 @@ export interface PresignAttachmentRequest {
   description?: string;
   /** Optional attachment category */
   category?: AttachmentCategory;
+  /** Scope the attachment to one occurrence. Omit for all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -195,6 +223,8 @@ export interface PresignAttachmentResponse {
   uid: string;
   /** Meeting or past meeting ID */
   meeting_id?: string;
+  /** Occurrence this attachment is scoped to (unix start time). Absent means it applies to every occurrence of the meeting */
+  occurrence_id?: string;
   /** Presigned S3 URL to upload the file to via HTTP PUT */
   file_url: string;
   /** Attachment type */
@@ -238,6 +268,47 @@ export interface MaterialsChangedEvent {
 }
 
 /**
+ * What the meeting materials drawer opens with
+ * @description Set `meetingId` for an upcoming meeting or `pastMeetingId` for a past meeting record.
+ */
+export interface MeetingMaterialsDrawerData {
+  /** Series id of an upcoming meeting */
+  meetingId?: string;
+  /** Resource id of the past meeting record (`meeting_and_occurrence_id`, or the meeting id) */
+  pastMeetingId?: string;
+  /** Changes already saved this session, which the past record's read can lag */
+  pastChanges?: MaterialsChangedEvent;
+  /** The occurrence managed on an upcoming recurring meeting: it decides what is listed and the scope labels; null otherwise */
+  occurrence: MeetingOccurrence | null;
+  /** Whether items can be scoped to `occurrence` (upcoming and not cancelled) */
+  canScopeToOccurrence: boolean;
+  /** Called after every saved change to a past record, so the list behind the drawer shows it before its read catches up */
+  onChanged?: (event: MaterialsChangedEvent) => void;
+}
+
+/** Outcome of saving one staged scope change in Manage Materials */
+export interface MeetingAttachmentScopeResult {
+  uid: string;
+  ok: boolean;
+  scope: AttachmentScope;
+}
+
+/**
+ * An existing attachment as the materials drawer lists it
+ */
+export interface MeetingMaterialRow {
+  attachment: MeetingAttachment | PastMeetingAttachment;
+  /** Staged for deletion on Save */
+  deleting: boolean;
+  /** Scope once staged changes are saved */
+  scope: AttachmentScope;
+  /** The scope differs from the saved one */
+  scopeUnsaved: boolean;
+  /** The organizer may switch its scope */
+  canToggleScope: boolean;
+}
+
+/**
  * Temporary attachment during upload process
  * @description Represents an attachment being uploaded with status tracking
  */
@@ -258,4 +329,63 @@ export interface PendingAttachment {
   uploaded?: boolean;
   /** Error message if upload failed */
   uploadError?: string;
+  /** Occurrence the file is scoped to, fixed when it was queued so a later change to the scope picker cannot retarget it */
+  occurrence_id?: string;
+}
+
+/**
+ * Which occurrences an upcoming meeting attachment applies to
+ * - `occurrence`: the single occurrence it is scoped to
+ * - `series`: every occurrence of the meeting
+ */
+export type AttachmentScope = 'occurrence' | 'series';
+
+/**
+ * The part of an attachment that says which occurrence it is scoped to
+ * @description Shared by meeting and past meeting attachments so the scope helpers serve both; an empty or missing `occurrence_id` means every occurrence.
+ */
+export interface OccurrenceScopedAttachment {
+  /** Occurrence the attachment is scoped to (unix start time) */
+  occurrence_id?: string;
+}
+
+/**
+ * Scope changes that were saved, keyed by attachment uid
+ * @description The value is the occurrence the attachment is now scoped to, or '' for all occurrences. Reads come from the
+ * query service, which indexes asynchronously, so a read right after a save can still return the old scope.
+ */
+export type AttachmentScopeOverrides = ReadonlyMap<string, string>;
+
+/**
+ * Attachments added to and removed from one live meeting in this session, before a read shows them.
+ * @description Reads come from the query service, which indexes asynchronously, so a read right after a save can still
+ * return the list as it was.
+ */
+export interface MeetingAttachmentChanges {
+  /** Attachments created in this session, newest last */
+  added: MeetingAttachment[];
+  /** UIDs of attachments deleted in this session */
+  deletedUids: ReadonlySet<string>;
+}
+
+/** What a save adds to and removes from {@link MeetingAttachmentChanges}; either side may be omitted. */
+export interface MeetingAttachmentChangeInput {
+  /** Attachments that were created */
+  added?: MeetingAttachment[];
+  /** UIDs of attachments that were deleted */
+  deletedUids?: string[];
+}
+
+/** {@link MeetingAttachmentChanges} keyed by meeting id */
+export type MeetingAttachmentChangesByMeeting = ReadonlyMap<string, MeetingAttachmentChanges>;
+
+/**
+ * Outcome of one staged upload in the materials drawer
+ * @description Keyed by the pending attachment's id; `result` is null when the upload failed.
+ */
+export interface MeetingAttachmentUploadResult {
+  /** Id of the pending attachment that was uploaded */
+  id: string;
+  /** The created attachment, or null when the upload failed */
+  result: PresignAttachmentResponse | null;
 }

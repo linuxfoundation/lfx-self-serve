@@ -20,12 +20,14 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import type {
+  BatchRegistrantOperationResponse,
   CustomRecurrencePattern,
   Meeting,
   MeetingCommittee,
   MeetingOccurrence,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRsvp,
   PastMeeting,
   PastMeetingSummary,
   PastOccurrenceSummary,
@@ -34,10 +36,16 @@ import type {
 } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildMeetingOccurrenceOptions,
   buildMeetingOccurrenceRoute,
   buildOccurrenceNavTimeline,
+  formatMeetingOccurrenceLabel,
+  getMeetingSelfRemovalMessage,
+  getMeetingSelfRemovalNotes,
+  getMeetingSelfRemovalQuestion,
   getMeetingSeriesUid,
   buildMeetingOrganizerChip,
+  buildMeetingOrganizerKeys,
   buildMeetingOrganizerMailto,
   buildImportSummary,
   buildRecurrenceNeverEndDate,
@@ -45,27 +53,37 @@ import {
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
   convertRecurrenceToPattern,
+  countMeetingDatesBefore,
   extractRegistrantEmails,
   filterUnlistedEmails,
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
+  getMeetingCommitteeSelectionKey,
   isCalendarDeadlinePast,
+  isMeetingAccepted,
+  isMeetingDeclinedForAllOccurrences,
+  isMeetingHiddenAsDeclined,
   isMeetingInviteResponsesEnabled,
   isMeetingOccurrenceCancelled,
   isMeetingOrganizedByViewer,
   isOccurrencePast,
   isPastMeetingCompositeId,
   isUnresolvableParticipantName,
+  isBatchRegistrantOperationResponse,
   isVoteCalendarEventPast,
+  mergeBatchRegistrantResponses,
+  organizerDisplayName,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
   reconcileOptimisticPad,
+  resolveMeetingGuestRole,
   resolveMeetingOrganizer,
   resolveMeetingOwner,
   resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
+  resolveShownOccurrenceId,
   resolveSurveyCalendarColors,
   resolveVoteCalendarColors,
   sanitizeMeetingCommittees,
@@ -280,6 +298,55 @@ describe('resolveRsvpOccurrenceId', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('resolveShownOccurrenceId', () => {
+  const NEXT_START = '2030-03-07T15:00:00Z';
+  const NEXT_START_SECONDS = String(Date.parse(NEXT_START) / 1000);
+  const weekly = { recurrence: { type: 'weekly' } } as unknown as Partial<Meeting>;
+  const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({ id: 'm-1', start_time: '2029-01-04T15:00:00Z', ...overrides }) as Meeting;
+
+  it('uses an explicitly given occurrence over everything else', () => {
+    const shown = meeting({ ...weekly, next_occurrence_start_time: NEXT_START });
+
+    expect(resolveShownOccurrenceId(shown, { occurrence_id: 'explicit-1', start_time: '2030-04-01T15:00:00Z' } as MeetingOccurrence)).toBe('explicit-1');
+  });
+
+  it('finds the meeting occurrence that starts at the date the card shows when no occurrence is passed', () => {
+    const shown = meeting({
+      ...weekly,
+      next_occurrence_start_time: NEXT_START,
+      occurrences: [
+        { occurrence_id: 'occ-earlier', start_time: '2030-02-28T15:00:00Z', duration: 60 },
+        { occurrence_id: 'occ-next', start_time: NEXT_START, duration: 60 },
+      ] as MeetingOccurrence[],
+    });
+
+    expect(resolveShownOccurrenceId(shown)).toBe('occ-next');
+  });
+
+  it("falls back to the shown start's Unix seconds when the list has no matching occurrence (LFXV2-2054)", () => {
+    expect(resolveShownOccurrenceId(meeting({ ...weekly, next_occurrence_start_time: NEXT_START, occurrences: [] }))).toBe(NEXT_START_SECONDS);
+    expect(resolveShownOccurrenceId(meeting({ ...weekly, next_occurrence_start_time: NEXT_START }))).toBe(NEXT_START_SECONDS);
+  });
+
+  it('matches an occurrence whose start is written with a different but equal timestamp format', () => {
+    const shown = meeting({
+      ...weekly,
+      next_occurrence_start_time: NEXT_START,
+      occurrences: [{ occurrence_id: 'occ-next', start_time: '2030-03-07T15:00:00.000Z', duration: 60 }] as MeetingOccurrence[],
+    });
+
+    expect(resolveShownOccurrenceId(shown)).toBe('occ-next');
+  });
+
+  it('resolves to null for a one-time meeting, which has no occurrences to tell apart', () => {
+    expect(resolveShownOccurrenceId(meeting())).toBeNull();
+  });
+
+  it('resolves to null when the shown start cannot be parsed', () => {
+    expect(resolveShownOccurrenceId(meeting({ ...weekly, next_occurrence_start_time: 'not-a-date' }))).toBeNull();
   });
 });
 
@@ -1055,6 +1122,36 @@ describe('isUnresolvableParticipantName', () => {
   });
 });
 
+describe('resolveMeetingGuestRole', () => {
+  const organizerKeys = buildMeetingOrganizerKeys([' Organizer-One@acme-motors.example ', 'organizer-two', '']);
+
+  it('reports a listed organizer by email, ignoring case and spacing', () => {
+    expect(resolveMeetingGuestRole({ email: 'ORGANIZER-ONE@acme-motors.example' }, organizerKeys)).toBe('organizer');
+  });
+
+  it('reports a listed organizer by username', () => {
+    expect(resolveMeetingGuestRole({ email: 'someone@acme-motors.example', username: 'Organizer-Two' }, organizerKeys)).toBe('organizer');
+  });
+
+  it('never reports a listed organizer as a host, whatever their host flag says', () => {
+    expect(resolveMeetingGuestRole({ email: 'organizer-one@acme-motors.example', host: true }, organizerKeys)).toBe('organizer');
+    expect(resolveMeetingGuestRole({ email: 'organizer-one@acme-motors.example', host: false }, organizerKeys)).toBe('organizer');
+  });
+
+  it('reports a host-flagged guest who is not an organizer as a host', () => {
+    expect(resolveMeetingGuestRole({ email: 'guest-a@acme-motors.example', host: true }, organizerKeys)).toBe('host');
+  });
+
+  it('reports no role for an ordinary guest', () => {
+    expect(resolveMeetingGuestRole({ email: 'guest-a@acme-motors.example', host: false }, organizerKeys)).toBeNull();
+  });
+
+  it('treats a missing or blank organizers list as nobody being an organizer', () => {
+    expect(buildMeetingOrganizerKeys(undefined).size).toBe(0);
+    expect(buildMeetingOrganizerKeys(['', '  ']).size).toBe(0);
+  });
+});
+
 describe('compareMeetingPeopleByHostThenName', () => {
   it('floats hosts to the top, sinks unresolvable rows to the bottom, sorts by first name within a tier', () => {
     const people = [
@@ -1698,5 +1795,350 @@ describe('reconcileOptimisticPad', () => {
 
   it('never produces a negative pad when the roster shrinks, rebasing to the new snapshot', () => {
     expect(reconcileOptimisticPad({ pad: 1, before: 10, current: 9 })).toEqual({ pad: 1, before: 9 });
+  });
+});
+
+describe('isMeetingDeclinedForAllOccurrences', () => {
+  const rsvp = (overrides: Partial<MeetingRsvp>): MeetingRsvp => ({
+    id: 'r1',
+    meeting_id: 'm1',
+    registrant_id: 'reg1',
+    username: 'alovelace',
+    email: 'ada@example.com',
+    response_type: 'declined',
+    scope: 'all',
+    created_at: '2026-01-01T00:00:00Z',
+    ...overrides,
+  });
+
+  it('is true for a decline that covers every occurrence', () => {
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({}) }))).toBe(true);
+  });
+
+  it('is false for a decline scoped to one date or onward', () => {
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ scope: 'single' }) }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ scope: 'this_and_following' }) }))).toBe(false);
+  });
+
+  it('is false for accepted, maybe, or no RSVP', () => {
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ response_type: 'accepted' }) }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: rsvp({ response_type: 'maybe' }) }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
+    expect(isMeetingDeclinedForAllOccurrences(null)).toBe(false);
+  });
+});
+
+describe('isMeetingAccepted', () => {
+  const rsvp = (response_type: MeetingRsvp['response_type'], scope: MeetingRsvp['scope'] = 'all'): MeetingRsvp => ({
+    id: 'r1',
+    meeting_id: 'm1',
+    registrant_id: 'reg1',
+    username: 'alovelace',
+    email: 'ada@example.com',
+    response_type,
+    scope,
+    created_at: '2026-01-01T00:00:00Z',
+  });
+
+  it('is true for an acceptance, whatever its scope', () => {
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted') }))).toBe(true);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('accepted', 'single') }))).toBe(true);
+  });
+
+  describe('recurring meetings', () => {
+    const NEXT_OCCURRENCE_ID = '4070908800';
+    const NEXT_START = '2099-01-01T10:00:00Z';
+    const recurring = (my_rsvp: MeetingRsvp | null): Meeting =>
+      buildMeetingFixture({
+        id: 'm1',
+        recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
+        occurrences: [{ occurrence_id: NEXT_OCCURRENCE_ID, start_time: NEXT_START, duration: 60 }],
+        my_rsvp,
+      });
+
+    it('counts an acceptance that covers the next date', () => {
+      expect(isMeetingAccepted(recurring(rsvp('accepted', 'all')))).toBe(true);
+      expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: NEXT_OCCURRENCE_ID }))).toBe(true);
+    });
+
+    it('does not count an acceptance given only for a different date', () => {
+      // The BFF falls back to the newest series RSVP when none applies to the next date.
+      expect(isMeetingAccepted(recurring({ ...rsvp('accepted', 'single'), occurrence_id: '1785247200' }))).toBe(false);
+    });
+
+    it.each(['single', 'this_and_following'] as const)('does not count a %s acceptance without a resolved recurring date', (scope) => {
+      const meeting = { ...recurring({ ...rsvp('accepted', scope), occurrence_id: NEXT_OCCURRENCE_ID }), occurrences: [] };
+      expect(isMeetingAccepted(meeting)).toBe(false);
+    });
+
+    it('counts an all-dates acceptance without a resolved recurring date', () => {
+      expect(isMeetingAccepted({ ...recurring(rsvp('accepted', 'all')), occurrences: [] })).toBe(true);
+    });
+  });
+
+  it('is false for maybe, declined, or no RSVP', () => {
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('maybe') }))).toBe(false);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: rsvp('declined') }))).toBe(false);
+    expect(isMeetingAccepted(buildMeetingFixture({ my_rsvp: null }))).toBe(false);
+    expect(isMeetingAccepted(null)).toBe(false);
+  });
+});
+
+describe('isMeetingHiddenAsDeclined', () => {
+  const declinedAll = { id: 'r1', response_type: 'declined', scope: 'all' } as MeetingRsvp;
+  const ada = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
+
+  it('hides a meeting declined for every date', () => {
+    expect(isMeetingHiddenAsDeclined(buildMeetingFixture({ my_rsvp: declinedAll }), 'ghopper')).toBe(true);
+  });
+
+  it('keeps a declined meeting the viewer organizes', () => {
+    expect(isMeetingHiddenAsDeclined(buildMeetingFixture({ my_rsvp: declinedAll, created_by: ada }), 'alovelace')).toBe(false);
+  });
+
+  it('keeps a meeting that is not declined for every date', () => {
+    expect(isMeetingHiddenAsDeclined(buildMeetingFixture({ my_rsvp: null }), 'ghopper')).toBe(false);
+  });
+});
+
+describe('countMeetingDatesBefore', () => {
+  const NOW = new Date('2026-10-01T12:00:00Z').getTime();
+  const HOUR = 60 * 60_000;
+  const DAY = 24 * HOUR;
+  const iso = (ms: number): string => new Date(ms).toISOString();
+  const occurrence = (startMs: number, overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence =>
+    ({ occurrence_id: String(startMs / 1000), start_time: iso(startMs), duration: 30, ...overrides }) as MeetingOccurrence;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('counts each active occurrence in the window, not each series', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const weekly = buildMeetingFixture({
+      occurrences: [occurrence(NOW + DAY), occurrence(NOW + 3 * DAY), occurrence(NOW + 6 * DAY), occurrence(NOW + 8 * DAY)],
+    });
+    expect(countMeetingDatesBefore([weekly], NOW + 7 * DAY)).toBe(3);
+  });
+
+  it('skips cancelled and ended occurrences but keeps one in progress', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const series = buildMeetingFixture({
+      occurrences: [occurrence(NOW - 2 * DAY), occurrence(NOW - 10 * 60_000), occurrence(NOW + DAY, { status: 'cancel' }), occurrence(NOW + 2 * DAY)],
+    });
+    expect(countMeetingDatesBefore([series], NOW + 7 * DAY)).toBe(2);
+  });
+
+  it('counts a one-time meeting once when it starts inside the window', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const inside = buildMeetingFixture({ start_time: iso(NOW + 2 * HOUR), duration: 60 });
+    const outside = buildMeetingFixture({ start_time: iso(NOW + 9 * DAY), duration: 60 });
+    expect(countMeetingDatesBefore([inside, outside], NOW + 7 * DAY)).toBe(1);
+  });
+});
+
+describe('formatMeetingOccurrenceLabel', () => {
+  it('formats the start in the series timezone, naming the zone', () => {
+    const fixture = occurrence({ occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 });
+
+    expect(formatMeetingOccurrenceLabel(fixture, 'America/New_York')).toBe('Wed, Jan 9, 2030 · 10:00 AM EST');
+  });
+
+  it('falls back to the occurrence id for an unparseable start', () => {
+    expect(formatMeetingOccurrenceLabel(occurrence({ occurrence_id: '42', start_time: 'nope', duration: 30 }), 'UTC')).toBe('42');
+  });
+});
+
+describe('buildMeetingOccurrenceOptions', () => {
+  const NOW = new Date('2030-01-05T12:00:00Z');
+  const ended = occurrence({ occurrence_id: '1893494400', start_time: '2030-01-01T09:00:00Z', duration: 30 });
+  const upcomingLater = occurrence({ occurrence_id: '1894608000', start_time: '2030-01-15T09:00:00Z', duration: 30 });
+  const upcoming = occurrence({ occurrence_id: '1894006800', start_time: '2030-01-08T09:00:00Z', duration: 30 });
+  const cancelled = occurrence({ occurrence_id: '1894611600', start_time: '2030-01-22T09:00:00Z', duration: 30 });
+  const meeting = buildMeetingFixture({
+    id: 'meeting-1',
+    timezone: 'UTC',
+    occurrences: [ended, upcomingLater, upcoming, cancelled],
+    cancelled_occurrences: [cancelled.occurrence_id],
+  });
+
+  it('lists active occurrences that have not ended, earliest first', () => {
+    expect(buildMeetingOccurrenceOptions(meeting, null, NOW).map((option) => option.value)).toEqual([upcoming.occurrence_id, upcomingLater.occurrence_id]);
+  });
+
+  it('keeps the included occurrence even when it has ended', () => {
+    expect(buildMeetingOccurrenceOptions(meeting, ended.occurrence_id, NOW).map((option) => option.value)).toEqual([
+      ended.occurrence_id,
+      upcoming.occurrence_id,
+      upcomingLater.occurrence_id,
+    ]);
+  });
+
+  it('never brings back a cancelled occurrence', () => {
+    expect(buildMeetingOccurrenceOptions(meeting, cancelled.occurrence_id, NOW).map((option) => option.value)).not.toContain(cancelled.occurrence_id);
+  });
+
+  it('keeps a running occurrence that inherits the series duration', () => {
+    // Started 30 minutes before NOW, no duration of its own, series runs 60 minutes — still in progress.
+    const running = occurrence({ occurrence_id: '1893841200', start_time: '2030-01-05T11:30:00Z', duration: 0 });
+    const series = buildMeetingFixture({ id: 'meeting-2', timezone: 'UTC', duration: 60, occurrences: [running] });
+
+    expect(buildMeetingOccurrenceOptions(series, null, NOW).map((option) => option.value)).toEqual([running.occurrence_id]);
+  });
+});
+
+describe('mergeBatchRegistrantResponses', () => {
+  const failure = (input: string, message: string): BatchRegistrantOperationResponse<string>['failures'][number] => ({ input, error: { message } });
+
+  it('returns empty arrays and zero counts for no responses', () => {
+    expect(mergeBatchRegistrantResponses<string>([])).toEqual({ successes: [], failures: [], summary: { total: 0, successful: 0, failed: 0 } });
+  });
+
+  it('returns a single response unchanged', () => {
+    const response: BatchRegistrantOperationResponse<string> = {
+      successes: ['reg-1', 'reg-2'],
+      failures: [failure('reg-3', 'Not found')],
+      summary: { total: 3, successful: 2, failed: 1 },
+    };
+
+    expect(mergeBatchRegistrantResponses([response])).toEqual(response);
+  });
+
+  it('concatenates successes and failures in request order and sums the counts', () => {
+    const merged = mergeBatchRegistrantResponses<string>([
+      { successes: ['reg-1', 'reg-2'], failures: [], summary: { total: 2, successful: 2, failed: 0 } },
+      { successes: ['reg-3'], failures: [failure('reg-4', 'Forbidden')], summary: { total: 2, successful: 1, failed: 1 } },
+      { successes: [], failures: [failure('reg-5', 'Request failed'), failure('reg-6', 'Request failed')], summary: { total: 2, successful: 0, failed: 2 } },
+    ]);
+
+    expect(merged.successes).toEqual(['reg-1', 'reg-2', 'reg-3']);
+    expect(merged.failures.map((item) => item.input)).toEqual(['reg-4', 'reg-5', 'reg-6']);
+    expect(merged.failures[0].error.message).toBe('Forbidden');
+    expect(merged.summary).toEqual({ total: 6, successful: 3, failed: 3 });
+  });
+});
+
+describe('isBatchRegistrantOperationResponse', () => {
+  it('accepts a batch response, including an all-failed one', () => {
+    expect(
+      isBatchRegistrantOperationResponse({
+        successes: [],
+        failures: [{ input: 'reg-1', error: { message: 'Not found' } }],
+        summary: { total: 1, successful: 0, failed: 1 },
+      })
+    ).toBe(true);
+  });
+
+  it.each([
+    ['null', null],
+    ['a string', 'Bad Request'],
+    ['a validation error body', { error: 'Validation failed', validationErrors: [{ field: 'registrants', message: 'No registrants provided' }] }],
+    ['a body missing failures', { successes: [], summary: { total: 0, successful: 0, failed: 0 } }],
+    ['a body with a null summary', { successes: [], failures: [], summary: null }],
+    ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
+  ])('rejects %s', (_label, value) => {
+    expect(isBatchRegistrantOperationResponse(value)).toBe(false);
+  });
+});
+
+describe('getMeetingSelfRemovalMessage', () => {
+  it('names the meeting and warns about losing the RSVP', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync')).toBe(
+      'Remove yourself from "Weekly sync"? You will no longer be invited to any occurrence and will lose your RSVP.'
+    );
+  });
+
+  it.each([[undefined], [false]])('does not mention a committee when invited_via_committee is %s', (viaCommittee) => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', { viaCommittee })).not.toContain('committee');
+  });
+
+  it('tells a committee invitee the committee will not invite them again', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', { viaCommittee: true })).toContain(
+      "You stay in the committee, but it won't invite you to this meeting again."
+    );
+  });
+
+  it('tells an organizer they stay an organizer', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', { organizer: true })).toContain('You will still be an organizer of this meeting.');
+  });
+
+  it('says both when an organizer was invited through a committee', () => {
+    const message = getMeetingSelfRemovalMessage('Weekly sync', { organizer: true, viaCommittee: true });
+
+    expect(message).toContain('still be an organizer');
+    expect(message).toContain("it won't invite you to this meeting again");
+  });
+});
+
+describe('getMeetingSelfRemovalQuestion and getMeetingSelfRemovalNotes', () => {
+  it('asks with curly quotes and lists only the notes that apply, organizer first', () => {
+    expect(getMeetingSelfRemovalQuestion('Weekly sync')).toBe(
+      'Remove yourself from “Weekly sync”? You will no longer be invited to any occurrence and will lose your RSVP.'
+    );
+    expect(getMeetingSelfRemovalNotes()).toEqual([]);
+    expect(getMeetingSelfRemovalNotes({ organizer: true, viaCommittee: true })).toEqual([
+      'You will still be an organizer of this meeting.',
+      "You stay in the committee, but it won't invite you to this meeting again.",
+    ]);
+  });
+});
+
+describe('organizerDisplayName', () => {
+  it('prefers the owner name', () => {
+    expect(
+      organizerDisplayName({ owner: { name: 'Test Organizer', username: 'test-organizer' }, created_by: { name: 'Other Person', username: 'op', email: '' } })
+    ).toBe('Test Organizer');
+  });
+
+  it('falls back to created_by name when the owner is empty', () => {
+    expect(organizerDisplayName({ owner: {}, created_by: { name: 'Pat Creator', username: 'pc', email: 'pc@example.com' } })).toBe('Pat Creator');
+  });
+
+  it('falls back to created_by name when the owner has no name', () => {
+    expect(organizerDisplayName({ owner: { username: 'someone' }, created_by: { name: 'Pat Creator', username: 'pc', email: '' } })).toBe('Pat Creator');
+  });
+
+  it('falls back to the owner email local part when no name exists', () => {
+    expect(organizerDisplayName({ owner: { email: 'jane.doe@acme-motors.example' } })).toBe('jane.doe');
+  });
+
+  it('falls back to Linux Foundation when nothing identifies a person', () => {
+    expect(organizerDisplayName({ owner: {} })).toBe('Linux Foundation');
+    expect(organizerDisplayName({})).toBe('Linux Foundation');
+    expect(organizerDisplayName(null)).toBe('Linux Foundation');
+  });
+
+  it('never surfaces a service account as the organizer', () => {
+    expect(organizerDisplayName({ owner: { username: 'zoom.webhooks', email: 'zoom.webhooks@example.com' } })).toBe('Linux Foundation');
+    expect(organizerDisplayName({ created_by: { name: 'zoom.webhooks', username: 'zoom.webhooks', email: '' } })).toBe('Linux Foundation');
+  });
+
+  it('trims whitespace-only names', () => {
+    expect(organizerDisplayName({ owner: { name: '   ', email: 'sam@acme-motors.example' } })).toBe('sam');
+  });
+});
+
+describe('getMeetingCommitteeSelectionKey', () => {
+  it('ignores group order, labels, duplicate statuses, and legacy status spellings', () => {
+    const legacy: MeetingCommittee = { uid: 'group-a', name: 'Old label' };
+    // Model the untyped wire value stored before the voting-status migration.
+    Reflect.set(legacy, 'allowed_voting_statuses', ['Voting Rep', 'Observer', 'Voting Rep']);
+    expect(getMeetingCommitteeSelectionKey([{ uid: 'group-b' }, legacy])).toBe(
+      getMeetingCommitteeSelectionKey([
+        { uid: 'group-a', name: 'New label', allowed_voting_statuses: ['observer', 'voting_rep'] },
+        { uid: 'group-b', allowed_voting_statuses: [] },
+      ])
+    );
+    expect(getMeetingCommitteeSelectionKey([null, undefined])).toBe(getMeetingCommitteeSelectionKey([]));
+  });
+
+  it('distinguishes group changes and voting-filter changes', () => {
+    const original = getMeetingCommitteeSelectionKey([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-b', allowed_voting_statuses: ['voting_rep'] }]));
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-a', allowed_voting_statuses: ['observer'] }]));
+    expect(original).not.toBe(getMeetingCommitteeSelectionKey([{ uid: 'group-a' }]));
   });
 });

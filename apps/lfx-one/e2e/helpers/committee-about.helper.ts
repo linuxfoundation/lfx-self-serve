@@ -48,20 +48,60 @@ export function buildBaseCommittee(uid: string, overrides: Record<string, unknow
   };
 }
 
-export async function mockCommitteeApis(page: Page, uid: string, opts: { committee: Record<string, unknown>; meetings?: unknown[] }): Promise<void> {
-  await page.route(`**/api/committees/${uid}*`, (route) => {
-    if (route.request().method() !== 'GET') return route.fallback();
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.committee) });
-  });
+export async function mockCommitteeApis(
+  page: Page,
+  uid: string,
+  opts: { committee: Record<string, unknown>; meetings?: unknown[]; members?: unknown[]; detailReady?: Promise<void>; membersReady?: Promise<void> }
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === `/api/committees/${uid}` || url.pathname.startsWith(`/api/committees/${uid}/`),
+    async (route) => {
+      if (route.request().method() !== 'GET') return route.fallback();
+      // Unknown subresources must not receive a detail object or reach the live synthetic-ID API.
+      if (new URL(route.request().url()).pathname !== `/api/committees/${uid}`) return route.abort();
+      await opts.detailReady;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.committee) });
+    }
+  );
   await page.route(`**/api/committees/${uid}/children`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
-  await page.route(`**/api/committees/${uid}/members`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/committees/${uid}/members*`, async (route) => {
+    await opts.membersReady;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.members ?? []) });
+  });
   await page.route(`**/api/committees/${uid}/invites*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route(`**/api/committees/${uid}/applications*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/committees/${uid}/my-applications*`, (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"not found"}' })
+  );
+  await page.route(`**/api/committees/${uid}/documents*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route(`**/api/committees/${uid}/activity*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }));
+  await page.route(`**/api/committees/${uid}/engagement*`, (route) =>
+    route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"forbidden"}' })
+  );
+  await page.route('**/api/user/pending-invitations', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  for (const projectId of [opts.committee['project_uid'], opts.committee['project_slug']]) {
+    if (typeof projectId !== 'string') continue;
+    await page.route(
+      (url) => url.pathname === `/api/projects/${projectId}` || url.pathname.startsWith(`/api/projects/${projectId}/`),
+      (route) => {
+        if (new URL(route.request().url()).pathname !== `/api/projects/${projectId}`) return route.abort();
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ uid: opts.committee['project_uid'], slug: opts.committee['project_slug'], name: 'E2E Project', is_foundation: false }),
+        });
+      }
+    );
+  }
   await page.route('**/api/mailing-lists*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route('**/api/meetings*', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: opts.meetings ?? [] }) });
   });
+  await page.route('**/api/meetings/count*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"count":0}' }));
+  await page.route('**/api/past-meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }));
+  await page.route('**/api/votes*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":[]}' }));
+  await page.route('**/api/surveys*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
 }
 
 export async function gotoCommitteeTab(page: Page, uid: string, query = '?tab=about'): Promise<void> {

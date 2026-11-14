@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Console } from 'node:console';
+
 import otelApi from '@opentelemetry/api';
 import otelExporterProto from '@opentelemetry/exporter-trace-otlp-proto';
 import otelExpress from '@opentelemetry/instrumentation-express';
@@ -23,6 +25,55 @@ const { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } = otelSemconv;
 
 const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 
+// Pages whose `?token=` is a signed credential. Mirrors isInviteLandingPath and
+// isMentorshipMentorInvitePath in packages/shared/src/utils/url.utils.ts; this bootstrap imports no app code.
+const CREDENTIAL_URL_PATHS = new Set(['/invite', '/invite/error', '/mentorship/mentor/invites']);
+// The Gatewaze host-session proxies, whose `token` (a Storage signed URL) and `access_token` are
+// credentials. Mirrors GW_HOST_SESSION_PROXY_API_MOUNT and GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS.
+const GATEWAZE_PROXY_MOUNT = '/api/gatewaze';
+const GATEWAZE_PROXY_CREDENTIAL_PARAMS = ['token', 'access_token', 'refresh_token', 'code'];
+// Upstream path that carries the mentor invite token as a segment.
+export const MENTOR_INVITE_UPSTREAM_PATH = '/mentorship/v1/mentor-invites/';
+// Upstream mentor candidate search, whose `?search=` can be a full email address. Mirrors the path the BFF builds in
+// MentorshipAdminService.getMentorCandidates (MENTORSHIP_PROGRAMS_PATH + /{id}/mentor-candidates).
+export const MENTOR_CANDIDATES_UPSTREAM_PATH_PATTERN = /\/mentorship\/v1\/programs\/[^/]+\/mentor-candidates\/?$/;
+
+/**
+ * Returns a root-relative request URL with an invite `token` replaced by `redacted`, on the
+ * credential pages and inside a `returnTo` that points at one; any other URL comes back unchanged.
+ */
+export function redactCredentialUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl, 'http://localhost');
+    const path = url.pathname.length > 1 && url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
+    let redacted = false;
+    if (CREDENTIAL_URL_PATHS.has(path) && url.searchParams.has('token')) {
+      url.searchParams.set('token', 'redacted');
+      redacted = true;
+    }
+    const lowerPath = path.toLowerCase();
+    if (lowerPath === GATEWAZE_PROXY_MOUNT || lowerPath.startsWith(`${GATEWAZE_PROXY_MOUNT}/`)) {
+      for (const key of GATEWAZE_PROXY_CREDENTIAL_PARAMS) {
+        if (url.searchParams.has(key)) {
+          url.searchParams.set(key, 'redacted');
+          redacted = true;
+        }
+      }
+    }
+    const returnTo = url.searchParams.get('returnTo');
+    if (returnTo) {
+      const redactedReturnTo = redactCredentialUrl(returnTo);
+      if (redactedReturnTo !== returnTo) {
+        url.searchParams.set('returnTo', redactedReturnTo);
+        redacted = true;
+      }
+    }
+    return redacted ? `${url.pathname}${url.search}` : rawUrl;
+  } catch {
+    return rawUrl.includes('token') || rawUrl.toLowerCase().includes(GATEWAZE_PROXY_MOUNT) ? rawUrl.split('?')[0] : rawUrl;
+  }
+}
+
 // Minimal JSON logger for otel.mjs — serverLogger is not available here since
 // this module runs via --import before the server module loads.
 // JSON.stringify is wrapped in try/catch so non-serializable values (bigint,
@@ -38,7 +89,7 @@ function otelReplacer(_key, value) {
   }
   return value;
 }
-const _otelConsole = new console.Console({ stdout: process.stdout, ignoreErrors: true });
+const _otelConsole = new Console({ stdout: process.stdout, ignoreErrors: true });
 function otelWrite(level, msg, extra) {
   let line;
   try {
@@ -148,6 +199,14 @@ if (!otlpEndpoint) {
           const url = req.url || '';
           return url === '/livez' || url === '/readyz' || url.startsWith('/.well-known');
         },
+        // Server spans record the query string in url.query (the only HTTP semconv emitted since
+        // 0.221), which carries the invite token on the credential pages.
+        requestHook: (span, request) => {
+          if (typeof request.url !== 'string') return;
+          const redacted = redactCredentialUrl(request.url);
+          if (redacted === request.url) return;
+          span.setAttribute('url.query', redacted.split('?')[1] ?? '');
+        },
         applyCustomAttributesOnSpan: (span, request, response) => {
           const req = 'req' in response ? response.req : undefined;
           if (!req) return;
@@ -212,9 +271,18 @@ if (!otlpEndpoint) {
         // can't diverge from it. On a malformed input this falls back to normal instrumentation
         // (undici's own construction would throw on the same input and skip the span anyway, so
         // that fallback is provably harmless here, not merely assumed safe).
+        // The mentor-invite upstream call carries the signed invite token as a path segment, so it
+        // is suppressed the same way: url.full/url.path would export the credential. The mentor
+        // candidate search is suppressed too: its query can be a full email address, and url.full
+        // keeps the query string.
         ignoreRequestHook: (request) => {
           try {
-            return new URL(request.path, request.origin).hostname === 'hooks.slack.com';
+            const url = new URL(request.path, request.origin);
+            return (
+              url.hostname === 'hooks.slack.com' ||
+              url.pathname.includes(MENTOR_INVITE_UPSTREAM_PATH) ||
+              MENTOR_CANDIDATES_UPSTREAM_PATH_PATTERN.test(url.pathname)
+            );
           } catch {
             return false;
           }

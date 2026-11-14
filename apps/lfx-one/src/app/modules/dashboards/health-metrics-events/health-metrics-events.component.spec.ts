@@ -24,7 +24,7 @@ import { EventsSpeakersComponent } from './components/events-speakers/events-spe
 import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSectionKey } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
 
 const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, hasEvents: true };
 
@@ -33,7 +33,7 @@ const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, h
 class AtAGlanceStubComponent {
   public readonly glance = input.required<HealthMetricsEventsAtAGlance>();
   public readonly status = input.required<HealthMetricsEventsAtAGlanceStatus>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -41,39 +41,35 @@ class AtAGlanceStubComponent {
 @Component({ selector: 'lfx-events-registration-forecast', template: '<div data-testid="events-forecast-stub"></div>' })
 class ForecastStubComponent {
   public readonly countsChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Past events, whose reads its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-past-events', template: '<div data-testid="events-past-stub"></div>' })
 class PastStubComponent {
-  public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registrations-growth', template: '<div data-testid="events-reg-stub"></div>' })
 class RegistrationsGrowthStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 }
 
 /** Stands in for Revenue, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-revenue', template: '<div data-testid="events-rev-stub"></div>' })
 class RevenueStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for Sponsorship, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-sponsorship', template: '<div data-testid="events-spon-stub"></div>' })
 class SponsorshipStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -81,23 +77,21 @@ class SponsorshipStubComponent {
 @Component({ selector: 'lfx-events-speakers', template: '<div data-testid="events-spk-stub"></div>' })
 class SpeakersStubComponent {
   public readonly noteChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for Organizations at events, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-organizations', template: '<div data-testid="events-orgs-stub"></div>' })
 class OrganizationsStubComponent {
-  public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for Geographic distribution, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-geography', template: '<div data-testid="events-geo-stub"></div>' })
 class GeographyStubComponent {
-  public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -162,32 +156,23 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
   }
 
-  async function sectionsReport(
-    note: string,
-    pastCount: number | null = null,
-    speakersNote = '',
-    orgsCount: number | null = null,
-    geoCount: number | null = null
-  ): Promise<void> {
+  async function sectionsReport(note: string, speakersNote = ''): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
-    atAGlanceStub().settled.emit();
+    atAGlanceStub().settled.emit(false);
     forecast.countsChange.emit(note);
-    forecast.settled.emit();
-    pastStub.countChange.emit(pastCount);
-    pastStub.settled.emit();
-    (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit();
-    (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit();
-    (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit();
+    forecast.settled.emit(false);
+    pastStub.settled.emit(false);
+    (fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent).settled.emit(false);
+    (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit(false);
+    (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit(false);
     const speakersStub = fixture.debugElement.query(By.directive(SpeakersStubComponent)).componentInstance as SpeakersStubComponent;
     speakersStub.noteChange.emit(speakersNote);
-    speakersStub.settled.emit();
+    speakersStub.settled.emit(false);
     const orgsStub = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
-    orgsStub.countChange.emit(orgsCount);
-    orgsStub.settled.emit();
+    orgsStub.settled.emit(false);
     const geoStub = fixture.debugElement.query(By.directive(GeographyStubComponent)).componentInstance as GeographyStubComponent;
-    geoStub.countChange.emit(geoCount);
-    geoStub.settled.emit();
+    geoStub.settled.emit(false);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -250,15 +235,14 @@ describe('HealthMetricsEventsComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge before a read and the Members note', async () => {
+  it('lists every section in the sub-nav, with no note before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]');
 
     for (const section of HEALTH_METRICS_EVENTS_SECTIONS) {
       expect(fixture.nativeElement.querySelector(`[data-testid="events-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
-    expect(nav.textContent).toContain('also appears in Members');
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('shows the note the forecast reports on its sub-nav item', async () => {
@@ -270,33 +254,9 @@ describe('HealthMetricsEventsComponent', () => {
 
   it('shows the note Speakers & proposals reports on its sub-nav item', async () => {
     await setup();
-    await sectionsReport('', null, 'down 30% YoY');
+    await sectionsReport('', 'down 30% YoY');
 
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk"]').textContent).toContain('down 30% YoY');
-  });
-
-  it('badges Organizations at events with the in-scope count it reports', async () => {
-    await setup();
-    await sectionsReport('', null, '', 340);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-orgs"]').textContent).toContain('340');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-past"]').textContent).not.toMatch(/\d/);
-  });
-
-  it('badges Geographic distribution with the countries count it reports', async () => {
-    await setup();
-    await sectionsReport('', null, '', null, 42);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-geo"]').textContent).toContain('42');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-orgs"]').textContent).not.toMatch(/\d/);
-  });
-
-  it('badges Past events with the count it reports', async () => {
-    await setup();
-    await sectionsReport('', 12);
-
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-past"]').textContent).toContain('12');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).not.toMatch(/\d/);
   });
 
   it('scrolls to the section a deep link names', async () => {
@@ -308,20 +268,6 @@ describe('HealthMetricsEventsComponent', () => {
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-spon');
-  });
-
-  it('scrolls to Past events on every pick from the forecast, not only when the URL changes', async () => {
-    await setup('past');
-    await sectionsReport('');
-    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
-    scrollIntoView.mockClear();
-    const stub = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
-    stub.sectionPicked.emit('past');
-    stub.sectionPicked.emit('past');
-    fixture.detectChanges();
-
-    expect(scrollIntoView).toHaveBeenCalledTimes(2);
-    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('events-sub-nav-past');
   });
 
   it('reads the foundation at a glance once and hands the result to the section', async () => {
@@ -340,13 +286,29 @@ describe('HealthMetricsEventsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="events-empty"]')).toBeNull();
   });
 
-  it('swaps the whole shell for one empty state when the foundation has no events', async () => {
+  it('keeps the shell for a foundation with no events until every section settles empty, then shows the Events blank card', async () => {
     await setup(null, { ...GLANCE, upcomingEvents: 0, hasEvents: false });
-    const empty = fixture.nativeElement.querySelector('[data-testid="events-empty"]');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-blank"]')).toBeNull();
 
-    expect(empty.textContent).toContain('No events yet');
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid^="events-section-"]')).toBeNull();
+    const stubs = [
+      AtAGlanceStubComponent,
+      ForecastStubComponent,
+      PastStubComponent,
+      RegistrationsGrowthStubComponent,
+      RevenueStubComponent,
+      SponsorshipStubComponent,
+      SpeakersStubComponent,
+      OrganizationsStubComponent,
+      GeographyStubComponent,
+    ];
+    for (const type of stubs)
+      (fixture.debugElement.query(By.directive(type)).componentInstance as { settled: { emit(empty: boolean): void } }).settled.emit(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="events-blank"] h2').textContent).toBe('No event data yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-events-page"]').className).toContain('hidden');
   });
 
   it("drops a landed empty state back to loading on a foundation switch, never showing the next one's as empty", async () => {

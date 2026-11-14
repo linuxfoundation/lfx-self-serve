@@ -1,7 +1,36 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_EMAIL_VARIANTS, CAMPAIGN_METRICS_WINDOWS } from '../constants/campaign.constants';
+import type {
+  ACCOUNT_MONITOR_CONFLICT_REASONS,
+  CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_STRATEGIES,
+  CAMPAIGN_EMAIL_SEGMENTS,
+  CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_SURVEY_STAGES,
+  CAMPAIGN_EMAIL_VARIANTS,
+  CAMPAIGN_METRICS_WINDOWS,
+  CREATIVE_ASSET_MIME_TYPES,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_AUDIENCE_READ_TYPES,
+  GOOGLE_ADS_DEMAND_GEN_DEVICES,
+  GOOGLE_ADS_GENDERS,
+  GOOGLE_ADS_INCOME_RANGES,
+  GOOGLE_ADS_OBSERVED_DEMOGRAPHICS,
+  GOOGLE_ADS_PARENTAL_STATUSES,
+  GOOGLE_ADS_RADIUS_UNITS,
+  GOOGLE_ADS_SCHEDULE_DAYS,
+  GOOGLE_ADS_SCHEDULE_MINUTES,
+  GOOGLE_BIDDING_STRATEGIES,
+  GOOGLE_CAMPAIGN_CHANNELS,
+  GOOGLE_CHANNELS_WITH_CREATIVE,
+  MICROSOFT_KEYWORDS_WINDOWS,
+  MONITOR_DATE_RANGE_OPTIONS,
+  REDDIT_CALL_TO_ACTIONS,
+  REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOALS,
+} from '../constants/campaign.constants';
+import type { KeywordTargetingPlatform, MetaAdSetCampaignEligibility } from './campaign-optimize.interface';
 
 // ---------------------------------------------------------------------------
 // Platform & Phase
@@ -33,9 +62,59 @@ export interface LinkedInTargetingProfileConfig {
   groups: readonly string[];
 }
 
+/**
+ * A set of LinkedIn targeting facet URNs, with no claim about which side of an edit it is on (#5546).
+ * Empty lists mean no entries in the set, so what that implies depends on the extending type or the
+ * value holding it: the KEPT facets of an edited profile, or the REMOVED ones.
+ */
+export interface LinkedInTargetingFacets {
+  skills: string[];
+  groups: string[];
+}
+
+/**
+ * The facet URNs an operator took OUT of the selected LinkedIn targeting profile on the Implement tab
+ * (#5546). Removal only: nothing can be added until campaign-service offers a name-to-URN lookup
+ * (linuxfoundation/lfx-v2-campaign-service#585). Empty lists mean nothing was removed, i.e. the
+ * profile as configured. For the entries that are KEPT, use `LinkedInTargetingFacets`.
+ */
+export interface LinkedInTargetingRemovals extends LinkedInTargetingFacets {}
+
+/**
+ * The selected profile as edited, sent as `linkedInConfig.targetingProfileEdit` (#5546) only when
+ * the operator removed something. `id` is the profile campaign-service resolves the selection to
+ * (`custom` resolves to `cloud-native`); `skills` and `groups` are the entries KEPT, not removed. The
+ * BFF accepts it only when every URN is one the configured profile already carries.
+ */
+export interface LinkedInTargetingProfileEdit extends LinkedInTargetingFacets {
+  id: LinkedInTargetingProfile;
+}
+
 export type CampaignStatus = 'draft' | 'paused' | 'enabled' | 'removed' | 'limited' | 'unknown';
 
-export type CampaignType = 'search' | 'demand-gen' | 'sponsored' | 'social';
+/**
+ * The campaign shapes a brief can ask for.
+ *
+ * The first five are GOOGLE ADS channels and map one-to-one onto `googleAdsConfig.channel`
+ * upstream (`internal/dispatch/googleads.go`); `sponsored` and `social` name the LinkedIn and
+ * Meta/Reddit shapes and never reach that field. `performance-max`, `video` and `display` are
+ * servable only through campaign-service — the legacy in-process create path branches on
+ * `search` alone (`executeGoogleCampaignCreation` in `campaign-proxy.service.ts`) and would
+ * build a DEMAND GEN campaign for any other value rather than rejecting it.
+ */
+export type CampaignType = 'search' | 'demand-gen' | 'performance-max' | 'video' | 'display' | 'sponsored' | 'social';
+
+export type GoogleCampaignChannel = (typeof GOOGLE_CAMPAIGN_CHANNELS)[number];
+
+/**
+ * How a Google campaign bids, named in the Google Ads UI's own vocabulary.
+ *
+ * Which of these a given channel will actually accept is not uniform — see
+ * `GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL`, which reproduces campaign-service's five per-channel
+ * sets. Being a member of this union says only that the name exists, not that it is valid
+ * anywhere it can be typed.
+ */
+export type GoogleBiddingStrategy = (typeof GOOGLE_BIDDING_STRATEGIES)[number];
 
 export type DateRangeOption = 7 | 14 | 30;
 
@@ -43,17 +122,323 @@ export type CampaignGoal = 'conversions' | 'brand-awareness' | 'traffic' | 'lead
 
 export type CampaignProgramType = 'events' | 'education';
 
-/** How a campaign reaches its audience — the second selector after the program type. */
-export type CampaignDeliveryType = 'paid-marketing' | 'email';
+/**
+ * How a campaign reaches its audience — the second selector after the program type.
+ *
+ * `survey` is a SURFACE, not a kind of email: its brief is authored from a pasted source document
+ * and a promoted URL rather than a scraped event page, and its stages name which ASSET is promoted
+ * rather than which send in a series it is. Upstream keys a brief on `(project, slug, delivery,
+ * stage)`, so modelling it as an email stage would put a survey brief in the same identity slot as
+ * that event's sends and let one displace the other.
+ */
+export type CampaignDeliveryType = 'paid-marketing' | 'email' | 'survey';
 
 export type RedditObjective = 'awareness' | 'traffic' | 'conversions' | 'video_views';
+
+/** An objective the picker currently offers — a subset of `RedditObjective`, see that constant. */
+export type SelectableRedditObjective = (typeof REDDIT_SELECTABLE_OBJECTIVES)[number];
+
+/** One of the promoted-post CTA labels Reddit accepts — see `REDDIT_CALL_TO_ACTIONS`. */
+export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
+
+/** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
+export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
+
+/** Where an image upload in the create form stands; a finished upload is its asset id being set. */
+export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
+/**
+ * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
+ * upload per owner, so a pick on one platform never cancels or takes over another's.
+ * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
+ * upload still running in another, as a second Meta pick replaces the first.
+ */
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft' | 'twitter';
+
+/**
+ * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
+ * returns it to the browser.
+ *
+ * `created` is false when an identical image had already been uploaded to the same brief:
+ * campaign-service dedupes on the content checksum and returns the existing row (200 rather than
+ * 201), so the `id` is equally usable either way.
+ */
+export interface CreativeAssetUploadResult {
+  id: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  created: boolean;
+}
+
+/**
+ * campaign-service's `CreativeAsset` as the upload answers it (`design/brief.go`). `created` is
+ * the string `"true"`/`"false"` upstream, mirroring its 201/200 split.
+ */
+export interface CampaignServiceCreativeAsset {
+  id: string;
+  project_id: string;
+  brief_id: string;
+  mime_type: string;
+  byte_size: number;
+  checksum: string;
+  /**
+   * Pixel dimensions as read from the image header at upload. OPTIONAL upstream, and absent means
+   * UNKNOWN rather than 0: the service began recording them in migration 000047, so an asset stored
+   * before it has none and never will until a backfill runs. Carrying a fabricated 0 would read to a
+   * slot matcher as "fails every minimum", which is a different and wrong answer.
+   */
+  width?: number;
+  height?: number;
+  created?: 'true' | 'false';
+}
+
+/** campaign-service's `creative-asset-list` — the brief's library plus the quota an upload is judged against. */
+export interface CampaignServiceCreativeAssetList {
+  assets: CampaignServiceCreativeAsset[];
+  count: number;
+  count_limit: number;
+  bytes_used: number;
+  bytes_limit: number;
+}
+
+/** campaign-service's `creative-slot-assignment` — one platform image slot and the assets that fill it. */
+export interface CampaignServiceCreativeSlotAssignment {
+  slot_key: string;
+  platform: string;
+  /** Absent where the platform has a single ad shape. */
+  channel?: string;
+  slot: string;
+  label: string;
+  requirement: string;
+  asset_ids: string[];
+  min_count: number;
+  max_count: number;
+}
+
+/** campaign-service's `creative-slot-gap` — one required rule the library cannot meet. */
+export interface CampaignServiceCreativeSlotGap {
+  platform: string;
+  channel?: string;
+  /** Absent when the requirement spans several slots and no single one is required on its own. */
+  slot_key?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** campaign-service's `creative-asset-plan` — which stored assets fit which slots, and what is missing. */
+export interface CampaignServiceCreativeAssetPlan {
+  platforms: string[];
+  assignments: CampaignServiceCreativeSlotAssignment[];
+  gaps: CampaignServiceCreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One stored creative asset as the browser sees it.
+ *
+ * `width`/`height` stay optional here for the same reason they are optional upstream — absent means
+ * the dimensions were never recorded, which a slot grid must render as "unknown", not as "0".
+ */
+export interface StoredCreativeAsset {
+  id: string;
+  projectId: string;
+  briefId: string;
+  mimeType: CreativeAssetMimeType;
+  byteSize: number;
+  checksum: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * A brief's creative-asset library plus its quota.
+ *
+ * The limits travel with the list rather than only in the 409 an upload returns, so a folder upload
+ * knows before it starts how many assets and bytes it may still add — instead of discovering the
+ * brief is full by sending file 51 and being refused.
+ */
+export interface CreativeAssetLibrary {
+  assets: StoredCreativeAsset[];
+  count: number;
+  countLimit: number;
+  bytesUsed: number;
+  bytesLimit: number;
+}
+
+/**
+ * Where one file of a library upload stands.
+ *
+ * Every file an operator picks ends in exactly one of the four outcomes — `uploaded`, `present`
+ * (identical bytes were already stored, so nothing was added), `refused` (the file can never be
+ * stored as it is) or `failed` (it might be on another try) — or in `cancelled`. None is ever
+ * dropped from the list: a file that was skipped without saying so is the one an operator later
+ * hunts for in six ad managers.
+ */
+export type CreativeAssetQueueItemStatus = 'waiting' | 'uploading' | 'uploaded' | 'present' | 'refused' | 'failed' | 'cancelled';
+
+/** Why a file was refused. `quota` is campaign-service's 409; the rest are checked before sending. */
+export type CreativeAssetQueueRefusal = 'type' | 'size' | 'quota' | 'subfolder' | 'other';
+
+/** One file of a library upload, as `CampaignService` reports it. */
+export interface CreativeAssetQueueItem {
+  /** Unique within the queue — two files can share a name when picked from different folders. */
+  id: string;
+  /**
+   * The brief the file is stored against. The queue is one serial lane across briefs, so a pick on
+   * a second brief waits its turn rather than erasing what the first brief's run reported.
+   */
+  briefId: string;
+  projectSlug: string;
+  name: string;
+  byteSize: number;
+  status: CreativeAssetQueueItemStatus;
+  /** Set only on `refused`. */
+  refusal: CreativeAssetQueueRefusal | null;
+  /** The outcome as a sentence for the operator; empty while waiting or uploading. */
+  message: string;
+  /** The stored asset's id on `uploaded` and `present`; empty otherwise. */
+  assetId: string;
+}
+
+/** How one library upload outcome reads: its label and its badge's Tailwind classes. */
+export interface CreativeAssetQueueStatusView {
+  label: string;
+  badge: string;
+}
+
+/** A library upload item as the upload list renders it, its outcome's label and badge resolved. */
+export interface CreativeAssetQueueRow extends CreativeAssetQueueItem {
+  statusLabel: string;
+  statusBadge: string;
+  retryable: boolean;
+}
+
+/** The library upload's read of the brief's quota. `error` keeps no library: a guessed headroom would mislead. */
+export interface CreativeAssetLibraryQuotaState {
+  status: 'loading' | 'ready' | 'error';
+  library: CreativeAssetLibrary | null;
+}
+
+/** One quota read tagged with the brief it was for, so a re-read can keep showing that brief's last answer. */
+export interface CreativeAssetLibraryQuotaRead {
+  briefId: string;
+  quota: CreativeAssetLibraryQuotaState;
+}
+
+/** One platform image slot and the stored assets that fill it, best fit first. */
+export interface CreativeSlotAssignment {
+  slotKey: string;
+  platform: string;
+  channel?: string;
+  slot: string;
+  label: string;
+  /** The slot's rule as an operator-readable sentence, carried even on a full slot. */
+  requirement: string;
+  assetIds: string[];
+  minCount: number;
+  maxCount: number;
+}
+
+/** One required slot or cross-slot rule the library leaves short. */
+export interface CreativeSlotGap {
+  platform: string;
+  channel?: string;
+  slotKey?: string;
+  label: string;
+  need: number;
+  reason: string;
+}
+
+/** The computed slot grid for a brief's library. A pure read — nothing is attached to anything. */
+export interface CreativeAssetPlan {
+  platforms: string[];
+  assignments: CreativeSlotAssignment[];
+  gaps: CreativeSlotGap[];
+  unclassified: string[];
+  unused: string[];
+}
+
+/**
+ * One row of the slot-coverage grid: a slot the plan filled, a slot it left short, or a
+ * cross-slot requirement that names no single slot.
+ *
+ * Assembled from a plan's `assignments` and `gaps` TOGETHER, because the two describe the same
+ * slot from opposite sides — a slot holding one of the two images it needs appears in both, and
+ * rendering them as separate rows would show an operator the same slot twice with contradictory
+ * answers.
+ */
+export interface CreativeSlotCoverageRow {
+  key: string;
+  label: string;
+  /** The slot's rule as a sentence, when the plan carried an assignment for it. */
+  requirement: string;
+  /** How many stored assets the plan placed here. Zero for a slot with no assignment at all. */
+  filled: number;
+  /** How many more this slot or rule still needs. Zero when nothing is missing, including a row the form already fills. */
+  need: number;
+  /** The plan's own words for why it is short. Empty when nothing is missing. */
+  reason: string;
+  status: 'filled' | 'short' | 'missing';
+  statusLabel: string;
+  /**
+   * The count as a phrase: `filled` against the slot's minimum where the plan carried an
+   * assignment and that minimum is above zero, a bare stored count where the slot states no
+   * minimum, `0` against the outstanding need where the plan carried only a gap, and empty for a
+   * cross-slot requirement, which has no single slot to count in. A row the host's form already
+   * fills (#4833) reads `N in the form` instead, summed across a cross-slot rule's member slots.
+   */
+  countText: string;
+}
+
+/** The coverage rows for one platform, or for one channel within a platform. */
+export interface CreativeSlotCoverageGroup {
+  key: string;
+  /** The platform's display label, with its channel appended when the plan named one. */
+  label: string;
+  rows: CreativeSlotCoverageRow[];
+  /** Rows still short or missing — what an operator has to act on in this group. */
+  openCount: number;
+}
+
+/**
+ * The slot grid's own read of `get-asset-plan`.
+ *
+ * `idle` is NOT `ready` with an empty plan: before a brief is saved there is nothing to plan
+ * against, and an empty plan rendered as a result would read as "no gaps — this library can
+ * launch", which is the one thing it does not mean.
+ */
+export interface CreativeSlotCoverageState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  plan: CreativeAssetPlan | null;
+  message: string;
+}
+
+/** One of the concrete video optimization goals Reddit accepts — see `REDDIT_VIDEO_GOALS`. */
+export type RedditVideoGoal = (typeof REDDIT_VIDEO_GOALS)[number];
+
+/** The three inputs needed to author a promoted post, once a creator has decided to author one. */
+export interface RedditAuthoredPostInput {
+  imageUrl: string;
+  headline: string;
+  callToAction: RedditCallToAction;
+}
 
 export interface RedditObjectiveParams {
   readonly redditObjective: string;
   readonly bidType: 'CPM' | 'CPC';
   /** Reserved for future manual-bid support; unused while campaign strategy is BIDLESS. */
   readonly bidValue: number;
-  readonly optimizationGoal: string;
+  /**
+   * The goal this objective always optimizes toward, where it has one.
+   *
+   * Optional because `video_views` does not: Reddit has no bare `VIDEO_VIEWS` goal, so the concrete
+   * goal is resolved per campaign from the request's `videoGoal` rather than baked into the table.
+   * Read it through `resolveRedditOptimizationGoal`, never directly — the direct read is what sent
+   * an unacceptable goal to Reddit (#3449).
+   */
+  readonly optimizationGoal?: string;
   readonly viewThroughConversionType?: string;
 }
 
@@ -114,7 +499,13 @@ export interface CampaignPlatformOption {
   id: CampaignPlatform;
   label: string;
   icon: string;
+  /** CREATE is off for the platform: the Ad Channels picker and the Implement tab do not offer it. */
   disabled?: boolean;
+  /**
+   * Whether the Monitoring tab offers the platform's monitor, independently of `disabled`. Omitted,
+   * it follows create (offered unless `disabled`); see `campaignPlatformMonitorable`.
+   */
+  monitorable?: boolean;
 }
 
 export interface CampaignGoalOption {
@@ -151,6 +542,9 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'negativeKeywords'
+  | 'callouts'
+  | 'sitelinks'
   | 'linkedin_strategy'
   | 'error'
   | 'done'
@@ -168,6 +562,15 @@ export interface CampaignBriefRequest {
    * two different things. This field is what distinguishes them.
    */
   deliveryType?: CampaignDeliveryType;
+  /**
+   * The SURVEY surface's source document: the survey instrument or report text the copy is written
+   * from. Required when `deliveryType` is `survey` and ignored otherwise.
+   *
+   * It replaces the scrape rather than supplementing it. A survey's facts live in the document the
+   * operator pasted, not on the page the call-to-action opens -- that page is often a bare form --
+   * so the survey path skips fetching and extraction entirely and takes this as the whole truth.
+   */
+  sourceText?: string;
   programType?: CampaignProgramType;
   campaignGoal?: CampaignGoal;
   targetAudience?: string;
@@ -207,7 +610,125 @@ export interface CampaignEventSponsor {
   logoUrl: string;
 }
 
+/**
+ * One send of a survey series, as the page holds it between generating and building.
+ *
+ * Carries the brief id because each send is its own brief upstream, and the copy because the
+ * operator reviews all of them together before anything reaches HubSpot.
+ */
+export interface CampaignSequenceSend {
+  stage: CampaignSurveyStage;
+  /** The send's operator-facing name, e.g. "Survey Reminder". */
+  label: string;
+  briefId: string;
+  copy: EmailBriefCopy;
+  /** The HubSpot draft this send was staged as: its link, and its id for pasting into search. */
+  draftUrl?: string;
+  draftId?: string;
+}
+
+/** One written send as the series panel renders it: the send, its staged body, button and state. */
+export interface CampaignSequenceSendRow {
+  send: CampaignSequenceSend;
+  bodyHtml: string;
+  button: { text: string; url: string } | null;
+  staged: boolean;
+}
+
+/**
+ * What a send workflow is built from: the series' briefs, in SEND ORDER, and the workflow whose
+ * schedule and enrollment it copies.
+ *
+ * Brief ids rather than HubSpot email ids, because which draft a brief produced is
+ * campaign-service's own record -- a client that looked that up could pair a brief with another
+ * campaign's email, and a workflow is exactly where that goes unnoticed: every step looks filled in.
+ */
+export interface CampaignSendWorkflowRequest {
+  /**
+   * The workflow to copy. Its HubSpot editor URL, or its bare numeric id. Only ever READ.
+   *
+   * OPTIONAL: omitted, campaign-service uses the deployment's configured survey-sequence
+   * workflow, which is the ordinary case -- an operator should not have to find a URL in HubSpot
+   * to do the usual thing.
+   */
+  sourceWorkflowUrl?: string;
+  /** Name for the new workflow. */
+  name: string;
+  /** The briefs this workflow sends, in send order. At least two -- one email needs no workflow. */
+  briefIds: string[];
+  /**
+   * Calendar dates (YYYY-MM-DD), one per wait-until-date step of the source workflow, in flow
+   * order, each after today and after the one before it. Required by campaign-service whenever the
+   * source has dated steps -- its own dates belong to another campaign. Each step's time of day is
+   * always the source's.
+   */
+  sendDates?: string[];
+}
+
+/** The created workflow, which is always disabled until a human enables it in HubSpot. */
+export interface CampaignSendWorkflowResult {
+  flowId: string;
+  name: string;
+  /** Where the operator reviews and enables it. */
+  editUrl: string;
+  sourceFlowId: string;
+  sourceFlowName?: string;
+  /** Always false on create. Reported rather than assumed, so a portal that ignored it is visible. */
+  isEnabled: boolean;
+  /** How many of the source's send steps were pointed at this campaign's drafts. */
+  sendEmailSteps: number;
+  /** How many wait-until-date steps had their date replaced. */
+  datedSteps: number;
+  /**
+   * The HubSpot lists the new workflow enrolls: the series' shared audience (its master list, or
+   * every list it was attached from). The source workflow's own enrollment is always replaced.
+   */
+  enrollmentListIds: string[];
+  /** The new workflow's whole suppression set: the source workflow's own lists plus the audience's. */
+  suppressionListIds: string[];
+}
+
+/**
+ * campaign-service's `send-workflow-result`, as it arrives on the wire (snake_case). The BFF maps
+ * it to `CampaignSendWorkflowResult`; nothing outside the BFF reads this shape.
+ */
+export interface CampaignServiceSendWorkflowResult {
+  flow_id?: string;
+  name?: string;
+  edit_url?: string;
+  source_flow_id?: string;
+  source_flow_name?: string;
+  is_enabled?: boolean;
+  send_email_steps?: number;
+  dated_steps?: number;
+  enrollment_list_ids?: string[];
+  suppression_list_ids?: string[];
+}
+
+/** One choice in the survey surface's "How many emails?" picker. */
+export interface CampaignSurveyEmailCountOption {
+  count: number;
+  label: string;
+  description: string;
+  /** The stages this count's sends occupy, in send order. */
+  stages: readonly CampaignSurveyStage[];
+}
+
+/** Where a survey series' generate, stage or workflow build stands. */
+export type CampaignSurveySequenceGenerateState = 'idle' | 'generating' | 'done' | 'error';
+export type CampaignSurveySequenceStagingState = 'idle' | 'staging' | 'done' | 'error';
+export type CampaignSurveySendWorkflowState = 'idle' | 'building' | 'done' | 'error';
+
 export interface CampaignEventDetails {
+  /**
+   * The SURVEY surface's primary input: the survey instrument or report text the copy is written
+   * from, pasted by the operator rather than scraped. Empty on every event brief.
+   *
+   * It rides in this blob rather than in a column of its own because upstream stores
+   * `event_details` as an opaque JSON document, so carrying it costs no migration -- the
+   * generator reads it back as `sourceText` and renders it into the prompt as "Source document".
+   */
+  sourceText: string;
   name: string;
   dates: string;
   city: string;
@@ -218,6 +739,26 @@ export interface CampaignEventDetails {
   speakers: string[];
   slug: string;
   formatNotes: string;
+  /**
+   * The event's own summary of itself, 1-3 sentences.
+   *
+   * This is the single richest fact the scrape produces, and email copy generation is its main
+   * consumer: campaign-service's generator refuses to invent facts, so without a description it
+   * can only write from the name, dates and location and the resulting email is three lines long.
+   */
+  description: string;
+  /**
+   * Links the event page itself publishes, beyond `registrationUrl`.
+   *
+   * Empty string means "the page did not state one", which is NOT the same as "the model could
+   * not find one": every value here survived `verifyPageLink`, so it is a URL the fetched HTML
+   * actually links to. A link the extraction invented is dropped before it reaches this type.
+   * See `event-links.helper.ts` for why that check exists rather than trusting the extraction.
+   */
+  agendaUrl: string;
+  cfpUrl: string;
+  venueUrl: string;
+  sponsorshipUrl: string;
   heroImageUrl?: string;
   sponsors?: CampaignEventSponsor[];
 }
@@ -233,6 +774,32 @@ export interface CampaignBriefOutput {
   eventDetails: CampaignEventDetails;
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
+  /**
+   * Negative keywords the brief generated from the event page, as suggestions for two editors: the
+   * Implement tab's create-time negatives on a Search campaign (#4991), and the Optimize tab's
+   * negative-keyword editor once the campaign is live.
+   *
+   * A SUGGESTION: each editor opens with this text. On a Search create it is sent as shown unless the
+   * operator edits or clears it; on Optimize nothing leaves until they press the button.
+   *
+   * Text only, no match type. The match type is one choice for the whole request and belongs to the
+   * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
+   * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
+   * did not exist when it was written.
+   *
+   * Absent and empty are interchangeable here, UNLIKE {@link googleCallouts}, where `[]` is a list
+   * the operator emptied and clears an editor. Both leave this editor empty and nothing is lost
+   * either way, because the operator's own text is never stored in this field — a suggestion is all
+   * it ever holds, and the consumer seeds only on a non-empty one.
+   *
+   * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
+   * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
+   * of the four platforms that take negatives, since the brief cannot know which campaign these
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`. A stored brief
+   * is still runtime-arbitrary, so the Implement tab filters its seed through the same rules again
+   * (`googleSuggestedNegativeKeywordsText`) and never opens holding a line it would refuse.
+   */
+  negativeKeywords?: string[];
   hsUtm: string | null;
   totalBudget: number | null;
   driveFolderUrl: string;
@@ -274,11 +841,57 @@ export interface CampaignBriefOutput {
    * campaign be the series it actually is -- a CFP Launch and a Final Countdown for the same
    * event, both live at once.
    */
-  emailStage?: CampaignEmailStage;
+  emailStage?: CampaignSendStage;
   selectedPlatforms?: CampaignPlatform[];
   linkedInCopy?: LinkedInBriefCopy;
   redditCopy?: RedditBriefCopy;
   metaCopy?: MetaBriefCopy;
+  /**
+   * Google callout extensions the brief generated, for the Implementation tab's editor to open on.
+   *
+   * A SEED, not a decision: the operator adds, edits and removes entries there exactly as before,
+   * and {@link CampaignImplementationDraft.googleCallouts} is what survives a tab leave.
+   *
+   * Absent and empty do NOT agree, and the difference is load-bearing. `undefined` means the brief
+   * carries no list at all — a brief generated before this feature shipped, or restored from a row
+   * written then — and the Implementation tab leaves its editor untouched for it, so entries the
+   * operator typed by hand survive. `[]` is a list, and assigning it CLEARS that editor. The brief
+   * restore path is written to the same rule: it returns `undefined`, never `[]`, for a stored row
+   * that carries no list.
+   *
+   * Already capped to {@link GOOGLE_ADS_MAX_CALLOUTS} by the generator, which also DROPS an entry
+   * past {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} rather than shortening it — so the editor never
+   * opens holding a list it would refuse the operator for typing, and never holding a phrase cut
+   * mid-word that nobody wrote. (The restore path bounds instead, because there the alternative is
+   * losing an entry the operator typed.)
+   */
+  googleCallouts?: string[];
+  /**
+   * Google sitelink extensions the brief derived from the event page's own links.
+   *
+   * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, with
+   * absent and empty meaning different things.
+   *
+   * Three producers, and they guarantee different things about `finalUrl`. The GENERATOR builds
+   * each one from a URL `verifyPageLink` already confirmed the scraped page carries, so a generated
+   * sitelink cannot point at a destination the model composed. The brief RESTORE path rebuilds the
+   * list from campaign-service's opaque `copy` blob, which carries no page provenance to check; it
+   * guarantees only what it can enforce on the value itself — an absolute http(s) URL within
+   * {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, a bounded label, and no duplicate labels. The CARRY
+   * (the Implementation tab's `briefWithCarriedExtensions`) re-attaches the operator's own edited
+   * list, which the editor's add-guards vetted on the same value-only terms — a destination the
+   * operator typed or pasted there was never fetched and is not known to resolve. Do not treat a
+   * value read off this field as page-verified.
+   *
+   * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
+   * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own
+   * final URL goes through, with the channel's own `utm_medium`: `paid-search` on Search,
+   * `display` on Demand Gen), so a click on one attributes under this campaign's `utm_campaign`
+   * with no help from this app. Tagging here as well would hand that builder a
+   * pre-tagged URL whose `utm_campaign` it preserves rather than sets, which is how a sitelink
+   * would end up attributed to a campaign other than the one that bought the click.
+   */
+  googleSitelinks?: CampaignSitelink[];
 }
 
 /**
@@ -348,10 +961,67 @@ export interface CampaignBriefPersistResult {
    * still refuses.
    *
    * A discriminated field rather than a thrown error: the brief is not lost, nothing is broken,
-   * and the caller's next step is a CHOICE (open the existing one, or file under a different
-   * event) rather than a retry.
+   * and the caller's next step is a CHOICE (open the existing one, replace it explicitly — the paid
+   * surface's Replace saved brief, #4731 — or file under a different event) rather than a retry.
    */
   conflict?: 'unowned-brief-exists' | 'stale-brief' | 'superseded-after-write' | 'unverified-validator';
+}
+
+/**
+ * What `POST /api/campaigns/brief/:briefId/approve` reports back.
+ *
+ * Approval used to exist only as the tail of a save: `saveBrief` writes the row, then calls
+ * campaign-service's `approve-brief` with the write's own ETag. That left one state with no way
+ * out — a stored brief sitting in `draft`, because the write's approval failed or because a later
+ * replace reset it (campaign-service resets `status` to `draft` on every PUT). RESTORING such a
+ * brief deliberately suppresses the save, since re-saving would PUT a lossy reconstruction over
+ * the stored bytes, so the only path back to `approved` was also the one path the restore must
+ * not take. Campaign creation and audience building both refuse an unapproved brief, so the brief
+ * was durable and unusable at once. This endpoint approves the STORED row and writes nothing.
+ *
+ * Deliberately NOT `CampaignBriefPersistResult`: `created` is meaningless here (nothing is
+ * written), and the conflicts a save can hit are not the ones an approve can.
+ */
+export interface CampaignBriefApproveResult {
+  /** `false` when `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS` is off — see `CampaignBriefPersistResult.enabled`. */
+  enabled: boolean;
+  /** The brief that was approved, echoed back so a caller holding several can match the answer to one. */
+  briefId: string;
+  /**
+   * The approved row's new validator, or `null` when the outcome left it unknowable.
+   *
+   * Approval bumps the row's `version` upstream, and the ETag mirrors the version — so the
+   * validator the caller approved WITH is stale the moment this succeeds, and a caller that
+   * keeps it would have its next save refused with a 412. Re-record this one.
+   */
+  etag: string | null;
+  /** Whether the stored brief is now `approved`. `false` with no `conflict` means the outcome is unknown. */
+  approved: boolean;
+  /**
+   * Why approval did not happen, when it did not. Absent means it did.
+   *
+   * `stale-brief`: the `If-Match` validator was rejected with a 412 — the row moved since the
+   * caller read it. The remedy is to reload the brief and approve the version that is actually
+   * stored, never to retry with the same validator.
+   *
+   * `brief-not-found`: the row is gone — a typed 404 on the approve itself.
+   *
+   * `rejected`: campaign-service refused the approval outright (a 4xx that is neither of the
+   * above) — the brief is stored but campaign-service will not approve it as it stands.
+   *
+   * `unverified-validator`: the caller held no validator, so nothing was sent. The same name and
+   * the same meaning as `CampaignBriefPersistResult`'s: an approval the server would accept is
+   * not the same as an approval that is about the row the user was SHOWN, and without a
+   * validator from the read that filled the screen, nothing can tell the two apart. Reading one
+   * here rather than refusing is what made this path able to approve an intervening writer's
+   * content — the restore approves automatically, one round trip after its own read, and
+   * campaign creation then builds from the approved row. The remedy is a fresh read: reload and
+   * re-enter the event URL.
+   *
+   * An indeterminate outcome (5xx, timeout) carries NO conflict and `approved: false`: the
+   * approval may or may not have landed, and claiming either way would be a guess.
+   */
+  conflict?: 'stale-brief' | 'brief-not-found' | 'rejected' | 'unverified-validator';
 }
 
 /**
@@ -380,7 +1050,7 @@ export interface CampaignBriefPersistenceState {
    * Is the stored brief APPROVED, and therefore usable for campaign creation?
    *
    * Explicit rather than inferred from `message` being non-null. campaign-service refuses a create
-   * from an unapproved brief outright — `internal/service/brief.go:439` returns 400 "brief must be
+   * from an unapproved brief outright — `BriefService.CreateCampaigns` returns 400 "brief must be
    * approved before creating campaigns" — so the Implementation tab has to know, and matching on
    * banner prose to find out would break the first time the copy is edited.
    *
@@ -398,6 +1068,39 @@ export interface CampaignBriefPersistenceState {
    * reads it exactly that way — see `canSubmit`, which checks the brief id before the flag.
    */
   approved: boolean;
+
+  /**
+   * Why the save was refused, on an `error` whose refusal still stands — set by a conflict, and kept
+   * by a failed Replace read, which leaves the `unowned-brief-exists` refusal unresolved. Absent on
+   * an ordinary save failure.
+   *
+   * Read for one case: `unowned-brief-exists` is the refusal the Implementation tab offers
+   * "Replace saved brief" for (#4731). Retry cannot clear it — the same save is refused for as long
+   * as the page holds no id for the stored row — and Restore discards the brief on screen, so
+   * without this the generated brief and its extensions have no way to be saved at all.
+   */
+  conflict?: CampaignBriefPersistResult['conflict'];
+}
+
+/** The Implementation tab's Google budget and flight controls, read together (#4847). */
+export interface GoogleBudgetInputs {
+  /** The daily budget control's value; `null` once the number input is emptied, whatever the control's declared type. */
+  daily: number | null;
+  /** The flight's first day, `YYYY-MM-DD`. */
+  start: string;
+  /** The flight's last day, `YYYY-MM-DD`. */
+  end: string;
+}
+
+/**
+ * The Google daily budget's flight on the Implementation tab: how many days it runs and what the
+ * daily figure spends over them, shown beside the field so the operator sees both numbers (#4847).
+ */
+export interface GoogleBudgetFlight {
+  /** Flight length in days, start and end days both counted (`campaignFlightDays`). */
+  days: number;
+  /** The daily budget times {@link GoogleBudgetFlight.days}. */
+  total: number;
 }
 
 /**
@@ -470,13 +1173,27 @@ export interface CampaignImplementationDraft {
   /** Search ad copy as edited. Empty arrays are meaningful — the user removed every entry. */
   headlines: string[];
   descriptions: string[];
-  /** Budget and flight, which the brief seeds but the user routinely overrides. */
+  /**
+   * Budget and flight, which the brief seeds but the user routinely overrides. `budgetUsd` is the
+   * Google DAILY budget (#4847), the same figure {@link CampaignCreateRequest.budgetUsd} sends.
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
   endDate: string;
   includeSearch: boolean;
   includeDemandGen: boolean;
+  /**
+   * The three channels gated behind `googleChannelsEnabled`.
+   *
+   * Persisted like `includeDemandGen` and restored by the same rule: cleared only when the
+   * deployment has explicitly answered that it cannot create them, never on an unanswered `null`.
+   * REQUIRED rather than optional so "not selected" and "not yet saved" stay distinguishable at
+   * the restore site, which is what `includeDemandGen` already relies on.
+   */
+  includePerformanceMax: boolean;
+  includeVideo: boolean;
+  includeDisplay: boolean;
   /**
    * The three LinkedIn controls the user picks rather than types (LFXV2-3230): the ad account,
    * the geo target list, and the targeting profile.
@@ -497,6 +1214,11 @@ export interface CampaignImplementationDraft {
   linkedInAccountId: string;
   linkedInGeoTargets: LinkedInGeoTarget[];
   linkedInTargetingProfile: LinkedInTargetingProfile;
+  /**
+   * The URNs removed from the selected targeting profile (#5546). Optional because absent and empty
+   * mean the same thing here: the profile as configured.
+   */
+  linkedInTargetingRemovals?: LinkedInTargetingRemovals;
   /**
    * The event this draft belongs to, so a draft cannot be replayed onto a different brief.
    * Without it, generating a brief for event B and opening Implement would restore event A's
@@ -525,6 +1247,13 @@ export interface CampaignImplementationDraft {
   metaPlacements?: MetaPlacement;
   metaPixelId?: string;
   metaGeoTargets?: string[];
+  /**
+   * The Meta Instagram account id and EU DSA beneficiary/payor, as typed. Optional on the same
+   * present-only rule as the fields above: absent means the draft predates them.
+   */
+  metaInstagramUserId?: string;
+  metaDsaBeneficiary?: string;
+  metaDsaPayor?: string;
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -557,11 +1286,12 @@ export interface CampaignImplementationDraft {
    * WHAT IS DELIBERATELY ABSENT, and why, because the obvious next edit is to add it back:
    *
    * The brief-derived arrays — Reddit's variants, subreddits, interests, keywords and geos, plus
-   * `linkedInVariants` and `metaVariants` — are NOT carried. They have no user mutation path: the
-   * complete set of event bindings in the implementation tab's template contains no handler that
-   * writes any of them, and `populateFromBrief` is now their ONLY writer — `applyDraft` has no
-   * restore arm for any of the seven, which is precisely what this change removed. A draft that
-   * carried them round-tripped the brief's own recommendation back to itself.
+   * `metaVariants` — are NOT carried. They have no user mutation path: the complete set of event
+   * bindings in the implementation tab's template contains no handler that writes any of them, and
+   * `populateFromBrief` is now their ONLY writer — `applyDraft` has no restore arm for any of the
+   * six, which is precisely what this change removed. A draft that carried them round-tripped the
+   * brief's own recommendation back to itself. (`linkedInVariants` was one of them until it gained
+   * an editor, #5547; it is carried below.)
    *
    * That single-writer fact is the reason the exclusion is safe, so do not "restore" them here on
    * the assumption that `applyDraft` still writes them: re-adding them re-creates the bug below.
@@ -581,6 +1311,122 @@ export interface CampaignImplementationDraft {
    * new binding rather than one that writes the signal and calls `emitDraft` by hand.
    */
   redditBudgetUsd?: number;
+  /**
+   * The Reddit objective, carried for the reason the block above reserves: it is a real editor,
+   * so a tab switch would otherwise revert a chosen objective to the default and change the
+   * campaign that gets bought without saying so.
+   *
+   * Typed `RedditObjective`, not `SelectableRedditObjective`: a draft written while an objective
+   * was offered must still round-trip after it is withdrawn, which is the case
+   * `redditObjectiveIsUnavailable` exists to render.
+   */
+  redditObjective?: RedditObjective;
+  /**
+   * The Reddit promoted-post fields, carried for the same reason as the objective.
+   *
+   * All three round-trip regardless of `redditCreativeEnabled`. A capability answer decides what
+   * the REQUEST carries, never what the draft remembers: withholding the controls already stops
+   * the values reaching a creator that would discard them, and dropping them from the draft as
+   * well would destroy an operator's text on a capability read they never saw.
+   *
+   * `redditCallToAction` is typed to allow `''` — the empty choice is a real selection meaning
+   * "let upstream apply `DEFAULT_REDDIT_CALL_TO_ACTION`", distinct from the key being absent.
+   */
+  redditPostUrl?: string;
+  redditImageUrl?: string;
+  redditCallToAction?: RedditCallToAction | '';
+  /**
+   * The per-campaign conversion pixel override (`RedditCampaignCreateRequest.conversionPixelId`).
+   * Round-trips regardless of `redditConversionPixelEnabled`, for the reason the three above do.
+   */
+  redditConversionPixelId?: string;
+  /**
+   * An uploaded Reddit image (`RedditCampaignCreateRequest.imageAssetId`), the file name it was
+   * chosen as, and the brief it was uploaded to, so a tab switch keeps the upload rather than
+   * asking for it again. The asset exists upstream for that ONE brief, so it is sent only while the
+   * brief being created from is still that brief. Round-trips regardless of
+   * `redditAssetUploadEnabled`, for the reason the three above do.
+   */
+  redditImageAssetId?: string;
+  redditImageAssetName?: string;
+  redditImageAssetBriefId?: string;
+  /**
+   * The file name of a Reddit image upload still in flight when the draft was taken. The request
+   * outlives the tab (`CampaignService.uploadCreativeAsset`), so a remount resumes it by brief
+   * instead of losing the image the operator picked; empty when nothing is uploading.
+   */
+  redditImageUploadPendingName?: string;
+  /** The brief that upload was started for, so a remount resumes that upload, not the current brief's. */
+  redditImageUploadPendingBriefId?: string;
+  /**
+   * A failed upload's reason and the brief it was for, kept until the operator removes or replaces
+   * the image, so a tab switch cannot lift the block it raises (`uploadFailed`) and let Create send
+   * the campaign without the image they chose. Empty when no upload has failed.
+   */
+  redditImageUploadFailedMessage?: string;
+  redditImageUploadFailedBriefId?: string;
+  /**
+   * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
+   * objective is, so switching away from Video Views and back does not lose the choice; only the
+   * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
+   */
+  redditVideoGoal?: RedditVideoGoal | '';
+  /**
+   * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
+   * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
+   * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
+   * failure raises. Round-trips regardless of `metaCreativeEnabled` and `metaAssetUploadEnabled`.
+   */
+  metaImageUrl?: string;
+  metaImageAssetId?: string;
+  metaImageAssetName?: string;
+  metaImageAssetBriefId?: string;
+  metaImageUploadPendingName?: string;
+  metaImageUploadPendingBriefId?: string;
+  metaImageUploadFailedMessage?: string;
+  metaImageUploadFailedBriefId?: string;
+  /**
+   * The LinkedIn ad variants as edited (#5547): each one's intro text, headline and its own uploaded
+   * image. A real editor, so carried and restored over the brief's seed, as the Search copy is.
+   * Restored only when present; an empty list is the operator's own (Create then asks for a variant).
+   */
+  linkedInVariants?: LinkedInVariantDraft[];
+  /**
+   * The LinkedIn image upload in flight or failed, on the Meta upload fields' terms above, and the
+   * `key` of the variant it is for. One at a time: a second LinkedIn upload would cancel the first
+   * (`CampaignService.uploadCreativeAsset`). Round-trips regardless of `linkedInAssetUploadEnabled`.
+   */
+  linkedInImageUploadVariantKey?: string;
+  linkedInImageUploadPendingName?: string;
+  linkedInImageUploadPendingBriefId?: string;
+  linkedInImageUploadFailedMessage?: string;
+  linkedInImageUploadFailedBriefId?: string;
+  /**
+   * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
+   * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
+   * upload fields' terms above. All optional and restored only when present, so a draft written
+   * before the section existed changes nothing. Round-trips regardless of `twitterCreateEnabled`.
+   */
+  twitterBudget?: string;
+  twitterTweetText?: string;
+  twitterImageAssetId?: string;
+  twitterImageAssetName?: string;
+  twitterImageAssetBriefId?: string;
+  twitterImageUploadPendingName?: string;
+  twitterImageUploadPendingBriefId?: string;
+  twitterImageUploadFailedMessage?: string;
+  twitterImageUploadFailedBriefId?: string;
+  /**
+   * The Microsoft image extension, an upload only, on the Meta upload fields' terms above.
+   * Round-trips regardless of `microsoftAssetUploadEnabled`.
+   */
+  microsoftImageAssetId?: string;
+  microsoftImageAssetName?: string;
+  microsoftImageAssetBriefId?: string;
+  microsoftImageUploadPendingName?: string;
+  microsoftImageUploadPendingBriefId?: string;
+  microsoftImageUploadFailedMessage?: string;
+  microsoftImageUploadFailedBriefId?: string;
   /**
    * Microsoft's four editable controls (LFXV2-3312): budget, the geo chip list, the keyword list
    * and the optional CPC bid.
@@ -617,6 +1463,283 @@ export interface CampaignImplementationDraft {
   microsoftKeywords?: MicrosoftKeyword[];
   /** Empty string records "unset", which is the serve-capable default — see `cpcBid`. */
   microsoftCpcBid?: string;
+  /**
+   * The per-platform Bidding choice (#3299), keyed by platform. Absent for a draft written before
+   * the control shipped, and absent per platform until the operator touches that platform's
+   * control — both mean "the default, automatic". Restored only when present, like every field
+   * here, so an older draft cannot overwrite a choice with nothing.
+   */
+  bidding?: CampaignBiddingDrafts;
+  /**
+   * The per-channel Google creative sections, as RAW form text rather than the wire shape: keyed
+   * by the creative's request key, then by field, with list fields still one entry per line.
+   *
+   * Raw deliberately. A draft's job is to give the operator back exactly the form they left,
+   * including the blank line they were about to type into and the entry order they chose;
+   * round-tripping through the split-and-trim that `submit` applies would quietly rewrite their
+   * text every time they switched tabs.
+   *
+   * Optional and restored only when present, on the same rule as the Meta and Microsoft fields
+   * above: a draft saved before these sections shipped has none of them, and absence must leave
+   * the form alone rather than clear it.
+   */
+  googleCreatives?: Record<string, Record<string, string>>;
+  /**
+   * Which Demand Gen ad format was chosen — the image ad or the video ad. Both formats' text rides in
+   * {@link googleCreatives} either way, so switching back restores what was typed; this says which
+   * one the create would send. Absent restores the default, `image`.
+   */
+  demandGenAdFormat?: GoogleDemandGenAdFormat;
+  /**
+   * Whether the Demand Gen campaign is split into named ad groups (#5226). Absent restores the
+   * default, off, which sends the single ad exactly as before.
+   */
+  demandGenAdGroupsSplit?: boolean;
+  /**
+   * The named Demand Gen ad groups as typed, both formats of each, kept whether or not the split is
+   * on, so turning it off and on again restores them. Absent leaves the form's groups alone.
+   */
+  demandGenAdGroups?: GoogleDemandGenAdGroupDraft[];
+  /** The single Demand Gen ad group's first ad's name, used once it has more than one ad. Absent leaves it alone. */
+  demandGenAdName?: string;
+  /** The single Demand Gen ad group's second and later ads, both formats raw. Absent leaves the form's alone. */
+  demandGenAds?: GoogleDemandGenAdDraft[];
+  /** The single Demand Gen ad group's picked Audience resource name (#5244). Absent leaves it alone. */
+  demandGenAudience?: string;
+  /**
+   * The single Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), kept
+   * whether or not the split is on. Absent leaves the form's alone.
+   */
+  demandGenDemographics?: GoogleDemandGenDemographics;
+  /** Whether the Display campaign is split into named ad groups (#475). Absent restores the default, off. */
+  displayAdGroupsSplit?: boolean;
+  /** The named Display ad groups as typed, kept whether or not the split is on. Absent leaves the form's groups alone. */
+  displayAdGroups?: GoogleDisplayAdGroupDraft[];
+  /**
+   * The single Display ad group's picked audiences and the campaign's excluded user lists (#5262), kept
+   * whether or not the split is on, so turning it off restores them. Absent leaves the form's alone.
+   */
+  displayAudiences?: GoogleDisplayCampaignAudiences;
+  /**
+   * The name each Display audience was picked under, by resource name (#5262), so a restored pick is shown by
+   * name though the picker's current list (an interest search, or the first 500 by name) no longer holds it.
+   * Display only, never sent. Absent leaves the names the tab holds alone.
+   */
+  displayAudienceNames?: Record<string, string>;
+  /**
+   * The stored images held in the Google image slots, keyed `<request key>.<control>` — the same
+   * key `GoogleCreativeImageSlotView.key` carries — beside the pasted URLs in
+   * {@link googleCreatives}. Each records the brief it was stored for, so a brief switch blocks
+   * rather than sends another brief's asset.
+   *
+   * With them, an upload still in flight (its file name, brief and slot) and a failed upload's
+   * reason, on the Meta image fields' terms: a tab switch neither loses the images nor lifts the
+   * block a failure raises. Round-trips regardless of `googleAssetUploadEnabled`, and restored only
+   * when present.
+   */
+  googleImageAssets?: Record<string, GoogleCreativeHeldImage[]>;
+  googleImageUploadPendingName?: string;
+  googleImageUploadPendingBriefId?: string;
+  googleImageUploadPendingSlot?: string;
+  googleImageUploadFailedMessage?: string;
+  googleImageUploadFailedBriefId?: string;
+  googleImageUploadFailedSlot?: string;
+  /**
+   * Google's own geo targets, separate from {@link countryCode} rather than a widening of it.
+   *
+   * Empty means "use the event country", which is what this path did before the list existed — so
+   * an absent field and an empty list agree, and neither is a silent change of target.
+   */
+  googleGeoTargets?: string[];
+  /**
+   * Google's postal-code targets, as the raw geo target constant ids the operator typed.
+   *
+   * Ids rather than postal codes because that is what the wire takes: upstream's `resolveGeoList`
+   * reads a numeric entry in `geoTargets` as a constant id from Google's published geo-targets
+   * table, and neither campaign-service nor this application exposes a lookup from a postal code to
+   * its id. Sent in the same `geoTargets` list as {@link googleGeoTargets}, after the countries.
+   *
+   * Empty means "no postal codes", so an absent field and an empty list agree. Restored whatever the
+   * capability says: the section and the payload both gate on the campaign-service road, so a list
+   * restored on the legacy road is held rather than sent.
+   */
+  googlePostalGeoTargets?: string[];
+  /**
+   * Display labels for {@link googlePostalGeoTargets}, by id — Google's canonical name, recorded when
+   * an id was PICKED from the geo target search rather than typed. Display only: the request carries
+   * the ids alone, so an id with no label here still renders (as itself) and still dispatches.
+   */
+  googlePostalGeoLabels?: Record<string, string>;
+  /**
+   * Google's radius targets, as the operator added them — already validated, because an entry only
+   * reaches this list once it has passed the add guards.
+   *
+   * Held and restored on the same rule as {@link googleLanguages}: absent and empty agree, and a list
+   * saved under a channel that takes no radius targets (Demand Gen) is kept rather than discarded.
+   */
+  googleProximityTargets?: CampaignProximityTarget[];
+  /**
+   * Google's campaign languages, as ISO 639-1 codes the operator picked.
+   *
+   * Empty means "every language", which is Google's own default and what this path did before the
+   * list existed — so an absent field and an empty list agree, and neither narrows anything the
+   * operator did not ask to narrow. Same rule as {@link googleGeoTargets} above.
+   */
+  googleLanguages?: string[];
+  /**
+   * Google's ad-schedule windows, as the operator set them in the editor. Absent and empty agree:
+   * no windows means the campaign serves all day, every day. Held and restored on the same rule as
+   * {@link googleLanguages}, so a list saved under a channel that takes none is kept, not sent.
+   */
+  googleAdSchedules?: CampaignAdSchedule[];
+  /**
+   * Google's device bid adjustments and exclusions, one entry per device the operator changed from
+   * the default. Held and restored on the same rule as {@link googleAdSchedules}.
+   */
+  googleDeviceBidModifiers?: CampaignDeviceBidModifier[];
+  /**
+   * Google's excluded age ranges and genders, as the operator ticked them. Absent and empty agree:
+   * nothing is excluded. Held and restored on the same rule as {@link googleAdSchedules}, so a list
+   * saved under a channel that takes no demographic exclusions is kept, not sent.
+   */
+  googleExcludedAgeRanges?: GoogleAdsAgeRange[];
+  googleExcludedGenders?: GoogleAdsGender[];
+  /**
+   * Google's excluded income ranges and parental statuses, observed Search dimensions and Display
+   * demographic targeting, as the operator set them. Held and restored on the same rule as
+   * {@link googleAdSchedules}: a list saved under a channel that does not take it is kept, not sent.
+   */
+  googleExcludedIncomeRanges?: GoogleAdsIncomeRange[];
+  googleExcludedParentalStatuses?: GoogleAdsParentalStatus[];
+  googleObservedDemographics?: GoogleAdsObservedDemographic[];
+  googleDisplayDemographics?: GoogleDisplayDemographics;
+  /**
+   * Google's excluded locations — country codes and numeric geo target constant ids. Countries
+   * picked from the list come first; an entry typed into the geo id box is appended after them.
+   * Absent and empty agree: the campaign excludes nowhere.
+   */
+  googleExcludedGeoTargets?: string[];
+  /**
+   * The first Search ad's display paths and the second and third ads, as the operator left them.
+   * Held and restored on the same rule as {@link googleAdSchedules}, so they are kept, not sent,
+   * while a channel other than Search is selected.
+   */
+  googleSearchPath1?: string;
+  googleSearchPath2?: string;
+  googleAdditionalSearchAds?: CampaignSearchAd[];
+  /** The Search partners toggle as the operator left it, held on the same rule as the ads above. */
+  googleSearchPartners?: boolean;
+  /**
+   * The create-time negative keywords as TYPED — the editor's raw text, one keyword per line — and
+   * the one match type they are all sent with. Raw so a reopened draft shows the line a refusal
+   * names; restored over the brief's suggestions.
+   */
+  googleNegativeKeywordsText?: string;
+  googleNegativeKeywordMatchType?: CampaignNegativeKeywordMatchType;
+  /**
+   * Google's callout extensions, as the operator typed them — already trimmed, because a callout
+   * only becomes a chip once it has passed the add guards.
+   *
+   * Empty means "no callouts", which is what this path sent before the list existed, so an absent
+   * field and an empty list agree. Restored whatever channel the draft was saved under: the section
+   * and the payload both gate on the dispatched channel, so a list restored under Demand Gen or
+   * Display is held rather than sent, and is still there if the operator switches back to Search or
+   * Performance Max (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`).
+   */
+  googleCallouts?: string[];
+  /**
+   * Google's sitelink extensions, as the operator typed them.
+   *
+   * Held and restored on exactly the same rule as {@link googleCallouts}: absent and empty agree,
+   * and a list saved under a channel that takes no sitelinks is kept rather than discarded. Unlike
+   * the callouts, it is SENT on Demand Gen too (`GOOGLE_CHANNELS_WITH_SITELINKS`: Search, Demand Gen
+   * and Performance Max).
+   */
+  googleSitelinks?: CampaignSitelink[];
+  /**
+   * Google's structured snippets, as the operator typed them.
+   *
+   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
+   * and empty agree, and a list saved under a channel that takes no snippets is kept rather than
+   * discarded.
+   *
+   * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
+   * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
+   * is cleared on every hand-over from Planning and on Start Over, and a reload never had it.
+   *
+   * Callouts and sitelinks outlive that clear because they also exist on `CampaignBriefOutput` —
+   * they are GENERATED from the event page, so `briefWithCarriedExtensions` replays the operator's
+   * edits onto an incoming brief whose generated lists are the ones those edits were typed over.
+   * Snippets are typed by hand, have no brief counterpart, and are outside that carry: a re-generate
+   * or a Start Over drops them and the operator types them again. That is the accepted scope of this
+   * slice, not an oversight — a carry needs a generated baseline to compare against, and there is
+   * none until snippet generation exists.
+   */
+  googleStructuredSnippets?: CampaignStructuredSnippet[];
+  /**
+   * Google's audience segments, as the user-list resource names the operator entered — already
+   * trimmed, because an entry only becomes a chip once it has passed the add guards. A create sends
+   * them as `campaignAudienceSegments`, observed on the whole Search campaign (#5244); a draft saved
+   * while they went out as `audienceSegments` holds the same names under this same key, so it
+   * restores unchanged and sends them at the campaign level too.
+   *
+   * Held and restored on the same rule as {@link googleCallouts}: absent and empty agree, and a list
+   * saved under a non-Search channel is kept rather than discarded. Typed by hand like
+   * {@link googleStructuredSnippets}, so it shares their shorter lifetime.
+   */
+  googleAudienceSegments?: string[];
+  /**
+   * The name each audience segment was added under, by resource name (#5493), so a restored segment is shown
+   * by name though the user list read is loading, unavailable or no longer lists it. Never sent. Absent
+   * leaves the names the tab holds alone.
+   */
+  googleAudienceSegmentNames?: Record<string, string>;
+  /**
+   * Google's call, promotion and price extensions, as the operator added them.
+   *
+   * Held, restored and cleared on exactly the rule {@link googleStructuredSnippets} is: absent and
+   * empty agree, a list saved under a non-Search channel is kept rather than discarded, and — being
+   * typed by hand with no brief counterpart — none of the three outlives a re-generate or a Start
+   * Over.
+   */
+  googleCallExtensions?: CampaignCallExtension[];
+  googlePromotions?: CampaignPromotion[];
+  googlePrices?: CampaignPriceExtension[];
+  /**
+   * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
+   * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
+   * form they left, and an empty string is "they have not filled this in", which is a different
+   * state from a zero they typed.
+   *
+   * `googleBiddingStrategy` empty means "the channel default", exactly as it does in the form;
+   * `googleConversionActions` is the textarea verbatim, one action per line, unsplit and untrimmed.
+   *
+   * Optional and restored only when present: a draft saved before this section shipped carries
+   * none of these, and absence must leave the form alone rather than clear it.
+   */
+  googleBiddingStrategy?: string;
+  googleTargetCpa?: string;
+  googleTargetRoas?: string;
+  googleCpcBid?: string;
+  googleConversionActions?: string;
+  /**
+   * The Display placement exclusions box verbatim, one domain per line, unsplit and untrimmed, kept
+   * whichever channel is picked. Absent leaves the form alone.
+   */
+  googleExcludedPlacements?: string;
+  /**
+   * The Performance Max search themes box, as RAW text, one theme per line, unsplit and untrimmed, as
+   * {@link googleConversionActions} is. Restored whatever channel the draft was saved under: the
+   * section and the payload both gate on Performance Max, so text restored under another channel is
+   * held rather than sent. Optional and restored only when present.
+   */
+  googlePerformanceMaxSearchThemes?: string;
+  /**
+   * The Performance Max audience signal's picked Audience resource name (#5262), raw. Restored whatever
+   * channel the draft was saved under: the picker and the payload both gate on Performance Max, so a
+   * value restored under another channel is held rather than sent. Absent leaves it alone.
+   */
+  googlePerformanceMaxAudienceSignal?: string;
 }
 
 /**
@@ -676,6 +1799,60 @@ export interface CampaignBriefLoadResult {
    * to assume approval.
    */
   approved: boolean;
+  /**
+   * The event name campaign-service will compose this brief's create names from, read off the stored
+   * row the way its dispatcher reads it (`briefDispatchEventName`). Set on `loaded` only; the server's
+   * pre-dispatch name checks read it, and the UI does not.
+   */
+  storedEventName?: string;
+}
+
+/**
+ * A saved-brief lookup's answer together with the slug that produced it (#5492). The Plan tab tries
+ * the URL's segment and then year-suffixed variants of it, so the slug a found or unreadable answer
+ * is stored under is not always the one the URL names. `result` is null for a failed request.
+ */
+export interface CampaignBriefLookupHit {
+  result: CampaignBriefLoadResult | null;
+  matchedSlug: string;
+}
+
+/**
+ * A saved brief the Plan tab offers, with the provenance the page needs to take ownership of its row.
+ *
+ * Emitted by both the restore offer and its Open to edit action (#4983).
+ */
+export interface CampaignSavedBriefOffer {
+  brief: CampaignBriefOutput;
+  briefId: string;
+  etag: string | null;
+  approved: boolean;
+  /**
+   * The `savedBriefRefreshToken` this offer's lookup was DISPATCHED under.
+   *
+   * The page keeps its own record of the row and has to decide, on every restore, whether that record
+   * or this offer is the newer account. Neither is reliably newer on its own: the offer loses to a
+   * record written by an approval the Plan tab's cache has not seen, and the record loses to a read
+   * that happened after it. The id cannot separate those, since it is the same row in both.
+   *
+   * This token can, because the page bumps it on every write it makes to the row. An offer carrying a
+   * token ABOVE the one stamped on the record was read after that write and is the newer account; one
+   * at or below it is a replay of what the page already held. Emitted rather than inferred, because
+   * only the Plan tab knows which token its cached answer belongs to.
+   */
+  readAt: number;
+}
+
+/**
+ * Asks the Plan tab to open a brief in its editor (#4983): the saved brief from Open to edit, or the
+ * brief on the Implement tab from Edit brief.
+ *
+ * `requestId` makes each request distinct, so asking again for the same brief re-opens it, and a
+ * Plan tab re-created by a program change does not re-apply a request it already handled.
+ */
+export interface CampaignBriefEditRequest {
+  brief: CampaignBriefOutput;
+  requestId: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +1867,35 @@ export interface LinkedInGeoTarget {
 export interface LinkedInCreativeVariant {
   introText: string;
   headline: string;
+  /** An existing `urn:li:image` used verbatim as the dark post's thumbnail. Never sent with `imageAssetId`. */
   imageUrn?: string;
+  /**
+   * A creative asset uploaded to the brief, which campaign-service uploads through LinkedIn's Images
+   * API at dispatch and uses as the dark post's article thumbnail. Mutually exclusive with
+   * `imageUrn`: campaign-service refuses a variant carrying both. The Implement tab sends each
+   * variant its own upload, and campaign-service uploads each distinct asset once
+   * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
+   */
+  imageAssetId?: string;
+}
+
+/**
+ * One LinkedIn ad variant as the Implement tab edits it: the copy, plus the image uploaded for this
+ * variant alone. Mapped to a {@link LinkedInCreativeVariant} at create; `key` and the asset's name
+ * and brief are never sent.
+ */
+export interface LinkedInVariantDraft {
+  /** Stable for the variant's life in the tab, so an upload lands on the variant it was chosen for after another is removed. */
+  key: string;
+  introText: string;
+  headline: string;
+  /** The brief's own `imageUrn`, sent while the variant has no upload of its own. */
+  imageUrn?: string;
+  /** The upload for this variant, or `''`. Sent only when made for the open brief and the upload capability is an explicit yes. */
+  imageAssetId: string;
+  imageAssetName: string;
+  /** The brief the upload was made for. */
+  imageAssetBriefId: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -731,10 +1936,25 @@ export type CampaignAudienceStatus = 'building' | 'built' | 'failed';
  */
 export interface CampaignAudience {
   id: string;
-  projectId: string;
+  /**
+   * Optional because one producer genuinely cannot know it. A recorded compose
+   * (`AudienceComposeMasterResult.audience`) returns a deliberately slim row — id, status,
+   * version and master list — and the BFF that fills the rest holds the project SLUG, not its id.
+   * Fabricating one there would put an unusable value on a field callers are entitled to trust.
+   *
+   * Nothing in the UI reads it today; it is carried because the build and read-back paths do
+   * return it and dropping it would lose real information those paths have.
+   */
+  projectId?: string;
   briefId: string;
   platform: string;
   platformMasterListId?: string;
+  /**
+   * Every list the send includes, when the audience was attached from several existing lists
+   * rather than one composed master. Absent on a composed or single-list audience, where
+   * `platformMasterListId` alone is the send list.
+   */
+  includeListIds?: string[];
   suppressionListIds?: string[];
   inclusionSummary?: string;
   status: CampaignAudienceStatus;
@@ -742,10 +1962,20 @@ export interface CampaignAudience {
   etag?: string;
 }
 
-/** Result of asking campaign-service to build a brief's audience. */
-export interface BuildAudienceResult {
+/**
+ * Result of reading back the audiences campaign-service already holds for a brief.
+ *
+ * `enabled: false` is a steady state rather than a failure: the flag being dark is an ordinary
+ * deployment state, and the caller branches on it the same way as on an empty list.
+ *
+ * `audiences` is newest-first, as upstream returns it. No `etag`: `list-audiences` declares no
+ * `Header("etag:ETag")`, so a caller that means to PATCH one of these rows must re-read the
+ * SINGLE audience first to obtain a concurrency token — a row from this list carries none, and
+ * inventing one here would be a token that means nothing upstream.
+ */
+export interface ListAudiencesResult {
   enabled: boolean;
-  audience?: CampaignAudience;
+  audiences?: CampaignAudience[];
   error?: string;
 }
 
@@ -858,6 +2088,10 @@ export interface LinkedInCampaignCreateRequest {
   project?: string;
   driveFolderUrl?: string;
   adAccountId?: string;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
+  /** The selected targeting profile with entries removed (#5546). Omitted when nothing was removed. */
+  targetingProfileEdit?: LinkedInTargetingProfileEdit;
 }
 
 export interface LinkedInCampaignCreateResult {
@@ -888,6 +2122,27 @@ export interface RedditBriefCopy {
   recommendedGeos: string[];
 }
 
+/**
+ * What the Reddit section may ask for when creating a campaign.
+ *
+ * Reaches lfx-v2-campaign-service's Reddit wire struct (`internal/dispatch/reddit.go`) by JSON tag
+ * alone: the controller forwards `redditConfig` verbatim, so a field named to match a tag there
+ * needs no server-layer mapping here. Every field below is spelled to match one.
+ *
+ * BOTH creators honour `objective`, `postUrl`, `imageUrl` and `callToAction`. The LEGACY
+ * vendor-direct creator (`server/services/reddit-ads.service.ts`) is what serves a create while the
+ * three-flag create cutover is dark — the deployment state `canCreateDemandGen`
+ * (`campaign-service.service.ts`) documents as the most likely one in effect — and #3432 extended it
+ * to author the promoted post from `imageUrl` the way campaign-service does, so the creative fields
+ * no longer depend on which arm serves. `redditCreativeEnabled` reports that, and reports it as a
+ * capability rather than a literal because nothing in a create request tells the client which arm
+ * will serve.
+ *
+ * `videoGoal` joined that list in #3449 — both creators now read it, and both refuse a
+ * `video_views` create without it rather than sending Reddit an optimization goal it does not have.
+ * `conversionPixelId` is still campaign-service only: the legacy creator does not read it, so the
+ * control is offered and the field accepted only while campaign-service serves the create (#3484).
+ */
 export interface RedditCampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -903,7 +2158,58 @@ export interface RedditCampaignCreateRequest {
   variants: RedditAdVariant[];
   project?: string;
   objective?: RedditObjective;
+  /** An existing Reddit post to promote. Set it and BOTH creators ignore `imageUrl`/`callToAction`. */
   postUrl?: string;
+  /**
+   * Image for a post the creator authors itself. The author-a-post path: without either this or
+   * `postUrl` the campaign is created with no ad and cannot serve.
+   *
+   * Must be a public absolute http(s) URL with no embedded credentials — Reddit ingests and
+   * re-hosts it at post-create time, so there is no upload step and a URL it cannot fetch fails the
+   * create. Both arms refuse a bad one before anything upstream is created.
+   */
+  imageUrl?: string;
+  /**
+   * The alternative to `imageUrl`: the id of an image uploaded to THIS brief through
+   * `POST /api/campaigns/brief/creative-assets`. campaign-service serves it to Reddit at a
+   * short-lived signed URL (LFXV2-2665). Exactly one of `imageUrl` / `imageAssetId`, and never with
+   * `postUrl` — upstream refuses any such combination with a 400.
+   *
+   * campaign-service only: the legacy creator does not read it, and campaign-service refuses it
+   * unless its URL signing is configured. Hence `CampaignListResult.redditAssetUploadEnabled`, and
+   * the create route refuses this field while that capability is off rather than dropping it.
+   */
+  imageAssetId?: string;
+  /**
+   * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
+   * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
+   */
+  callToAction?: RedditCallToAction;
+  /**
+   * Overrides the ad account's own conversion pixel for this campaign.
+   *
+   * Upstream prefers this campaign-level value and falls back to the connection's pixel, refusing
+   * the create when neither supplies one — for EVERY objective, not just conversions. So it is an
+   * optional override, normally left blank, and it matters when the connection carries no pixel
+   * or the campaign needs a different one.
+   *
+   * The implementation tab collects it only while `CampaignListResult.redditConversionPixelEnabled`
+   * says campaign-service serves the create, and omits the key when blank: upstream reads empty as
+   * "use the connection's pixel", the same thing an absent key means (#3484). The create route
+   * refuses the field on the legacy arm rather than dropping it.
+   */
+  conversionPixelId?: string;
+  /**
+   * Required by BOTH creators for, and only for, the `video_views` objective — Reddit has no bare
+   * `VIDEO_VIEWS` goal, so a video-view campaign has to name a concrete duration goal and neither
+   * arm can invent one. Read it through `resolveRedditOptimizationGoal` (#3449).
+   *
+   * The implementation tab collects it with a goal picker shown only for `video_views`, sends it
+   * only with that objective, and blocks the create until one is chosen.
+   */
+  videoGoal?: RedditVideoGoal;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface RedditCampaignCreateResult {
@@ -926,6 +2232,14 @@ export interface MetaAdVariant {
   primaryText: string;
   headline: string;
   description?: string;
+  /**
+   * The ad's image, as ONE of a public https URL Meta fetches or a creative asset uploaded to the
+   * brief (campaign-service resolves the asset's bytes and uploads them to the ad account's image
+   * library at dispatch). Never both: campaign-service refuses a variant carrying the two. Absent
+   * is a link ad with no image of its own. The Implement tab sets the same image on every variant.
+   */
+  imageUrl?: string;
+  imageAssetId?: string;
 }
 
 export interface MetaBriefCopy {
@@ -981,6 +2295,24 @@ export interface MetaCampaignCreateRequest {
   objective?: MetaObjective;
   placements?: Partial<MetaPlacement>;
   pixelId?: string;
+  /**
+   * The Instagram account id (IGSID, numeric) campaign-service binds to each ad creative as
+   * `instagram_user_id` when an Instagram placement is enabled. Meta will not publish an Instagram
+   * placement without it. Sent ONLY when `CampaignListResult.metaInstagramDsaEnabled` is an explicit
+   * yes; the create route refuses it while the capability is off.
+   */
+  instagramUserId?: string;
+  /**
+   * EU Digital Services Act "advertiser": who the ads benefit, set on the ad set as
+   * `dsa_beneficiary`. Sent together with {@link dsaPayor} or not at all, and REQUIRED with it when
+   * `geoTargets` include an EU country (`META_DSA_TERRITORIES`). At most
+   * `META_DSA_NAME_MAX_LENGTH` characters, one line. Same capability gate as {@link instagramUserId}.
+   */
+  dsaBeneficiary?: string;
+  /** EU DSA "payer": who pays for the ads, set on the ad set as `dsa_payor`. Same rules as {@link dsaBeneficiary}. */
+  dsaPayor?: string;
+  /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
+  bidding?: CampaignBiddingConfig;
 }
 
 export interface MetaCampaignCreateResult {
@@ -1041,17 +2373,20 @@ export interface MicrosoftCampaignCreateRequest {
   hsToken?: string;
   /** Daily budget, whole units of the account currency. Must be finite and > 0. */
   budgetUsd: number;
-  // NO `startDate` / `endDate`, and their absence is deliberate rather than an oversight.
-  //
-  // `microsoftConfig` (`internal/dispatch/microsoft.go:57-83`) declares no scheduling fields, and
-  // neither does the client's `CampaignInput` — unlike `metaConfig`, which carries and applies
-  // both. A Microsoft campaign is therefore created with NO flight, and sending dates here would
-  // put fields on the wire that `unmarshalPlatformConfig` silently discards, implying a schedule
-  // the operator never gets.
-  //
-  // The campaign is created PAUSED, so nothing spends until a human enables it — but there is no
-  // automatic stop, which is why the UI states this rather than hiding it. Upstream scheduling is
-  // the fix; see the note on the implementation tab's Microsoft section.
+  /**
+   * OPTIONAL flight start, `"YYYY-MM-DD"` — the same key and format as `metaConfig.startDate`.
+   * campaign-service sets it on the Microsoft ad group (linuxfoundation/lfx-v2-campaign-service#409),
+   * and either date may be sent alone. Sent ONLY when `CampaignListResult.microsoftScheduleEnabled`
+   * is an explicit yes: an older service discards both keys and creates the campaign with NO flight,
+   * which is why the create route refuses them while the capability is off. A malformed date fails
+   * the platform job rather than the request.
+   *
+   * Without it the campaign is created PAUSED with no automatic stop, which is why the UI states
+   * that rather than hiding it — see the note on the implementation tab's Microsoft section.
+   */
+  startDate?: string;
+  /** OPTIONAL flight end, `"YYYY-MM-DD"`. Same rules as {@link startDate}. */
+  endDate?: string;
   /** ISO 3166-1 alpha-2 codes. REQUIRED, >= 1 — see the interface note on uncontrolled spend. */
   geoTargets: string[];
   /** REQUIRED, >= 1 — see the interface note on unservable campaigns. */
@@ -1068,6 +2403,76 @@ export interface MicrosoftCampaignCreateRequest {
    * requires it on Add; the client supplies its default when empty.
    */
   timeZone?: string;
+  /**
+   * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. When it is sent,
+   * `cpcBid` is not: campaign-service refuses an automatic `bidding` beside any `cpcBid`, and a
+   * manual one beside a different `cpcBid`.
+   */
+  bidding?: CampaignBiddingConfig;
+  /**
+   * OPTIONAL creative asset uploaded to the brief. At dispatch campaign-service uploads it to the ad
+   * account's media library and attaches it to the campaign as an image ad extension. Refused
+   * pre-create over 76,800 bytes or outside 40x20..2592x2048 pixels; its alt text defaults to the
+   * event name.
+   */
+  imageAssetId?: string;
+}
+
+/**
+ * X's per-platform config, typed to the wire: the `twitterConfig` campaign-service decodes
+ * (`internal/dispatch/twitter.go`, `type twitterConfig`), less the two fields this app never sends.
+ *
+ * Unlike the Meta and Microsoft requests it carries the service's own field names, so the BFF's
+ * `buildTwitterConfig` validates and projects rather than renames. What the wire does NOT have is
+ * as load-bearing as what it does:
+ *
+ * - No geo. campaign-service sets no location targeting on an X line item, so an X campaign
+ *   created here is eligible to serve in every market X serves once it is enabled. The Implement
+ *   tab says so rather than offering a control that would be sent nowhere.
+ * - No destination URL and no objective. The destination is the SAVED brief's registration URL,
+ *   which campaign-service tags with UTM parameters and appends to the tweet; every campaign is
+ *   `WEBSITE_CLICKS`.
+ * - No `tweetId` / `asUserId`. This app always authors a new promoted-only (nullcast) tweet from
+ *   `tweetText`, which never posts to the public timeline, and leaves the publishing handle to the
+ *   connection: campaign-service prefers the connection's `as_user_id` over a caller's for exactly
+ *   that reason.
+ *
+ * Every X campaign is created PAUSED (campaign and line item), so nothing spends until a human
+ * enables it.
+ */
+export interface TwitterCampaignCreateRequest {
+  /**
+   * DAILY budget in the ad ACCOUNT's currency, not USD — sent as `daily_budget_amount_local_micro`,
+   * with no FX conversion (the known gap LFXV2-3251 shares with Meta and Microsoft). Finite, at
+   * least 1 and at most `TWITTER_MAX_BUDGET`.
+   */
+  budgetAmount: number;
+  /**
+   * Flight start, `"YYYY-MM-DD"`, REQUIRED. Sent to X as UTC midnight, which X requires to be in
+   * the future (with five minutes' headroom), so today's date is always refused: the earliest
+   * start is tomorrow, UTC.
+   */
+  startDate: string;
+  /** Flight end, `"YYYY-MM-DD"`, REQUIRED and strictly after `startDate`. */
+  endDate: string;
+  /**
+   * The authored tweet's copy, REQUIRED. campaign-service appends the UTM-tagged destination link
+   * (unless the copy already carries it) and refuses the composed text above
+   * `TWITTER_MAX_TWEET_WEIGHTED_CHARS` weighted characters, every link counting
+   * `TWITTER_TCO_URL_WEIGHT`.
+   */
+  tweetText: string;
+  /**
+   * OPTIONAL creative asset uploaded to THIS brief, attached to the authored tweet as its image. At
+   * most `TWITTER_IMAGE_MAX_BYTES`; refused at dispatch otherwise.
+   */
+  imageAssetId?: string;
+  /**
+   * Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means X AUTO; a
+   * manual bid must be at most `budgetAmount`, since X does not accept a line-item bid above its
+   * campaign's daily budget.
+   */
+  bidding?: CampaignBiddingConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,9 +2495,24 @@ export interface MetaCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: MetaPacingLabel;
+  /**
+   * ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set: there
+   * is no label to show, and campaign-service's placeholder ("normal") is not passed on.
+   */
+  pacingLabel?: MetaPacingLabel;
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); the
+   * legacy path never sets them. `pacingUnknown`: pacing could not be computed (no flight dates
+   * or no usable budget), so `pacingPct` is a 0 placeholder. `fetchFailed`: this row's upstream
+   * metrics could not be trusted, so its numbers are zero placeholders. `conversionsMeasured`:
+   * false when the platform did not measure conversions, so `conversions` is a 0 placeholder,
+   * not a measured zero.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface MetaAccountTotals {
@@ -1101,6 +2521,8 @@ export interface MetaAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface MetaActionItem {
@@ -1115,6 +2537,212 @@ export interface MetaAccountOption {
   label: string;
 }
 
+/**
+ * One Google Ads account the project's own connection can reach, as `GET /api/campaigns/google/accounts`
+ * answers it: the Meta/Reddit picker option shape. `key` is the upstream id verbatim (bare digits).
+ */
+export interface GoogleAdsAccountOption {
+  key: string;
+  label: string;
+}
+
+/** One X Ads account the connection's credential can reach, in the same option shape. `key` is X's alphanumeric account id verbatim. */
+export interface TwitterAdsAccountOption {
+  key: string;
+  label: string;
+}
+
+/** `GET /api/campaigns/twitter/create-capability`: the deployment-wide `canCreateTwitter` answer, with no brief. */
+export interface TwitterCreateCapability {
+  enabled: boolean;
+}
+
+/**
+ * `GET /api/campaigns/twitter/accounts` (LFXV2-3319): which X ad account an X create will use, and
+ * what the credential can reach.
+ *
+ * `twitterConfig` takes no account id: campaign-service creates under the account bound on the
+ * project's X connection (`account_id`), and refuses the create with `ErrAccountNotSelected` when
+ * that is empty. So `connection` is the answer that matters — `connected` names the account,
+ * `no_account` is a create that will be refused, and `no_connection` means campaign-service falls
+ * back to the LF system X connection. One case this cannot see: a campaign-service running with
+ * `LFX_FORCE_SYSTEM_ADS_ACCOUNT` creates every paid campaign on the LF system connection whatever
+ * the project's says, so the UI states the project connection's account and never blocks on it. `accounts` is `list-twitter-ads-accounts`, the choices an
+ * administrator can bind the connection to.
+ */
+export interface TwitterAdsAccountsResult {
+  accounts: TwitterAdsAccountOption[];
+  connection: MonitorConnectionAccount;
+}
+
+/**
+ * One Google Ads location, as `GET /api/campaigns/google/geo-targets` answers it: campaign-service's
+ * suggestion in this app's camelCase vocabulary. `id` goes into `geoTargets` as-is.
+ */
+export interface GoogleAdsGeoTargetSuggestion {
+  id: string;
+  name: string;
+  canonicalName: string;
+  countryCode: string;
+  targetType: string;
+  status: string;
+  reach?: number;
+}
+
+/** `GET /api/campaigns/google/geo-targets`. `truncated` says more locations matched than were returned. */
+export interface GoogleAdsGeoTargetSearchResult {
+  suggestions: GoogleAdsGeoTargetSuggestion[];
+  truncated: boolean;
+}
+
+/**
+ * One row of the Implement tab's location picker: a suggestion plus `disabled`, set when its id is
+ * already a postal-code target, so the row is listed but cannot be picked twice.
+ */
+export interface GoogleAdsGeoTargetOption extends GoogleAdsGeoTargetSuggestion {
+  disabled: boolean;
+}
+
+/**
+ * Where the location picker's search stands. `failed` is a search that did not come back — not an
+ * empty answer, which is `suggestions: []` with `failed: false`. `pending` is a search waiting out
+ * its debounce or its request: its rows are already cleared, but "nothing matched" is not yet true.
+ */
+export interface GoogleAdsGeoTargetSearchState {
+  suggestions: GoogleAdsGeoTargetSuggestion[];
+  truncated: boolean;
+  failed: boolean;
+  pending: boolean;
+}
+
+/**
+ * One enabled conversion action on the Google Ads account a create uses, as the Implement tab's
+ * picker offers it (campaign-service `list-google-ads-conversion-actions`, camel-cased). `id` is the
+ * short form `conversionActions` accepts and the one the picker writes; `name` and `category` are
+ * labels only.
+ */
+export interface GoogleAdsConversionActionOption {
+  id: string;
+  resourceName: string;
+  name: string;
+  category: string;
+  /** Counts toward the account's Conversions column and so drives bidding by default. */
+  primaryForGoal: boolean;
+}
+
+/**
+ * One action as the picker lists it: the action, and the label it is shown with, built once when
+ * the list is read.
+ */
+export interface GoogleConversionActionPickerOption extends GoogleAdsConversionActionOption {
+  label: string;
+}
+
+/** The conversion-action read: the account it came from and its enabled actions, sorted by name. */
+export interface GoogleAdsConversionActionsResult {
+  accountId: string;
+  actions: GoogleAdsConversionActionOption[];
+}
+
+/**
+ * Where the Implement tab's conversion-action picker stands. `unavailable` is a list that could not
+ * load — the caller lacks `global_marketing_ops` on the project, the route is off on this deployment,
+ * the access check could not be made, or Google failed —
+ * and `reason` says which in one sentence; the free-text box is the way in then, as it always was.
+ */
+export interface GoogleConversionActionPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  actions: GoogleConversionActionPickerOption[];
+  reason: string | null;
+}
+
+/**
+ * One user list on the Google Ads account a create uses, as the Implement tab's audience segment
+ * picker offers it (campaign-service `list-google-ads-user-lists`, camel-cased). `resourceName` is the
+ * `customers/{customerId}/userLists/{id}` form `campaignAudienceSegments` accepts and the one the picker adds;
+ * the rest are labels only. `eligibleForSearch` is `null` when Google reported nothing.
+ */
+export interface GoogleAdsUserListOption {
+  resourceName: string;
+  id: string;
+  name: string;
+  /** Google's UserListType, verbatim (CRM_BASED, RULE_BASED, LOGICAL, SIMILAR, ...). */
+  type: string;
+  eligibleForSearch: boolean | null;
+}
+
+/** One user list as the picker lists it: the list, and the label it is shown with, built once when the list is read. */
+export interface GoogleUserListPickerOption extends GoogleAdsUserListOption {
+  label: string;
+}
+
+/** The user list read: the account it came from, its lists sorted by name, and whether more exist than were returned. */
+export interface GoogleAdsUserListsResult {
+  accountId: string;
+  userLists: GoogleAdsUserListOption[];
+  truncated: boolean;
+}
+
+/**
+ * Where the Implement tab's audience segment picker stands. `unavailable` is a list that could not
+ * load — the route is off or refused, or Google failed — and `reason` says which in one sentence; the
+ * typed box is the way in then, as it always was. `truncated` is upstream's word that the account
+ * holds more lists than were returned.
+ */
+export interface GoogleUserListPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  lists: GoogleUserListPickerOption[];
+  truncated: boolean;
+  reason: string | null;
+}
+
+/**
+ * One entry of campaign-service `list-google-ads-audiences`, camel-cased, as the Implement tab's pickers offer
+ * it: an Audience (`type=audience`, the Demand Gen audience and Performance Max audience signal pickers) or,
+ * for the Display audience pickers (#5262), a custom audience, custom affinity segment or user interest.
+ * `resourceName` is the `customers/{customerId}/<collection>/{id}` form the create input of that kind accepts
+ * (`demandGenAudience` and `performanceMaxAudienceSignal` take the `audiences` form) and the one the picker
+ * sets; `name` and `description` are labels only.
+ */
+export interface GoogleAdsAudienceOption {
+  resourceName: string;
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+/** The read type of `GET /api/campaigns/google/audiences`: one of `GOOGLE_ADS_AUDIENCE_READ_TYPES` (#5262). */
+export type GoogleAdsAudienceReadType = (typeof GOOGLE_ADS_AUDIENCE_READ_TYPES)[number];
+
+/** The audience read: the account it came from, its entries sorted by name, and whether more exist than were returned. */
+export interface GoogleAdsAudiencesResult {
+  accountId: string;
+  audiences: GoogleAdsAudienceOption[];
+  truncated: boolean;
+}
+
+/**
+ * Where one of the Implement tab's audience pickers stands: the Audience list the Demand Gen audience picker
+ * and the Performance Max audience signal picker both offer, or one Display audience kind's (#5262).
+ * `unavailable` is a list that could not load (the route is off or refused, or Google failed) and `reason`
+ * says which in one sentence. `accountId` is the customer the entries were read from, which a picked or
+ * restored one must name; `''` until the list has loaded.
+ */
+export interface GoogleAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: GoogleAdsAudienceOption[];
+  accountId: string;
+  truncated: boolean;
+  reason: string | null;
+}
+
+/** The optional narrowing a geo target search may carry beside its query text. */
+export interface GoogleAdsGeoTargetSearchOptions {
+  countryCode?: string;
+  targetTypes?: string[];
+  limit?: number;
+}
+
 export interface MetaMonitorResponse {
   accountLabel: string;
   pulledAt: string;
@@ -1122,6 +2750,11 @@ export interface MetaMonitorResponse {
   campaigns: MetaCampaignMetrics[];
   accountTotals: MetaAccountTotals;
   actionItems: MetaActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 export interface CampaignBriefRefineRequest {
@@ -1226,6 +2859,13 @@ export interface HubSpotCampaignCreateRequest {
    */
   buttonUrl?: string;
   /**
+   * The links the event page published (CFP, agenda, venue, sponsorship), sent by the client so the BFF
+   * can judge the body's secondary links the way the preview did (#3306). BFF-ONLY: never forwarded to
+   * campaign-service. Not trusted either: the BFF keeps only those on `buttonUrl`'s host or an LF-owned
+   * domain (`emailLinkDestinations`), so an off-host url sent here is refused like any other.
+   */
+  secondaryLinkUrls?: string[];
+  /**
    * Hero banner image URL, rendered as its own image module ABOVE the body during the same full
    * content rebuild (`internal/dispatch/hubspot.go`'s `HeroImageURL`). Upstream re-hosts it to
    * HubSpot's file manager via `UploadImage` before attaching it; a failed upload degrades to no
@@ -1245,6 +2885,1186 @@ export interface HubSpotCampaignCreateRequest {
   sponsors?: CampaignEventSponsor[];
 }
 
+/**
+ * One collectable field of one Google channel's creative.
+ *
+ * The creative interfaces below say what MAY be sent; this says what a form should ask for,
+ * in what order, under what name, and inside what bounds — the same facts a server-side normalizer
+ * needs to decide which keys to copy off an unvalidated body and whether a value is a list or a
+ * scalar. Both sides read {@link GOOGLE_CREATIVE_FIELD_SPECS}, so a field added to a channel reaches
+ * the form and the wire together instead of being added to one and forgotten in the other.
+ *
+ * `control` is both the property name on the creative object and the form-control name under that
+ * channel's group; they are deliberately the same string so neither side needs a mapping table.
+ */
+export interface GoogleCreativeFieldSpec {
+  control:
+    | keyof GoogleDemandGenCreative
+    | keyof GoogleDemandGenVideoCreative
+    | keyof GooglePerformanceMaxCreative
+    | keyof GoogleDisplayCreative
+    | keyof GoogleSearchAssets;
+  /** Field label as shown to an operator. */
+  label: string;
+  /**
+   * `list` is an array of strings on the wire and one entry per line in the form; `text` is a single
+   * string on both. The distinction is not cosmetic — `display.longHeadline` is a scalar while
+   * `performance-max.longHeadlines` is a list, and sending the wrong shape is refused upstream.
+   */
+  kind: 'list' | 'text';
+  /**
+   * Minimum non-empty entries upstream requires ONCE A CREATIVE IS SUPPLIED for this channel. A
+   * channel with no creative at all is accepted (see `GOOGLE_CREATIVE_REQUIRED_NOTICE` for what that
+   * costs), so this is a floor within a creative, never a reason to block a create outright.
+   *
+   * No control validator carries it, for that reason — a validator sees one control and cannot
+   * tell a half-filled creative from an empty one. The Implementation tab checks it at submit
+   * instead, over the whole assembled creative.
+   */
+  min?: number;
+  /** Maximum entries upstream accepts. Omitted where upstream sets no bound. */
+  max?: number;
+  /**
+   * Per-entry character bound. Google states these as display WIDTH, which counts a double-width
+   * character twice; this application measures LENGTH, which is the permissive direction — a form
+   * that refused what Google accepts is the costlier error, and the upstream preflight still
+   * measures width before anything is created.
+   */
+  width?: number;
+  /**
+   * A `text` field Google marks required ONCE A CREATIVE IS SUPPLIED for this channel — the scalar
+   * counterpart of {@link min}, and bounded by the same rule: a channel with no creative at all is
+   * accepted upstream, so this is a floor within a creative and never a reason to block a create.
+   *
+   * Machine-readable rather than stated only in {@link hint}, because the submit-time check reads
+   * it. Set where campaign-service refuses the creative without the field:
+   * `demandgen_creative.go`, `display_creative.go` and `pmax_creative.go` each require a business
+   * name, and a responsive display ad additionally requires its single long headline.
+   */
+  requiredOnce?: boolean;
+  /** Anything true of this field that its bounds do not say, shown beneath the control. */
+  hint?: string;
+  /**
+   * Set on an IMAGE slot, and only there: the shape Google requires of every image in it. Its
+   * presence is also what marks the list as one whose entries may name a stored asset
+   * ({@link GoogleCreativeImageRef}) rather than only a URL — `youtubeVideoIds` is a list too, and
+   * an asset ref there would be refused upstream.
+   */
+  image?: GoogleCreativeImageShape;
+  /**
+   * Set on a `text` field whose value is one of a closed list, and only there: the form offers the
+   * list as a select, the empty value sends nothing, and a value outside the list is refused before
+   * the create. Every Google call to action is one: the Demand Gen video ad's takes a `CallToActionType`
+   * from the short list campaign-service has probed (`demandGenVideoCallToActions`), and the responsive
+   * display ad's and Demand Gen image ad's take the text a 13 Nov 2026 validateOnly probe found Google
+   * accepts on each
+   * (`GOOGLE_DISPLAY_CALLS_TO_ACTION`, `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`).
+   */
+  options?: readonly GoogleCreativeFieldOption[];
+}
+
+/** Why a creative field would be refused, and which field: the control name the BFF reports it against. */
+export interface GoogleCreativeFieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** One choice of a closed-list creative field ({@link GoogleCreativeFieldSpec.options}). */
+export interface GoogleCreativeFieldOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * The shape one Google image slot requires: a target aspect ratio, held to
+ * `GOOGLE_CREATIVE_IMAGE_RATIO_TOLERANCE`, and a floor on each side with no ceiling.
+ *
+ * The numbers are campaign-service's own (`demandGenImageSlots`, `performanceMaxImageSlots` and
+ * `displayImageSlots` in `internal/platform/googleads/`), which publish them as the slot catalogue
+ * `get-asset-plan` classifies against. They are restated here rather than read from the plan
+ * because the plan answers a different question: it PLACES only as many assets as a slot's minimum
+ * (one, for an optional slot), so an image that fits but ranks below another is reported unused,
+ * and a picker built on it could never offer the operator their second-best fit.
+ */
+export interface GoogleCreativeImageShape {
+  ratioW: number;
+  ratioH: number;
+  minWidth: number;
+  minHeight: number;
+}
+
+/**
+ * One stored creative asset named in a Google image slot, in place of a URL — campaign-service's
+ * `googleAdsImageRef` (`internal/dispatch/googleads_image_ref.go`).
+ *
+ * An OBJECT and not a bare id, and in the SAME array as the URLs rather than a parallel
+ * `*AssetIds` list, because that is the wire: upstream decodes each slot entry as either a bare
+ * string (a URL, today's shape) or an object, and finds an asset reference only under the
+ * `imageAssetId` key — the key its dangling-reference guard scans a stored config for. A bare id
+ * would be fetched as a URL and refused.
+ */
+export interface GoogleCreativeImageAssetRef {
+  imageAssetId: string;
+}
+
+/** One entry in a Google image slot: a hosted image URL, or a stored asset of the brief's. */
+export type GoogleCreativeImageRef = string | GoogleCreativeImageAssetRef;
+
+/**
+ * One stored image the Implement tab holds in one Google image slot.
+ *
+ * `briefId` is the brief the asset was stored for, kept per image because an asset belongs to one
+ * brief's library and campaign-service refuses it under another ("does not exist for this brief").
+ * `name` is the uploaded file's name, or `''` for an image picked from the library, which records
+ * no file name — the label then falls back to the library's own description of it.
+ */
+export interface GoogleCreativeHeldImage {
+  id: string;
+  name: string;
+  briefId: string;
+}
+
+/** One held image as a slot renders it, with the reason it cannot be sent when there is one. */
+export interface GoogleCreativeHeldImageView {
+  id: string;
+  label: string;
+  problem: string;
+}
+
+/** One library image offered for a slot — already narrowed to the images that fit it. */
+export interface GoogleCreativeImageOption {
+  label: string;
+  value: string;
+}
+
+/**
+ * What the browser learned about one pasted Google image URL, by loading it as an image: still
+ * loading, its natural size, or that it could not be loaded here. Advisory only — campaign-service
+ * downloads and checks every pasted URL itself before anything is created.
+ */
+export interface GoogleTypedImageProbe {
+  state: 'checking' | 'loaded' | 'failed';
+  width?: number;
+  height?: number;
+  /** A settled answer being probed again. It stays the answer shown until the new probe settles. */
+  rechecking?: boolean;
+}
+
+/**
+ * One Google image slot's library controls, assembled by the Implement tab for
+ * `lfx-google-creative-image-library`. `key` is `<request key>.<control>`, the key the held images
+ * and the draft are stored under.
+ */
+export interface GoogleCreativeImageSlotView {
+  key: string;
+  label: string;
+  /** The shape as a sentence an operator can take to a designer. */
+  requirement: string;
+  held: GoogleCreativeHeldImageView[];
+  options: GoogleCreativeImageOption[];
+  /** Why no option is offered, or `''` when some are. */
+  optionsNote: string;
+  /** False once the slot's URLs and held images reach its catalogued `max`. */
+  canAdd: boolean;
+  uploading: boolean;
+  /** A failed upload into this slot, or `''`. */
+  error: string;
+}
+
+/** The Implement tab's read of the brief's creative-asset library, for the Google image slots. */
+export interface CreativeAssetLibraryState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  assets: StoredCreativeAsset[];
+}
+
+/**
+ * One "at least one of these" rule over a channel's list fields.
+ *
+ * Not expressible as a per-field {@link GoogleCreativeFieldSpec.min}: the requirement is on the
+ * PAIR, and putting `min: 1` on either member would refuse a creative that supplied only the other
+ * one — which upstream accepts. Demand Gen states it over the two marketing-image arrays
+ * (`demandgen_creative.go`). Performance Max and Display have no such rule because they require
+ * both arrays independently, which their two `min: 1` entries already carry (#4848).
+ */
+export interface GoogleCreativeEitherOrRule {
+  /** The `control` names of the list fields, at least one of which must be non-empty. */
+  controls: readonly string[];
+  /** What is missing, as a clause that follows the channel's label in the submit-time message. */
+  message: string;
+}
+
+/**
+ * One ceiling Google states across SEVERAL of a channel's image fields (#4848).
+ *
+ * Not expressible as a per-field {@link GoogleCreativeFieldSpec.max}: each field can sit under its
+ * own cap while the group is over the shared one, which campaign-service refuses before anything
+ * is created (`demandgen_creative.go`, `pmax_creative.go`, `display_creative.go`).
+ */
+export interface GoogleCreativeSharedCap {
+  /** The `control` names of the image fields the ceiling spans. */
+  controls: readonly string[];
+  /** The most entries, pasted URLs and stored images together, across all of them. */
+  max: number;
+  /** The group's name in the submit-time message, e.g. `marketing images`. */
+  label: string;
+}
+
+/**
+ * The Google channels that carry a creative object — the four `GOOGLE_CHANNELS_WITH_CREATIVE` names.
+ *
+ * Derived from the constant rather than spelled out, so the creative catalogues keyed by it and
+ * anything that indexes them stay provably the same set. Narrower than `GoogleCampaignChannel` on
+ * purpose: Video cannot be created at all, so it has no entry in `GOOGLE_CREATIVE_FIELD_SPECS` to
+ * index. Search's object is its campaign assets ({@link GoogleSearchAssets}), not its ad copy.
+ */
+export type GoogleCreativeChannel = (typeof GOOGLE_CHANNELS_WITH_CREATIVE)[number];
+
+/**
+ * One creative catalogue reduced to what the BFF's normalizer needs: the `googleAdsConfig` key it is
+ * sent under, which of its fields are lists or scalars, and which lists are image slots that may carry
+ * a stored-asset ref. Derived from a field catalogue, never restated.
+ */
+export interface GoogleCreativeWireFields {
+  key: string;
+  lists: readonly string[];
+  images: readonly string[];
+  scalars: readonly string[];
+}
+
+/**
+ * One creative the Implement tab can collect: a nested form group, the request key it is sent under,
+ * and its field catalogue. Each Google channel with a creative has one, and Demand Gen has a second
+ * for its video ad (#5226), so a group is named by its {@link groupName}, never by its channel.
+ */
+export interface GoogleCreativeGroup {
+  channel: GoogleCreativeChannel;
+  format: GoogleDemandGenAdFormat;
+  /** The nested `campaignForm` group and the `googleAdsConfig` key, which are the same name. */
+  groupName: string;
+  /** The section heading. */
+  label: string;
+  fields: readonly GoogleCreativeFieldSpec[];
+}
+
+/**
+ * One channel's creative section, resolved for rendering.
+ *
+ * Everything a template needs to draw the section and bind it to the right nested form group,
+ * assembled once in a computed rather than by indexing constants from the template — Angular
+ * templates may only read signals, computed values and pipes, and a template that indexed
+ * `GOOGLE_CREATIVE_REQUEST_KEYS` by channel would also be a second place the group-name mapping
+ * lives.
+ */
+export interface GoogleCreativeSection {
+  channel: GoogleCreativeChannel;
+  /**
+   * Which of the channel's ad formats this section collects. Only Demand Gen has two — an image ad
+   * (`demandGenCreative`) or a video ad (`demandGenVideoCreative`), one per create — so every other
+   * section is `image`.
+   */
+  format: GoogleDemandGenAdFormat;
+  /** The channel's own display label, as the channel checkboxes name it. */
+  label: string;
+  /** The nested `campaignForm` group holding this channel's controls. */
+  groupName: string;
+  fields: readonly GoogleCreativeSectionField[];
+}
+
+/**
+ * One field of a resolved creative section: its catalogue entry plus the sentence shown under it.
+ *
+ * The guidance line is assembled when the section is resolved rather than read from a template
+ * method call, because a method on the render path is re-run on every change-detection pass to
+ * produce a string that cannot change — the bounds it states come from the static catalogue.
+ */
+export interface GoogleCreativeSectionField extends GoogleCreativeFieldSpec {
+  /**
+   * The bounds sentence, followed by anything the catalogue entry's own `hint` adds.
+   *
+   * Named apart from `hint` because it SUBSUMES it: `hint` is the catalogue's extra clause, this is
+   * the whole line an operator reads.
+   */
+  guidance: string;
+  /**
+   * A closed-list field's choices for `lfx-select`, with "None" first so an empty value sends nothing.
+   * Resolved with the section, like {@link guidance}, so the template binds a property instead of
+   * calling a method on every change-detection pass. Absent on a free-text or list field.
+   */
+  selectOptions?: GoogleCreativeFieldOption[];
+}
+
+/**
+ * One entry in the bidding-strategy picker, already narrowed to the selected channel.
+ *
+ * The picker is a closed list rather than a free field precisely because the valid set is
+ * per-channel — see `GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL`. The empty-value "channel default"
+ * entry is not one of these; the template renders it separately, because it names no strategy.
+ */
+export interface GoogleBiddingOption {
+  value: GoogleBiddingStrategy;
+  label: string;
+}
+
+/**
+ * The Demand Gen ad's creative, typed to `googleAdsConfig.demandGenCreative`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenCreativeConfig`).
+ *
+ * Each image is a URL the caller already hosts, or a stored asset of the brief's named by
+ * {@link GoogleCreativeImageAssetRef} in the same array. Google is the one platform that will not
+ * fetch a URL itself, so campaign-service downloads each URL and uploads the bytes — which is why a
+ * URL that 404s fails the create rather than producing an ad with a missing image. A stored asset
+ * skips the download: its bytes are read from the library and POSTed to `assets:mutate`, after the
+ * same size and shape checks a fetched image gets. Asset refs are sent only while
+ * `CampaignListResult.googleAssetUploadEnabled` is true; the BFF refuses them otherwise.
+ *
+ * Counts and widths are Demand Gen's own and are NOT the Search ad's. See
+ * `GOOGLE_CREATIVE_FIELD_SPECS['demand-gen']`.
+ */
+export interface GoogleDemandGenCreative {
+  /**
+   * The four marketing-image shapes, each with its own aspect ratio and minimum size enforced by
+   * the upstream preflight. At least one of `marketingImages` or `squareMarketingImages` is
+   * required; the four share a COMBINED cap.
+   */
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  portraitImages?: GoogleCreativeImageRef[];
+  tallPortraitImages?: GoogleCreativeImageRef[];
+  /** REQUIRED upstream: 1-5 square images. A Demand Gen ad with no logo is refused. */
+  logoImages?: GoogleCreativeImageRef[];
+  headlines?: string[];
+  descriptions?: string[];
+  /** REQUIRED by Google when a creative is supplied. */
+  businessName?: string;
+  callToActionText?: string;
+}
+
+/**
+ * The two ad formats a Demand Gen ad can take: the image multi-asset ad ({@link GoogleDemandGenCreative})
+ * or the video responsive ad ({@link GoogleDemandGenVideoCreative}). One per create — campaign-service
+ * refuses a Demand Gen create carrying both (`errDemandGenTwoCreatives`).
+ */
+export type GoogleDemandGenAdFormat = 'image' | 'video';
+
+/**
+ * The Demand Gen VIDEO responsive ad, typed to `googleAdsConfig.demandGenVideoCreative`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenVideoCreativeConfig`, #460/#481).
+ *
+ * Set INSTEAD of {@link GoogleDemandGenCreative}, never beside it. The bounds are this ad type's own
+ * and differ from the image ad's: headlines are 40 wide, not 30, and the ad carries long headlines
+ * the image ad does not have. See `GOOGLE_DEMAND_GEN_VIDEO_CREATIVE_FIELD_SPECS`.
+ */
+export interface GoogleDemandGenVideoCreative {
+  /** REQUIRED: 1-5 bare YouTube video ids. A watch URL is refused upstream rather than parsed. */
+  youtubeVideoIds?: string[];
+  /** REQUIRED: exactly one square logo, a URL or a stored asset of the brief's. */
+  logoImages?: GoogleCreativeImageRef[];
+  headlines?: string[];
+  longHeadlines?: string[];
+  descriptions?: string[];
+  /** REQUIRED by Google once a creative is supplied. */
+  businessName?: string;
+  /** Optional; one of `GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION`. Absent sends none. */
+  callToAction?: string;
+}
+
+/**
+ * One named Demand Gen ad group (#5226), typed to an entry of `googleAdsConfig.demandGenAdGroups`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDemandGenAdGroupConfig`, #460). campaign-service names
+ * the group `<event name> - Display | <name>` and gives it one ad from exactly one of the two creatives,
+ * or several from {@link ads} instead.
+ *
+ * `audience` is the group's one Google Ads Audience (#5244), sent only when one was picked.
+ * `demographics` (linuxfoundation/lfx-v2-campaign-service#518) is built into an Audience of the group's
+ * own instead, so upstream refuses the two together.
+ */
+export interface GoogleDemandGenAdGroup {
+  name: string;
+  /** The group's Audience resource name, `customers/{customerId}/audiences/{id}`, under the same rules as {@link CampaignCreateRequest.demandGenAudience}. */
+  audience?: string;
+  /** The group's own demographics, the same object as {@link CampaignCreateRequest.demandGenDemographics}; they replace those for this group. */
+  demographics?: GoogleDemandGenDemographics;
+  /** The group's image ad, the same shape as {@link CampaignCreateRequest.demandGenCreative}. */
+  creative?: GoogleDemandGenCreative;
+  /** The group's video ad, the same shape as {@link CampaignCreateRequest.demandGenVideoCreative}. */
+  videoCreative?: GoogleDemandGenVideoCreative;
+  /** The group's several named ads (#474 upstream), sent INSTEAD of both creatives above. At most 5. */
+  ads?: GoogleDemandGenAd[];
+}
+
+/**
+ * One of several named ads of a Demand Gen ad group, typed to an entry of `googleAdsConfig.demandGenAds`
+ * or of a group's `ads` (`googleAdsDemandGenAdConfig`, lfx-v2-campaign-service#482): a name and exactly
+ * one of the two creatives. campaign-service names a video ad `<ad group name> - <name>`; an image ad's
+ * name is not sent to Google.
+ */
+export interface GoogleDemandGenAd {
+  name: string;
+  creative?: GoogleDemandGenCreative;
+  videoCreative?: GoogleDemandGenVideoCreative;
+}
+
+/** One Demand Gen ad as the Implement tab's draft keeps it: its name, the raw text of both formats, and which is chosen. */
+export interface GoogleDemandGenAdDraft {
+  name: string;
+  format: GoogleDemandGenAdFormat;
+  creative: Record<string, string>;
+  videoCreative: Record<string, string>;
+}
+
+/**
+ * One Demand Gen ad group as the Implement tab's draft keeps it: its name, its first ad's raw text in
+ * both formats and which is chosen, and, when it has several ads, the first ad's name and the others.
+ */
+export interface GoogleDemandGenAdGroupDraft extends GoogleDemandGenAdDraft {
+  /** The group's picked Audience resource name (#5244). Absent restores none. */
+  audience?: string;
+  /** The group's own demographics (linuxfoundation/lfx-v2-campaign-service#518). Absent restores none. */
+  demographics?: GoogleDemandGenDemographics;
+  /** The first ad's name, used once the group has more than one ad. Absent restores blank. */
+  adName?: string;
+  /** The group's second and later ads. Absent restores none. */
+  ads?: GoogleDemandGenAdDraft[];
+}
+
+/** The form controls of one Demand Gen ad on the Implement tab: {@link GoogleDemandGenAdDraft}, live. */
+export interface GoogleDemandGenAdControls {
+  name: import('@angular/forms').FormControl<string>;
+  format: import('@angular/forms').FormControl<GoogleDemandGenAdFormat>;
+  creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+  videoCreative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+}
+
+/**
+ * A form holding one Demand Gen ad's controls: an ad's own form group, or a named group's, whose
+ * first ad it holds. Structural, because a `FormGroup` of the group's wider controls is not assignable
+ * to a `FormGroup` of the ad's.
+ */
+export interface GoogleDemandGenAdForm {
+  controls: GoogleDemandGenAdControls;
+}
+
+/**
+ * The form controls of one Demand Gen ad group on the Implement tab: {@link GoogleDemandGenAdGroupDraft},
+ * live. `name` is the group's name; `format` and the two creatives are its first ad.
+ */
+export interface GoogleDemandGenAdGroupControls extends GoogleDemandGenAdControls {
+  adName: import('@angular/forms').FormControl<string>;
+  audience: import('@angular/forms').FormControl<string>;
+  demographics: import('@angular/forms').FormControl<GoogleDemandGenDemographics>;
+  ads: import('@angular/forms').FormArray<import('@angular/forms').FormGroup<GoogleDemandGenAdControls>>;
+}
+
+/**
+ * The audience lists one Display ad group targets (campaign-service v1.0.35, #472 and #480), keyed by
+ * their `googleAdsConfig` field: existing resources on the campaign's own Google Ads account, each a
+ * `customers/<id>/<collection>/<id>` resource name, attached as targeting criteria (`validateDisplayTargeting`
+ * and `validateDisplayAudienceList` in `display_targeting.go`). At most `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS`
+ * entries each. Every list but `userInterests` names an account-owned resource, so campaign-service requires
+ * `global_marketing_ops` on the project for it (`GoogleAdsMarketingOpsInputs`, #505).
+ */
+export interface GoogleDisplayAudienceLists {
+  /** User lists, `customers/<id>/userLists/<id>`. */
+  audienceSegments?: string[];
+  /** Custom audiences, `customers/<id>/customAudiences/<id>`. */
+  customAudiences?: string[];
+  /** Custom affinity segments, `customers/<id>/customInterests/<id>`. */
+  customAffinities?: string[];
+  /** Google's affinity and in-market categories, `customers/<id>/userInterests/<id>`. */
+  userInterests?: string[];
+}
+
+/** The `googleAdsConfig` field of one Display audience list: a key of {@link GoogleDisplayAudienceLists}. */
+export type GoogleDisplayAudienceKind = keyof GoogleDisplayAudienceLists;
+
+/**
+ * The Display audiences a create carries beside the ad groups (#5262), as `CampaignCreateRequest.displayAudiences`:
+ * the single ad group's four lists, and the user lists the whole campaign excludes. The BFF sends each as the
+ * top-level `googleAdsConfig` field of the same name, on Display alone.
+ */
+export interface GoogleDisplayCampaignAudiences extends GoogleDisplayAudienceLists {
+  /**
+   * User lists excluded from the whole campaign, as campaign-level negative criteria (#475), so they cover
+   * every ad group, split or not. User lists only (`validateDisplayExcludedUserLists`).
+   */
+  excludedAudienceSegments?: string[];
+}
+
+/**
+ * One named Display ad group (#475), typed to an entry of `googleAdsConfig.displayAdGroups`
+ * (`internal/dispatch/googleads.go`'s `googleAdsDisplayAdGroupConfig`). campaign-service names the group
+ * `<event name> - Display Network | <name>` and requires its responsive display ad.
+ *
+ * Its audience lists (#5262) are the group's own, under the upstream names. Upstream also takes a group's
+ * own `excludedAudienceSegments`; it is not sent: this application excludes user lists at the campaign
+ * level only ({@link GoogleDisplayCampaignAudiences.excludedAudienceSegments}), which covers every group.
+ */
+export interface GoogleDisplayAdGroup extends GoogleDisplayAudienceLists {
+  name: string;
+  /** The group's responsive display ad, the same shape as {@link CampaignCreateRequest.displayCreative}. */
+  creative?: GoogleDisplayCreative;
+}
+
+/** One Display ad group as the Implement tab's draft keeps it: the name, the ad's raw text and its audiences (#5262). */
+export interface GoogleDisplayAdGroupDraft {
+  name: string;
+  creative: Record<string, string>;
+  audiences?: GoogleDisplayAudienceLists;
+}
+
+/** The form controls of one Display audience target on the Implement tab: one list of resource names per kind (#5262). */
+export interface GoogleDisplayAudienceControls {
+  audienceSegments: import('@angular/forms').FormControl<string[]>;
+  customAudiences: import('@angular/forms').FormControl<string[]>;
+  customAffinities: import('@angular/forms').FormControl<string[]>;
+  userInterests: import('@angular/forms').FormControl<string[]>;
+}
+
+/** The form controls of one Display ad group on the Implement tab: {@link GoogleDisplayAdGroupDraft}, live. */
+export interface GoogleDisplayAdGroupControls {
+  name: import('@angular/forms').FormControl<string>;
+  creative: import('@angular/forms').FormGroup<Record<string, import('@angular/forms').FormControl<string>>>;
+  audiences: import('@angular/forms').FormGroup<GoogleDisplayAudienceControls>;
+}
+
+/**
+ * The Performance Max ASSET GROUP, typed to `googleAdsConfig.performanceMaxCreative`.
+ *
+ * A Performance Max campaign has no ad groups and no ads — its creative lives in a named asset
+ * group, and Google assembles ads from the parts. The counts here are emphatically not Demand Gen's
+ * beside them: three headlines against one, a separate long-headline FIELD TYPE rather than a
+ * headline that happens to be long, and a two-description minimum with a short-description rule.
+ *
+ * This is also the channel where omitting creative is not merely weak but terminal: campaign-service
+ * accepts the create, flags the empty asset group, and then REFUSES the activation
+ * (`internal/platform/googleads/pmax.go`), so the campaign can never serve.
+ */
+export interface GooglePerformanceMaxCreative {
+  /**
+   * `marketingImages` (1.91:1) and `squareMarketingImages` (1:1) are BOTH required here — unlike
+   * Demand Gen, where either satisfies the other. `portraitImages` (4:5) is optional, and the three
+   * share a combined cap. Every image list here, as on Demand Gen, carries URLs and asset refs alike.
+   */
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  portraitImages?: GoogleCreativeImageRef[];
+  /** `logoImages` (1:1) is REQUIRED, 1-5. `landscapeLogoImages` (4:1) is optional. */
+  logoImages?: GoogleCreativeImageRef[];
+  landscapeLogoImages?: GoogleCreativeImageRef[];
+  headlines?: string[];
+  /** A DISTINCT asset field type (`LONG_HEADLINE`), not a long `headlines` entry. 1-5 required. */
+  longHeadlines?: string[];
+  /** 2-5, and at least one must fit the short slot Google renders on constrained surfaces. */
+  descriptions?: string[];
+  businessName?: string;
+  /** BARE YouTube video ids, never watch URLs — upstream refuses a URL rather than parsing it. */
+  youtubeVideoIds?: string[];
+  /** Defaults upstream to the event name plus " - Asset Group" when blank. */
+  assetGroupName?: string;
+  /** Optional display-path segments rendered after the domain; `path2` renders only after `path1`. */
+  path1?: string;
+  path2?: string;
+}
+
+/**
+ * The responsive display ad, typed to `googleAdsConfig.displayCreative`.
+ *
+ * One shape here departs from both siblings and is the single most likely thing to get wrong:
+ * `longHeadline` is a SINGLE STRING, not a list. Performance Max and Video both take a list of long
+ * headlines; a responsive display ad carries exactly one, and the field is spelled as a scalar
+ * upstream so the envelope cannot carry a second that Google would reject after the ad group exists.
+ */
+export interface GoogleDisplayCreative {
+  /**
+   * Both marketing arrays are required — Google's `ResponsiveDisplayAdInfo` needs a landscape AND a
+   * square marketing image (#4848) — and share a combined cap of 15. Both logo arrays are optional
+   * and share a combined cap of 5. Their
+   * ratios and minimums are this channel's own, not the same-named Demand Gen or Performance Max
+   * slots'. Each list carries URLs and asset refs alike, as on the siblings.
+   */
+  marketingImages?: GoogleCreativeImageRef[];
+  squareMarketingImages?: GoogleCreativeImageRef[];
+  logoImages?: GoogleCreativeImageRef[];
+  squareLogoImages?: GoogleCreativeImageRef[];
+  headlines?: string[];
+  /** Scalar. See the interface docblock. */
+  longHeadline?: string;
+  descriptions?: string[];
+  /** REQUIRED by Google when a creative is supplied. */
+  businessName?: string;
+  callToActionText?: string;
+}
+
+/**
+ * The Search campaign's image, business-logo and business-name assets (#5262), typed to
+ * `googleAdsConfig.searchAssets` (`internal/dispatch/googleads.go`'s `googleAdsSearchAssetsConfig`,
+ * lfx-v2-campaign-service#477, #538). campaign-service links each one to the CAMPAIGN, after the
+ * campaign exists, in one atomic `googleAds:mutate` (`createSearchCampaignAssets`).
+ *
+ * Every field is optional and each stands alone: a Search campaign serves on its ads without any of
+ * them, so leaving all four empty sends no key. SEARCH ONLY: campaign-service refuses the object on
+ * every other channel, and the BFF sends it only on a Search create. Each image entry is a URL or a
+ * stored asset of the brief's, as on the other creatives. See `GOOGLE_CREATIVE_FIELD_SPECS.search`.
+ */
+export interface GoogleSearchAssets {
+  /** Square (1:1) ad images, at least 300x300. At most 20 together with {@link landscapeAdImages}. */
+  adImages?: GoogleCreativeImageRef[];
+  /** Landscape (1.91:1) ad images, at least 600x314, linked as the same AD_IMAGE field type. */
+  landscapeAdImages?: GoogleCreativeImageRef[];
+  /** The business logo: at most one square (1:1) image, at least 128x128. A list on the wire. */
+  businessLogoImages?: GoogleCreativeImageRef[];
+  /** The business name, at most 25 display-width units. */
+  businessName?: string;
+}
+
+/**
+ * One Google sitelink extension: a label, its destination, and an optional two-line description.
+ *
+ * `finalUrl` is REQUIRED. Upstream (`assets.go`'s `validateSitelinks`) treats a sitelink with no
+ * destination as unservable rather than as a lesser sitelink, and refuses the whole create.
+ *
+ * The two description lines are ALL-OR-NOTHING: Google renders them together and rejects an asset
+ * carrying only one, so upstream refuses a sitelink that has exactly one of them. They are
+ * optional together, which is why both are optional here rather than required.
+ */
+export interface CampaignSitelink {
+  text: string;
+  description1?: string;
+  description2?: string;
+  finalUrl: string;
+}
+
+/**
+ * One Google structured snippet: a header and the list of things it enumerates, rendered under the
+ * text ad as a single "Header: value, value, value" line.
+ *
+ * Both fields are REQUIRED. A snippet carries no link of its own, so unlike {@link CampaignSitelink}
+ * there is no destination; what makes it servable is having a header and enough values, and upstream
+ * (`assets.go`'s `validateStructuredSnippets`) refuses the whole create when either is missing.
+ *
+ * `values` is bounded at BOTH ends — see {@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, which is counted
+ * after blanks and case-folded repeats are removed, so the length of this array is not the number
+ * upstream judges.
+ *
+ * `header` must be one of Google's predefined headers FOR THE CAMPAIGN'S LANGUAGE, a list Google
+ * publishes per locale; neither upstream nor this app checks membership. See
+ * {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}.
+ */
+export interface CampaignStructuredSnippet {
+  header: string;
+  values: string[];
+}
+
+/**
+ * The structured-snippet sub-form as the operator is filling it in, before it becomes a
+ * {@link CampaignStructuredSnippet}.
+ *
+ * `values` is ONE STRING here, not a list: the box is a textarea taking one value per line, the
+ * same shape the Google conversion-action textarea uses. Keeping the raw text rather than a parsed
+ * list is what lets a refused snippet stay on screen exactly as it was typed — trailing blank
+ * lines, repeats and all — so the warning the operator is being asked to act on still describes
+ * what they can see.
+ */
+export interface CampaignStructuredSnippetDraft {
+  header: string;
+  values: string;
+}
+
+/**
+ * One Google call extension: a phone number shown with the Search ad, and the country it belongs to.
+ *
+ * Both fields are REQUIRED. `countryCode` is the ISO alpha-2 country, because Google interprets the
+ * number against it and has no default to pick; upstream (`assets_extended.go`'s
+ * `validateCallExtensions`) upper-cases it before judging it, and this app sends it upper-cased.
+ * `phoneNumber` is the number as a human writes it for that country — Google normalises it, and
+ * neither upstream nor this app tries to.
+ */
+export interface CampaignCallExtension {
+  countryCode: string;
+  phoneNumber: string;
+}
+
+/**
+ * One Google promotion extension: what is on sale, the discount, and where a click lands.
+ *
+ * Mirrors `googleAdsPromotionConfig` (`internal/dispatch/googleads.go`) field for field. Every
+ * money and percentage field is a NUMBER in whole units and is OMITTED when unset — upstream decodes
+ * an absent field to `0`, which is its own "unset", so sending `0` and omitting the key mean the
+ * same thing there.
+ *
+ * Two oneofs, both Google's. `discountPercent` and `discountAmount` — EXACTLY one. `promotionCode`
+ * and `ordersOverAmount` — AT MOST one. `currencyCode` is required whenever either money field is
+ * set. `occasion` is Google's `PromotionExtensionOccasion` name, checked for shape and not for
+ * membership. The four dates are optional `YYYY-MM-DD` pairs — a serving window and a redemption
+ * window, each ordered on its own.
+ *
+ * `finalUrl` is REQUIRED and UNTAGGED here, as a sitelink's is: campaign-service tags it exactly as
+ * it tags the ad's own final URL.
+ */
+export interface CampaignPromotion {
+  promotionTarget: string;
+  discountPercent?: number;
+  discountAmount?: number;
+  ordersOverAmount?: number;
+  currencyCode?: string;
+  promotionCode?: string;
+  occasion?: string;
+  languageCode?: string;
+  startDate?: string;
+  endDate?: string;
+  redemptionStartDate?: string;
+  redemptionEndDate?: string;
+  finalUrl: string;
+}
+
+/**
+ * One row of a {@link CampaignPriceExtension}, mirroring `googleAdsPriceOfferingConfig`.
+ *
+ * Each row carries its OWN destination: Google serves the rows as separate clickable entries.
+ * `amount` must be greater than zero in `currencyCode` units — a free row is not a price row, and
+ * `0` reaches Google as unset. `unit` is Google's `PriceExtensionPriceUnit` name, optional.
+ */
+export interface CampaignPriceOffering {
+  header: string;
+  description: string;
+  amount: number;
+  currencyCode: string;
+  unit?: string;
+  finalUrl: string;
+}
+
+/**
+ * One Google price extension: a typed table of 3-8 priced rows, mirroring `googleAdsPriceConfig`.
+ *
+ * `type` (Google's `PriceExtensionType`) and `languageCode` are REQUIRED — upstream refuses a price
+ * asset without a language rather than picking one. `priceQualifier` (`FROM`, `UP_TO`, `AVERAGE`) is
+ * optional. Row headers must be distinct, case-folded: Google serves one row per header.
+ */
+export interface CampaignPriceExtension {
+  type: string;
+  priceQualifier?: string;
+  languageCode: string;
+  offerings: CampaignPriceOffering[];
+}
+
+/**
+ * The call-extension sub-form as the operator is filling it in — the two boxes' raw text, before
+ * trimming, so a refused entry stays on screen exactly as typed.
+ */
+export interface CampaignCallExtensionDraft {
+  countryCode: string;
+  phoneNumber: string;
+}
+
+/**
+ * Which arm of the promotion's discount oneof the sub-form is filling in. A select, not two boxes,
+ * because Google takes exactly one of the two.
+ */
+export type CampaignPromotionDiscountKind = 'percent' | 'amount';
+
+/**
+ * Which arm of the promotion's eligibility oneof the sub-form is filling in — `none` being the
+ * legal third state, since Google takes AT MOST one of the two.
+ */
+export type CampaignPromotionEligibilityKind = 'none' | 'code' | 'ordersOver';
+
+/**
+ * The promotion sub-form as the operator is filling it in. Every box is RAW TEXT, numbers included —
+ * the same choice the bidding controls make: an empty box is "not filled in", a different state from
+ * a zero, and a refused entry must stay on screen as typed.
+ */
+export interface CampaignPromotionDraft {
+  promotionTarget: string;
+  discountKind: CampaignPromotionDiscountKind;
+  discount: string;
+  eligibilityKind: CampaignPromotionEligibilityKind;
+  promotionCode: string;
+  ordersOverAmount: string;
+  currencyCode: string;
+  occasion: string;
+  languageCode: string;
+  startDate: string;
+  endDate: string;
+  redemptionStartDate: string;
+  redemptionEndDate: string;
+  finalUrl: string;
+}
+
+/** One price row as the operator is filling it in, raw text throughout. */
+export interface CampaignPriceOfferingDraft {
+  header: string;
+  description: string;
+  amount: string;
+  unit: string;
+  finalUrl: string;
+}
+
+/**
+ * The price sub-form as the operator is filling it in. `currencyCode` is ONE box for the whole
+ * table — every row of a price extension is in the same currency in practice — and is copied onto
+ * each row's `currencyCode`, which is where the wire carries it.
+ */
+export interface CampaignPriceExtensionDraft {
+  type: string;
+  priceQualifier: string;
+  languageCode: string;
+  currencyCode: string;
+  offerings: CampaignPriceOfferingDraft[];
+}
+
+/**
+ * The radius unit a {@link CampaignProximityTarget} is measured in.
+ *
+ * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
+ * the constant cannot leave this type behind.
+ */
+export type GoogleAdsRadiusUnit = (typeof GOOGLE_ADS_RADIUS_UNITS)[number];
+
+/**
+ * One Google proximity target: a point in decimal degrees and a radius around it.
+ *
+ * Every field is REQUIRED, `radiusUnit` emphatically so — upstream (`geo.go`'s
+ * `validateProximityTargets`) supplies no default because "a radius of 50 means two very different
+ * campaigns depending on the unit, and guessing one would silently buy ~2.5x the intended area (or
+ * 0.4x)". Refusing costs the caller one explicit word, before anything paid exists.
+ *
+ * Latitude and longitude are DECIMAL DEGREES (37.7749, -122.4194), the form every mapping tool
+ * emits; upstream converts them to the microdegrees Google's `GeoPoint` actually carries. `radius`
+ * must be greater than zero and within {@link GOOGLE_ADS_MAX_RADIUS} for its own unit — the two
+ * ceilings are not a converted pair.
+ */
+export interface CampaignProximityTarget {
+  latitude: number;
+  longitude: number;
+  radius: number;
+  radiusUnit: GoogleAdsRadiusUnit;
+}
+
+/**
+ * The Implementation tab's radius sub-form as TYPED, before it becomes a
+ * {@link CampaignProximityTarget}.
+ *
+ * The three numbers are raw text for the reason {@link CampaignStructuredSnippetDraft.values} is: an
+ * empty box is "not filled in yet", which is a different state from a zero, and a zero latitude is
+ * a real point in the Gulf of Guinea that nothing downstream would refuse. `radiusUnit` admits `''`
+ * because upstream supplies no default and neither does the form — the operator picks one.
+ */
+export interface CampaignProximityTargetDraft {
+  latitude: string;
+  longitude: string;
+  radius: string;
+  radiusUnit: GoogleAdsRadiusUnit | '';
+}
+
+/**
+ * The day a {@link CampaignAdSchedule} runs on.
+ *
+ * Derived from {@link GOOGLE_ADS_SCHEDULE_DAYS} rather than written out again, so a day spelled
+ * differently in the constant cannot leave this type behind.
+ */
+export type GoogleAdsScheduleDay = (typeof GOOGLE_ADS_SCHEDULE_DAYS)[number];
+
+/**
+ * The minute a {@link CampaignAdSchedule} window starts or ends on.
+ *
+ * A UNION of the four values rather than `number`, because Google models minutes as an enum: `:10`
+ * is unrepresentable rather than merely unusual, and a caller honouring this type cannot write one.
+ */
+export type GoogleAdsScheduleMinute = (typeof GOOGLE_ADS_SCHEDULE_MINUTES)[number];
+
+/**
+ * One "serve during this window on this day" interval.
+ *
+ * The window is HALF-OPEN — [start, end) — which is why `endHour` admits 24 and `startHour` does
+ * not: a window running to midnight ends at hour 24, and one starting at midnight starts at hour 0.
+ * It is also what makes 09:00-12:00 and 12:00-17:00 two non-overlapping windows rather than a
+ * clash, so the ordinary split-day schedule is accepted.
+ *
+ * `bidModifier` is OPTIONAL and its absence is meaningful: an interval with no modifier restricts
+ * WHEN the campaign serves without changing what it bids, which is the ordinary case. It cannot
+ * default to 0: upstream reads 0 as the -100% modifier, which Google refuses on an ad schedule (it
+ * reserves 0 for device exclusions), so an entry written as "listed but unadjusted" would fail the
+ * create. Upstream carries the field as a pointer so absence stays distinguishable from 0, so an
+ * absent modifier must be OMITTED on the wire rather than sent as a zero. A present value must be between
+ * {@link GOOGLE_ADS_MIN_BID_MODIFIER} and {@link GOOGLE_ADS_MAX_BID_MODIFIER}, and is sent only under
+ * a strategy in {@link GOOGLE_BIDDING_SCHEDULE_ADJUSTMENT_STRATEGIES}, and never on a channel in
+ * {@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}.
+ */
+export interface CampaignAdSchedule {
+  dayOfWeek: GoogleAdsScheduleDay;
+  startHour: number;
+  startMinute: GoogleAdsScheduleMinute;
+  endHour: number;
+  endMinute: GoogleAdsScheduleMinute;
+  bidModifier?: number;
+}
+
+/**
+ * A device a campaign may adjust its bid on, or exclude.
+ *
+ * Derived from {@link GOOGLE_ADS_DEMAND_GEN_DEVICES}, the widest channel vocabulary, rather than
+ * written out again, so a device added to it cannot leave this type behind. Which of these a channel
+ * takes is `googleAdsDevicesOn`'s answer: `CONNECTED_TV` is Demand Gen's and Performance Max's alone.
+ */
+export type GoogleAdsDevice = (typeof GOOGLE_ADS_DEMAND_GEN_DEVICES)[number];
+
+/**
+ * An age range a campaign may exclude, in either spelling upstream accepts — the friendly `18-24`
+ * or Google's own `AGE_RANGE_18_24`. Derived from {@link GOOGLE_ADS_AGE_RANGE_MAP}'s keys, so the
+ * type admits exactly what the lookup resolves.
+ */
+export type GoogleAdsAgeRange = keyof typeof GOOGLE_ADS_AGE_RANGE_MAP;
+
+/**
+ * A gender a campaign may exclude. Derived from {@link GOOGLE_ADS_GENDERS}.
+ */
+export type GoogleAdsGender = (typeof GOOGLE_ADS_GENDERS)[number];
+
+/** A household income range the Implementation tab offers. Derived from {@link GOOGLE_ADS_INCOME_RANGES}. */
+export type GoogleAdsIncomeRange = (typeof GOOGLE_ADS_INCOME_RANGES)[number];
+
+/** A parental status. Derived from {@link GOOGLE_ADS_PARENTAL_STATUSES}. */
+export type GoogleAdsParentalStatus = (typeof GOOGLE_ADS_PARENTAL_STATUSES)[number];
+
+/** A demographic dimension a Search campaign can observe. Derived from {@link GOOGLE_ADS_OBSERVED_DEMOGRAPHICS}. */
+export type GoogleAdsObservedDemographic = (typeof GOOGLE_ADS_OBSERVED_DEMOGRAPHICS)[number];
+
+/**
+ * Positive demographic targeting on every Display ad group (linuxfoundation/lfx-v2-campaign-service#499),
+ * `googleAdsConfig.displayDemographics` on the wire. Each non-empty list narrows the campaign to the
+ * values it names; an empty or absent list leaves that dimension open. Each list takes the vocabulary
+ * of its exclusion counterpart.
+ */
+export interface GoogleDisplayDemographics {
+  ageRanges?: GoogleAdsAgeRange[];
+  genders?: GoogleAdsGender[];
+  incomeRanges?: GoogleAdsIncomeRange[];
+  parentalStatuses?: GoogleAdsParentalStatus[];
+}
+
+/**
+ * A Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498, #518),
+ * `googleAdsConfig.demandGenDemographics` or a `demandGenAdGroups` entry's `demographics` on the wire:
+ * the same four lists as {@link GoogleDisplayDemographics}, in the same vocabularies. Upstream builds
+ * them into one new Audience the ad group targets, so each non-empty list narrows the ad group to the
+ * values it names. Unknown (`UNDETERMINED`) adds the people Google could not classify and needs a real
+ * value beside it; a list naming every value and Unknown narrows nothing, and upstream leaves it out.
+ * Upstream also takes user lists and custom audiences in this object; this application sends neither.
+ */
+export type GoogleDemandGenDemographics = GoogleDisplayDemographics;
+
+/** What the "create another campaign" confirmation shows (#4983, "ss-3"). */
+export interface CampaignCreateAnotherDialogData {
+  /** "This creates a separate, separately budgeted … campaign on …", built by the Implement tab. */
+  summary: string;
+  /** The live campaigns those platforms already have for this event. */
+  existing: CampaignExistingRow[];
+}
+
+/** A campaign's funnel stage, as campaign-service stores it (lfx-v2-campaign-service#453). */
+export type CampaignFunnelStage = 'top' | 'mid' | 'lower';
+
+/** A campaign's tactic label: campaign-service's controlled list (lfx-v2-campaign-service#453). */
+export type CampaignTactic = 'prospecting' | 'retargeting' | 'lookalike' | 'keyword' | 'competitor' | 'content-promotion';
+
+/** One option of a funnel-stage or tactic picker. */
+export interface CampaignLabelOption<T extends string> {
+  id: T;
+  label: string;
+}
+
+/**
+ * A confirmed "create another campaign" (#4983, "ss-3"): what turns a repeat create into a deliberate
+ * second (or third) campaign on platforms that already have one.
+ *
+ * `expectedSlotVersions` is the compare-and-set: for each platform, the latest slot version the
+ * operator SAW for the slot being created (for Google, the same channel). campaign-service claims the
+ * next slot only while that is still the latest, so a double click, a reload, a second tab or a late
+ * replay returns the existing campaign (`reused`) instead of creating another.
+ */
+export interface CampaignCreateAnother {
+  funnelStage: CampaignFunnelStage;
+  tactic?: CampaignTactic;
+  expectedSlotVersions: Record<string, number>;
+}
+
+/**
+ * One "bid this much more, or less, on this device" adjustment.
+ *
+ * `bidModifier` is REQUIRED here, and the contrast with {@link CampaignAdSchedule}'s optional one is
+ * deliberate rather than an inconsistency. Upstream carries the schedule modifier as a `*float64`,
+ * so an omitted one stays distinguishable from `0`; it carries THIS one as a plain `float64`, where
+ * an omitted key decodes to `0` — and `0` is the -100% "do not serve on this device at all" opt-out.
+ * A caller who forgets the field would be asking, in upstream's reading, for the device to be
+ * switched off entirely on a paid campaign, and would be told the create succeeded.
+ *
+ * So there is no safe default to supply and nothing to omit on the wire: the field is required, and
+ * the BFF refuses an entry that leaves it out rather than guessing which of the two the caller
+ * meant. Any value other than the `0` opt-out must be between {@link GOOGLE_ADS_MIN_BID_MODIFIER}
+ * and {@link GOOGLE_ADS_MAX_BID_MODIFIER}.
+ */
+export interface CampaignDeviceBidModifier {
+  device: GoogleAdsDevice;
+  bidModifier: number;
+}
+
+/**
+ * One ad schedule as normalized for judgement and dispatch.
+ *
+ * Widened from {@link CampaignAdSchedule} in three places: `dayOfWeek` is the caller's own string
+ * rather than one of the seven Google accepts, and the two minute fields are plain numbers rather
+ * than the four-value enum, because the BFF judges an unvalidated body and narrowing a type before
+ * the value has been judged would mean casting a lie. The BFF's `createCampaign` refuses each by
+ * name through `googleAdScheduleRefusal`, so what it dispatches always carries a real day and real
+ * quarter-hours.
+ *
+ * `bidModifier` stays OPTIONAL rather than being zero-filled like every other field: upstream reads
+ * an absent modifier as "listed but unadjusted" and `0` as the -100% modifier Google refuses on a
+ * schedule, so the two must stay distinguishable all the way to the wire.
+ */
+export interface NormalizedGoogleAdSchedule extends Omit<CampaignAdSchedule, 'dayOfWeek' | 'startMinute' | 'endMinute'> {
+  dayOfWeek: string;
+  startMinute: number;
+  endMinute: number;
+}
+
+/**
+ * One device bid modifier as normalized for judgement and dispatch.
+ *
+ * `device` is widened from {@link CampaignDeviceBidModifier}'s enum to the caller's own string, for
+ * the same reason {@link NormalizedGoogleAdSchedule} widens its day of week: the body is unvalidated
+ * there and narrowing a type before the value has been judged would mean casting a lie.
+ *
+ * `bidModifier` is widened the other way — from REQUIRED to optional — and that is the one place
+ * this type must not be read as a copy of its ad-schedule sibling. There an absent modifier is the
+ * ordinary case and must survive all the way to the wire; here an absent modifier is a REFUSAL, and
+ * it is optional only so the BFF can see the absence and name it.
+ * Upstream's wire type carries a `*float64` for exactly this reason and `googleAdsDeviceBidModifiers`
+ * (`internal/dispatch/googleads.go`) refuses the nil, because the client type it maps onto holds a
+ * plain `float64` where `0` is the -100% opt-out — so an omitted modifier flattened to a zero would
+ * stop the campaign serving on that device while reporting a successful create.
+ */
+export interface NormalizedGoogleDeviceBidModifier extends Omit<CampaignDeviceBidModifier, 'device' | 'bidModifier'> {
+  device: string;
+  bidModifier?: number;
+}
+
+/**
+ * One ad-schedule window as the Implementation tab's editor renders it: the day, the start and end
+ * as minutes since midnight (24:00 is 1440), the bid adjustment as a whole percentage, or `null`
+ * when the window carries no adjustment, and whether that adjustment is HELD — kept, read-only and
+ * clearable, because the bidding strategy in force is one Google ignores it under.
+ */
+export interface GoogleAdScheduleRowView {
+  dayOfWeek: GoogleAdsScheduleDay;
+  start: number;
+  end: number;
+  adjustment: number | null;
+  held: boolean;
+}
+
+/**
+ * What the device control does with one device: leave Google's default bid, adjust it, or exclude
+ * the device (a `0` bid modifier, which stops the campaign serving there).
+ */
+export type GoogleDeviceBidMode = 'default' | 'adjust' | 'exclude';
+
+/**
+ * One responsive search ad on a Google Search campaign (#4991): its copy and its optional display
+ * paths. Blank lines are dropped before sending; an ad that sets neither path inherits the
+ * campaign-level pair upstream.
+ */
+export interface CampaignSearchAd {
+  headlines: string[];
+  descriptions: string[];
+  path1?: string;
+  path2?: string;
+}
+
+/** One demographic checkbox on the Implementation tab (an exclusion, an observed dimension or a targeted value): the value it writes, its label and whether it is ticked. */
+export interface GoogleExclusionOptionView {
+  value: string;
+  label: string;
+  checked: boolean;
+}
+
+/** A refusal naming the request field it is about, so the BFF can attach it to that field. */
+export interface GoogleDemographicFieldRefusal {
+  field: string;
+  message: string;
+}
+
+/** The exclusion lists a targeted or observed demographic is compared with, as the request carries them. */
+export interface GoogleDemographicExclusionLists {
+  ageRanges?: unknown;
+  genders?: unknown;
+  incomeRanges?: unknown;
+  parentalStatuses?: unknown;
+}
+
+/** One dimension of Display's demographic targeting on the Implementation tab: the list it writes, its legend and its checkboxes. */
+export interface GoogleDemographicTargetingGroupView {
+  key: keyof GoogleDisplayDemographics;
+  legend: string;
+  rows: GoogleExclusionOptionView[];
+}
+
+/**
+ * One choice in a device's mode picker. `disabled` is set only on an Adjust bid choice shown for a
+ * device that already holds an adjustment the bidding strategy refuses: it keeps the held value
+ * visible without offering it as something to pick.
+ */
+export interface GoogleDeviceBidModeOption {
+  value: GoogleDeviceBidMode;
+  label: string;
+  disabled: boolean;
+}
+
+/**
+ * One device as the Implementation tab's device control renders it; `adjustment` is a whole percentage.
+ *
+ * `held` is true for an adjustment the effective bidding strategy refuses (anything but Manual CPC):
+ * it stays in the list, and so blocks Create through the shared refusal, until the operator changes
+ * it or switches back. Its percentage box is read-only, not disabled, so keyboard and screen-reader
+ * users can still reach the value. `modeOptions` is what this device's picker offers.
+ */
+export interface GoogleDeviceBidRowView {
+  device: GoogleAdsDevice;
+  label: string;
+  mode: GoogleDeviceBidMode;
+  adjustment: number | null;
+  held: boolean;
+  modeOptions: GoogleDeviceBidModeOption[];
+}
+
+/** One option of an ad-schedule `lfx-ui-select`: a day, or a time as minutes since midnight written as a string. */
+export interface GoogleAdScheduleSelectOption {
+  value: string;
+  label: string;
+}
+
+/** Which end of an ad-schedule window a time picker sets. */
+export type GoogleAdScheduleEdge = 'start' | 'end';
+
+/** One window on one day as minutes since midnight, half-open: 24:00 is 1440. */
+export interface GoogleAdScheduleSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * Where the ad-schedule editor's "Add window" would put a new window, and, when it found nowhere,
+ * why. `slot` is `null` when no day has a gap a window can fill. `fullDays` are the days skipped
+ * because they already hold the per-day maximum; `earlyOnlyDays` are the days whose only free time
+ * ends before 01:00, which no window can fill because an end hour of 0 is refused. Every other day is
+ * covered from 00:00 to 24:00.
+ */
+export interface GoogleAdScheduleFreeSlot {
+  slot: CampaignAdSchedule | null;
+  fullDays: GoogleAdsScheduleDay[];
+  earlyOnlyDays: GoogleAdsScheduleDay[];
+}
+
 export interface CampaignCreateRequest {
   eventName: string;
   eventSlug: string;
@@ -1252,6 +4072,11 @@ export interface CampaignCreateRequest {
   registrationUrl: string;
   hsToken?: string;
   campaignTypes: CampaignType[];
+  /**
+   * The Google DAILY budget. campaign-service creates the Google budget with no period, which
+   * Google treats as daily, so this is never a flight total (#4847). Spent in the ad account's
+   * currency despite the name (LFXV2-3251).
+   */
   budgetUsd: number;
   searchBudgetPct: number;
   startDate: string;
@@ -1259,11 +4084,373 @@ export interface CampaignCreateRequest {
   keywords: CampaignKeyword[];
   headlines: string[];
   descriptions: string[];
-  displayHeadlines?: string[];
-  displayDescriptions?: string[];
-  displayBusinessName?: string;
-  displayCallToAction?: string;
+  /**
+   * The selected Google channel's creative, one key per channel exactly as `googleAdsConfig` names
+   * them upstream. At most one is populated per create, because the BFF emits one config carrying
+   * one `channel` and campaign-service refuses a multi-channel Google create outright.
+   *
+   * `videoCreative` is deliberately absent: {@link GOOGLE_VIDEO_CREATE_SUPPORTED} is `false`, so no
+   * Video campaign is created here for a creative to attach to.
+   *
+   * These replace a `displayHeadlines`/`displayDescriptions`/`displayBusinessName`/
+   * `displayCallToAction` quartet that was declared on this request and read by nothing — no
+   * producer, no consumer, and a 40-character headline bound that does not match Google's 30 for a
+   * responsive display ad. A half-shaped field that no code honours is worse than an absent one:
+   * the next person to need display copy finds it, fills it in, and it goes nowhere.
+   */
+  demandGenCreative?: GoogleDemandGenCreative;
+  /**
+   * The Demand Gen VIDEO ad, sent INSTEAD of {@link demandGenCreative} when the operator picks the
+   * video format. The BFF refuses a Demand Gen create carrying both, as campaign-service would.
+   */
+  demandGenVideoCreative?: GoogleDemandGenVideoCreative;
+  /**
+   * The Demand Gen campaign split into named ad groups (#5226), sent INSTEAD of both creatives above:
+   * campaign-service refuses the list beside either of them. At most `GOOGLE_DEMAND_GEN_MAX_AD_GROUPS`.
+   */
+  demandGenAdGroups?: GoogleDemandGenAdGroup[];
+  /**
+   * Several named ads for the single Demand Gen ad group (lfx-v2-campaign-service#482), sent INSTEAD
+   * of both creatives above and never beside {@link demandGenAdGroups}. At most
+   * `GOOGLE_DEMAND_GEN_MAX_ADS_PER_GROUP`.
+   */
+  demandGenAds?: GoogleDemandGenAd[];
+  /**
+   * The single Demand Gen ad group's one Google Ads Audience (#5244), a full
+   * `customers/{customerId}/audiences/{id}` resource name on the campaign's own account. Never beside
+   * {@link demandGenAdGroups}, whose groups each carry their own `audience`; campaign-service refuses the
+   * pair. campaign-service also requires `global_marketing_ops` on the project to send one (#501).
+   */
+  demandGenAudience?: string;
+  /**
+   * The single Demand Gen ad group's demographics (linuxfoundation/lfx-v2-campaign-service#498), which
+   * upstream builds into one new Audience before the budget. DEMAND GEN ONLY
+   * (`GOOGLE_CHANNELS_WITH_DEMAND_GEN_DEMOGRAPHICS`). Never beside {@link demandGenAudience} or a group's
+   * `audience`, since an ad group takes one Audience; a named group's own `demographics` replace these for
+   * that group. Upstream refuses an object naming nothing. Not gated on `global_marketing_ops`: the four
+   * lists name no account resource.
+   */
+  demandGenDemographics?: GoogleDemandGenDemographics;
+  performanceMaxCreative?: GooglePerformanceMaxCreative;
+  /**
+   * The Performance Max asset group's search themes (campaign-service v1.0.31, linuxfoundation/lfx-v2-campaign-service#461): free text naming
+   * the searches the campaign is for. A signal, not targeting, so Google may serve beyond them.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}. PERFORMANCE MAX ONLY
+   * (`GOOGLE_CHANNELS_WITH_SEARCH_THEMES`), and only beside a {@link performanceMaxCreative}: a theme
+   * attaches to the asset group that creative creates. At most
+   * `GOOGLE_ADS_MAX_PERFORMANCE_MAX_SEARCH_THEMES`, each non-blank, at most
+   * `GOOGLE_ADS_MAX_SEARCH_THEME_RUNES` runes and not repeated (case-folded). The UI withholds them on
+   * any other channel and the BFF refuses every breach by name.
+   */
+  performanceMaxSearchThemes?: string[];
+  /**
+   * The Performance Max asset group's ONE audience signal (#5262; linuxfoundation/lfx-v2-campaign-service#461):
+   * an existing Google Ads Audience Google treats as likely converters, as a bare audience id or a
+   * `customers/{customerId}/audiences/{id}` resource name on the campaign's own account. A signal, not
+   * targeting, so Google may serve beyond it.
+   *
+   * Omitted when blank. PERFORMANCE MAX ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SIGNAL`), and only beside a
+   * {@link performanceMaxCreative}, whose asset group it attaches to. campaign-service requires
+   * `global_marketing_ops` on the project to send one (#501) and refuses it unless its deployment opts in
+   * (`GOOGLE_ADS_PMAX_AUDIENCE_SIGNAL_ENABLED`).
+   */
+  performanceMaxAudienceSignal?: string;
+  displayCreative?: GoogleDisplayCreative;
+  /**
+   * The Display campaign split into named ad groups (#475), sent INSTEAD of {@link displayCreative}:
+   * campaign-service refuses the list beside it. At most `GOOGLE_DISPLAY_MAX_AD_GROUPS`.
+   */
+  displayAdGroups?: GoogleDisplayAdGroup[];
+  /**
+   * The Search campaign's ad images, business logo and business name (#5262), sent only on a Search
+   * create and omitted when every field is empty. See {@link GoogleSearchAssets}.
+   */
+  searchAssets?: GoogleSearchAssets;
+  /**
+   * The Display campaign's audiences outside the named groups (#5262): the single ad group's four lists,
+   * never beside {@link displayAdGroups} (campaign-service refuses them there), and the user lists excluded
+   * from the whole campaign, which cover every group. DISPLAY ONLY: the BFF refuses it on any other channel.
+   * Optional and OMITTED when every list is empty.
+   */
+  displayAudiences?: GoogleDisplayCampaignAudiences;
+  /**
+   * The places the Google campaign serves in, as ISO 3166-1 alpha-2 country codes or raw numeric
+   * Google geo target constant ids — the two spellings upstream's `resolveGeoList` tells apart by
+   * shape. The Implementation tab sends its country chips first and its postal-code ids after them.
+   *
+   * Bounded by {@link GOOGLE_ADS_MAX_GEO_TARGETS} across both spellings together.
+   */
   geoTargets: string[];
+  /**
+   * The places the Google campaign must NOT serve in, as ISO 3166-1 alpha-2 country codes or raw
+   * numeric Google geo target constant ids (which is how a CITY, region, metro or postal code is
+   * addressed — the curated country map cannot express those).
+   *
+   * Optional and OMITTED when empty, on the same rule as {@link geoTargets}: an absent list and an
+   * empty one both mean "exclude nowhere".
+   *
+   * Accepted on EVERY Google channel, Demand Gen included — `validateGeoPlan` puts no channel fence
+   * on exclusions, unlike {@link proximityTargets}. Bounded by
+   * {@link GOOGLE_ADS_MAX_EXCLUDED_GEO_TARGETS}, which is counted separately from the targeted
+   * list's own bound.
+   *
+   * A place named in BOTH lists is refused rather than resolved: the exclusion would win and the
+   * campaign would not serve there at all, so a caller who wrote both did not get what either list
+   * says. The two are compared by RESOLVED id, so `US` in one list and `2840` in the other clash.
+   */
+  excludedGeoTargets?: string[];
+  /**
+   * Websites a Display campaign must never appear on, as bare domains (`example.com`), attached
+   * upstream as campaign-level negative placement criteria (campaign-service v1.0.31,
+   * `googleAdsConfig.excludedPlacements`, #462). DISPLAY ONLY: campaign-service refuses the list on
+   * every other channel (`validateDisplayTargeting`). Optional and OMITTED when empty. At most
+   * `GOOGLE_ADS_MAX_EXCLUDED_PLACEMENTS`; a scheme, path or port is refused rather than stripped
+   * (`validateExcludedPlacements`).
+   */
+  excludedPlacements?: string[];
+  /**
+   * Radius targeting around points — "everyone within N miles of the venue" — which is the one
+   * location shape that is not a place in Google's geo table.
+   *
+   * Optional and OMITTED when empty. Refused by upstream on Demand Gen (see
+   * {@link GOOGLE_CHANNELS_WITH_PROXIMITY}), so the BFF refuses a Demand Gen create carrying one by
+   * name rather than letting it fail after the fact, and the builder withholds the list on any
+   * channel that cannot take it. Bounded by {@link GOOGLE_ADS_MAX_PROXIMITY_TARGETS}.
+   *
+   * Two entries that render to the same criterion are COLLAPSED, not refused — unlike a repeated ad
+   * schedule, a proximity target carries no bid modifier, so two spellings of one target cannot
+   * disagree about anything.
+   */
+  proximityTargets?: CampaignProximityTarget[];
+  /**
+   * The languages the Google campaign serves in, as ISO 639-1 codes (`EN`, `DE`, `JA`) or raw
+   * numeric Google language constant ids.
+   *
+   * Optional, and OMITTED rather than sent empty when unset — upstream reads an absent list as
+   * Google's own default, which is to serve in EVERY language. So this is a narrowing, and an empty
+   * array and an absent key mean the same thing, exactly as they do for `geoTargets`.
+   *
+   * Accepted on every Google channel — see {@link GOOGLE_CHANNELS_WITH_LANGUAGES}; on Demand Gen
+   * campaign-service attaches it to the ad group. Bounded by {@link GOOGLE_ADS_MAX_LANGUAGES}. Upstream
+   * resolves each ISO code against its own `languageConstants` table — which
+   * {@link GOOGLE_ADS_LANGUAGE_MAP} mirrors — and refuses an unknown one rather than dropping it; a
+   * numeric id skips that table and is resolved by Google.
+   */
+  languages?: string[];
+  /**
+   * When the Google campaign serves, as one or more intervals per day of the week. Left unset it
+   * runs around the clock, which is Google's own default — so this list is a narrowing and an
+   * absent key means the same as an empty one, exactly as {@link languages} does.
+   *
+   * Accepted on every Google channel — see {@link GOOGLE_CHANNELS_WITH_AD_SCHEDULES} — but on Demand
+   * Gen only without a bid modifier ({@link GOOGLE_CHANNELS_WITHOUT_SCHEDULE_BID_MODIFIERS}). Bounded by {@link GOOGLE_ADS_MAX_AD_SCHEDULES}
+   * overall and {@link GOOGLE_ADS_MAX_AD_SCHEDULES_PER_DAY} on any one day; both are Google's own
+   * limits rather than local opinions.
+   *
+   * Two intervals that OVERLAP on the same day are refused, because Google rejects them — but
+   * touching intervals do not overlap, so a day split at noon is two ordinary entries. An exact
+   * repeat carrying the SAME bid modifier is collapsed; a repeat carrying a DIFFERENT one is
+   * refused, because Google accepts one criterion per interval and the second value would be the
+   * one silently dropped. That is the difference from {@link proximityTargets}, which has no field
+   * two spellings could disagree about.
+   */
+  adSchedules?: CampaignAdSchedule[];
+  /**
+   * How much more, or less, the Google campaign bids on each device. Left unset it bids the same
+   * everywhere, which is Google's own default — so this list is an adjustment and an absent key
+   * means the same as an empty one, exactly as {@link adSchedules} does.
+   *
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS}, every Google
+   * channel. Demand Gen and Performance Max take a device only as an exclusion, a modifier of `0`
+   * ({@link GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY}), and are the two channels that take
+   * `CONNECTED_TV`. Performance Max also refuses a list that excludes all four devices, since the
+   * campaign could then serve nowhere.
+   *
+   * A NON-ZERO modifier also needs the effective bidding strategy to be `manual-cpc`: Google would
+   * ignore it under any other, so campaign-service refuses it (see `googleDeviceBidModifierRefusal`).
+   * `0`, the exclusion, is accepted under every strategy.
+   *
+   * Bounded by the size of the channel's device vocabulary (`googleAdsDevicesOn`), as upstream's
+   * `validateDeviceBidModifiers` bounds it: a longer list necessarily REPEATS a device, and a repeat is refused rather than
+   * collapsed, because Google accepts one criterion per device and the second value would be the one
+   * silently dropped. That is the same rule {@link adSchedules} applies to a repeated interval with
+   * a different modifier — here every repeat qualifies, since a device has nothing else to agree on.
+   */
+  deviceBidModifiers?: CampaignDeviceBidModifier[];
+  /**
+   * The age ranges the Google campaign excludes. Left unset it serves to every age, which is
+   * Google's own default, so an absent key and an empty list agree.
+   *
+   * EXCLUSION-ONLY is Google's shape rather than a narrowing here: campaign-level demographic
+   * criteria are negative. Positive demographic targeting lives on the ad group
+   * ({@link displayDemographics}), so this field cannot be mistaken for one that targets.
+   *
+   * Accepted on the channels in {@link GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS}; Performance Max
+   * takes demographics as asset-group signals, which this client does not create, so upstream
+   * refuses rather than leaving an operator to read "campaign created" with their exclusion nowhere.
+   * Bounded by {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, applied to this list on its own.
+   *
+   * A repeated range is COLLAPSED, not refused — an exclusion carries no second field two spellings
+   * could disagree about, so the same range written twice says one thing twice.
+   */
+  excludedAgeRanges?: GoogleAdsAgeRange[];
+  /**
+   * The genders the Google campaign excludes, on the same terms as {@link excludedAgeRanges}:
+   * exclusion-only, the same channel fence, its own copy of
+   * {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, and a repeat collapsed rather than refused.
+   *
+   * `UNDETERMINED` — the bucket Google puts users it could not classify into — is an ordinary
+   * member: excluding it is a real choice a campaign makes.
+   */
+  excludedGenders?: GoogleAdsGender[];
+  /**
+   * The household income ranges every ad group of the campaign excludes
+   * (linuxfoundation/lfx-v2-campaign-service#473). Search and Display only
+   * ({@link GOOGLE_CHANNELS_WITH_INCOME_EXCLUSIONS}); capped at
+   * {@link GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS}, and a repeat is collapsed upstream.
+   */
+  excludedIncomeRanges?: GoogleAdsIncomeRange[];
+  /** The parental statuses every ad group excludes, on the same terms as {@link excludedIncomeRanges} but Display only ({@link GOOGLE_CHANNELS_WITH_PARENTAL_EXCLUSIONS}). */
+  excludedParentalStatuses?: GoogleAdsParentalStatus[];
+  /**
+   * The demographic dimensions every Search ad group observes (linuxfoundation/lfx-v2-campaign-service#497):
+   * reported and open to a bid adjustment, with no narrowing. Search only; upstream observes every
+   * value of a dimension except those its exclusions already exclude.
+   */
+  observedDemographics?: GoogleAdsObservedDemographic[];
+  /** Display's positive demographic targeting (linuxfoundation/lfx-v2-campaign-service#499). Display only. */
+  displayDemographics?: GoogleDisplayDemographics;
+  /**
+   * The first responsive search ad's display paths — the segments Google shows after the final
+   * URL's domain, as in `example.com/kubecon/na`. Search only ({@link GOOGLE_CHANNELS_WITH_SEARCH_ADS});
+   * each at most {@link GOOGLE_ADS_MAX_SEARCH_AD_PATH_WIDTH} wide, `path2` only with `path1`. Sent
+   * as the campaign-level pair, which every ad that sets neither path inherits upstream.
+   */
+  path1?: string;
+  path2?: string;
+  /**
+   * The Search ad group's second and third responsive search ads (#4991). The first ad stays
+   * {@link headlines}, {@link descriptions}, {@link path1} and {@link path2}; with any entry here the
+   * BFF sends all of them as ONE named ad group (`adGroups`), so up to
+   * {@link GOOGLE_ADS_MAX_SEARCH_ADS_PER_AD_GROUP} ads in total. Absent or empty sends the single ad
+   * exactly as before.
+   */
+  additionalSearchAds?: CampaignSearchAd[];
+  /**
+   * Whether the Search campaign also serves on Google's Search partner network, beside Google Search
+   * (campaign-service's `searchPartners`, 1.0.24). Search only; sent only when `true`, so absent and
+   * `false` both mean Google Search only, as every create before this field.
+   */
+  searchPartners?: boolean;
+  /**
+   * Campaign-level negative keywords created with the Search campaign (#4991): queries it must
+   * never pay for. Search only, at most {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST}, each text on the
+   * rules `parseNegativeKeywordInput` applies with Google's 80-character cap. The BFF sends the match
+   * type upper-cased, as it sends {@link keywords}.
+   */
+  negativeKeywords?: CampaignNegativeKeywordInput[];
+  /**
+   * The Google campaign's callout extensions — short claims appended to the text ad, carrying no
+   * link of their own.
+   *
+   * Optional and OMITTED when empty, not sent as `[]`. Upstream treats an absent list as "this
+   * campaign has no extensions", which is what every create on this path did before the field
+   * existed, so an absent key and an empty list agree — the same rule as {@link geoTargets}.
+   *
+   * SEARCH AND PERFORMANCE MAX (`GOOGLE_CHANNELS_WITH_CALLOUTS_AND_SNIPPETS`; campaign-service
+   * v1.0.31 takes them on Performance Max, linuxfoundation/lfx-v2-campaign-service#461, linked to the campaign). On Demand Gen, Display and
+   * Video upstream refuses the create outright rather than dropping the list, so the UI withholds it
+   * there and the BFF refuses it by name.
+   */
+  callouts?: string[];
+  /**
+   * The Google campaign's sitelink extensions — extra links rendered with the ad.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}. SEARCH, DEMAND GEN AND PERFORMANCE MAX
+   * (`GOOGLE_CHANNELS_WITH_SITELINKS`): campaign-service v1.0.31 accepts sitelinks alone on Demand
+   * Gen and beside callouts and snippets on Performance Max, under the same per-entry rules as
+   * Search. On Display and Video the UI withholds them and the BFF refuses them by name.
+   */
+  sitelinks?: CampaignSitelink[];
+  /**
+   * The Google campaign's structured snippets — one "Header: value, value, value" line each,
+   * enumerating what the campaign offers rather than claiming anything about it.
+   *
+   * Omitted when empty, and Search and Performance Max only, on the same rule as {@link callouts}.
+   */
+  structuredSnippets?: CampaignStructuredSnippet[];
+  /**
+   * The existing Google Ads user lists the Search ad group targets, as full resource names
+   * (`customers/{customerId}/userLists/{id}`, see `GOOGLE_ADS_USER_LIST_RESOURCE_PATTERN`).
+   *
+   * Upstream attaches them to the ad group under an observation-only (bid-only) audience targeting
+   * setting, by design reporting on an audience rather than narrowing reach. Omitted when empty, on
+   * the same rule as {@link callouts}, and SEARCH ONLY (`GOOGLE_CHANNELS_WITH_AUDIENCE_SEGMENTS`):
+   * upstream refuses the create on any other channel, and the BFF refuses it by name.
+   *
+   * The Implement tab no longer sends this key: its lists go out as {@link campaignAudienceSegments}.
+   * The BFF still accepts it, and refuses it beside that field.
+   */
+  audienceSegments?: string[];
+  /**
+   * The existing Google Ads user lists the Search CAMPAIGN observes, as full resource names
+   * (`customers/{customerId}/userLists/{id}`), dispatched as `googleAdsConfig.campaignAudienceSegments`
+   * (linuxfoundation/lfx-v2-campaign-service#525). Upstream adds one campaign criterion per list under
+   * the campaign's targeting setting AUDIENCE bid-only, so the lists report without narrowing reach and
+   * cover every ad group, including one added later.
+   *
+   * Omitted when empty. SEARCH ONLY, never beside {@link audienceSegments}, each entry a user list on
+   * the campaign's own account with a canonical id, at most `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS` distinct
+   * lists; repeats are collapsed upstream. The BFF refuses each of those by name, except the account
+   * match, which it cannot see. Needs `global_marketing_ops` on the project, as `audienceSegments` does.
+   */
+  campaignAudienceSegments?: string[];
+  /**
+   * The Google campaign's call extensions — a phone number shown with the text ad.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too. The key is
+   * campaign-service's own (`googleAdsConfig.callExtensions`), forwarded unrenamed.
+   */
+  callExtensions?: CampaignCallExtension[];
+  /**
+   * The Google campaign's promotion extensions — a discount shown with the text ad.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
+   */
+  promotions?: CampaignPromotion[];
+  /**
+   * The Google campaign's price extensions — a table of priced rows shown with the text ad.
+   *
+   * Omitted when empty, on the same rule as {@link callouts}, and SEARCH ONLY
+   * (`GOOGLE_CHANNELS_WITH_AD_EXTENSIONS`): upstream refuses it on Performance Max too.
+   */
+  prices?: CampaignPriceExtension[];
+  /**
+   * How the Google campaign bids, and the numbers that go with the strategy it names.
+   *
+   * All five are optional and all five are OMITTED when unset rather than sent as zero. Absent
+   * `biddingStrategy` means the channel's own default (`GOOGLE_BIDDING_DEFAULT_BY_CHANNEL`), and
+   * campaign-service — not this request — is what applies it. The three numbers are refused
+   * upstream when they do not belong to the named strategy or channel, so sending a zero to mean
+   * "none" would be sending a value, not omitting one. The conversion list is accepted on every
+   * channel and under every strategy (`validateConversionActions`, `applyCampaignConversionGoal`);
+   * the tab sends it only where `GOOGLE_CONVERSION_ACTION_CHANNELS` says.
+   *
+   * `targetRoas` is a RATIO, not a percentage: 4 is 400% return on ad spend. `cpcBid` and
+   * `targetCpa` are in whole units of the ad ACCOUNT's currency.
+   *
+   * `conversionActions` entries are either a bare numeric id or a full
+   * `customers/<id>/conversionActions/<id>` resource name — see
+   * {@link GOOGLE_ADS_CONVERSION_ACTION_PATTERN}.
+   */
+  biddingStrategy?: GoogleBiddingStrategy;
+  targetCpa?: number;
+  targetRoas?: number;
+  cpcBid?: number;
+  conversionActions?: string[];
   project?: string;
   driveFolderUrl?: string;
   /**
@@ -1273,10 +4460,18 @@ export interface CampaignCreateRequest {
    * use, so accepting `hubspot` there would type-check a request the generators cannot serve.
    */
   platforms?: CampaignAnyPlatform[];
+  /**
+   * Present ONLY when the operator confirmed creating ANOTHER campaign on platforms that already have
+   * one (#4983, "ss-3"). Without it a repeat create is a retry and campaign-service returns the
+   * existing campaign. See `CampaignCreateAnother`.
+   */
+  another?: CampaignCreateAnother;
   linkedInConfig?: LinkedInCampaignCreateRequest;
   redditConfig?: RedditCampaignCreateRequest;
   metaConfig?: MetaCampaignCreateRequest;
   microsoftConfig?: MicrosoftCampaignCreateRequest;
+  /** Sent only while `CampaignListResult.twitterCreateEnabled` is an explicit yes; see {@link TwitterCampaignCreateRequest}. */
+  twitterConfig?: TwitterCampaignCreateRequest;
   hubspotConfig?: HubSpotCampaignCreateRequest;
 }
 
@@ -1307,6 +4502,12 @@ export interface CampaignServiceCreateResult {
    * null. Never a raw upstream error — the caller renders this.
    */
   error: string | null;
+  /**
+   * The create MAY have started upstream although no job can be followed: accepted with no job id,
+   * or a failure after the request left that cannot be classified as a rejection. The caller must
+   * treat the outcome as unresolved -- a retry could create a duplicate -- rather than as a refusal.
+   */
+  indeterminate?: boolean;
 }
 
 export interface CampaignCreateResult {
@@ -1333,7 +4534,8 @@ export interface CampaignCreateResponse {
  * Deliberately NOT a `CampaignCreateResult`. That interface carries `type`, `campaignName`,
  * `adGroupCount`, `keywordCount`, `adCount`, `campaignUrl` and `steps`, and campaign-service's
  * `platform-result` carries none of them — it knows the platform, whether the create
- * succeeded, the upstream campaign id, and the failure reason. Widening this into a
+ * succeeded, the upstream campaign id, the failure reason, and for HubSpot a link to the draft
+ * when it could build one. Widening this into a
  * `CampaignCreateResult` with zeros and empty strings would make the implementation tab
  * render "0 ad groups · 0 keywords · 0 ads" and an empty link for a campaign that really has
  * them, which reports a successful create as an empty one. A separate, smaller type keeps the
@@ -1342,9 +4544,43 @@ export interface CampaignCreateResponse {
 export interface CampaignPlatformResult {
   platform: string;
   ok: boolean;
+  /**
+   * campaign-service returned an EXISTING campaign instead of creating one (lfx-v2-campaign-service#453):
+   * an idempotent retry, a "create another" whose expectation was stale (a double click, a reload,
+   * a second tab), or a claim lost to a completed row. Absent from an older campaign-service.
+   */
+  reused?: boolean;
+  /** Which campaign on its slot this is (1 for the first). Absent from an older campaign-service. */
+  slotVersion?: number;
+  /** The slot's variant (Google channel, or `default`). Absent from an older campaign-service. */
+  variant?: string;
+  /** The funnel stage stored on the campaign. Absent for an unlabelled campaign. */
+  funnelStage?: CampaignFunnelStage;
+  /** The tactic stored on the campaign. Absent when none was set. */
+  tactic?: CampaignTactic;
   /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
   campaignId?: string;
+  /** HubSpot app link to the created draft. Absent when campaign-service could not build one (unknown portal id). */
+  hubspotUrl?: string;
+  /**
+   * Operator-readable notes about best-effort steps of a SUCCESSFUL create that did not apply. For the email
+   * channel this reports a hero image that could not be re-hosted: the draft exists but has no hero banner.
+   */
+  warnings?: string[];
   error?: string;
+}
+
+/**
+ * What the UI makes of one failed platform's `error` (see `describeCampaignDispatchFailure`).
+ *
+ * `message` is the backend sentence to show, with the `(reason: <token>)` fragment removed when
+ * `nextStep` replaces it. `nothingCreated` is true only for the fixed pre-create sentence endings
+ * in `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`.
+ */
+export interface CampaignDispatchFailureDescription {
+  message: string;
+  nextStep: string | null;
+  nothingCreated: boolean;
 }
 
 /**
@@ -1404,6 +4640,14 @@ export interface CampaignMetrics {
   pacingLabel: PacingLabel;
   campaignId: string;
   googleAdsUrl: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); see
+   * `RedditCampaignMetrics` for their meaning. On that path `pacingPct` is 0 and `pacingLabel` a
+   * placeholder whenever `pacingUnknown` or `fetchFailed` is set.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface CampaignActionItem {
@@ -1420,6 +4664,11 @@ export interface CampaignActionItem {
     impressions: number;
     clicks: number;
     conversions: number;
+    /**
+     * Campaign-service path only: true when `pacingPct` is a 0 placeholder — the item's campaign could not
+     * be read or paced, or the item names no campaign at all.
+     */
+    pacingUnknown?: boolean;
   };
 }
 
@@ -1429,6 +4678,8 @@ export interface CampaignAccountTotals {
   impressions: number;
   clicks: number;
   conversions: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface CampaignMonitorResponse {
@@ -1438,6 +4689,28 @@ export interface CampaignMonitorResponse {
   accountTotals: CampaignAccountTotals;
   actionItems: CampaignActionItem[];
   message?: string;
+  /**
+   * Campaign-service path only: true when the amounts are those of the account that was read (the
+   * project's own connection's, or the one its recorded campaigns were created under; see
+   * `googleAccountOrigin`), unconverted, in a currency nobody named — campaign-service sets no
+   * `currency` for Google. The legacy read is the LF's own USD account and leaves it unset.
+   */
+  amountsInAccountCurrency?: boolean;
+  /**
+   * Campaign-service path only: the Google Ads customer that was read. ABSENT on the legacy read, and
+   * on a campaign-service read that had no account to read (no campaigns recorded for the project).
+   */
+  accountId?: string;
+  /**
+   * Campaign-service path only: where the Google account that was read came from. `connection` is
+   * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
+   * with an account bound of its own and campaign-service read the customer its campaigns were
+   * created under, through the LF system account when needed (#5622, campaign-service #592).
+   *
+   * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
+   * client's account picker got its account; that marker is never set from this field.
+   */
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
 }
 
 // ---------------------------------------------------------------------------
@@ -1487,6 +4760,12 @@ export interface KeywordMetricsResponse {
   truncated?: boolean;
   totals: KeywordTotals;
   keywords: KeywordMetrics[];
+  /**
+   * Campaign-service path only: true when spend and CPC are the project's own connected account's,
+   * unconverted, in a currency nobody named (`cost_micros` is "the account's native currency", with
+   * no FX). The legacy read is the LF's own USD account and leaves it unset (#4807).
+   */
+  amountsInAccountCurrency?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1560,6 +4839,72 @@ export interface CampaignServiceKeywords {
   truncated: boolean;
 }
 
+/**
+ * The reporting windows campaign-service's Microsoft keyword read accepts: the subset of
+ * `CampaignMetricsWindow` the Microsoft client maps to a date range (`microsoftKeywordsWindowEnum`).
+ */
+export type MicrosoftKeywordsWindow = (typeof MICROSOFT_KEYWORDS_WINDOWS)[number];
+
+/**
+ * campaign-service's `microsoft-ads-keywords` result, in its own vocabulary.
+ *
+ * The rows are the Google row shape: `criterion_id` is Microsoft's KeywordId and `ad_group_id` its
+ * AdGroupId, `cost_micros` is Spend (account currency) times 10^6, and `ctr` is a fraction. Unlike
+ * the Google read they come from the last FINISHED asynchronous report, not a live query.
+ */
+export interface CampaignServiceMicrosoftKeywords {
+  window: CampaignMetricsWindow;
+  /** Empty while no finished report covers every campaign the project owns (`metrics_as_of` absent). */
+  rows: CampaignServiceKeywordRow[];
+  row_count: number;
+  truncated: boolean;
+  /**
+   * When the served report was REQUESTED (RFC 3339). ABSENT when no finished report covers every
+   * campaign this project now owns; `rows` is then empty rather than a partial picture.
+   */
+  metrics_as_of?: string;
+  /** True while a newer report is building, so a later read will return newer (or the first) rows. */
+  metrics_pending: boolean;
+  /**
+   * False when Microsoft left at least one returned row's conversion count blank. Those rows carry
+   * `conversions: 0`, which is then NOT a measurement, so CPA must not be computed from them.
+   */
+  conversions_complete: boolean;
+  /** True when Microsoft flagged the served report's last day as possibly still aggregating. */
+  data_incomplete: boolean;
+}
+
+/** A Microsoft keyword row as the UI renders it: the Google row without the Google Ads deep link. */
+export type MicrosoftKeywordMetrics = Omit<KeywordMetrics, 'googleAdsUrl'>;
+
+/**
+ * Response of `GET /api/campaigns/microsoft/keywords`.
+ *
+ * Currency amounts, CTR as a percentage, like `KeywordMetricsResponse`. The report-freshness
+ * fields travel with the rows so the UI can say "metrics as of ..." and "building".
+ */
+export interface MicrosoftKeywordMetricsResponse {
+  pulledAt: string;
+  /** The window the counters cover, as campaign-service reports it. */
+  window: CampaignMetricsWindow;
+  totalKeywords: number;
+  /** True when the project has MORE keywords than `keywords` carries; `totals` is then a subtotal. */
+  truncated: boolean;
+  /** When the served report was requested, or `null` when no finished report covers the project yet. */
+  metricsAsOf: string | null;
+  /** True while a newer report is building. With `metricsAsOf: null` it means the first one is. */
+  metricsPending: boolean;
+  /**
+   * False when at least one row's conversions were not reported (shown as 0, not measured). A
+   * consumer must not present a CPA or a conversions total as complete when this is false.
+   */
+  conversionsComplete: boolean;
+  /** True when Microsoft flagged the report's last day as still aggregating, so counters may rise. */
+  dataIncomplete: boolean;
+  totals: KeywordTotals;
+  keywords: MicrosoftKeywordMetrics[];
+}
+
 export interface CampaignServiceAudienceBucket {
   dimension: 'age' | 'gender' | 'device';
   /** Google's own enum literal, e.g. `AGE_RANGE_25_34`. */
@@ -1614,8 +4959,15 @@ export interface OrderedKeywordResult {
   response: KeywordActionResponse;
 }
 
-/** One campaign's worth of a keyword-action request, keyed by the platform campaign id. */
+/**
+ * One campaign's worth of a keyword-action request, keyed by the platform AND its campaign id.
+ *
+ * The platform is part of the key because Google and Microsoft mint campaign ids in unrelated
+ * spaces: the same digits can name one campaign on each, and folding them into one group would
+ * resolve and mutate the wrong platform's campaign.
+ */
 export interface KeywordActionGroup {
+  platform: KeywordActionPlatform;
   platformCampaignId: string;
   keywords: KeywordActionRequest[];
 }
@@ -1627,19 +4979,38 @@ export interface CampaignServiceKeywordActionInput {
   action: 'PAUSE' | 'REMOVE';
 }
 
+/**
+ * A Microsoft Advertising keyword action's own outcome. Mirrors `keywordItemOutcomeEnum` in
+ * campaign-service's `design/brief.go`. Google's batch is atomic and its results carry none.
+ */
+export type CampaignServiceKeywordItemOutcome = 'APPLIED' | 'FAILED' | 'UNCONFIRMED';
+
 export interface CampaignServiceKeywordActionResult {
   ad_group_id: string;
   criterion_id: string;
   action: 'PAUSE' | 'REMOVE';
-  resource_name: string;
+  /**
+   * Google Ads only: the criterion resource name Google returned. Present on every Google result;
+   * absent on Microsoft Advertising, which has no resource names.
+   */
+  resource_name?: string;
+  /**
+   * Microsoft Advertising only: this action's own outcome, because a Microsoft batch is applied
+   * item by item. ABSENT on Google, where every result on a 200 was applied.
+   */
+  outcome?: CampaignServiceKeywordItemOutcome;
+  /** Microsoft Advertising only: the platform's error code for a FAILED or UNCONFIRMED action, when it named one. */
+  error_code?: string;
 }
 
 /**
  * The outcome of one campaign's keyword batch.
  *
- * There is NO partial success within a batch: upstream sends it as a single atomic mutate with
- * partial failure disabled, so `applied_count` always equals the number requested or the whole
- * request failed. A caller must not read it as "how many of my actions worked".
+ * Google Ads: there is NO partial success within a batch. Upstream sends it as a single atomic
+ * mutate with partial failure disabled, so `applied_count` always equals the number requested or
+ * the whole request failed. Microsoft Advertising: each result carries its own `outcome`, and
+ * `applied_count` counts only `APPLIED`, so it can be fewer than requested. Either way `results[i]`
+ * answers `actions[i]` of the request.
  */
 export interface CampaignServiceKeywordActions {
   campaign_id: string;
@@ -1652,6 +5023,629 @@ export interface CampaignServiceAudience {
   /** Every bucket across all three breakdowns, discriminated by `dimension`. */
   buckets: CampaignServiceAudienceBucket[];
   bucket_count: number;
+}
+
+// ---------------------------------------------------------------------------
+// campaign-service account monitors (`GET /projects/{id}/connection-*/account-monitor`)
+//
+// campaign-service's WIRE shapes, in its vocabulary (snake_case, currency amounts in the account's
+// currency, `ctr` as a PERCENTAGE). The Google Ads, LinkedIn, Meta and Reddit routes map these onto the legacy
+// `CampaignMonitorResponse` / `LinkedInMonitorResponse` / `MetaMonitorResponse` / `RedditMonitorResponse`; the
+// Microsoft, X and HubSpot routes have no legacy shape and return these unchanged.
+// ---------------------------------------------------------------------------
+
+/**
+ * The ad platforms with an account-scoped monitor this app proxies. `google-ads` is read by the Google
+ * Ads monitor route itself, from the project's own connection, and is not a Monitor tab connection
+ * picker (`MonitorConnectionPlatform`), because the Google panel has no account picker.
+ */
+export type CampaignServiceMonitorProvider = 'google-ads' | 'linkedin-ads' | 'meta-ads' | 'reddit-ads' | 'microsoft-ads' | 'twitter-ads';
+
+export type CampaignServiceMonitorPacingLabel = 'normal' | 'underspending' | 'constrained' | 'overspending';
+
+export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
+
+/** The X monitor's 409 `reason`, forwarded to the client as `upstreamCode`. */
+export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
+
+/** campaign-service `account-monitor-campaign`. */
+export interface CampaignServiceAccountMonitorCampaign {
+  platform_campaign_id: string;
+  name: string;
+  /** The platform's own status string, verbatim. */
+  status: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** clicks / impressions * 100 — a percentage, 0 with no impressions. */
+  ctr: number;
+  /** ABSENT when the platform/row could not measure conversions — not a measured 0. */
+  conversions?: number;
+  budget_day: number;
+  total_budget: number;
+  /** `YYYY-MM-DD`, empty when the platform reported none. */
+  start_date: string;
+  end_date: string;
+  /** When true, `pacing_pct` is meaningless. */
+  pacing_unknown: boolean;
+  is_search_channel: boolean;
+  /** When true, the row's numbers are placeholders and it was excluded from the rules. */
+  fetch_failed: boolean;
+  pacing_pct: number;
+  /** A placeholder `normal` when `pacing_unknown` or `fetch_failed` is true. */
+  pacing_label: CampaignServiceMonitorPacingLabel;
+  campaign_url?: string;
+}
+
+/** campaign-service `account-monitor-action-item`, shared by the ad monitors and the HubSpot one. */
+export interface CampaignServiceAccountMonitorActionItem {
+  /** Platform campaign id on the ad monitors; campaign-service's campaign UUID on HubSpot. Empty for an account-wide item. */
+  campaign_id?: string;
+  /** HubSpot monitor only: the email the item is about. */
+  email_id?: string;
+  campaign_name?: string;
+  priority: CampaignServiceMonitorPriority;
+  issue: string;
+  action: string;
+}
+
+/** campaign-service `account-monitor-totals`: always the sum of the `campaigns` beside it. */
+export interface CampaignServiceAccountMonitorTotals {
+  spend: number;
+  impressions: number;
+  clicks: number;
+  /** ABSENT when no row measured conversions. */
+  conversions?: number;
+  campaign_count: number;
+}
+
+/** campaign-service `account-monitor`. */
+export interface CampaignServiceAccountMonitor {
+  account_id: string;
+  /** The REQUESTED window, echoed. */
+  days: number;
+  campaigns: CampaignServiceAccountMonitorCampaign[];
+  action_items: CampaignServiceAccountMonitorActionItem[];
+  totals: CampaignServiceAccountMonitorTotals;
+  /**
+   * Report-backed platforms (Microsoft Ads, X) only: when the served report was requested
+   * (RFC 3339). ABSENT before the first report finishes, when every campaign is `fetch_failed`.
+   */
+  metrics_as_of?: string;
+  /** Report-backed platforms only: first/last calendar day (inclusive) the metrics cover. */
+  metrics_window_start?: string;
+  metrics_window_end?: string;
+  /** Report-backed platforms only: a newer report is building. */
+  metrics_pending?: boolean;
+  /**
+   * The ad account's ISO 4217 code (`^[A-Z]{3}$`): spend and budgets are in it, unconverted.
+   * ABSENT when the platform did not report one (always on Google Ads) — unknown, never a default.
+   */
+  currency?: string;
+}
+
+/** campaign-service `hubspot-email-monitor-email`. Rates are FRACTIONS, absent on a zero denominator. */
+export interface CampaignServiceHubSpotEmailMonitorEmail {
+  campaign_id: string;
+  email_id: string;
+  name: string;
+  ab_variant: boolean;
+  deleted: boolean;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spam_reports: number;
+  open_rate?: number;
+  click_rate?: number;
+  bounce_rate?: number;
+  unsubscribe_rate?: number;
+  spam_rate?: number;
+}
+
+/** campaign-service `hubspot-email-monitor-totals`: the sum of the emails, rates from the sums. */
+export interface CampaignServiceHubSpotEmailMonitorTotals {
+  email_count: number;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spam_reports: number;
+  open_rate?: number;
+  click_rate?: number;
+  bounce_rate?: number;
+  unsubscribe_rate?: number;
+  spam_rate?: number;
+}
+
+/**
+ * campaign-service `hubspot-email-monitor`: PROJECT-scoped (no account id) — the marketing emails
+ * campaign-service itself recorded for the project and HubSpot reports as sent in the window.
+ */
+export interface CampaignServiceHubSpotEmailMonitor {
+  days: number;
+  emails: CampaignServiceHubSpotEmailMonitorEmail[];
+  action_items: CampaignServiceAccountMonitorActionItem[];
+  totals: CampaignServiceHubSpotEmailMonitorTotals;
+  /** ABSENT when HubSpot was not called because the project has recorded no HubSpot email. */
+  metrics_as_of?: string;
+  metrics_window_start?: string;
+  metrics_window_end?: string;
+  emails_checked: number;
+  emails_not_sent_in_window: number;
+  emails_unattributable: number;
+  /** True when only the 50 most recently recorded campaigns were checked. */
+  emails_truncated: boolean;
+}
+
+/**
+ * campaign-service's connection read model (`GET /projects/{id}/connection-{provider}`), reduced to
+ * the fields the Monitor tab reads. Credentials are never returned by that endpoint.
+ */
+export interface CampaignServiceConnection {
+  id: string;
+  project_id: string;
+  label?: string;
+  /**
+   * The ad account the connection is bound to. EMPTY on a connection created credentials-first
+   * (Meta allows this) whose account has not been chosen yet.
+   */
+  account_id: string;
+  has_credentials: boolean;
+  status: 'active' | 'inactive' | 'error' | 'deleted';
+}
+
+/**
+ * One element of campaign-service's account discovery (`AccessibleAccount`). `id` is opaque and
+ * per-provider; `label` is optional on the wire.
+ */
+export interface CampaignServiceAccessibleAccount {
+  id: string;
+  label?: string;
+}
+
+/** `GET /projects/{id}/connection-google-ads/accounts` (`list-google-ads-accounts`). */
+export interface CampaignServiceAccessibleAccounts {
+  accounts: CampaignServiceAccessibleAccount[];
+}
+
+/** One entry of campaign-service's `google-ads-conversion-actions` result, as it is on the wire. */
+export interface CampaignServiceGoogleAdsConversionAction {
+  id: string;
+  resource_name: string;
+  name: string;
+  status: string;
+  type: string;
+  category: string;
+  primary_for_goal: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/google-ads/conversion-actions` (`global_marketing_ops` on the project only, lfx-v2-campaign-service#486). */
+export interface CampaignServiceGoogleAdsConversionActions {
+  account_id: string;
+  conversion_actions: CampaignServiceGoogleAdsConversionAction[];
+  conversion_action_count: number;
+}
+
+/** One element of campaign-service's user list read (`google-ads-user-list`, linuxfoundation/lfx-v2-campaign-service#508). */
+export interface CampaignServiceGoogleAdsUserList {
+  resource_name: string;
+  id: string;
+  name: string;
+  type: string;
+  membership_status?: string;
+  account_status?: string;
+  size_for_search?: number;
+  size_range_for_search?: string;
+  eligible_for_search?: boolean;
+}
+
+/** One element of campaign-service's Audience read (`google-ads-audience-resource`, linuxfoundation/lfx-v2-campaign-service#504). */
+export interface CampaignServiceGoogleAdsAudience {
+  resource_name: string;
+  id: string;
+  name: string;
+  type: string;
+  subtype?: string;
+  status?: string;
+  description?: string;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/google-ads/audiences?type=` (`global_marketing_ops` on the
+ * project; linuxfoundation/lfx-v2-campaign-service#504): at most 500 entries sorted by name, `truncated`
+ * when more matched.
+ */
+export interface CampaignServiceGoogleAdsAudiences {
+  account_id: string;
+  type: string;
+  audiences: CampaignServiceGoogleAdsAudience[];
+  audience_count: number;
+  truncated: boolean;
+}
+
+/** campaign-service `GET /projects/{project_id}/google-ads/user-lists` (`global_marketing_ops` on the project; linuxfoundation/lfx-v2-campaign-service#508). */
+export interface CampaignServiceGoogleAdsUserLists {
+  account_id: string;
+  user_lists: CampaignServiceGoogleAdsUserList[];
+  user_list_count: number;
+  truncated: boolean;
+}
+
+/**
+ * One element of campaign-service's geo target suggest (`google-ads-geo-target-suggestion`,
+ * linuxfoundation/lfx-v2-campaign-service#411). `id` is the bare numeric geo target constant id, in
+ * exactly the form `googleAdsConfig.geoTargets` accepts; `reach` is absent when Google sent none.
+ */
+export interface CampaignServiceGoogleAdsGeoTargetSuggestion {
+  id: string;
+  name: string;
+  canonical_name: string;
+  country_code: string;
+  target_type: string;
+  status: string;
+  reach?: number;
+}
+
+/** `GET /projects/{id}/google-ads/geo-targets` (`suggest-google-ads-geo-targets`). */
+export interface CampaignServiceGoogleAdsGeoTargetSuggestions {
+  suggestions: CampaignServiceGoogleAdsGeoTargetSuggestion[];
+  suggestion_count: number;
+  truncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// The Monitor tab's campaign-service shapes (#2519)
+//
+// What the BFF answers with LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on: the account each platform's
+// picker offers (the project's OWN connection's bound account), and the Microsoft Ads / X /
+// HubSpot monitors mapped into this app's camelCase vocabulary.
+// ---------------------------------------------------------------------------
+
+/** The Monitor tab's ad platforms whose account picker comes from the project's own connection. */
+export type MonitorConnectionPlatform = 'linkedin' | 'meta' | 'reddit' | 'microsoft' | 'twitter';
+
+/**
+ * What the project's own connection says about one platform's monitor:
+ * - `connected`: a connection exists and is bound to `accountId`;
+ * - `no_connection`: campaign-service has no connection of this provider for the project;
+ * - `no_account`: a connection exists but no ad account is bound to it;
+ * - `unavailable`: the connection could not be read, so neither of the above is known;
+ * - `forbidden`: campaign-service refused the read (403). It authorizes every connection and monitor
+ *   read with the project's `campaign_manager` relation, which a ROOT writer this app admits need not
+ *   hold (#4837) — a standing refusal, so never reported as the retryable `unavailable`.
+ */
+export type MonitorConnectionState = 'connected' | 'no_connection' | 'no_account' | 'unavailable' | 'forbidden';
+
+/** One platform's connection, as the Monitor tab's account picker consumes it. */
+export interface MonitorConnectionAccount {
+  state: MonitorConnectionState;
+  /** The bound account id. Set only when `state` is `connected`. */
+  accountId: string | null;
+  /** The connection's own label, else the account id. Set only when `state` is `connected`. */
+  label: string | null;
+}
+
+/**
+ * Where the Monitor tab's LinkedIn/Reddit/Meta read got its account: the project's connection
+ * (`/monitor/connections`, a pod with the cutover ON) or a legacy allowlist picker (cutover OFF).
+ * Sent as `accountSource` so a pod whose flag disagrees refuses the read instead of misserving it.
+ */
+export type MonitorAccountSource = 'connection' | 'legacy';
+
+/** `GET /api/campaigns/monitor/connections`. */
+export interface CampaignMonitorConnections {
+  /**
+   * Whether the monitors are served by campaign-service (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`).
+   * False means the tab keeps its legacy account lists, and `platforms` is empty.
+   */
+  viaCampaignService: boolean;
+  platforms: Partial<Record<MonitorConnectionPlatform, MonitorConnectionAccount>>;
+}
+
+/** A Monitor panel that can show a `MonitorPanelNotice`: the connection-backed ad platforms, and the HubSpot email section. */
+export type MonitorPanelKey = MonitorConnectionPlatform | 'hubspot';
+
+/** Every panel the Monitor tab can show: Google Ads (the aggregate view) plus each `MonitorPanelKey`. */
+export type MonitorTabPlatform = 'google' | MonitorPanelKey;
+
+/** The Monitor tab's trailing-days choices; a member of `MONITOR_DATE_RANGE_OPTIONS`. */
+export type MonitorDateRangeOption = (typeof MONITOR_DATE_RANGE_OPTIONS)[number];
+
+/**
+ * Why a Monitor panel shows an empty state instead of data: a connection state, the platform's metrics
+ * switched off upstream, or `restricted` — the read was refused because its ad account is shared by
+ * every foundation (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`).
+ */
+export type MonitorPanelNoticeState = Exclude<MonitorConnectionState, 'connected'> | 'metrics_disabled' | 'restricted';
+
+/** The empty state a Monitor panel renders in place of its data, with the action that resolves it. */
+export interface MonitorPanelNotice {
+  state: MonitorPanelNoticeState;
+  title: string;
+  message: string;
+}
+
+/**
+ * The Microsoft Ads / X account monitor as the Monitor tab renders it. The rows, totals and action
+ * items are the shape the Reddit/Meta panels already render; the four freshness fields are what a
+ * report-backed platform adds — its metrics come from the last finished platform report, not a
+ * live read.
+ */
+export interface ReportBackedMonitorResponse {
+  accountId: string;
+  pulledAt: string;
+  /** The REQUESTED window; the days the metrics actually cover are `metricsWindowStart`–`metricsWindowEnd`. */
+  dateRange: { mode: string };
+  campaigns: RedditCampaignMetrics[];
+  accountTotals: RedditAccountTotals;
+  actionItems: RedditActionItem[];
+  /** When the served report was requested (RFC 3339). NULL before the first report finishes, when every row is `fetchFailed`. */
+  metricsAsOf: string | null;
+  /** First/last calendar day (inclusive, `YYYY-MM-DD`) the metrics cover; null with `metricsAsOf`. */
+  metricsWindowStart: string | null;
+  metricsWindowEnd: string | null;
+  /** A newer report is building on the platform, so a later refresh returns newer (or the first) metrics. */
+  metricsPending: boolean;
+  /** The ad account's ISO 4217 code when campaign-service named one in the expected shape; ABSENT when unknown. */
+  currency?: string;
+}
+
+/** One HubSpot marketing email on the Monitor tab. Rates are FRACTIONS (0.3 = 30%), NULL when their denominator is 0 — unknown, not 0. */
+export interface HubSpotEmailMonitorRow {
+  campaignId: string;
+  emailId: string;
+  name: string;
+  abVariant: boolean;
+  deleted: boolean;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spamReports: number;
+  openRate: number | null;
+  clickRate: number | null;
+  bounceRate: number | null;
+  unsubscribeRate: number | null;
+  spamRate: number | null;
+}
+
+/** The sum of the emails, rates from the sums; same null rule as the rows. */
+export interface HubSpotEmailMonitorTotals {
+  emailCount: number;
+  sent: number;
+  delivered: number;
+  opens: number;
+  clicks: number;
+  bounces: number;
+  unsubscribes: number;
+  spamReports: number;
+  openRate: number | null;
+  clickRate: number | null;
+  bounceRate: number | null;
+  unsubscribeRate: number | null;
+  spamRate: number | null;
+}
+
+/** One finding of campaign-service's email rules. `emailId` joins it to its row; null for a project-wide finding. */
+export interface HubSpotEmailMonitorActionItem {
+  priority: CampaignServiceMonitorPriority;
+  emailId: string | null;
+  emailName: string;
+  issue: string;
+  action: string;
+}
+
+/** The HubSpot email monitor as the Monitor tab renders it. PROJECT-scoped: there is no account. */
+export interface HubSpotEmailMonitorResponse {
+  pulledAt: string;
+  days: number;
+  emails: HubSpotEmailMonitorRow[];
+  totals: HubSpotEmailMonitorTotals;
+  actionItems: HubSpotEmailMonitorActionItem[];
+  /** Upper bound on when every email's counters were read. NULL when the project has recorded no HubSpot email, so HubSpot was not called. */
+  metricsAsOf: string | null;
+  /** The send-date window (UTC days, inclusive); null with `metricsAsOf`. */
+  metricsWindowStart: string | null;
+  metricsWindowEnd: string | null;
+  emailsChecked: number;
+  /** Recorded emails HubSpot reported no send of inside the window. */
+  emailsNotSentInWindow: number;
+  /** Recorded emails not read because their HubSpot portal is unrecorded or no longer the token's. */
+  emailsUnattributable: number;
+  /** Only the 50 most recently recorded campaigns were checked, so the totals may omit an email. */
+  emailsTruncated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Monitor tab view models: what the Microsoft/X and HubSpot sections render, formatted once in
+// computed signals so the template only reads fields (frontend checklist §4, no template functions).
+// ---------------------------------------------------------------------------
+
+/** One rendered value and the text class it is shown with (grey for a value nobody measured). */
+export interface MonitorCellView {
+  text: string;
+  className: string;
+}
+
+/** An ad-platform panel's KPI tiles (LinkedIn, Reddit, Meta, Microsoft Ads, X). */
+export interface AccountMonitorKpisView {
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  spend: string;
+  conversions: MonitorCellView;
+}
+
+/** The read state of one LinkedIn/Reddit/Meta/Microsoft Ads/X Monitor panel, as its screen-reader status describes it. */
+export interface AccountMonitorPanelReadState {
+  label: string;
+  loading: boolean;
+  error: string | null;
+  /** A read has answered, so `campaigns` and `note` describe what the panel shows. */
+  loaded: boolean;
+  campaigns: number;
+  /** What the panel's visible empty state says, repeated verbatim so both audiences hear the same claim. */
+  emptyMessage: string;
+  /** The panel's totals-coverage note, or null when the totals cover every campaign. */
+  note: string | null;
+}
+
+/** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
+export interface AccountMonitorCampaignRowView {
+  campaignId: string;
+  /** The row's heading: the event name on LinkedIn, the campaign name elsewhere. */
+  title: string;
+  /** The full campaign name under the heading (LinkedIn only); null elsewhere. */
+  subtitle: string | null;
+  campaignName: string;
+  status: string;
+  statusClass: string;
+  fetchFailed: boolean;
+  flight: string;
+  budget: string;
+  spend: MonitorCellView;
+  pacing: MonitorCellView;
+  impressions: MonitorCellView;
+  clicks: MonitorCellView;
+  ctr: MonitorCellView;
+  conversions: MonitorCellView;
+  /** LinkedIn only: the creative count, or "Not read". Null on every other platform. */
+  creatives: MonitorCellView | null;
+}
+
+/** An ad-platform panel, rendered. `kpis` is null when no totals arrived. */
+export interface AccountMonitorPanelView {
+  kpis: AccountMonitorKpisView | null;
+  rows: AccountMonitorCampaignRowView[];
+}
+
+/** The Google Ads panel's KPI tiles. */
+export interface GoogleMonitorKpisView {
+  impressions: string;
+  clicks: string;
+  /** An em dash, never 0.0%, when CTR is not computable. */
+  ctr: string;
+  spend: string;
+  conversions: string;
+}
+
+/** One row of the Google Ads campaign table. */
+export interface GoogleMonitorCampaignRowView {
+  campaignId: string;
+  title: string;
+  /** The full campaign name, copied by the row's copy button. */
+  name: string;
+  shortName: string;
+  startDate: string;
+  endDate: string;
+  totalBudget: string;
+  spend: string;
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  avgCpc: string;
+  conversions: string;
+  pacingBarClass: string;
+  /** Bar width in percent, capped at 100. */
+  pacingBarWidth: number;
+  pacingText: string;
+}
+
+/** The Google Ads keyword totals strip. */
+export interface KeywordTotalsView {
+  impressions: string;
+  clicks: string;
+  avgCtr: string;
+  spend: string;
+  conversions: string;
+}
+
+/** One row of the visible keyword page. */
+export interface KeywordRowView {
+  trackKey: string;
+  keyword: string;
+  /** The full campaign name, copied by the row's copy button. */
+  campaign: string;
+  campaignLabel: string;
+  matchType: string;
+  matchTypeClass: string;
+  qualityScore: string;
+  qualityScoreClass: string;
+  impressions: string;
+  clicks: string;
+  ctr: string;
+  avgCpc: string;
+  spend: string;
+  conversions: string;
+}
+
+/** One platform button on the Monitor tab, styled for its selected state. */
+export interface MonitorPlatformButtonView {
+  className: string;
+  /** The brand background when selected, null otherwise. */
+  background: string | null;
+}
+
+/** A platform's selected-button colours: its brand background and a foreground that clears WCAG AA (4.5:1) on it. */
+export interface MonitorPlatformButtonColors {
+  background: string;
+  foreground: string;
+  /** The Tailwind text class that renders `foreground`. */
+  textClass: 'text-white' | 'text-gray-950';
+}
+
+/** The HubSpot section's KPI tiles; rates are `MonitorCellView`s so an unknown one renders grey. */
+export interface HubSpotKpisView {
+  emails: string;
+  sent: string;
+  delivered: string;
+  opens: string;
+  clicks: string;
+  bounces: string;
+  openRate: MonitorCellView;
+  clickRate: MonitorCellView;
+  bounceRate: MonitorCellView;
+}
+
+export interface HubSpotEmailRowView {
+  emailId: string;
+  name: string;
+  abVariant: boolean;
+  deleted: boolean;
+  sent: string;
+  delivered: string;
+  opens: string;
+  clicks: string;
+  spamReports: string;
+  openRate: MonitorCellView;
+  clickRate: MonitorCellView;
+  bounceRate: MonitorCellView;
+  unsubscribeRate: MonitorCellView;
+}
+
+export interface HubSpotActionItemView {
+  priority: CampaignServiceMonitorPriority;
+  priorityClass: string;
+  heading: string;
+  action: string;
+}
+
+/**
+ * The HubSpot section, rendered. `emptyMessage` is set exactly when there are no rows, and says
+ * "nothing was sent" only when the coverage counts show nothing was skipped.
+ */
+export interface HubSpotMonitorView {
+  emptyMessage: string | null;
+  kpis: HubSpotKpisView;
+  rows: HubSpotEmailRowView[];
+  actionItems: HubSpotActionItemView[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1677,11 +5671,25 @@ export interface ImpressionShareMetrics {
 
 export type KeywordActionType = 'pause' | 'remove';
 
+/**
+ * The ad platforms whose keywords can be paused or removed from the Optimize tab: campaign-service's
+ * `apply-keyword-actions` serves Google Ads and Microsoft Advertising only.
+ */
+export type KeywordActionPlatform = Extract<CampaignPlatform, 'google-ads' | 'microsoft-ads'>;
+
 export interface KeywordActionRequest {
+  /** The ad platform's own campaign id (Google's or Microsoft's numeric id), not campaign-service's UUID. */
   campaignId: string;
   adGroupId: string;
+  /** Google Ads: the criterion id. Microsoft Advertising: the KeywordId (`criterion_id` on its keyword rows). */
   criterionId: string;
   action: KeywordActionType;
+  /**
+   * The platform the ids belong to. OPTIONAL and defaulting to `google-ads`, so every request sent
+   * before Microsoft keyword actions existed keeps its meaning. Microsoft is reachable only through
+   * campaign-service (the legacy keyword path is Google-only).
+   */
+  platform?: KeywordActionPlatform;
 }
 
 export interface KeywordActionResponse {
@@ -1794,10 +5802,24 @@ export interface LinkedInCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: LinkedInPacingLabel;
+  /** ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set — see `RedditCampaignMetrics`. */
+  pacingLabel?: LinkedInPacingLabel;
   creatives: LinkedInCreativeMetrics[];
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); see
+   * `RedditCampaignMetrics` for their meaning. On that path `creatives` is always empty —
+   * campaign-service does not read LinkedIn creative analytics.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
+  /**
+   * Campaign-service path only: `false` because campaign-service does not read LinkedIn creative
+   * analytics, so the empty `creatives` is not a count of zero. Absent on the legacy path.
+   */
+  creativesMeasured?: boolean;
 }
 
 export interface LinkedInAccountTotals {
@@ -1806,6 +5828,8 @@ export interface LinkedInAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface LinkedInActionItem {
@@ -1822,6 +5846,11 @@ export interface LinkedInMonitorResponse {
   campaigns: LinkedInCampaignMetrics[];
   accountTotals: LinkedInAccountTotals;
   actionItems: LinkedInActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1843,9 +5872,24 @@ export interface RedditCampaignMetrics {
   ctr: number;
   conversions: number;
   pacingPct: number;
-  pacingLabel: RedditPacingLabel;
+  /**
+   * ABSENT only on the campaign-service path, when `pacingUnknown` or `fetchFailed` is set: there
+   * is no label to show, and campaign-service's placeholder ("normal") is not passed on.
+   */
+  pacingLabel?: RedditPacingLabel;
   startDate: string;
   endDate: string;
+  /**
+   * Set ONLY by the campaign-service monitor path (`LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`); the
+   * legacy path never sets them. `pacingUnknown`: pacing could not be computed (no flight dates
+   * or no usable budget), so `pacingPct` is a 0 placeholder. `fetchFailed`: this row's upstream
+   * metrics could not be trusted, so its numbers are zero placeholders. `conversionsMeasured`:
+   * false when the platform did not measure conversions, so `conversions` is a 0 placeholder,
+   * not a measured zero.
+   */
+  pacingUnknown?: boolean;
+  fetchFailed?: boolean;
+  conversionsMeasured?: boolean;
 }
 
 export interface RedditAccountTotals {
@@ -1854,6 +5898,8 @@ export interface RedditAccountTotals {
   clicks: number;
   conversions: number;
   campaignCount: number;
+  /** Campaign-service path only: false when no row measured conversions, so `conversions` is a 0 placeholder. */
+  conversionsMeasured?: boolean;
 }
 
 export interface RedditActionItem {
@@ -1875,6 +5921,11 @@ export interface RedditMonitorResponse {
   campaigns: RedditCampaignMetrics[];
   accountTotals: RedditAccountTotals;
   actionItems: RedditActionItem[];
+  /**
+   * Campaign-service path only: the ad account's ISO 4217 code, set only when campaign-service
+   * named one in the expected shape. ABSENT on the legacy path and whenever it is unknown.
+   */
+  currency?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1984,6 +6035,12 @@ export interface KeywordActionOutcome {
   success: boolean;
   message: string;
   state: 'done' | 'unconfirmed' | 'failed';
+  /**
+   * The action this outcome answers, recorded when the response lands — not looked up from what was
+   * last asked, which a re-read or a newer click can change while the request is out. The Optimize
+   * tab's removed-keyword set is derived from this field, so it is the one record of a confirmed REMOVE.
+   */
+  action?: KeywordActionType;
 }
 
 // ---------------------------------------------------------------------------
@@ -2067,6 +6124,31 @@ export interface HubSpotUtmCreateResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * One platform's line in the Implement tab's "Already created for this event" panel (#4983): how
+ * many live campaigns the event already has there, and the sentence that says so.
+ */
+export interface CampaignExistingPlatformNotice {
+  platform: string;
+  label: string;
+  count: number;
+  message: string;
+}
+
+/** One live campaign in that panel, with its display values resolved for the template. */
+export interface CampaignExistingRow {
+  id: string;
+  /** The platform id (`google-ads`, …), for matching; `platformLabel` is what is shown. */
+  platform: string;
+  platformLabel: string;
+  name: string;
+  status: string;
+  /** The slot as text: the number, or '—' when the index does not record it. */
+  slot: string;
+  /** Channel, stage, tactic and created date as text, '—' when absent. */
+  labels: CampaignLabelColumns;
+}
+
+/**
  * A campaign as the platform's Query Service indexes it.
  *
  * Mirrors campaign-service's `CampaignDoc` (`internal/infrastructure/indexer/contract.go`)
@@ -2099,6 +6181,65 @@ export interface CampaignIndexDoc {
    * A caller that quoted it differently would get a 412 that looks like a concurrent edit.
    */
   etag?: string;
+  /**
+   * How the campaign was CREATED to bid, as campaign-service recorded it (#3299,
+   * linuxfoundation/lfx-v2-campaign-service#332). ABSENT when not recorded — a campaign created
+   * before the field existed, an adopted one, or a Google Ads one — and never read as `automatic`.
+   * Typed `string` because it is read from the index, which this app does not control; only the
+   * two documented values are rendered.
+   */
+  bidding_strategy?: string;
+  /**
+   * The manual max cost-per-click bid campaign-service most recently set — the starting bid, then
+   * whatever the bid lever set. USD on LinkedIn; the ad account's own currency everywhere else.
+   * ABSENT when the service never set one.
+   */
+  max_cpc_bid?: number;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
+  /**
+   * Which campaign on its `(brief, platform, variant)` slot this is: 1 for the first, 2+ for a
+   * deliberate second (`new_version`). campaign-service's indexer always emits it
+   * (`CampaignDoc.SlotVersion`, `internal/infrastructure/indexer/contract.go`), but documents indexed
+   * before the field existed lack it until the campaign's next write, so absence means "not
+   * recorded", not slot 1. Unrelated to `version`, the optimistic-concurrency counter (#4983).
+   */
+  slot_version?: number;
+  /**
+   * The slot's sub-division of the platform: Google's channel (`default` for Search, `demand-gen`,
+   * `performance-max`, `video`, `display`); `default` everywhere else (lfx-v2-campaign-service#453).
+   * Absent on a document indexed before that release.
+   */
+  variant?: string;
+  /** The campaign's funnel stage, set when it was created (#453). Absent for an unlabelled or older campaign. */
+  funnel_stage?: CampaignFunnelStage;
+  /** The campaign's tactic label, set when it was created (#453). Absent for an unlabelled or older campaign. */
+  tactic?: CampaignTactic;
+  /**
+   * When campaign-service made this campaign, as an RFC 3339 timestamp: its indexer's `CampaignDoc.CreatedAt`
+   * (`internal/infrastructure/indexer/contract.go`, multi-campaign cs-1). Absent on a document indexed
+   * before the field existed, until the campaign's next write, and on a row never read back. Shown as "—"
+   * then, never guessed.
+   */
+  created_at?: string;
+}
+
+/**
+ * The labels that tell a brief's several campaigns on one platform apart, as display text: the Google
+ * channel, funnel stage, tactic and created date. Each is "—" when the index does not record it (a
+ * legacy or adopted campaign) or records a value this build does not know (#4983).
+ */
+export interface CampaignLabelColumns {
+  channel: string;
+  stage: string;
+  tactic: string;
+  created: string;
 }
 
 /**
@@ -2112,6 +6253,17 @@ export interface CampaignIndexDoc {
  */
 export interface CampaignRow {
   campaign: CampaignIndexDoc;
+  /**
+   * The recorded bidding (`bidding_strategy` / `max_cpc_bid`) as one read-only line, or `''` when
+   * the index records neither. Carried on the row so the template only reads it.
+   */
+  biddingSummary: string;
+  /**
+   * The bid this session confirmed for the row, or `null`. `null` too once the index carries a
+   * NEWER version than the write that confirmed it, so the "set here" note and the recorded-bidding
+   * line both give way to the indexed value together.
+   */
+  confirmedBidAmount: number | null;
   /** What the row displays: this session's confirmed status, else the indexed one. */
   status: string;
   /**
@@ -2125,12 +6277,23 @@ export interface CampaignRow {
    */
   action: CampaignToggleAction;
   /**
+   * The row offers Resume, but the campaign was ADOPTED (`campaign.adopted === true`), which
+   * campaign-service never resumes. The button stays labelled Resume and focusable, rendered
+   * `aria-disabled` with `resumeAdoptedReason` as its description, and a click does nothing.
+   * `action` stays `resume`: the campaign is paused, and Pause is not on offer.
+   */
+  resumeAdopted: boolean;
+  /** Why an adopted campaign cannot be resumed here, naming its platform — set when `resumeAdopted`, empty otherwise. */
+  resumeAdoptedReason: string;
+  /**
    * Why the toggle is disabled — set for `unavailable` rows only, empty otherwise.
    *
    * Carried on the row rather than looked up in the template, so the reason is rendered from the
    * same `status` the action was derived from and the two cannot disagree.
    */
   unavailableReason: string;
+  /** Channel, stage, tactic and created date as text, '—' when absent (#4983). */
+  labels: CampaignLabelColumns;
   /**
    * Whether a 412 refused this row's validator and no re-read has yet proved it advanced.
    *
@@ -2159,6 +6322,304 @@ export interface CampaignRow {
    * `aria-describedby` takes a LIST and a row can hold both an error and an unavailable reason.
    */
   describedBy: string | null;
+  /**
+   * Whether the row offers the budget editor. False when the platform has no budget-write support
+   * in campaign-service or the campaign was never created on its platform (no
+   * `platform_campaign_id`), both of which upstream refuses whatever the amount.
+   *
+   * Independent of `action`: the budget route has no deployment flag and a paused campaign's
+   * budget can still be changed, so neither the toggle's status nor its cutover gate applies.
+   */
+  budgetAvailable: boolean;
+  /** Why the budget editor is disabled — set when `budgetAvailable` is false, empty otherwise. */
+  budgetUnavailableReason: string;
+  /**
+   * Why the budget editor cannot submit RIGHT NOW although the row supports it, or `''`.
+   *
+   * Transient, unlike `budgetUnavailableReason`: a pause/resume on the row is in flight (both
+   * writes need the same validator, so the second would 412), or a 412 has already proved the
+   * row's validator stale and only a refresh can replace it.
+   */
+  budgetBlockedReason: string;
+  /**
+   * The row's platform takes a DAILY budget only (X — `DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`), so
+   * its editor offers no lifetime pacing.
+   */
+  budgetDailyOnly: boolean;
+  /**
+   * Whether the row offers the bid editor: a platform campaign-service can write a manual max CPC
+   * bid on (`BID_WRITABLE_CAMPAIGN_PLATFORMS`) and a campaign that exists on it. Whether the
+   * campaign's bid STRATEGY takes a manual bid is only known upstream, which refuses with 409.
+   */
+  bidAvailable: boolean;
+  /** Why the bid editor is disabled — set when `bidAvailable` is false, empty otherwise. */
+  bidUnavailableReason: string;
+  /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
+  bidBlockedReason: string;
+  /** Whether the row shows the negative-keyword control at all: Google Ads, Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
+  negativeKeywordsOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  negativeKeywordsAvailable: boolean;
+  /** Why the negative-keyword control is disabled — set when offered but not available, empty otherwise. */
+  negativeKeywordsUnavailableReason: string;
+  /** Whether the row shows the ad-set control at all: Meta campaigns only. */
+  adSetsOffered: boolean;
+  /** Whether that control can be opened (the campaign exists on Meta and is not deleted). */
+  adSetsAvailable: boolean;
+  /** Why the ad-set control is disabled — set when offered but not available, empty otherwise. */
+  adSetsUnavailableReason: string;
+  /** Why an open ad-set panel cannot change an ad set RIGHT NOW (stale validator, another write in flight), or `''`. */
+  adSetsBlockedReason: string;
+  /** Which ad-set directions the campaign's own state allows (`metaAdSetCampaignEligibility`); the read panel stays available either way. */
+  adSetEligibility: MetaAdSetCampaignEligibility;
+  /** The row's platform when it is offered negative keywords, which decides what the editor offers and sends; `null` otherwise. */
+  negativeKeywordsPlatform: NegativeKeywordCampaignPlatform | null;
+  /** Whether the row shows the keyword-targeting control at all: Reddit and X campaigns (`KEYWORD_TARGETING_CAMPAIGN_PLATFORMS`). */
+  keywordTargetingOffered: boolean;
+  /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
+  keywordTargetingAvailable: boolean;
+  /** Why the keyword-targeting control is disabled — set when offered but not available, empty otherwise. */
+  keywordTargetingUnavailableReason: string;
+  /** The row's platform when it is offered keyword targeting; `null` otherwise. */
+  keywordTargetingPlatform: KeywordTargetingPlatform | null;
+}
+
+/** The bid the Optimize tab's bid editor submits, or that a change confirmed. */
+export interface CampaignBidChange {
+  /** Manual max cost-per-click, in the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
+  bid: number;
+}
+
+/**
+ * A bid change this session CONFIRMED, with the campaign version the successful write returned
+ * (from its ETag). The confirmed bid stands only while the index has not moved past that version:
+ * a newer indexed version may carry a bid someone else set since. `null` when the ETag could not
+ * be parsed, in which case the confirmed bid stands as before.
+ */
+export interface CampaignConfirmedBid extends CampaignBidChange {
+  version: number | null;
+}
+
+/**
+ * How a bid change that did not succeed is reported. The budget change's three states, for the
+ * same reasons: `failed` (a refusal, shown verbatim — including upstream's neutral 409 about the
+ * bidding setup), `conflict` (a 412) and `unconfirmed` (may have applied; verify before retrying).
+ */
+export type CampaignBidOutcome = CampaignBudgetOutcome;
+
+/** One match-type choice offered by the negative-keyword editor. */
+export interface CampaignNegativeKeywordMatchTypeOption {
+  value: CampaignNegativeKeywordMatchType;
+  label: string;
+}
+
+/** One line of the negative-keyword editor that cannot be sent, and why. */
+export interface NegativeKeywordInputProblem {
+  /** 1-based line number in the editor, as the operator sees it. */
+  line: number;
+  text: string;
+  reason: string;
+}
+
+/**
+ * The negative-keyword editor's text parsed into what would be sent.
+ *
+ * Blank lines are dropped; every other line is one keyword, kept as typed (upstream trims and
+ * collapses whitespace itself). `keywords[i]` is what `results[i]` of the response will answer.
+ */
+export interface ParsedNegativeKeywordInput {
+  keywords: string[];
+  problems: NegativeKeywordInputProblem[];
+}
+
+/** One sent negative keyword joined, by POSITION, to the outcome the response gave it. */
+export interface CampaignNegativeKeywordOutcomeRow {
+  /** The index in the request, which is also the index in `results`. */
+  index: number;
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  label: string;
+  /** What to tell the operator beyond the label: the error code, or the verify-first advice. */
+  detail: string;
+}
+
+/**
+ * A negative-keywords request that produced no per-keyword results at all.
+ *
+ * `unconfirmed` when the request may have reached the platform (the BFF could not read the
+ * confirmation, or nobody answered): every keyword sent may or may not have been added.
+ */
+export interface CampaignNegativeKeywordsBatchOutcome {
+  state: 'failed' | 'unconfirmed';
+  message: string;
+}
+
+/**
+ * One campaign's latest negative-keyword request, as the Optimize tab keeps it ACROSS the editor's
+ * lifetime. A tab switch or a campaign-list re-read destroys the editor while the request runs on;
+ * this is what the editor (and the row) read back when they are drawn again.
+ */
+export interface CampaignNegativeKeywordsRequestState {
+  pending: boolean;
+  /** Per-keyword outcomes, in the order the keywords were SENT: never filtered or re-sorted. */
+  outcomeRows: CampaignNegativeKeywordOutcomeRow[];
+  /** The request's outcome when it produced no per-keyword results at all. */
+  batchOutcome: CampaignNegativeKeywordsBatchOutcome | null;
+  /** The keywords the batch outcome is about, so an unconfirmed batch can name them. */
+  batchKeywords: string[];
+  /** Every keyword sent, in order, so a remounted editor can restore the ones not confirmed added. */
+  sent: string[];
+  /** The match type the request was sent with, restored with them. */
+  matchType: CampaignNegativeKeywordMatchType;
+  /** The campaign's ad platform, which words its outcomes ("Reddit refused it"). */
+  platform: NegativeKeywordCampaignPlatform;
+  /** How many requests of this campaign have settled: a change means Reddit's revision must be read again. */
+  settleCount: number;
+  /**
+   * Each keyword's LAST outcome on this campaign, by the text sent, across requests: a later request
+   * for other keywords does not erase it, so a keyword that was not confirmed keeps its
+   * verify-first advice until it is itself sent again.
+   */
+  keywordOutcomes: Record<string, CampaignNegativeKeywordLastOutcome>;
+}
+
+/** One keyword's last outcome on a campaign (`CampaignNegativeKeywordsRequestState.keywordOutcomes`). */
+export interface CampaignNegativeKeywordLastOutcome {
+  /** A batch with no per-keyword results counts as FAILED (refused) or UNCONFIRMED for each keyword sent. */
+  outcome: CampaignNegativeKeywordOutcome;
+  label: string;
+  /** The per-keyword detail, or the batch's message. */
+  detail: string;
+  /**
+   * When it was recorded, as a sequence number that only grows across every settled request
+   * (`CampaignNegativeKeywordsService`): what decides whether an outcome is NEWER than something
+   * recorded against an earlier one, such as the Reddit keyword table's not-sent note.
+   */
+  seq: number;
+}
+
+/** One negative-keyword request, as the editor hands it to `CampaignNegativeKeywordsService`. */
+export interface CampaignNegativeKeywordsSubmission {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  campaignName: string;
+  /** The campaign's ad platform. Decides whether `revision` is sent: Reddit only. */
+  platform: NegativeKeywordCampaignPlatform;
+  /** Parsed once by the editor and sent as-is: the outcomes are zipped onto this exact list. */
+  keywords: string[];
+  matchType: CampaignNegativeKeywordMatchType;
+  /**
+   * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
+   * Reddit campaign: Google Ads, Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
+   */
+  revision?: string;
+}
+
+/** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
+export type NegativeKeywordCampaignPlatform = 'google-ads' | 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+
+/** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
+export interface CampaignNegativeKeywordPlatformRules {
+  /** The platform's name in outcome text ("Reddit refused it"). */
+  label: string;
+  /** The match types the platform takes for a negative, in display order. */
+  matchTypes: readonly CampaignNegativeKeywordMatchTypeOption[];
+  /** The match type the editor opens on. */
+  defaultMatchType: CampaignNegativeKeywordMatchType;
+  /** Most keywords one request may carry on this platform. */
+  maxKeywords: number;
+  /**
+   * Longest a keyword's text may be on this platform, in characters (code points). Google Ads'
+   * limit is shorter than the shared one the BFF enforces, and the BFF cannot apply it: the add
+   * route is addressed by campaign id alone and never learns the campaign's platform. So this is
+   * the editor's own cap, exactly as `maxKeywords` is for X's 20.
+   */
+  maxTextLength: number;
+  /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
+  requiresRevision: boolean;
+  /** Where the negatives land, for the field hint. */
+  destination: string;
+  /** The match-type hint under the choice. */
+  matchTypeHint: string;
+}
+
+/** One reporting-window choice of the Microsoft keyword table. */
+export interface MicrosoftKeywordsWindowOption {
+  value: MicrosoftKeywordsWindow;
+  label: string;
+}
+
+/** A pause/remove asked for on one Microsoft keyword row. */
+export interface MicrosoftKeywordActionRequest {
+  keyword: MicrosoftKeywordMetrics;
+  action: KeywordActionType;
+}
+
+/** A Microsoft keyword row as the table renders it, with its action state already looked up. */
+export interface MicrosoftKeywordDisplayRow {
+  /** The action-state key: platform-qualified, so a Microsoft id can never collide with a Google one. */
+  key: string;
+  keyword: MicrosoftKeywordMetrics;
+  inProgress: boolean;
+  result: KeywordActionOutcome | null;
+  /**
+   * True once a REMOVE of this keyword was confirmed on this page: it no longer exists, so no action
+   * is offered on it — even when a finished report read afterwards still lists it.
+   */
+  removed: boolean;
+  /**
+   * False when this row's `0` conversions may not be a measurement: the report left some rows'
+   * conversions blank (`conversionsComplete: false`) and Microsoft reports a blank as `0`.
+   */
+  conversionsMeasured: boolean;
+}
+
+/** The amount and pacing the Optimize tab's budget editor submits, or that a change confirmed. */
+export interface CampaignBudgetChange {
+  /** In the AD ACCOUNT's own currency, exactly as entered. Never converted or rounded. */
+  budget: number;
+  budgetType: CampaignBudgetType;
+}
+
+/**
+ * How a budget change that did not succeed is reported.
+ *
+ * Three states, because the operator has to act differently on each:
+ * - `failed`: campaign-service (or the BFF) answered with a refusal. Its message is shown verbatim.
+ * - `conflict`: a 412. The row's validator is stale, so the list must be re-read before retrying.
+ * - `unconfirmed`: nobody can say whether the platform applied the change. The operator must check
+ *   the ad platform before retrying, and nothing retries on their behalf.
+ */
+export interface CampaignBudgetOutcome {
+  state: 'failed' | 'conflict' | 'unconfirmed';
+  message: string;
+}
+
+/**
+ * The per-lever wording `classifyCampaignWriteFailure` reports an Optimize-tab write failure with.
+ * The classification itself is shared, so the budget, bid and negative-keyword levers cannot drift.
+ */
+export interface CampaignWriteFailureMessages {
+  /** What a 412 says. Omitted for a write sent without a validator, where a 412 is a plain refusal. */
+  conflict?: string;
+  /** What an outcome nobody could confirm says when the response carried no usable message. */
+  unconfirmed: string;
+  /** What a refusal says when the response carried no readable message. */
+  failureFallback: string;
+  /**
+   * When set, a BFF-relayed 503 is `failed` only when its message contains this wording; every other
+   * 503 is unconfirmed (the bid lever, whose unconfirmed and definite 503s share a status).
+   */
+  definiteFailureMarker?: string;
+}
+
+/** One pacing choice offered by the budget editor. */
+export interface CampaignBudgetTypeOption {
+  value: CampaignBudgetType;
+  label: string;
 }
 
 /**
@@ -2236,6 +6697,273 @@ export interface CampaignListResult {
    * the capability is off.
    */
   demandGenEnabled: boolean;
+
+  /**
+   * Whether this deployment can create a Performance Max, Video or Display Google campaign.
+   *
+   * Read the same way as `demandGenEnabled` and modelled the same way on the client (`boolean |
+   * null`, `null` for unanswered), but derived by the opposite rule: these three channels exist
+   * only on the campaign-service create path, so this is `false` whenever the cutover is dark —
+   * where `demandGenEnabled` is `true`, because the legacy creator serves Demand Gen.
+   */
+  googleChannelsEnabled: boolean;
+
+  /**
+   * Whether a Google creative object supplied with the create will actually reach Google.
+   *
+   * The creative objects ride on `googleAdsConfig`, which only the campaign-service create path
+   * builds. The LEGACY creator composes a Demand Gen ad from `headlines`/`descriptions` alone and
+   * reads no creative key at all, so with the cutover dark everything an operator typed into the
+   * creative section — images, logos, business name, call to action — is discarded in silence and
+   * the create still reports success.
+   *
+   * This is therefore `cutoverOwnsCreate()` and nothing else. It is NOT a third way of saying
+   * `googleChannelsEnabled`: that one additionally requires the Google-channels flag, and the
+   * window where the cutover owns the create with that flag off is one where Demand Gen creative
+   * works perfectly well. Deriving this from that would withhold a working control.
+   *
+   * Read the same way as the two above and modelled the same way on the client (`boolean | null`,
+   * `null` for unanswered).
+   */
+  googleCreativeEnabled: boolean;
+
+  /**
+   * Whether a Reddit promoted post AUTHORED from `imageUrl`/`callToAction` will actually be
+   * created.
+   *
+   * Unlike its Google sibling this is NOT the cutover gate, and the difference is in the creators
+   * rather than in how the question is asked. `postUrl` — promote an EXISTING post — was always
+   * read by both: the legacy path extracts the post id and creates the ad from it
+   * (`reddit-ads.service.ts`), exactly as campaign-service does. The author-a-post path — no
+   * `postUrl`, an `imageUrl`, a new promoted post carrying `callToAction` — was campaign-service's
+   * alone (`internal/platform/reddit/client.go`) until #3432 gave the legacy creator the same
+   * capability. Both arms now author the post, so the answer is a constant `true`
+   * (`canCreateRedditCreative` in `campaign-service.service.ts`).
+   *
+   * Still carried on the wire, and still a capability rather than a literal on the client, because
+   * nothing in a create request says which arm will serve — this is how a third creator, or a
+   * legacy regression, would report itself. Read the same way as the three above and modelled the
+   * same way on the client (`boolean | null`, `null` for unanswered), so a deployment that has not
+   * answered yet still withholds the controls rather than guessing.
+   */
+  redditCreativeEnabled: boolean;
+  /**
+   * Whether the Reddit section may offer an image UPLOAD, sent as `redditConfig.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` flag, which says the deployed campaign-service has
+   * its creative-asset URL signing configured (signing key + public base URL). Neither alone is
+   * enough: the legacy creator never reads `imageAssetId`, and a campaign-service without signing
+   * refuses it ("stored creative assets are not enabled for Reddit"). Modelled on the client like
+   * the capabilities above (`boolean | null`, `null` for unanswered), which withholds the control;
+   * the pasted image URL stays offered either way.
+   */
+  redditAssetUploadEnabled: boolean;
+  /**
+   * Whether the Reddit section may offer a per-campaign conversion pixel override, sent as
+   * `redditConfig.conversionPixelId` (#3484).
+   *
+   * Exactly the campaign-service create path: upstream prefers this value over the connection's own
+   * pixel (`internal/platform/reddit/client.go`), while the legacy creator never reads it, so a
+   * pixel typed while the cutover is dark would be accepted and silently dropped. Modelled on the
+   * client like the capabilities above (`boolean | null`, `null` for unanswered), which withholds
+   * the control.
+   */
+  redditConversionPixelEnabled: boolean;
+  /**
+   * Whether the Google creative section may offer a stored-image LIBRARY — uploading images to the
+   * brief and naming them by asset id in the Google creative fields.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS` flag. The claim the flag makes is deliberately NOT
+   * its Reddit sibling's: Google's dispatch path reads the stored BYTES and POSTs them to
+   * `assets:mutate`, so no URL signing is involved and none is asserted
+   * (`internal/dispatch/googleads_creative_assets.go` holds no signer reference). What it asserts is
+   * that the deployed campaign-service resolves Google creative asset ids, which every release from
+   * v1.0.21 does — an older one types the image arrays as strings and cannot decode an asset entry,
+   * so its Google create fails. The legacy creator never reads them at all, hence the cutover half.
+   *
+   * The Implement tab reads it as `boolean | null`, `null` for unanswered, like the Reddit and Meta
+   * siblings: only an explicit `true` offers the library controls in each Google image slot — upload
+   * into the brief's library, or pick a stored image that fits — and sends the picks as
+   * {@link GoogleCreativeImageAssetRef} entries beside the pasted URLs. Anything else withholds the
+   * controls and blocks Create while a stored image is still held, rather than dropping it. The
+   * pasted image URLs are offered either way.
+   */
+  googleAssetUploadEnabled: boolean;
+  /**
+   * Whether a Meta ad image (`MetaAdVariant.imageUrl`) will actually be used.
+   *
+   * `cutoverOwnsCreate()` and nothing else, like `googleCreativeEnabled`: campaign-service reads
+   * the image on every variant, the legacy Meta creator reads none. Modelled on the client the
+   * same way (`boolean | null`, `null` for unanswered), which withholds the image controls.
+   */
+  metaCreativeEnabled: boolean;
+  /**
+   * Whether the Meta section may offer an image UPLOAD, sent as `MetaAdVariant.imageAssetId`.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS` flag. Like its Google sibling and unlike Reddit's it
+   * asserts no URL signing: Meta's dispatch path uploads the stored bytes to the ad account's image
+   * library, so no URL leaves the service. What it asserts is that the deployed campaign-service
+   * resolves Meta asset ids. Modelled on the client like the capabilities above.
+   */
+  metaAssetUploadEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer an image UPLOAD, sent as
+   * `LinkedInCreativeVariant.imageAssetId`, each variant its own upload.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS` flag. Like the Meta sibling it asserts no URL
+   * signing: LinkedIn's dispatch path uploads the stored bytes through the Images API. There is no
+   * pasted-URL alternative, so there is no LinkedIn `…CreativeEnabled` to pair it with. Modelled on
+   * the client like the capabilities above.
+   */
+  linkedInAssetUploadEnabled: boolean;
+  /**
+   * Whether the LinkedIn section may offer removing entries from the selected targeting profile,
+   * sent as `linkedInConfig.targetingProfileEdit` (#5546).
+   *
+   * `cutoverOwnsCreate()` and nothing else, like `metaCreativeEnabled`: campaign-service builds the
+   * targeting from the profiles the request carries, while the legacy creator reads the mounted
+   * ConfigMap and would drop the edit. Modelled on the client like the capabilities above, which
+   * shows the profile read-only.
+   */
+  linkedInTargetingEditEnabled: boolean;
+  /**
+   * Whether the Microsoft section may offer an image UPLOAD, sent as
+   * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
+   *
+   * Needs the campaign-service create path to serve the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS` flag. Like the Meta sibling it asserts no URL
+   * signing: Microsoft's dispatch path uploads the stored bytes to the account's media library.
+   * Modelled on the client like the capabilities above.
+   */
+  microsoftAssetUploadEnabled: boolean;
+  /**
+   * Whether the create flow may offer the per-platform Bidding control (#3299).
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING` flag says the deployed campaign-service understands
+   * `bidding` (linuxfoundation/lfx-v2-campaign-service#332). An older service ignores the unknown
+   * key and creates every campaign on automatic bidding, and the legacy creator never reads it — so
+   * either way a Manual choice would be silently dropped. Modelled on the client like the
+   * capabilities above (`boolean | null`, `null` for unanswered), which withholds the control.
+   */
+  biddingEnabled: boolean;
+  /**
+   * Whether a Microsoft create may carry the flight dates, as `microsoftConfig.startDate` / `endDate`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE` flag says the deployed campaign-service
+   * understands the two keys (linuxfoundation/lfx-v2-campaign-service#409). An older service
+   * ignores them and creates the campaign with no flight, and the legacy creator never reads them.
+   * Modelled on the client like the capabilities above (`boolean | null`, `null` for unanswered),
+   * which sends no dates and keeps the "ignores the flight dates" warning.
+   */
+  microsoftScheduleEnabled: boolean;
+  /**
+   * Whether the create flow may offer X (`twitter-ads`) at all, sent as `twitterConfig`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE` flag is on. The cutover half is not optional:
+   * the legacy creator has no X path. `CAMPAIGN_PLATFORMS` keeps X `disabled: true` as the static
+   * default, and the Plan picker and the Implement tab consult this instead, on an explicit yes
+   * only. Modelled on the client like the capabilities above (`boolean | null`, `null` for
+   * unanswered), which keeps X unselectable and blocks a create that still holds it.
+   */
+  twitterCreateEnabled: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA` flag says the deployed campaign-service
+   * refuses an EU-targeted Meta create without the disclosures (linuxfoundation/lfx-v2-campaign-service#414). Modelled on the
+   * client like the capabilities above (`boolean | null`, `null` for unanswered), which hides the
+   * inputs and sends none of the three keys.
+   */
+  metaInstagramDsaEnabled: boolean;
+  /**
+   * Whether THIS caller may send Google audience segments (`audienceSegments` or
+   * `campaignAudienceSegments`) on a create.
+   *
+   * Per CALLER, unlike every capability above: true only when the campaign-service create path
+   * serves the create AND the caller holds `global_marketing_ops` on the listed project (the LF
+   * marketing team; `campaign_manager` alone, which admits foundation EDs, is not enough). Every
+   * foundation's Google Ads connection points at one shared LF customer, so a foundation operator
+   * could otherwise target another foundation's list. campaign-service checks the same relation on
+   * the same project (linuxfoundation/lfx-v2-campaign-service#501, #505). `null` when that check
+   * cannot be made: unverified, not denied, so the Implement tab offers a Retry rather than the
+   * restricted block. The create route refuses such a caller's segments with a 403
+   * `GOOGLE_AUDIENCE_SEGMENTS_RESTRICTED_CODE`, or a 503 when the check cannot be made. Modelled on the client like the
+   * capabilities above (`boolean | null`, `null` for unanswered): only an explicit yes shows the section.
+   */
+  googleAudienceSegmentsEnabled: boolean | null;
+  /**
+   * Whether THIS caller may read the Implement tab's conversion-action picker list (#4991), through
+   * `GET /api/campaigns/google/conversion-actions`. Per caller: true only when the campaign-service
+   * create path serves the create AND the caller holds `global_marketing_ops` on the listed project —
+   * the two checks that route makes, and the relation campaign-service checks before it answers
+   * (linuxfoundation/lfx-v2-campaign-service#486) — because the shared LF Google Ads account lists
+   * every foundation's actions. Its own field rather than {@link googleAudienceSegmentsEnabled}: the
+   * relation is the same, but the deployment test differs (the create road here, the audience-segment
+   * gate there). Optional, so a BFF that predates it reads as unanswered (`null` on the client) and
+   * the tab keeps its free-text box without asking.
+   */
+  googleConversionActionsEnabled?: boolean;
+  /**
+   * Whether THIS caller may pick a Demand Gen audience on the Implement tab (#5244), through
+   * `GET /api/campaigns/google/audiences`, and send it. Per caller: true only when the campaign-service
+   * create path serves the create AND the caller holds `global_marketing_ops` on the listed project, the
+   * two checks that route makes and the relation campaign-service checks both before it answers the read
+   * (#504) and before it creates with an Audience (#501). `null` when that check cannot be made, as
+   * {@link googleAudienceSegmentsEnabled} answers it: unverified, not denied, so the Implement tab holds a
+   * retained audience with a Retry rather than the restricted block. Optional, so a BFF that predates it
+   * reads as unanswered (`null` on the client) and the tab offers no picker.
+   */
+  googleDemandGenAudienceEnabled?: boolean | null;
+  /**
+   * Whether THIS caller may pick Display audiences on the Implement tab (#5262), through
+   * `GET /api/campaigns/google/user-lists` and `GET /api/campaigns/google/audiences`, and send them. On the
+   * same two checks as {@link googleDemandGenAudienceEnabled}: the campaign-service create path serves the
+   * create, and the caller holds `global_marketing_ops` on the listed project, which campaign-service checks
+   * before it answers either read and before it creates with an account-owned Display list (#505). `null`
+   * when that check cannot be made. Optional, so a BFF that predates it reads as unanswered.
+   */
+  googleDisplayAudiencesEnabled?: boolean | null;
+  /**
+   * Whether THIS caller may pick a Performance Max audience signal on the Implement tab (#5262), through
+   * the same `GET /api/campaigns/google/audiences` read, and send it. Answered on the same two checks as
+   * {@link googleDemandGenAudienceEnabled}: the campaign-service create path serves the create, and the
+   * caller holds `global_marketing_ops` on the listed project, the relation campaign-service checks before
+   * it creates with a signal (#501). `null` when that check cannot be made: unverified, not denied.
+   * Optional, so a BFF that predates it reads as unanswered (`null` on the client) and the tab offers no
+   * picker.
+   */
+  googlePerformanceMaxAudienceSignalEnabled?: boolean | null;
+  /**
+   * Whether the Implement tab may SEARCH Google's geo target table for postal-code targets, through
+   * `GET /api/campaigns/google/geo-targets`, instead of asking for a typed constant id.
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH` flag says the deployed campaign-service has the
+   * suggest endpoint (linuxfoundation/lfx-v2-campaign-service#411). An older service answers it 404.
+   * Modelled on the client like the capabilities above (`boolean | null`, `null` for unanswered),
+   * which keeps the typed-id box.
+   */
+  googleGeoSearchEnabled: boolean;
+  /**
+   * The platforms on which this deployment may deliberately create ANOTHER campaign for a brief that
+   * already has one there, labelled by funnel stage and tactic (#4983, "ss-3").
+   *
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS` (comma-separated, default empty), narrowed
+   * to the platforms campaign-service accepts the labels and `new_version` for
+   * (`CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS`, cs `ProviderNamesByStage`). Empty means the
+   * feature is off. Each campaign-service release that adds a platform is paired with an argocd values
+   * change adding it here, and removing it is the rollback lever. OPTIONAL because a BFF from before
+   * this field sends none mid-deploy; absent reads as empty, which is off.
+   */
+  multiCampaignPlatforms?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -2304,6 +7032,14 @@ export interface CampaignServiceCampaign {
   status: string;
   version: number;
   etag?: string;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 export interface CampaignStatusUpdateResult {
@@ -2339,6 +7075,590 @@ export interface CampaignStatusUpdateResult {
    * "what was asked for". Absent on the legacy path, whose SDK calls return no row.
    */
   serviceStatus?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Bidding at create time (#3299)
+// ---------------------------------------------------------------------------
+
+/** The two bidding strategies a create may ask for, spelled exactly as campaign-service takes them. */
+export type CampaignBiddingStrategy = (typeof CAMPAIGN_BIDDING_STRATEGIES)[number];
+
+/** The platforms whose create config accepts a `bidding` object. Google Ads has its own bidding plan. */
+export type CampaignBiddingPlatform = (typeof CAMPAIGN_BIDDING_PLATFORMS)[number];
+
+/**
+ * The optional `bidding` object of a per-platform create config, mirroring
+ * linuxfoundation/lfx-v2-campaign-service#332 (`internal/dispatch/bidding.go`).
+ *
+ * camelCase, like the config envelope it sits in. Exactly these two keys: campaign-service refuses
+ * any other key, any case variant, an explicit `null` and an empty string with a 400. Omitting the
+ * whole object means automatic. `bidAmount` is present only for `manual`; an automatic object that
+ * names an amount is refused too.
+ */
+export interface CampaignBiddingConfig {
+  strategy: CampaignBiddingStrategy;
+  /** Max cost-per-click bid, in the currency the provider expects (USD on LinkedIn). Manual only. */
+  bidAmount?: number;
+}
+
+/** One platform's Bidding control as edited. `bidAmount` is `null` until a number is entered. */
+export interface CampaignBiddingDraft {
+  strategy: CampaignBiddingStrategy;
+  bidAmount: number | null;
+}
+
+/** The Bidding control's state per platform, as the implementation draft carries it. */
+export type CampaignBiddingDrafts = Partial<Record<CampaignBiddingPlatform, CampaignBiddingDraft>>;
+
+/**
+ * Where the create-capability read stands, for a choice the form cannot send without its answer:
+ * `pending` only while a read is IN FLIGHT, `failed` after an error, `ready` once it answered, and
+ * `unknown` when no read is out and none has answered — initially, after a foundation switch, or
+ * when there was no brief to read against. `unknown` must offer a way to start a read; nothing
+ * else will. The answer itself travels separately (`biddingEnabled`).
+ */
+export type CampaignCapabilityReadState = 'unknown' | 'pending' | 'ready' | 'failed';
+
+/** Why Create is blocked for a retained Manual bidding choice the deployment cannot confirm (#3299). */
+export interface CampaignBiddingCapabilityBlock {
+  /**
+   * `pending`: a read is in flight. `failed`: a read failed, or none is out but there is a brief to
+   * read against — Retry starts one. `unsaved`: none is out and there is no brief id yet, so a Retry
+   * could not read anything; saving the brief starts the read. `unsupported`: the answer is no.
+   */
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why generated Google callouts and sitelinks are being WITHHELD from the create because the
+ * create-capability answer is not an explicit yes. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ *
+ * Unlike that one this does not block Create, and the difference is deliberate. A withheld manual
+ * bid changes what the campaign DOES — it would be created automatic, spending differently from
+ * what was chosen — so the create waits for the answer. Withheld extensions cost only the
+ * extensions: the campaign is still the one the operator asked for. Blocking a create on a stalled
+ * capability read for that is worse than creating and saying so.
+ */
+export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for postal-code or radius targets the draft holds but the request cannot
+ * carry, because the campaign-service create capability is unanswered or answered no. The kinds
+ * mean what they do on {@link CampaignGoogleExtensionsCapabilityBlock}.
+ *
+ * Unlike that block this one GATES Create: a withheld location list does not shrink the campaign, it
+ * WIDENS it — the request falls back to the event country, so a 25-mile radius would become a
+ * nationwide campaign. The operator retries the check or removes the targets explicitly.
+ */
+export interface CampaignGoogleLocationsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why upstream refuses one trimmed `campaignAudienceSegments` entry, in the order
+ * `validateCampaignAudienceSegments` checks it (`search_campaign_audiences.go`): `blank`, then `shape`
+ * (not `customers/{digits}/{kind}/{digits}`), then `notUserList` (a well-formed name of another kind,
+ * such as a custom audience), then `id` (a list id that is not the canonical base-10 spelling of a
+ * positive int64). The account match comes between the last two upstream; this client cannot see the
+ * campaign's account, so it is not judged here.
+ */
+export type GoogleCampaignAudienceSegmentFault = 'blank' | 'shape' | 'notUserList' | 'id';
+
+/**
+ * Why upstream refuses a trimmed `campaignAudienceSegments` list after its channel and level checks:
+ * `entries`, more than `GOOGLE_ADS_MAX_CAMPAIGN_AUDIENCE_SEGMENT_ENTRIES` raw entries; `entry`, the
+ * first bad entry (1-based `position`); `lists`, more than `GOOGLE_ADS_MAX_AUDIENCE_SEGMENTS` distinct
+ * lists. `count` is the raw or distinct count the rule judged.
+ */
+export type GoogleCampaignAudienceSegmentsRefusal =
+  | { rule: 'entries'; count: number }
+  | { rule: 'entry'; position: number; fault: GoogleCampaignAudienceSegmentFault }
+  | { rule: 'lists'; count: number };
+
+/**
+ * Why Create is blocked for Google audience segments the draft still holds but the request cannot
+ * carry. `restricted`: the caller does not hold `global_marketing_ops` on the project, so the
+ * segments would be refused (`CampaignListResult.googleAudienceSegmentsEnabled`). `unsupported`: the
+ * campaign-service create path does not serve this deployment. The other kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers all of them.
+ */
+export interface CampaignGoogleAudienceSegmentsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen audiences (#5244) the draft still holds but the request cannot
+ * carry. The kinds mean what they do on {@link CampaignGoogleAudienceSegmentsBlock}: `restricted` is an
+ * explicit no from `CampaignListResult.googleDemandGenAudienceEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGoogleDemandGenAudienceBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Demand Gen demographics the draft still holds but the request cannot carry,
+ * because the campaign-service create path is not serving the create. The kinds mean what they do on
+ * {@link CampaignGoogleDemandGenAudienceBlock}; there is no `restricted`, because no role gates them.
+ */
+export interface CampaignGoogleDemandGenDemographicsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for Display audiences (#5262) the draft still holds but the request cannot carry.
+ * The kinds mean what they do on {@link CampaignGoogleDemandGenAudienceBlock}, with `restricted` an explicit
+ * no from `CampaignListResult.googleDisplayAudiencesEnabled`.
+ */
+export interface CampaignGoogleDisplayAudiencesBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for a Performance Max audience signal (#5262) the draft still holds but the
+ * request cannot carry, on {@link CampaignGoogleDemandGenAudienceBlock}'s kinds: `restricted` is an
+ * explicit no from `CampaignListResult.googlePerformanceMaxAudienceSignalEnabled`, and `unsupported` the
+ * campaign-service create path not serving this deployment.
+ */
+export interface CampaignGooglePerformanceMaxAudienceSignalBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'restricted';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
+ * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
+ * was made for a different brief than the one now open, so it is never sent whatever the capability.
+ */
+export interface CampaignRedditImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for an uploaded Meta image the draft still holds but the request cannot
+ * carry. The kinds mean what they do on `CampaignRedditImageAssetBlock`.
+ */
+export interface CampaignMetaImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * Why Create is blocked for a stored image held in a Google image slot that the request cannot
+ * carry, or that campaign-service would refuse. The first six kinds mean what they do on
+ * `CampaignMetaImageAssetBlock`. `missing`: the asset is no longer in the brief's library (it was
+ * deleted). `misfit`: its recorded dimensions do not meet the slot's shape.
+ */
+export interface CampaignGoogleImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed' | 'missing' | 'misfit';
+  message: string;
+}
+
+/** `CampaignMetaImageAssetBlock`'s LinkedIn sibling, with the same kinds. */
+export interface CampaignLinkedInImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * What the Implement tab shows for one LinkedIn ad variant (#5547): its copy with the lengths and
+ * refusals campaign-service would apply, and the state of its own image. Errors and messages are
+ * `''` when there is none.
+ */
+export interface LinkedInVariantView {
+  key: string;
+  introText: string;
+  headline: string;
+  introTextLength: number;
+  headlineLength: number;
+  introTextError: string;
+  headlineError: string;
+  /** "Uploading image…", "Uploaded: <name>", or `''`. */
+  imageStatusMessage: string;
+  imageUploading: boolean;
+  /** Whether the variant holds an upload (for any brief), so Remove is offered. */
+  imageHeld: boolean;
+  /** Why this variant's last pick or upload failed, or `''`. */
+  imageError: string;
+  imagePickerDisabled: boolean;
+  /** Why the picker is disabled while another variant's upload is running or failed, or `''`. */
+  imagePickerNote: string;
+  /** Why Create is blocked for this variant's image, or `null`. */
+  imageBlock: CampaignLinkedInImageAssetBlock | null;
+}
+
+/** `CampaignLinkedInImageAssetBlock`'s X sibling, for the authored tweet's image, with the same kinds. */
+export interface CampaignTwitterImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/**
+ * The X section's typed fields, carried across a Plan → Implement round trip for the SAME event
+ * (a refine), when the rest of the draft is cleared. Nothing the generator produces feeds X, so a
+ * refine has nothing to regenerate there and clearing would only lose what the operator typed.
+ */
+export type CampaignTwitterDraft = Pick<
+  CampaignImplementationDraft,
+  | 'eventSlug'
+  | 'twitterBudget'
+  | 'twitterTweetText'
+  | 'twitterImageAssetId'
+  | 'twitterImageAssetName'
+  | 'twitterImageAssetBriefId'
+  | 'twitterImageUploadPendingName'
+  | 'twitterImageUploadPendingBriefId'
+  | 'twitterImageUploadFailedMessage'
+  | 'twitterImageUploadFailedBriefId'
+>;
+
+/** The X section's read of which ad account an X create uses (LFXV2-3319). */
+export interface CampaignTwitterAccountState {
+  /**
+   * The X account read for the open X section (`GET /api/campaigns/twitter/accounts`): `idle` while
+   * X is not offered, `restricted` for the non-root 403 (the shared-credential rule), `forbidden` when
+   * campaign-service refused to read the project's X connection for lack of its `campaign_manager` role
+   * (#4837), `error` for any other failure. Only `loaded` carries a `result`.
+   */
+  status: 'idle' | 'loading' | 'loaded' | 'restricted' | 'forbidden' | 'error';
+  result: TwitterAdsAccountsResult | null;
+}
+
+/**
+ * Why Create is blocked while the Implement tab holds X (`twitter-ads`) but this deployment has not
+ * said, with an explicit yes, that it can create there (`CampaignListResult.twitterCreateEnabled`).
+ * The kinds are the bidding capability block's: the read is pending, failed, impossible before the
+ * brief is saved, or answered no.
+ */
+export interface CampaignTwitterCreateBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/** `CampaignMetaImageAssetBlock`'s Microsoft sibling, with the same kinds. */
+export interface CampaignMicrosoftImageAssetBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
+  message: string;
+}
+
+/** The rest of a platform's config that its bidding rules read. */
+export interface CampaignBiddingContext {
+  /** The config's objective, where the platform has one. Manual bidding needs particular objectives on Meta and Reddit. */
+  objective?: string;
+  /** The DAILY budget, or `null` when the budget is a lifetime one. Meta and X compare the bid with it. */
+  dailyBudget?: number | null;
+}
+
+/** What one platform accepts as a manual bid, and how the control describes it. */
+export interface CampaignBiddingPlatformRule {
+  /** The platform's display name, used in the control's accessible names. */
+  label: string;
+  /** Where the bid's currency comes from: LinkedIn takes USD, every other platform the ad account's currency. */
+  currency: 'USD' | 'account';
+  /** The bid's precision: 100 for whole cents, 1,000,000 for whole micro-units. Finer amounts are refused, never rounded. */
+  scale: number;
+  /** Lowest bid this app lets through, in the platform's currency. */
+  minBid: number;
+  /** Highest bid campaign-service sets on this platform. */
+  maxBid: number;
+  /** Objectives manual bidding needs, or `null` when any objective will do. */
+  manualObjectives: readonly string[] | null;
+  /** Objective campaign-service assumes when none is sent; `null` when the platform has no objective. */
+  defaultObjective: string | null;
+  /** Meta: the daily budget must be at least this many times the bid. `null` when there is no such rule. */
+  dailyBudgetMultiple: number | null;
+  /** X: the bid may not exceed the daily budget. */
+  bidAtMostDailyBudget: boolean;
+  /** What Automatic does on this platform. */
+  automaticDescription: string;
+  /** What Manual creates on this platform. */
+  manualDescription: string;
+  /** The currency hint shown beside the bid input. */
+  currencyHint: string;
+  /** The platform's limits, in words. */
+  limitText: string;
+}
+
+/** Everything one platform's Bidding control renders, computed once by the implementation tab. */
+export interface CampaignBiddingControlView {
+  platform: CampaignBiddingPlatform;
+  value: CampaignBiddingDraft;
+  /** Why the choice cannot be sent, or `null` when it can. Blocks the create. */
+  error: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Budget Change
+// ---------------------------------------------------------------------------
+
+/**
+ * The pacing a budget amount is expressed in. Mirrors the `budget_type` enum of campaign-service's
+ * `update-campaign-budget` (`design/brief.go`).
+ *
+ * It must name the pacing the campaign ALREADY has upstream: that endpoint changes the amount,
+ * never the pacing, and refuses a mismatch with 409 rather than translating it.
+ */
+export type CampaignBudgetType = 'daily' | 'lifetime';
+
+/**
+ * Body of `PATCH /api/campaigns/:campaignId/budget`.
+ *
+ * Every field is required, and there is nothing safe to default. campaign-service addresses the
+ * campaign by `(project, brief, campaign)` and requires `If-Match`. A defaulted `budgetType` would
+ * turn an omission into a 409 about a pacing the caller never named.
+ */
+export interface CampaignBudgetUpdateRequest {
+  /** Parent brief of the campaign being changed. */
+  briefId: string;
+  /** The campaign row's current ETag, sent as `If-Match`. A missing one is a 428 upstream and a stale one a 412. */
+  etag: string;
+  /**
+   * The new amount, in the AD ACCOUNT's own currency (not USD). Sent upstream exactly as given:
+   * this app never converts or rounds it. The platform's own floor (LinkedIn's minimums, Meta's
+   * minor unit) is enforced upstream, and a 400 from there names it.
+   */
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /**
+   * The row's platform as the caller read it from the index. A HINT for the BFF's wording only — it
+   * is never sent upstream, which decides platform support from the row itself — used to explain an
+   * X refusal in X's terms (`CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE`). Optional: absent, every
+   * upstream message passes through unchanged.
+   */
+  platform?: CampaignPlatform;
+}
+
+/**
+ * Everything needed to address and authorize one budget change, as the server client takes it.
+ * Every field but `platform` is required. A wrong one is a 404, 428 or 412 upstream rather than a
+ * type error.
+ */
+export interface CampaignBudgetUpdateParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+  /** The row's platform, forwarded to the BFF as `CampaignBudgetUpdateRequest.platform`. Never sent to campaign-service. */
+  platform?: CampaignPlatform;
+}
+
+/**
+ * What the Optimize tab knows about a daily-only platform's CURRENT budget pacing, from the
+ * campaign's live settings readback: `pending` while that read is out, `daily` or `lifetime` once
+ * the platform reported one, and `unknown` when it reported neither or the read failed — in which
+ * case the editor stays usable and upstream remains the authority.
+ */
+export type CampaignBudgetPacingRead = 'pending' | 'daily' | 'lifetime' | 'unknown';
+
+export interface CampaignBudgetUpdateResult {
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
+   */
+  platform: CampaignPlatform | null;
+  campaignId: string;
+  /**
+   * The amount requested, which the platform accepted; the platform may hold it rounded to its
+   * smallest settable unit (LinkedIn cents, Meta the account currency's minor unit). A 200 is only
+   * returned after the platform accepted the write, but campaign-service persists the requested
+   * amount, not a readback of what the platform holds, and this is an echo of the request.
+   */
+  budget: number;
+  budgetType: CampaignBudgetType;
+  /** The row's NEW ETag. The caller's own validator went stale when this write committed. */
+  etag?: string;
+  /**
+   * The row's status, which a budget change leaves exactly as found. This is how a
+   * `created_degraded` campaign keeps its reconciliation marker while its spend is cut.
+   */
+  serviceStatus: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Bid Change
+// ---------------------------------------------------------------------------
+
+/**
+ * The unit a bid is expressed in. Mirrors the `bid_type` enum of campaign-service's
+ * `update-campaign-bid` (`design/brief.go`), which has one value today: a manual max
+ * cost-per-click. It must match how the ad group bids upstream, which refuses a mismatch with 409
+ * rather than re-bidding in a unit the caller never named.
+ */
+export type CampaignBidType = 'cpc';
+
+/**
+ * Body of `PATCH /api/campaigns/:campaignId/bid`.
+ *
+ * The bid route's sibling of `CampaignBudgetUpdateRequest`. `bidType` alone is optional, because
+ * upstream defaults it to its only value; everything else is required for the same reasons as the
+ * budget change.
+ */
+export interface CampaignBidUpdateRequest {
+  /** Parent brief of the campaign being changed. */
+  briefId: string;
+  /** The campaign row's current ETag, sent as `If-Match`. A missing one is a 428 upstream and a stale one a 412. */
+  etag: string;
+  /**
+   * The new max cost-per-click bid, in the AD ACCOUNT's own currency (not USD). Sent upstream
+   * exactly as given: this app never converts or rounds it. Each platform's own floor and ceiling
+   * (Microsoft's 0.01-1000) is enforced upstream, and a 400 from there names it.
+   */
+  bid: number;
+  bidType?: CampaignBidType;
+}
+
+/** Everything needed to address and authorize one bid change, as the server client takes it. */
+export interface CampaignBidUpdateParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  bid: number;
+  bidType: CampaignBidType;
+  /** The etag read WITH the campaign, not one cached from an earlier render. */
+  etag: string;
+}
+
+export interface CampaignBidUpdateResult {
+  /**
+   * The ROW's platform as campaign-service reports it, in the hyphenated paid-platform vocabulary
+   * (`google-ads`, …). The request does not name one, and upstream refuses unsupported platforms.
+   * `null` when the row carried a value outside `CampaignPlatform`: checked at runtime by the BFF,
+   * never cast, so an unknown value is not passed off as a known platform.
+   */
+  platform: CampaignPlatform | null;
+  campaignId: string;
+  /**
+   * The bid requested, which the platform accepted. An echo of the request, like
+   * `CampaignBudgetUpdateResult.budget`: campaign-service persists the requested amount, not a
+   * readback of what the platform holds.
+   */
+  bid: number;
+  bidType: CampaignBidType;
+  /** The row's NEW ETag. The caller's own validator went stale when this write committed. */
+  etag?: string;
+  /** The row's status, which a bid change leaves exactly as found. */
+  serviceStatus: string;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign Negative Keywords
+// ---------------------------------------------------------------------------
+
+/**
+ * The match types a negative keyword may carry. Mirrors `negativeKeywordMatchTypeEnum` in
+ * campaign-service's `design/brief.go`. Each platform takes a subset and upstream refuses the rest
+ * with 400: Microsoft Advertising Exact or Phrase, X Broad, Phrase or Exact, Reddit Broad only
+ * (Reddit's excluded keywords carry no match type).
+ */
+export type CampaignNegativeKeywordMatchType = 'Exact' | 'Phrase' | 'Broad';
+
+/**
+ * One negative keyword's outcome. Mirrors `negativeKeywordOutcomeEnum`.
+ *
+ * - `APPLIED`: added by this request.
+ * - `ALREADY_PRESENT`: the campaign already had it, so the requested state holds. A success.
+ * - `FAILED`: definitely not added (see `errorCode`).
+ * - `UNCONFIRMED`: may have been added. Verify in the ad platform before retrying.
+ */
+export type CampaignNegativeKeywordOutcome = 'APPLIED' | 'ALREADY_PRESENT' | 'FAILED' | 'UNCONFIRMED';
+
+export interface CampaignNegativeKeywordInput {
+  /** Letters, digits, spaces and `& ' - .` only; at most 100 characters. */
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+}
+
+/**
+ * Body of `POST /api/campaigns/:campaignId/negative-keywords`.
+ *
+ * No etag: campaign-service persists nothing for this lever (the negatives live on the platform),
+ * so it takes no `If-Match`.
+ */
+export interface CampaignNegativeKeywordsRequest {
+  briefId: string;
+  /** 1 to 60 entries (1 to 20 on X). `results[i]` in the response answers `negativeKeywords[i]`. */
+  negativeKeywords: CampaignNegativeKeywordInput[];
+  /**
+   * Reddit only, and required there: the `revision` the keyword-targeting read returned. Microsoft
+   * Advertising and X refuse the field (400) whenever it is present, even empty, so it is omitted
+   * rather than sent blank.
+   */
+  revision?: string;
+}
+
+/** Everything the server client needs to add negative keywords to one campaign. */
+export interface CampaignNegativeKeywordsParams {
+  projectSlug: string;
+  briefId: string;
+  campaignId: string;
+  negativeKeywords: CampaignNegativeKeywordInput[];
+  /** Sent upstream only when defined (Reddit). */
+  revision?: string;
+}
+
+export interface CampaignNegativeKeywordResult {
+  /** The text as sent to the platform: upstream trims it and collapses whitespace. */
+  text: string;
+  matchType: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
+  negativeKeywordId?: string;
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Google Ads, Reddit and X. */
+  errorCode?: string;
+}
+
+/**
+ * The outcome of one negative-keywords request.
+ *
+ * NOT ATOMIC and POSITIONAL: Microsoft and X add each negative independently (Reddit's new ones share
+ * one write's outcome), and `results[i]` answers `negativeKeywords[i]` of the request. The BFF never filters or reorders `results`, so a caller
+ * may zip them onto the list it sent.
+ */
+export interface CampaignNegativeKeywordsResult {
+  campaignId: string;
+  results: CampaignNegativeKeywordResult[];
+  /** How many requested negatives are now on the campaign: outcomes `APPLIED` or `ALREADY_PRESENT`. */
+  appliedCount: number;
+}
+
+/** One negative keyword as campaign-service's `negative-keyword-input` takes it. */
+export interface CampaignServiceNegativeKeywordInput {
+  text: string;
+  match_type: CampaignNegativeKeywordMatchType;
+}
+
+/** One entry of campaign-service's `negative-keywords` result, in its own vocabulary. */
+export interface CampaignServiceNegativeKeywordResult {
+  text: string;
+  match_type: CampaignNegativeKeywordMatchType;
+  outcome: CampaignNegativeKeywordOutcome;
+  negative_keyword_id?: string;
+  error_code?: string;
+}
+
+/** campaign-service's `negative-keywords` result: one entry per requested keyword, in request order. */
+export interface CampaignServiceNegativeKeywords {
+  campaign_id: string;
+  results: CampaignServiceNegativeKeywordResult[];
+  applied_count: number;
 }
 
 /**
@@ -2394,6 +7714,9 @@ export interface CampaignServiceEmailMetrics {
   unsubscribes: number;
 }
 
+/** campaign-service's `conversions_status` on a metrics read (lfx-v2-campaign-service#452, issue #175). */
+export type CampaignConversionsStatus = 'reported' | 'unavailable' | 'incomplete' | 'no_conversions';
+
 /** One campaign's measurement, as campaign-service reports it. */
 export interface CampaignServiceCampaignMetrics {
   campaign_id: string;
@@ -2403,8 +7726,10 @@ export interface CampaignServiceCampaignMetrics {
   impressions: number;
   clicks: number;
   /**
-   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
-   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * Cost in MICRO-UNITS. ALWAYS USD on LinkedIn (its Ad Analytics `costInUsd`, whatever the ad
+   * account bills in); the ad ACCOUNT's own currency everywhere else — Google Ads, Meta, Microsoft,
+   * Reddit (its report's "microcurrency") and X (`billed_charge_local_micro`), none of which the
+   * read names. campaign-service performs no FX conversion, so these must never be
    * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
    * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
    */
@@ -2425,8 +7750,19 @@ export interface CampaignServiceCampaignMetrics {
    * populated for accounts wired for Universal Event Tracking, and a partial column summed as
    * though it were complete would understate the campaign. So a consumer must not render an
    * absent value as zero or fold it into a conversion total.
+   *
+   * Present ONLY when `conversions_status` is `reported` (lfx-v2-campaign-service#452). Read the
+   * status for WHY it is absent, never the absence itself.
    */
   conversions?: number;
+  /**
+   * Why `conversions` is or is not there (required upstream since lfx-v2-campaign-service#452):
+   * `reported` (a complete measurement, the only status with a total), `unavailable` (the channel or
+   * this account reports none), `incomplete` (part of the window came back without it), or
+   * `no_conversions` (a zero-click window with no conversion reported, and no total). OPTIONAL here
+   * because an older campaign-service sends none, and that case keeps the previous behaviour.
+   */
+  conversions_status?: CampaignConversionsStatus;
   email?: CampaignServiceEmailMetrics;
 }
 
@@ -2478,6 +7814,18 @@ export interface BriefMetricsRow {
 export type BriefMetricsActionPriority = 'HIGH' | 'MED';
 
 /**
+ * The stable rule tokens campaign-service's brief rule engine emits
+ * (`internal/service/rules/actions.go`, `Evaluate`).
+ *
+ * Closed here because the Optimize tab maps each one to the control that resolves it
+ * (`CAMPAIGN_ACTION_RULE_LEVERS`), and a `Record` over this union is what makes that mapping
+ * exhaustive at compile time. The WIRE is not closed: a token added upstream later still arrives,
+ * so every consumer that reads `rule` off a response must treat an unlisted value as unknown
+ * rather than trusting this union (see `campaignActionRuleLever`).
+ */
+export type BriefMetricsActionRule = 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+
+/**
  * One thing an operator should look at, derived by campaign-service from the readable rows.
  *
  * `rule` is a STABLE TOKEN — group, filter or link on it. `issue` and `action` are for humans and
@@ -2488,13 +7836,50 @@ export type BriefMetricsActionPriority = 'HIGH' | 'MED';
  * impression floors and how paused campaigns are treated. This is the single-source version.
  */
 export interface BriefMetricsActionItem {
-  rule: 'zero_delivery' | 'underspending' | 'budget_constrained' | 'low_ctr' | 'no_conversions';
+  rule: BriefMetricsActionRule;
   priority: BriefMetricsActionPriority;
   campaign_id: string;
   /** `string` for the same reason as `BriefMetricsRow.platform` — `hubspot` is in scope. */
   platform: string;
   issue: string;
   action: string;
+}
+
+/**
+ * The Optimize tab control that resolves a monitor finding.
+ *
+ * - `budget`: the row's budget editor, opened and focused, never submitted on the operator's behalf.
+ * - `pause_resume`: the row's pause/resume toggle, through the same method and guards as the row.
+ * - `keywords`: the keyword actions (pause/remove per keyword) of the campaign's platform, Google Ads or Microsoft Advertising.
+ * - `none`: nothing in LFX One resolves it; the finding is shown with its advice only.
+ */
+export type CampaignOptimizeLever = 'budget' | 'pause_resume' | 'keywords' | 'none';
+
+/** A lever that maps to an actual control, i.e. every `CampaignOptimizeLever` except `none`. */
+export type CampaignOptimizeControlLever = Exclude<CampaignOptimizeLever, 'none'>;
+
+/**
+ * One monitor finding as the Optimize tab renders it: the rule engine's item joined to the brief
+ * campaign row it is about, with the one lever that resolves it already decided.
+ */
+export interface CampaignOptimizeFinding {
+  /** Unique within a read: a rule fires at most once per campaign. */
+  key: string;
+  item: BriefMetricsActionItem;
+  /** The row the item is about, or `null` when the campaign is not in the loaded list. */
+  row: CampaignRow | null;
+  /** The row's campaign name, or a neutral placeholder when the row is not in the list. */
+  campaignName: string;
+  /** The platform's display label, or the raw token when this UI does not know it. */
+  platformLabel: string;
+  /** `none` whenever the rule has no lever, the platform does not support it, or there is no row. */
+  lever: CampaignOptimizeLever;
+  /** Visible text of the lever's button, `''` when `lever` is `none`. */
+  leverLabel: string;
+  /** Accessible name of the lever's button: the visible text plus the campaign it acts on. */
+  leverAriaLabel: string;
+  /** Why the lever cannot be used right now (the row control's own reason), or `''`. */
+  leverBlockedReason: string;
 }
 
 /**
@@ -2547,6 +7932,20 @@ export interface BriefMetrics {
 export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
 
 /**
+ * A stage on the SURVEY surface. Derived from `CAMPAIGN_SURVEY_STAGES` for the same reason
+ * `CampaignEmailStage` is derived from its list: the runtime value that goes on the wire and the
+ * type that describes it cannot then drift apart.
+ */
+export type CampaignSurveyStage = (typeof CAMPAIGN_SURVEY_STAGES)[number];
+
+/**
+ * A stage on any send surface. The wire field is one column upstream, so the places that merely
+ * carry a stage — the brief payload, the copy request — take this union, while the places that
+ * OFFER a choice take the surface's own list.
+ */
+export type CampaignSendStage = CampaignEmailStage | CampaignSurveyStage;
+
+/**
  * Requests a differently-styled draft of the same stage's copy from `generate-email-copy` --
  * currently just `'urgency-fomo'`, an urgency/FOMO-forward structure instead of the stage's normal
  * copy. Free text upstream, same lenient-fallback shape as `CampaignEmailStage`: an unrecognised
@@ -2556,6 +7955,21 @@ export type CampaignEmailStage = (typeof CAMPAIGN_EMAIL_STAGES)[number];
  * cannot drift apart.
  */
 export type CampaignEmailVariant = (typeof CAMPAIGN_EMAIL_VARIANTS)[number];
+
+/**
+ * Narrows which of a `generate-email-copy` draft's content blocks are relevant to a named
+ * audience -- `'developer'`, `'business-decision-maker'`, `'alumni'` or `'prospect'`.
+ *
+ * Orthogonal to `CampaignEmailVariant`: variant restyles the whole draft's framing, segment
+ * narrows which blocks within that draft matter to this audience. Both may be set together,
+ * either alone, or neither. Same free-text, lenient-fallback shape as `CampaignEmailStage` and
+ * `CampaignEmailVariant`: an unrecognised or absent value produces the normal stage-based copy
+ * under a 200 rather than an error.
+ *
+ * Derived from `CAMPAIGN_EMAIL_SEGMENTS` rather than restated, so the UI's selector and this type
+ * cannot drift apart.
+ */
+export type CampaignEmailSegment = (typeof CAMPAIGN_EMAIL_SEGMENTS)[number];
 
 /**
  * One selectable email type.
@@ -2569,6 +7983,18 @@ export interface CampaignEmailTypeOption {
   id: string;
   label: string;
   stage: CampaignEmailStage;
+  keywords: readonly string[];
+}
+
+/**
+ * What the operator picks on the survey surface. Structurally the same as
+ * `CampaignEmailTypeOption` but carrying a survey stage, so the two cannot be assigned to each
+ * other by accident -- the stage is what upstream keys the brief on.
+ */
+export interface CampaignSurveyTypeOption {
+  id: string;
+  label: string;
+  stage: CampaignSurveyStage;
   keywords: readonly string[];
 }
 
@@ -2652,14 +8078,14 @@ export interface AudienceCardBucket {
 }
 
 /**
- * How a suppression list was found, which is also its priority order in the UI.
+ * How a suppression list was found, which is also its order in the UI.
  *
- * `event_specific` outranks `brand` outranks `standard`: a per-event suppression list carried
- * over from a prior edition already bundles that event's current-registrant and unsubscribe
- * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
- * never assumed.
+ * `current_registrants` comes first (the edition's own registrants are the exclusion a
+ * registration push most needs), then `event_specific` (carried over from a prior edition),
+ * `brand`, and `standard`: the portfolio-wide hygiene lists, shown as one entry because they are
+ * applied through the project's one shared standard suppression list.
  */
-export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific';
+export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific' | 'current_registrants';
 
 export interface AudienceSuppressionList {
   /** Stable key for the category that resolved this list (e.g. `lf_events_gdpr`). */
@@ -2670,6 +8096,21 @@ export interface AudienceSuppressionList {
   size?: number;
   category: AudienceSuppressionCategory;
   hubspotUrl: string;
+  /**
+   * The list does not exist yet: attach or compose creates it by name when the row is applied.
+   * Only the `current_registrants` row sets it, and such a row has an empty `listId`.
+   */
+  willCreate?: boolean;
+}
+
+/**
+ * The suppression rows for a scope, and the project's standing standard suppression list when it
+ * already exists. `standardList` is absent until the first attach or compose that applies every
+ * resolved standard row creates it, so its absence is how the tab knows that write will CREATE it.
+ */
+export interface AudienceSuppressionListsResult {
+  lists: AudienceSuppressionList[];
+  standardList?: AudienceComposedList;
 }
 
 /**
@@ -2687,6 +8128,8 @@ export interface AudienceListBrief {
   size?: number;
   missing: boolean;
   resolvedFromLegacyId?: string;
+  /** Deep link to the list in HubSpot; absent when the list no longer resolves. */
+  hubspotUrl?: string;
 }
 
 /**
@@ -2718,7 +8161,12 @@ export interface AudienceLastSentEmail {
    * identical shape, and an outage reads as verified precedent for the operator's own selection.
    */
   listsUnavailable?: boolean;
+  subject?: string;
+  /** Why this send is listed — a brand-only row is weaker precedent than one named for the event. */
+  matchReason?: AudienceLastSentMatchReason;
 }
+
+export type AudienceLastSentMatchReason = 'event_name' | 'subject' | 'related_words' | 'brand_only';
 
 /** A master list already built for this event, offered for reuse instead of a rebuild. */
 export interface AudienceMasterListBrief {
@@ -2761,6 +8209,18 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /** Edition (event name with year) whose current registrants the master also excludes. */
+  currentRegistrantsEvent?: string;
+  /**
+   * Attach the composed master to this brief, as its built send audience.
+   *
+   * Optional because the builder is deliberately usable with no campaign to attach to — the
+   * routes are project-scoped for exactly that reason. When it is set, campaign-service records
+   * the audience row itself INSIDE the compose: that is the only point at which the HubSpot
+   * portal the lists were created in is provably known, and an audience with no recorded portal
+   * is refused at dispatch and cannot be repaired by a later PATCH.
+   */
+  briefId?: string;
 }
 
 /** A list this request created in HubSpot. */
@@ -2777,27 +8237,67 @@ export interface AudienceComposedList {
 }
 
 /**
+ * A confirmed master list that a compose created but did not record as the brief's send audience.
+ *
+ * Carries the brief and project the compose was DISPATCHED with. The list alone could not be scoped:
+ * a reply landing after the operator switched briefs was filed under the brief they had moved to,
+ * telling them to use the previous brief's list for the current email.
+ */
+export interface AudienceComposeUnattachedEvent {
+  master: AudienceComposedList;
+  /** The brief the compose was sent for; empty for an exploratory compose with no saved plan. */
+  briefId: string;
+  projectSlug: string;
+  /** The parent's brief-state generation at dispatch; scopes a brief-less event. */
+  scope: number;
+}
+
+/**
  * Result of composing a master list.
  *
- * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one
- * shared NOT_IN_LIST exclusion inside every inclusion branch — never the individual
- * GDPR/opt-out lists repeated per branch. It is absent when no exclusions were selected.
+ * `suppression` is the project's standing standard suppression list, which the master excludes
+ * directly beside every other selected suppression. It is reused across composes, never created
+ * per compose, and absent unless every resolved standard list was selected.
  *
- * This operation is NOT idempotent: it performs up to two real HubSpot creates. A partial
- * failure (suppression created, master failed) is reported as an error that still carries
- * `suppression`, so an operator can be linked to the orphan rather than left to find it. Do not
- * offer a bare retry on failure.
+ * This operation is NOT idempotent: the master is a real HubSpot create. An unconfirmed master
+ * create is reported as a partial error carrying the master's name. (Older deployments could
+ * also report a combined suppression list created before a failed master.) Do not offer a bare
+ * retry on failure.
  */
 export interface AudienceComposeMasterResult {
   master: AudienceComposedList;
   suppression?: AudienceComposedList;
   /** The inclusion list ids the master was built from, in the order applied. */
   sourceListIds: string[];
+  /**
+   * The suppression list ids the master actually excludes: the standing list first (in place of
+   * the standard rows), then the other exclusions, then the edition's current-registrants list.
+   * Not the ids sent. Absent from an upstream that predates it, so every reader needs a fallback.
+   */
+  suppressionListIds?: string[];
+  /**
+   * Whether the master was recorded as the brief's built send audience.
+   *
+   * Explicit rather than inferred from `audience` being present, and it is not the same question
+   * as "was a `briefId` sent": an upstream that predates this field composes normally and returns
+   * nothing, which the proxy reads as `false`. A caller that inferred "attached" from an absent
+   * object would tell the operator their send is wired up against a deployment that never wired
+   * anything.
+   */
+  recorded: boolean;
+  /**
+   * The recorded audience row, present exactly when `recorded` is true.
+   *
+   * The same `CampaignAudience` the build path returns, so the parent can set it on the one signal
+   * that gates staging without an adapter. It carries no `etag` — upstream does not return one on
+   * this response, and a PATCH would have to re-read the single audience first.
+   */
+  audience?: CampaignAudience;
 }
 
 /** A partial `compose-master` failure: what was created before the failure, and why it failed. */
 /**
- * A compose that did not complete. FOUR shapes are reachable and the field that is set tells the
+ * A compose that did not complete. FIVE shapes are reachable and the field that is set tells the
  * caller which (`docs/api-catalog.md` in campaign-service):
  *
  *  - `suppression` alone — the suppression list definitely exists and the master create failed.
@@ -2806,6 +8306,10 @@ export interface AudienceComposeMasterResult {
  *  - `masterName` alone — no exclusions were requested (or the suppression create failed
  *    outright) and the master create is unconfirmed.
  *  - `suppression` + `masterName` — the suppression list exists and the master is unconfirmed.
+ *  - `master` (with `suppression` when one was created) — BOTH lists exist and are confirmed, and
+ *    the attempt to record them as the brief's audience failed. Reachable only on a compose that
+ *    asked to attach. It is a partial rather than a 500 precisely because a 500 invites the retry
+ *    that would mint a second master list for one send.
  *
  * `suppression` and `suppressionName` are never both set: an id is only reported once a create is
  * confirmed, at which point there is no unconfirmed name left to report. None of these is a bare
@@ -2819,12 +8323,96 @@ export interface AudienceComposeMasterPartial {
   suppressionName?: string;
   /** Deterministic name of a master list whose creation could not be confirmed. */
   masterName?: string;
+  /**
+   * The confirmed master list, when the lists exist but attaching them to the brief failed.
+   *
+   * Never set together with `masterName`: one says the master is confirmed, the other says it is
+   * not. This is the one shape whose lists are both real and usable — the operator's route out is
+   * attaching this list by hand, not composing again.
+   */
+  master?: AudienceComposedList;
   error: string;
+}
+
+/**
+ * Record lists that ALREADY exist as a brief's send audience — "send to the same lists as this
+ * earlier email" — without composing a new master list.
+ *
+ * Nothing is created in HubSpot. Upstream reads every id back from the project's portal before
+ * recording it, so a mistyped or foreign id is a 404 rather than a send that fails at dispatch.
+ */
+export type AudienceAttachExistingRequest = AudienceAttachExistingRequestBase &
+  (
+    | {
+        /** A single include list the send goes to. */
+        masterListId: string;
+        includeListIds?: never;
+      }
+    | {
+        /** Several existing include lists the send goes to directly — no master list is composed. */
+        includeListIds: string[];
+        masterListId?: never;
+      }
+  );
+
+/**
+ * The fields every attach carries. The BFF refuses a request with both include forms or neither,
+ * and one with no suppression list, so the type states the same contract: exactly one of
+ * `masterListId` / `includeListIds`, and `suppressionListIds` always present.
+ */
+export interface AudienceAttachExistingRequestBase {
+  briefId: string;
+  /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
+  suppressionListIds: string[];
+  /**
+   * Edition (event name with year) whose current registrants the send also suppresses, through a
+   * `<edition> - Current Registrants` list campaign-service finds or creates by name.
+   */
+  currentRegistrantsEvent?: string;
+  /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
+  inclusionSummary?: string;
+}
+
+/** The result of attaching existing lists: the verified include list and the recorded audience. */
+export interface AudienceAttachExistingResult {
+  master: AudienceComposedList;
+  suppressionListIds: string[];
+  /**
+   * The project's standing standard suppression list, reused across audiences and recorded in
+   * place of the standard lists. Absent unless every resolved standard list was sent.
+   */
+  standardSuppression?: AudienceComposedList;
+  audience: CampaignAudience;
+}
+
+/**
+ * Where the email's saved plan (brief) stands, as far as attaching lists to it is concerned.
+ *
+ * The brief is saved automatically when the Audience tab opens, so an empty brief id is almost
+ * never "no plan yet": it is a save still running, a save that failed, or a plan that is saved but
+ * not approved. Each needs different copy, and only `failed` can be retried from the Audience tab.
+ * `unopened` is a save refused because this send already has a saved brief the page never loaded;
+ * retrying cannot help, only restoring that brief can. `none` is the exploratory path -- no email
+ * plan to attach to at all.
+ */
+export type AudienceBriefState = 'none' | 'resolving' | 'ready' | 'unapproved' | 'unopened' | 'failed';
+
+/** A list identified by id and display name, as the Audience tab's include/exclude actions carry it. */
+export interface AudienceListRef {
+  listId: string;
+  name: string;
 }
 
 // --- Audience QA -----------------------------------------------------------
 
 export type AudienceQaVerdict = 'PASS' | 'NEEDS VERIFY' | 'FAIL';
+
+/**
+ * One check's verdict. `NOT APPLICABLE` is check-level only and only the current-registrants
+ * check returns it -- for a Post-Event send, whose intended audience IS this edition's attendees
+ * (lfx-v2-campaign-service#244). `overall` never takes it.
+ */
+export type AudienceQaCheckVerdict = AudienceQaVerdict | 'NOT APPLICABLE';
 
 export type AudienceQaSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM';
 
@@ -2845,8 +8433,26 @@ export interface AudienceQaChecks {
   signalMapping: AudienceQaCheck;
   /** Are the GDPR / global-opt-out suppressions actually applied as exclusions? */
   suppression: AudienceQaCheck & { applied: { gdpr: boolean; optOut: boolean } };
-  /** Does the list exclude anything at all? */
-  exclusionCompleteness: AudienceQaCheck & { exclusionCount: number };
+  /**
+   * Does the list exclude anything at all?
+   *
+   * `exclusionCount` includes send-time suppressions; `sendTimeCount` is their share, when any were counted.
+   */
+  exclusionCompleteness: AudienceQaCheck & { exclusionCount: number; sendTimeCount?: number };
+  /**
+   * Is this edition's own registration list suppressed rather than included? Absent when the
+   * request named no event or the event name could not decide it — absent is "not checked",
+   * never a pass. `NOT APPLICABLE` (with `note`) when the request's stage was Post-Event.
+   */
+  currentRegistrants?: AudienceQaStageScopedCheck;
+}
+
+/** A check whose question depends on the send's stage, so it can also be `NOT APPLICABLE`. */
+export interface AudienceQaStageScopedCheck {
+  verdict: AudienceQaCheckVerdict;
+  findings: AudienceQaFinding[];
+  /** Why the check does not apply; set only with `NOT APPLICABLE`. */
+  note?: string;
 }
 
 export interface AudienceQaCandidate {
@@ -2890,7 +8496,7 @@ export type AudienceQaReport = Extract<AudienceQaResult, { needsDisambiguation: 
 export interface AudienceQaCheckRow {
   key: keyof AudienceQaChecks;
   name: string;
-  verdict: AudienceQaVerdict;
+  verdict: AudienceQaCheckVerdict;
   findings: readonly AudienceQaFinding[];
   note: string | null;
 }
@@ -2900,6 +8506,258 @@ export interface AudienceQaRunRequest {
   listRef: string;
   targetsEu?: boolean;
   targetsCa?: boolean;
+  /** This edition's event name; enables the current-registrants check. */
+  eventName?: string;
+  /**
+   * The send's email stage. `Post-Event` marks the current-registrants check NOT APPLICABLE --
+   * that send is FOR this edition's attendees. Absent or any other stage runs it as before.
+   */
+  stage?: CampaignEmailStage;
+  /**
+   * Suppression lists the send applies on top of the list. Custom lists and directly attached
+   * lists carry none of their own, so without these QA judges them on their filters alone.
+   */
+  sendSuppressionListIds?: string[];
+}
+
+// --- Custom audiences --------------------------------------------------------
+
+/** Operators an extra property filter can use. */
+export type AudienceCustomOperator = 'is_equal_to' | 'contains' | 'is_any_of' | 'is_not_any_of' | 'is_known' | 'is_unknown';
+
+/** One extra condition ANDed into every branch of a custom list. */
+export interface AudienceCustomPropertyFilter {
+  /** HubSpot internal contact property name; the service verifies it exists. */
+  property: string;
+  operator: AudienceCustomOperator;
+  /** Ignored for `is_known` / `is_unknown`. */
+  values: string[];
+}
+
+/** Restricts a custom audience to event speakers. */
+export interface AudienceCustomSpeakers {
+  scope: AudienceSpeakerScope;
+  /** An existing speakers list; preferred over `eventNames` when set. */
+  listId?: string;
+  /** Exact event names, including co-located tracks. */
+  eventNames: string[];
+}
+
+/**
+ * The reviewed definition of a custom audience. The service builds the HubSpot filter from this
+ * — no endpoint accepts filter JSON.
+ */
+export interface AudienceCustomCriteria {
+  cities: string[];
+  countries: string[];
+  /** City/country contact branches; always gated by `gateListId`. */
+  contactLocation: boolean;
+  /** Registered for an event held in the location. */
+  eventRegistered: boolean;
+  /** Enrolled in education from the location. */
+  educationEnrolled: boolean;
+  /** Exact event names: contacts registered for any of them. */
+  registeredFor: string[];
+  /** Also gate the event-history branches by the brand master list. */
+  gateEventHistory: boolean;
+  /** The brand master list gated branches must be in. */
+  gateListId?: string;
+  propertyFilters: AudienceCustomPropertyFilter[];
+  speakers?: AudienceCustomSpeakers;
+  ambassadors: boolean;
+  /** Course/topic keywords narrowing education enrolment to the brand's own courses. */
+  educationTopics: string[];
+  /**
+   * The education event's course/topic property. The service resolves it; a value sent back is
+   * honoured only when it is one of the portal's own candidates.
+   */
+  educationTopicProperty?: string;
+  /** Contacts who viewed a page whose URL contains any of these. */
+  pageViewUrls: string[];
+  /** The event(s) the audience is for; feeds the list name. */
+  label?: string;
+}
+
+/** What the model suggests doing with an existing list that resembles the request. */
+export type AudienceCustomReuseRecommendation = 'reuse' | 'update' | 'unrelated';
+
+/** An existing list that may already be the requested audience. */
+export interface AudienceCustomSimilarList {
+  list: AudienceListSearchResult;
+  /** Absent when the model could not assess it. */
+  recommendation?: AudienceCustomReuseRecommendation;
+  reason?: string;
+}
+
+export interface AudienceCustomAnswer {
+  questionId?: string;
+  question?: string;
+  answer: string;
+}
+
+export interface AudienceCustomQuestion {
+  id: string;
+  question: string;
+  why?: string;
+  options: string[];
+}
+
+export interface AudienceCustomInterpretRequest {
+  request: string;
+  answers?: AudienceCustomAnswer[];
+  /** An event page: makes this an event audience planned from the page itself. */
+  eventUrl?: string;
+}
+
+export interface AudienceCustomInterpretResult {
+  criteria: AudienceCustomCriteria;
+  brandShort?: string;
+  /** The brand master list found for the gate; already filled into `criteria.gateListId`. */
+  gate?: AudienceListSearchResult;
+  /** An existing speakers list; already filled into `criteria.speakers.listId`. */
+  speakersList?: AudienceListSearchResult;
+  questions: AudienceCustomQuestion[];
+  notes: string[];
+  /** Existing lists found by name search and ranked by the model; it never adds one. */
+  similar: AudienceCustomSimilarList[];
+  /** The event an event audience was planned from; absent for a plain custom request. */
+  event?: AudienceDiscoveredEvent;
+}
+
+export interface AudienceCustomRequest {
+  criteria: AudienceCustomCriteria;
+  /** Explicit list name; derived when omitted. A taken name is versioned, never reused. */
+  name?: string;
+}
+
+/**
+ * What an attach or compose expected to create, captured at dispatch so its result can say what
+ * actually happened: whether the standing standard list existed, and the name of the
+ * current-registrants list it was asked to create ('' when none).
+ */
+export interface AudienceWriteDispatchContext {
+  standingExisted: boolean;
+  registrantsName: string;
+}
+
+/**
+ * A 409 from compose or attach: a HubSpot list already holds the name of the standing standard
+ * suppression list or of the edition's current-registrants list. `message` is upstream's, naming
+ * the list and its id; `fromCompose` says whether the compose latch waits on the operator's fix.
+ */
+export interface AudienceListNameConflict {
+  message: string;
+  fromCompose: boolean;
+}
+
+/**
+ * A step-4 reuse attach (an existing master list, or a past send's lists) waiting for the operator
+ * to confirm the lists it would create in HubSpot.
+ */
+export interface AudiencePendingReuseAttach {
+  kind: 'master' | 'send';
+  /** The master list id, or the past send's email id. */
+  id: string;
+  /** What the operator is attaching, for the confirmation. */
+  label: string;
+  /** The lists this attach would create, as one phrase: it can differ from the step-6 attach's. */
+  creates: string;
+}
+
+/**
+ * The project's standing standard list and the standard rows it stands for, so a past send that
+ * excluded the standing list is compared with a recorded audience in the same terms.
+ */
+export interface AudienceStandingExpansion {
+  listId: string;
+  rowIds: readonly string[];
+}
+
+/** An action that starts the Audience tab over and so waits for the operator to confirm it. */
+export type AudienceStartOverAction = 'discover' | 'draft';
+
+/** The suppression grid's standard-entry toggle: tick or untick these standard row keys together. */
+export interface AudienceStandardSuppressionToggle {
+  keys: readonly string[];
+  selected: boolean;
+}
+
+/** How the Audience tab sets the send audience: build a new list, or use existing lists. */
+export type AudienceBuildMode = 'build' | 'reuse';
+
+/** The Audience tab's numbered steps, in page order. Numbers are assigned to the visible ones only. */
+export type AudienceStepKey = 'discover' | 'include' | 'exclude' | 'reuse' | 'gaps' | 'compose' | 'qa';
+
+/** The two opt-in signals an event draft adds as existing lists rather than as new filters. */
+export type AudienceOptInSignal = 'project_opt_in' | 'lf_newsletter_opt_in';
+
+/**
+ * The existing opt-in lists looked up for an event draft. Opt-ins are HubSpot subscription types
+ * spread over many portal-specific properties, so they are never built as filters: the lists the
+ * portal already keeps for them are found by discovery and joined to Include instead.
+ */
+export interface AudienceOptInLookup {
+  status: 'idle' | 'loading' | 'done' | 'failed';
+  /**
+   * Lists this lookup actually inserted into Include: one per signal, the largest found. A list
+   * the operator had already included, or had marked Exclude, is never counted here, so a later
+   * draft's clean-up cannot take out a list the operator chose.
+   */
+  added: AudienceDiscoveredList[];
+  /**
+   * Picked lists waiting for the drafted list to be created. Added before it, they enabled the main
+   * attach with only the portfolio-wide newsletter list in the send.
+   */
+  pending: AudienceDiscoveredList[];
+  /** Further opt-in lists found, offered but not added. */
+  others: AudienceDiscoveredList[];
+  /** Opt-in signals discovery found no list for. */
+  missing: AudienceOptInSignal[];
+}
+
+/** The follow-up a readiness notice offers, emitted back to the tab that raised it. */
+export type AudienceReadinessAction = 'retry-audience-read' | 'retry-brief';
+
+/**
+ * One reason the Audience tab is paused or limited. The tab raises several at once (a staging
+ * pause, an unread audience, an unsaved plan, a degraded connection); the banner shows the most
+ * urgent first and folds the rest behind a toggle.
+ */
+export interface AudienceReadinessNotice {
+  /** The notice's `data-testid`, unchanged from when each was its own banner. */
+  testId: string;
+  /** `busy` shows a spinner; `warn` is amber and announced as an alert. */
+  tone: 'busy' | 'info' | 'warn';
+  title?: string;
+  message: string;
+  /** A `data-testid` for the message itself, when the copy variant matters to a test. */
+  messageTestId?: string;
+  action?: { kind: AudienceReadinessAction; label: string; testId: string };
+}
+
+/** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
+export interface AudienceCustomPreset {
+  /** Free text to interpret, when the preset needs the model (e.g. an opt-in signal). */
+  request?: string;
+  /** Criteria to start from directly, when the preset is fully deterministic. */
+  criteria?: Partial<AudienceCustomCriteria>;
+  /** An event page: the request is planned as an event audience from this page. */
+  eventUrl?: string;
+  /** Bumped by the container so the same preset can be applied twice. */
+  version: number;
+}
+
+export interface AudienceCustomPreview {
+  /** The name the list would be created under. */
+  name: string;
+  criteria: AudienceCustomCriteria;
+  branchCount: number;
+  /** Education event properties that could hold a course topic, best first. */
+  educationTopicCandidates: string[];
+  gate?: AudienceListSearchResult;
+  /** The gate list's size when every branch is gated, so the list can only be smaller. */
+  upperBound?: number;
+  warnings: string[];
 }
 
 // --- Discovery stream ------------------------------------------------------
@@ -2937,6 +8795,8 @@ export interface AudienceDiscoveryResult {
   lists: AudienceDiscoveredList[];
   /** Signals for which nothing qualified — drives the "not found" section. */
   missingSignals: AudienceSignal[];
+  /** Lists found but never offered for inclusion: suppressions, masters, test and staff lists. */
+  hidden?: number;
 }
 
 export interface AudienceDiscoverRequest {
@@ -2961,3 +8821,10 @@ export interface AudienceBuilderCapabilities {
    */
   detail?: string;
 }
+
+/**
+ * How a custom-audience create settled, kept per project by the client service so a builder
+ * remounted after navigation still knows: `created` (the list exists but was never added to step 2)
+ * or `unconfirmed` (it may exist; search before creating again).
+ */
+export type AudienceCustomCreateOutcome = { kind: 'created'; list: AudienceComposedList } | { kind: 'unconfirmed'; name: string };

@@ -47,6 +47,7 @@ import {
   collectClaEmails,
   githubIdWasSkipped,
   normalizeGithubId,
+  normalizeGitlabId,
   producerMessageFrom,
   recordedGithubIdentity,
   toClaGroupSearchResponse,
@@ -224,6 +225,37 @@ describe('normalizeGithubId', () => {
   });
 });
 
+describe('normalizeGitlabId', () => {
+  it('accepts a bare numeric id', () => {
+    expect(normalizeGitlabId('4815162')).toBe('4815162');
+  });
+
+  it('strips a single gitlab| prefix, compared case-insensitively', () => {
+    expect(normalizeGitlabId('gitlab|4815162')).toBe('4815162');
+    expect(normalizeGitlabId('GitLab|4815162')).toBe('4815162');
+  });
+
+  it('keeps an id beyond the safe-integer range exact', () => {
+    expect(normalizeGitlabId('gitlab|90071992547409930')).toBe('90071992547409930');
+  });
+
+  it('rejects foreign and nested prefixes', () => {
+    expect(normalizeGitlabId('github|4815162')).toBeNull();
+    expect(normalizeGitlabId('oauth2|4815162')).toBeNull();
+    expect(normalizeGitlabId('oauth2|gitlab|4815162')).toBeNull();
+    expect(normalizeGitlabId('gitlab|gitlab|4815162')).toBeNull();
+  });
+
+  it('rejects non-decimal and empty values', () => {
+    expect(normalizeGitlabId('gitlab|tanuki-dev')).toBeNull();
+    expect(normalizeGitlabId('gitlab|-42')).toBeNull();
+    expect(normalizeGitlabId('gitlab|1e3')).toBeNull();
+    expect(normalizeGitlabId('gitlab| 4815162')).toBeNull();
+    expect(normalizeGitlabId('gitlab|')).toBeNull();
+    expect(normalizeGitlabId('')).toBeNull();
+  });
+});
+
 describe('collectClaEmails', () => {
   it('returns just the session primary when no other source is available', () => {
     expect(collectClaEmails('alice@x.org', null, [])).toEqual(['alice@x.org']);
@@ -263,6 +295,15 @@ describe('collectClaEmails', () => {
     };
 
     expect(collectClaEmails('alice@x.org', emailData as never, [])).toEqual(['alice@x.org', 'verified@x.org']);
+  });
+
+  it('omits the auth-service primary when the session email is unverified (primaryEmail null)', () => {
+    const emailData = {
+      primary_email: 'unverified-primary@example.com',
+      alternate_emails: [{ email: 'verified-alt@example.com', verified: true }],
+    };
+
+    expect(collectClaEmails(null, emailData as never, [])).toEqual(['verified-alt@example.com']);
   });
 
   it('caps the set at the upstream 100-email limit, keeping the session primary first', () => {
@@ -654,13 +695,132 @@ describe('ClaService.resolveIdentity', () => {
 
   it('degrades to username+email when the linked-identity lookup fails (e.g. NATS down)', async () => {
     getEffectiveUsername.mockReturnValue('alice');
-    getEffectiveEmail.mockReturnValue('alice@x.org');
+    getEffectiveEmail.mockReturnValue('alice@example.org');
     getEffectiveSub.mockReturnValue('auth0|abc');
     getUserIdentities.mockRejectedValueOnce(new Error('NATS TIMEOUT'));
 
     const identity = await new ClaService().resolveIdentity(req);
 
-    expect(identity).toMatchObject({ lfUsername: 'alice', emails: ['alice@x.org'], githubIds: [], githubUsernames: [], githubLinked: false });
+    expect(identity).toMatchObject({
+      lfUsername: 'alice',
+      emails: ['alice@example.org'],
+      githubIds: [],
+      githubUsernames: [],
+      githubLinked: false,
+      gitlabIds: [],
+      gitlabUsernames: [],
+    });
+    expect(logger.warning).toHaveBeenCalledWith(req, 'cla_resolve_identity', 'linked-identity lookup failed; continuing without GitHub or GitLab keys', {
+      err: 'NATS TIMEOUT',
+    });
+  });
+
+  it('collects the GitLab id and username from an identity linked through the GitLab connection (#4191)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'oauth2', user_id: 'gitlab|4815162', connection: 'gitlab', profileData: { nickname: ' tanuki-dev ' } },
+    ]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity).toMatchObject({ gitlabIds: ['4815162'], gitlabUsernames: ['tanuki-dev'], githubIds: [], githubUsernames: [], githubLinked: false });
+  });
+
+  it('keeps GitHub and GitLab keys apart when both accounts are linked', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } },
+      { provider: 'oauth2', user_id: 'gitlab|4815162', connection: 'gitlab', profileData: { nickname: 'tanuki-dev' } },
+    ]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity).toMatchObject({
+      githubIds: ['13434323'],
+      githubUsernames: ['octocat'],
+      githubLinked: true,
+      gitlabIds: ['4815162'],
+      gitlabUsernames: ['tanuki-dev'],
+    });
+  });
+
+  it('ignores identities that do not match both the GitLab provider and connection', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'oauth2', user_id: 'other|111', connection: 'other-oauth', profileData: { nickname: 'not-gitlab' } },
+      { provider: 'oauth2', user_id: 'gitlab|222', connection: 'GitLab', profileData: { nickname: 'case-mismatch' } },
+      { provider: 'oauth2', user_id: 'gitlab|333', profileData: { nickname: 'no-connection' } },
+      { provider: 'oidc', user_id: 'gitlab|444', connection: 'gitlab', profileData: { nickname: 'wrong-provider' } },
+      { provider: 'gitlab', user_id: 'gitlab|555', connection: 'gitlab', profileData: { nickname: 'legacy-provider' } },
+    ]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.gitlabIds).toEqual([]);
+    expect(identity.gitlabUsernames).toEqual([]);
+  });
+
+  it('keeps a numeric GitLab id without a nickname, and a nickname without a usable id', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'oauth2', user_id: 'gitlab|4815162', connection: 'gitlab', profileData: { name: 'Tanuki Dev', email: 'tanuki@example.org' } },
+      { provider: 'oauth2', user_id: 'github|999', connection: 'gitlab', profileData: { nickname: 'tanuki-alt' } },
+      { provider: 'oauth2', user_id: 'gitlab|2342', connection: 'gitlab', profileData: { nickname: '   ' } },
+    ]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    // Display name and email never stand in for a username; the foreign-prefixed id is dropped.
+    expect(identity.gitlabIds).toEqual(['4815162', '2342']);
+    expect(identity.gitlabUsernames).toEqual(['tanuki-alt']);
+  });
+
+  it('deduplicates GitLab keys in first-seen order and caps each list at 100', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    const linked = Array.from({ length: 105 }, (_, i) => ({
+      provider: 'oauth2',
+      user_id: `gitlab|${1000 + i}`,
+      connection: 'gitlab',
+      profileData: { nickname: `tanuki-${i}` },
+    }));
+    getUserIdentities.mockResolvedValueOnce([linked[1], linked[0], { ...linked[1], user_id: '1001' }, ...linked]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.gitlabIds).toHaveLength(100);
+    expect(identity.gitlabIds.slice(0, 3)).toEqual(['1001', '1000', '1002']);
+    expect(new Set(identity.gitlabIds).size).toBe(100);
+    expect(identity.gitlabUsernames).toHaveLength(100);
+    expect(identity.gitlabUsernames.slice(0, 3)).toEqual(['tanuki-1', 'tanuki-0', 'tanuki-2']);
+  });
+
+  it('logs GitLab key counts, never the raw GitLab identities', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'oauth2', user_id: 'gitlab|4815162', connection: 'gitlab', profileData: { nickname: 'tanuki-dev' } }]);
+
+    await new ClaService().resolveIdentity(req);
+
+    expect(logger.success).toHaveBeenCalledWith(req, 'cla_resolve_identity', 0, expect.objectContaining({ gitlab_id_count: 1, gitlab_username_count: 1 }));
+    const logged = JSON.stringify(vi.mocked(logger.success).mock.calls);
+    expect(logged).not.toContain('4815162');
+    expect(logged).not.toContain('tanuki-dev');
+  });
+
+  it('reports empty GitLab keys when no GitLab identity is linked (no-regression)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
+
+    const identity = await new ClaService().resolveIdentity(req);
+
+    expect(identity.gitlabIds).toEqual([]);
+    expect(identity.gitlabUsernames).toEqual([]);
   });
 
   it('sends all verified emails: session primary + verified alternates + linked-identity emails, deduped (#1227)', async () => {
@@ -717,6 +877,62 @@ describe('ClaService.getMyClas', () => {
     expect(calledUrl).toContain('email=alice%40x.org');
     expect(calledUrl).toContain('githubId=13434323');
     expect(calledUrl).toContain('githubUsername=octocat');
+  });
+
+  it('sends linked GitLab ids and usernames as repeatable params alongside the other keys (#4191)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@example.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([
+      { provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } },
+      { provider: 'oauth2', user_id: 'gitlab|4815162', connection: 'gitlab', profileData: { nickname: 'tanuki-dev' } },
+      { provider: 'oauth2', user_id: '2342', connection: 'gitlab', profileData: { nickname: 'tanuki.alt' } },
+    ]);
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [icla({ signedVia: 'gitlab', signedAs: 'tanuki-dev' })] });
+
+    const response = await new ClaService().getMyClas(req);
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.get('lfUsername')).toBe('alice');
+    expect(params.getAll('email')).toEqual(['alice@example.org']);
+    expect(params.getAll('githubId')).toEqual(['13434323']);
+    expect(params.getAll('githubUsername')).toEqual(['octocat']);
+    expect(params.getAll('gitlabId')).toEqual(['4815162', '2342']);
+    expect(params.getAll('gitlabUsername')).toEqual(['tanuki-dev', 'tanuki.alt']);
+    expect(response.agreements).toHaveLength(1);
+    expect(response.agreements[0]).toMatchObject({ signedVia: 'gitlab', signedAs: 'tanuki-dev' });
+  });
+
+  it('sends no GitLab params for a caller without a linked GitLab account (no-regression)', async () => {
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveEmail.mockReturnValue('alice@example.org');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'github', user_id: 'github|13434323', connection: 'github', profileData: { nickname: 'octocat' } }]);
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(req);
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect([...params.keys()].sort()).toEqual(['email', 'githubId', 'githubUsername', 'lfUsername']);
+  });
+
+  it('under impersonation, forwards the TARGET user GitLab keys with the target token', async () => {
+    isImpersonating.mockReturnValue(true);
+    getEffectiveUsername.mockReturnValue('alice');
+    getEffectiveSub.mockReturnValue('auth0|abc');
+    getUserIdentities.mockResolvedValueOnce([{ provider: 'oauth2', user_id: 'gitlab|4815162', connection: 'gitlab', profileData: { nickname: 'tanuki-dev' } }]);
+    const imperReq = { bearerToken: 'target-token' } as unknown as Request;
+    gatewayFetch.mockResolvedValueOnce({ userIds: ['u-1'], clas: [] });
+
+    await new ClaService().getMyClas(imperReq);
+
+    const [, calledUrl, opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.getAll('gitlabId')).toEqual(['4815162']);
+    expect(params.getAll('gitlabUsername')).toEqual(['tanuki-dev']);
+    expect(opts.bearerToken).toBe('target-token');
   });
 
   it('FR-011 guard: a multi-email caller reaches the gateway with its GitHub keys present', async () => {
@@ -912,7 +1128,15 @@ describe('ClaService.searchClaGroups', () => {
 // ---------------------------------------------------------------------------
 
 describe('ClaService.getPdfUrl', () => {
-  const identity: ResolvedClaIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
+  const identity: ResolvedClaIdentity = {
+    lfUsername: 'alice',
+    emails: [],
+    githubIds: [],
+    githubUsernames: [],
+    githubLinked: false,
+    gitlabIds: [],
+    gitlabUsernames: [],
+  };
 
   it('returns the presigned url and TTL from upstream', async () => {
     gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
@@ -923,6 +1147,17 @@ describe('ClaService.getPdfUrl', () => {
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     expect(calledUrl).toContain('/v4/my-clas/sig-1/pdf?');
     expect(calledUrl).toContain('lfUsername=alice');
+  });
+
+  it('forwards linked GitLab keys so a GitLab-signed ICLA passes the ownership check (#4191)', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: 'sig-1', url: 'https://s3/signed.pdf', expiresInSeconds: 900 });
+
+    await new ClaService().getPdfUrl(req, 'sig-1', { ...identity, gitlabIds: ['4815162'], gitlabUsernames: ['tanuki-dev'] });
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.getAll('gitlabId')).toEqual(['4815162']);
+    expect(params.getAll('gitlabUsername')).toEqual(['tanuki-dev']);
   });
 
   it('returns null on a 404 (unknown, not-owned or ECLA signature id)', async () => {
@@ -1229,6 +1464,34 @@ describe('ClaService.prepareSign', () => {
     }
   );
 
+  it.each([[['https://easycla.example.org/sign']], [{ href: 'https://easycla.example.org/sign' }], [0]])(
+    'treats a non-string signing address of %p as missing',
+    async (signUrl) => {
+      gatewayFetch.mockResolvedValueOnce(prepared({ signUrl }));
+
+      await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502, code: 'CLA_BINDING_INCOMPLETE' });
+    }
+  );
+
+  it.each([['javascript:alert(1)'], [' javascript:alert(1)'], ['JaVaScRiPt:alert(1)'], ['data:text/html,<p>x</p>'], ['http://evil.example'], ['/cla/sign']])(
+    'refuses a signing address of %p with a 502',
+    async (signUrl) => {
+      gatewayFetch.mockResolvedValueOnce(prepared({ signUrl }));
+
+      await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toMatchObject({ statusCode: 502, code: 'CLA_SIGN_URL_INVALID' });
+    }
+  );
+
+  it('keeps a refused signing address out of the logs, recording only its scheme', async () => {
+    gatewayFetch.mockResolvedValueOnce(prepared({ signUrl: 'javascript:alert(document.cookie)' }));
+
+    await expect(new ClaService().prepareSign(prepareReq, '12345', CLA_GROUP_ID)).rejects.toThrow();
+
+    const logged = JSON.stringify(vi.mocked(logger.warning).mock.calls);
+    expect(logged).not.toContain('alert(document.cookie)');
+    expect(logged).toContain('"sign_url_scheme":"javascript"');
+  });
+
   it('refuses a success that skipped the chosen account', async () => {
     gatewayFetch.mockResolvedValueOnce(prepared({ identity: ['github-id:67890'], skippedIdentities: ['github-id:12345'] }));
 
@@ -1361,7 +1624,15 @@ describe('ClaService.prepareSign', () => {
 const MANAGER_SIG = '3fee6d72-0c80-4145-99c2-fb382b3a93fb';
 
 describe('ClaService.getClaManagers', () => {
-  const identity: ResolvedClaIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
+  const identity: ResolvedClaIdentity = {
+    lfUsername: 'alice',
+    emails: [],
+    githubIds: [],
+    githubUsernames: [],
+    githubLinked: false,
+    gitlabIds: [],
+    gitlabUsernames: [],
+  };
 
   it('maps the producer list and forwards the session identity query', async () => {
     gatewayFetch.mockResolvedValueOnce({
@@ -1383,6 +1654,17 @@ describe('ClaService.getClaManagers', () => {
     const calledUrl = gatewayFetch.mock.calls[0][1] as string;
     expect(calledUrl).toContain(`/v4/my-clas/${MANAGER_SIG}/cla-managers?`);
     expect(calledUrl).toContain('lfUsername=alice');
+  });
+
+  it('forwards linked GitLab keys on the manager lookup (#4191)', async () => {
+    gatewayFetch.mockResolvedValueOnce({ signatureID: MANAGER_SIG, managers: [], resultCount: 0 });
+
+    await new ClaService().getClaManagers(req, MANAGER_SIG, { ...identity, gitlabIds: ['4815162'], gitlabUsernames: ['tanuki-dev'] });
+
+    const calledUrl = gatewayFetch.mock.calls[0][1] as string;
+    const params = new URLSearchParams(calledUrl.slice(calledUrl.indexOf('?') + 1));
+    expect(params.getAll('gitlabId')).toEqual(['4815162']);
+    expect(params.getAll('gitlabUsername')).toEqual(['tanuki-dev']);
   });
 
   it('returns null on a 404 rather than an empty manager list', async () => {
@@ -1407,7 +1689,15 @@ describe('ClaService.getClaManagers', () => {
 });
 
 describe('ClaService.createClaManagerRequest', () => {
-  const identity: ResolvedClaIdentity = { lfUsername: 'alice', emails: [], githubIds: [], githubUsernames: [], githubLinked: false };
+  const identity: ResolvedClaIdentity = {
+    lfUsername: 'alice',
+    emails: [],
+    githubIds: [],
+    githubUsernames: [],
+    githubLinked: false,
+    gitlabIds: [],
+    gitlabUsernames: [],
+  };
 
   it('posts approval/removal to the producer with identity query and no impersonation token override', async () => {
     gatewayFetch.mockResolvedValueOnce({
@@ -1437,6 +1727,26 @@ describe('ClaService.createClaManagerRequest', () => {
     expect(opts.method).toBe('POST');
     expect(opts.bearerToken).toBeUndefined();
     expect(opts.body).toEqual({ requestType: 'removal', recipients: ['jdoe'], message: 'please' });
+  });
+
+  it('forwards linked GitLab keys on the manager request, still without a token override (#4191)', async () => {
+    gatewayFetch.mockResolvedValueOnce({ requestID: 'r-1', signatureID: MANAGER_SIG, requestType: 'approval', status: 'sent', recipients: ['jdoe'] });
+
+    await new ClaService().createClaManagerRequest(
+      req,
+      MANAGER_SIG,
+      { ...identity, gitlabIds: ['4815162'], gitlabUsernames: ['tanuki-dev'] },
+      {
+        requestType: 'approval',
+        recipients: ['jdoe'],
+      }
+    );
+
+    const [, url, opts] = gatewayFetch.mock.calls[0] as [unknown, string, { bearerToken?: string }];
+    const params = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+    expect(params.getAll('gitlabId')).toEqual(['4815162']);
+    expect(params.getAll('gitlabUsername')).toEqual(['tanuki-dev']);
+    expect(opts.bearerToken).toBeUndefined();
   });
 
   it('omits a blank message rather than sending an empty string', async () => {

@@ -66,6 +66,71 @@ describe('AudienceQaPanelComponent', () => {
     fixture.detectChanges();
   }
 
+  function listRefValue(): string {
+    return host().querySelector<HTMLInputElement>('[data-testid="audience-qa-panel-list-ref"]')?.value ?? '';
+  }
+
+  it('prefills the list reference with the master list the operator just composed', () => {
+    // QA is the step straight after compose, and it used to open on an empty field: the
+    // operator had to copy the new list's id out of the compose result by hand.
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+
+    expect(listRefValue()).toBe('601');
+  });
+
+  it('never overwrites a list reference the operator typed', () => {
+    const input = host().querySelector<HTMLInputElement>('[data-testid="audience-qa-panel-list-ref"]');
+    if (input === null) {
+      throw new Error('the list-ref input is not rendered');
+    }
+    input.value = '777';
+    input.dispatchEvent(new Event('input'));
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+
+    expect(listRefValue()).toBe('777');
+  });
+
+  it('follows a newer compose when the field still holds the previous suggestion', () => {
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '602');
+    fixture.detectChanges();
+
+    expect(listRefValue()).toBe('602');
+  });
+
+  it('follows a compose after a reset, so QA does not audit the previous master', () => {
+    // A new discovery clears the compose result, so the suggestion goes 601 -> '' -> 602.
+    // Ignoring the empty step left 601 in the field, and 602 was then refused.
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '602');
+    fixture.detectChanges();
+
+    expect(listRefValue(), 'Run QA would audit the previous master').toBe('602');
+  });
+
+  it('keeps a typed reference across a suggestion reset', () => {
+    fixture.componentRef.setInput('suggestedListRef', '601');
+    fixture.detectChanges();
+    const input = host().querySelector<HTMLInputElement>('[data-testid="audience-qa-panel-list-ref"]');
+    if (input === null) {
+      throw new Error('the list-ref input is not rendered');
+    }
+    input.value = '777';
+    input.dispatchEvent(new Event('input'));
+    fixture.componentRef.setInput('suggestedListRef', '');
+    fixture.detectChanges();
+    fixture.componentRef.setInput('suggestedListRef', '602');
+    fixture.detectChanges();
+
+    expect(listRefValue(), 'an operator-entered reference was overwritten').toBe('777');
+  });
+
   it('does not carry a verdict across a project change', () => {
     // The parent stays mounted across foundation changes and this child watched nothing, so a
     // PASS from portal A was rendered under portal B — and picking a candidate then submitted
@@ -78,6 +143,25 @@ describe('AudienceQaPanelComponent', () => {
     fixture.detectChanges();
 
     expect(host().textContent, "portal A's verdict was rendered under portal B").not.toContain('PASS');
+  });
+
+  // The event and send-time suppressions are part of what is audited: a verdict for other inputs is stale.
+  it.each([
+    ['the send-time suppressions', () => fixture.componentRef.setInput('sendSuppressionIds', [])],
+    ['the event', () => fixture.componentRef.setInput('eventName', 'Another Event')],
+    ['the email stage', () => fixture.componentRef.setInput('stage', 'Post-Event')],
+  ])('drops a verdict when %s change', (_label, change) => {
+    fixture.componentRef.setInput('eventName', 'Synthetic Summit');
+    fixture.componentRef.setInput('sendSuppressionIds', ['201']);
+    fixture.detectChanges();
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun();
+    expect(host().textContent, 'precondition: a verdict is shown').toContain('PASS');
+
+    change();
+    fixture.detectChanges();
+
+    expect(host().textContent).not.toContain('PASS');
   });
 
   it("shows the fallback copy rather than Angular's transport string", () => {
@@ -148,6 +232,20 @@ describe('AudienceQaPanelComponent', () => {
     for (const key of ['signalMapping', 'suppression', 'exclusionCompleteness']) {
       expect(host().querySelector(`[data-testid="audience-qa-panel-check-${key}"]`), `${key} was not rendered`).not.toBeNull();
     }
+  });
+
+  it('links the audited list to HubSpot only when the report carries a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    runAudienceQa.mockReturnValue(of(report()));
+    enterRefAndRun();
+    expect(host().querySelector('[data-testid="audience-qa-panel-report-link"]')?.getAttribute('href')).toBe(
+      'https://app.hubspot.com/contacts/1/objectLists/601'
+    );
+
+    runAudienceQa.mockReturnValue(of(report({ hubspotUrl: '' })));
+    enterRefAndRun();
+    expect(host().querySelector('[data-testid="audience-qa-panel-overall"]'), 'fixture precondition: the report must render').not.toBeNull();
+    expect(host().querySelector('[data-testid="audience-qa-panel-report-link"]'), 'a blank URL rendered a link back to this app').toBeNull();
   });
 
   it('shows candidates and no verdict when the name matched several lists', () => {
@@ -223,5 +321,130 @@ describe('AudienceQaPanelComponent', () => {
     fixture.detectChanges();
 
     expect(runAudienceQa).not.toHaveBeenCalled();
+  });
+
+  describe('current registrants', () => {
+    it('sends the event name so upstream can check this edition is suppressed', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', '  Synthetic Summit 2026 ');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', { listRef: '601', targetsEu: false, targetsCa: false, eventName: 'Synthetic Summit 2026' });
+    });
+
+    it('sends no event name when there is none, and shows no fourth row', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', { listRef: '601', targetsEu: false, targetsCa: false });
+      expect(host().textContent).not.toContain('Current registrants');
+    });
+
+    // lfx-v2-campaign-service#244: the stage lets upstream set the check aside for a Post-Event send.
+    it('sends the email stage with the run', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.componentRef.setInput('stage', 'Post-Event');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', {
+        listRef: '601',
+        targetsEu: false,
+        targetsCa: false,
+        eventName: 'Synthetic Summit 2026',
+        stage: 'Post-Event',
+      });
+    });
+
+    it('sends no stage when none is known', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).not.toHaveProperty('stage');
+    });
+
+    it('shows a check set aside for the stage as NOT APPLICABLE, with upstream reason', () => {
+      const note = 'Not applicable to a Post-Event send: its audience is this edition attendees.';
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'NOT APPLICABLE', findings: [], note } }) })));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.componentRef.setInput('stage', 'Post-Event');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(host().textContent).toContain('Current registrants');
+      expect(host().textContent).toContain('NOT APPLICABLE');
+      const row = host().querySelector('[data-testid="audience-qa-panel-check-currentRegistrants"]');
+      expect(row?.textContent).toContain(note);
+      expect(row?.textContent, 'a set-aside check must not carry the green pass line').not.toContain('No findings.');
+    });
+
+    it('exports a set-aside check with its reason rather than "No findings"', async () => {
+      const note = 'Not applicable to a Post-Event send: its audience is this edition attendees.';
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'NOT APPLICABLE', findings: [], note } }) })));
+      const blobs: Blob[] = [];
+      // jsdom implements neither, so they are installed for this test and removed after it.
+      const urlApi = URL as unknown as { createObjectURL?: (blob: Blob) => string; revokeObjectURL?: (url: string) => void };
+      const original = { create: urlApi.createObjectURL, revoke: urlApi.revokeObjectURL };
+      urlApi.createObjectURL = (blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:qa';
+      };
+      urlApi.revokeObjectURL = () => undefined;
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      try {
+        enterRefAndRun();
+        host().querySelector<HTMLButtonElement>('[data-testid="audience-qa-panel-download-csv"]')?.click();
+
+        expect(blobs).toHaveLength(1);
+        const row = (await blobs[0].text()).split('\n').find((line) => line.includes('Current registrants'));
+        expect(row).toContain('NOT APPLICABLE');
+        expect(row).toContain(note);
+        expect(row).not.toContain('No findings');
+      } finally {
+        urlApi.createObjectURL = original.create;
+        urlApi.revokeObjectURL = original.revoke;
+        click.mockRestore();
+      }
+    });
+
+    it('shows the check when upstream ran it', () => {
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'FAIL', findings: [] } }), overall: 'FAIL' })));
+
+      enterRefAndRun();
+
+      expect(host().textContent).toContain('Current registrants');
+    });
+  });
+
+  describe('send-time suppression', () => {
+    it('sends the suppression lists the send applies, and says which exclusions are send-time', () => {
+      runAudienceQa.mockReturnValue(
+        of(report({ checks: checks({ exclusionCompleteness: { verdict: 'PASS', findings: [], exclusionCount: 3, sendTimeCount: 3 } }) }))
+      );
+      fixture.componentRef.setInput('sendSuppressionIds', ['201', '202', '203']);
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).toMatchObject({ sendSuppressionListIds: ['201', '202', '203'] });
+      expect(host().textContent).toContain('0 on the list, 3 applied at send time');
+    });
+
+    it('sends none when the send applies none', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).not.toHaveProperty('sendSuppressionListIds');
+    });
   });
 });

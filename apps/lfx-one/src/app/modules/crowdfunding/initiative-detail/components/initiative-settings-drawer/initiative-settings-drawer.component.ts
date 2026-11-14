@@ -98,7 +98,9 @@ export class InitiativeSettingsDrawerComponent {
 
       const input: UpdateInitiativeInput = {
         name,
-        description,
+        // Only send the description when the user edited it — the editor loads older plain-text
+        // descriptions as HTML, and saving another tab must not rewrite them unasked.
+        ...(details.form.controls['description'].dirty ? { description } : {}),
         // Only send industry when the user has explicitly changed topics — sending an
         // empty string clears the backend value, and existing slugs that don't map to
         // SS options would be lost if we always overwrite.
@@ -148,9 +150,7 @@ export class InitiativeSettingsDrawerComponent {
         input.sponsorshipTiers = sponsorshipTiers.sponsorshipTiers;
       }
 
-      const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input), { defaultValue: null });
-
-      if (!updated) return; // CF_UNAUTHENTICATED redirect in progress
+      const updated = await firstValueFrom(this.crowdfundingService.updateInitiative(this.initiative().id, input));
 
       this.messageService.add({ severity: 'success', summary: 'Saved', detail: 'Initiative updated successfully.' });
       this.initiativeSaved.emit(updated);

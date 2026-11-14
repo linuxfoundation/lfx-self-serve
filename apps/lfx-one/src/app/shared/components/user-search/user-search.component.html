@@ -10,6 +10,7 @@
   control="userSearch"
   [placeholder]="placeholder()"
   [suggestions]="suggestions()"
+  [minLength]="searchMinLength()"
   [styleClass]="styleClass()"
   [inputStyleClass]="inputStyleClass()"
   [panelStyleClass]="panelStyleClass()"
@@ -45,20 +46,39 @@
           <span class="text-xs text-amber-700" [attr.data-testid]="dataTestId() + '-option-note'">{{ user.note }}</span>
         }
       </div>
+      <!-- Shown only on the hovered or keyboard-focused row (PrimeNG puts `p-focus` on both), never on a disabled one -->
+      @if (showAddHint() && !user.disabled) {
+        <span
+          class="invisible shrink-0 text-xs font-medium text-blue-600 [.p-autocomplete-option.p-focus_&]:visible"
+          aria-hidden="true"
+          [attr.data-testid]="dataTestId() + '-option-add-hint'">
+          Add
+        </span>
+      }
     </div>
   </ng-template>
   <!-- Empty template -->
   <ng-template #empty>
-    <div class="p-3 text-center">
+    <div class="flex flex-col items-center gap-1 p-3 text-center">
       <p class="text-sm text-gray-600" [attr.data-testid]="dataTestId() + '-empty'">{{ emptyMessage() }}</p>
+      <!-- Manual entry offered only once the search has come back empty (manualEntryPlacement="empty") -->
+      @if (showManualEntry() && manualEntryPlacement() === 'empty') {
+        <button
+          type="button"
+          class="text-sm font-medium text-primary hover:underline"
+          [attr.data-testid]="dataTestId() + '-manual-entry'"
+          (click)="onEnterManually()">
+          {{ manualEntryLabel() }}
+        </button>
+      }
     </div>
   </ng-template>
 
-  <!-- Footer template - shown unless the consumer sets showManualEntry to false -->
-  @if (showManualEntry()) {
+  <!-- Footer template - shown on every dropdown unless the consumer hides manual entry or moves it into the empty state -->
+  @if (showManualEntry() && manualEntryPlacement() === 'footer') {
     <ng-template #footer>
       <div class="p-2 border-t border-gray-200 text-center">
-        <button type="button" class="text-sm text-primary hover:underline" (click)="onEnterManually()">Enter details manually</button>
+        <button type="button" class="text-sm text-primary hover:underline" (click)="onEnterManually()">{{ manualEntryLabel() }}</button>
       </div>
     </ng-template>
   }

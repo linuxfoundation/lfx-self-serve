@@ -7,6 +7,15 @@
     >. You may optionally include a note for the applicant.
   </p>
 
+  @if (groupName) {
+    <p class="text-sm text-gray-600" data-testid="reject-application-destination">
+      Group: <strong data-testid="reject-application-group">{{ groupName }}</strong>
+      @if (projectName) {
+        · Project: <strong data-testid="reject-application-project">{{ projectName }}</strong>
+      }
+    </p>
+  }
+
   <lfx-textarea
     [form]="form"
     control="reviewer_notes"

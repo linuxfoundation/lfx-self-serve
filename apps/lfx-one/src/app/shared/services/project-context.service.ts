@@ -8,7 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { MeetingWriteAccess, Project, ProjectContext, ProjectSettingsAccess } from '@lfx-one/shared/interfaces';
+import { Lens, MeetingWriteAccess, Project, ProjectContext, ProjectSettingsAccess } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
@@ -44,6 +44,8 @@ export class ProjectContextService {
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
+  /** Bumped by {@link refreshActiveProject} to re-run the active project's fetches once a write has changed its stage. */
+  private readonly activeProjectRefresh = signal(0);
 
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -88,6 +90,11 @@ export class ProjectContextService {
   public readonly activeContext: Signal<ProjectContext | null> = this.initActiveContext();
   public readonly isFoundationContext: Signal<boolean> = this.initIsFoundationContext();
   public readonly activeContextUid: Signal<string> = computed(() => this.activeContext()?.uid || '');
+  /**
+   * The context the nav menu's selector shows: {@link activeContext}, except while the mobile drawer previews another
+   * lens (`LensService.menuLens`, #4208) — then that lens's slot, so the page's own context stays untouched.
+   */
+  public readonly menuContext: Signal<ProjectContext | null> = this.initMenuContext();
 
   public readonly selectedFoundation: Signal<ProjectContext | null> = computed(() => this.foundationSelection());
   public readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectSelection());
@@ -156,7 +163,7 @@ export class ProjectContextService {
    * itself never carries `stage` — `projectQueryParamGuard` builds it from a `Project` response but
    * drops that field — so this reads it via a separate `ProjectService.getProject` call keyed off
    * `activeContext`, not a derivation of it. That call is cached per slug for the service's
-   * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
+   * lifetime, separately from `projectQueryParamGuard`'s strict lookup cache, so the value reflects the project's
    * stage as of its first fetch this session, not a live re-check on every context change. `null`
    * while resolving, absent, or unauthenticated — `activeProjectStageResolved` tells those apart.
    */
@@ -172,6 +179,27 @@ export class ProjectContextService {
 
   /** `undefined` while a stage fetch is in flight for the current context; otherwise the resolved stage, or `null`. */
   private readonly activeProjectStageFetch: Signal<string | null | undefined> = this.initActiveProjectStageFetch();
+
+  /**
+   * The previewed lens's project (#4208) — `undefined` while its fetch is in flight, `null` without a preview, a context
+   * or a session. Rides the same per-slug `getProject` cache as `activeProject`, so a context already seen answers
+   * synchronously.
+   */
+  private readonly menuProjectFetch: Signal<Project | null | undefined> = this.initMenuProjectFetch();
+  /**
+   * {@link activeProjectStage}, {@link activeProjectStageResolved} and {@link canWrite} for the nav menu: the active
+   * context's, except while the mobile drawer previews another lens — then {@link menuContext}'s, so the previewed menu
+   * is shaped by the project it will land on rather than by the page underneath.
+   */
+  public readonly menuProjectStage: Signal<string | null> = computed(() =>
+    this.lensService.previewingMenuLens() ? (this.menuProjectFetch()?.stage ?? null) : this.activeProjectStage()
+  );
+  public readonly menuProjectStageResolved: Signal<boolean> = computed(() =>
+    this.lensService.previewingMenuLens() ? this.menuProjectFetch() !== undefined : this.activeProjectStageResolved()
+  );
+  public readonly menuCanWrite: Signal<boolean> = computed(() =>
+    this.lensService.previewingMenuLens() ? this.menuProjectFetch()?.writer === true : this.canWrite()
+  );
 
   private readonly formationOverviewAllowed = signal<string | null>(null);
   /**
@@ -237,6 +265,18 @@ export class ProjectContextService {
       });
   }
 
+  /**
+   * Re-fetches the active project's record and stage after a write moved it (#5134: the formation card's
+   * stage edit), so the nav and badges stop showing the previous stage until the context reloads. Only the
+   * ACTIVE context is touched — it is never replaced. On the foundation drill-down the card edits a child
+   * while the context stays the foundation, so a uid that is not the active context's is a no-op.
+   */
+  public refreshActiveProject(projectUid: string): void {
+    if (projectUid && this.activeContextUid() === projectUid) {
+      this.activeProjectRefresh.update((count) => count + 1);
+    }
+  }
+
   // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
   // selection must still be corrected when the incoming selection already matches the current one.
   public setFoundation(foundation: ProjectContext, syncUrl = true): void {
@@ -269,16 +309,20 @@ export class ProjectContextService {
     this.formationOverviewAllowed.set(slug);
   }
 
-  public clearFoundation(): void {
+  public clearFoundation(syncUrl = true): void {
     this.foundationSelection.set(null);
     this.persistToCookie(this.foundationStorageKey, null);
-    this.syncProjectQueryParam(null);
+    if (syncUrl) {
+      this.syncProjectQueryParam(null);
+    }
   }
 
-  public clearProject(): void {
+  public clearProject(syncUrl = true): void {
     this.projectSelection.set(null);
     this.persistToCookie(this.projectStorageKey, null);
-    this.syncProjectQueryParam(null);
+    if (syncUrl) {
+      this.syncProjectQueryParam(null);
+    }
   }
 
   /**
@@ -310,12 +354,18 @@ export class ProjectContextService {
    * no Angular navigation is triggered, so guards and resolvers are not re-evaluated.
    * Skipped when a navigation is already in flight: the URL already carries the correct
    * param (deep-link) or the caller's own navigation will set the destination URL.
+   *
+   * Built from `location.path(true)` — the live address WITH its `#fragment`, as
+   * `AppComponent.initProjectQueryParamSync` reads it — not `router.url`. The router never sees a
+   * `replaceState`, so `router.url` is the URL of the last NAVIGATION: rebuilding from it dropped
+   * any parameter another `replaceState` had written since (the campaigns page's `?event=`, #4756)
+   * or brought back that parameter's stale value — even when re-selecting the same foundation.
    */
   private syncProjectQueryParam(slug: string | null): void {
     if (this.router.getCurrentNavigation()) {
       return;
     }
-    const urlTree = this.router.parseUrl(this.router.url);
+    const urlTree = this.router.parseUrl(this.location.path(true));
     if (slug === null) {
       delete urlTree.queryParams['project'];
     } else {
@@ -363,20 +413,33 @@ export class ProjectContextService {
         return routeKind === 'foundation' ? this.foundationSelection() : this.projectSelection();
       }
 
-      const lens = this.lensService.activeLens();
-
-      switch (lens) {
-        case 'foundation':
-          return this.foundationSelection();
-        case 'project':
-          return this.projectSelection();
-        case 'me':
-        case 'org':
-          return isBoardScopedPersona(this.personaService.currentPersona()) ? this.foundationSelection() : this.projectSelection();
-        default:
-          return null;
-      }
+      return this.contextForLens(this.lensService.activeLens());
     });
+  }
+
+  private initMenuContext(): Signal<ProjectContext | null> {
+    return computed(() => {
+      // A previewed lens has no route behind it yet, so its slot is resolved by the lens alone.
+      if (!this.lensService.previewingMenuLens()) {
+        return this.activeContext();
+      }
+      return this.contextForLens(this.lensService.menuLens());
+    });
+  }
+
+  /** The selection slot a lens reads when no route declares a kind. */
+  private contextForLens(lens: Lens): ProjectContext | null {
+    switch (lens) {
+      case 'foundation':
+        return this.foundationSelection();
+      case 'project':
+        return this.projectSelection();
+      case 'me':
+      case 'org':
+        return isBoardScopedPersona(this.personaService.currentPersona()) ? this.foundationSelection() : this.projectSelection();
+      default:
+        return null;
+    }
   }
 
   private initIsFoundationContext(): Signal<boolean> {
@@ -405,7 +468,7 @@ export class ProjectContextService {
 
   private initActiveProjectDetails(): Signal<Project | null> {
     return toSignal(
-      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated), toObservable(this.activeProjectRefresh)]).pipe(
         switchMap(([ctx, authenticated]) => {
           // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266).
           if (!ctx?.slug || !authenticated) {
@@ -506,7 +569,7 @@ export class ProjectContextService {
 
   private initActiveProjectStageFetch(): Signal<string | null | undefined> {
     return toSignal(
-      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated), toObservable(this.activeProjectRefresh)]).pipe(
         switchMap(([ctx, authenticated]) => {
           if (!ctx?.slug || !authenticated) {
             return of(null);
@@ -517,6 +580,22 @@ export class ProjectContextService {
             // synchronously, so consumers never observe the marker for a project already seen.
             startWith(undefined)
           );
+        })
+      ),
+      { initialValue: undefined }
+    );
+  }
+
+  private initMenuProjectFetch(): Signal<Project | null | undefined> {
+    // Keyed on the previewed context only: without a preview the menu reads the active context's signals instead.
+    const previewedContext = computed(() => (this.lensService.previewingMenuLens() ? this.menuContext() : null));
+    return toSignal(
+      combineLatest([toObservable(previewedContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          if (!ctx?.slug || !authenticated) {
+            return of(null);
+          }
+          return this.projectService.getProject(ctx.slug, false).pipe(startWith(undefined));
         })
       ),
       { initialValue: undefined }
@@ -542,11 +621,9 @@ export class ProjectContextService {
           if (!ctx?.slug || !authenticated) {
             return of({ contextUid, canWrite: false });
           }
-          // Two requests rather than one `?meeting_coordinator=true` fetch, and cheaper than it
-          // looks: the plain `getProject(slug, false)` response is already in ProjectService's
-          // cache on every navigation — `projectQueryParamGuard` fetches that exact key — while
-          // `:mc` is a separate cache entry and so a genuine extra round trip on the SSR critical
-          // path of every page.
+          // The plain `getProject(slug, false)` lookup can share context enrichment's ordinary
+          // cache, but not projectQueryParamGuard's separate strict cache. On a cold context,
+          // both the plain lookup and the separate `:mc` role check can require a request.
           return this.meetingWriteAccessFor(ctx.slug).pipe(map((canWrite) => ({ contextUid, canWrite })));
         })
       ),

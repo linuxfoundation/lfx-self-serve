@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   ERROR_CODES,
   MAX_PLAIN_TEXT_BODY_LENGTH,
+  PROPAGATION_LAG_RETRY_DELAYS_MS,
   STATUS_DERIVED_SERVER_ERROR_CODES,
   TRANSIENT_RETRY_DELAY_MS,
   VALIDATION_FAILED_MESSAGE_PREFIX,
@@ -221,6 +222,18 @@ export function extractErrorMessage(error: unknown, fallback: string): string {
 }
 
 /**
+ * A BFF validation failure's first field-level message (e.g. "This newsletter is a member benefit of …"),
+ * else the envelope message via {@link extractErrorMessage}, else `fallback`.
+ */
+export function extractFieldOrEnvelopeMessage(error: unknown, fallback: string): string {
+  if (error instanceof HttpErrorResponse) {
+    const fieldMessage = (error.error as { errors?: { message?: string }[] } | null)?.errors?.[0]?.message;
+    if (fieldMessage) return fieldMessage;
+  }
+  return extractErrorMessage(error, fallback);
+}
+
+/**
  * Maps a join-committee failure to actionable toast copy. Reads the upstream text through
  * `serverAuthoredMessage` (both BFF error shapes) — never `err.error?.message` alone, which is
  * dead code on the error-class proxy path that emits under `error` (GH-2349).
@@ -355,6 +368,13 @@ function hasServerAuthoredMessage(error: unknown): boolean {
  * is wrong, and the next attempt may well land inside the budget — treating it as permanent
  * would abandon exactly the case retrying exists for. The rest of the 4xx range keeps failing
  * fast, so authentication and validation errors still surface on the first response.
+ *
+ * 403/404 are deliberately excluded here even though they are sometimes transient too: right
+ * after creating an entity, a read of it can 403/404 for a few seconds while the ITX index / FGA
+ * tuple it depends on catches up with the write (#501). That is a narrower, call-site-specific
+ * condition than "any network blip", so it is not folded into this general-purpose predicate —
+ * see `retryPropagationLag` below, which retries exactly that case without reclassifying every
+ * 403/404 in the app as retryable.
  */
 export function isTransientHttpError(error: unknown): boolean {
   return error instanceof HttpErrorResponse && (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500);
@@ -372,4 +392,46 @@ export function retryTransientHttpError<T>(count: number = 1): MonoTypeOperatorF
     count,
     delay: (error: unknown) => (isTransientHttpError(error) ? timer(TRANSIENT_RETRY_DELAY_MS) : throwError(() => error)),
   });
+}
+
+/**
+ * Retries a 403/404 with backoff on the assumption that it is index/FGA propagation lag right
+ * after a create, not a genuine permission/not-found response (#501) — the counterpart to
+ * `retryTransientHttpError` above for this narrower, deliberately separate error class. Apply it
+ * only at a call site that reads an entity a user may have just created (e.g.
+ * `MeetingService.getMeetingDetail`, shared by both the edit-page load and the `writerGuard` slug
+ * probe that runs before it), never broadly — unlike `isTransientHttpError`, a 403/404 here is
+ * still a real, final denial once the schedule is exhausted, and retrying it anywhere a user is
+ * browsing to something they already know they can't access would just add latency with no payoff.
+ * `count` and the per-attempt delay both come from `PROPAGATION_LAG_RETRY_DELAYS_MS` so the two
+ * can't drift apart; the schedule is short (a few seconds total) because this is in the critical
+ * path of a page load, not a background poll.
+ */
+export function retryPropagationLag<T>(): MonoTypeOperatorFunction<T> {
+  return retry({
+    count: PROPAGATION_LAG_RETRY_DELAYS_MS.length,
+    delay: (error: unknown, retryIndex: number) => {
+      if (error instanceof HttpErrorResponse && (error.status === 403 || error.status === 404)) {
+        return timer(PROPAGATION_LAG_RETRY_DELAYS_MS[retryIndex - 1]);
+      }
+      return throwError(() => error);
+    },
+  });
+}
+
+/**
+ * The BFF error `code` from a failed `responseType: 'blob'` request, where Angular hands the JSON
+ * error body back as a Blob. Resolves `undefined` when the body is missing or not JSON.
+ */
+export async function readBlobErrorCode(error: unknown): Promise<string | undefined> {
+  if (!(error instanceof HttpErrorResponse) || !(error.error instanceof Blob)) return undefined;
+
+  try {
+    const body: unknown = JSON.parse(await error.error.text());
+    if (typeof body !== 'object' || body === null) return undefined;
+    const code = (body as Record<string, unknown>)['code'];
+    return typeof code === 'string' ? code : undefined;
+  } catch {
+    return undefined;
+  }
 }

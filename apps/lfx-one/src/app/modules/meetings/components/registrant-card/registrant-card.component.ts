@@ -3,6 +3,7 @@
 
 import { Component, inject, input, OnInit, output, signal } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { MeetingInviteResendService } from '@app/shared/services/meeting-invite-resend.service';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -18,12 +19,14 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 })
 export class RegistrantCardComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
+  protected readonly inviteResend = inject(MeetingInviteResendService);
   // Inputs
   public registrant = input.required<MeetingRegistrantWithState>();
 
   // Outputs
   public readonly onValidSave = output<{ id: string; data: MeetingRegistrant }>();
   public readonly onDelete = output<string>();
+  public readonly onResend = output<MeetingRegistrant>();
 
   // Internal state
   public isEditing = signal<boolean>(false);
@@ -41,6 +44,10 @@ export class RegistrantCardComponent implements OnInit {
   public handleDeleteClick(): void {
     const registrant = this.registrant();
     this.onDelete.emit(registrant.uid || registrant.tempId || '');
+  }
+
+  public handleResendClick(): void {
+    this.onResend.emit(this.registrant());
   }
 
   public handleSaveEdit(): void {

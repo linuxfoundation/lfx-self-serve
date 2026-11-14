@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { Location } from '@angular/common';
+import { HashAwareSpyLocation } from '@shared/testing/hash-aware-spy-location';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -70,13 +71,13 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -114,6 +115,35 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
 
     expect(service.activeProjectFormationSubStage()).toBeNull();
     expect(service.isActiveProjectInFormation()).toBe(false);
+  });
+
+  describe('refreshActiveProject (#5134)', () => {
+    it('re-fetches the active project and its stage when the uid is the active context', () => {
+      getProject.mockReturnValue(of(project('Formation - Engaged')));
+      service.setProject({ ...CONTEXT, uid: 'refresh-me' }, false);
+      TestBed.inject(ApplicationRef).tick();
+      expect(service.activeProjectStage()).toBe('Formation - Engaged');
+
+      getProject.mockReturnValue(of(project('Active')));
+      service.refreshActiveProject('refresh-me');
+      TestBed.inject(ApplicationRef).tick();
+
+      expect(service.activeProjectStage()).toBe('Active');
+      expect(service.isActiveProjectInFormation()).toBe(false);
+    });
+
+    it('leaves the foundation context alone when a child project was edited from the drill-down', () => {
+      getProject.mockReturnValue(of(project('Formation - Engaged')));
+      service.setProject({ ...CONTEXT, uid: 'foundation-context' }, false);
+      TestBed.inject(ApplicationRef).tick();
+      const callsBefore = getProject.mock.calls.length;
+
+      service.refreshActiveProject('some-child-uid');
+      TestBed.inject(ApplicationRef).tick();
+
+      expect(getProject.mock.calls.length).toBe(callsBefore);
+      expect(service.activeContext()?.uid).toBe('foundation-context');
+    });
   });
 
   it('reports isActiveProjectConfidential only for the Confidential stage', () => {
@@ -400,13 +430,13 @@ describe('ProjectContextService — canWriteMeetings', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -534,13 +564,13 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
         { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
-        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: LensService, useValue: { activeLens: signal('project'), menuLens: signal('project'), previewingMenuLens: signal(false) } },
         {
           provide: PersonaService,
           useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
         },
         { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
-        { provide: Location, useValue: { replaceState: vi.fn() } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
         { provide: MessageService, useValue: { add: vi.fn() } },
       ],
@@ -577,5 +607,147 @@ describe('ProjectContextService — meetingWriteAccess pairing', () => {
     answerFor(OTHER.slug, true).next({ writer: false });
     TestBed.inject(ApplicationRef).tick();
     expect(service.meetingWriteAccess()).toEqual({ contextUid: OTHER.uid, canWrite: false });
+  });
+});
+
+/**
+ * The selector of a lens the mobile drawer only previews (#4208) shows that lens's slot, while `activeContext` — what
+ * the page underneath acts on — stays on the slot its route and lens resolve to.
+ */
+describe('ProjectContextService — menuContext', () => {
+  const FOUNDATION: ProjectContext = { uid: 'found-1', name: 'Foundation One', slug: 'foundation-one' };
+
+  const setup = (activeLens: 'me' | 'foundation' | 'project' | 'org', menuLens: 'me' | 'foundation' | 'project' | 'org') => {
+    const active = signal(activeLens);
+    const menu = signal(menuLens);
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of(null)), getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
+        { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: LensService, useValue: { activeLens: active, menuLens: menu, previewingMenuLens: signal(activeLens !== menuLens) } },
+        {
+          provide: PersonaService,
+          useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
+        },
+        { provide: Router, useValue: { getCurrentNavigation: () => null, parseUrl: vi.fn(), serializeUrl: vi.fn(), url: '/' } },
+        { provide: Location, useValue: { replaceState: vi.fn(), path: () => '/' } },
+        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    const service = TestBed.inject(ProjectContextService);
+    service.setProject(CONTEXT, false);
+    service.setFoundation(FOUNDATION, false);
+    return service;
+  };
+
+  it('follows activeContext when nothing is previewed', () => {
+    const service = setup('foundation', 'foundation');
+    service.setRouteLensKind('foundation');
+
+    expect(service.menuContext()).toEqual(FOUNDATION);
+    expect(service.activeContext()).toEqual(FOUNDATION);
+  });
+
+  it("shows the previewed lens's slot while the page's route keeps its own", () => {
+    const service = setup('foundation', 'project');
+    service.setRouteLensKind('foundation');
+
+    expect(service.menuContext()).toEqual(CONTEXT);
+    expect(service.activeContext()).toEqual(FOUNDATION);
+  });
+
+  it("shapes the previewed menu by the previewed context's project, not the page's", () => {
+    const service = setup('foundation', 'project');
+    service.setRouteLensKind('foundation');
+    const getProject = TestBed.inject(ProjectService).getProject as ReturnType<typeof vi.fn>;
+    getProject.mockImplementation((slug: string) =>
+      of(slug === CONTEXT.slug ? { ...project('Formation - Exploratory'), writer: true } : { ...project('Active'), writer: false })
+    );
+    TestBed.inject(UserService).authenticated.set(true);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.menuProjectStage()).toBe('Formation - Exploratory');
+    expect(service.menuProjectStageResolved()).toBe(true);
+    expect(service.menuCanWrite()).toBe(true);
+    expect(service.activeProjectStage()).toBe('Active');
+    expect(service.canWrite()).toBe(false);
+  });
+
+  it("shows the previewed Foundation lens's slot from a Me page", () => {
+    const service = setup('me', 'foundation');
+
+    expect(service.menuContext()).toEqual(FOUNDATION);
+    expect(service.activeContext()).toEqual(CONTEXT);
+  });
+});
+
+/**
+ * `?project=` is written with `replaceState`, and so are other parameters on the same page — the
+ * campaigns page keeps its event URL in `?event=` (#4756). The router never sees a `replaceState`,
+ * so the sync must rebuild from the LIVE address, or it drops (or reverts) those parameters.
+ * A real router and `HashAwareSpyLocation` stand in for the address bar.
+ */
+describe('ProjectContextService — project query param sync', () => {
+  const foundationA = { uid: 'foundation-a-uid', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext;
+  const foundationB = { uid: 'foundation-b-uid', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext;
+  let location: HashAwareSpyLocation;
+  let service: ProjectContextService;
+
+  function param(name: string): string | null {
+    return new URL(location.path(), 'https://app.example').searchParams.get(name);
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: Location, useClass: HashAwareSpyLocation },
+        { provide: ProjectService, useValue: { getProject: vi.fn().mockReturnValue(of(null)), getProjectSfid: vi.fn().mockReturnValue(of(null)) } },
+        { provide: SsrCookieService, useValue: { get: vi.fn(), set: vi.fn(), delete: vi.fn() } },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn(), unregisterCookie: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: LensService, useValue: { activeLens: signal('foundation'), menuLens: signal('foundation'), previewingMenuLens: signal(false) } },
+        {
+          provide: PersonaService,
+          useValue: { isMarketingAuditor: signal(false), isCampaignManager: signal(false), marketingGrantSlug: signal(null), currentPersona: signal(null) },
+        },
+        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of({})), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    location = TestBed.inject(Location) as HashAwareSpyLocation;
+    service = TestBed.inject(ProjectContextService);
+    service.setRouteLensKind('foundation');
+  });
+
+  it('keeps a parameter another replaceState wrote when the foundation changes', () => {
+    location.replaceState('/campaigns?project=foundation-a&event=https%3A%2F%2Fevents.example.com%2Fkubecon');
+
+    service.setFoundation(foundationB);
+
+    expect(param('project')).toBe('foundation-b');
+    expect(param('event')).toBe('https://events.example.com/kubecon');
+    expect(location.path()).toContain('/campaigns');
+  });
+
+  it('keeps the #fragment of the live address', () => {
+    location.replaceState('/campaigns?project=foundation-a#implementation');
+
+    service.setFoundation(foundationB);
+
+    expect(location.path(true)).toBe('/campaigns?project=foundation-b#implementation');
+  });
+
+  it('keeps the live value, not a stale one, when the active foundation is re-selected', () => {
+    service.setFoundation(foundationA, false);
+    location.replaceState('/campaigns?project=foundation-a&event=https%3A%2F%2Fevents.example.com%2Fnewer');
+
+    service.setFoundation(foundationA);
+
+    expect(param('project')).toBe('foundation-a');
+    expect(param('event')).toBe('https://events.example.com/newer');
   });
 });

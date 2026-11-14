@@ -27,6 +27,7 @@ import {
   CommitteeEngagementWindow,
   CommitteeMember,
   CommitteePendingActionRow,
+  EditChairsDialogResult,
   Meeting,
   PastMeeting,
   PendingActionItem,
@@ -38,6 +39,7 @@ import {
 import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW } from '@lfx-one/shared/constants';
 import {
   assertNeverSilent,
+  canViewCommitteeRoster,
   countVotingReps,
   formatRelativeTime,
   getSurveyDisplayStatus,
@@ -56,11 +58,10 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, startWith, Subject, switchMap, take, takeUntil, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { SurveyResultsDrawerComponent } from '../../../surveys/components/survey-results-drawer/survey-results-drawer.component';
-import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 import { CommitteeEngagementSummaryComponent } from '../committee-engagement-summary/committee-engagement-summary.component';
 import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 import { GroupJoinCtaComponent } from '../group-join-cta/group-join-cta.component';
@@ -77,7 +78,6 @@ import { WeeklyBriefCardComponent } from '../weekly-brief-card/weekly-brief-card
     SkeletonModule,
     SurveyResultsDrawerComponent,
     TagComponent,
-    VoteResultsDrawerComponent,
     WeeklyBriefCardComponent,
   ],
   providers: [DialogService],
@@ -113,6 +113,9 @@ export class CommitteeOverviewComponent {
   public members = input<CommitteeMember[]>([]);
   public membersLoading = input<boolean>(true);
   public canEdit = input<boolean>(false);
+  public canShareWeeklyBriefByEmail = input<boolean>(false);
+  public shareAccessLoading = input<boolean>(false);
+  public shareAccessError = input<boolean>(false);
   public myRole = input<string | null>(null);
   public myMemberUid = input<string | null>(null);
   public myRoleLoading = input<boolean>(true);
@@ -139,29 +142,7 @@ export class CommitteeOverviewComponent {
   public readonly joinRequested = output<void>();
   public readonly tabNavigated = output<string>();
   public readonly engagementWindowChange = output<CommitteeEngagementWindow>();
-
-  // A field initializer runs in this component's injection context automatically (must come
-  // after the `committee` input it reads, or TS2729 "used before its initialization") — used
-  // by openVoteDrawer's cache-miss fetch to stop if the user navigates to a different committee
-  // (RouteReuseStrategy can keep this component instance alive across that navigation) before
-  // the fetch resolves. Calling toObservable(this.committee) directly inside a click-handler
-  // method would throw (NG0203: not an injection context), same rationale as
-  // weekly-brief-card.component.ts's identical committee$ field.
-  private readonly committee$ = toObservable(this.committee);
-
-  // Vote drawer state
-  public voteDrawerVisible = signal(false);
-  public selectedVoteId = signal<string | null>(null);
-  public selectedVote = signal<Vote | null>(null);
-  // Every openVoteDrawer(voteUid) call pushes here rather than resolving inline — initVoteDrawerRequests'
-  // switchMap is what guarantees "latest click wins" (see that method's own comment). A manual
-  // in-flight-uid tracking flag was tried first and still had a gap: two clicks on the *same*
-  // uid (A, then B, then A again) can't be told apart by uid alone, so a stale first-A response
-  // could still land after a second-A request started and be misread as current (PR #1363
-  // review: Copilot caught this after Copilot/Cursor Bugbot/@dealako's original different-uid
-  // race was fixed). switchMap's built-in cancel-the-previous-inner-observable semantics close
-  // both cases at once, for any pair of clicks — not just different uids.
-  private readonly voteDrawerRequest$ = new Subject<{ voteUid: string; committeeUid: string | undefined }>();
+  public readonly shareAccessRetryRequested = output<void>();
 
   // Survey drawer state
   public surveyDrawerVisible = signal(false);
@@ -216,6 +197,14 @@ export class CommitteeOverviewComponent {
   // via activityMeetingBadge()), so this stays private rather than following the public-signal
   // convention the rest of this "data fetches" section uses.
   private readonly pastMeetingsById: Signal<Map<string, PastMeeting>> = this.initPastMeetingsById();
+
+  // Computed: whether the caller may see the roster under member_visibility (gates the Chairs card
+  // and the roster-derived Organizations / Voting Reps stats)
+  public canViewRoster: Signal<boolean> = computed(() => canViewCommitteeRoster(this.committee()));
+
+  // Computed: member count. A hidden roster is never fetched, so fall back to the committee's own
+  // total_members (the same figure the Members tab label shows) rather than reporting 0.
+  public memberCount: Signal<number | null> = computed(() => (this.canViewRoster() ? this.members().length : (this.committee()?.total_members ?? null)));
 
   // Computed: chairs derived from members
   public chairs: Signal<CommitteeMember[]> = this.initChairs();
@@ -273,6 +262,9 @@ export class CommitteeOverviewComponent {
 
   // Role-based computed signals
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  // Uses canEdit() instead of !myRoleLoading() so it does not flip during role refresh —
+  // prevents member-only content from briefly showing to visitors while roles reload.
+  protected readonly isVisitorForPrivacy: Signal<boolean> = computed(() => this.myRole() === null && !this.canEdit());
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() =>
@@ -316,8 +308,6 @@ export class CommitteeOverviewComponent {
   });
 
   public constructor() {
-    this.initVoteDrawerRequests();
-
     // When the last pending vote/survey is resolved, fade the section out then remove it from the DOM.
     // sectionEverShown prevents the fade from triggering on initial load with zero actions.
     toObservable(this.pendingActionItems)
@@ -358,13 +348,13 @@ export class CommitteeOverviewComponent {
     this.tabNavigated.emit(tab);
   }
 
-  // Shared by handleActivityItemClick's 'vote-drawer' case and weekly-brief-card's
-  // voteDrawerRequested output (LFXV2-3044) — both need the same lookup-fetch-or-toast
-  // behavior, not two copies of it. Just pushes onto voteDrawerRequest$; all the
-  // cache-vs-fetch and latest-click-wins logic lives in initVoteDrawerRequests, once, rather
-  // than per call site.
-  public openVoteDrawer(voteUid: string): void {
-    this.voteDrawerRequest$.next({ voteUid, committeeUid: this.committee()?.uid });
+  // Shared by handleActivityItemClick's 'vote-drawer' case, the pending-actions vote rows and
+  // weekly-brief-card's voteRequested output (#3915). Opens the vote page, which decides access
+  // and renders the shared not-found page for a missing or forbidden vote — so there is no cache
+  // lookup, fetch or toast here, and the router's own navigation cancellation means the last
+  // click wins.
+  public openVote(voteUid: string): void {
+    void this.router.navigate(['/votes', voteUid]);
   }
 
   public handlePendingActionClick(item: PendingActionItem): void {
@@ -379,12 +369,13 @@ export class CommitteeOverviewComponent {
       this.tabNavigated.emit('surveys');
       return;
     }
-    // Searches votes() (the broader fetch), not pendingVotes() (ACTIVE-only) — item.buttonLink
-    // was a valid pendingVotes() uid when this row was built, but the vote may have closed by
-    // the time it's clicked. Falls back to '' rather than skipping the call on a missing
-    // buttonLink so that edge case still reaches openVoteDrawer's own "Vote unavailable" toast
-    // (a guaranteed miss) instead of a silent no-op.
-    this.openVoteDrawer(item.buttonLink ?? '');
+    // A row without a vote uid can't name a page, so it falls back to the Votes tab like the
+    // survey rows above rather than becoming a silent no-op.
+    if (!item.buttonLink) {
+      this.tabNavigated.emit('votes');
+      return;
+    }
+    this.openVote(item.buttonLink);
   }
 
   public handleActivityItemClick(item: ActivityFeedItem): void {
@@ -407,13 +398,11 @@ export class CommitteeOverviewComponent {
         break;
       }
       case 'vote-drawer':
-        this.openVoteDrawer(action.voteUid);
+        this.openVote(action.voteUid);
         break;
       case 'survey-drawer': {
-        // Different failure mode than the vote-drawer case above, still toast-only on a miss
-        // (unlike votes, not upgraded to a cache-miss fetch — see openVoteDrawer's own comment
-        // for why that gap mattered more there). Unlike votes (a genuine window-size mismatch —
-        // getVotesByCommittee pins page_size=100), the server's SurveyService.getSurveys drains
+        // Toast-only on a miss: unlike votes, which open the vote page and let it decide not-found
+        // (#3915), surveys still open an in-place drawer fed from this.surveys(). The server's SurveyService.getSurveys drains
         // every page via fetchAllQueryResources, so this.surveys() is not a windowed slice — but
         // "drains every page" isn't "always complete": fetchAllQueryResources defaults to
         // failOnPartial=false (this call site doesn't override it), so a later page failing
@@ -422,11 +411,8 @@ export class CommitteeOverviewComponent {
         // regardless of drain completeness. So a miss here is normally fetch-timing staleness
         // against the activity feed's independent request (the common case, since surveys()
         // usually is complete) rather than a bounded-window gap like votes — but isn't
-        // guaranteed to be. Recoverable in principle the same way: SurveyResultsDrawerComponent's
-        // own initSurvey() has the identical startWith/re-fetch shape and the identical missing
-        // `@else` on its template's `@if` as VoteResultsDrawerComponent, so a fetch-on-miss
-        // fallback could be added here too if this asymmetry becomes a real problem — out of
-        // this ticket's scope (LFXV2-3044 only touches the vote-drawer path).
+        // guaranteed to be. SurveyResultsDrawerComponent's own initSurvey() re-fetches by uid once
+        // open, so a fetch-on-miss fallback could be added here if this becomes a real problem.
         const survey = this.surveys().find((s) => s.uid === action.surveyUid);
         if (survey) {
           this.selectedSurveyId.set(survey.uid);
@@ -479,9 +465,6 @@ export class CommitteeOverviewComponent {
 
   // Chairs edit methods
   public startEditChairs(): void {
-    const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);
-    const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
-
     const ref = this.dialogService.open(EditChairsDialogComponent, {
       header: 'Edit Chairs',
       width: '480px',
@@ -490,47 +473,50 @@ export class CommitteeOverviewComponent {
       draggable: false,
       data: {
         members: this.memberOptions(),
-        currentChairUid: currentChair?.uid || null,
-        currentViceChairUid: currentViceChair?.uid || null,
+        currentChairUids: this.chairs()
+          .filter((c) => c.role?.name === CommitteeMemberRole.CHAIR)
+          .map((c) => c.uid),
+        currentViceChairUids: this.chairs()
+          .filter((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR)
+          .map((c) => c.uid),
       },
     });
 
-    ref?.onClose.pipe(take(1)).subscribe((result: { chairUid: string | null; viceChairUid: string | null } | undefined) => {
+    ref?.onClose.pipe(take(1)).subscribe((result: EditChairsDialogResult | undefined) => {
       if (result) {
-        this.saveChairs(result.chairUid, result.viceChairUid);
+        this.saveChairs(result.chairUids, result.viceChairUids);
       }
     });
   }
 
-  public saveChairs(newChairUid: string | null, newViceChairUid: string | null): void {
+  public saveChairs(newChairUids: string[], newViceChairUids: string[]): void {
     const committeeId = this.committee().uid;
-    const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);
-    const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
-
-    if (newChairUid && newChairUid === newViceChairUid) {
-      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Chair and Vice Chair must be different members' });
-      return;
-    }
+    const currentChairs = this.chairs().filter((c) => c.role?.name === CommitteeMemberRole.CHAIR);
+    const currentViceChairs = this.chairs().filter((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
 
     // Serialize: removals first, then assignments to avoid race conditions
     const removals: ReturnType<typeof this.committeeService.updateCommitteeMember>[] = [];
     const assignments: ReturnType<typeof this.committeeService.updateCommitteeMember>[] = [];
 
-    // Remove old chair role if changed
-    if (currentChair && currentChair.uid !== newChairUid) {
-      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentChair.uid, { role: { name: CommitteeMemberRole.NONE } }));
+    for (const c of currentChairs) {
+      if (!newChairUids.includes(c.uid)) {
+        removals.push(this.committeeService.updateCommitteeMember(committeeId, c.uid, { role: { name: CommitteeMemberRole.NONE } }));
+      }
     }
-    // Remove old vice chair role if changed
-    if (currentViceChair && currentViceChair.uid !== newViceChairUid) {
-      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentViceChair.uid, { role: { name: CommitteeMemberRole.NONE } }));
+    for (const c of currentViceChairs) {
+      if (!newViceChairUids.includes(c.uid)) {
+        removals.push(this.committeeService.updateCommitteeMember(committeeId, c.uid, { role: { name: CommitteeMemberRole.NONE } }));
+      }
     }
-    // Assign new chair
-    if (newChairUid && newChairUid !== currentChair?.uid) {
-      assignments.push(this.committeeService.updateCommitteeMember(committeeId, newChairUid, { role: { name: CommitteeMemberRole.CHAIR } }));
+    for (const uid of newChairUids) {
+      if (!currentChairs.some((c) => c.uid === uid)) {
+        assignments.push(this.committeeService.updateCommitteeMember(committeeId, uid, { role: { name: CommitteeMemberRole.CHAIR } }));
+      }
     }
-    // Assign new vice chair
-    if (newViceChairUid && newViceChairUid !== currentViceChair?.uid) {
-      assignments.push(this.committeeService.updateCommitteeMember(committeeId, newViceChairUid, { role: { name: CommitteeMemberRole.VICE_CHAIR } }));
+    for (const uid of newViceChairUids) {
+      if (!currentViceChairs.some((c) => c.uid === uid)) {
+        assignments.push(this.committeeService.updateCommitteeMember(committeeId, uid, { role: { name: CommitteeMemberRole.VICE_CHAIR } }));
+      }
     }
 
     if (removals.length === 0 && assignments.length === 0) {
@@ -558,63 +544,6 @@ export class CommitteeOverviewComponent {
       clearTimeout(this.sectionFadeTimerId);
       this.sectionFadeTimerId = null;
     }
-  }
-
-  // Called once from the constructor — wires openVoteDrawer's voteDrawerRequest$ to a
-  // switchMap pipeline so every new request (cache hit or fetch, same uid or different)
-  // automatically cancels whatever the previous request was still doing. This is what
-  // actually guarantees "latest click wins": a manual in-flight-uid tracking flag (tried
-  // first) still let a stale response through when the *same* uid was clicked twice in a row
-  // (A, then B, then A again) — the flag can't distinguish "this specific request" from "an
-  // earlier request for the same uid," but switchMap's built-in unsubscribe-the-previous-inner-
-  // observable semantics don't need to (PR #1363 review: Copilot caught this gap after the
-  // original different-uid race, from Copilot/Cursor Bugbot/@dealako, was fixed).
-  private initVoteDrawerRequests(): void {
-    this.voteDrawerRequest$
-      .pipe(
-        switchMap(({ voteUid, committeeUid }) => {
-          const cached = this.votes().find((v) => v.uid === voteUid);
-          if (cached) return of({ vote: cached });
-          // this.votes() and the caller's own source (the activity feed, or a weekly brief's
-          // source_refs) are independent server fetches (the former page_size=100 by
-          // updated_at) — a vote recent enough to appear in either isn't guaranteed to be
-          // within this fetch's window, so the cache lookup above can miss even though the
-          // vote genuinely exists. Fetch it directly by uid — mirrors
-          // pending-actions.component.ts's loadVoteForRow — so only a real fetch failure
-          // (not-found, network) falls through to the toast below, not every cache-window miss.
-          return this.voteService.getVote(voteUid).pipe(
-            map((vote) => ({ vote })),
-            // Stop if the user has navigated to a different committee before this resolves —
-            // RouteReuseStrategy can keep this component instance alive across that
-            // navigation, and a late response must not pop the wrong committee's vote drawer
-            // open (same rationale as weekly-brief-card.component.ts's identical guard on its
-            // own async calls).
-            takeUntil(this.committee$.pipe(filter((c) => c?.uid !== committeeUid))),
-            catchError(() => of({ vote: null }))
-          );
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe(({ vote }) => {
-        if (vote) {
-          this.selectedVoteId.set(vote.uid);
-          this.selectedVote.set(vote);
-          this.voteDrawerVisible.set(true);
-        } else {
-          // "Try the Votes tab instead" is only true when that tab actually exists —
-          // committee-view.component.ts hides it when enable_voting is false, and a weekly
-          // brief's vote chip deliberately still renders in that state (see
-          // mapWeeklyBriefSourceRefsToChips's 'vote' case) since a brief's window can predate
-          // voting being turned off. Neutral copy avoids pointing at a tab that isn't there
-          // (Copilot review, PR #1363).
-          const votesTabVisible = !!this.committee()?.enable_voting;
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Vote unavailable',
-            detail: votesTabVisible ? 'This vote could not be found. Try the Votes tab instead.' : 'This vote could not be found.',
-          });
-        }
-      });
   }
 
   // Private initializer functions
@@ -864,14 +793,15 @@ export class CommitteeOverviewComponent {
   }
 
   private initActivityItems(): Signal<ActivityFeedItem[]> {
-    // Skip-for-visitor + distinctUntilChanged shape mirrors this component's other committee-scoped
-    // fetches: the feed (and everything else in the enclosing !isVisitor() block) never renders for
-    // a visitor, so this fetch should never fire for one either. Derived from one combined computed
-    // (not combineLatest over separate toObservable() sources) so committee/myRoleLoading/isVisitor —
-    // all recomputed together in the same signal flush — can't glitch through an inconsistent
-    // intermediate tick that fires then immediately cancels a request.
+    // Derived from one combined computed (not combineLatest over separate toObservable() sources)
+    // so committee/myRoleLoading/isVisitor — all recomputed together in the same signal flush —
+    // can't glitch through an inconsistent intermediate tick that fires then immediately cancels a
+    // request. Visitors now also fetch the feed (committee#viewer FGA grants the same document
+    // access as the group page itself), but their result is filtered to meeting + document events
+    // only — votes, surveys, and notes are member-only content. The feed section in the template
+    // is visible to all, so the previous visitor short-circuit that returned [] early is removed.
     return toSignal(
-      toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() }))).pipe(
+      toObservable(computed(() => ({ committee: this.committee(), roleLoading: this.myRoleLoading(), visitor: this.isVisitor() && !this.canEdit() }))).pipe(
         filter(({ committee }) => !!committee?.uid),
         distinctUntilChanged((a, b) => a.committee.uid === b.committee.uid && a.roleLoading === b.roleLoading && a.visitor === b.visitor),
         switchMap(({ committee, roleLoading, visitor }) => {
@@ -882,13 +812,17 @@ export class CommitteeOverviewComponent {
             // can't have already cleared it out from under us.
             return EMPTY;
           }
-          if (visitor) {
-            this.activityFeedLoading.set(false);
-            return of<ActivityFeedItem[]>([]);
-          }
           this.activityFeedLoading.set(true);
           return this.committeeService.getCommitteeActivity(committee.uid).pipe(
-            map((events) => mapActivityEventsToFeedItems(events, { votingEnabled: !!committee.enable_voting })),
+            map((events) => {
+              const items = mapActivityEventsToFeedItems(events, { votingEnabled: !!committee.enable_voting });
+              // Visitors only see meeting and document events — votes, surveys, and notes contain
+              // member-facing content (vote/survey names can be sensitive) and their click-actions
+              // route to member-only tabs anyway. Past-meeting items are further gated on
+              // `calendar.public` to stay consistent with the Meetings tab visibility rule.
+              const calendarPublic = !!committee.calendar?.public;
+              return visitor ? items.filter((item) => (item.type === 'past_meeting' && calendarPublic) || item.type === 'document') : items;
+            }),
             tap(() => this.activityFeedLoading.set(false)),
             // CommitteeService.getCommitteeActivity already falls back to of([]) on failure, so this
             // catchError is a belt-and-suspenders guard against that coupling changing underneath

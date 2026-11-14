@@ -1,19 +1,27 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
+import { buildHealthMetricsYtdRangeLabel } from '@lfx-one/shared/utils';
+import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
-import { UserService } from '@services/user.service';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
+import { EMPTY, filter, Observable, switchMap } from 'rxjs';
 
+import { HealthMetricsTruncationTipDirective } from '../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 
 import type { IsActiveMatchOptions } from '@angular/router';
-import type { HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsTab, HealthMetricsTabKey } from '@lfx-one/shared/interfaces';
 
 /**
  * Route target for `foundation/health-metrics`. Renders the legacy page by default (server and
@@ -25,7 +33,7 @@ import type { HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/
  * `HealthMetricsComponent` mounts server-side, its data fetches run to completion there (SSR waits
  * for them before serializing), and the legacy page stays rendered on the client until the flag
  * resolves post-hydration — only then does the swap happen. A `CanMatchFn` awaiting flag
- * readiness (the `org-lens-cla-m3-enabled.guard.ts` pattern) would skip that duplicate legacy render, but
+ * readiness (the `org-lens-flag.guard.ts` pattern) would skip that duplicate legacy render, but
  * it would hold the whole route's client-side render until the provider reports for the ~100% of
  * users the flag is still off for — a worse trade while this page is dark-launched to a small
  * cohort; remove this gate rather than ramping the flag to 100% through it.
@@ -36,15 +44,26 @@ import type { HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/
  * override (as e2e helpers for other flags do) would swap pages on the very first client render
  * and mismatch the SSR-rendered legacy DOM.
  *
- * Since LFXV2-3366 the enabled branch is also the tab shell: it owns the sticky header (project,
- * period, export) and the tab bar, with each Level 2 page rendering through `<router-outlet />` as
- * a child route. Selection state is shared through {@link HealthMetricsChromeService}, provided
- * here so it survives tab switches but resets on leaving the page. Nothing renders an outlet while
- * the flag is off, so a direct hit on `…/health-metrics/engagement` still serves the legacy page.
+ * Since LFXV2-3366 the enabled branch is also the tab shell: it owns the sticky header (title and
+ * period) and the tab bar, with each Level 2 page rendering through `<router-outlet />` as a child
+ * route. The period is shared through {@link HealthMetricsChromeService}, provided here so it
+ * survives tab switches but resets on leaving the page. Nothing renders an outlet while the flag is
+ * off, so a direct hit on `…/health-metrics/engagement` still serves the legacy page.
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
-  imports: [NgClass, RouterLink, RouterLinkActive, RouterOutlet, HealthMetricsComponent],
+  imports: [
+    RouterLink,
+    RouterLinkActive,
+    RouterOutlet,
+    AppFooterComponent,
+    HealthMetricsComponent,
+    HealthMetricsTruncationTipDirective,
+    UiOptionComponent,
+    UiSelectComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
+  ],
   providers: [HealthMetricsChromeService],
   templateUrl: './health-metrics-gate.component.html',
   styleUrl: './health-metrics-gate.component.scss',
@@ -53,11 +72,15 @@ export class HealthMetricsGateComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
+  private readonly appService = inject(AppService);
   protected readonly chrome = inject(HealthMetricsChromeService);
-  protected readonly userService = inject(UserService);
 
   protected readonly basePath = HEALTH_METRICS_BASE_PATH;
   protected readonly tabs: readonly HealthMetricsTab[] = HEALTH_METRICS_TABS;
+  protected readonly ytdRangeLabel = buildHealthMetricsYtdRangeLabel(new Date());
+  /** The narrowest header's view dropdown, kept on the routed tab. */
+  protected readonly selectedTab = signal<string | null>(this.activeTabKey(this.router.url));
 
   // queryParams must be `ignored` rather than the `{ exact: true }` shorthand's `exact` — the tab
   // links carry no query params of their own while the URL always carries `foundationSlug`.
@@ -74,6 +97,8 @@ export class HealthMetricsGateComponent {
 
   public constructor() {
     afterNextRender(() => this.hydrated.set(true));
+    this.initFooter();
+    this.initTabSelect();
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
     // latches — watching the viewChild signal picks it up whenever that happens.
     toObservable(this.pageHeader)
@@ -81,8 +106,43 @@ export class HealthMetricsGateComponent {
       .subscribe((header) => this.observeHeaderHeight(header?.nativeElement));
   }
 
-  protected setPeriod(period: HealthMetricsYearOption): void {
-    this.chrome.setPeriod(period);
+  /** Sets the shared period from the switch or its dropdown; both only offer the page's periods. */
+  protected setPeriod(range: string | null): void {
+    const period = this.chrome.periods.find((option) => option.range === range);
+    if (period) this.chrome.setPeriod(period);
+  }
+
+  protected openTab(key: string | null): void {
+    const tab = this.tabs.find((candidate) => candidate.key === key);
+    if (tab) void this.router.navigate(tab.route ? [this.basePath, tab.route] : [this.basePath], { queryParamsHandling: 'preserve' });
+  }
+
+  /** The redesigned page renders the app footer itself, at its own gutters; the legacy page keeps the layout's. */
+  private initFooter(): void {
+    // `claimFooter` returns its release, which runs as the teardown when the flag turns off or the page goes.
+    toObservable(this.overviewEnabled)
+      .pipe(
+        switchMap((enabled) => (enabled ? new Observable<never>(() => this.appService.claimFooter()) : EMPTY)),
+        takeUntilDestroyed()
+      )
+      .subscribe();
+  }
+
+  private initTabSelect(): void {
+    this.router.events
+      .pipe(
+        // A cancelled or failed navigation leaves the route where it was, so the dropdown goes back with it.
+        filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.selectedTab.set(this.activeTabKey(this.router.url)));
+  }
+
+  /** The tab a URL routes to: the segment after the base path, or the Overview. */
+  private activeTabKey(url: string): HealthMetricsTabKey {
+    const path = url.split(/[?#]/)[0];
+    const segment = path.startsWith(this.basePath) ? (path.slice(this.basePath.length).split('/')[1] ?? '') : '';
+    return (this.tabs.find((tab) => tab.route === segment) ?? this.tabs[0]).key;
   }
 
   private observeHeaderHeight(header: HTMLElement | undefined): void {

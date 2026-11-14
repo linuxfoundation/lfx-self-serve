@@ -27,7 +27,7 @@ import type {
   OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, isMailtoSafeEmail, orgClaPairFoundationSfid, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -228,17 +228,21 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     return list.list.map((ack) => this.toRow(ack, pending));
   });
 
-  // ACS decides both affordances, per the self permission check the gateway also enforces (#1980).
   // Each starts null (checking) and fails closed, so the control stays hidden until ACS says yes.
   // Invalidate is gated on `ecla-invalidate`; the dialog's also-remove option on
   // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
-  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true);
+  // Both writes also need the viewer on this CCLA's CLA Manager list. The approval-list write is
+  // refused by EasyCLA otherwise; Invalidate is refused by this application's server, because
+  // EasyCLA checks only ACS on it. The list's own `canEdit` is read after the row, so it can
+  // withdraw what the row's flag offered.
+  private readonly rosterAllows = computed(() => this.claGroup().viewerIsClaManager === true && this.loadedList()?.canEdit === true);
+  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true && this.rosterAllows());
   // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
   // `approval-list-update` grant the tab itself needs, so a read-only reader isn't offered a
   // dead-end link into a list they can't edit. Fails closed while the grant is still checking.
-  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true);
+  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true && this.rosterAllows());
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly showEmptyState = computed(
@@ -264,13 +268,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         this.invalidateDialog = null;
       });
 
-    toObservable(
-      computed(() => {
-        const orgUid = this.orgUid();
-        const projectSfid = orgClaPairProjectSfid(this.claGroup());
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initWritePermissionPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -279,10 +277,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         }),
         switchMap((pair) => {
           if (!pair) return of<[boolean, boolean]>([false, false]);
-          const [orgUid, projectSfid] = pair.split('::');
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          const foundation = foundationSfid || undefined;
           return combineLatest([
-            this.claService.checkPermission(orgUid, 'ecla-invalidate', projectSfid),
-            this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
+            this.claService.checkPermission(orgUid, 'ecla-invalidate', projectSfid, foundation),
+            this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid, foundation),
           ]);
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -360,7 +359,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     const orgUid = this.orgUid();
     const claSignatureId = this.signatureId();
     const matchingEntries = signal<OrgClaApprovalEntry[] | null | undefined>(undefined);
-    const canRemoveEntries = signal(this.removeFromListGrant() === true);
+    const canRemoveEntries = signal(this.canAddToApprovalList());
     const dialogRef = this.dialogService.open(OrgEasyclaInvalidateAcknowledgmentDialogComponent, {
       showHeader: false,
       modal: true,
@@ -403,6 +402,14 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
       this.sendInvalidate(row, request, orgUid, claSignatureId, removeApprovalEntries ?? []);
     });
+  }
+
+  private initWritePermissionPair(): string {
+    const orgUid = this.orgUid();
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   /** Entries added for this contributor alone. Domain and org entries cover others too, so they never match. */
@@ -480,12 +487,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         if (removeApprovalEntries.length > 0) {
           this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries, () => {
             settlePending();
-            this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
+            this.refreshLoadedRows(signatureId, orgUid, claSignatureId);
           });
           return;
         }
         settlePending();
-        this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
+        this.refreshLoadedRows(signatureId, orgUid, claSignatureId);
       },
       error: (error: unknown) => {
         settlePending();
@@ -494,17 +501,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
           detail: this.invalidateFailureDetail(error),
         });
+        if (error instanceof HttpErrorResponse && error.status === 409) this.refreshLoadedRows(null, orgUid, claSignatureId);
       },
     });
   }
 
-  /**
-   * Refreshes the loaded rows after a successful invalidate. A loaded span of more than one page is
-   * marked Invalidated in place first, so the state does not flicker while the span refetches; a
-   * single page just retriggers its resource. Guards the pair, so a confirm that outran a CCLA
-   * change refreshes nothing it no longer owns.
-   */
-  private refreshAfterInvalidate(signatureId: string, orgUid: string, claSignatureId: string): void {
+  private refreshLoadedRows(invalidatedId: string | null, orgUid: string, claSignatureId: string): void {
     if (this.destroyed) return;
     if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
     if (this.pagesLoaded > 1) {
@@ -512,8 +514,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       this.fetchGeneration.set(generation);
       this.loadingMore.set(true);
       const search = (this.searchTerm() ?? '').trim();
-      this.markInvalidatedInPlace(signatureId);
-      this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
+      if (invalidatedId) this.markInvalidatedInPlace(invalidatedId);
+      this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation, invalidatedId !== null);
       return;
     }
     this.reloadTrigger.update((value) => value + 1);
@@ -535,6 +537,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
               // shown as this invalidation's date/reason. The producer's refresh supplies the real ones.
               invalidatedAt: undefined,
               invalidatedBy: undefined,
+              invalidatedByDisplay: undefined,
               invalidationReason: undefined,
             }
           : ack
@@ -542,7 +545,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     });
   }
 
-  private refreshLoadedSpan(orgUid: string, claSignatureId: string, search: string, pages: number, generation: number): void {
+  private refreshLoadedSpan(orgUid: string, claSignatureId: string, search: string, pages: number, generation: number, afterInvalidate: boolean): void {
     let remaining = pages;
     this.claService
       .getContributorAcknowledgments(orgUid, claSignatureId, { search })
@@ -553,8 +556,19 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           return this.claService.getContributorAcknowledgments(orgUid, claSignatureId, { search, nextKey: list.nextKey });
         }),
         reduce((acc, list) => this.mergeAcknowledgmentPage(acc, list), null as OrgClaContributorAcknowledgmentList | null),
-        catchError(() => {
-          if (!this.destroyed && this.fetchGeneration() === generation && orgUid === this.orgUid() && claSignatureId === this.signatureId()) {
+        catchError((error: unknown) => {
+          console.warn(
+            'Failed to refresh the loaded acknowledgments after an invalidate:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.statusText
+          );
+          if (
+            afterInvalidate &&
+            !this.destroyed &&
+            this.fetchGeneration() === generation &&
+            orgUid === this.orgUid() &&
+            claSignatureId === this.signatureId()
+          ) {
             this.messageService.add({
               severity: 'warn',
               summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
@@ -675,7 +689,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         ariaLabel: `GitLab username @${ack.gitlabUsername}, opens on gitlab.com`,
       };
     }
-    if (ack.email) return { lfLogin: null, display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
+    // Upstream data: only a plain single-recipient address becomes a mailto link; anything else
+    // (query fields, separators, percent escapes) renders as plain text.
+    if (ack.email) {
+      return { lfLogin: null, display: ack.email, href: isMailtoSafeEmail(ack.email) ? `mailto:${ack.email}` : null, ariaLabel: `Email ${ack.email}` };
+    }
     return { lfLogin: null, display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
   }
 
@@ -690,7 +708,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   private formatInvalidatedTooltip(ack: OrgClaContributorAcknowledgment): string {
     const parts: string[] = [];
-    if (ack.invalidatedBy) parts.push(`Invalidated by ${ack.invalidatedBy}`);
+    const who = ack.invalidatedByDisplay?.trim() || ack.invalidatedBy;
+    if (who) parts.push(`Invalidated by ${who}`);
     if (ack.invalidationReason) parts.push(`Reason: ${ack.invalidationReason}`);
     return parts.join(' · ');
   }

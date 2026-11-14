@@ -6,6 +6,8 @@ import { inject, Injectable } from '@angular/core';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
   MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES,
   MENTORSHIP_MENTEE_TASK_STATUS_ERROR_SUMMARY,
@@ -26,8 +28,8 @@ import { catchError, map, Observable, of } from 'rxjs';
  * `changeStatus` never errors: it emits `true` when the change was saved and `false` when it was not,
  * after showing the reason. A success leaves the refresh to `MentorshipMenteeService`, which drops the
  * cached applications. A failure that means the mentee's view is out of date (see
- * `MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES`) also re-reads them; the impersonation guard's 403
- * shows the server's message and re-reads nothing.
+ * `MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES`) also re-reads them, and the BFF's past-due 400 gets
+ * its own copy; the impersonation guard's 403 shows the server's message and re-reads nothing.
  *
  * Callers must not cancel the returned observable when their view goes away (no `takeUntilDestroyed`):
  * the cached applications are invalidated and the toast is shown only when the request completes, so
@@ -64,6 +66,9 @@ export class MenteeTaskStatusService {
     if (err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
       detail = serverAuthoredMessage(err, MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK);
     } else if (MENTORSHIP_MENTEE_TASK_STATUS_STALE_STATUSES.includes(err.status)) {
+      if (err.status === 400 && code === MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE) {
+        detail = MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE;
+      }
       this.menteeService.clearMenteeCaches();
     }
 

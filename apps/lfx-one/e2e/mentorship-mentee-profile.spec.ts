@@ -6,7 +6,7 @@
  * (KB: `code-truthiness/missing-e2e-for-empty-state`).
  *
  * The profile page renders through distinct empty-state branches: profile error, about-me empty,
- * skills empty, areas-to-improve empty, additional-notes empty, resume empty, application-history
+ * skills empty, areas-to-improve empty, additional-notes empty, application-history
  * empty. This suite stubs `/api/mentorship/mentee/profile` via `page.route` so it locks each
  * empty-state independently of whatever the signed-in user has stored upstream, and drives the
  * Edit Mentee Profile drawer through its seeded cancel/save workflow.
@@ -16,11 +16,11 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL } from '@lfx-one/shared/constants';
 import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
+import { MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -28,13 +28,12 @@ test.setTimeout(60_000);
 
 test.describe('Mentee Profile — empty states', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: '', resumeFileName: null, resumeUrl: null },
+          profile: { aboutMe: '', skillsHave: [], skillsWant: [], additionalNotes: '' },
           history: [],
         }),
       })
@@ -58,12 +57,6 @@ test.describe('Mentee Profile — empty states', () => {
     await expect(page.getByTestId('mentorship-mentee-profile-details-notes-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
   });
 
-  test('shows the resume empty label when the mentee has not uploaded one', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toHaveCount(0);
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-name')).toHaveCount(0);
-  });
-
   test('shows the application-history empty state when the mentee has no applications', async ({ page }) => {
     await expect(page.getByTestId('mentorship-application-history-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-application-history-list')).toHaveCount(0);
@@ -72,7 +65,6 @@ test.describe('Mentee Profile — empty states', () => {
 
 test.describe('Mentee Profile — error state', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
     await openMenteeProfile(page);
   });
@@ -90,8 +82,6 @@ const POPULATED_PROFILE = {
     skillsHave: ['Python', 'Go'],
     skillsWant: ['Observability'],
     additionalNotes: 'Comfortable working asynchronously.',
-    resumeFileName: 'test-user-1-resume.pdf',
-    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
   history: [
     { id: 'hist_pending', programId: 'prog_gridflow', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' },
@@ -100,7 +90,6 @@ const POPULATED_PROFILE = {
 
 test.describe('Mentee Profile — edit drawer golden path', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) =>
       route.fulfill({
         status: 200,
@@ -117,7 +106,6 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
     await expect(page.getByTestId('mentorship-mentee-profile-details-about-text')).toContainText('Want production pipelines.');
     await expect(page.getByTestId('mentorship-mentee-profile-details-skills-list')).toContainText('Python');
     await expect(page.getByTestId('mentorship-mentee-profile-details-notes-text')).toHaveText('Comfortable working asynchronously.');
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toContainText('test-user-1-resume.pdf');
     await expect(page.getByTestId('mentorship-application-history-name-hist_pending')).toHaveText('GridFlow Ingestion');
 
     await page.getByTestId('mentorship-mentee-profile-details-edit').click();
@@ -128,14 +116,5 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
 
     await page.getByTestId('mentee-profile-edit-drawer-cancel').click();
     await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
-  });
-
-  test('Resume Browse shows the coming-soon toast', async ({ page }) => {
-    await page.getByTestId('mentorship-mentee-profile-details-edit').click();
-    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
-
-    await page.getByTestId('mentee-profile-edit-resume-browse').click();
-    await expect(page.getByText(MENTORSHIP_COMING_SOON_DETAIL)).toBeVisible();
-    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
   });
 });

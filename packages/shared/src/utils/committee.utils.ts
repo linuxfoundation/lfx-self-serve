@@ -1,19 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import type { Committee, CommitteeFoundationGroup, CommitteeMemberPermissionInfo, GroupBehavioralClass } from '../interfaces/committee.interface';
+import type {
+  Committee,
+  CommitteeFoundationGroup,
+  CommitteeMailingListLink,
+  CommitteeMemberPermissionInfo,
+  GroupBehavioralClass,
+  GroupEditLink,
+  JoinMode,
+  ParentCommitteeOption,
+} from '../interfaces/committee.interface';
 import type { GroupsEngagementStats } from '../interfaces/groups-engagement-stats.interface';
 import type { CommitteeMember } from '../interfaces/member.interface';
-import type { BadgeSeverity } from '../interfaces/components.interface';
+import type { BadgeSeverity, TagSeverity } from '../interfaces/components.interface';
+import type { PersonaType } from '../interfaces/persona.interface';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import {
   CATEGORY_BEHAVIORAL_CLASS,
+  COMMITTEE_CATEGORIES,
+  FILTERED_COMMITTEE_CATEGORIES,
   FOUNDATION_LEVEL_GROUP_FALLBACK_LABEL,
   GROUPS_ENGAGEMENT_ICON_CLASS,
   OTHER_GROUPS_LABEL,
 } from '../constants/committees.constants';
 import { formatRelativeTime } from './date-time.utils';
+import { getMailingListCommands } from './mailing-list.utils';
 import { getEntityCommands } from './entity-route.utils';
 import { slugify } from './string.utils';
 
@@ -88,6 +102,34 @@ export function getGroupCommands(committee: Pick<Committee, 'uid' | 'is_foundati
 }
 
 /**
+ * Link target for a group's associated mailing list(s). One list links straight to its detail page;
+ * several link to the group's page, where they are all listed. `null` when no lists were enriched
+ * onto the committee (e.g. only the `has_mailing_list` flag is known), so callers fall back to text.
+ */
+export function getCommitteeMailingListLink(
+  committee: Pick<Committee, 'uid' | 'is_foundation' | 'project_slug' | 'mailing_lists'>
+): CommitteeMailingListLink | null {
+  const lists = committee.mailing_lists ?? [];
+  if (lists.length === 0) {
+    return null;
+  }
+
+  const queryParams = committee.project_slug ? { project: committee.project_slug } : null;
+  if (lists.length === 1) {
+    // A group's lists belong to the group's project, and the list index never emits `is_foundation`, so use the committee's tier.
+    const [list] = lists;
+    return {
+      commands: getMailingListCommands({ uid: list.uid, is_foundation: committee.is_foundation }),
+      queryParams,
+      target: 'list',
+      label: list.title || list.group_name || null,
+    };
+  }
+
+  return { commands: getGroupCommands(committee) ?? ['/groups', committee.uid], queryParams, target: 'group', label: `${lists.length} mailing lists` };
+}
+
+/**
  * True when a `/groups/:id` (or lens-prefixed) route param names this committee — either by UID
  * or by vanity `sso_group_name` slug (case-insensitive). Authenticated vanity URLs keep the slug
  * in the route while the loaded payload carries the UID (GH-2072).
@@ -116,6 +158,46 @@ export function buildCommitteeCreateQueryParams(committee: Committee): Record<st
     params['project'] = committee.project_slug;
   }
   return params;
+}
+
+/** Categories a persona may pick when creating a group; Maintainers get the restricted set. */
+export function getSelectableCommitteeCategories(persona: PersonaType): { label: string; value: string }[] {
+  return persona === 'maintainer' ? FILTERED_COMMITTEE_CATEGORIES : COMMITTEE_CATEGORIES;
+}
+
+/**
+ * Type options for editing an existing group: the persona's selectable categories, plus the group's
+ * current category when it falls outside that set (e.g. a Maintainer viewing a TOC) so the select
+ * never renders blank for a value the group already holds.
+ */
+export function getEditableCommitteeCategories(persona: PersonaType, currentCategory: string | null | undefined): { label: string; value: string }[] {
+  const options = getSelectableCommitteeCategories(persona);
+  return currentCategory && !options.some((option) => option.value === currentCategory)
+    ? [{ label: currentCategory, value: currentCategory }, ...options]
+    : options;
+}
+
+/**
+ * Parent-group select options: the "No Parent" choice, then every top-level committee except
+ * `excludeUid` (a group can't be its own parent). Shared by the edit wizard's Basic Info step and
+ * the settings tab's General card so the eligibility rule can't drift between them.
+ */
+export function buildParentCommitteeOptions(committees: Committee[], excludeUid: string | null | undefined, groupLabel: string): ParentCommitteeOption[] {
+  return [
+    { label: `No Parent ${groupLabel}`, value: null },
+    ...committees
+      .filter((committee) => !committee.parent_uid && committee.uid !== excludeUid)
+      .map((committee) => ({ label: committee.name, value: committee.uid })),
+  ];
+}
+
+/** Edit-wizard link for a group — the same tier-aware route the groups table uses, with the flat `/groups/:uid/edit` fallback for unenriched payloads. */
+export function getGroupEditLink(committee: Pick<Committee, 'uid' | 'is_foundation' | 'project_slug'>): GroupEditLink {
+  const queryParams: Record<string, string> = {};
+  if (committee.project_slug) {
+    queryParams['project'] = committee.project_slug;
+  }
+  return { commands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'], queryParams };
 }
 
 // ── Per-type query helpers ──────────────────────────────────────────────────
@@ -218,6 +300,17 @@ export function canManageCommitteeMembers(committee: Committee | null | undefine
   return !!committee?.writer;
 }
 
+/**
+ * Whether the current caller may read this committee's member roster under its `member_visibility`
+ * setting. Fail-closed: anything other than an explicit `basic_profile` is treated as hidden, so the
+ * roster is then visible only to callers who manage (`writer`) or review (`auditor`) the committee.
+ * Enforced server-side on the roster read routes and mirrored client-side to skip the fetch.
+ */
+export function canViewCommitteeRoster(committee: Committee | null | undefined): boolean {
+  if (!committee) return false;
+  return committee.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || !!committee.writer || committee.auditor === true;
+}
+
 /** Whether a member has an active "Voting Rep" status (excludes Alternate Voting Rep). */
 export function isVotingRep(member: CommitteeMember): boolean {
   return member.voting?.status === CommitteeMemberVotingStatus.VOTING_REP;
@@ -243,6 +336,71 @@ export function resolveGroupsCardRoleSeverity(role: CommitteeMemberRole | 'Membe
       return 'success';
     case CommitteeMemberRole.LF_STAFF:
       return 'contrast';
+    default:
+      return 'secondary';
+  }
+}
+
+/**
+ * Maps a committee member role to a Tailwind `bgColor`/`color` pair for the inline role chip —
+ * styled the same way as the behavioral-class chip (rounded-full pill with coloured background).
+ *
+ * Returns `null` when the role is absent, `'None'`, or an empty string so the template can use
+ * `@if (committee.roleChip)` to hide the chip cleanly.
+ */
+export function resolveRoleChip(role: CommitteeMemberRole | 'Member' | null | undefined): { bgColor: string; color: string } | null {
+  if (!role || role === CommitteeMemberRole.NONE) return null;
+  switch (role) {
+    case CommitteeMemberRole.CHAIR:
+      return { bgColor: 'bg-purple-100', color: 'text-purple-700' };
+    case CommitteeMemberRole.VICE_CHAIR:
+      return { bgColor: 'bg-indigo-100', color: 'text-indigo-700' };
+    case CommitteeMemberRole.LF_STAFF:
+      return { bgColor: 'bg-sky-100', color: 'text-sky-700' };
+    case CommitteeMemberRole.DIRECTOR:
+    case CommitteeMemberRole.TAC_TOC_REPRESENTATIVE:
+      return { bgColor: 'bg-blue-100', color: 'text-blue-700' };
+    case CommitteeMemberRole.LEAD:
+      return { bgColor: 'bg-teal-100', color: 'text-teal-700' };
+    case CommitteeMemberRole.SECRETARY:
+    case CommitteeMemberRole.TREASURER:
+      return { bgColor: 'bg-amber-100', color: 'text-amber-700' };
+    case CommitteeMemberRole.DEVELOPER_SEAT:
+      return { bgColor: 'bg-cyan-100', color: 'text-cyan-700' };
+    default:
+      // 'Member' and any unrecognised value
+      return { bgColor: 'bg-gray-100', color: 'text-gray-600' };
+  }
+}
+
+/**
+ * Computes the merged "Type" display label for a committee row/card chip — collapses the former
+ * separate "Type" (raw category) and "Class" (behavioral class) columns into one:
+ *   - SIGs: `"SIG | {raw category}"` to expose the sub-type (e.g. "SIG | Marketing Mailing List")
+ *   - All others: behavioral-class label only (e.g. "Working Groups", "Boards", "Oversight")
+ *
+ * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent`.
+ */
+export function resolveTypeDisplay(committee: { behavioralClass?: string; category?: string; classDisplay?: { label?: string } }): string {
+  if (committee.behavioralClass === 'special-interest-group' && committee.category) {
+    return `SIG | ${committee.category}`;
+  }
+  return committee.classDisplay?.label ?? 'Other';
+}
+
+/**
+ * Maps a group's `join_mode` to a tag severity so joinability is scannable at a glance.
+ * Shared by both `CommitteeTableComponent` and `MyGroupsCardGridComponent` — extracted here
+ * so the two views can't drift and so the 4-branch mapping is unit-tested in this package.
+ */
+export function resolveJoinModeSeverity(mode?: JoinMode): TagSeverity {
+  switch (mode) {
+    case 'open':
+      return 'success';
+    case 'application':
+      return 'info';
+    case 'invite_only':
+      return 'warn';
     default:
       return 'secondary';
   }

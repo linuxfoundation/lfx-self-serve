@@ -4,12 +4,13 @@
 import { Component, computed, DestroyRef, inject, linkedSignal, makeStateKey, PLATFORM_ID, signal, Signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -19,11 +20,12 @@ import {
   Committee,
   CommitteeInvite,
   CommitteeMember,
-  CommitteeMemberVisibility,
   CommitteePermissionLevel,
   CommitteeTab,
   CommitteeUser,
   getCommitteeCategorySeverity,
+  MembershipTagDisplay,
+  PollStatus,
   TagSeverity,
 } from '@lfx-one/shared';
 import {
@@ -33,18 +35,31 @@ import {
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
   CommitteeOrganizationReference,
+  GroupEditLink,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
   ProjectContext,
+  Survey,
   TabConfigEntry,
+  Vote,
 } from '@lfx-one/shared/interfaces';
-import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_BACK_PATHS,
+  COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_VALID_TABS,
+  VOTE_INVITATION_COUNT_REFRESH_MS,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
+  canViewCommitteeRoster,
   committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
+  getGroupCommands,
+  getGroupEditLink,
+  hasMeetingEnded,
   invitationRequiresOrganization,
 } from '@lfx-one/shared/utils';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
@@ -57,7 +72,12 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
+import { DocumentService } from '@services/document.service';
+import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
+import { VoteService } from '@services/vote.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { InvitationSubtextPipe } from '@pipes/invitation-subtext.pipe';
@@ -75,6 +95,7 @@ import {
   finalize,
   firstValueFrom,
   map,
+  merge,
   Observable,
   of,
   switchMap,
@@ -85,6 +106,7 @@ import {
 import { committeeJoinErrorMessage, committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -115,6 +137,27 @@ const INVITE_TOAST_KEY = 'committee-view-invite';
 const ACCESS_RETRY_ATTEMPTS = 3;
 const ACCESS_RETRY_INTERVAL_MS = 400;
 
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  Chair: 'Leads the group and facilitates decisions',
+  'Vice Chair': 'Supports the Chair; acts in their absence',
+  Lead: 'Leads the technical direction of the group',
+  Secretary: 'Manages group records and communications',
+  Treasurer: 'Oversees group finances and reporting',
+  Director: 'Serves on the governing board',
+  'TAC/TOC Representative': 'Represents the group on the advisory council',
+  'Developer Seat': 'Represents the developer community in governance',
+  'LF Staff': 'Linux Foundation staff supporting the group',
+};
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function buildTooltipHtml(title: string, bullets: string[]): string {
+  const items = bullets.map((b) => `<div class="flex gap-1"><span>•</span><span>${b}</span></div>`).join('');
+  return `<div><strong>${escapeHtml(title)}</strong><div class="flex flex-col gap-0.5 pl-2 mt-1">${items}</div></div>`;
+}
+
 @Component({
   selector: 'lfx-committee-view',
   imports: [
@@ -128,6 +171,7 @@ const ACCESS_RETRY_INTERVAL_MS = 400;
     PopoverModule,
     SkeletonModule,
     ToastModule,
+    TooltipModule,
     CategoryAvatarColorPipe,
     InitialsPipe,
     InvitationSubtextPipe,
@@ -159,6 +203,10 @@ export class CommitteeViewComponent {
   private readonly userService = inject(UserService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
+  private readonly surveyService = inject(SurveyService);
+  private readonly voteService = inject(VoteService);
+  private readonly documentService = inject(DocumentService);
   private readonly invitationService = inject(InvitationService);
   private readonly joinApplicationSession = inject(CommitteeJoinApplicationSessionService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
@@ -168,6 +216,21 @@ export class CommitteeViewComponent {
   private readonly transferState = inject(TransferState);
 
   private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
+  /**
+   * True when the user arrived from a Me Lens list — My Groups (table anchor and card grid link) or the
+   * Surveys and Votes group links — used to show a context-transition notice.
+   * Reads an explicit `fromMeLens` boolean from navigation state rather inferring it from the display label, so renaming the label
+   * can never silently suppress the notice (addresses GH review on coupling to a label literal).
+   */
+  protected readonly fromMeLens: boolean = this.router.getCurrentNavigation()?.extras?.state?.['fromMeLens'] === true;
+  /**
+   * List route the back button and browser back return to. Set by the page that linked here (e.g. `/surveys`)
+   * through navigation state; anything outside `COMMITTEE_BACK_PATHS` falls back to the Groups list.
+   */
+  protected readonly backPath: string = this.resolveBackPath(this.router.getCurrentNavigation()?.extras?.state?.['backPath']);
+  // The foundation or project a meetings list was scoped to, so Back restores it even after the group page switched to a sub-project.
+  private readonly backProject: string | null = this.resolveBackProject(this.router.getCurrentNavigation()?.extras?.state?.['backProject']);
+  private readonly backLens: 'foundation' | 'project' | null = this.resolveBackLens(this.router.getCurrentNavigation()?.extras?.state?.['backLens']);
 
   // Set when a server-side read is denied and the terminal decision is left to the client. Only
   // one read is ever in flight (switchMap), so a plain field is enough.
@@ -197,10 +260,53 @@ export class CommitteeViewComponent {
   // window is exhausted, so the view shows "finalizing access" rather than the error state.
   public accessFinalizing = signal<boolean>(false);
   public refresh = signal(0);
+  // Consumed once by readCommitteeToleratingPropagation's next read, then reset — set via
+  // refreshCommittee({ skipCache: true })/refreshMembers({ skipCache: true }) when a caller needs a
+  // guaranteed-fresh committee payload (role/voting fields) rather than a 10s-cached hit, e.g. after
+  // a reverse mailing-list sync changes committee membership (copilot, #4911 review).
+  private skipCacheOnNextRefresh = signal(false);
+  private readonly projectWriterRetry = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
+  public readonly membersError = signal(false);
+  private readonly membersLoadedFor = signal<string | null>(null);
+  public readonly membersReady = computed(
+    () =>
+      !this.membersLoading() &&
+      !this.membersError() &&
+      !!this.committeeId() &&
+      this.membersLoadedFor() === this.committee()?.uid &&
+      committeeRouteIdMatches(this.committeeId(), this.committee()) &&
+      canViewCommitteeRoster(this.committee())
+  );
   public invitesLoading = signal<boolean>(true);
   public applicationsLoading = signal<boolean>(true);
+  // Votes and surveys are pre-fetched here so the tab badge counts are available before the user
+  // first opens those tabs. votesRefresh/surveysRefresh increment to trigger a re-fetch (e.g.
+  // after a delete from the child component).
+  public votesLoading = signal<boolean>(true);
+  public surveysLoading = signal<boolean>(true);
+  private readonly votesRefresh = signal(0);
+  private readonly surveysRefresh = signal(0);
+  // Documents are only counted (not fetched) so the tab badge is available before the tab is opened;
+  // the tab itself loads the rows when it is. documentsRefresh re-counts after a document is added.
+  public documentCountLoading = signal<boolean>(true);
+  private readonly documentsRefresh = signal(0);
+  // Set by the invitation-count poll before it bumps votesRefresh (GH-4078) and consumed by the next
+  // initVotes fetch, which then runs silently: no badge-hiding votesLoading, no error toast, and a
+  // failure keeps the current rows instead of emptying the Votes tab.
+  private votesRefreshSilent = false;
+  // Committee whose fetch produced the current rawVotes(), so a failed silent poll only keeps rows it owns.
+  private votesCommitteeUid: string | undefined;
+  // Confirmed deadline from committee-votes' voteExtended output, held until rawVotes() reflects a
+  // deadline at least as new (self-healing, mirrors votes-table's own extendedDeadlines overlay) — this
+  // must live here rather than in CommitteeVotesComponent because @switch destroys that component on
+  // every tab switch, which previously dropped the override and let the stale pre-extension deadline
+  // reappear once the user returned to the Votes tab (per @audigregorie, GH-3823 review).
+  private readonly extendedVoteOverrides = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
+  // Confirmed `ended` status from committee-votes' voteClosed output, held for the same reason as extendedVoteOverrides and
+  // dropped once rawVotes() reports the vote as no longer active.
+  private readonly closedVoteOverrides = signal<Map<string, Pick<Vote, 'status' | 'early_end_time'>>>(new Map());
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -235,6 +341,23 @@ export class CommitteeViewComponent {
   // Pending invites share the members refresh trigger so adding/revoking refreshes both.
   public invites: Signal<CommitteeInvite[]> = this.initializeInvites();
   public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
+  // Pre-fetched so tab badge counts are available before the user visits each tab. The child
+  // components receive these as inputs and emit refresh outputs to trigger re-fetches here.
+  private readonly rawVotes: Signal<Vote[]> = this.initVotes();
+  // Overlays extendedVoteOverrides onto rawVotes so the extension survives committee-votes being
+  // destroyed/recreated on tab switches (per @audigregorie, GH-3823 review).
+  public votes: Signal<Vote[]> = computed(() => {
+    const overrides = this.extendedVoteOverrides();
+    const closed = this.closedVoteOverrides();
+    if (overrides.size === 0 && closed.size === 0) return this.rawVotes();
+    return this.rawVotes().map((vote) => {
+      const override = overrides.get(vote.uid);
+      const closedOverride = closed.get(vote.uid);
+      return override || closedOverride ? { ...vote, ...override, ...closedOverride } : vote;
+    });
+  });
+  public surveys: Signal<Survey[]> = this.initSurveys();
+  public documentCount: Signal<number | null> = this.initDocumentCount();
   // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
   // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
   public readonly engagementMetricsEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(WG_ENGAGEMENT_METRICS_FLAG, false);
@@ -250,6 +373,16 @@ export class CommitteeViewComponent {
   // committee response carrying the new my_role.
   public myRoleLoading: Signal<boolean> = computed(() => this.loading() || this.committeeRefreshing());
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  /**
+   * Role-only visitor check for privacy-gated inputs (Email column, votes/surveys fetch,
+   * channels card, About tab). Deliberately excludes `myRoleLoading()` so the boundary is
+   * based solely on known role state and cannot fail open during a silent refresh when
+   * `committeeRefreshing()` is true. Also excludes `canReview()` so auditors (committee#auditor)
+   * are not treated as visitors and retain access to private mailing lists and the Email column.
+   * Before the initial data arrives (myRole() === null), this correctly fails closed —
+   * privacy-gated UI stays in visitor mode until a non-null role is confirmed.
+   */
+  public isVisitorForPrivacy: Signal<boolean> = computed(() => this.myRole() === null && !this.canEdit() && !this.canReview());
   /** True when the visitor submitted an application for the current committee this session. */
   public hasPendingApplication: Signal<boolean> = computed(() => {
     const uid = this.committee()?.uid;
@@ -282,9 +415,69 @@ export class CommitteeViewComponent {
     return getCommitteeCategorySeverity(category || '');
   });
 
-  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.lensService.activeLens() === 'me' ? 'My Groups' : 'Groups'));
+  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? 'Groups');
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
+
+  /**
+   * Project-writer access, which is what `writerGuard` requires for the edit wizard — `committee.writer`
+   * alone also covers committee-only writers, whom the guard redirects with an access-denied notice.
+   * Same project lookup as the wizard's own access check, and only probed for committee writers.
+   * Tagged with the committee uid it was fetched for: this view is reused across `/groups/:id`
+   * navigations, so an untagged result from the previous group would stay visible until the next
+   * lookup settles.
+   */
+  private readonly projectWriter: Signal<{ uid: string; writer: boolean; failed: boolean; attempt: number } | null> = toSignal(
+    combineLatest([toObservable(this.committee), toObservable(this.projectWriterRetry)]).pipe(
+      map(([committee, attempt]) =>
+        committee?.writer
+          ? { uid: committee.uid, key: resolveEntityWriteSlug(committee, this.projectContextService.activeContext()?.slug ?? null), attempt }
+          : null
+      ),
+      distinctUntilChanged((previous, next) => previous?.uid === next?.uid && previous?.key === next?.key && previous?.attempt === next?.attempt),
+      switchMap((target) => {
+        if (!target) {
+          return of(null);
+        }
+        if (!target.key) {
+          // Missing project context is not a transient lookup failure; retrying cannot supply it.
+          return of({ uid: target.uid, writer: false, failed: false, attempt: target.attempt });
+        }
+        return this.projectService.getProject(target.key, false, { strictWriter: true }).pipe(
+          map((project) => ({ uid: target.uid, writer: project?.writer === true, failed: project === null, attempt: target.attempt })),
+          catchError(() => of({ uid: target.uid, writer: false, failed: true, attempt: target.attempt }))
+        );
+      })
+    ),
+    { initialValue: null }
+  );
+
+  /** Link to the full edit wizard (type, name, parent, settings, members); null unless the viewer can actually open it. */
+  public editLink: Signal<GroupEditLink | null> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return committee?.uid && this.canEdit() && access?.uid === committee.uid && access.writer ? getGroupEditLink(committee) : null;
+  });
+
+  /** The weekly brief email share requires project-writer access server-side (`NOT_PROJECT_WRITER`), not just committee-writer access. */
+  public canShareWeeklyBriefByEmail: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return !!committee?.uid && this.canEdit() && !this.shareAccessLoading() && access?.uid === committee.uid && access.writer;
+  });
+
+  /** True while the project-writer lookup for the current committee is unresolved, so the card can hold back its denial hint. */
+  public shareAccessLoading: Signal<boolean> = computed(() => {
+    const committee = this.committee();
+    const access = this.projectWriter();
+    return !!committee?.uid && this.canEdit() && (access?.uid !== committee.uid || access.attempt !== this.projectWriterRetry());
+  });
+
+  /** A failed lookup grants nothing, but must not be presented as a confirmed permission denial. */
+  public shareAccessError: Signal<boolean> = computed(() => {
+    const access = this.projectWriter();
+    return this.canEdit() && !this.shareAccessLoading() && access?.uid === this.committee()?.uid && access?.failed === true;
+  });
 
   /** Non-writer members may send invites in invite_only groups (LFXV2-2690). */
   public canSendMemberInvites: Signal<boolean> = computed(() => {
@@ -308,9 +501,63 @@ export class CommitteeViewComponent {
     return 'member';
   });
 
+  /** Resolved membership status label, severity, and icon for display in the group header. Null while loading. */
+  public membershipStatus: Signal<MembershipTagDisplay | null> = computed(() => {
+    if (this.myRoleLoading()) return null;
+    if (this.canEdit()) return { label: 'Manager', severity: 'info', icon: 'fa-light fa-user-gear' };
+    if (this.canReview()) return { label: 'Auditor', severity: 'secondary', icon: 'fa-light fa-user-magnifying-glass' };
+    const role = this.myRole();
+    if (role !== null) {
+      return { label: role === 'None' ? 'Member' : role, severity: 'success', icon: 'fa-light fa-user-check' };
+    }
+    if (this.hasPendingApplication()) return { label: 'Application Pending', severity: 'warn', icon: 'fa-light fa-user-clock' };
+    return { label: 'Not a Member', severity: 'secondary', icon: 'fa-light fa-user' };
+  });
+
+  /** HTML tooltip content explaining what the current membership role allows. */
+  public membershipTooltipHtml: Signal<string> = computed(() => {
+    const status = this.membershipStatus();
+    if (!status) return '';
+    const { label } = status;
+    switch (label) {
+      case 'Manager':
+        return buildTooltipHtml('Manager', [
+          'Manage group members and their roles',
+          'Edit group settings and information',
+          'Create and manage meetings',
+          'Full access to all group content',
+        ]);
+      case 'Auditor':
+        return buildTooltipHtml('Auditor', [
+          'View all group content and discussions',
+          'Access the full member roster',
+          'Cannot modify settings or manage members',
+        ]);
+      case 'Application Pending':
+        return buildTooltipHtml('Application Pending', ['Your request to join is under review', 'You will be notified when approved or declined']);
+      case 'Not a Member':
+        return buildTooltipHtml('Not a Member', ['Join this group to access member-only content', 'Participate in meetings, votes, and discussions']);
+      default: {
+        const roleDesc = ROLE_DESCRIPTIONS[label];
+        const bullets = [
+          ...(roleDesc ? [roleDesc] : []),
+          'Attend meetings and view discussions',
+          'Participate in votes and surveys',
+          'Access member-only content',
+        ];
+        return buildTooltipHtml(label, bullets);
+      }
+    }
+  });
+
   public hasChannels: Signal<boolean> = computed(() => {
     const c = this.committee();
-    return this.associatedMailingLists().length > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
+    // Visitors only see public mailing lists — don't show the card wrapper when a visitor
+    // would land on an empty card (private-only lists, no chat channel, no website).
+    // Use isVisitorForPrivacy() (role-only) so a silent refresh does not temporarily
+    // expose private lists while committeeRefreshing() is true.
+    const visibleListCount = this.isVisitorForPrivacy() ? this.associatedMailingLists().filter((ml) => ml.public).length : this.associatedMailingLists().length;
+    return visibleListCount > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
   });
 
   // -- Associated mailing lists (rich objects filtered by ml.committees[]) --
@@ -327,11 +574,23 @@ export class CommitteeViewComponent {
   // consume this; fetched once here and passed down to both to avoid a duplicate round-trip). --
   public meetingsLoading = signal(true);
   public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
+  // Client-side filter matching the predicate committee-meetings uses: only meetings where at least
+  // one occurrence is non-cancelled and non-ended (for recurring), or the meeting itself hasn't
+  // ended (for one-time). This is what the Meetings tab's "Upcoming" view actually shows, so the
+  // badge count is guaranteed to match the tab list.
+  public upcomingMeetingsFiltered: Signal<Meeting[]> = computed(() =>
+    this.upcomingMeetings().filter((m) => {
+      if (m.occurrences?.length) {
+        return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+      }
+      return !hasMeetingEnded(m);
+    })
+  );
 
   // -- Tab visibility signals --
-  public isMembersTabVisible: Signal<boolean> = computed(
-    () => this.committee()?.member_visibility === CommitteeMemberVisibility.BASIC_PROFILE || this.canEdit() || this.canSendMemberInvites()
-  );
+  // Same rule the BFF roster endpoint enforces (basic_profile, writer or auditor), plus the
+  // invite-only path for members who can send invites while the roster stays hidden.
+  public isMembersTabVisible: Signal<boolean> = computed(() => canViewCommitteeRoster(this.committee()) || this.canEdit() || this.canSendMemberInvites());
   public isVotesTabVisible: Signal<boolean> = computed(() => !!this.committee()?.enable_voting);
 
   // -- Visitor gating --
@@ -342,17 +601,60 @@ export class CommitteeViewComponent {
     { key: 'about', label: 'About', icon: 'fa-circle-info', visible: () => true },
     {
       key: 'members',
-      label: () => {
-        const count = this.committee()?.total_members;
-        return count != null ? `Members (${count})` : 'Members';
-      },
+      label: 'Members',
       icon: 'fa-users',
-      visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
+      // isMembersTabVisible() already encodes the full access rule (canViewCommitteeRoster
+      // covers BASIC_PROFILE + writer + auditor; canEdit and canSendMemberInvites add invite_only
+      // and admin scenarios). Using it directly here ensures BASIC_PROFILE visitors see the tab
+      // even though isMemberOrAdmin() is false for them (GH-2988).
+      visible: () => this.isMembersTabVisible(),
+      // Use the actual roster length for callers who have roster access (including admin/writers):
+      // total_members may under-count when the current user is an admin who isn't also a regular
+      // member — the backend counts roster members but may not include all manager entries.
+      // Show null while loading so the badge only appears once the count is known.
+      badge: () => {
+        if (this.membersLoading() || this.membersError()) return null;
+        if (canViewCommitteeRoster(this.committee())) return this.members().length;
+        // Invite-only members who can send invites but whose roster is hidden fall back to
+        // the server-computed total (the roster wasn't fetched, so members() is always []).
+        return this.committee()?.total_members ?? null;
+      },
     },
-    { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
-    { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
-    { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
-    { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
+    {
+      key: 'votes',
+      label: 'Votes',
+      icon: 'fa-check-to-slot',
+      visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible(),
+      badge: () => (this.votesLoading() ? null : this.votes().length),
+    },
+    {
+      // Visitors see the Meetings tab when the group's calendar is marked public.
+      key: 'meetings',
+      label: 'Meetings',
+      icon: 'fa-calendar',
+      visible: () => this.isMemberOrAdmin() || !!this.committee()?.calendar?.public,
+      // Derived from upcomingMeetingsFiltered (a proper computed() signal) so the badge count
+      // always equals the length of the list passed to the Meetings tab.
+      badge: () => (this.meetingsLoading() ? null : this.upcomingMeetingsFiltered().length),
+    },
+    {
+      key: 'surveys',
+      label: 'Surveys',
+      icon: 'fa-chart-simple',
+      visible: () => this.isMemberOrAdmin(),
+      badge: () => (this.surveysLoading() ? null : this.surveys().length),
+    },
+    // Visitors can see the Documents tab — committee#viewer FGA (the same check that gates the
+    // group page itself) also governs /committees/:id/folders, /links, and committee_document
+    // query-service resources, so a viewer of a public committee already has read access to all
+    // three document sub-types. No separate document-level visibility flag exists in the model.
+    {
+      key: 'documents',
+      label: 'Documents',
+      icon: 'fa-folder-open',
+      visible: () => true,
+      badge: () => (this.documentCountLoading() ? null : this.documentCount()),
+    },
     { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
   ];
 
@@ -374,6 +676,51 @@ export class CommitteeViewComponent {
   public constructor() {
     this.initAutoSelectInitialTab();
 
+    // Re-fetch votes while a just-opened vote still shows "Counting invitations…" (GH-4078) so its
+    // real participation count appears without a manual reload; stops once the carrier window ends.
+    // A tick that lands while a foreground fetch is loading is skipped so it never cancels that fetch;
+    // the poll re-arms once its rows arrive.
+    toObservable(this.rawVotes)
+      .pipe(
+        switchMap((votes) => (this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        filter(() => !this.votesLoading()),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.votesRefreshSilent = true;
+        this.votesRefresh.update((v) => v + 1);
+      });
+
+    // Self-healing eviction for extendedVoteOverrides (mirrors votes-table's own extendedDeadlines
+    // pattern): once rawVotes() reflects a deadline at least as new as the override, drop it rather
+    // than keep shadowing a now-accurate search-index row indefinitely.
+    toObservable(this.rawVotes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((votes) => {
+        const closed = this.closedVoteOverrides();
+        if (closed.size > 0) {
+          const nextClosed = new Map(closed);
+          for (const vote of votes) {
+            if (vote.status !== PollStatus.ACTIVE) nextClosed.delete(vote.uid);
+          }
+          if (nextClosed.size !== closed.size) this.closedVoteOverrides.set(nextClosed);
+        }
+        const overrides = this.extendedVoteOverrides();
+        if (overrides.size === 0) return;
+        const next = new Map(overrides);
+        let changed = false;
+        for (const vote of votes) {
+          const override = next.get(vote.uid);
+          if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
+            next.delete(vote.uid);
+            changed = true;
+          }
+        }
+        if (changed) {
+          this.extendedVoteOverrides.set(next);
+        }
+      });
+
     // Populate the shared invitation cache once in the browser so a direct landing on an invited
     // group (e.g. via the email link) can surface the Accept/Decline banner. Browser-only: the
     // banner is an interactive surface and the list is per-user.
@@ -382,6 +729,7 @@ export class CommitteeViewComponent {
     }
 
     syncEntityProjectContext(this.committee, this.projectContextService, this.router, this.destroyRef);
+    restoreMeLensOnBrowserBack(this.router, this.lensService, this.destroyRef, this.fromMeLens, this.backPath);
 
     bindLfxDocumentTitle(computed(() => this.committee()?.name));
 
@@ -396,6 +744,55 @@ export class CommitteeViewComponent {
         this.joinApplicationSession.clearPending(committeeUid);
       });
 
+    // When a visitor lands on a group with application join-mode, check the server for an
+    // existing pending application so the CTA reflects the real state on first load (not
+    // just what's recorded in sessionStorage for this browser session). Browser-only:
+    // SSR cannot make authenticated user-scoped API calls for this secondary enrichment.
+    //
+    // Implementation note: we observe a *computed trigger* rather than toObservable(this.committee)
+    // directly. In initializeCommittee(), `committee` emits its value *before* finalize() runs and
+    // clears `loading`. If we filtered on this.committee() directly, myRoleLoading() would still be
+    // true at filter time (finalize hasn't fired yet), so the predicate would fail and the fetch
+    // would never happen. The computed signal re-evaluates whenever ANY of committee, myRole, or
+    // myRoleLoading changes — including when loading settles — so the pipeline fires once the full
+    // visitor state is confirmed.
+    if (isPlatformBrowser(this.platformId)) {
+      const applicationCheckTrigger = computed(() => {
+        const committee = this.committee();
+        // Emit the committee UID only when loading has settled and the caller is confirmed visitor.
+        const isVisitorReady = this.myRole() === null && !this.myRoleLoading();
+        if (!committee?.uid || committee.join_mode !== 'application' || !isVisitorReady) {
+          return null;
+        }
+        return committee.uid;
+      });
+
+      toObservable(applicationCheckTrigger)
+        .pipe(
+          filter((uid): uid is string => !!uid),
+          distinctUntilChanged(),
+          switchMap((uid) =>
+            this.committeeService.getMyApplication(uid).pipe(
+              // getMyApplication already converts 404 → null; any other error is re-thrown.
+              // Use EMPTY so transient 5xx / network failures do not emit and therefore
+              // do not trigger clearPending (which would re-enable Apply-to-Join prematurely).
+              catchError(() => EMPTY),
+              map((application) => ({ uid, application }))
+            )
+          ),
+          takeUntilDestroyed(this.destroyRef)
+        )
+        .subscribe(({ uid, application }) => {
+          if (application?.status === 'pending') {
+            this.joinApplicationSession.markPending(uid);
+          } else {
+            // null = no pending application (rejected / withdrawn / never applied).
+            // Clear any stale session marker so the Apply-to-Join CTAs are re-enabled.
+            this.joinApplicationSession.clearPending(uid);
+          }
+        });
+    }
+
     // Flush any deferred decline on destroy so navigating away still commits it.
     this.destroyRef.onDestroy(() => {
       for (const inviteUid of [...this.pendingDeclines.keys()]) {
@@ -406,10 +803,58 @@ export class CommitteeViewComponent {
 
   // -- Public methods --
   public goBack(): void {
-    this.router.navigate(['/', 'groups']);
+    if (this.fromMeLens) {
+      this.lensService.setLens('me');
+    }
+    if (this.backProject && this.backLens) {
+      // Restore the lens first: the flat route redirects by the active lens, and the group page may have moved it.
+      this.lensService.setLens(this.backLens);
+      this.router.navigate([this.backPath], { queryParams: { project: this.backProject } });
+      return;
+    }
+    this.router.navigate([this.backPath]);
   }
 
-  public refreshCommittee(): void {
+  /**
+   * Settings saved. Normally a plain refetch by the route id — but a rename regenerates `sso_group_name`
+   * for public / SSO groups, so a page opened through the old vanity slug would refetch a slug that no
+   * longer resolves. Move to the stable UID route first; the param change drives the refetch.
+   */
+  public onSettingsSaved(): void {
+    const committee = this.committee();
+    if (committee?.uid && this.committeeId() !== committee.uid) {
+      // Set unconditionally, not just on the refreshMembers() path below — a reverse sync can
+      // add/remove committee members within the 10s detail-cache TTL, and the route param change
+      // below drives its own refetch (readCommitteeToleratingPropagation) that would otherwise
+      // replay that stale cache instead of seeing post-sync state (dealako/cursor, #4911 review).
+      this.skipCacheOnNextRefresh.set(true);
+      // The route id change resets activeTab to Overview; `?tab=` is what the auto-select restores it from, and an explicit value also overrides a stale deep-linked tab.
+      void this.router.navigate(getGroupCommands(committee) ?? ['/groups', committee.uid], {
+        queryParams: { tab: this.activeTab() },
+        queryParamsHandling: 'merge',
+        replaceUrl: true,
+      });
+      return;
+    }
+    // committeeUpdated fires from both a Settings save and a reverse sync (mailing list →
+    // committee) via openSyncPreviewDialog's committeeChanged gate — a save already evicts the
+    // detail cache server-side (updateCommittee), but a reverse sync can add/remove committee
+    // members within the 10s detail-cache TTL, so skipCache guarantees role-gated UI and the
+    // Settings form see the post-sync state instead of a stale cached read (copilot, dealako,
+    // #4911 review).
+    this.refreshMembers({ skipCache: true });
+  }
+
+  public retryShareAccessCheck(): void {
+    if (this.shareAccessError()) {
+      this.projectWriterRetry.update((attempt) => attempt + 1);
+    }
+  }
+
+  public refreshCommittee(options?: { skipCache?: boolean }): void {
+    if (options?.skipCache) {
+      this.skipCacheOnNextRefresh.set(true);
+    }
     // Set synchronously here, not only inside initializeCommittee's async switchMap below (which
     // still sets it too, on the actual refetch) -- closes a race where refreshMembers() bumps
     // membersRefresh() (read by initEngagement's engagementKey) in the same synchronous call, but
@@ -423,18 +868,48 @@ export class CommitteeViewComponent {
     this.refresh.update((v) => v + 1);
   }
 
-  public refreshMembers(): void {
+  public refreshMembers(options?: { skipCache?: boolean }): void {
     this.membersLoading.set(true);
+    this.membersLoadedFor.set(null);
     this.membersRefresh.update((v) => v + 1);
     // The caller's role lives on the committee payload (not the members list), so any
     // member-mutation that triggers a members refresh must also refetch the committee
     // — otherwise role-gated UI (CTAs, banners, tabs) keeps a stale `my_role` until the
     // user navigates away and back. Cheap: the committee GET is a single round-trip.
-    this.refreshCommittee();
+    this.refreshCommittee(options);
+  }
+
+  public retryMembers(): void {
+    this.membersLoadedFor.set(null);
+    this.membersLoading.set(true);
+    this.membersRefresh.update((value) => value + 1);
   }
 
   public onMembersRefreshed(): void {
     this.refreshMembers();
+  }
+
+  public onVotesRefreshed(): void {
+    this.votesRefresh.update((v) => v + 1);
+  }
+
+  /** committee-votes' voteExtended output (relayed from votes-table) — held in parent-owned state so the
+   *  confirmed deadline survives the Votes tab being destroyed/recreated on tab switches (per
+   *  @audigregorie, GH-3823 review). */
+  public onVoteClosed(vote: Vote): void {
+    this.closedVoteOverrides.update((map) => new Map(map).set(vote.uid, { status: PollStatus.ENDED, early_end_time: vote.early_end_time }));
+  }
+
+  public onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverrides.update((map) => new Map(map).set(vote.uid, { end_time: vote.end_time, end_time_timezone: vote.end_time_timezone }));
+  }
+
+  public onDocumentsChanged(): void {
+    this.documentsRefresh.update((v) => v + 1);
+  }
+
+  public onSurveysRefreshed(): void {
+    this.surveysRefresh.update((v) => v + 1);
   }
 
   public onEngagementWindowChange(window: CommitteeEngagementWindow): void {
@@ -593,8 +1068,7 @@ export class CommitteeViewComponent {
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
-          this.refreshCommittee();
-          this.membersRefresh.update((v) => v + 1);
+          this.refreshCommitteeAfterLeave();
         },
         error: (err: HttpErrorResponse) => {
           const detail = committeeLeaveErrorMessage(err, committee.name);
@@ -752,6 +1226,49 @@ export class CommitteeViewComponent {
       });
   }
 
+  /**
+   * Polls until the committee payload confirms the leave has propagated (my_role gone), then
+   * refreshes members and committee. Sets committeeRefreshing immediately so role-gated UI
+   * stays hidden for the whole polling window — mirrors refreshCommitteeAfterMembershipChange.
+   */
+  private refreshCommitteeAfterLeave(): void {
+    const committeeId = this.committee()?.uid ?? this.committeeId();
+
+    // Hide role-gated UI while we wait for the backend to confirm the leave.
+    this.committeeRefreshing.set(true);
+    this.membersRefresh.update((v) => v + 1);
+
+    if (!committeeId) {
+      this.committeeRefreshing.set(false);
+      return;
+    }
+
+    let pollSucceeded = false;
+
+    // skipCache: same reasoning as refreshCommitteeAfterMembershipChange — the 10s detail-cache
+    // TTL would replay stale my_role across all attempts otherwise.
+    timer(400, 400)
+      .pipe(
+        take(6),
+        exhaustMap(() => this.committeeService.getCommittee(committeeId, { skipCache: true, auditor: true }).pipe(catchError(() => of(null)))),
+        filter((committee) => committee !== null && !committee.my_role),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: () => {
+          pollSucceeded = true;
+          this.refreshMembers();
+        },
+        complete: () => {
+          if (!pollSucceeded) {
+            this.committeeRefreshing.set(false);
+            this.refreshMembers();
+          }
+        },
+      });
+  }
+
   /** Cancels the deferred timer and fires the upstream decline immediately (destroy flush). */
   private flushDecline(inviteUid: string): void {
     const pending = this.pendingDeclines.get(inviteUid);
@@ -797,38 +1314,43 @@ export class CommitteeViewComponent {
       data: { committeeName },
     }) as DynamicDialogRef;
 
-    ref.onClose.pipe(take(1)).subscribe((result: JoinApplicationDialogResult | null) => {
-      if (!result) {
-        this.joiningOrLeaving.set(false);
-        return;
-      }
+    // PrimeNG DynamicDialog fires destroy() — not close() — when the user dismisses via the
+    // header X button (onDialogHide path). In that case onClose never emits. Merge onDestroy
+    // as a null fallback so joiningOrLeaving is always reset on every dismiss path.
+    merge(ref.onClose, ref.onDestroy.pipe(map(() => null as JoinApplicationDialogResult | null)))
+      .pipe(takeUntilDestroyed(this.destroyRef), take(1))
+      .subscribe((result: JoinApplicationDialogResult | null) => {
+        if (!result) {
+          this.joiningOrLeaving.set(false);
+          return;
+        }
 
-      this.committeeService
-        .submitApplication(committeeUid, result.message, organization)
-        .pipe(finalize(() => this.joiningOrLeaving.set(false)))
-        .subscribe({
-          next: () => {
-            this.joinApplicationSession.markPending(committeeUid);
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Application Submitted',
-              detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
-              life: 8000,
-            });
-          },
-          error: (err: HttpErrorResponse) => {
-            const upstream = err.error?.message as string | undefined;
-            let detail: string;
-            if (err.status === 409) {
+        this.committeeService
+          .submitApplication(committeeUid, result.message, organization)
+          .pipe(finalize(() => this.joiningOrLeaving.set(false)))
+          .subscribe({
+            next: () => {
               this.joinApplicationSession.markPending(committeeUid);
-              detail = 'You already have a pending application for this group.';
-            } else {
-              detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
-            }
-            this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
-          },
-        });
-    });
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Application Submitted',
+                detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
+                life: 8000,
+              });
+            },
+            error: (err: HttpErrorResponse) => {
+              const upstream = err.error?.message as string | undefined;
+              let detail: string;
+              if (err.status === 409) {
+                this.joinApplicationSession.markPending(committeeUid);
+                detail = 'You already have a pending application for this group.';
+              } else {
+                detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
+              }
+              this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
+            },
+          });
+      });
   }
 
   private async openOrganizationDialog(committeeName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
@@ -865,7 +1387,11 @@ export class CommitteeViewComponent {
       return Promise.resolve(null);
     }
     return new Promise((resolve) => {
-      ref.onClose.pipe(take(1)).subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
+      // Same PrimeNG destroy()-vs-close() issue: X button fires onDestroy, not onClose.
+      // Merge onDestroy as a null fallback so resolvingOrg is always cleared on dismiss.
+      merge(ref.onClose, ref.onDestroy.pipe(map(() => null as AcceptInviteOrganizationDialogResult | null)))
+        .pipe(take(1))
+        .subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
     });
   }
 
@@ -897,17 +1423,23 @@ export class CommitteeViewComponent {
 
   private initAutoSelectInitialTab(): void {
     const navigationKey = computed(() => ({ id: this.committeeId(), tab: this.initialTab() }));
-    // toObservable must run in an injection context; build the streams here, not inside switchMap.
-    const visibleTabs$ = toObservable(this.visibleTabs);
-    const membersLoading$ = toObservable(this.membersLoading);
+    const selectionSnapshot = computed(() => ({
+      id: this.committeeId(),
+      committeeMatches: committeeRouteIdMatches(this.committeeId(), this.committee()),
+      roleLoading: this.myRoleLoading(),
+      membersLoading: this.membersLoading(),
+      tabs: this.visibleTabs(),
+    }));
+    // Bridge one coherent snapshot in the injection context, not separately scheduled signals.
+    const selectionSnapshot$ = toObservable(selectionSnapshot);
     toObservable(navigationKey)
       .pipe(
-        switchMap(({ tab }) => {
-          if (!tab) return EMPTY;
-          return combineLatest([visibleTabs$, membersLoading$]).pipe(
-            filter(([, loading]) => !loading),
+        switchMap(({ id, tab }) => {
+          if (!id || !tab) return EMPTY;
+          return selectionSnapshot$.pipe(
+            filter((snapshot) => snapshot.id === id && snapshot.committeeMatches && !snapshot.roleLoading && !snapshot.membersLoading),
             take(1),
-            filter(([tabs]) => tabs.some((t) => t.key === tab)),
+            filter((snapshot) => snapshot.tabs.some((entry) => entry.key === tab)),
             map(() => tab)
           );
         }),
@@ -998,8 +1530,12 @@ export class CommitteeViewComponent {
    * Accept/Decline right away instead of behind a misleading "Finalizing" flash (Cursor Bugbot).
    */
   private readCommitteeToleratingPropagation(committeeId: string, isInitialLoad: boolean): Observable<Committee | null> {
+    // Consumed once per read, not per retry attempt — every retry inside attemptRead below shares
+    // this same captured value, so a skipCache request still skips cache across its retry window.
+    const skipCache = this.skipCacheOnNextRefresh();
+    this.skipCacheOnNextRefresh.set(false);
     const attemptRead = (retriesLeft: number, deniedBefore: boolean): Observable<Committee | null> =>
-      this.committeeService.getCommittee(committeeId, { auditor: true }).pipe(
+      this.committeeService.getCommittee(committeeId, { skipCache, auditor: true }).pipe(
         tap((committee) => {
           this.accessFinalizing.set(false);
           // Authorization cleared but the membership index hasn't caught up. Hand that second,
@@ -1090,15 +1626,22 @@ export class CommitteeViewComponent {
     return toSignal(
       combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
         switchMap(([committee]) => {
-          if (!committee?.uid) {
+          this.membersLoadedFor.set(null);
+          this.membersError.set(false);
+          // Skip the roster fetch when member_visibility hides it from this caller (server enforces too)
+          if (!committee?.uid || !canViewCommitteeRoster(committee)) {
             this.membersLoading.set(false);
             return of([]);
           }
 
           this.membersLoading.set(true);
 
-          return this.committeeService.getCommitteeMembers(committee.uid).pipe(
-            catchError(() => of([])),
+          return this.committeeService.getCommitteeMembers(committee.uid, new HttpParams().set('require_complete', 'true')).pipe(
+            tap(() => this.membersLoadedFor.set(committee.uid)),
+            catchError(() => {
+              this.membersError.set(true);
+              return of([]);
+            }),
             finalize(() => this.membersLoading.set(false))
           );
         })
@@ -1386,11 +1929,125 @@ export class CommitteeViewComponent {
     );
   }
 
+  /**
+   * Pre-fetches votes for this committee so the Votes tab badge count is available before the
+   * user first opens the tab. Only fetches when the committee has voting enabled and the current
+   * user has some form of access (member role or writer). Mirrors initializeMembers' pattern of
+   * reading access state from the committee object to avoid signal timing issues.
+   */
+  private initVotes(): Signal<Vote[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.votesRefresh)]).pipe(
+        switchMap(([committee]) => {
+          const silent = this.votesRefreshSilent;
+          this.votesRefreshSilent = false;
+          // Only fetch if voting is enabled and the user has access (member or admin, not visitor).
+          if (!committee?.uid || !committee.enable_voting || (!committee.my_role && !committee.writer)) {
+            this.votesLoading.set(false);
+            return of([]);
+          }
+          if (!silent) this.votesLoading.set(true);
+          return this.voteService.getVotesByCommittee(committee.uid).pipe(
+            // mergeRecentlyCreatedVotes (GH-4007) inserts a just-created/cloned vote that is missing
+            // from the page entirely while the search index catches up — scoped to this committee so
+            // a vote created elsewhere can't leak in. getVotesByCommittee is unpaginated (returns the
+            // full list in one call), so isFirstPage defaults true with no duplication risk.
+            //
+            // Runs on the RAW fetched rows, before the opened-overlay (Copilot/dealako, GH-4007 round
+            // 4): the created-carrier's eviction check reads `vote.status`, and if the opened overlay
+            // ran first it would see an already-rebadged Active row and evict the carrier while the
+            // index is still actually lagging — losing the new vote again once it converges.
+            map((votes) => this.voteService.mergeRecentlyCreatedVotes(votes, { committeeUid: committee.uid })),
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
+            // index rows — same transformation the child component previously applied.
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            tap(() => (this.votesCommitteeUid = committee.uid)),
+            catchError(() => {
+              // A failed background poll keeps the current rows without a toast; the new array re-arms
+              // the poll so it retries while the carrier window is still live (GH-4078). The rows are
+              // kept only when they were fetched for this same committee, so a poll can never surface
+              // another committee's votes (keyed on the fetch, not each row's committee_uid, because a
+              // multi-committee vote carries only its primary committee there).
+              if (silent) return of(this.votesCommitteeUid === committee.uid ? [...this.rawVotes()] : []);
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
+              return of([]);
+            }),
+            finalize(() => this.votesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  /**
+   * Pre-fetches surveys for this committee so the Surveys tab badge count is available before the
+   * user first opens the tab. Only fetches when the user has member or admin access.
+   */
+  private initSurveys(): Signal<Survey[]> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.surveysRefresh)]).pipe(
+        switchMap(([committee]) => {
+          // Only fetch when the user has access (member or admin, not a visitor).
+          if (!committee?.uid || (!committee.my_role && !committee.writer)) {
+            this.surveysLoading.set(false);
+            return of([]);
+          }
+          this.surveysLoading.set(true);
+          return this.surveyService.getSurveysByCommittee(committee.uid, 'last_modified_at.desc').pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load surveys. Please try again.' });
+              return of([]);
+            }),
+            finalize(() => this.surveysLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  /**
+   * Counts this committee's documents so the Documents tab badge is available before the user first
+   * opens the tab. Uses the query service count endpoint, so no document rows are fetched. Resolves to
+   * null on failure, which keeps the badge hidden.
+   */
+  private initDocumentCount(): Signal<number | null> {
+    return toSignal(
+      combineLatest([toObservable(this.committee), toObservable(this.documentsRefresh)]).pipe(
+        switchMap(([committee]) => {
+          if (!committee?.uid) {
+            this.documentCountLoading.set(false);
+            return of(null);
+          }
+          this.documentCountLoading.set(true);
+          return this.documentService.getCommitteeDocumentCount(committee.uid).pipe(finalize(() => this.documentCountLoading.set(false)));
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   /** Case-insensitive email OR username match against an auditor list (committee-scoped or inherited). */
   private isCallerInAuditorList(auditors: CommitteeUser[] | undefined): boolean {
     const email = this.userService.user()?.email?.toLowerCase();
     const username = this.userService.viewerUsername()?.toLowerCase();
     if (!email && !username) return false;
     return auditors?.some((u) => (email && u.email?.toLowerCase() === email) || (username && u.username?.toLowerCase() === username)) ?? false;
+  }
+
+  /** Accepts a `backProject` navigation-state value only when it looks like a project slug. */
+  private resolveBackProject(value: unknown): string | null {
+    return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : null;
+  }
+
+  /** Accepts a `backLens` navigation-state value only for the two lenses a scoped list can be on. */
+  private resolveBackLens(value: unknown): 'foundation' | 'project' | null {
+    return value === 'foundation' || value === 'project' ? value : null;
+  }
+
+  /** Accepts a `backPath` navigation-state value only when it is an allowed list route. */
+  private resolveBackPath(requested: unknown): string {
+    return typeof requested === 'string' && COMMITTEE_BACK_PATHS.includes(requested) ? requested : '/groups';
   }
 }

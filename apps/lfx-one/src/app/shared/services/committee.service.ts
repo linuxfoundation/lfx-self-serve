@@ -13,6 +13,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
@@ -26,11 +27,12 @@ import {
   CreateCommitteeMemberRequest,
   GroupsEngagementStats,
   MyCommittee,
+  MyPendingApplication,
   PaginatedResponse,
   QueryServiceCountResponse,
 } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { catchError, map, Observable, of, shareReplay, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -239,6 +241,23 @@ export class CommitteeService {
     );
   }
 
+  /**
+   * Adds up to 100 members in one request and returns one result per row, in submission order
+   * (GH-5111). `options.skipNotification` applies to every row, as for createCommitteeMember.
+   */
+  public bulkCreateCommitteeMembers(
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    options?: CreateCommitteeMemberOptions
+  ): Observable<CommitteeMemberBulkCreateResult> {
+    const params = options?.skipNotification ? new HttpParams().set('skip_notification', 'true') : undefined;
+
+    return this.http.post<CommitteeMemberBulkCreateResult>(`/api/committees/${encodeURIComponent(committeeId)}/members/bulk`, { members }, { params }).pipe(
+      take(1),
+      tap(() => this.evictCommitteeDetailCache(committeeId))
+    );
+  }
+
   public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Observable<CommitteeMember> {
     return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(
       take(1),
@@ -296,6 +315,31 @@ export class CommitteeService {
   public submitApplication(committeeId: string, message?: string, organization?: CommitteeOrganizationReference): Observable<CommitteeJoinApplication> {
     const body: CreateCommitteeJoinApplicationRequest = { message: message || '', ...(organization ? { organization } : {}) };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
+  }
+
+  /**
+   * Returns the caller's own pending join application for a committee.
+   * Emits `null` when no pending application exists (404 → null).
+   * Used to pre-seed application state on page load without relying on sessionStorage.
+   */
+  public getMyApplication(committeeId: string): Observable<CommitteeJoinApplication | null> {
+    return this.http.get<CommitteeJoinApplication>(`/api/committees/${committeeId}/my-applications`).pipe(
+      take(1),
+      catchError((err: HttpErrorResponse) => (err.status === 404 ? of(null) : throwError(() => err)))
+    );
+  }
+
+  /**
+   * Returns all of the caller's own pending join applications across all committees,
+   * enriched with committee display fields (name, is_foundation, project_slug).
+   * Used on the My Groups page to surface the "Pending Applications" section.
+   * Errors degrade to an empty array so a transient failure never breaks the My Groups load.
+   */
+  public getMyApplications(): Observable<MyPendingApplication[]> {
+    return this.http.get<MyPendingApplication[]>('/api/committees/my-applications').pipe(
+      take(1),
+      catchError(() => of([] as MyPendingApplication[]))
+    );
   }
 
   /** Lists join applications for a committee (from query index). */

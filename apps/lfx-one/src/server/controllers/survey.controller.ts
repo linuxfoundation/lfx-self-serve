@@ -1,11 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateSurveyRequest } from '@lfx-one/shared/interfaces';
+import { SURVEY_REMINDER_MAX_RECIPIENTS } from '@lfx-one/shared/constants';
+import { CreateSurveyRequest, SendSurveyRemindersRequest } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
-import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { SurveyService } from '../services/survey.service';
 
@@ -142,6 +144,19 @@ export class SurveyController {
         return;
       }
 
+      // surveyUid is interpolated directly into the upstream request path — reject anything
+      // that isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#436).
+      if (!isUuid(surveyUid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', {
+            operation: 'get_survey_responses',
+            service: 'survey_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
       const page = await this.surveyService.getSurveyResponses(req, surveyUid, req.query as Record<string, any>);
 
       logger.success(req, 'get_survey_responses', startTime, {
@@ -150,6 +165,105 @@ export class SurveyController {
       });
 
       res.json(page);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /surveys/:uid/reminders — resends the survey email to the selected response rows (#4340).
+   */
+  public async sendSurveyReminders(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const payload: SendSurveyRemindersRequest = req.body;
+    const startTime = logger.startOperation(req, 'send_survey_reminders', {
+      survey_uid: surveyUid,
+      recipient_count: Array.isArray(payload?.recipient_ids) ? payload.recipient_ids.length : undefined,
+    });
+
+    try {
+      const context = { operation: 'send_survey_reminders', service: 'survey_controller', path: req.path } as const;
+      if (!this.validateSurveyUid(surveyUid, req, next, context.operation)) return;
+      if (!validateRequestBody(payload, req, next, context)) return;
+      if (!validateArrayParameter(payload.recipient_ids, 'recipient_ids', req, next, context)) return;
+      if (payload.recipient_ids.length > SURVEY_REMINDER_MAX_RECIPIENTS) {
+        throw ServiceValidationError.forField('recipient_ids', `recipient_ids may name at most ${SURVEY_REMINDER_MAX_RECIPIENTS} recipients`, context);
+      }
+      if (payload.recipient_ids.some((id) => typeof id !== 'string' || !isUuid(id))) {
+        throw ServiceValidationError.forField('recipient_ids', 'recipient_ids must contain only response UUIDs', context);
+      }
+
+      const result = await this.surveyService.sendSurveyReminders(req, surveyUid, [...new Set(payload.recipient_ids)]);
+
+      logger.success(req, 'send_survey_reminders', startTime, { survey_uid: surveyUid, recipient_count: result.recipient_count });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /surveys/:uid/resync-preview — committee members a resync would add (#4340).
+   */
+  public async getResyncPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const startTime = logger.startOperation(req, 'get_survey_resync_preview', { survey_uid: surveyUid });
+
+    try {
+      if (!this.validateSurveyUid(surveyUid, req, next, 'get_survey_resync_preview')) return;
+      const committeeUid = this.parseCommitteeUid(req, 'get_survey_resync_preview');
+
+      const preview = await this.surveyService.getResyncPreview(req, surveyUid, committeeUid);
+
+      logger.success(req, 'get_survey_resync_preview', startTime, {
+        survey_uid: surveyUid,
+        recipient_count: preview.affected_recipients.length,
+      });
+      res.json(preview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /surveys/templates?project_uid=&committee_uid= — SurveyMonkey templates for the wizard (#5124).
+   */
+  public async getSurveyTemplates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_survey_templates';
+    const projectUid = req.query['project_uid'];
+    const startTime = logger.startOperation(req, operation, { project_uid: projectUid });
+
+    try {
+      if (typeof projectUid !== 'string' || !isUuid(projectUid)) {
+        next(ServiceValidationError.forField('project_uid', 'project_uid must be a valid UUID', { operation, service: 'survey_controller', path: req.path }));
+        return;
+      }
+      const committeeUid = this.parseCommitteeUid(req, operation);
+
+      const templates = await this.surveyService.getSurveyTemplates(req, projectUid, committeeUid);
+
+      logger.success(req, operation, startTime, { template_count: templates.length });
+      res.json(templates);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /surveys/:uid/resync — sends the survey to committee members added since launch (#4340).
+   */
+  public async resyncRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyUid = req.params['uid'];
+    const startTime = logger.startOperation(req, 'resync_survey_recipients', { survey_uid: surveyUid });
+
+    try {
+      if (!this.validateSurveyUid(surveyUid, req, next, 'resync_survey_recipients')) return;
+      const committeeUid = this.parseCommitteeUid(req, 'resync_survey_recipients');
+
+      await this.surveyService.resyncRecipients(req, surveyUid, committeeUid);
+
+      logger.success(req, 'resync_survey_recipients', startTime, { survey_uid: surveyUid, committee_uid: committeeUid });
+      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -171,6 +285,19 @@ export class SurveyController {
           service: 'survey_controller',
         })
       ) {
+        return;
+      }
+
+      // uid is interpolated directly into the upstream request path — reject anything that
+      // isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#436).
+      if (!isUuid(uid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', {
+            operation: 'get_survey_by_id',
+            service: 'survey_controller',
+            path: req.path,
+          })
+        );
         return;
       }
 
@@ -209,6 +336,19 @@ export class SurveyController {
         return;
       }
 
+      // uid is interpolated directly into the upstream request path — reject anything that
+      // isn't a UUID before it reaches the proxy layer (linuxfoundation/lfx-self-serve-ops#436).
+      if (!isUuid(uid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', {
+            operation: 'delete_survey',
+            service: 'survey_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
       await this.surveyService.deleteSurvey(req, uid);
 
       logger.success(req, 'delete_survey', startTime, {
@@ -220,5 +360,27 @@ export class SurveyController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** surveyUid is interpolated into the upstream path — accept UUIDs only. */
+  private validateSurveyUid(surveyUid: string | undefined, req: Request, next: NextFunction, operation: string): surveyUid is string {
+    if (!validateUidParameter(surveyUid, req, next, { operation, service: 'survey_controller' })) {
+      return false;
+    }
+    if (!isUuid(surveyUid as string)) {
+      next(ServiceValidationError.forField('uid', 'Survey uid must be a valid UUID', { operation, service: 'survey_controller', path: req.path }));
+      return false;
+    }
+    return true;
+  }
+
+  /** Optional `committee_uid` query param; must be a UUID when present. */
+  private parseCommitteeUid(req: Request, operation: string): string | undefined {
+    const value = req.query['committee_uid'];
+    if (value === undefined || value === '') return undefined;
+    if (typeof value !== 'string' || !isUuid(value)) {
+      throw ServiceValidationError.forField('committee_uid', 'committee_uid must be a valid UUID', { operation, service: 'survey_controller', path: req.path });
+    }
+    return value;
   }
 }

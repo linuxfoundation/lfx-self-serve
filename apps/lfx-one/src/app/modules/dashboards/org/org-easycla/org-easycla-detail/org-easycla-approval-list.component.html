@@ -9,7 +9,7 @@
       this page is routinely not a CLA manager for this pair — so a disabled button would be
       permanently disabled for them with no way to explain itself. Also absent while the list is
       loading or the grant is still unknown, so its enabled state is never decided from a hop that
-      has not arrived. Roster `canEdit` does not drive these controls.
+      has not arrived.
     -->
     @if (!locked() && !loading() && !fetchError() && canMutate()) {
       <lfx-button label="Add entries" icon="fa-light fa-plus" [disabled]="saving()" (onClick)="openAdd()" data-testid="org-easycla-approval-add" />

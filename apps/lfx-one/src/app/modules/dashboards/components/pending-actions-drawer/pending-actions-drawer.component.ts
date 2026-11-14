@@ -1,36 +1,69 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, UrlTree } from '@angular/router';
+import { JoinRequestSummaryComponent } from '@app/modules/dashboards/components/join-request-summary/join-request-summary.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
+import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_FADE_OUT_MS, PENDING_ACTION_LABEL } from '@lfx-one/shared/constants';
-import { buildFormationPendingActionView } from '@lfx-one/shared/utils';
+import {
+  PENDING_ACTION_BULK_DISMISS_SECTIONS,
+  PENDING_ACTION_BUTTON_ICON,
+  PENDING_ACTION_FADE_OUT_MS,
+  PENDING_ACTION_LABEL,
+  PENDING_ACTION_SECTION,
+  PENDING_ACTION_SECTION_LABEL,
+  PENDING_ACTION_SECTION_ORDER,
+} from '@lfx-one/shared/constants';
+import { buildFormationPendingActionView, isReviewableJoinApplication } from '@lfx-one/shared/utils';
+import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
 import { InvitationService } from '@shared/services/invitation.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { filter, timer } from 'rxjs';
 
-import type { DrawerActionRow, Meeting, MeetingRsvp, PendingActionItem, RsvpResponse } from '@lfx-one/shared/interfaces';
+import type {
+  DrawerActionRow,
+  DrawerActionSection,
+  Meeting,
+  MeetingRsvp,
+  PendingActionItem,
+  PendingActionSection,
+  RsvpResponse,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions-drawer',
-  imports: [DrawerModule, SkeletonModule, ButtonComponent, TagComponent, EmptyStateComponent, RsvpButtonGroupComponent],
+  imports: [
+    ConfirmDialogModule,
+    DrawerModule,
+    SkeletonModule,
+    ButtonComponent,
+    BadgeComponent,
+    TagComponent,
+    EmptyStateComponent,
+    RsvpButtonGroupComponent,
+    JoinRequestSummaryComponent,
+    MeetingTimePipe,
+  ],
   templateUrl: './pending-actions-drawer.component.html',
   styleUrl: './pending-actions-drawer.component.scss',
+  providers: [ConfirmationService],
 })
 export class PendingActionsDrawerComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly meetingService = inject(MeetingService);
   private readonly invitationService = inject(InvitationService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
 
@@ -39,6 +72,7 @@ export class PendingActionsDrawerComponent {
 
   public readonly pendingActions = input.required<PendingActionItem[]>();
   public readonly visible = model<boolean>(false);
+  public readonly processingApplicationKey = input<string | null>(null);
 
   public readonly actionCompleted = output<PendingActionItem>();
   // Emits voteUid when a Vote row's CTA is clicked so the parent dashboard can open the cast drawer inline.
@@ -47,25 +81,30 @@ export class PendingActionsDrawerComponent {
   // deferred-undo decline (whose Undo affordance lives in the parent's shared p-toast) are all owned in one place.
   public readonly acceptInvitationRequested = output<PendingActionItem>();
   public readonly declineInvitationRequested = output<PendingActionItem>();
+  public readonly approveApplicationRequested = output<PendingActionItem>();
+  public readonly rejectApplicationRequested = output<PendingActionItem>();
 
   private readonly hiddenActionsVersion = signal(0);
   // Rows currently in the fade-out + collapse transition; keeps them rendered through the animation.
   protected readonly completingRowKeys = signal<ReadonlySet<string>>(new Set());
   private readonly meetingCache = signal<Record<string, Meeting>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
-  private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
+  // A replacement feed permits one new attempt; cache/loading updates must not create a retry loop.
+  private readonly failedMeetingUids = linkedSignal<ReadonlySet<string>>(() => {
+    this.pendingActions();
+    return new Set<string>();
+  });
 
   protected readonly visibleRows: Signal<DrawerActionRow[]> = this.initVisibleRows();
   protected readonly uncompletedCount: Signal<number> = computed(() => this.visibleRows().length);
+  protected readonly sectionedRows: Signal<DrawerActionSection[]> = this.initSectionedRows();
 
   public constructor() {
-    // When the drawer becomes visible, eagerly load Meeting payloads for every RSVP row so the inline RSVP buttons render immediately.
-    // Subscribe only to the visibility signal (not `visibleRows`) — `visibleRows` re-emits every time `meetingCache` updates,
-    // which would cause an O(n) rescan per fetched meeting (O(n²) overall). Read `visibleRows()` synchronously inside the
-    // subscribe instead so each fetch fires exactly once per row.
-    toObservable(this.visible)
+    // Load missing RSVP meetings when the drawer opens or receives a refreshed feed while open.
+    // Watch the raw input, not `visibleRows`: cache updates would otherwise rescan every row per fetched meeting (O(n²)).
+    toObservable(computed(() => (this.visible() ? this.pendingActions() : null)))
       .pipe(
-        filter((isVisible) => isVisible),
+        filter((actions) => actions !== null),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => {
@@ -82,6 +121,7 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleAgendaOrOtherClick(item: DrawerActionRow): void {
+    if (item.type === 'JoinApplication') return;
     if (item.isVoteInline && item.voteUid) {
       this.visible.set(false);
       this.castVoteRequested.emit(item.voteUid);
@@ -95,9 +135,56 @@ export class PendingActionsDrawerComponent {
   }
 
   protected handleDismiss(item: DrawerActionRow): void {
+    if (item.type === 'JoinApplication') {
+      // Hides the request for this user only; it stays pending for other reviewers and on the group's applications tab.
+      if (!isReviewableJoinApplication(item)) return;
+      this.hiddenActionsService.dismissAction(item);
+      this.hiddenActionsVersion.update((v) => v + 1);
+      this.actionCompleted.emit(item);
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Request Dismissed',
+        detail: `The request from ${item.applicationApplicantEmail} is hidden from your pending actions. It is still pending for other reviewers.`,
+      });
+      return;
+    }
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, true);
+  }
+
+  // Dismissals are permanent cookies with no undo, so confirm before dismissing a whole section.
+  protected handleDismissAll(group: DrawerActionSection): void {
+    const rows = group.dismissibleRows;
+    if (rows.length === 0) return;
+    const noun = rows.length === 1 ? 'item' : 'items';
+    this.confirmationService.confirm({
+      header: `Dismiss all in ${group.label}`,
+      message: `Dismiss ${rows.length} ${noun} from ${group.label}? They will no longer appear in your pending actions.`,
+      icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Dismiss all',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm',
+      accept: () => {
+        // The confirm can sit open while the feed refreshes or a row is dismissed on its own: dismiss only the rows the user
+        // confirmed that are still dismissible now, so none is dismissed twice and the toast counts what actually happened.
+        const confirmedKeys = new Set(rows.map((row) => row.rowKey));
+        const liveRows = (this.sectionedRows().find((section) => section.section === group.section)?.dismissibleRows ?? []).filter((row) =>
+          confirmedKeys.has(row.rowKey)
+        );
+        if (liveRows.length === 0) return;
+        for (const row of liveRows) {
+          this.hiddenActionsService.dismissAction(row);
+          this.startCompletion(row, true);
+        }
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Actions dismissed',
+          detail: `Dismissed ${liveRows.length} ${liveRows.length === 1 ? 'item' : 'items'} from ${group.label}.`,
+        });
+      },
+    });
   }
 
   // Delegate invitation Accept/Decline to the parent (it owns the optimistic markResolved, toasts, and deferred undo).
@@ -162,6 +249,7 @@ export class PendingActionsDrawerComponent {
 
   // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), then drive the fade animation through a single timer.
   private startCompletion(item: PendingActionItem, skipHide = false): void {
+    if (item.type === 'JoinApplication') return;
     const rowKey = this.getRowKey(item);
     if (!skipHide) {
       this.hiddenActionsService.hideAction(item);
@@ -186,6 +274,9 @@ export class PendingActionsDrawerComponent {
 
   // Mirror HiddenActionsService.getActionIdentifier so the row key, hidden-cookie identifier, and `@for` track key all stay in sync.
   private getRowKey(item: PendingActionItem): string {
+    if (item.type === 'JoinApplication' && item.committeeUid && item.applicationUid) {
+      return `JoinApplication-${item.committeeUid}-${item.applicationUid}`;
+    }
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
     }
@@ -213,6 +304,40 @@ export class PendingActionsDrawerComponent {
       default:
         return response;
     }
+  }
+
+  // Group the visible rows into their drawer sections in the fixed PENDING_ACTION_SECTION_ORDER, skipping empty
+  // sections. Derives from visibleRows so completing rows keep their section mounted until the fade-out finishes.
+  private initSectionedRows(): Signal<DrawerActionSection[]> {
+    return computed(() => {
+      const rowsBySection = new Map<PendingActionSection, DrawerActionRow[]>();
+      for (const row of this.visibleRows()) {
+        // Totality is compile-time only — a `type` this bundle doesn't know would otherwise drop the row
+        // from every section while the header still counts it; land it in the catch-all instead.
+        const section = PENDING_ACTION_SECTION[row.type] ?? 'other';
+        const bucket = rowsBySection.get(section);
+        if (bucket) {
+          bucket.push(row);
+        } else {
+          rowsBySection.set(section, [row]);
+        }
+      }
+      return PENDING_ACTION_SECTION_ORDER.reduce<DrawerActionSection[]>((sections, section) => {
+        const rows = rowsBySection.get(section);
+        if (rows) {
+          const dismissibleRows = PENDING_ACTION_BULK_DISMISS_SECTIONS.includes(section) ? rows.filter((row) => this.isBulkDismissible(row)) : [];
+          sections.push({ section, label: PENDING_ACTION_SECTION_LABEL[section], rows, dismissibleRows });
+        }
+        return sections;
+      }, []);
+    });
+  }
+
+  // Mirrors the per-row Dismiss control: skip rows without one, rows already fading out, and RSVPs still loading their meeting.
+  private isBulkDismissible(row: DrawerActionRow): boolean {
+    if (row.isInvitation || row.isFormationItem || row.type === 'JoinApplication') return false;
+    if (this.completingRowKeys().has(row.rowKey)) return false;
+    return !(row.isRsvpInline && (row.isMeetingLoading || !row.meeting));
   }
 
   private initVisibleRows(): Signal<DrawerActionRow[]> {
@@ -250,6 +375,7 @@ export class PendingActionsDrawerComponent {
             isMeetingLoading: !!item.meetingUid && loading.has(item.meetingUid),
             meetingLoadFailed,
             isInvitation,
+            isReviewableApplication: item.type === 'JoinApplication' && isReviewableJoinApplication(item),
             // Formation rows (#2732): link, status chip and due label — shared with the dashboard list.
             ...buildFormationPendingActionView(item),
             acceptAriaLabel: `Accept invite to ${inviteGroupName}`,

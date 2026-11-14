@@ -3,6 +3,8 @@
 
 import {
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA,
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
   DEFAULT_ALL_ACTIVITIES_PROJECT_LIMIT,
   DEFAULT_ORG_PROJECTS_WORKSPACE_ID,
   DEFAULT_ORG_PROJECTS_WORKSPACE_NAME,
@@ -13,6 +15,8 @@ import {
   ORG_PROJECTS_SEARCH_MAX_RESULTS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
+  ORG_PROJECTS_MAINTAINER_ROLES_RANGE,
+  ORG_UNKNOWN_MAINTAINER_NAME,
   ORG_LENS_PROJECT_PEOPLE_COLUMNS,
   ORG_LENS_PROJECT_ROW_COLUMNS,
   VALKEY_CACHE,
@@ -44,12 +48,18 @@ import type {
   OrgProjectsWorkspaceProjectResource,
   OrgProjectsWorkspaceResource,
   OrgProjectsWorkspacesResponse,
+  OrgProjectMaintainerRoleRow,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { orgMaintainerRoleOverlap, readMaintainerRoles } from '../helpers/org-maintainer-roles-sql.helper';
+import { resolveOrgScope } from '../helpers/org-scope.helper';
+import { orgTeamMembersQueryOptions, readWithOrgTeamMembersFallback } from '../helpers/org-team-members.helper';
 import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -61,22 +71,40 @@ export class OrgLensProjectsService {
   private readonly snowflakeService = SnowflakeService.getInstance();
   private readonly microserviceProxy = new MicroserviceProxyService();
 
-  public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v7` bump: what is stored is no longer the response but the compact, people-deduplicated
-    // projection below (GH-1906). A `v6` entry decodes to nothing recognizable under the new
-    // reader, so it must miss outright rather than be read back.
-    const cacheKey = `projects:v7:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+  /**
+   * The account's projects. `orgScope` (lfx-self-serve-ops#1219) scopes only the contributors: under `insights` a
+   * contributor is listed for code of the account's Insights organization in repositories LFX Insights counts.
+   * `teamMembers` (lfx-self-serve-ops#1246) also applies to the contributors only: under `exclude`, the default, CDP
+   * team members are left out, as on People and Code Contributions. Influence, health, participants and maintainer roles
+   * are the same under every pick.
+   */
+  public async getProjects(
+    accountId: string,
+    orgName: string,
+    slugs: string[] | null,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS
+  ): Promise<OrgLensProjectsResponse> {
+    const scope = await resolveOrgScope(this.snowflakeService, accountId, orgScope);
+    // `v8` bump: maintainers are now the account's maintainer roles on the project (lfx-self-serve#4482), not the
+    // current-tenure people of ORG_LENS_PROJECT_PEOPLE, so a `v7` entry must miss. The served scope and the team
+    // members pick end the key.
+    const cacheKey = `projects:v8:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}:${scope}:${teamMembers}`;
     // Set by the fetcher below, read by `storable` immediately after it resolves. A flag rather
     // than a field on the response because it must never reach the browser or the stored value —
     // it describes this one fetch, not the page.
     let noActivityDegraded = false;
+    let rolesMissing = false;
+    let teamMembersUnavailable = false;
     return withOrgCompactCache(
       accountId,
       cacheKey,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
-        const fetched = await this.fetchProjects(accountId, orgName, slugs);
+        const fetched = await this.fetchProjects(accountId, orgName, slugs, scope, teamMembers);
         noActivityDegraded = fetched.noActivityDegraded;
+        rolesMissing = fetched.rolesMissing;
+        teamMembersUnavailable = fetched.response.teamMembersUnavailable === true;
         return fetched.response;
       },
       { encode: encodeProjectsResponse, decode: decodeProjectsResponse, accept: isCompactProjectsCache },
@@ -84,7 +112,8 @@ export class OrgLensProjectsService {
       // it once is the established fallback; storing it is not — and now that compaction brings
       // the largest orgs under the write cap for the first time, an unstored degraded response
       // would become an hour of wrong answers rather than a single one.
-      () => !noActivityDegraded
+      // Likewise a response read while the maintainer roles table or the team-member flag is missing is served, never stored.
+      () => !noActivityDegraded && !rolesMissing && !teamMembersUnavailable
     );
   }
 
@@ -181,9 +210,11 @@ export class OrgLensProjectsService {
   }
 
   /**
-   * `canEdit=false` (auditor-only callers) makes this a pure read: member-service rejects the
-   * default-workspace bootstrap and seed writes for them, so skipping the writes returns the
-   * indexed state instead of a 502 / empty-after-warning result.
+   * `canEdit=false` — a caller not on the company's admin list, including company-wide writers
+   * (`global_org_admin`, #3136) whose writes member-service would accept — makes loading a pure read:
+   * no default-workspace bootstrap and no seed writes, so opening Projects never writes to a company
+   * on someone else's behalf. `canEdit` comes from `OrgLensProjectsController.resolveCanEdit` (roster
+   * only, deliberately); explicit workspace edits are separate calls.
    */
   public async getWorkspaces(req: Request, accountId: string, canEdit: boolean): Promise<OrgProjectsWorkspacesResponse> {
     let workspaces = await this.fetchWorkspaceMetadata(req, accountId);
@@ -403,22 +434,31 @@ export class OrgLensProjectsService {
   private async fetchProjects(
     accountId: string,
     orgName: string,
-    slugs: string[] | null
-  ): Promise<{ response: OrgLensProjectsResponse; noActivityDegraded: boolean }> {
+    slugs: string[] | null,
+    scope: OrgScopeFilter,
+    teamMembers: OrgTeamMembersFilter
+  ): Promise<{ response: OrgLensProjectsResponse; noActivityDegraded: boolean; rolesMissing: boolean }> {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
+    // Requested slugs with no ORG_LENS_PROJECTS row (post-relaxation, no-activity participation is a real `full` row
+    // above) are hydrated from the onboarded catalog. The account can still hold maintainer roles on them — roles count
+    // with or without code — so the roles read covers them too.
+    const missingSlugs = this.missingRequestedSlugs(slugs, projectSlugs);
+    const roleSlugs = [...projectSlugs, ...missingSlugs];
     let noActivityDegraded = false;
-    // Run both slug-keyed reads concurrently to avoid a second sequential Snowflake round trip. fetchNoActivityProjects
-    // fires only for requested slugs with no ORG_LENS_PROJECTS row (post-relaxation, no-activity participation is a real `full` row above).
-    const [peopleRows, noActivityProjects] = await Promise.all([
-      projectSlugs.length ? this.fetchPeopleRows(accountId, projectSlugs) : Promise.resolve([]),
+    // Run the slug-keyed reads concurrently to avoid sequential Snowflake round trips.
+    const [people, maintainerRows, noActivityRows] = await Promise.all([
+      projectSlugs.length
+        ? readWithOrgTeamMembersFallback(teamMembers, 'get_org_lens_projects_people', (pick) => this.fetchPeopleRows(accountId, projectSlugs, scope, pick))
+        : Promise.resolve({ value: [] as OrgLensProjectPersonRow[], teamMembersUnavailable: false }),
+      roleSlugs.length ? this.fetchMaintainerRows(accountId, roleSlugs) : Promise.resolve([]),
       // No-activity hydration is a soft enhancement over the onboarded catalog (which may be mid-migration or
       // absent); never let its failure fail the whole response — degrade to activity rows only, as before.
-      this.fetchNoActivityProjects(slugs, projectSlugs).catch((err) => {
+      this.fetchNoActivityProjects(missingSlugs).catch((err) => {
         logger.warning(undefined, 'fetch_no_activity_org_projects', 'No-activity org project hydration failed; returning activity rows only', { err });
         noActivityDegraded = true;
-        return [] as OrgLensProject[];
+        return [] as OrgLensProjectRow[];
       }),
     ]);
 
@@ -427,19 +467,30 @@ export class OrgLensProjectsService {
         orgSlug: this.slugify(orgName) || accountId,
         orgName: orgName || 'Your organization',
         dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-        projects: [...projectRows.map((row) => this.mapProject(row, peopleRows)), ...noActivityProjects],
+        projects: [
+          ...projectRows.map((row) => this.mapProject(row, people.value, maintainerRows ?? [])),
+          ...noActivityRows.map((row) => this.mapNoActivityProject(row, maintainerRows ?? [])),
+        ],
+        ...(maintainerRows === null ? { maintainerRolesUnavailable: true as const } : {}),
+        // Exclude team members was asked but ORG_LENS_PROJECT_PEOPLE has no team-member flag yet: contributors include them.
+        ...(people.teamMembersUnavailable ? { teamMembersUnavailable: true as const } : {}),
       },
       noActivityDegraded,
+      rolesMissing: maintainerRows === null,
     };
   }
 
-  private async fetchNoActivityProjects(requestedSlugs: string[] | null, returnedSlugs: string[]): Promise<OrgLensProject[]> {
+  /** Requested slugs (trimmed, lowercased, de-duplicated) the account's ORG_LENS_PROJECTS rows did not return. */
+  private missingRequestedSlugs(requestedSlugs: string[] | null, returnedSlugs: string[]): string[] {
     if (!requestedSlugs?.length) {
       return [];
     }
     const returned = new Set(returnedSlugs.map((slug) => slug.toLowerCase()));
-    const missing = [...new Set(requestedSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))].filter((slug) => !returned.has(slug));
-    if (!missing.length) {
+    return [...new Set(requestedSlugs.map((slug) => slug.trim().toLowerCase()).filter(Boolean))].filter((slug) => !returned.has(slug));
+  }
+
+  private async fetchNoActivityProjects(missingSlugs: string[]): Promise<OrgLensProjectRow[]> {
+    if (!missingSlugs.length) {
       return [];
     }
     // Select project-global health so a fallback row can still render Health (sub-case A). These alias the columns
@@ -460,21 +511,24 @@ export class OrgLensProjectsService {
         HEALTH_SECURITY_V2,
         HEALTH_DEVELOPMENT_V2
       FROM ${this.onboardedProjectsTable()}
-      WHERE LOWER(PROJECT_SLUG) IN (${missing.map(() => '?').join(', ')})
+      WHERE LOWER(PROJECT_SLUG) IN (${missingSlugs.map(() => '?').join(', ')})
     `;
-    const result = await this.snowflakeService.execute<OrgLensProjectRow>(sql, missing);
-    // mapProject fills unselected org-relative metrics with placeholders and maps health from the columns above.
-    // metricsState reflects only health availability — derived from mapProject's `health` so the two can't drift.
-    // Emit both discriminators: metricsState for the new frontend, noActivityYet for a still-running pre-close-out
-    // frontend during a rolling deploy.
-    return result.rows.map((row) => {
-      const project = this.mapProject(row, []);
-      return {
-        ...project,
-        metricsState: project.health === 'unavailable' ? ('unavailable' as const) : ('health-only' as const),
-        noActivityYet: true,
-      };
-    });
+    return (await this.snowflakeService.execute<OrgLensProjectRow>(sql, missingSlugs)).rows;
+  }
+
+  /**
+   * A fallback (no-activity) project: mapProject fills the unselected org-relative metrics with placeholders, maps
+   * health from the catalog columns and the account's maintainer roles on it. metricsState reflects only health
+   * availability — derived from mapProject's `health` so the two can't drift. Emit both discriminators: metricsState
+   * for the new frontend, noActivityYet for a still-running pre-close-out frontend during a rolling deploy.
+   */
+  private mapNoActivityProject(row: OrgLensProjectRow, maintainerRows: OrgProjectMaintainerRoleRow[]): OrgLensProject {
+    const project = this.mapProject(row, [], maintainerRows);
+    return {
+      ...project,
+      metricsState: project.health === 'unavailable' ? ('unavailable' as const) : ('health-only' as const),
+      noActivityYet: true,
+    };
   }
 
   private buildProjectsQuery(slugs: string[] | null): string {
@@ -521,7 +575,20 @@ export class OrgLensProjectsService {
     return slugs?.length ? [accountId, ...slugs] : [accountId];
   }
 
-  private async fetchPeopleRows(accountId: string, projectSlugs: string[]): Promise<OrgLensProjectPersonRow[]> {
+  /**
+   * Contributors and participants; maintainers come from {@link fetchMaintainerRows}. Under `insights` a contributor
+   * row needs `IS_INSIGHTS_SCOPE` (lfx-self-serve-ops#1219); under `exclude` a contributor row flagged
+   * `IS_CDP_TEAM_MEMBER` is left out (lfx-self-serve-ops#1246). Participant rows carry NULL in both and are kept.
+   */
+  private async fetchPeopleRows(
+    accountId: string,
+    projectSlugs: string[],
+    scope: OrgScopeFilter,
+    teamMembers: OrgTeamMembersFilter
+  ): Promise<OrgLensProjectPersonRow[]> {
+    const scopeGate = scope === 'insights' ? " AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE))" : '';
+    // Only a contributor row flagged TRUE is dropped: a NULL flag keeps it, as on the other Org Lens reads.
+    const teamMembersGate = teamMembers === 'exclude' ? " AND (INVOLVEMENT_ROLE <> 'contributor' OR NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE))" : '';
     const sql = `
       SELECT
         PROJECT_SLUG,
@@ -531,15 +598,46 @@ export class OrgLensProjectsService {
         PARTICIPANT_AVATAR_URL
       FROM ${this.projectPeopleTable()}
       WHERE ACCOUNT_ID = ?
+        AND INVOLVEMENT_ROLE <> 'maintainer'${scopeGate}${teamMembersGate}
         AND PROJECT_SLUG IN (${projectSlugs.map(() => '?').join(', ')})
       ORDER BY PROJECT_SLUG ASC, INVOLVEMENT_ROLE ASC, PARTICIPANT_NAME ASC
     `;
-    const result = await this.snowflakeService.execute<OrgLensProjectPersonRow>(sql, [accountId, ...projectSlugs]);
+    const result = await this.snowflakeService.execute<OrgLensProjectPersonRow>(sql, [accountId, ...projectSlugs], orgTeamMembersQueryOptions(teamMembers));
     return result.rows;
   }
 
-  private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[]): OrgLensProject {
+  /**
+   * One row per person holding a maintainer role on a listed project overlapping the past 2 years (the window of the
+   * page's contributors), matched on the catalog's lowercased Insights slug. The page has no project type filter: its
+   * projects are the catalog's, LF and non-LF alike. The avatar comes from the person's contributor/participant row
+   * when they have one. `null` when the roles table is missing.
+   */
+  private fetchMaintainerRows(accountId: string, projectSlugs: string[]): Promise<OrgProjectMaintainerRoleRow[] | null> {
+    const overlap = orgMaintainerRoleOverlap(ORG_PROJECTS_MAINTAINER_ROLES_RANGE, 'r');
+    const sql = `
+      SELECT
+        r.INSIGHTS_PROJECT_SLUG,
+        r.MEMBER_ID,
+        MAX(r.MAINTAINER_NAME) AS MAINTAINER_NAME,
+        MAX(pp.PARTICIPANT_AVATAR_URL) AS MAINTAINER_AVATAR_URL
+      FROM ${this.maintainerRolesTable()} r
+      LEFT JOIN ${this.projectPeopleTable()} pp
+        ON pp.ACCOUNT_ID = r.ACCOUNT_ID
+        AND LOWER(pp.PROJECT_SLUG) = r.INSIGHTS_PROJECT_SLUG
+        AND pp.PARTICIPANT_ID = r.MEMBER_ID
+      WHERE r.ACCOUNT_ID = ?
+        AND r.INSIGHTS_PROJECT_SLUG IN (${projectSlugs.map(() => '?').join(', ')})
+        AND ${overlap.sql}
+      GROUP BY r.INSIGHTS_PROJECT_SLUG, r.MEMBER_ID
+      ORDER BY r.INSIGHTS_PROJECT_SLUG ASC, MAINTAINER_NAME ASC, r.MEMBER_ID ASC
+    `;
+    const binds = [accountId, ...projectSlugs.map((slug) => slug.toLowerCase()), ...overlap.binds];
+    return readMaintainerRoles<OrgProjectMaintainerRoleRow>(this.snowflakeService, 'ORG_MAINTAINER_ROLES', sql, binds);
+  }
+
+  private mapProject(row: OrgLensProjectRow, peopleRows: OrgLensProjectPersonRow[], maintainerRows: OrgProjectMaintainerRoleRow[]): OrgLensProject {
     const people = peopleRows.filter((person) => person.PROJECT_SLUG === row.PROJECT_SLUG);
+    const slug = row.PROJECT_SLUG.toLowerCase();
     const category = normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2);
     if (row.HEALTH_SCORE_CATEGORY_V2 != null && !category) {
       logger.warning(undefined, 'map_org_project_health', 'Unrecognized warehouse health_score_category_v2; treating as unavailable', {
@@ -578,7 +676,13 @@ export class OrgLensProjectsService {
         direction: this.mapTrendDirection(row.TREND_DIRECTION),
         series: this.parseNumberArray(row.COMBINED_SCORE_SERIES),
       },
-      maintainers: this.mapPeople(people, 'maintainer'),
+      maintainers: maintainerRows
+        .filter((maintainer) => maintainer.INSIGHTS_PROJECT_SLUG === slug)
+        .map((maintainer) => ({
+          id: maintainer.MEMBER_ID,
+          name: maintainer.MAINTAINER_NAME ?? ORG_UNKNOWN_MAINTAINER_NAME,
+          avatarUrl: maintainer.MAINTAINER_AVATAR_URL ?? '',
+        })),
       contributors: this.mapPeople(people, 'contributor'),
       participants: this.mapPeople(people, 'participant'),
       // Wire-contract placeholders until warehouse supplies commits1y / changeDriver.
@@ -586,7 +690,7 @@ export class OrgLensProjectsService {
       changeDriver: { label: 'Not calculated yet', direction: 'flat' },
       description: row.DESCRIPTION ?? `${row.PROJECT_NAME} is an open source project in the ${this.mapFoundation(row).name} ecosystem.`,
       // Real org-scoped row (org-dashboard parity): every metric is genuine, including participating
-      // projects with activity_count = 0. fetchNoActivityProjects overrides this for its fallback rows.
+      // projects with activity_count = 0. mapNoActivityProject overrides this for its fallback rows.
       metricsState: 'full',
     };
   }
@@ -1008,6 +1112,10 @@ export class OrgLensProjectsService {
   private projectPeopleTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_PEOPLE`;
   }
+
+  private maintainerRolesTable(): string {
+    return `${this.lfxOnePlatinumSchema()}.ORG_MAINTAINER_ROLES`;
+  }
 }
 
 /**
@@ -1133,7 +1241,7 @@ function decodeProjectsResponse(value: CompactOrgLensProjectsCache): OrgLensProj
         metricsState: row.metricsState,
       };
       // Appended last, and only when the stored row actually carried it, so the rebuilt project is
-      // key-for-key identical to the uncached one — `fetchNoActivityProjects` likewise appends this
+      // key-for-key identical to the uncached one — `mapNoActivityProject` likewise appends this
       // transitional flag after `metricsState`, and `mapProject` omits it entirely.
       if ('noActivityYet' in row) {
         project.noActivityYet = row.noActivityYet;

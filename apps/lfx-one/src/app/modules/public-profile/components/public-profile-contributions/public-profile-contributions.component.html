@@ -2,8 +2,21 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section data-testid="contributions-section">
-  <h2 class="m-0 text-lg font-bold text-gray-900">Project contributions</h2>
-  <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Open source contributions across Linux Foundation projects.</p>
+  <div class="flex items-start justify-between gap-4">
+    <div class="min-w-0">
+      <h2 class="m-0 text-lg font-bold text-gray-900">Project contributions</h2>
+      <p class="mb-5 mt-1 text-xs leading-relaxed text-gray-500">Open source contributions across Linux Foundation projects.</p>
+    </div>
+    @if (yearOptions().length > 1) {
+      <lfx-select
+        size="small"
+        [form]="yearForm"
+        control="year"
+        [options]="yearOptions()"
+        ariaLabel="Contribution year"
+        data-testid="contributions-year-select"></lfx-select>
+    }
+  </div>
 
   <div class="overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="contributions-projects">
     @for (project of projects(); track project) {

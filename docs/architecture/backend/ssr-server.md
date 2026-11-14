@@ -33,6 +33,34 @@ The server implements an **aggressive caching strategy** for static assets, serv
 - **Reduces server load** by serving static content directly from filesystem
 - **Improves performance** through efficient asset delivery before application logic
 
+`createBrowserAssetsMiddleware` groups static serving with a missing-bundle boundary,
+mounted before OIDC and selective authentication. Existing files retain their cache
+policy: content-hashed assets are immutable for one year, non-hashed HTML/JS/CSS must
+revalidate, and other files use a short cache lifetime.
+
+If static serving cannot find a root-level hashed JavaScript or CSS file, GET and
+HEAD return **404** with **`Cache-Control: no-store`**, without entering authentication
+or Angular SSR. This prevents a stale-tab or mixed-version rollout asset miss from
+becoming an SSO redirect and a browser CORS failure. The matcher excludes nested API
+and page paths; it is not a general authentication exemption for file extensions.
+
+The boundary also runs before `pino-http`, so sampled misses use infrastructure
+`logger.info(undefined, 'browser_asset_miss', ...)`, never `req.log`. Logging
+is limited to generated `main`, `chunk`, `styles`, and `polyfills` hashed JS/CSS
+names, without narrowing the 404 matcher. One monotonic, constant-memory gate per
+middleware instance logs the first eligible miss and throttles subsequent samples
+across all filenames and callers. The app mounts one instance per process; there
+are no per-path/IP maps or timers. Samples include the decoded `asset_path`
+(length-capped), explicit `APP_VERSION || 'development'` as `version`,
+`method`, and `status_code: 404`, with no request context. Logger failures do not
+change the 404. This is a sampled availability signal, **not an exact miss count**;
+see [Logging & Monitoring](./logging-monitoring.md#browser-asset-miss-sampling)
+for the canonical sampling constants, event fields, and limitations.
+
+This boundary does not retain previous releases' assets or invalidate redirects
+already cached in browsers/CDNs. Deployment asset availability and CDN rules must
+be addressed separately; the CDN must respect `no-store` for these responses.
+
 ### Health Monitoring Architecture
 
 The application includes **dedicated health endpoints** designed for load balancers and monitoring systems. These endpoints:
@@ -65,14 +93,15 @@ The authentication layer operates at the Express middleware level, ensuring all 
 
 ### Middleware Pipeline Architecture
 
-The server employs a **carefully orchestrated middleware pipeline** that processes requests in specific order:
+After compression and body parsing, the server registers handlers in this order:
 
-1. **Static Asset Serving** - Fast path for pre-built resources
-2. **Health Monitoring** - Unobstructed monitoring endpoints
-3. **Structured Logging** - Request/response tracking and metrics
-4. **Authentication** - Session management and user context
-5. **API Routes** - Business logic endpoints with bearer token validation
-6. **Angular SSR** - Universal rendering for all remaining routes
+1. **Health Monitoring** - Unobstructed monitoring endpoints, before filesystem lookups, logging, and authentication
+2. **Public Docs Sitemap** - Dedicated handler before static serving and authentication
+3. **Static Asset Serving** - Fast path for pre-built resources; missing root-level hashed JS/CSS terminates with a non-cacheable 404 before authentication
+4. **Structured Logging** - Request/response tracking and metrics
+5. **Authentication** - Session management and user context
+6. **API Routes** - Business logic endpoints with bearer token validation
+7. **Angular SSR** - Universal rendering for all remaining routes
 
 ### Selective Authentication
 
@@ -123,13 +152,42 @@ The SSR integration represents the **fallback handler** in the middleware chain,
 
 Angular's `AngularNodeAppEngine` receives the complete request context, including user authentication state, enabling fully personalized server-side rendering.
 
+### Allowed Hosts and Trusted Proxy Headers
+
+`AngularNodeAppEngine` is constructed with an explicit `allowedHosts` and `trustProxyHeaders`, which also disables Angular's `NG_ALLOWED_HOSTS` / `NG_TRUST_PROXY_HEADERS` env fallbacks:
+
+- **`allowedHosts`** is only the hostname of `PCC_BASE_URL`. Serving the app on a second hostname means adding it here.
+- **`trustProxyHeaders`** lists exactly the headers the ingress sends: `x-forwarded-for`, `-host`, `-port`, `-proto` and `-server`. If the ingress starts sending another `x-forwarded-*` header, add it here.
+
+Getting either wrong does not fail loudly. Angular serves the client-only shell (`<lfx-root></lfx-root>` with no `ng-state`), which carries no auth state, so `authGuard` bounces signed-in users from `/` to `/login` and back in a loop (#4649). The server logs `Received "x-forwarded-…" header but "trustProxyHeaders" was not set up to allow it` or `Header "host" with value "…" is not allowed`.
+
 ### Error Handling Strategy
 
 The server implements **graceful degradation** for rendering errors:
 
 - **404 Not Found**: Proper HTTP status for missing routes
+- **503 Service Unavailable**: in-place retry view when a page's project couldn't be loaded (transient upstream failure)
 - **401 Unauthorized**: Authentication-required responses
 - **500 Internal Server Error**: Comprehensive error logging with fallback responses
+
+In-place not-found and unavailable views set `ServerRequestContext.notFound` or
+`ServerRequestContext.unavailable` during rendering. The SSR handler rewrites a
+200 response to 404 or 503 respectively, retaining the requested URL and rendered
+shell. `applySsrRenderStatus` preserves response headers and gives 404 precedence if
+both flags are set; existing non-200 responses remain unchanged.
+The unavailable view's **Try again** action reads the latest failed destination from
+`ProjectRecoveryService`, including query parameters and fragments. Guards update it
+before redirecting, so repeated failures refresh the target even when Angular skips
+the same-URL recovery redirect. Selected-project newsletter access and Formation
+CanMatch lookups share the strict lookup/retry policy without bypassing their access,
+stage or feature-flag checks. Non-transient selected-project lookup failures show
+not-found in-place; successful permission or stage denials still redirect to overview.
+Query-selected Formation overview and checklist routes use the same strict cache to
+avoid conflicting stage redirects. A cancelled Formation navigation cannot overwrite
+a newer recovery target. The service owns destination writes and clearing, and the
+view clears it on destruction. The target is distinct from the previous SPA address.
+When recovery state is absent (SSR/hydration), it falls back to the current browser
+path with its fragment, which retains the directly requested address.
 
 ## 🚀 Production Deployment Architecture
 
@@ -162,7 +220,7 @@ This strategy eliminates the need for separate server configurations across envi
 
 #### 2. Middleware Pipeline Ordering
 
-**Decision**: Static assets → Health → Logging → Auth → API → SSR
+**Decision**: Health → Sitemap → Static assets → Logging → Auth → API → SSR
 **Trade-offs**:
 
 - ✅ **Benefits**: Optimal performance with fast static asset serving

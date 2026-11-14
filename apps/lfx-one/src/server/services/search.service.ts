@@ -1,8 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMember, MeetingRegistrant, QueryServiceResponse, UserSearchParams, UserSearchResponse, UserSearchResult } from '@lfx-one/shared/interfaces';
-import { dedupeUserSearchResults } from '@lfx-one/shared/utils';
+import {
+  ApiRequestOptions,
+  CommitteeMember,
+  MeetingRegistrant,
+  QueryServiceResponse,
+  UserSearchParams,
+  UserSearchResponse,
+  UserSearchResult,
+} from '@lfx-one/shared/interfaces';
+import { dedupeUserSearchResults, matchesUserSearchQuery } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -20,7 +28,7 @@ export class SearchService {
   /**
    * Searches for users across meeting registrants and committee members
    */
-  public async searchUsers(req: Request, params: UserSearchParams): Promise<UserSearchResponse> {
+  public async searchUsers(req: Request, params: UserSearchParams, options?: ApiRequestOptions): Promise<UserSearchResponse> {
     const queryParams = {
       ...(params.name ? { name: params.name } : {}),
       ...(params.tags ? { tags: params.tags } : {}),
@@ -35,7 +43,10 @@ export class SearchService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      queryParams
+      queryParams,
+      undefined,
+      undefined,
+      options
     );
 
     // Transform the resources to UserSearchResult format
@@ -74,10 +85,9 @@ export class SearchService {
               website: member.organization.website || null,
             }
           : null,
-        committee: {
-          uid: member.committee_uid,
-          name: member.committee_name,
-        },
+        // Committee attribution is withheld: this is a people directory, and naming the committee
+        // would disclose roster membership the committee's `member_visibility` may hide.
+        committee: null,
         type: 'committee_member',
         username: member.username || null,
       };
@@ -95,7 +105,13 @@ export class SearchService {
     // covers the full result set. If this endpoint ever walks multiple pages
     // (page_token), the dedupe must span all pages — otherwise duplicates can
     // reappear at page boundaries.
-    const results = dedupeUserSearchResults(mapped);
+    // Upstream indexes the committee name in every `committee_member` row's `name_and_aliases`, so a
+    // name query can select a committee and return its whole roster. Keep only rows whose own
+    // name or username matches the query, so a hidden roster cannot be listed by name. Email is not
+    // matched: a committee named after a domain would otherwise pass every member at that domain.
+    const matching =
+      params.type === 'committee_member' && params.name ? mapped.filter((result) => matchesUserSearchQuery(result, params.name as string)) : mapped;
+    const results = dedupeUserSearchResults(matching);
 
     return {
       results,

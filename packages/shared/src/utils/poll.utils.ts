@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
-import type { PollCommentResponse, UserVote, Vote } from '../interfaces/poll.interface';
+import type { PollCommentResponse, UserVote, Vote, VoteStatusCounts } from '../interfaces/poll.interface';
 
 /**
  * Combined vote status type
@@ -31,12 +31,12 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   return 'closed';
 }
 
-/** Tooltip copy when a vote auto-ended because all eligible voters responded. */
+/** Tooltip copy for an early closure; the timestamp does not establish why voting ended. */
 export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
-  return `Vote closed early on ${earlyEndTimeFormatted}. All voters have responded.`;
+  return `Vote closed early on ${earlyEndTimeFormatted}.`;
 }
 
-/** True when ITX auto-ended the poll because all eligible voters responded. */
+/** True when an early-close timestamp is recorded, without inferring the closure reason. */
 export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
   return Boolean(vote.early_end_time);
 }
@@ -59,11 +59,38 @@ export function normalizePollStatus(status: string | null | undefined): PollStat
 }
 
 /**
+ * Bucket votes by normalized poll status for the votes table's status tabs (#3687).
+ * @description `all` counts every row; each recognized status (after `normalizePollStatus`)
+ * also counts toward its own bucket, so mixed-case legacy rows land where the status filters put
+ * them. A row with an unrecognized status counts toward `all` only. The BFF and the Me-lens
+ * dashboard share this helper so both lenses bucket identically.
+ */
+export function countVotesByStatus(votes: Pick<Vote, 'status'>[]): VoteStatusCounts {
+  const counts: VoteStatusCounts = { all: 0, active: 0, disabled: 0, ended: 0 };
+  for (const vote of votes) {
+    counts.all++;
+    const status = normalizePollStatus(vote.status);
+    if (status) counts[status]++;
+  }
+  return counts;
+}
+
+/**
  * Sort comment-prompt responses newest-first by `vote_creation_time`.
  * @description Returns a new array — never mutates the API payload. An unparseable timestamp
  * parses to NaN, which `|| 0` collapses to epoch 0 so a malformed row sinks to the end instead
  * of scrambling the comparator with NaN. Ties keep the API's original order (stable sort).
  */
 export function sortCommentResponsesByRecency(responses: PollCommentResponse[]): PollCommentResponse[] {
-  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time) || 0) - (Date.parse(a.vote_creation_time) || 0));
+  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time ?? '') || 0) - (Date.parse(a.vote_creation_time ?? '') || 0));
+}
+
+/**
+ * Sort comment-prompt responses by `comment_text` (#3916).
+ * @description Used for pseudo-anonymous votes, whose responses carry no submission time, so
+ * the order exposes nothing about when each ballot was cast. Returns a new array — never mutates
+ * the API payload.
+ */
+export function sortCommentResponsesByText(responses: PollCommentResponse[]): PollCommentResponse[] {
+  return [...responses].sort((a, b) => (a.comment_text ?? '').localeCompare(b.comment_text ?? ''));
 }

@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { AbstractControl } from '@angular/forms';
-import { DEFAULT_DURATION, MAX_CUSTOM_DURATION, MEETING_AGENDA_PROMPT_MAX_LENGTH, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
+import { DEFAULT_DURATION, MAX_MEETING_DURATION, MEETING_AGENDA_PROMPT_MAX_LENGTH, MIN_CUSTOM_DURATION } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { GenerateAgendaResponse, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -306,7 +306,7 @@ describe('ComposerAgendaFieldComponent — popovers and the estimated duration',
 
     it.each([
       ['below', MIN_CUSTOM_DURATION - 1],
-      ['above', MAX_CUSTOM_DURATION + 1],
+      ['above', MAX_MEETING_DURATION + 1],
     ] as const)('drops an estimate %s the allowed range and leaves the duration alone', (_label, estimate) => {
       applyEstimate(estimate);
 
@@ -318,13 +318,13 @@ describe('ComposerAgendaFieldComponent — popovers and the estimated duration',
     it('still applies the agenda when the estimate is dropped', () => {
       // The two writes are independent: a duration the organizer has to set themselves is no reason
       // to withhold the agenda they asked for.
-      applyEstimate(MAX_CUSTOM_DURATION + 1);
+      applyEstimate(MAX_MEETING_DURATION + 1);
 
       expect(formService.form().get('description')?.value).toBe(template.content);
     });
 
     it('closes the templates popover whichever way the estimate lands', () => {
-      applyEstimate(MAX_CUSTOM_DURATION + 1);
+      applyEstimate(MAX_MEETING_DURATION + 1);
 
       expect(popover.hide).toHaveBeenCalled();
     });

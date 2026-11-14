@@ -141,8 +141,8 @@ export const FORMATION_ACTIVITY_ACTION_LABELS = {
   item_rejected: 'rejected this item',
   item_reopened: 'reopened this item',
   platform_check_resolved: 'resolved this item automatically',
-  template_expanded: 'created the checklist from a template',
-  template_upgraded: 'upgraded the checklist template',
+  template_expanded: 'created the formation items from a template',
+  template_upgraded: 'upgraded the formation template',
 } as const satisfies Record<FormationActivityAction, string>;
 
 /**
@@ -461,3 +461,35 @@ export const FORMATION_CHECKLIST_PATH = '/project/formation';
  * append (#2573, #2616, #1961).
  */
 export const FORMATION_ITEM_QUERY_PARAM = 'item';
+
+/** The formation section's default heading — `/project/formation` (ED/PM) keeps it; hosts can override via the section's `heading` input (#5635). */
+export const FORMATION_CHECKLIST_HEADING = 'Formation Checklist';
+
+/** The neutral heading `/foundation/formations/:slug` passes (#5635). */
+export const FORMATION_ITEMS_HEADING = 'Formation items';
+
+/**
+ * Empty state of the checklist section when the checklist read is not-found. Neutral on purpose: the BFF masks 403 and 404 alike, so the copy
+ * must not claim the project lacks access or does not exist.
+ */
+export const FORMATION_NO_CHECKLIST_COPY = {
+  title: 'Nothing to track for this project yet',
+  subtitle: 'Formation items start when the project moves into a formation stage.',
+} as const;
+
+/** The empty state for a Disengaged project with no items: it already is a formation stage, so the default subtitle would be wrong. */
+export const FORMATION_NO_CHECKLIST_DISENGAGED_COPY = {
+  title: FORMATION_NO_CHECKLIST_COPY.title,
+  subtitle: 'This project is disengaged.',
+} as const;
+
+/** The not-found empty state for a project in the stage given; the default copy for Draft, an unknown stage or none. */
+export function getFormationNoChecklistCopy(stage: string | null | undefined): { readonly title: string; readonly subtitle: string } {
+  return stage === ProjectStage.FormationDisengaged ? FORMATION_NO_CHECKLIST_DISENGAGED_COPY : FORMATION_NO_CHECKLIST_COPY;
+}
+
+/** Subtitle of the "no longer in formation" state, by stage: an Archived project may never have launched, so it is not said to have completed formation. */
+export const FORMATION_POST_FORMATION_SUBTITLES: Record<string, string> = {
+  [ProjectStage.Active]: 'It has completed formation.',
+  [ProjectStage.Archived]: 'It has been archived.',
+};

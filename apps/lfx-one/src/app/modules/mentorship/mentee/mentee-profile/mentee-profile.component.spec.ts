@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, output, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
@@ -23,7 +23,9 @@ import { MenteeProfileComponent } from './mentee-profile.component';
   selector: 'lfx-mentorship-profile-card',
   template: '<div data-testid="mentorship-profile-card-stub"></div>',
 })
-class StubProfileCardComponent {}
+class StubProfileCardComponent {
+  public readonly syncMentorshipProfiles = input(false);
+}
 
 @Component({
   selector: 'lfx-mentorship-mentee-profile-edit-drawer',
@@ -39,8 +41,6 @@ describe('MenteeProfileComponent', () => {
       aboutMe: 'Student working on telemetry.',
       skillsHave: ['Python', 'Go'],
       skillsWant: ['Kubernetes'],
-      resumeFileName: 'test-mentee-resume.pdf',
-      resumeUrl: 'https://example.com/resume.pdf',
     },
     history: [
       {
@@ -123,6 +123,14 @@ describe('MenteeProfileComponent', () => {
 
     expect(card).toBeLessThan(details);
     expect(details).toBeLessThan(history);
+  });
+
+  it('tells the profile card to copy a saved LFX profile onto the mentorship profiles', async () => {
+    await bootstrap();
+
+    expect((fixture.debugElement.query(By.directive(StubProfileCardComponent)).componentInstance as StubProfileCardComponent).syncMentorshipProfiles()).toBe(
+      true
+    );
   });
 
   it('opens the mentee profile edit drawer when the mentee asks to edit the profile', async () => {

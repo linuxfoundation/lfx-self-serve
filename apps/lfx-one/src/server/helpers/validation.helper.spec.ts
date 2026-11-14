@@ -23,7 +23,15 @@ vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import { MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
 
-import { clampInteger, getStringQueryParam, parseOffsetPagination, validateFoundationUidParameter, validateItemKeyParameter } from './validation.helper';
+import { ServiceValidationError } from '../errors';
+import {
+  clampInteger,
+  getStringQueryParam,
+  getValidatedIsoDateQueryParam,
+  parseOffsetPagination,
+  validateFoundationUidParameter,
+  validateItemKeyParameter,
+} from './validation.helper';
 
 describe('validateItemKeyParameter', () => {
   const req = {} as any;
@@ -102,6 +110,54 @@ describe('getStringQueryParam', () => {
 
   it('narrows a nested-object value to undefined — express parses ?x[a]=b into x: ParsedQs, not a string', () => {
     expect(getStringQueryParam({ query: { x: { a: 'b' } } } as any, 'x')).toBeUndefined();
+  });
+});
+
+describe('getValidatedIsoDateQueryParam', () => {
+  const req = (value: unknown): Request => ({ query: { startDateFrom: value } }) as unknown as Request;
+
+  it.each([undefined, '', ['a', 'b'], { nested: 'x' }])('treats %j as absent', (value) => {
+    expect(getValidatedIsoDateQueryParam(req(value), 'startDateFrom', 'get_my_events')).toBeUndefined();
+  });
+
+  it.each([
+    '2026-10-01',
+    '2026-10-01T04:00:00.000Z',
+    '2026-10-01T04:00:00Z',
+    '2026-12-31T23:59:59.999Z',
+    '2024-02-29',
+    '2000-02-29',
+    '0099-10-01',
+    '0000-02-29',
+  ])('preserves the valid date %s', (value) => {
+    expect(getValidatedIsoDateQueryParam(req(value), 'startDateFrom', 'get_my_events')).toBe(value);
+  });
+
+  it.each([
+    'x',
+    '2026-02-31',
+    '2026-02-29',
+    '1900-02-29',
+    '2026-00-01',
+    '2026-13-01',
+    '2026-10-00',
+    '2026-04-31',
+    '2026-10-01T25:00:00Z',
+    '2026-10-01T24:00:00Z',
+    '2026-10-01T04:60:00Z',
+    '2026-10-01T04:00:60Z',
+    '2026-10-01T04:00:00+05:00',
+    '2026-10-01 04:00:00',
+    '2026-10-01T04:00:00.1Z',
+    '2026-10-01T04:00:00.12Z',
+    '2026-10-01T04:00:00.1234Z',
+    ' 2026-10-01',
+    '2026-10-01\n',
+  ])('rejects %j with a field-specific 400', (value) => {
+    expect(() => getValidatedIsoDateQueryParam(req(value), 'startDateFrom', 'get_my_events')).toThrow(ServiceValidationError);
+    expect(() => getValidatedIsoDateQueryParam(req(value), 'startDateFrom', 'get_my_events')).toThrow(
+      expect.objectContaining({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'startDateFrom' })] })
+    );
   });
 });
 

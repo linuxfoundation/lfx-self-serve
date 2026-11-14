@@ -321,6 +321,8 @@ The repository uses Husky for pre-commit hooks that automatically run:
 3. **Type Checking** - Verifies TypeScript types
 4. **Format Check** - Ensures consistent code formatting
 
+Worktree-root review and resolution reports named `*-findings.md` or `*-findings-02.md` (and other two-digit numbered variants) are local audit artifacts. The root-only patterns in `.prettierignore` keep both formatting commands and the mandatory format check from rewriting or rejecting these reports. Preserve their original bytes and keep them outside the commit unless their publication is explicitly requested. This is a formatting exception, not a Git ignore rule or a hook bypass: nested documentation and application sources remain checked.
+
 ```bash
 # Pre-commit hooks run automatically on commit
 git commit -m "your changes"

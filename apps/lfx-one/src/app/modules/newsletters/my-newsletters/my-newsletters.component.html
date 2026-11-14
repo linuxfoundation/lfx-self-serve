@@ -3,27 +3,83 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   @if (!personaLoaded()) {
-    <div class="mt-3 flex flex-col gap-4" data-testid="my-newsletters-persona-loading">
+    <div class="flex flex-col gap-4" data-testid="my-newsletters-persona-loading">
       <p-skeleton width="12rem" height="2rem" />
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
+    <!-- Breadcrumb: back to the foundation cards; matches the reader page's trail (#4979) -->
+    <nav aria-label="Breadcrumb" class="flex items-center gap-2 mb-3 text-sm text-gray-600" data-testid="my-newsletters-breadcrumb">
+      <a routerLink="/newsletters/my" class="hover:text-gray-900" data-testid="my-newsletters-back">Newsletters</a>
+      <i class="fa-light fa-chevron-right text-xs" aria-hidden="true"></i>
+      <span class="text-gray-900 min-w-0 break-words" aria-current="page" data-testid="my-newsletters-breadcrumb-current">{{
+        foundation()?.name ?? 'Newsletters'
+      }}</span>
+    </nav>
+
     <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="my-newsletters-title">My Newsletters</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="my-newsletters-description">
-          Newsletters sent to groups you belong to across all foundations and projects.
-        </p>
-      </div>
+    <div class="flex items-center gap-4 mb-6">
+      @if (foundation(); as current) {
+        <lfx-avatar
+          class="shrink-0"
+          [image]="current.logo_url ?? ''"
+          [label]="foundationInitial()"
+          shape="square"
+          styleClass="w-14 h-14 rounded-xl border border-gray-200 bg-white text-xl text-gray-700 [&_img]:object-contain [&_img]:p-1.5" />
+      }
+      <lfx-page-header
+        class="min-w-0 flex-1"
+        [title]="foundation()?.name ?? 'Newsletters'"
+        description="Newsletters you've received from this foundation."
+        titleTestId="my-newsletters-title"
+        descriptionTestId="my-newsletters-description">
+        @if (foundation()?.can_invite) {
+          <lfx-button
+            pageHeaderActions
+            label="Invite a colleague"
+            icon="fa-light fa-user-plus"
+            severity="info"
+            size="small"
+            (onClick)="onInvite()"
+            data-testid="my-newsletters-invite" />
+        }
+      </lfx-page-header>
     </div>
 
-    <!-- Dashboard-level empty state: only when there are genuinely no newsletters (no active filter). -->
-    @if (!loading() && myNewsletters().length === 0 && !hasActiveFilters()) {
+    @if (inviteCommitteeUid(); as committeeUid) {
+      <div class="mb-6">
+        <lfx-newsletter-invite-landing
+          [committeeUid]="committeeUid"
+          [foundationSlug]="foundationSlug()"
+          (joined)="onInviteJoined()"
+          (dismissed)="onInviteDismissed()" />
+      </div>
+    }
+
+    @if (loading() && myNewsletters().length > 0) {
+      <p class="mb-4 text-sm text-gray-500" role="status" data-testid="my-newsletters-refresh-status">Refreshing newsletters…</p>
+    }
+    @if (completenessNotice(); as notice) {
+      <div
+        class="flex items-center justify-between gap-3 mb-4 p-4 rounded-lg bg-amber-50 text-sm text-gray-700"
+        role="status"
+        data-testid="my-newsletters-completeness-notice">
+        <span>{{ notice }}</span>
+        <lfx-button label="Retry" size="small" [outlined]="true" (onClick)="onRetry()" data-testid="my-newsletters-retry" />
+      </div>
+    }
+    @if (error()) {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        title="Could not load newsletters"
+        ctaLabel="Retry"
+        (ctaClick)="onRetry()"
+        data-testid="my-newsletters-error" />
+    } @else if (!loading() && complete() === true && myNewsletters().length === 0 && !hasActiveFilters()) {
       <lfx-empty-state
         icon="fa-light fa-paper-plane"
         title="No newsletters yet"
-        subtitle="Newsletters sent to your groups will appear here. Join a group to see its past newsletters."
+        subtitle="Issues you receive from this foundation will appear here."
         data-testid="my-newsletters-empty-state">
       </lfx-empty-state>
     } @else {
@@ -41,21 +97,6 @@
                 data-testid="my-newsletters-search-input"></lfx-input-text>
             </div>
 
-            @if (showFoundationFilter()) {
-              <div class="w-full sm:w-56">
-                <lfx-select
-                  [form]="searchForm"
-                  control="foundationFilter"
-                  size="small"
-                  [options]="foundationOptions()"
-                  [filter]="true"
-                  filterPlaceholder="Search foundations..."
-                  styleClass="w-full"
-                  (onChange)="onFoundationFilterChange($event.value)"
-                  data-testid="my-newsletters-foundation-filter">
-                </lfx-select>
-              </div>
-            }
             @if (showProjectFilter()) {
               <div class="w-full sm:w-56">
                 <lfx-select
@@ -75,7 +116,7 @@
         </div>
 
         <div class="px-5 pb-5">
-          @if (!loading() && filteredNewsletters().length === 0) {
+          @if (!loading() && filteredNewsletters().length === 0 && (myNewsletters().length > 0 || (complete() === true && hasActiveFilters()))) {
             <lfx-empty-state
               [withCard]="false"
               icon="fa-light fa-eyes"
@@ -86,10 +127,10 @@
               (ctaClick)="resetFilters()"
               data-testid="my-newsletters-no-results">
             </lfx-empty-state>
-          } @else {
+          } @else if (loading() || filteredNewsletters().length > 0) {
             <lfx-table
               [value]="filteredNewsletterRows()"
-              [loading]="loading()"
+              [loading]="loading() && myNewsletters().length === 0"
               [paginator]="filteredNewsletters().length > 10"
               [rows]="10"
               [rowsPerPageOptions]="[10, 25, 50]"
@@ -98,54 +139,71 @@
               data-testid="my-newsletters-table">
               <ng-template #header>
                 <tr>
-                  <th class="w-[50%]">Title</th>
-                  <th class="w-[20%]">Received</th>
-                  <th class="w-[30%]">Project / Foundation</th>
+                  <th class="w-[42%]">Title</th>
+                  <th class="w-[16%]">Sent</th>
+                  <th class="w-[11%]">Views</th>
+                  <th class="w-[11%]">Shares</th>
+                  <th class="w-[20%]">Project</th>
                 </tr>
               </ng-template>
 
               <ng-template #body let-newsletter>
-                <!-- The subject anchor is the accessible control (real link role, native
-                     Enter/Space, right-click "Open in new tab"); the row click is a
-                     supplementary pointer convenience. -->
-                <tr class="cursor-pointer" (click)="onRowClick($event, newsletter)" [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
+                <!-- The subject link is the accessible control (real link role, native Enter,
+                     Cmd-click/right-click "Open in new tab"); the row click is a supplementary
+                     pointer convenience. Both open the issue's reader page (#4979). -->
+                <tr
+                  [class.cursor-pointer]="!!newsletter.issuePath"
+                  (click)="onRowClick($event, newsletter)"
+                  [attr.data-testid]="'my-newsletters-row-' + newsletter.id">
                   <td>
                     <div class="flex items-center gap-2 min-w-0">
-                      <!-- Real anchor when a permalink resolves (native new-tab/right-click);
-                           otherwise a button, so the href-less case stays keyboard-focusable
-                           and Enter/Space-activatable instead of a non-interactive <a>. -->
                       @if (newsletter.issuePath) {
                         <a
-                          [attr.href]="newsletter.issuePath"
+                          [routerLink]="newsletter.issuePath"
                           class="lfx-table-name-link text-sm text-gray-900 font-medium truncate min-w-0"
                           [attr.aria-label]="'Open newsletter ' + newsletter.subject"
                           [pTooltip]="newsletter.subject"
                           tooltipEvent="both"
                           tooltipPosition="top"
-                          (click)="onOpenSubject($event, newsletter)"
+                          (click)="$event.stopPropagation()"
                           [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
                           {{ newsletter.subject }}
                         </a>
                       } @else {
-                        <button
-                          type="button"
-                          class="lfx-table-name-link text-sm text-gray-900 font-medium truncate min-w-0 text-left"
-                          [attr.aria-label]="'Open newsletter ' + newsletter.subject"
-                          [pTooltip]="newsletter.subject"
-                          tooltipEvent="both"
-                          tooltipPosition="top"
-                          (click)="onOpenSubject($event, newsletter)"
-                          [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
+                        <!-- No resolvable permalink (project slug missing upstream): nothing to open.
+                             Wraps rather than truncating, so the full subject needs no tooltip. -->
+                        <span class="text-sm text-gray-900 font-medium min-w-0 break-words" [attr.data-testid]="'my-newsletters-open-' + newsletter.id">
                           {{ newsletter.subject }}
-                        </button>
-                      }
-                      @if (openingId() === newsletter.id) {
-                        <i class="fa-light fa-spinner-third fa-spin text-sm text-gray-400 flex-none" aria-hidden="true"></i>
+                        </span>
                       }
                     </div>
                   </td>
                   <td>
                     <span class="text-sm text-gray-700">{{ newsletter.sent_at | date: 'MMM d, y' }}</span>
+                  </td>
+                  <td>
+                    @if (newsletter.viewCount !== null) {
+                      <span
+                        class="inline-flex items-center gap-1.5 text-sm text-gray-700 tabular-nums"
+                        [attr.aria-label]="newsletter.viewCount === 1 ? 'Viewed 1 time' : 'Viewed ' + newsletter.viewCount + ' times'"
+                        [attr.data-testid]="'my-newsletters-views-' + newsletter.id">
+                        <i class="fa-light fa-eye text-xs text-gray-400" aria-hidden="true"></i>{{ newsletter.viewCount | number }}
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-400" [attr.data-testid]="'my-newsletters-views-' + newsletter.id">—</span>
+                    }
+                  </td>
+                  <td>
+                    @if (newsletter.shareCount) {
+                      <span
+                        class="inline-flex items-center gap-1.5 text-sm text-gray-700 tabular-nums"
+                        [attr.aria-label]="newsletter.shareCount === 1 ? 'Shared 1 time' : 'Shared ' + newsletter.shareCount + ' times'"
+                        [attr.data-testid]="'my-newsletters-shares-' + newsletter.id">
+                        <i class="fa-light fa-share-nodes text-xs text-gray-400" aria-hidden="true"></i>{{ newsletter.shareCount | number }}
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-400" [attr.data-testid]="'my-newsletters-shares-' + newsletter.id">—</span>
+                    }
                   </td>
                   <td>
                     <span class="text-sm text-gray-700">{{ newsletter.project_name || '—' }}</span>
@@ -159,18 +217,3 @@
     }
   }
 </div>
-
-<!-- Reader drawer: renders the newsletter as recipients saw it. Opened once
-     the body fetch resolves in onOpenNewsletter. Header is reader-framed
-     (project + received date) rather than the sender-side "Preview" default.
-     Share button shows the absolute permalink URL. -->
-<lfx-newsletter-preview-drawer
-  [(visible)]="previewVisible"
-  [subject]="selected()?.subject ?? ''"
-  [bodyHtml]="previewBody()"
-  [displayName]="selected()?.project_name || 'Newsletter'"
-  [headerTitle]="selected()?.project_name || 'Newsletter'"
-  [headerSubtitle]="drawerSubtitle()"
-  [shareUrl]="selectedShareUrl()"
-  (visibleChange)="onDrawerVisibleChange($event)"
-  data-testid="my-newsletters-preview-drawer"></lfx-newsletter-preview-drawer>

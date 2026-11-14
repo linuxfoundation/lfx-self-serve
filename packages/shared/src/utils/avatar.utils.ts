@@ -51,3 +51,13 @@ export function avatarInitials(firstName: string | null | undefined, lastName: s
     .slice(0, 2)
     .toUpperCase();
 }
+
+// Row display name: first + last, else a neutral label. Never falls back to email, which a roster row does not show.
+export function registrantDisplayName(registrant: { first_name?: string | null; last_name?: string | null }, fallback = 'Guest'): string {
+  return (
+    [registrant.first_name, registrant.last_name]
+      .map((part) => (part ?? '').trim())
+      .filter(Boolean)
+      .join(' ') || fallback
+  );
+}

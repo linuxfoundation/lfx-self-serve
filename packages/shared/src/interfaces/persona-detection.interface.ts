@@ -36,6 +36,12 @@ export interface EnrichedPersonaProject {
   projectName: string | null;
   parentProjectUid: string | null;
   isFoundation: boolean;
+  /**
+   * True once enrichment merged this project's record, so `isFoundation` reflects its real tier.
+   * Absent on raw detection and on entries the metadata batch missed, where `isFoundation` is just
+   * the detection default (`false`) and must not be read as "not a foundation".
+   */
+  tierResolved?: boolean;
   logoUrl: string | null;
   description: string | null;
   detections: PersonaDetection[];
@@ -57,13 +63,17 @@ export interface PersonaDetections {
 }
 
 export interface PersonaApiResponse extends PersonaDetections {
-  /** Writer on the tenant root project — bypasses nav persona filtering. Request-scoped, not cached. */
+  /**
+   * `writer_guard` on the tenant root project — bypasses nav persona filtering. The ROOT
+   * `global_writer` half does not cascade, so this does not imply writer on a named project.
+   * Request-scoped, not cached.
+   */
   isRootWriter: boolean;
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona. Request-scoped, not cached. */
   isLFStaff: boolean;
   /**
-   * `auditor` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
-   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}, `auditor` has no
+   * `auditor_guard` FGA grant on the tenant ROOT project — the Formations queue's (`foundation/formations`,
+   * GH-1958) authorization boundary. Unlike {@link isMarketingAuditor}, it has no
    * project-scoped variant to race, so this is always computed (not flag-gated) and carries no
    * "root grant" distinction field. Request-scoped, not cached.
    */
@@ -85,8 +95,24 @@ export interface PersonaApiResponse extends PersonaDetections {
    * foundation). `false` (not `undefined`) whenever {@link isMarketingAuditor} is `false`.
    */
   isMarketingAuditorRootGrant: boolean;
-  /** Same distinction as {@link isMarketingAuditorRootGrant}, for {@link isCampaignManager}. */
+  /**
+   * Always `false`: this no longer reads the cascading ROOT `marketing_ops` grant it used to report,
+   * whose ROOT tuple is removed before this ships, and ROOT `global_marketing_ops` does not cascade.
+   * Kept so the frontend contract is unchanged.
+   */
   isCampaignManagerRootGrant: boolean;
+  /**
+   * True when either marketing grant is unverified ({@link marketingAuditorUnverified} /
+   * {@link campaignManagerUnverified}): a marketing grant check behind {@link isMarketingAuditor} / {@link isCampaignManager}
+   * (ROOT or project-scoped, including its slug lookup) failed upstream instead of answering. Those
+   * booleans still fail closed to `false`; this tells the client the `false` means "couldn't check",
+   * not "denied", so it can offer a retry. Absent on responses that never ran the checks.
+   */
+  marketingGrantCheckFailed?: boolean;
+  /** {@link isMarketingAuditor} is `false` only because its check failed upstream: unverified, not denied. */
+  marketingAuditorUnverified?: boolean;
+  /** {@link isCampaignManager} is `false` only because its check failed upstream: unverified, not denied. */
+  campaignManagerUnverified?: boolean;
 }
 
 export interface SsrPersonaResult {
@@ -107,4 +133,9 @@ export interface AffiliatedProjectUidsCacheEntry {
 export interface PersonaApiResponseCacheEntry {
   promise: Promise<PersonaDetections>;
   expiresAt: number;
+}
+
+/** The caller's ROOT `global_marketing_ops` grant. */
+export interface RootMarketingOpsGrants {
+  globalMarketingOps: boolean;
 }

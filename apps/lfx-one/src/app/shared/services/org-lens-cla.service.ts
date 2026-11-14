@@ -4,6 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
+  ClaGroupOption,
   ClaGroupSearchResponse,
   OrgClaActivityLogPage,
   OrgClaApprovalList,
@@ -53,6 +54,14 @@ export class OrgLensClaService {
   }
 
   /**
+   * Catalogue row for a pasted CLA Group address (#2293). 404 means the group is unknown,
+   * including when the producer route is not deployed yet.
+   */
+  public getClaGroupCatalogue(orgUid: string, claGroupId: string): Observable<ClaGroupOption> {
+    return this.http.get<ClaGroupOption>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(claGroupId)}/catalogue`);
+  }
+
+  /**
    * Watermarked corporate template for the unsigned signing overview (#2317).
    * Distinct from `getPdfUrl`, which is the signed agreement.
    */
@@ -84,10 +93,11 @@ export class OrgLensClaService {
    * Fail closed: a missing body, a non-boolean, or an HTTP error is `false`, so a timeout cannot
    * continue Sign. The server interpolates the ACS string; this posts only the typed action.
    */
-  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string): Observable<boolean> {
+  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string, foundationSfid?: string): Observable<boolean> {
     const body: OrgClaPermissionCheckRequest = {
       action,
       ...(projectSfid ? { projectSfid } : {}),
+      ...(foundationSfid ? { foundationSfid } : {}),
     };
     return this.http.post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, body).pipe(
       map((response) => response?.allowed === true),

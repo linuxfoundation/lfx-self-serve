@@ -12,10 +12,15 @@ import {
   MailingListMember,
   MyMailingList,
   QueryServiceCountResponse,
+  SyncApplyJobStatus,
+  SyncApplyRequest,
+  SyncDiffJobStatus,
+  SyncJobStart,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { MAILING_LIST_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import { catchError, map, Observable, of, shareReplay, take, tap } from 'rxjs';
+import { MailingListSyncDirection } from '@lfx-one/shared/enums';
+import { map, Observable, shareReplay, take, tap } from 'rxjs';
 
 /**
  * Service for managing mailing list data
@@ -43,8 +48,12 @@ export class MailingListService {
     return this.http.get<GroupsIOMailingList[]>(this.baseUrl);
   }
 
+  /**
+   * No `catchError` here — the dashboard's `myMailingListsError` signal is the error handler for
+   * this stream (GH-2984 review); swallowing it here would make that signal permanently dead.
+   */
   public getMyMailingLists(): Observable<MyMailingList[]> {
-    return this.http.get<MyMailingList[]>(`${this.baseUrl}/my-mailing-lists`).pipe(catchError(() => of([])));
+    return this.http.get<MyMailingList[]>(`${this.baseUrl}/my-mailing-lists`);
   }
 
   /**
@@ -85,6 +94,37 @@ export class MailingListService {
     return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data).pipe(
       take(1),
       tap(() => this.mailingListDetailCache.delete(uid))
+    );
+  }
+
+  /**
+   * Starts an async sync-diff job and returns its ID immediately. Poll with {@link getSyncDiffStatus}.
+   * `direction` is required when the list's `sync_mode` is `manual`/unset, rejected for an auto_* list.
+   */
+  public startSyncDiff(mailingListId: string, direction?: MailingListSyncDirection): Observable<SyncJobStart> {
+    const params = direction ? new HttpParams().set('direction', direction) : undefined;
+    return this.http.post<SyncJobStart>(`${this.baseUrl}/${mailingListId}/sync-diff/start`, {}, { params }).pipe(take(1));
+  }
+
+  /** Fetches the current progress/result of a sync-diff job started via {@link startSyncDiff}. `direction` must match the value passed to `startSyncDiff` for this job. */
+  public getSyncDiffStatus(mailingListId: string, jobId: string, direction?: MailingListSyncDirection): Observable<SyncDiffJobStatus> {
+    const params = direction ? new HttpParams().set('direction', direction) : undefined;
+    return this.http.get<SyncDiffJobStatus>(`${this.baseUrl}/${mailingListId}/sync-diff/${jobId}/status`, { params });
+  }
+
+  /** Starts an async sync-apply job for an admin-approved subset of a sync-diff's adds/removes. Poll with {@link getSyncApplyStatus}. */
+  public startSyncApply(mailingListId: string, data: SyncApplyRequest): Observable<SyncJobStart> {
+    return this.http.post<SyncJobStart>(`${this.baseUrl}/${mailingListId}/sync-apply/start`, data).pipe(take(1));
+  }
+
+  /** Fetches the current progress/result of a sync-apply job started via {@link startSyncApply}. Evicts the mailing list detail cache once the job finishes. */
+  public getSyncApplyStatus(mailingListId: string, jobId: string): Observable<SyncApplyJobStatus> {
+    return this.http.get<SyncApplyJobStatus>(`${this.baseUrl}/${mailingListId}/sync-apply/${jobId}/status`).pipe(
+      tap((status) => {
+        if (status.status === 'completed' || status.status === 'failed') {
+          this.mailingListDetailCache.delete(mailingListId);
+        }
+      })
     );
   }
 

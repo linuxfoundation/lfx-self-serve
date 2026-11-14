@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import createJiti from 'jiti';
+import { MONITOR_PLATFORM_BUTTON_COLORS, ORG_TRAINING_STAT_TILES } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
 // GH-2555 regression guard. Tailwind loads `tailwind.config.js` through jiti's Node/`exports`-map
@@ -54,5 +55,20 @@ describe('tailwind.config.js (jiti/Node resolution, GH-2555)', () => {
     const source = readFileSync(configPath, 'utf8');
     expect(source).toMatch(/from '@lfx-one\/shared\/src\//);
     expect(source).not.toMatch(/from '@lfx-one\/shared\/constants'/);
+  });
+});
+
+// The Monitor tab's selected-button text classes are chosen at runtime from a shared constant that
+// Tailwind never scans, so they survive purging only through the safelist (#2519).
+describe('tailwind.config.js safelist — Monitor tab platform buttons', () => {
+  it.each(Object.entries(MONITOR_PLATFORM_BUTTON_COLORS))('safelists the %s button text class', (_platform, colors) => {
+    expect(config.safelist).toContain(colors.textClass);
+  });
+});
+
+// The Training & Certifications stat strip binds each tile's icon tint from a shared constant (lfx-self-serve#4290).
+describe('tailwind.config.js safelist — Org Lens training stat tiles', () => {
+  it.each(ORG_TRAINING_STAT_TILES.map((tile) => [tile.key, tile.iconClass]))('safelists the %s tile icon classes', (_key, iconClass) => {
+    for (const token of iconClass.split(' ')) expect(config.safelist).toContain(token);
   });
 });

@@ -4,8 +4,10 @@
 <div class="rsvp-scope-modal">
   <!-- Modal Header -->
   <div class="mb-6">
-    <h3 class="text-lg font-semibold text-gray-900 mb-2">Select RSVP Scope</h3>
-    <p class="text-sm text-gray-600">This is a recurring meeting. Choose which occurrences your "{{ response }}" response should apply to.</p>
+    <p class="text-sm text-gray-600">Choose which dates your {{ response }} response applies to. You can change your response later.</p>
+    @if (!canSelectOccurrence) {
+      <p class="mt-2 text-sm text-gray-600">A specific upcoming date could not be resolved. Only all dates can be selected.</p>
+    }
   </div>
 
   <!-- Scope Options -->
@@ -44,7 +46,7 @@
       [attr.data-testid]="'rsvp-scope-modal-cancel'">
     </lfx-button>
 
-    <lfx-button label="Confirm" severity="info" size="small" type="button" (onClick)="onConfirm()" [attr.data-testid]="'rsvp-scope-modal-confirm'">
+    <lfx-button label="Save response" severity="info" size="small" type="button" (onClick)="onConfirm()" [attr.data-testid]="'rsvp-scope-modal-confirm'">
     </lfx-button>
   </div>
 </div>

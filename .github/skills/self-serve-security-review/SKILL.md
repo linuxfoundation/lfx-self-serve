@@ -148,8 +148,8 @@ the concrete mechanism in the code each time.
   upstream FGA). Trusting the cookie or a client-side guard for an actual
   authorization gate is a bypass; client guards are UX, not security.
 - **Sessions and tokens.** The OIDC session, the refresh and audience-scoped
-  token exchanges (`exchangeRefreshTokenForAudience`, the API-gateway and
-  crowdfunding tokens), and the M2M token cache. Flag a token minted for the
+  token exchanges (`exchangeRefreshTokenForAudience`, the API-gateway
+  token), and the M2M token cache. Flag a token minted for the
   wrong audience, a bearer or refresh token written to a log/response/error, a
   token forwarded to an endpoint it was not scoped for, or a weakened
   session/refresh check.

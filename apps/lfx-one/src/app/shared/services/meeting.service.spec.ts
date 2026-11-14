@@ -1,10 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import type { MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  BatchRegistrantOperationResponse,
+  CreateMeetingRegistrantRequest,
+  MeetingRegistrant,
+  MeetingRegistrantWithState,
+  UpdateMeetingRegistrantRequest,
+} from '@lfx-one/shared/interfaces';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingService } from './meeting.service';
 
@@ -148,6 +155,681 @@ describe('MeetingService registrant payload mapping', () => {
 
       expect(body.meeting_id).toBe(MEETING_UID);
       expect(body).not.toHaveProperty('committee_uid');
+    });
+
+    // Upstream treats `user_id` as immutable: leaving it out of an update reads as a change and fails with
+    // "user_id cannot be changed". The index record carries it, so it goes back as stored.
+    it('sends back the user_id a listed guest is linked to, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', user_id: 'user-123' })).user_id).toBe('user-123');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('user_id');
+    });
+
+    // ITX rejects an update whose `username` differs from the stored one, and a blank counts as different when a
+    // username is stored. It is checked after `user_id`, so it matters once that is sent.
+    it('sends back the username a listed guest has, and omits it when there is none', () => {
+      expect(service.getChangedFields(registrant({ state: 'modified', username: 'guest-a' })).username).toBe('guest-a');
+      expect(service.getChangedFields(registrant({ state: 'modified' }))).not.toHaveProperty('username');
+      expect(service.getChangedFields(registrant({ state: 'modified', username: null }))).not.toHaveProperty('username');
+    });
+
+    // The avatar is derived from the linked user and ITX does not compare it.
+    it('never sends the avatar a listed guest carries', () => {
+      const body = service.getChangedFields(registrant({ state: 'modified', avatar_url: 'https://avatars.example/guest-a.png' }));
+
+      expect(body).not.toHaveProperty('avatar_url');
+    });
+  });
+});
+
+// The passcode gates private/restricted meetings server-side; it travels in a header so request
+// URLs, which Datadog RUM records as resource events, never carry it.
+describe('MeetingService public meeting passcode transport', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  let post: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn(() => of({}));
+    post = vi.fn(() => of({}));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('sends the getPublicMeeting passcode in the header, not the URL', () => {
+    service.getPublicMeeting(MEETING_UID, 'SUPER_SECRET').subscribe();
+
+    const [url, options] = get.mock.calls[0];
+    expect(url).not.toContain('SUPER_SECRET');
+    expect(options.params).toBeUndefined();
+    expect((options.headers as HttpHeaders).get('x-meeting-password')).toBe('SUPER_SECRET');
+  });
+
+  it('sends the getPublicMeetingJoinUrl passcode in the header, not the URL', () => {
+    service.getPublicMeetingJoinUrl(MEETING_UID, 'SUPER_SECRET', { email: 'dana.reyes@acme-motors.example' }).subscribe();
+
+    const [url, , options] = post.mock.calls[0];
+    expect(url).not.toContain('SUPER_SECRET');
+    expect(options.params).toBeUndefined();
+    expect((options.headers as HttpHeaders).get('x-meeting-password')).toBe('SUPER_SECRET');
+  });
+
+  it('sends no passcode header when there is no passcode', () => {
+    service.getPublicMeeting(MEETING_UID, null).subscribe();
+
+    expect(get.mock.calls[0][1].headers).toBeUndefined();
+  });
+});
+
+describe('MeetingService.removeMyMeetingRegistration', () => {
+  let service: MeetingService;
+  let del: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    del = vi.fn(() => of(undefined));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { delete: del } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('sends a body-less DELETE to the self registrant route, with no registrant id from the client', () => {
+    service.removeMyMeetingRegistration(MEETING_UID, 'meeting-card').subscribe();
+
+    expect(del).toHaveBeenCalledTimes(1);
+    expect(del.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self`);
+  });
+
+  it.each(['meeting-card', 'meeting-join'] as const)('names the %s surface in the removal-source header', (source) => {
+    service.removeMyMeetingRegistration(MEETING_UID, source).subscribe();
+
+    expect(del.mock.calls[0][1].headers.get('x-lfx-removal-source')).toBe(source);
+  });
+});
+
+describe('MeetingService.resendMyMeetingInvitation', () => {
+  let service: MeetingService;
+  let post: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    post = vi.fn(() => of({ message: 'Invitation resent successfully' }));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('posts to the self resend route, with no registrant id from the client', () => {
+    service.resendMyMeetingInvitation(MEETING_UID).subscribe();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self/resend`);
+    expect(post.mock.calls[0][1]).toEqual({});
+  });
+
+  it('sends the occurrence being viewed so the server picks the registration that fits it', () => {
+    service.resendMyMeetingInvitation(MEETING_UID, '1700000000').subscribe();
+
+    expect(post.mock.calls[0][1]).toEqual({ occurrence_id: '1700000000' });
+  });
+
+  it.each([[undefined], [null], ['']])('sends an empty body when the occurrence is %j', (occurrenceId) => {
+    service.resendMyMeetingInvitation(MEETING_UID, occurrenceId).subscribe();
+
+    expect(post.mock.calls[0][1]).toEqual({});
+  });
+
+  it('encodes the meeting id into the path', () => {
+    service.resendMyMeetingInvitation('a/b?c').subscribe();
+
+    expect(post.mock.calls[0][0]).toBe('/api/meetings/a%2Fb%3Fc/registrants/self/resend');
+  });
+
+  it('rethrows an upstream failure to the caller', () => {
+    const failure = new Error('nope');
+    post.mockReturnValueOnce(throwError(() => failure));
+    const error = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    service.resendMyMeetingInvitation(MEETING_UID).subscribe({ error });
+
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('MeetingService removed-registration state', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { delete: vi.fn(() => of(undefined)) } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('records a removal by meeting id and forgets it once the viewer registers again', () => {
+    service.markRegistrationRemoved('mtg-1');
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+    expect(service.removedRegistrationMeetingIds().has('mtg-2')).toBe(false);
+
+    service.clearRemovedRegistration('mtg-1');
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+
+  it('keeps a removal while only the removed registrant is listed, and lifts it for a new one', () => {
+    service.markRegistrationRemoved('mtg-1', ['reg-old']);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-old']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-old', 'reg-new']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+  });
+
+  it('keeps the uids of an earlier partial removal when a retry finishes it', () => {
+    service.rememberRemovedRegistrants('mtg-1', ['reg-a']);
+    service.markRegistrationRemoved('mtg-1', ['reg-b']);
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-a', 'reg-b']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+
+  it('remembers the first removed registrant after a re-invite and a second removal', () => {
+    service.markRegistrationRemoved('mtg-1', ['reg-a']);
+    service.clearRemovalIfReinvited('mtg-1', ['reg-b']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(false);
+
+    service.markRegistrationRemoved('mtg-1', ['reg-b']);
+    service.clearRemovalIfReinvited('mtg-1', ['reg-a']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+
+  it('keeps a removal recorded without registrant uids', () => {
+    service.markRegistrationRemoved('mtg-1');
+
+    service.clearRemovalIfReinvited('mtg-1', ['reg-new']);
+    expect(service.removedRegistrationMeetingIds().has('mtg-1')).toBe(true);
+  });
+});
+
+describe('MeetingService attachment scope overrides', () => {
+  const OCCURRENCE_ID = '1893456000';
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+  let del: ReturnType<typeof vi.fn>;
+
+  const attachment = (uid: string, occurrenceId?: string) => ({
+    uid,
+    meeting_id: 'mtg-1',
+    type: 'link' as const,
+    name: uid,
+    created_at: '2030-01-01T00:00:00Z',
+    occurrence_id: occurrenceId,
+  });
+
+  beforeEach(() => {
+    get = vi.fn();
+    del = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, delete: del } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('records a saved scope, using an empty value for "all occurrences"', () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }, { uid: 'b' }]);
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+    expect(service.attachmentScopeOverrides().get('b')).toBe('');
+  });
+
+  it('keeps an override after a read that still returns the old scope', async () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }]);
+    get.mockReturnValue(of([attachment('a')]));
+
+    await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+  });
+
+  // Each card keeps its own fetched list and only the one that saved refetches, so a read agreeing with the saved scope must
+  // not drop the override: the other cards would fall back to their stale snapshot.
+  it('keeps an override after a read that already shows the saved scope', async () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }, { uid: 'b' }]);
+    get.mockReturnValue(of([attachment('a', OCCURRENCE_ID), attachment('b')]));
+
+    await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+    expect(service.attachmentScopeOverrides().get('b')).toBe('');
+  });
+
+  it('replaces an override when the same attachment is changed again', () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }]);
+    service.recordAttachmentScopeChanges([{ uid: 'a' }]);
+
+    expect(service.attachmentScopeOverrides().get('a')).toBe('');
+  });
+
+  describe('recording attachments added and removed', () => {
+    it('keeps what was added and removed per meeting', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')], deletedUids: ['x'] });
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('b')], deletedUids: ['y'] });
+      service.recordAttachmentChanges('mtg-2', { added: [attachment('c')] });
+
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-1')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['a', 'b']);
+      expect([...(service.attachmentChanges().get('mtg-1')?.deletedUids ?? [])]).toEqual(['x', 'y']);
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-2')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['c']);
+    });
+
+    it('forgets an addition that is deleted afterwards', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')] });
+      service.recordAttachmentChanges('mtg-1', { deletedUids: ['a'] });
+
+      expect(service.attachmentChanges().get('mtg-1')?.added).toEqual([]);
+    });
+
+    it('records a successful delete from any caller, so an earlier addition is not listed again', async () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')] });
+      del.mockReturnValue(of(undefined));
+
+      await firstValueFrom(service.deleteMeetingAttachment('mtg-1', 'a'));
+
+      expect(service.attachmentChanges().get('mtg-1')?.added).toEqual([]);
+      expect([...(service.attachmentChanges().get('mtg-1')?.deletedUids ?? [])]).toEqual(['a']);
+    });
+
+    it('does not record a delete that failed', async () => {
+      del.mockReturnValue(throwError(() => new Error('rejected')));
+
+      await expect(firstValueFrom(service.deleteMeetingAttachment('mtg-1', 'a'))).rejects.toThrow('rejected');
+
+      expect(service.attachmentChanges().has('mtg-1')).toBe(false);
+    });
+
+    it('records nothing for an empty change', () => {
+      service.recordAttachmentChanges('mtg-1', { added: [], deletedUids: [] });
+
+      expect(service.attachmentChanges().has('mtg-1')).toBe(false);
+    });
+
+    // Each card keeps its own fetched list, so a read agreeing with the change must not drop it for the other cards.
+    it('keeps a change after a read that already shows it', async () => {
+      service.recordAttachmentChanges('mtg-1', { added: [attachment('a')], deletedUids: ['x'] });
+      get.mockReturnValue(of([attachment('a')]));
+
+      await firstValueFrom(service.getMeetingAttachments('mtg-1'));
+
+      expect(
+        service
+          .attachmentChanges()
+          .get('mtg-1')
+          ?.added.map((a) => a.uid)
+      ).toEqual(['a']);
+    });
+  });
+});
+
+// lfx-self-serve-ops#439: the BFF refuses a registrant batch longer than MEETING_REGISTRANT_BATCH_MAX
+// (100) and runs each one's items at bounded concurrency, so the service splits saves into sequential
+// requests of MEETING_REGISTRANT_CLIENT_CHUNK_SIZE (25) and merges the responses. Smaller chunks reduce
+// serial upstream rounds and timeout risk; they do not enforce an ingress deadline.
+describe('MeetingService registrant batch chunking', () => {
+  let service: MeetingService;
+  let post: ReturnType<typeof vi.fn>;
+  let put: ReturnType<typeof vi.fn>;
+  let del: ReturnType<typeof vi.fn>;
+
+  /** A response that reports every item of the chunk as created, echoing its emails. */
+  function allCreated(chunk: CreateMeetingRegistrantRequest[]): BatchRegistrantOperationResponse<MeetingRegistrant> {
+    return {
+      successes: chunk.map((item) => ({ email: item.email }) as MeetingRegistrant),
+      failures: [],
+      summary: { total: chunk.length, successful: chunk.length, failed: 0 },
+    };
+  }
+
+  /** The 400 the BFF answers when every item of a chunk failed upstream — the per-item results ride in the body. */
+  function allFailed(chunk: CreateMeetingRegistrantRequest[], message: string): HttpErrorResponse {
+    const body: BatchRegistrantOperationResponse<MeetingRegistrant> = {
+      successes: [],
+      failures: chunk.map((input) => ({ input, error: { message } })),
+      summary: { total: chunk.length, successful: 0, failed: chunk.length },
+    };
+    return new HttpErrorResponse({ status: 400, error: body });
+  }
+
+  function guests(count: number): CreateMeetingRegistrantRequest[] {
+    return Array.from({ length: count }, (_, i) => ({ meeting_id: MEETING_UID, email: `guest-${i}@acme-motors.example` }) as CreateMeetingRegistrantRequest);
+  }
+
+  beforeEach(() => {
+    post = vi.fn((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
+    put = vi.fn((_url: string, chunk: { uid: string }[]) =>
+      of({
+        successes: chunk.map((item) => ({ uid: item.uid }) as MeetingRegistrant),
+        failures: [],
+        summary: { total: chunk.length, successful: chunk.length, failed: 0 },
+      })
+    );
+    del = vi.fn((_url: string, options: { body: string[] }) =>
+      of({ successes: options.body, failures: [], summary: { total: options.body.length, successful: options.body.length, failed: 0 } })
+    );
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { post, put, delete: del } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('sends a batch of exactly the chunk size in a single request', async () => {
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(25)));
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][1]).toHaveLength(25);
+    expect(response.summary).toEqual({ total: 25, successful: 25, failed: 0 });
+  });
+
+  it('splits a larger batch into sequential requests and merges the responses', async () => {
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(60)));
+
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls.map((call) => call[1].length)).toEqual([25, 25, 10]);
+    expect(post.mock.calls[1][1][0].email).toBe('guest-25@acme-motors.example');
+    expect(response.summary).toEqual({ total: 60, successful: 60, failed: 0 });
+    expect(response.successes.map((item) => item.email)).toEqual(guests(60).map((item) => item.email));
+  });
+
+  it('waits for each chunk to finish before sending the next', () => {
+    const firstChunk = new Subject<BatchRegistrantOperationResponse<MeetingRegistrant>>();
+    post.mockImplementationOnce(() => firstChunk);
+
+    service.addMeetingRegistrants(MEETING_UID, guests(30)).subscribe();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    firstChunk.next(allCreated(guests(25)));
+    firstChunk.complete();
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues after an intermediate request errors and merges successes around the failed chunk', async () => {
+    const registrants = guests(60);
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
+    post.mockImplementationOnce(() => throwError(() => new Error('Service unavailable')));
+
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, registrants));
+
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(post.mock.calls[2][1]).toEqual(registrants.slice(50));
+    expect(response.summary).toEqual({ total: 60, successful: 35, failed: 25 });
+    expect(response.successes.map((item) => item.email)).toEqual([...registrants.slice(0, 25), ...registrants.slice(50)].map((item) => item.email));
+    expect(response.failures).toEqual(registrants.slice(25, 50).map((input) => ({ input, error: { message: 'Service unavailable' } })));
+  });
+
+  it('errors when the first request fails, as a single request would', async () => {
+    const forbidden = new HttpErrorResponse({ status: 403, error: { message: 'Forbidden' } });
+    post.mockImplementationOnce(() => throwError(() => forbidden));
+
+    await expect(firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)))).rejects.toBe(forbidden);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  // A single request carrying all of these would have attempted every item and answered 207, so an
+  // all-failed first chunk must not stop the rest from being sent.
+  it('merges an all-failed first chunk and still sends the remaining chunks', async () => {
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => throwError(() => allFailed(chunk, 'Already registered')));
+
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)));
+
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(response.summary).toEqual({ total: 30, successful: 5, failed: 25 });
+    expect(response.failures[0]).toEqual({ input: guests(30)[0], error: { message: 'Already registered' } });
+  });
+
+  it("keeps the BFF's per-item messages when a later chunk fails entirely", async () => {
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => of(allCreated(chunk)));
+    post.mockImplementationOnce((_url: string, chunk: CreateMeetingRegistrantRequest[]) => throwError(() => allFailed(chunk, 'Invalid email')));
+
+    const response = await firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(30)));
+
+    expect(response.summary).toEqual({ total: 30, successful: 25, failed: 5 });
+    expect(response.failures.map((failure) => failure.error.message)).toEqual(Array(5).fill('Invalid email'));
+  });
+
+  it('still errors on an all-failed batch that fits in one request', async () => {
+    const error = allFailed(guests(3), 'Already registered');
+    post.mockImplementationOnce(() => throwError(() => error));
+
+    await expect(firstValueFrom(service.addMeetingRegistrants(MEETING_UID, guests(3)))).rejects.toBe(error);
+  });
+
+  it('chunks updates the same way', async () => {
+    const updates = Array.from({ length: 30 }, (_, i) => ({ uid: `reg-${i}`, changes: { first_name: 'Alice' } as UpdateMeetingRegistrantRequest }));
+
+    const response = await firstValueFrom(service.updateMeetingRegistrants(MEETING_UID, updates));
+
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(put.mock.calls[0]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, updates.slice(0, 25)]);
+    expect(put.mock.calls[1]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, updates.slice(25)]);
+    expect(response.summary).toEqual({ total: 30, successful: 30, failed: 0 });
+  });
+
+  it("sends each delete chunk's uids in the request body", async () => {
+    const uids = Array.from({ length: 30 }, (_, i) => `reg-${i}`);
+
+    const response = await firstValueFrom(service.deleteMeetingRegistrants(MEETING_UID, uids));
+
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del.mock.calls[0]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, { body: uids.slice(0, 25) }]);
+    expect(del.mock.calls[1]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, { body: uids.slice(25) }]);
+    expect(response.summary).toEqual({ total: 30, successful: 30, failed: 0 });
+  });
+});
+
+// #501: a meeting just created by this user can 403/404 for a few seconds while the ITX index /
+// FGA organizer tuple it reads from catches up with the write. getMeetingDetail is the one place
+// both the writerGuard's `meetings` probe and this edit-page load go through, so retrying there
+// (via retryPropagationLag, unit-tested on its own in http-error.utils.spec.ts) fixes the race for
+// both callers at once. These tests pin the end-to-end wiring: the retry only applies to an id this
+// client just created (via createMeeting), the cache, and that a terminal failure logs exactly once
+// (not once per attempt). A plain read of an id nobody just created still fails on the first 403/404
+// — see 'does not retry a 403 for a meeting id nobody just created'.
+describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
+  let get: ReturnType<typeof vi.fn>;
+  let post: ReturnType<typeof vi.fn>;
+  let service: MeetingService;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    TestBed.resetTestingModule();
+    get = vi.fn();
+    post = vi.fn();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  // `getMeetingDetail` calls `this.http.get(...)` once and pipes `retryPropagationLag()` directly
+  // onto that Observable, so a retry resubscribes to the SAME Observable instance rather than
+  // re-invoking `get()` — exactly how a real HttpClient Observable behaves (cold: each subscribe
+  // re-fires the request). These mocks track subscriptions, not calls to `get`.
+  function flakyGet(status: number, failuresBeforeSuccess: number, value: unknown) {
+    let attempts = 0;
+    return new Observable((subscriber) => {
+      attempts += 1;
+      if (attempts <= failuresBeforeSuccess) {
+        subscriber.error(new HttpErrorResponse({ status }));
+        return;
+      }
+      subscriber.next(value);
+      subscriber.complete();
+    });
+  }
+
+  function countingErrorGet(status: number, onSubscribe: () => void) {
+    return new Observable((subscriber) => {
+      onSubscribe();
+      subscriber.error(new HttpErrorResponse({ status }));
+    });
+  }
+
+  /** Puts `id` in the service's recently-created window, the way a real create-then-edit navigation does. */
+  async function createMeeting(id: string): Promise<void> {
+    post.mockReturnValueOnce(of({ id, project_uid: 'project-1' }));
+    await firstValueFrom(service.createMeeting({ project_uid: 'project-1' } as never));
+  }
+
+  it('retries a 403 that resolves before the schedule is exhausted, never surfacing the error', async () => {
+    await createMeeting(MEETING_UID);
+    const meeting = { id: MEETING_UID, project_uid: 'project-1' };
+    get.mockReturnValue(flakyGet(403, 1, meeting));
+
+    const result = firstValueFrom(service.getMeetingDetail(MEETING_UID));
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual(meeting);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs once (not once per attempt) and evicts the cache on a terminal 404', async () => {
+    await createMeeting(MEETING_UID);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let attempts = 0;
+    get.mockReturnValue(countingErrorGet(404, () => (attempts += 1)));
+
+    // `.rejects` attaches its handler synchronously, before the timers below resolve the
+    // rejection — asserting on a separately-awaited promise would otherwise let the rejection
+    // go briefly unhandled and fail the run.
+    const assertion = expect(firstValueFrom(service.getMeetingDetail(MEETING_UID))).rejects.toBeInstanceOf(HttpErrorResponse);
+    await vi.advanceTimersByTimeAsync(1000 + 2000);
+    await assertion;
+
+    // 1 initial attempt + 2 retries (PROPAGATION_LAG_RETRY_DELAYS_MS has 2 entries) = 3 subscriptions
+    // to the same source Observable, but only the single terminal failure reaches the logging catchError.
+    expect(attempts).toBe(3);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+
+    // The cache was evicted on the terminal failure, so a later call issues a fresh request
+    // rather than replaying the same rejected observable.
+    get.mockReturnValue(of({ id: MEETING_UID, project_uid: 'project-1' }));
+    await expect(firstValueFrom(service.getMeetingDetail(MEETING_UID))).resolves.toEqual({ id: MEETING_UID, project_uid: 'project-1' });
+
+    consoleError.mockRestore();
+  });
+
+  it('does not retry a 403 for a meeting id nobody just created', async () => {
+    let attempts = 0;
+    get.mockReturnValue(countingErrorGet(403, () => (attempts += 1)));
+
+    await expect(firstValueFrom(service.getMeetingDetail(MEETING_UID))).rejects.toBeInstanceOf(HttpErrorResponse);
+
+    // No retry schedule applied: a single subscription, failing immediately — a genuine denial
+    // (or a stale/unrelated id) must not pay the propagation-lag retry delay.
+    expect(attempts).toBe(1);
+  });
+});
+
+describe('MeetingService project-lens meeting fetchers (#4964)', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('getUpcomingMeetingsByProject emits the page data scoped by project tag', async () => {
+    get.mockReturnValue(of({ data: [{ id: 'm-1' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getUpcomingMeetingsByProject('project-1'))).resolves.toEqual([{ id: 'm-1' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/meetings');
+    expect(get.mock.calls[0][1].params.get('tags')).toBe('project_uid:project-1');
+  });
+
+  it('getPastMeetingsByProject emits the page data scoped by project tag and sorted by name', async () => {
+    get.mockReturnValue(of({ data: [{ id: 'pm-1' }], page_token: undefined }));
+
+    await expect(firstValueFrom(service.getPastMeetingsByProject('project-1'))).resolves.toEqual([{ id: 'pm-1' }]);
+    expect(get.mock.calls[0][0]).toBe('/api/past-meetings');
+    expect(get.mock.calls[0][1].params.get('tags')).toBe('project_uid:project-1');
+    expect(get.mock.calls[0][1].params.get('sort')).toBe('name_desc');
+  });
+
+  it.each([
+    ['getUpcomingMeetingsByProject', '/api/meetings', 'Failed to load project meetings:'],
+    ['getPastMeetingsByProject', '/api/past-meetings', 'Failed to load past project meetings:'],
+  ] as const)('%s logs and propagates an HTTP failure instead of emitting an empty list', async (method, url, message) => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failure = new HttpErrorResponse({ status: 502, url });
+    get.mockReturnValue(throwError(() => failure));
+
+    await expect(firstValueFrom(service[method]('project-1'))).rejects.toBe(failure);
+    expect(errorLog).toHaveBeenCalledExactlyOnceWith(message, failure);
+  });
+
+  describe('roll-up (GH-5566)', () => {
+    const params = (): HttpParams => get.mock.calls[0][1].params;
+
+    it('sends the roll-up root and only the filters that are set', async () => {
+      get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+      await firstValueFrom(
+        service.getMeetingsByProjectPaginated('root', undefined, undefined, undefined, undefined, {
+          includeSubProjects: true,
+          projectUids: ['a', 'b'],
+          committeeUid: 'c',
+          groupType: 'Board',
+          pageSize: 1000,
+        })
+      );
+
+      expect(params().get('root_project_uid')).toBe('root');
+      expect(params().get('project_uids')).toBe('a,b');
+      expect(params().get('committee_uid')).toBe('c');
+      expect(params().get('group_type')).toBe('Board');
+      expect(params().get('page_size')).toBe('1000');
+      expect(params().has('tags')).toBe(false);
+    });
+
+    it('omits unset filters and keeps a single project scoped by tag without the roll-up', async () => {
+      get.mockReturnValue(of({ count: 0 }));
+
+      await firstValueFrom(service.getPastMeetingsCountByProject('root', { includeSubProjects: true }));
+      await firstValueFrom(service.getPastMeetingsCountByProject('project-1', { projectUids: ['ignored'] }));
+
+      const [rollup, single] = get.mock.calls.map((call) => call[1].params as HttpParams);
+      expect(rollup.keys()).toEqual(['root_project_uid']);
+      expect(single.keys()).toEqual(['tags']);
+      expect(single.get('tags')).toBe('project_uid:project-1');
+    });
+
+    it('fetches the filter options for a root, and offers none when that fails', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      get.mockReturnValueOnce(of({ projects: [{ uid: 'p', name: 'P', slug: 'p' }], groups: [], complete: true }));
+      get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({
+        projects: [{ uid: 'p', name: 'P', slug: 'p' }],
+        groups: [],
+        complete: true,
+      });
+      await expect(firstValueFrom(service.getRollupFilterOptions('root'))).resolves.toEqual({ projects: [], groups: [], complete: false });
+      expect(get.mock.calls[0][0]).toBe('/api/meetings/rollup-filters');
+      expect(params().get('root_project_uid')).toBe('root');
     });
   });
 });

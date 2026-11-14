@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<lfx-ui-modal heading="Delete meeting" data-testid="meetings-home-delete-scope-modal">
+  <lfx-meeting-dialog-context [row]="row" [origin]="origin" data-testid="meetings-home-delete-scope-info" />
+
+  <p class="text-[14px] leading-[20px] text-gray-700">This is a recurring meeting. What would you like to delete?</p>
+
+  <lfx-ui-radio-group ariaLabel="What to delete" [(value)]="scope" data-testid="meetings-home-delete-scope-options">
+    <span class="flex flex-col gap-[4px] self-stretch">
+      <lfx-ui-radio
+        class="[&_label]:font-medium"
+        value="occurrence"
+        label="Cancel a single occurrence"
+        [disabled]="!occurrenceOptions.length"
+        data-testid="meetings-home-delete-scope-occurrence" />
+      <!-- The uikit radio has no description slot, so a click on the description picks the option too. -->
+      <span
+        class="pl-[24px] text-[12px] leading-[16px] text-gray-500"
+        [class.cursor-pointer]="occurrenceOptions.length"
+        (click)="occurrenceOptions.length && scope.set('occurrence')"
+        data-testid="meetings-home-delete-scope-occurrence-description"
+        >{{
+          occurrenceOptions.length
+            ? 'Only the occurrence you pick will be canceled. The rest of the series will remain.'
+            : 'There are no upcoming occurrences left to cancel on their own.'
+        }}</span
+      >
+      @if (scope() === 'occurrence') {
+        <div class="mt-[6px] pl-[24px]">
+          <lfx-ui-select
+            label="Occurrence"
+            placeholder="Select an occurrence"
+            [(value)]="occurrenceId"
+            data-testid="meetings-home-delete-scope-occurrence-select">
+            @for (option of occurrenceOptions; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+      }
+    </span>
+    <span class="flex flex-col gap-[4px]">
+      <lfx-ui-radio class="[&_label]:font-medium" value="series" label="Delete the entire series" data-testid="meetings-home-delete-scope-series" />
+      <span
+        class="cursor-pointer pl-[24px] text-[12px] leading-[16px] text-gray-500"
+        (click)="scope.set('series')"
+        data-testid="meetings-home-delete-scope-series-description"
+        >Every occurrence of this recurring meeting will be permanently deleted.</span
+      >
+    </span>
+  </lfx-ui-radio-group>
+
+  <lfx-ui-note variant="error" plain size="small" icon="fa-solid fa-circle-exclamation" data-testid="meetings-home-delete-scope-note"
+    >Deleting or canceling here applies to all registrants of this meeting, not just yourself. This action cannot be undone.</lfx-ui-note
+  >
+
+  <ng-container modalActions>
+    <lfx-ui-button variant="secondary" (click)="cancel()" data-testid="meetings-home-delete-scope-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button [disabled]="!canContinue()" (click)="confirm()" data-testid="meetings-home-delete-scope-continue">Continue</lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

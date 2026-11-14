@@ -6,7 +6,7 @@ import '@angular/compiler';
 import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
   MENTORSHIP_SKILL_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
@@ -20,12 +20,15 @@ const VALID_BODY = {
   skillsHave: ['Java'],
   skillsWant: ['Python'],
   additionalNotes: 'Test notes',
+  country: 'KE',
   ageEligible: true,
   workAuthorized: true,
   noDuplicateProfile: true,
   complianceAccepted: true,
   termsAccepted: true,
 };
+
+const LFX_PROFILE = { firstName: 'Test', lastName: 'User', logoUrl: 'https://example.com/avatar.png' };
 
 /** The per-field error keys a rejected body reports. */
 const rejectedFields = (body: unknown): string[] => {
@@ -64,6 +67,22 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
     expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, demographics: {} })).not.toHaveProperty('demographics');
   });
 
+  it('keeps the LFX profile fields, trimmed, drops any email the browser sent, and drops an empty LFX profile', () => {
+    expect(
+      parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, lfxProfile: { ...LFX_PROFILE, firstName: '  Test ', email: 'someone.else@example.com' } })
+        .lfxProfile
+    ).toEqual(LFX_PROFILE);
+    expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, lfxProfile: {} })).not.toHaveProperty('lfxProfile');
+  });
+
+  it('rejects a bad LFX profile by field', () => {
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: 'text' })).toEqual(['lfxProfile']);
+    expect(rejectedFields({ ...VALID_BODY, lfxProfile: { firstName: 1, logoUrl: 'http://example.com/avatar.png' } }).sort()).toEqual([
+      'lfxProfile.firstName',
+      'lfxProfile.logoUrl',
+    ]);
+  });
+
   it.each([undefined, null, 'text', 42, ['a']])('rejects the non-object body %j', (body) => {
     expect(rejectedFields(body)).toEqual(['body']);
   });
@@ -75,6 +94,7 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
         skillsHave: 'Java',
         skillsWant: [1],
         additionalNotes: null,
+        country: 254,
         ageEligible: 'yes',
         workAuthorized: 1,
         noDuplicateProfile: undefined,
@@ -86,12 +106,22 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
       'skillsHave',
       'skillsWant',
       'additionalNotes',
+      'country',
       'ageEligible',
       'workAuthorized',
       'noDuplicateProfile',
       'complianceAccepted',
       'termsAccepted',
     ]);
+  });
+
+  it.each([
+    ['missing', ''],
+    ['a country name', 'Kenya'],
+    ['a lowercase code', 'ke'],
+    ['an unassigned code', 'ZZ'],
+  ])('rejects a country that is %s', (_label, country) => {
+    expect(rejectedFields({ ...VALID_BODY, country })).toEqual(['country']);
   });
 
   it('rejects additional notes over the cap', () => {
@@ -114,11 +144,12 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
       rejectedFields({
         ...VALID_BODY,
         introduction: '',
-        skillsHave: ['Not A Skill'],
+        skillsHave: [],
         skillsWant: [],
+        country: '',
         termsAccepted: false,
       })
-    ).toEqual(['introduction', 'skillsHave', 'skillsWant', 'termsAccepted']);
+    ).toEqual(['introduction', 'skillsHave', 'skillsWant', 'country', 'termsAccepted']);
   });
 
   it('rejects an introduction over the cap', () => {
@@ -132,15 +163,23 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
     expect(request.skillsWant).toEqual(['Python']);
   });
 
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    const request = parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: ['  Java  ', 'java', '   ', 'Rust'], skillsWant: ['Python'] });
+
+    expect(request.skillsHave).toEqual(['Java', 'Rust']);
+    expect(rejectedFields({ ...VALID_BODY, skillsHave: ['   '] })).toEqual(['skillsHave']);
+    expect(rejectedFields({ ...VALID_BODY, skillsWant: ['   '] })).toEqual(['skillsWant']);
+  });
+
   it('rejects either skills list over the profile edit cap', () => {
-    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1);
+    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS + 1);
 
     expect(rejectedFields({ ...VALID_BODY, skillsHave: overCap })).toEqual(['skillsHave']);
     expect(rejectedFields({ ...VALID_BODY, skillsWant: overCap })).toEqual(['skillsWant']);
   });
 
   it('counts the cap after repeats are dropped', () => {
-    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS);
 
     expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: [...atCap, atCap[0]] }).skillsHave).toEqual(atCap);
   });
@@ -156,6 +195,7 @@ describe('buildMentorshipUpstreamMenteeProfile', () => {
       age_eligible: true,
       work_eligible: true,
       skill_set: { skills: ['Java'], improvementSkills: ['Python'], comments: 'Test notes' },
+      address: { country: 'KE' },
     });
   });
 
@@ -180,6 +220,29 @@ describe('buildMentorshipUpstreamMenteeProfile', () => {
     const body = buildMentorshipUpstreamMenteeProfile({ ...request, ageEligible: false, workAuthorized: false });
 
     expect(body).toMatchObject({ age_eligible: false, work_eligible: false });
-    expect(Object.keys(body).sort()).toEqual(['age_eligible', 'introduction', 'skill_set', 'terms_and_conditions', 'work_eligible']);
+    expect(Object.keys(body).sort()).toEqual(['address', 'age_eligible', 'introduction', 'skill_set', 'terms_and_conditions', 'work_eligible']);
+  });
+
+  it('sends the LFX profile fields and the resolved email in the upstream column names', () => {
+    expect(buildMentorshipUpstreamMenteeProfile({ ...request, lfxProfile: LFX_PROFILE }, 'test.user@example.com')).toMatchObject({
+      first_name: 'Test',
+      last_name: 'User',
+      email: 'test.user@example.com',
+      logo_url: 'https://example.com/avatar.png',
+    });
+  });
+
+  it('sends no email when none was resolved', () => {
+    expect(buildMentorshipUpstreamMenteeProfile({ ...request, lfxProfile: LFX_PROFILE })).not.toHaveProperty('email');
+  });
+
+  it('sends the resolved GitHub link as the only profile link', () => {
+    expect(buildMentorshipUpstreamMenteeProfile(request, undefined, 'https://github.com/test-user').profile_links).toEqual({
+      githubProfileLink: 'https://github.com/test-user',
+    });
+  });
+
+  it('sends no profile links when no GitHub link was resolved', () => {
+    expect(buildMentorshipUpstreamMenteeProfile(request, 'test.user@example.com')).not.toHaveProperty('profile_links');
   });
 });

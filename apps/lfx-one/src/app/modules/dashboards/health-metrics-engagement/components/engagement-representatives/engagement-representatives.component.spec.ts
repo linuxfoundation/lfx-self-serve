@@ -8,7 +8,7 @@ import { HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/co
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { NEVER, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -21,14 +21,16 @@ function repRow(overrides: Partial<HealthMetricsEngagementRepRow> = {}): HealthM
   return {
     key: 'r-1',
     personName: 'Dana Fields',
+    identityUnresolved: false,
     accountName: 'Acme Motors',
+    membershipTier: 'Gold',
     committeeName: 'Technical Steering Committee',
     lastAttendedDate: '2026-08-14',
     periods: [
-      { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true },
-      { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false },
-      { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 3, neverAttended: false, lapsed: false },
-      { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false },
+      { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true, sortRank: 1 },
+      { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 },
+      { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 3, neverAttended: false, lapsed: false, sortRank: 1 },
+      { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 },
     ],
     ...overrides,
   };
@@ -52,6 +54,8 @@ describe('EngagementRepresentativesComponent', () => {
   let fixture: ComponentFixture<EngagementRepresentativesComponent>;
   let getEngagementRepresentatives: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let verdicts: boolean[];
+  let queryParamMap: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
   async function render(
     payload: HealthMetricsEngagementRepresentatives | Error = response(),
@@ -60,6 +64,7 @@ describe('EngagementRepresentativesComponent', () => {
     lifecycle?: string[]
   ): Promise<void> {
     getEngagementRepresentatives = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
+    queryParamMap = new BehaviorSubject(convertToParamMap(queryParams));
 
     await TestBed.configureTestingModule({
       imports: [EngagementRepresentativesComponent],
@@ -69,13 +74,14 @@ describe('EngagementRepresentativesComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementRepresentatives } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        // The component reads its initial segment off the URL, and writes it back.
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
+        // The component reads its initial segment off the URL, writes it back, and follows later changes.
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) }, queryParamMap } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementRepresentativesComponent);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
@@ -89,6 +95,7 @@ describe('EngagementRepresentativesComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
+    verdicts = [];
   });
 
   afterEach(() => {
@@ -109,10 +116,71 @@ describe('EngagementRepresentativesComponent', () => {
     expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
     expect(row.textContent).toContain('Dana Fields');
-    expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('Technical Steering Committee');
     expect(row.textContent).toContain('2 / 6');
     expect(row.textContent).toContain('Aug 14, 2026');
+    expect(verdicts).toEqual([false]);
+  });
+
+  // The design has no Organization column: the org and tier ride under the name, and the role, title
+  // and day count are gone.
+  it('shows the organization under the name in place of an Organization column', async () => {
+    await render();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-representatives-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Representative', 'Group', 'Attended', 'Last attended']);
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
+    expect(row.querySelectorAll('td')).toHaveLength(4);
+    const org = row.querySelector('[data-testid="engagement-representatives-row-r-1-org"]');
+    expect(org.textContent.trim()).toBe('Acme Motors · Gold');
+    expect(org.className).toContain('text-gray-400');
+    expect(row.textContent).not.toContain('Voting Rep');
+    expect(row.textContent).not.toContain('Engineer');
+    expect(row.textContent).not.toContain('days ago');
+  });
+
+  it('hides the organization sub-line when neither the organization nor the tier is known', async () => {
+    await render(response({ rows: [repRow({ accountName: '', membershipTier: null })] }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1-org"]')).toBeNull();
+  });
+
+  // Red marks a seat never filled, amber a seat that has lapsed; everything else reads as plain text.
+  it('colours never-attended rows red and lapsed rows amber', async () => {
+    const periodsWith = (flags: { neverAttended: boolean; lapsed: boolean }) =>
+      repRow().periods.map((period) => (period.range === 'YTD' ? { ...period, ...flags, meetingsAttended: flags.neverAttended ? 0 : 1 } : period));
+    await render(
+      response({
+        rows: [
+          repRow({ key: 'r-never', periods: periodsWith({ neverAttended: true, lapsed: false }) }),
+          repRow({ key: 'r-lapsed', periods: periodsWith({ neverAttended: false, lapsed: true }) }),
+          repRow({ key: 'r-ok', periods: periodsWith({ neverAttended: false, lapsed: false }) }),
+        ],
+        counts: counts(3, 1),
+      })
+    );
+
+    const cell = (key: string, part: string) =>
+      fixture.nativeElement.querySelector(`[data-testid="engagement-representatives-row-${key}-${part}"]`) as HTMLElement;
+    for (const part of ['attended', 'last-attended']) {
+      expect(cell('r-never', part).className).toContain('text-red-600');
+      expect(cell('r-never', part).className).toContain('font-medium');
+    }
+    expect(cell('r-lapsed', 'attended').className).toContain('text-gray-900');
+    expect(cell('r-lapsed', 'last-attended').className).toContain('text-amber-600');
+    expect(cell('r-lapsed', 'last-attended').className).not.toContain('text-red-600');
+    expect(cell('r-ok', 'attended').className).toContain('text-gray-900');
+    expect(cell('r-ok', 'last-attended').className).toContain('text-gray-900');
+    expect(cell('r-ok', 'last-attended').className).not.toContain('text-amber-600');
+  });
+
+  // Two unresolved rows must not read as one person listed twice.
+  it('renders an unresolved identity as unresolved', async () => {
+    await render(response({ rows: [repRow({ identityUnresolved: true, personName: 'Dana Fields' })] }));
+
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
+    expect(row.textContent).toContain('Unresolved identity');
+    expect(row.textContent).not.toContain('Dana Fields');
   });
 
   // The placeholder and the icon give the box no accessible name, so the label has to.
@@ -136,9 +204,9 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]').textContent).toContain('3 / 6');
   });
 
-  // Unlike the org and non-member captions, this view counts its scope per period, so the badge and
+  // Unlike the org and non-member captions, this view counts its scope per period, so the note and
   // the caption both have to follow the pill off the already-loaded response.
-  it('re-reports the badge counts for the newly selected period, off the loaded response', async () => {
+  it('re-reports the note counts for the newly selected period, off the loaded response', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: counts(48, 12) }), (value) => emitted.push(value));
     getEngagementRepresentatives.mockClear();
@@ -156,15 +224,19 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe(
       '49 representatives · 12 never attended'
     );
+    // The period re-settles too, since whether it has any representative moves the section's height.
+    expect(verdicts).toEqual([false, false]);
   });
 
   // A view that reports no scope count has not measured zero representatives, and the table says so.
-  it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
+  it('captions an unmeasured scope with an em dash rather than a confident zero, keeping its rows', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: null }), (value) => emitted.push(value));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe('—');
     expect(emitted).toEqual([null, null]);
+    // Unmeasured counts only caption the rows; the table still has them, so the section is not empty.
+    expect(verdicts).toEqual([false]);
   });
 
   // The caption counts the period's invited population, so a row invited in another period is not
@@ -174,10 +246,10 @@ describe('EngagementRepresentativesComponent', () => {
       key: 'r-2',
       personName: 'Sam Rivera',
       periods: [
-        { range: 'COMPLETED_YEAR_3', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'COMPLETED_YEAR_2', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
-        { range: 'COMPLETED_YEAR', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
-        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false },
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR_2', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
       ],
     });
     await render(response({ rows: [repRow(), other], counts: counts(2, 1) }));
@@ -192,10 +264,10 @@ describe('EngagementRepresentativesComponent', () => {
       personName: 'Sam Rivera',
       lastAttendedDate: null,
       periods: [
-        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
-        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false },
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
       ],
     });
     await render(response({ rows: [repRow(), never], counts: counts(2, 1) }));
@@ -215,10 +287,10 @@ describe('EngagementRepresentativesComponent', () => {
     const lapsed = repRow({
       key: 'r-2',
       periods: [
-        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false },
-        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true },
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR_2', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'COMPLETED_YEAR', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 6, meetingsAttended: 1, neverAttended: false, lapsed: true, sortRank: 1 },
       ],
     });
     await render(response({ rows: [repRow(), lapsed], counts: counts(2, 0) }));
@@ -228,22 +300,35 @@ describe('EngagementRepresentativesComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).not.toBeNull();
-    // The caption still counts the period's whole population, not the cut.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe(
-      '2 representatives · 0 never attended'
-    );
+    // The caption still counts the period's whole population, not the cut; the never part drops at zero.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe('2 representatives');
   });
 
   it('restores the cut from the URL, so a deep link lands on the segment it named', async () => {
     const never = repRow({
       key: 'r-2',
-      periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false }],
+      periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 }],
     });
     await render(response({ rows: [repRow(), never], counts: counts(2, 1) }), undefined, { repFilter: 'never' });
 
     expect(fixture.componentInstance['filter']()).toBe('never');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).not.toBeNull();
+  });
+
+  it('follows a later URL change to the cut, as when the Never attended stat links here', async () => {
+    const never = repRow({
+      key: 'r-2',
+      periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 }],
+    });
+    await render(response({ rows: [repRow(), never], counts: counts(2, 1) }));
+    expect(fixture.componentInstance['filter']()).toBe('all');
+
+    queryParamMap.next(convertToParamMap({ repFilter: 'never' }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['filter']()).toBe('never');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
   });
 
   // The segment is shareable state, so it belongs in the URL — and the default belongs out of it.
@@ -287,12 +372,32 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).toBeNull();
   });
 
-  // A zero-row read gets the empty-scope copy; the "no match" copy would blame the filter.
-  it('renders the empty-scope state for a scope with no representatives rows', async () => {
+  // A zero-row read settles empty for the shell; the "no match" copy would blame the filter.
+  it('settles empty, with no body, for a scope with no representatives rows', async () => {
     await render(response({ rows: [], counts: null }));
 
-    const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
-    expect(empty?.textContent).toContain('No representatives recorded for this foundation');
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-table"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).toBeNull();
+  });
+
+  it('settles empty, with no body, when every row was invited only in another period, and re-settles on that period', async () => {
+    const earlier = repRow({
+      periods: [
+        { range: 'COMPLETED_YEAR_3', meetingsInvited: 4, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 },
+        { range: 'YTD', meetingsInvited: 0, meetingsAttended: 0, neverAttended: false, lapsed: false, sortRank: 1 },
+      ],
+    });
+    await render(response({ rows: [earlier] }));
+
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-table"]')).toBeNull();
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
+    fixture.detectChanges();
+
+    expect(verdicts).toEqual([true, false]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).not.toBeNull();
   });
 
   it('keeps the no-match state for a search that filters a measured scope down to nothing', async () => {
@@ -302,7 +407,7 @@ describe('EngagementRepresentativesComponent', () => {
 
     const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
     expect(empty?.textContent).toContain('No representatives match this filter');
-    expect(empty?.textContent).not.toContain('recorded for this foundation');
+    expect(empty?.textContent).not.toContain('recorded for this scope');
   });
 
   // Two foundations can hold the same number of reps, so the row count cannot stand in for identity.
@@ -324,12 +429,12 @@ describe('EngagementRepresentativesComponent', () => {
     await render(new Error('snowflake down'), (value) => emitted.push(value));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(emitted).toEqual([null, null]);
   });
 
   // The pill re-reports off the loaded response, and a failed read has none to report.
-  it('keeps the badge empty when the period changes after a failed read', async () => {
+  it('keeps the note empty when the period changes after a failed read', async () => {
     const emitted: unknown[] = [];
     await render(new Error('snowflake down'), (value) => emitted.push(value));
 
@@ -340,7 +445,7 @@ describe('EngagementRepresentativesComponent', () => {
   });
 
   // A read in flight still holds the previous foundation's payload, so the pill must not republish it.
-  it('keeps the badge empty when the period changes while the next foundation is still loading', async () => {
+  it('keeps the note empty when the period changes while the next foundation is still loading', async () => {
     const emitted: unknown[] = [];
     await render(response(), (value) => emitted.push(value));
     emitted.length = 0;
@@ -392,6 +497,7 @@ describe('EngagementRepresentativesComponent', () => {
     // Unlike "none selected yet", this scope was read once — holding the skeleton here would leave
     // the section loading forever with nothing left to resolve it.
     expect(fixture.componentInstance['loading']()).toBe(false);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-table"]')).toBeNull();
   });
 });

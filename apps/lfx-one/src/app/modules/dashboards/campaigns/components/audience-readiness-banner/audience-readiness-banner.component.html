@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (notices().length > 0) {
+  <div
+    class="flex flex-col gap-2 rounded-lg border p-3"
+    [class]="notices()[0].tone === 'warn' ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'"
+    data-testid="campaigns-audience-readiness">
+    @for (notice of notices(); track notice.testId; let first = $first) {
+      <div
+        class="flex items-start gap-2"
+        [class.hidden]="!first && !expanded()"
+        [class.border-t]="!first"
+        [class.border-gray-200]="!first"
+        [class.pt-2]="!first"
+        [attr.role]="notice.tone === 'warn' ? 'alert' : 'status'"
+        [attr.data-testid]="notice.testId">
+        @if (notice.tone === 'busy') {
+          <i class="fa-light fa-spinner-third fa-spin mt-0.5 text-gray-500" aria-hidden="true"></i>
+        } @else if (notice.tone === 'warn') {
+          <i class="fa-light fa-triangle-exclamation mt-0.5 text-amber-600" aria-hidden="true"></i>
+        } @else {
+          <i class="fa-light fa-circle-info mt-0.5 text-gray-500" aria-hidden="true"></i>
+        }
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          @if (notice.title) {
+            <p class="text-sm font-medium text-gray-900">{{ notice.title }}</p>
+          }
+          <p class="text-xs text-gray-700" [attr.data-testid]="notice.messageTestId ?? null">{{ notice.message }}</p>
+          @if (notice.action; as act) {
+            <button
+              type="button"
+              (click)="action.emit(act.kind)"
+              class="inline-flex w-fit items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+              [attr.data-testid]="act.testId">
+              <i class="fa-light fa-arrows-rotate" aria-hidden="true"></i>
+              {{ act.label }}
+            </button>
+          }
+        </div>
+      </div>
+    }
+    @if (notices().length > 1) {
+      <button
+        type="button"
+        (click)="onToggle()"
+        [attr.aria-expanded]="expanded()"
+        class="w-fit text-xs font-medium text-blue-700 hover:underline"
+        data-testid="campaigns-audience-readiness-toggle">
+        {{ expanded() ? 'Show less' : notices().length - 1 + ' more' }}
+      </button>
+    }
+  </div>
+}

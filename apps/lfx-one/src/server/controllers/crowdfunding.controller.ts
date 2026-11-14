@@ -5,19 +5,28 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { ALLOWED_LOGO_MIME_TYPES, CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_DONATION_MODES, SPONSORSHIP_TIER_NAMES } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_LOGO_MIME_TYPES,
+  CROWDFUNDING_ATTRIBUTION_TYPES,
+  CROWDFUNDING_INITIATIVE_STATUSES,
+  ORG_ACCOUNT_ID_PATTERN,
+  SPONSORSHIP_DONATION_MODES,
+  SPONSORSHIP_TIER_NAMES,
+} from '@lfx-one/shared/constants';
 import {
   CreateAnnouncementInput,
+  CrowdfundingAttributionType,
+  InitiativesScope,
   CrowdfundingInitiativeStatus,
   SponsorshipDonationMode,
   SponsorshipTierName,
   UpdateAnnouncementInput,
+  UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { stripHtml } from '@lfx-one/shared/utils';
+import { isUuid, stripHtml } from '@lfx-one/shared/utils';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { CrowdfundingService } from '../services/crowdfunding.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -28,11 +37,80 @@ const parseNonNegativeInt = (val: unknown): number | undefined => {
   return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
 };
 
+/**
+ * Optional scope for the initiatives list/stats: `projectUid` (Project/Foundation lens, a UUID) or `orgUid` (Org Lens,
+ * an 18-char b2b_org SFID). Interpolated into the CF path, so each must match its id format; at most one may be set.
+ */
+const parseInitiativesScope = (query: Request['query'], operation: string): InitiativesScope | undefined => {
+  const { projectUid, orgUid } = query;
+  const given = (val: unknown): boolean => val != null && val !== '';
+  if (given(projectUid) && given(orgUid)) {
+    throw ServiceValidationError.forField('orgUid', 'Pass projectUid or orgUid, not both', { operation });
+  }
+  if (given(projectUid)) {
+    if (typeof projectUid !== 'string' || !isUuid(projectUid)) {
+      throw ServiceValidationError.forField('projectUid', 'projectUid must be a UUID', { operation });
+    }
+    return { kind: 'projects', uid: projectUid };
+  }
+  if (given(orgUid)) {
+    if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+      throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation });
+    }
+    return { kind: 'organizations', uid: orgUid };
+  }
+  return undefined;
+};
+
+/**
+ * Path id and body of the donation/subscription anonymity PATCHes (lfx-crowdfunding#466). The id is a CF UUID
+ * interpolated into the CF path; `anonymous` must be a boolean so a missing field never flips the setting.
+ */
+const parseAnonymityRequest = (req: Request, idLabel: string, operation: string): { id: string; anonymous: boolean } => {
+  const id = (req.params['id'] ?? '').trim();
+  if (!isUuid(id)) {
+    throw ServiceValidationError.forField('id', `${idLabel} id must be a UUID`, { operation });
+  }
+  const anonymous = ((req.body ?? {}) as Record<string, unknown>)['anonymous'];
+  if (typeof anonymous !== 'boolean') {
+    throw ServiceValidationError.forField('anonymous', 'anonymous must be true or false', { operation });
+  }
+  return { id, anonymous };
+};
+
+/**
+ * Body of PUT /initiatives/:id/attribution. `entityUid` is interpolated into the CF gateway's FGA check, which only
+ * admits canonical ids, so it must be an 18-char b2b_org SFID for an organization or a UUID (sent lowercase) for a
+ * project, and absent for personal.
+ */
+const parseAttributionInput = (body: Record<string, unknown>, operation: string): UpdateInitiativeAttributionInput => {
+  const type = body['type'];
+  if (typeof type !== 'string' || !CROWDFUNDING_ATTRIBUTION_TYPES.includes(type as CrowdfundingAttributionType)) {
+    throw ServiceValidationError.forField('type', `type must be one of: ${CROWDFUNDING_ATTRIBUTION_TYPES.join(', ')}`, { operation });
+  }
+  const entityUid = body['entityUid'];
+  if (type === 'personal') {
+    if (entityUid != null && entityUid !== '') {
+      throw ServiceValidationError.forField('entityUid', 'entityUid must be empty for personal attribution', { operation });
+    }
+    return { type };
+  }
+  if (type === 'organization') {
+    if (typeof entityUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(entityUid)) {
+      throw ServiceValidationError.forField('entityUid', 'entityUid must be an organization account id', { operation });
+    }
+    return { type, entityUid };
+  }
+  if (typeof entityUid !== 'string' || !isUuid(entityUid)) {
+    throw ServiceValidationError.forField('entityUid', 'entityUid must be a project UUID', { operation });
+  }
+  return { type: 'project', entityUid: entityUid.toLowerCase() };
+};
+
 export class CrowdfundingController {
   private readonly crowdfundingService = new CrowdfundingService();
-  private readonly crowdfundingAuthService = new CrowdfundingAuthService();
 
-  // GET /api/crowdfunding/initiatives
+  // GET /api/crowdfunding/initiatives[?projectUid=|?orgUid=]
   public async getMyInitiatives(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_my_initiatives');
 
@@ -43,7 +121,12 @@ export class CrowdfundingController {
 
       const { pageSize, offset } = req.query;
 
-      const initiatives = await this.crowdfundingService.getMyInitiatives(req, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+      const initiatives = await this.crowdfundingService.getMyInitiatives(
+        req,
+        parseNonNegativeInt(pageSize),
+        parseNonNegativeInt(offset),
+        parseInitiativesScope(req.query, 'get_my_initiatives')
+      );
 
       logger.success(req, 'get_my_initiatives', startTime, { result_count: initiatives.data.length });
 
@@ -159,7 +242,32 @@ export class CrowdfundingController {
     }
   }
 
-  // GET /api/crowdfunding/initiatives-stats
+  // GET /api/crowdfunding/org-donations?orgUid=
+  public async getOrgDonations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_donations');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_donations' });
+      }
+
+      const { orgUid, pageSize, offset } = req.query;
+      // Interpolated into the CF path, so it must be an 18-char b2b_org SFID.
+      if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+        throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation: 'get_org_donations' });
+      }
+
+      const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+
+      logger.success(req, 'get_org_donations', startTime, { result_count: donations.data.length, total: donations.total });
+
+      res.json(donations);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/crowdfunding/initiatives-stats[?projectUid=|?orgUid=]
   public async getInitiativesStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
 
@@ -168,7 +276,7 @@ export class CrowdfundingController {
         throw new AuthenticationError('User authentication required', { operation: 'get_initiatives_stats' });
       }
 
-      const stats = await this.crowdfundingService.getInitiativesStats(req);
+      const stats = await this.crowdfundingService.getInitiativesStats(req, parseInitiativesScope(req.query, 'get_initiatives_stats'));
 
       logger.success(req, 'get_initiatives_stats', startTime);
 
@@ -216,6 +324,44 @@ export class CrowdfundingController {
       logger.success(req, 'cancel_subscription', startTime, { subscriptionId: id });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/my-donations/:id — hide or show the caller's name on one of their one-time donations. */
+  public async updateMyDonationAnonymity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_my_donation_anonymity');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_my_donation_anonymity' });
+      }
+
+      const { id, anonymous } = parseAnonymityRequest(req, 'Donation', 'update_my_donation_anonymity');
+      const result = await this.crowdfundingService.updateMyDonationAnonymity(req, id, anonymous);
+
+      logger.success(req, 'update_my_donation_anonymity', startTime, { donationId: id, anonymous: result.anonymous });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/subscriptions/:id — hide or show the caller's name on every charge of a recurring donation. */
+  public async updateMySubscriptionAnonymity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_my_subscription_anonymity');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_my_subscription_anonymity' });
+      }
+
+      const { id, anonymous } = parseAnonymityRequest(req, 'Subscription', 'update_my_subscription_anonymity');
+      const result = await this.crowdfundingService.updateMySubscriptionAnonymity(req, id, anonymous);
+
+      logger.success(req, 'update_my_subscription_anonymity', startTime, { subscriptionId: id, anonymous: result.anonymous });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -330,6 +476,50 @@ export class CrowdfundingController {
       const initiative = await this.crowdfundingService.updateInitiative(req, id, input);
 
       logger.success(req, 'update_initiative', startTime, { id });
+      res.json(initiative);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/crowdfunding/attribution-options — organizations and projects the caller may attribute an initiative to. */
+  public async getAttributionOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_attribution_options');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+      if (!username) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_attribution_options' });
+      }
+
+      const options = await this.crowdfundingService.getAttributionOptions(req, username);
+
+      logger.success(req, 'get_attribution_options', startTime, { organizations: options.organizations.length, projects: options.projects.length });
+      res.json(options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PUT /api/crowdfunding/initiatives/:id/attribution — change who an initiative is attributed to (creator only, while submitted). */
+  public async updateInitiativeAttribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_initiative_attribution');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+      if (!username) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_initiative_attribution' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!isUuid(id)) {
+        throw ServiceValidationError.forField('id', 'Initiative id must be a UUID', { operation: 'update_initiative_attribution' });
+      }
+      const input = parseAttributionInput((req.body ?? {}) as Record<string, unknown>, 'update_initiative_attribution');
+
+      const initiative = await this.crowdfundingService.updateInitiativeAttribution(req, username, id, input);
+
+      logger.success(req, 'update_initiative_attribution', startTime, { id, attribution_type: input.type });
       res.json(initiative);
     } catch (error) {
       next(error);
@@ -593,125 +783,6 @@ export class CrowdfundingController {
       res.status(204).send();
     } catch (error) {
       next(error);
-    }
-  }
-
-  // GET /api/crowdfunding/auth/start — initiates the CF auth-code flow.
-  public startCrowdfundingAuth(req: Request, res: Response): void {
-    const startTime = logger.startOperation(req, 'crowdfunding_auth_start');
-    const returnTo = this.normalizeCrowdfundingReturnTo(req.query['returnTo']);
-
-    if (!this.crowdfundingAuthService.isConfigured()) {
-      logger.warning(req, 'crowdfunding_auth_start', 'Crowdfunding auth not configured', {});
-      res.redirect(this.returnToWithError(returnTo, 'crowdfunding_auth_not_configured'));
-      return;
-    }
-
-    const authorizeUrl = this.crowdfundingAuthService.getAuthorizationUrl(req, returnTo);
-    logger.success(req, 'crowdfunding_auth_start', startTime, { return_to: returnTo });
-    res.redirect(authorizeUrl);
-  }
-
-  // GET /crowdfunding/callback — Auth0 redirect target for the CF auth-code flow.
-  public async handleCrowdfundingAuthCallback(req: Request, res: Response): Promise<void> {
-    const startTime = logger.startOperation(req, 'crowdfunding_auth_callback');
-
-    const code = req.query['code'] as string;
-    const state = req.query['state'] as string;
-    const error = req.query['error'] as string;
-    const returnTo = this.normalizeCrowdfundingReturnTo(req.appSession?.crowdfundingAuthReturnTo);
-
-    if (error) {
-      // consent_required / interaction_required: prompt=none can't complete silently because
-      // the user hasn't consented to the CF audience yet. Retry with a full interactive redirect
-      // so they see the one-time consent screen. After consent, subsequent visits are silent.
-      if (error === 'consent_required' || error === 'interaction_required') {
-        logger.info(req, 'crowdfunding_auth_callback', 'Silent auth requires consent, retrying interactively', { error });
-        const authorizeUrl = this.crowdfundingAuthService.getAuthorizationUrl(req, returnTo, false);
-        res.redirect(authorizeUrl);
-        return;
-      }
-
-      // login_required or any other error: redirect with the error param so server.ts
-      // does not immediately re-trigger the silent redirect (which checks !req.query['error']).
-      logger.warning(req, 'crowdfunding_auth_callback', `Auth0 returned error: ${error}`, {
-        error_description: req.query['error_description'],
-      });
-      res.redirect(this.returnToWithError(returnTo, encodeURIComponent(error)));
-      return;
-    }
-
-    if (!state || state !== req.appSession?.crowdfundingAuthState) {
-      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Invalid state parameter'), {
-        has_state: !!state,
-        has_session_state: !!req.appSession?.crowdfundingAuthState,
-      });
-      res.redirect(this.returnToWithError(returnTo, 'invalid_state'));
-      return;
-    }
-
-    if (!code) {
-      logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('No authorization code received'), {});
-      res.redirect(this.returnToWithError(returnTo, 'no_code'));
-      return;
-    }
-
-    try {
-      const tokenResponse = await this.crowdfundingAuthService.exchangeCodeForToken(req, code);
-
-      const currentUserSub = req.oidc?.user?.['sub'] as string;
-      if (!currentUserSub) {
-        logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Current user sub not found in login session'), {});
-        res.redirect(this.returnToWithError(returnTo, 'login_session_invalid'));
-        return;
-      }
-
-      if (!this.crowdfundingAuthService.decodeAndValidateSub(tokenResponse.access_token, currentUserSub)) {
-        logger.error(req, 'crowdfunding_auth_callback', startTime, new Error('Crowdfunding token sub mismatch'), {
-          current_user_sub: currentUserSub,
-        });
-        res.redirect(this.returnToWithError(returnTo, 'user_mismatch'));
-        return;
-      }
-
-      this.crowdfundingAuthService.storeToken(req, tokenResponse);
-
-      delete req.appSession?.crowdfundingAuthState;
-      delete req.appSession?.crowdfundingAuthReturnTo;
-
-      logger.success(req, 'crowdfunding_auth_callback', startTime, {
-        user_sub: currentUserSub,
-        scope: tokenResponse.scope,
-        expires_in: tokenResponse.expires_in,
-      });
-
-      res.redirect(returnTo);
-    } catch (err) {
-      logger.error(req, 'crowdfunding_auth_callback', startTime, err, {});
-      res.redirect(this.returnToWithError(returnTo, 'token_exchange_failed'));
-    }
-  }
-
-  private returnToWithError(returnTo: string, error: string): string {
-    const sep = returnTo.includes('?') ? '&' : '?';
-    return `${returnTo}${sep}error=${error}`;
-  }
-
-  // Accepts only in-app /crowdfunding paths to prevent open-redirect attacks.
-  // Strips any existing `error` query params so they do not accumulate across
-  // redirect rounds (e.g. if the client passes a returnTo that already contains
-  // an error from a prior failed auth attempt).
-  private normalizeCrowdfundingReturnTo(raw: unknown): string {
-    const DEFAULT = '/crowdfunding/initiatives';
-    if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
-    try {
-      const url = new URL(raw, 'http://internal');
-      if (!url.pathname.startsWith('/crowdfunding')) return DEFAULT;
-      url.searchParams.delete('error');
-      const search = url.searchParams.size > 0 ? `?${url.searchParams.toString()}` : '';
-      return url.pathname + search;
-    } catch {
-      return DEFAULT;
     }
   }
 }

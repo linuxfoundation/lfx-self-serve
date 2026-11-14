@@ -9,9 +9,9 @@ import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '../services/feature-flag.service';
 
 /**
- * CanMatch guard for the Me-lens My Formations page (#2753) behind `formation-enabled`. Same
- * decision order as `mentorshipEnabledGuard`: SSR defers to the browser, a local override decides
- * before the provider is consulted, and an unready provider fails closed. Denies to My Dashboard
+ * CanMatch guard for the Me-lens My Formations page (#2753) behind `formation-enabled`. SSR defers
+ * to the browser, a local override decides before the provider is consulted, and an unready
+ * provider fails closed. Denies to My Dashboard
  * (`/`) rather than `formationEnabledGuard`'s `/foundation/overview` — that guard fronts the
  * foundation-lens queue, and bouncing a Me-lens visitor into the foundation lens would switch
  * their context as a side effect of a flag being off.

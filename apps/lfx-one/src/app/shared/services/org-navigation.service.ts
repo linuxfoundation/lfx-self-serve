@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_ROLE_AUTHORITY_ORDER, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
-import { isActiveStatus } from '@lfx-one/shared/utils';
+import { filterOrgItemsByName, isActiveStatus, sortOrgItemsByName } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import {
   catchError,
@@ -27,9 +27,11 @@ import {
   switchMap,
   take,
   tap,
+  timeout,
 } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -39,6 +41,9 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
   providedIn: 'root',
 })
 export class OrgNavigationService {
+  /** Hang-up for the one CLA-only request per reload: the same 10s ceiling as `ORG_SEARCH_TIMEOUT_MS`. A hang reads as a failed lookup. */
+  private static readonly claOnlyFetchTimeoutMs = 10_000;
+
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
@@ -47,10 +52,24 @@ export class OrgNavigationService {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly injector = inject(Injector);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly destroyRef = inject(DestroyRef);
 
   /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
   private readonly firstPageLandedGenerationInternal = signal<number>(0);
+
+  /**
+   * M3 — a grant holder's CLA-only rows, from the one `cla_only=1` request per reload, unfiltered.
+   * Declared before `state` because its pipeline writes them.
+   */
+  private readonly claOnlyRows = signal<OrgItem[]>([]);
+  private readonly claOnlyStatus = signal<'idle' | 'pending' | 'settled'>('idle');
+  private readonly claOnlyFailed = signal<boolean>(false);
+  /** Bumped by every reload, so an answer requested before it is dropped. */
+  private readonly claOnlyGeneration = signal<number>(0);
+  private readonly claOnlyFetch$ = new Subject<number>();
+  /** The term the displayed first page was fetched with; the CLA-only rows filter by it rather than by the live input. */
+  private readonly pageTerm = signal<string>('');
 
   private readonly state: OrgListState = this.createOrgListState();
 
@@ -62,11 +81,36 @@ export class OrgNavigationService {
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
 
-  public readonly items: Signal<OrgItem[]> = this.state.items;
+  /** The held rows, then the CLA-only rows the caller does not hold, filtered and ordered as the BFF orders its own. */
+  public readonly items: Signal<OrgItem[]> = computed(() => {
+    const held = this.state.items();
+    const claOnly = this.claOnlyRows();
+    if (claOnly.length === 0) return held;
+    const heldUids = new Set(held.map((item) => item.uid));
+    const term = this.pageTerm();
+    return [
+      ...held,
+      ...sortOrgItemsByName(
+        filterOrgItemsByName(
+          claOnly.filter((item) => !heldUids.has(item.uid)),
+          term
+        ),
+        term
+      ),
+    ];
+  });
   public readonly loading: Signal<boolean> = this.state.loading;
   public readonly loaded: Signal<boolean> = this.state.loaded;
   public readonly hasMore: Signal<boolean> = this.state.hasMore;
-  public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
+  public readonly upstreamFailed: Signal<boolean> = computed(() => this.state.upstreamFailed() || this.claOnlyFailed());
+  /** M3 — the CLA-only rows are still on their way, so the list is not yet complete. */
+  public readonly claOnlyPending: Signal<boolean> = computed(() => this.claOnlyStatus() === 'pending');
+  /**
+   * M3 — a non-staff grant holder's selection is not decided yet: no first page has landed, or the
+   * bootstrap page is still waiting to record it. Their CLA-only companies arrive only in the deferred
+   * rows, so until then a selection they do not hold may still be one of them.
+   */
+  public readonly selectionUndecided: Signal<boolean> = computed(() => this.holdsLensGrant() && (!this.state.loaded() || this.state.pendingDefaultSelection()));
   /** First-page fetch generation: bumped by every search, reset and refresh; a superseded fetch cannot clear `loading`. */
   public readonly generation: Signal<number> = this.state.generation.asReadonly();
   /**
@@ -75,6 +119,27 @@ export class OrgNavigationService {
    * still in flight" from "the viewer is scrolling"; this can.
    */
   public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
+
+  public constructor() {
+    this.claOnlyFetch$
+      .pipe(
+        switchMap((claOnlyGeneration) =>
+          this.http.get<OrgItemsResponse>('/api/nav/org-items', { params: new HttpParams().set('cla_only', '1') }).pipe(
+            map((response): OrgItemsResponse | null => response),
+            timeout({ first: OrgNavigationService.claOnlyFetchTimeoutMs, with: () => of(null) }),
+            catchError(() => of(null)),
+            map((response) => ({ claOnlyGeneration, response }))
+          )
+        ),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ claOnlyGeneration, response }) => {
+        if (claOnlyGeneration !== this.claOnlyGeneration()) return;
+        this.claOnlyRows.set(response?.items ?? []);
+        this.claOnlyFailed.set(!response || response.upstream_failed);
+        this.claOnlyStatus.set('settled');
+      });
+  }
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -178,6 +243,7 @@ export class OrgNavigationService {
     // not "keep my selection pinned"; injection would surface a non-matching row.
     const reloadTriggered$ = reload$.pipe(
       switchMap(() => {
+        this.resetClaOnlyRows();
         const term = searchTerm();
         if (term.trim()) {
           this.restoredSelectedUid = null;
@@ -214,6 +280,12 @@ export class OrgNavigationService {
           loaded.set(true);
           if (page.reset) {
             this.firstPageLandedGenerationInternal.set(generation());
+            this.pageTerm.set(page.term ?? '');
+            // One unfiltered request per reload serves every later search, which filters it here.
+            if (page.claOnlyDeferred && this.claOnlyStatus() === 'idle') {
+              this.claOnlyStatus.set('pending');
+              this.claOnlyFetch$.next(this.claOnlyGeneration());
+            }
           }
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
@@ -261,15 +333,16 @@ export class OrgNavigationService {
       if (activeGeneration() === pageGeneration) loading.set(false);
     };
     return this.fetchPage(term, pageToken, selectedUid).pipe(
-      map((response) => ({ page: this.toOrgListPage(response, reset), generation: pageGeneration })),
+      map((response) => ({ page: this.toOrgListPage(response, reset, term.trim()), generation: pageGeneration })),
       tap(clearLoadingIfActive),
       catchError(() => {
         // Reset failures emit an empty page so handleEmptyOrgResponse can redirect;
-        // scroll-triggered failures stay silent (just lose the spinner).
+        // scroll-triggered failures stay silent (just lose the spinner). The term is kept so the
+        // CLA-only rows stay filtered by the search that failed.
         clearLoadingIfActive();
         if (reset) {
           return of({
-            page: { items: [], nextPageToken: null, upstreamFailed: true, reset: true },
+            page: { items: [], nextPageToken: null, upstreamFailed: true, reset: true, term: term.trim() },
             generation: pageGeneration,
           } satisfies TaggedOrgListPage);
         }
@@ -292,17 +365,79 @@ export class OrgNavigationService {
     return this.http.get<OrgItemsResponse>('/api/nav/org-items', { params });
   }
 
-  private toOrgListPage(response: OrgItemsResponse, reset: boolean): OrgListPage {
+  private toOrgListPage(response: OrgItemsResponse, reset: boolean, term: string): OrgListPage {
     return {
       items: response.items,
       nextPageToken: response.next_page_token,
       upstreamFailed: response.upstream_failed,
       reset,
+      term,
+      claOnlyDeferred: response.cla_only_deferred === true,
     };
+  }
+
+  /** The caller is the one the BFF defers CLA-only rows for: not staff, and holding an Org Lens grant. */
+  private holdsLensGrant(): boolean {
+    const grants = this.orgRoleGrantsService;
+    return (
+      !grants.isStaff() &&
+      (grants.writerSet().size > 0 || grants.auditorSet().size > 0 || grants.inheritedWriterSet().size > 0 || grants.inheritedAuditorSet().size > 0)
+    );
+  }
+
+  private resetClaOnlyRows(): void {
+    this.claOnlyGeneration.update((g) => g + 1);
+    this.claOnlyStatus.set('idle');
+    this.claOnlyRows.set([]);
+    this.claOnlyFailed.set(false);
+  }
+
+  /** The page plus the CLA-only rows it does not already hold, unfiltered: the selection is decided on what the caller can reach, not on a search. */
+  private withClaOnlyRows(page: OrgListPage): OrgListPage {
+    const uids = new Set(page.items.map((item) => item.uid));
+    return {
+      ...page,
+      items: [...page.items, ...this.claOnlyRows().filter((item) => !uids.has(item.uid))],
+      upstreamFailed: page.upstreamFailed || this.claOnlyFailed(),
+    };
+  }
+
+  /** Whether the held page alone could decide wrongly: it is empty, or the selection is not on it and may be a CLA-only row still on its way. */
+  private selectionOwedToClaOnlyRows(page: OrgListPage): boolean {
+    if (page.items.length === 0) return true;
+    const current = this.accountContextService.selectedAccount();
+    if (!current.uid) return false;
+    return !page.items.some((item) => item.uid === current.uid || (!!current.accountId && item.accountId === current.accountId));
   }
 
   /** Fires once per first-page response when a reload is pending; routes empty pages through the FR-004 "No access" toast+redirect. */
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
+    // M3: a grant holder's CLA-only rows arrive after the held page. A restored CLA-only selection is
+    // not on that page, and defaulting there would replace it with a held organization; an empty held
+    // page would say "No access" to a CLA Manager. Either waits for the rows, leaving the selection
+    // pending so a newer page still decides. A held selection, or none, decides now: a held row always
+    // outranks a CLA-only one in the default.
+    if (page.claOnlyDeferred && !this.accountContextService.isAdoptedFromAddress()) {
+      if (this.claOnlyStatus() === 'settled') {
+        this.decidePendingSelection(this.withClaOnlyRows(page), pendingDefaultSelection);
+        return;
+      }
+      if (this.claOnlyStatus() === 'pending' && this.selectionOwedToClaOnlyRows(page)) {
+        const claOnlyGeneration = this.claOnlyGeneration();
+        this.whenSettled(
+          () => this.claOnlyStatus() !== 'pending',
+          () => {
+            if (claOnlyGeneration !== this.claOnlyGeneration() || !pendingDefaultSelection()) return;
+            this.handlePendingSelection(page, pendingDefaultSelection);
+          }
+        );
+        return;
+      }
+    }
+    this.decidePendingSelection(page, pendingDefaultSelection);
+  }
+
+  private decidePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
     // Spec 050: the organization the address named was access-verified for this viewer by the
     // resolver a moment ago. Whether or not it appears on the first org-items page (inherited or
@@ -311,6 +446,26 @@ export class OrgNavigationService {
     // pin (below) came from this very list, so a later authoritative page re-runs the selection —
     // that is how a revoked organization is released instead of kept for the session.
     if (this.accountContextService.isAdoptedFromAddress()) {
+      // One exception, and it is about the address rather than the selection. Two selections pin as
+      // an address while the URL names no organization — `/org`, or a legacy `/org/{page}`:
+      //
+      //  - a roll-up restored from the cookie, because nothing may re-default it. The pin alone
+      //    leaves the combined view living only in the cookie: the address still reads
+      //    `/org/people`, so sharing or reloading that link drops it (#4415 review 7).
+      //  - the organization a demotion fell back to, which `applyDemotionFallback` pins for the
+      //    same reason. `repointAddressAfterDemotion` corrects a `/org/family-{rootUid}/…` address but no-ops on
+      //    a legacy one, which names no organization to correct — so without this the page would
+      //    render one organization under `/org/people` and a shared link would not identify it
+      //    (#4415, Copilot).
+      //
+      // `isOnAddressedPage()` is what separates these from a genuine resolver adoption: there the
+      // URL already names the organization, so there is nothing to write. The selection stays
+      // pinned either way; only the address is written, through the same idle-safe writer every
+      // default uses, which takes the legacy-insert path. It is a no-op off `/org/…` entirely
+      // (`navigateToSelectedOrg` → `isRewritableOrgAddress`).
+      if (!this.orgLensNavigation.isOnAddressedPage()) {
+        this.writeDefaultAddress();
+      }
       return;
     }
     if (page.items.length === 0) {
@@ -360,6 +515,9 @@ export class OrgNavigationService {
         if (heldSlug !== indexedSlug) {
           this.accountContextService.setIndexedSlug(indexedSlug);
         }
+        // M3: with the slug known the path guard skips the resolver, so the row is the only answer
+        // the CLA-only shell gets for a restored selection when the role-grants lookup failed.
+        this.claOnlyAccess.noteAddressed(match.uid, match.claOnly === true);
         // Pinned before the address is written (lfx-self-serve#2570): the persona refresh can land
         // between here and the page's render, and for a grant-only (staff) viewer it carries no
         // seeds — unpinned, that resets the selection to the placeholder under the address just
@@ -408,18 +566,19 @@ export class OrgNavigationService {
   }
 
   private whenGrantsSettled(then: () => void): void {
+    this.whenSettled(() => this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null, then);
+  }
+
+  private whenSettled(settled: () => boolean, then: () => void): void {
     // A newer first-page decision (default selection or empty-list handling) always supersedes an older
     // one still waiting, whichever path this one takes.
     this.pendingDefaultSelectionSub?.unsubscribe();
     this.pendingDefaultSelectionSub = null;
-    if (this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null) {
+    if (settled()) {
       then();
       return;
     }
-    this.pendingDefaultSelectionSub = toObservable(
-      computed(() => this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null),
-      { injector: this.injector }
-    )
+    this.pendingDefaultSelectionSub = toObservable(computed(settled), { injector: this.injector })
       .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
         this.pendingDefaultSelectionSub = null;
@@ -458,6 +617,8 @@ export class OrgNavigationService {
 
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
+    // M3: recorded before the address is written, for the same path-guard reason as a restored selection.
+    this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     this.accountContextService.setAccount(account);
     // The default is what the address is written from next, so it is pinned like an adopted one
     // (lfx-self-serve#2570): the persona refresh that lands after this — with no seeds at all for a

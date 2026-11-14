@@ -3,6 +3,7 @@
 
 import type { ProjectFunding } from '../enums/project-funding.enum';
 import type { ProjectStage } from '../enums/project-stage.enum';
+import type { TagSeverity } from './components.interface';
 
 export interface Project {
   uid: string;
@@ -44,6 +45,9 @@ export interface Project {
   legal_parent_uid: string;
   autojoin_enabled: boolean;
   formation_date: string;
+  /** Present on the upstream record; optional because older query-service projections omit it. */
+  entity_dissolution_date?: string;
+  entity_formation_document_url?: string;
   logo_url: string;
   repository_url: string;
   website_url: string;
@@ -91,6 +95,7 @@ export interface ProjectSettings {
   announcement_date: string;
   writers: UserInfo[];
   auditors: UserInfo[];
+  meeting_coordinators?: UserInfo[];
   executive_director?: UserInfo | null;
   program_manager?: UserInfo | null;
   opportunity_owner?: UserInfo | null;
@@ -158,6 +163,23 @@ export interface MeetingWriteAccess {
 
 export type ProjectDocumentType = 'file' | 'link' | 'folder';
 
+/** What a non-folder document is, as shown in the label bubble next to its name. */
+export type DocumentKind = 'file' | 'link' | 'recording' | 'transcript' | 'summary';
+
+/** Label bubble and name-column icon for a {@link DocumentKind}. */
+export interface DocumentKindTag {
+  value: string;
+  severity: TagSeverity;
+  /** Font Awesome classes for the icon shown before the document name. */
+  icon: string;
+}
+
+/**
+ * Subsystem a project-lens document was sourced from.
+ * Used by the BFF to carry attribution and by the UI to drive source filtering.
+ */
+export type ProjectDocumentSource = 'project' | 'committee' | 'mailing_list' | 'meeting' | 'recording' | 'transcript' | 'summary';
+
 /**
  * Document types accepted by the JSON `POST /projects/:uid/documents` create endpoint.
  * Files are uploaded via a separate multipart endpoint, not this one — keep this union
@@ -196,6 +218,25 @@ export interface ProjectDocument {
   parent_uid?: string;
   /** Project UID this document belongs to */
   project_uid?: string;
+  /** Subsystem this document was sourced from (project, committee, meeting, etc.) */
+  document_source?: ProjectDocumentSource;
+  /**
+   * File vs link for rows whose `type` is always 'link' upstream (meeting attachments, mailing list
+   * artifacts). Left unset where `type` or `document_source` already says what the row is.
+   */
+  document_kind?: DocumentKind;
+  /** Display name of the source entity (committee name, meeting title, etc.) */
+  document_source_name?: string;
+  /** Committee UID — set on committee_document rows so the UI can build a download URL */
+  committee_uid?: string;
+  /** Mailing list UID — set on mailing list rows whose list resolved, so the UI can open the list's details page (the numeric groups.io id is not what that page opens by) */
+  mailing_list_uid?: string;
+  /** Past meeting id (`meeting_and_occurrence_id`) — set on recording, transcript and summary rows so the UI can open the past meeting details */
+  past_meeting_id?: string;
+  /** Summary UID — set on past_meeting_summary rows for the preview dialog */
+  summary_uid?: string;
+  /** Raw markdown summary content — set on past_meeting_summary rows for the preview dialog */
+  summary_content?: string;
 }
 
 /** Request body for creating a project document (folder or link). */
@@ -317,3 +358,32 @@ export interface WriterSummary {
   hasWriterFoundation: boolean;
   hasWriterProject: boolean;
 }
+
+/**
+ * Response of GET /public/api/projects/:identifier/summary: the branding the login-free vote page shows.
+ * Allowlisted fields only; no user data, and nothing that maps a vote to a project.
+ */
+export interface PublicProjectSummary {
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  is_foundation: boolean;
+}
+
+/**
+ * `PUT /api/projects/:uid/formation-record` body (#5134). Every key is optional and only keys that
+ * are present change upstream — the BFF merges them onto the raw stored project and PUTs the full
+ * object back. Null or an empty string clears the five non-stage fields; a null stage is rejected. `legal_parent_uid` and announcement date
+ * are intentionally not editable here.
+ */
+export interface UpdateFormationRecordRequest {
+  stage?: ProjectStage | string;
+  legal_entity_name?: string | null;
+  legal_entity_type?: string | null;
+  formation_date?: string | null;
+  entity_dissolution_date?: string | null;
+  entity_formation_document_url?: string | null;
+}
+
+/** The editable formation-record fields as normalized (trimmed, never null) strings — the shape the edit drawer compares baseline and current values in. */
+export type FormationRecordValues = Record<keyof UpdateFormationRecordRequest, string>;

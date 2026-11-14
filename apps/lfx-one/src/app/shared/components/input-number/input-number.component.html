@@ -22,6 +22,8 @@
         [class]="styleClass()"
         class="w-full"
         [autocomplete]="autocomplete()"
+        [attr.min]="min() ?? null"
+        [attr.max]="max() ?? null"
         [attr.aria-describedby]="describedBy() || null"
         [attr.aria-invalid]="invalid() ? true : null"
         [attr.data-test]="dataTest()" />
@@ -37,6 +39,8 @@
       [class]="styleClass()"
       class="w-full"
       [autocomplete]="autocomplete()"
+      [attr.min]="min() ?? null"
+      [attr.max]="max() ?? null"
       [attr.aria-describedby]="describedBy() || null"
       [attr.aria-invalid]="invalid() ? true : null"
       [attr.data-test]="dataTest()" />

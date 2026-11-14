@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_ORG_SCOPE,
+  DEFAULT_ORG_TEAM_MEMBERS,
+  ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS,
+  ORG_UNRANGED_ROSTER_FILTERS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   ColumnarTable,
@@ -10,26 +16,33 @@ import type {
   KeyContactEmployee,
   OrgAccessBadgeState,
   OrgAccessUser,
+  OrgAllEmployeeCountedRow,
   OrgAllEmployeeFoundationOption,
-  OrgAllEmployeeRow,
   OrgAllEmployeeRowInternal,
-  OrgAllEmployeeStats,
+  OrgAllEmployeesCountedResponse,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
+  OrgCommitFilters,
+  OrgLensTimeRange,
   OrgPersonSource,
+  OrgProjectScope,
+  OrgScopeFilter,
+  OrgTeamMemberKeys,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
 import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
+import { orgPeopleDirectoryNamespace } from '../helpers/org-people-directory-cache.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { OrgLensAccessService } from './org-lens-access.service';
 import { OrgLensBoardCommitteeService } from './org-lens-board-committee.service';
-import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
 import { OrgLensPeopleService } from './org-lens-people.service';
-import { toWireRow } from './org-people-wire.mapper';
+import { toStoredRow, toWireResponse } from './org-people-wire.mapper';
+import { OrgPeopleKeyContactsService } from './org-people-key-contacts.service';
 import { withPerUserCache } from './valkey.service';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -58,7 +71,7 @@ function isStoredString(value: unknown): boolean {
  * Switched on the row's own key union, so a misspelled case fails to compile instead of silently
  * leaving that column unchecked.
  */
-function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boolean {
+function isValidDirectoryCell(key: keyof OrgAllEmployeeCountedRow, value: unknown): boolean {
   switch (key) {
     case 'personKey':
     case 'name':
@@ -68,14 +81,19 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boo
       return value === null || isStoredString(value);
     case 'sources':
     case 'engagedFoundationIds':
+    case 'keyContactRoles':
       return isStringArray(value);
     case 'seatsCount':
     case 'boardSeatsCount':
     case 'committeeSeatsCount':
     case 'commitsCount':
+    case 'mergedCommitsCount':
+    case 'codeActivitiesCount':
     case 'eventsCount':
     case 'coursesCount':
       return typeof value === 'number';
+    case 'isFormer':
+      return value === true || isColumnarAbsent(value);
     default:
       return true;
   }
@@ -146,18 +164,6 @@ function isFoundationOption(value: unknown): boolean {
   return isObject(value) && typeof f.foundationId === 'string' && typeof f.foundationName === 'string';
 }
 
-function isAllEmployeeStats(value: unknown): boolean {
-  const s = value as Partial<OrgAllEmployeeStats>;
-  return (
-    isObject(value) &&
-    typeof s.activeInOss === 'number' &&
-    typeof s.inGovernance === 'number' &&
-    typeof s.codeContributors === 'number' &&
-    typeof s.eventAttendees === 'number' &&
-    typeof s.trainees === 'number'
-  );
-}
-
 /**
  * Rejects a corrupt or pre-compaction merged-roster entry (degrades to a miss) — a `v2` value, with
  * its `rows` array of wire objects, has no columnar `r` and fails here rather than decoding into
@@ -171,54 +177,63 @@ function isCompactDirectoryEntry(value: unknown): boolean {
     isColumnarTable(entry.r) &&
     isDirectoryRowTable(entry.r) &&
     Array.isArray(entry.foundations) &&
-    entry.foundations.every(isFoundationOption) &&
-    isAllEmployeeStats(entry.stats)
+    entry.foundations.every(isFoundationOption)
   );
 }
 
-/** Projects the merged response onto the stored cache shape (GH-1906): `rows` columnar, `stats`/`foundations` verbatim (both are small, fixed-size structures). */
-function toCompactDirectory(response: OrgAllEmployeesResponse): CompactOrgPeopleDirectoryEntry {
+/** Projects the merged roster onto the stored cache shape (GH-1906): `rows` columnar, `foundations` verbatim (small, fixed-size). */
+function toCompactDirectory(response: OrgAllEmployeesCountedResponse): CompactOrgPeopleDirectoryEntry {
   return {
     accountId: response.accountId,
     r: toColumnar(response.rows, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS),
-    stats: response.stats,
     foundations: response.foundations,
   };
 }
 
-/** Rebuilds the exact `OrgAllEmployeesResponse` stored by {@link toCompactDirectory}. */
-function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmployeesResponse {
-  return { accountId: entry.accountId, rows: fromColumnar<OrgAllEmployeeRow>(entry.r), stats: entry.stats, foundations: entry.foundations };
+/** Rebuilds the exact counted roster stored by {@link toCompactDirectory}. */
+function fromCompactDirectory(entry: CompactOrgPeopleDirectoryEntry): OrgAllEmployeesCountedResponse {
+  return { accountId: entry.accountId, rows: fromColumnar<OrgAllEmployeeCountedRow>(entry.r), foundations: entry.foundations };
 }
 
 /**
  * Unified people directory for the Org Lens People page (`?live` path).
  *
- * Merges the stored Snowflake roster (`ORG_PEOPLE_ALL`, the source of activity counts) with three
- * LIVE sources — committee/board seats, key contacts, and the org's writers/auditors — deduped by
- * lowercased email so a person who was added since the last dbt build still appears. The response
- * keeps the exact `OrgAllEmployeesResponse` shape; live-only people surface with zero activity
- * counts and a `sources` provenance array. Each source is fetched with `Promise.allSettled` so a
- * single upstream outage degrades the roster gracefully rather than failing the whole tab.
+ * Merges the stored Snowflake roster — one time range of `ORG_PEOPLE_ALL_RANGES`, or the unranged
+ * `ORG_PEOPLE_ALL` roster the reassign pickers read; the source of activity counts — with three LIVE
+ * sources — committee/board seats, key contacts on active memberships, and the org's writers/auditors — so a person who was
+ * added since the last dbt build still appears. Records match on their verified LF username
+ * (`resolveMergeKey`); the lowercased email is the key only for a record without one, such as a pending
+ * invite or an unresolved seat, and key contacts always match on email. The two kinds of key never
+ * match each other, except that a live identity-less row is folded into the one identity row that owns
+ * its address (`absorbIdentitylessRows`). The live sources are current state and are not windowed. The
+ * response keeps the exact `OrgAllEmployeesResponse` shape; live-only people surface with zero activity
+ * counts and a `sources` provenance array. Each source is fetched with `Promise.allSettled` so a single
+ * upstream outage degrades the roster gracefully rather than failing the whole tab.
  */
 export class OrgPeopleDirectoryService {
   private readonly peopleService: OrgLensPeopleService;
   private readonly boardCommitteeService: OrgLensBoardCommitteeService;
-  private readonly keyContactsService: OrgLensKeyContactsService;
+  private readonly keyContactsService: OrgPeopleKeyContactsService;
   private readonly accessService: OrgLensAccessService;
 
   public constructor() {
     this.peopleService = new OrgLensPeopleService();
     this.boardCommitteeService = new OrgLensBoardCommitteeService();
-    this.keyContactsService = new OrgLensKeyContactsService();
+    this.keyContactsService = new OrgPeopleKeyContactsService();
     this.accessService = new OrgLensAccessService();
   }
 
   /**
-   * Merged stored + live roster, served through the per-caller shared cache: the merge folds in
-   * request-scoped permission-filtered reads (committee seats, FGA-filtered key contacts, the
-   * caller's access view), so keying by caller + org stops one caller's roster from being replayed
-   * to another within the TTL.
+   * Merged stored + live roster for one time range and its commit filters (`null` range: the unranged
+   * roster), served through the per-caller shared cache: the merge folds in request-scoped
+   * permission-filtered reads (committee seats, FGA-filtered key contacts, the caller's access view), so
+   * keying by caller + org stops one caller's roster from being replayed to another within the TTL. Only
+   * the range and project scope change who is listed, so each (range, project scope) — and the unranged
+   * roster — has its own namespace, holding every code count; the commit scope and metric pick the count
+   * and the tiles are counted after the read. The commit filters do not apply to the unranged roster, so it
+   * is always computed and projected with `ORG_UNRANGED_ROSTER_FILTERS`, every project and the default code
+   * count: its one shared entry holds the full current roster the reassign pickers read, whatever filters an
+   * unranged caller sent and whatever the page default scope is.
    *
    * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
    * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
@@ -228,64 +243,157 @@ export class OrgPeopleDirectoryService {
    * connection the session store shares. For monitoring: an oversize warning now counts a burst,
    * not a caller, so fewer warnings alone does not mean the value started to fit.
    *
-   * Joined callers share the COMPACT envelope. Each gets freshly built row objects, but `stats`,
-   * `foundations` and each row's array fields (`sources`, `engagedFoundationIds`) are shared by
-   * reference between them, since they come from one parsed entry. That is safe only because the
-   * response is read-only downstream — it is serialized to the client or searched by
-   * `OrgLensPeopleService`, never mutated. A consumer that needs to mutate it must copy first.
+   * Joined callers share the COMPACT envelope. Each gets freshly built row objects, but `foundations`
+   * and each row's array fields (`sources`, `engagedFoundationIds`) are shared by reference between
+   * them, since they come from one parsed entry. That is safe only because the response is read-only
+   * downstream — it is serialized to the client or searched by `OrgLensPeopleService`, never mutated.
+   * A consumer that needs to mutate it must copy first.
+   *
+   * A roster computed while the stored roster read or the former-employee read failed is served but not
+   * cached: without the stored roster it lists the live sources only, and without the former employees its
+   * access-only principals went unclassified, so they are served without address or title, and storing it would
+   * list the former ones as current for the whole TTL. A ranged request whose organization scope cannot be resolved
+   * is served the live sources the same way, uncached and outside the coalesced entry: no stored code counts are read
+   * or cached under a guessed scope.
    */
-  public async getLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
+  public async getLive(
+    req: Request,
+    accountId: string,
+    range: OrgLensTimeRange | null,
+    requestedFilters: OrgCommitFilters,
+    teamMembers: OrgTeamMembersFilter = DEFAULT_ORG_TEAM_MEMBERS,
+    orgScope: OrgScopeFilter = DEFAULT_ORG_SCOPE
+  ): Promise<OrgAllEmployeesResponse> {
+    const filters = range ? requestedFilters : ORG_UNRANGED_ROSTER_FILTERS;
     const username = getEffectiveUsername(req) ?? '';
+    // The organization scope picks which code counts the stored rows carry and who is listed for code alone
+    // (lfx-self-serve-ops#1219), so it is part of the entry; the unranged roster is not scoped.
+    const scope = range
+      ? await this.peopleService.resolveOrgScope(accountId, orgScope).catch((error: unknown): null => {
+          logger.warning(req, 'get_org_people_directory', 'Organization scope read failed; serving live sources only, uncached', {
+            org_uid: accountId,
+            err: error,
+          });
+          return null;
+        })
+      : 'all';
+    const [directory, teamMemberKeys] = await Promise.all([
+      scope === null
+        ? this.computeLive(req, accountId, range, filters.projectScope, null).then((live) => live.directory)
+        : this.getCachedLive(req, accountId, username, range, filters.projectScope, scope),
+      // A failed team-member read never takes the live roster down with it (the merge itself degrades source by
+      // source): it serves everyone, says so, and the client does not keep the answer.
+      this.peopleService.getTeamMemberPersonKeys(accountId, range ? teamMembers : 'include').catch((error: unknown): OrgTeamMemberKeys => {
+        logger.warning(req, 'get_org_people_directory', 'Team-member read failed; serving team members included', { org_uid: accountId, err: error });
+        return { excluded: null, unavailable: true };
+      }),
+    ]);
+    return toWireResponse(directory, filters, teamMemberKeys);
+  }
+
+  private async getCachedLive(
+    req: Request,
+    accountId: string,
+    username: string,
+    range: OrgLensTimeRange | null,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter
+  ): Promise<OrgAllEmployeesCountedResponse> {
+    const namespace = orgPeopleDirectoryNamespace(range, projectScope, orgScope);
     // Same effective principal (impersonation honoured) + org the cache key is built from, and
     // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
     // bucket per blank principal would hand the first caller's permission-filtered roster to every
-    // other caller that arrived without a resolvable identity.
-    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, accountId, (isCurrent) =>
-      withPerUserCache<CompactOrgPeopleDirectoryEntry>(
-        VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
+    // other caller that arrived without a resolvable identity. The Team members filter removes team
+    // members' code after the cached merge, so one directory entry serves both picks; the unranged roster (the
+    // assignment pickers' read) lists everyone, like the commit filters it is not scoped by.
+    const entry = await coalescePerUserOrgFetch(namespace, username, accountId, (isCurrent) => {
+      let complete = true;
+      return withPerUserCache<CompactOrgPeopleDirectoryEntry>(
+        namespace,
         username,
         accountId,
         VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-        async () => toCompactDirectory(await this.computeLive(req, accountId)),
+        async () => {
+          const live = await this.computeLive(req, accountId, range, projectScope, orgScope);
+          complete = live.complete;
+          return toCompactDirectory(live.directory);
+        },
         isCompactDirectoryEntry,
-        isCurrent
-      )
-    );
+        () => complete && isCurrent()
+      );
+    });
     return fromCompactDirectory(entry);
   }
 
-  private async computeLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
+  /** `orgScope` `null`: the scope could not be resolved, so the stored roster is not read and the result is incomplete. */
+  private async computeLive(
+    req: Request,
+    accountId: string,
+    range: OrgLensTimeRange | null,
+    projectScope: OrgProjectScope,
+    orgScope: OrgScopeFilter | null
+  ): Promise<{ directory: OrgAllEmployeesCountedResponse; complete: boolean }> {
     // `fetchAllOrgSeats` is the full cross-foundation seat drain — heavier than the picker's bounded read —
     // because this roster also backs the All Employees tab, which needs the complete set. Each source is
     // fetched with `Promise.allSettled` so a single upstream outage degrades the roster gracefully.
-    const [snowflake, seats, keyContacts, access] = await Promise.allSettled([
-      this.peopleService.getAllEmployeesInternal(accountId),
-      this.boardCommitteeService.fetchAllOrgSeats(req, accountId),
-      this.keyContactsService.getEmployees(req, accountId),
+    // Board/committee seats are LF engagement, so `non_lf` reads none, and there the live sources only enrich
+    // stored rows: no row exists only because of a live seat, key contact or access.
+    const lfEngagement = projectScope !== 'non_lf';
+    // Whether someone left is not a property of the view: the range's former rows need code in that range and scope,
+    // so a former employee whose code is older or outside the scope would read as current. The account's former
+    // employees with credited code, in any range and scope, decide instead, read as usernames only: the full all-time
+    // former roster outgrows its cache on the largest accounts. The warehouse lists only people with code as former,
+    // so someone who left without credited code and still holds Org Lens access stays listed as current (a known gap).
+    // The unranged picker roster is classified the same way, so the assignment pickers do not offer them.
+    const [snowflake, seats, keyContacts, access, former] = await Promise.allSettled([
+      orgScope === null ? null : this.peopleService.getAllEmployeesInternal(accountId, range, projectScope, orgScope),
+      lfEngagement ? this.boardCommitteeService.fetchAllOrgSeats(req, accountId) : Promise.resolve([]),
+      this.keyContactsService.getActiveEmployees(req, accountId),
       this.accessService.getAccessPrincipals(req, accountId),
+      lfEngagement ? this.peopleService.getFormerUsernames(accountId) : Promise.resolve([]),
     ]);
 
-    const base: OrgAllEmployeesInternalResponse =
-      snowflake.status === 'fulfilled' ? snowflake.value : { ...EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, accountId, rows: [] };
+    const stored = snowflake.status === 'fulfilled' ? snowflake.value : null;
+    const base: OrgAllEmployeesInternalResponse = stored ?? { accountId, rows: [], foundations: [] };
     if (snowflake.status === 'rejected') {
-      logger.warning(req, 'get_org_people_directory', 'Snowflake roster failed; serving live sources only', {
+      // Its code counts are read with the People → Contributors rows (lfx-self-serve#4735), so either read failing lands
+      // here. Served from the live sources and kept out of the cache, so the next request reads the stored roster again.
+      logger.warning(req, 'get_org_people_directory', 'Snowflake roster failed; serving live sources only, uncached', {
         org_uid: accountId,
         err: snowflake.reason,
       });
     }
 
-    return this.merge(req, accountId, base, seats, keyContacts, access);
+    const formerUsernames = former.status === 'fulfilled' ? new Set<string>(former.value) : null;
+    if (former.status === 'rejected') {
+      // Served rather than without access-only rows: hiding every access-only principal would drop current
+      // people who are not in the stored roster yet. Unclassified, each is served the way a former one would
+      // be — no address or title — and `getLive` keeps the roster out of the cache.
+      logger.warning(req, 'get_org_people_directory', 'Former employees read failed; serving access-only rows without address or title, uncached', {
+        org_uid: accountId,
+        err: former.reason,
+      });
+    }
+
+    const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
+    return { directory, complete: stored !== null && formerUsernames !== null };
   }
 
-  /** Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in. */
+  /**
+   * Seed the snowflake rows by merge key (unkeyable rows pass through), then fold each live source in; `addLiveOnlyRows` false only enriches stored rows.
+   * `formerUsernames` are the account's former employees, whose access-only live rows are tagged former; `null` when
+   * they could not be read, and then no access-only row is tagged but none carries an address or title.
+   */
   private merge(
     req: Request,
     accountId: string,
     base: OrgAllEmployeesInternalResponse,
     seats: PromiseSettledResult<CommitteeServiceOrgSeat[]>,
     keyContacts: PromiseSettledResult<KeyContactEmployee[]>,
-    access: PromiseSettledResult<OrgAccessUser[]>
-  ): OrgAllEmployeesResponse {
+    access: PromiseSettledResult<OrgAccessUser[]>,
+    addLiveOnlyRows: boolean,
+    formerUsernames: ReadonlySet<string> | null
+  ): OrgAllEmployeesCountedResponse {
     const byKey = new Map<string, OrgAllEmployeeRowInternal>();
     const unkeyedRows: OrgAllEmployeeRowInternal[] = [];
 
@@ -326,6 +434,9 @@ export class OrgPeopleDirectoryService {
       this.logSourceFailure(req, accountId, 'committee seats', seats.reason);
     }
 
+    // Key contacts that matched no row, held for the deferred pass below. Enriching them here would read
+    // an ownership map that the access pass and the orphan fold have not contributed their addresses to yet.
+    const unmatchedKeyContacts: { emp: KeyContactEmployee; email: string }[] = [];
     if (keyContacts.status === 'fulfilled') {
       for (const emp of keyContacts.value) {
         const email = (emp.email ?? '').trim().toLowerCase();
@@ -338,10 +449,13 @@ export class OrgPeopleDirectoryService {
           this.addSource(existing, 'keyContact');
           this.addEmail(existing, email);
           this.fill(existing, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+          this.addKeyContactRoles(existing, emp.roles);
           // No username backfill onto an email-merged row: the username is member-service's resolution of
           // this address, and resolving identity from an address is prohibited.
-        } else {
+        } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromKeyContact(emp, email, key));
+        } else {
+          unmatchedKeyContacts.push({ emp, email });
         }
       }
     } else {
@@ -362,7 +476,7 @@ export class OrgPeopleDirectoryService {
           existing.accessBadge = badgeOf(user);
           const [firstName, lastName] = splitDisplayName(user.name);
           this.fill(existing, { firstName, lastName, title: user.jobTitle, avatarUrl: user.avatarUrl });
-        } else {
+        } else if (addLiveOnlyRows) {
           byKey.set(key, this.rowFromAccess(user, email, key));
         }
       }
@@ -371,12 +485,17 @@ export class OrgPeopleDirectoryService {
     }
 
     this.absorbIdentitylessRows(byKey);
+    this.enrichStoredOwnersFromKeyContacts(byKey, unmatchedKeyContacts);
+    if (formerUsernames) {
+      this.tagFormerAccessPrincipals(byKey, formerUsernames);
+    } else {
+      this.redactAccessOnlyPrincipals(byKey);
+    }
 
     const merged = [...byKey.values(), ...unkeyedRows].sort((a, b) => a.name.localeCompare(b.name));
     return {
       accountId,
-      rows: merged.map(toWireRow),
-      stats: computeStats(merged),
+      rows: merged.map(toStoredRow),
       // Foundation options stay sourced from Snowflake (authoritative id↔name pairs). Live-only people
       // carry no engagedFoundationIds, so they are not foundation-filterable until the next dbt build.
       foundations: base.foundations,
@@ -401,9 +520,44 @@ export class OrgPeopleDirectoryService {
    * Three kinds of orphan are deliberately left standing: a pending invitation (unverified), a stored
    * row (it owns data this fold does not carry), and any row whose address two identities both claim.
    */
-  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
-    // An address claimed by more than one identity has no correct owner, so it gets none: picking the
-    // first would attribute the orphan by upstream ordering, which is not a property worth depending on.
+  /**
+   * Carry a key contact's roles onto the stored employee who owns its address.
+   *
+   * Only reached in a scope that enriches stored rows without adding live-only ones: there is no
+   * live-only row for `absorbIdentitylessRows` to fold, so without this an employee keyed by LF identity
+   * loses their pills while an email-keyed one keeps theirs.
+   *
+   * Deliberately last. The access pass and the orphan fold both call `addEmail`, so an ownership map
+   * built before them is wrong in two directions: an address only an access principal contributed is
+   * claimed by nobody and its roles vanish, and an address that a second identity claims later is handed
+   * to the first — putting one person's key-contact role on another, which is the worse of the two.
+   * Reading the final map means both cases resolve the way the full-roster path already resolves them.
+   */
+  private enrichStoredOwnersFromKeyContacts(
+    byKey: Map<string, OrgAllEmployeeRowInternal>,
+    unmatched: readonly { emp: KeyContactEmployee; email: string }[]
+  ): void {
+    if (unmatched.length === 0) return;
+    const identityOwners = OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
+    for (const { emp, email } of unmatched) {
+      const owner = identityOwners.get(email);
+      if (!owner) continue;
+      this.addSource(owner, 'keyContact');
+      this.addEmail(owner, email);
+      this.fill(owner, { firstName: emp.firstName || null, lastName: emp.lastName || null, title: emp.jobTitle, avatarUrl: emp.avatarUrl ?? null });
+      this.addKeyContactRoles(owner, emp.roles);
+    }
+  }
+
+  /**
+   * Address -> the single identity row listing it.
+   *
+   * An address claimed by more than one identity has no correct owner, so it gets none: picking the
+   * first would attribute by upstream ordering, which is not a property worth depending on. Shared by
+   * the orphan fold and by the key-contact enrichment, so the two cannot disagree about who owns an
+   * address.
+   */
+  private static identityOwnersByEmail(byKey: Map<string, OrgAllEmployeeRowInternal>): Map<string, OrgAllEmployeeRowInternal> {
     const claims = new Map<string, OrgAllEmployeeRowInternal[]>();
     for (const [key, row] of byKey) {
       if (!key.startsWith('identity:')) continue;
@@ -415,6 +569,11 @@ export class OrgPeopleDirectoryService {
     for (const [email, owners] of claims) {
       if (owners.length === 1) ownerByEmail.set(email, owners[0]);
     }
+    return ownerByEmail;
+  }
+
+  private absorbIdentitylessRows(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
+    const ownerByEmail = OrgPeopleDirectoryService.identityOwnersByEmail(byKey);
 
     for (const [key, orphan] of byKey) {
       if (!key.startsWith('email:')) continue;
@@ -439,6 +598,7 @@ export class OrgPeopleDirectoryService {
       }
       for (const source of orphan.sources) this.addSource(owner, source);
       for (const email of orphan.emails) this.addEmail(owner, email);
+      this.addKeyContactRoles(owner, orphan.keyContactRoles);
       this.fill(owner, { firstName: orphan.firstName, lastName: orphan.lastName, title: orphan.title, avatarUrl: orphan.avatarUrl });
       // Reachable only for an accepted principal whose settings record carries no username: it keys on
       // the address like any orphan, but `isPending` is false so its badge is a real role rather than
@@ -449,10 +609,59 @@ export class OrgPeopleDirectoryService {
     }
   }
 
+  /**
+   * Org Lens access alone does not make a former employee current again — only a live seat or key-contact
+   * role does — so a live row held up by access alone, whose username is one of the account's former
+   * employees, is tagged `isFormer` and the current view does not list it. It stays in the directory so the
+   * former row shown under "All" and "Former employees" can take its access badge. A stored current row is
+   * never tagged, and a pending invite has no username to match.
+   *
+   * A tagged row is shaped like the former roster's own rows ({@link redactPrincipal}).
+   */
+  private tagFormerAccessPrincipals(byKey: Map<string, OrgAllEmployeeRowInternal>, formerUsernames: ReadonlySet<string>): void {
+    if (formerUsernames.size === 0) return;
+    for (const row of byKey.values()) {
+      if (row.lfUsername && row.sources.every((source) => source === 'access') && formerUsernames.has(row.lfUsername)) {
+        row.isFormer = true;
+        this.redactPrincipal(row, row.lfUsername);
+      }
+    }
+  }
+
+  /**
+   * With the former employees unknown, every access-only row that could have been tagged — one with a username — is
+   * served as a tagged one would be, untagged: fail closed on the data rather than on the listing. A pending invite has
+   * no username to match, so it is served as it always is.
+   */
+  private redactAccessOnlyPrincipals(byKey: Map<string, OrgAllEmployeeRowInternal>): void {
+    for (const row of byKey.values()) {
+      if (row.lfUsername && row.sources.every((source) => source === 'access')) this.redactPrincipal(row, row.lfUsername);
+    }
+  }
+
+  /**
+   * No address is sent, and none stands in for a blank name, so a name taken from the address falls back to the LF
+   * username. The title goes too: it is the access record's, which may describe a role they held here.
+   */
+  private redactPrincipal(row: OrgAllEmployeeRowInternal, lfUsername: string): void {
+    if (row.name === row.email || row.emails.includes(row.name.toLowerCase())) row.name = lfUsername;
+    row.email = null;
+    row.emails = [];
+    row.title = null;
+  }
+
   private addSource(row: OrgAllEmployeeRowInternal, source: OrgPersonSource): void {
     if (!row.sources.includes(source)) {
       row.sources.push(source);
     }
+  }
+
+  /** Union the person's key-contact roles, kept sorted so the Key Contact column renders in a stable order across refetches. */
+  private addKeyContactRoles(row: OrgAllEmployeeRowInternal, roles: readonly string[] | undefined): void {
+    // Tolerates an absent array, not just an empty one: this is an upstream service's shape, and the
+    // field is newer than some of its callers.
+    if (!roles?.length) return;
+    row.keyContactRoles = [...new Set([...row.keyContactRoles, ...roles])].sort((a, b) => a.localeCompare(b));
   }
 
   /** Record a contributing address. A merged person legitimately holds several; `email` stays the preferred display one. */
@@ -496,7 +705,18 @@ export class OrgPeopleDirectoryService {
   }
 
   private rowFromKeyContact(emp: KeyContactEmployee, email: string, key: string): OrgAllEmployeeRowInternal {
-    return this.liveRow(email, emp.firstName || null, emp.lastName || null, emp.jobTitle, emp.avatarUrl ?? null, 'keyContact', key, emp.lfUsername ?? null);
+    const row = this.liveRow(
+      email,
+      emp.firstName || null,
+      emp.lastName || null,
+      emp.jobTitle,
+      emp.avatarUrl ?? null,
+      'keyContact',
+      key,
+      emp.lfUsername ?? null
+    );
+    this.addKeyContactRoles(row, emp.roles);
+    return row;
   }
 
   private rowFromAccess(user: OrgAccessUser, email: string, key: string): OrgAllEmployeeRowInternal {
@@ -544,7 +764,10 @@ export class OrgPeopleDirectoryService {
       seatsCount: 0,
       boardSeatsCount: 0,
       committeeSeatsCount: 0,
+      keyContactRoles: [],
       commitsCount: 0,
+      mergedCommitsCount: 0,
+      codeActivitiesCount: 0,
       eventsCount: 0,
       coursesCount: 0,
       engagedFoundationIds: [],
@@ -557,32 +780,4 @@ export class OrgPeopleDirectoryService {
       err: reason,
     });
   }
-}
-
-/**
- * Recompute the 5 stat cards over the merged rows so the headline matches the visible table.
- * `activeInOss` counts only people with at least one engagement signal (governance / code / event /
- * training) — matching the stored model's Definition-2 meaning — so access-only rows merged in for the
- * roster don't inflate the "Employees Active in Open Source" headline. Governance counts a seat count OR
- * a live board/committee provenance — the provenance fallback also catches any seat that arrived without a
- * resolvable count.
- */
-function computeStats(rows: OrgAllEmployeeRow[]): OrgAllEmployeeStats {
-  let activeInOss = 0;
-  let inGovernance = 0;
-  let codeContributors = 0;
-  let eventAttendees = 0;
-  let trainees = 0;
-  for (const row of rows) {
-    const inGov = row.seatsCount > 0 || row.sources.includes('board') || row.sources.includes('committee');
-    const hasCode = row.commitsCount > 0;
-    const hasEvents = row.eventsCount > 0;
-    const hasTraining = row.coursesCount > 0;
-    if (inGov) inGovernance++;
-    if (hasCode) codeContributors++;
-    if (hasEvents) eventAttendees++;
-    if (hasTraining) trainees++;
-    if (inGov || hasCode || hasEvents || hasTraining) activeInOss++;
-  }
-  return { activeInOss, inGovernance, codeContributors, eventAttendees, trainees };
 }

@@ -1,0 +1,203 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section
+  class="flex flex-col gap-3 rounded-md border border-gray-100 bg-gray-50 p-3"
+  [attr.aria-label]="'Ad sets of ' + campaignName()"
+  [attr.data-testid]="'meta-ad-sets-panel-' + campaignId()">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <h4 class="text-xs font-semibold text-gray-900">Ad sets</h4>
+    <div class="flex items-center gap-2">
+      @if (data(); as list) {
+        <span class="text-xs text-gray-500" data-testid="meta-ad-sets-read-at">Read {{ list.read_at | date: 'medium' }}</span>
+      }
+      <lfx-button
+        label="Close"
+        size="small"
+        severity="secondary"
+        [text]="true"
+        [disabled]="pending() !== null"
+        (onClick)="closePanel.emit()"
+        data-testid="meta-ad-sets-close" />
+    </div>
+  </div>
+
+  <!--
+    The outcome of the last change. Not a live region: the toast already announces it, and a second
+    live role would speak one change twice.
+  -->
+  @if (outcome(); as result) {
+    <div class="flex flex-col gap-1" data-testid="meta-ad-sets-outcome">
+      <p class="text-xs" [class]="outcomeClass()" [attr.data-testid]="'meta-ad-sets-outcome-' + result.state">{{ result.message }}</p>
+      <!--
+        The follow-up after an unconfirmed change: campaign-service's advice for the direction sent,
+        then what the re-read made FOR this change shows (pending until it lands).
+      -->
+      @if (recordCheckView(); as check) {
+        <p class="text-xs text-amber-700" data-testid="meta-ad-sets-record-check-advice">{{ check.advice }}</p>
+        <p class="text-xs" [class]="check.tone" [attr.data-testid]="'meta-ad-sets-record-check-' + recordCheck()?.state">{{ check.text }}</p>
+      }
+    </div>
+  }
+
+  <!-- What the campaign's own state refuses (both directions, or Resume only). The ad sets stay readable. -->
+  @if (eligibility().reason) {
+    <p class="text-xs text-gray-500" [id]="'meta-ad-sets-campaign-state-' + campaignId()" data-testid="meta-ad-sets-campaign-state">
+      {{ eligibility().reason }}
+    </p>
+  }
+
+  @if (blockedReason()) {
+    <p class="text-xs text-gray-500" [id]="'meta-ad-sets-blocked-' + campaignId()" data-testid="meta-ad-sets-blocked">{{ blockedReason() }}</p>
+  }
+
+  <!-- Persistent and empty until a read starts: only its text changes (see liveRegionMounted). -->
+  <div role="status" aria-live="polite" class="sr-only" data-testid="meta-ad-sets-live">{{ loadingAnnouncement() }}</div>
+
+  @if (state() === 'loading' && !data()) {
+    <p class="flex items-center gap-2 text-sm text-gray-500" data-testid="meta-ad-sets-loading">
+      <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+      Loading ad sets...
+    </p>
+  } @else if (state() === 'error') {
+    <div class="flex flex-wrap items-center justify-between gap-3" role="alert" data-testid="meta-ad-sets-error">
+      <p class="text-sm text-gray-600">{{ errorMessage() }}</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-rotate-right"
+        size="small"
+        severity="secondary"
+        [text]="true"
+        (onClick)="retry()"
+        data-testid="meta-ad-sets-retry" />
+    </div>
+  } @else if (data()) {
+    @if (rows().length === 0) {
+      <p class="text-sm text-gray-500" data-testid="meta-ad-sets-empty">Meta lists no ad sets for this campaign.</p>
+    } @else {
+      <div class="overflow-x-auto rounded-md border border-gray-200 bg-white">
+        <table class="w-full text-left text-sm">
+          <caption class="sr-only">
+            Ad sets of
+            {{
+              campaignName()
+            }}. Budgets are in the ad account's currency.
+          </caption>
+          <thead>
+            <tr class="border-b border-gray-200 bg-gray-50">
+              <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Ad set</th>
+              <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Status</th>
+              <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Budget</th>
+              <th scope="col" class="px-3 py-2 text-right text-xs font-medium text-gray-500">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of rows(); track row.adSet.id) {
+              <tr class="border-b border-gray-100 last:border-0" [attr.data-testid]="'meta-ad-set-row-' + row.adSet.id">
+                <td class="px-3 py-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="break-words text-gray-900">{{ row.name }}</span>
+                    @if (row.adSet.deliberately_paused) {
+                      <lfx-tag
+                        value="Deliberately paused"
+                        severity="warn"
+                        tooltip="Paused here on purpose: resuming the campaign leaves this ad set paused until it is resumed here."
+                        [attr.data-testid]="'meta-ad-set-deliberately-paused-' + row.adSet.id" />
+                    }
+                    @if (row.adSet.recorded) {
+                      <lfx-tag value="Created here" severity="secondary" [attr.data-testid]="'meta-ad-set-recorded-' + row.adSet.id" />
+                    }
+                  </div>
+                  <button
+                    type="button"
+                    (click)="toggleAds(row.adSet.id)"
+                    [attr.aria-expanded]="row.adsExpanded"
+                    [attr.aria-controls]="row.adsExpanded ? 'meta-ad-set-ads-region-' + campaignId() + '-' + row.adSet.id : null"
+                    [attr.aria-label]="(row.adsExpanded ? 'Hide ads of ' : 'Show ads of ') + row.name"
+                    class="mt-1 flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+                    [attr.data-testid]="'meta-ad-set-ads-toggle-' + row.adSet.id">
+                    <i class="fa-light" [class]="row.adsExpanded ? 'fa-chevron-down' : 'fa-chevron-right'" aria-hidden="true"></i>
+                    {{ row.adsExpanded ? 'Hide ads' : 'Show ads' }}
+                  </button>
+                </td>
+                <td class="px-3 py-2 text-xs text-gray-700" [attr.data-testid]="'meta-ad-set-status-' + row.adSet.id">
+                  @if (row.status) {
+                    {{ row.status }}
+                  } @else {
+                    <span class="text-gray-500">Not reported</span>
+                  }
+                  @if (row.effectiveStatus) {
+                    <span class="block text-gray-500">Effective: {{ row.effectiveStatus }}</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-xs text-gray-700" [attr.data-testid]="'meta-ad-set-budget-' + row.adSet.id">
+                  @if (row.budget) {
+                    {{ row.budget }}
+                  } @else {
+                    <span class="text-gray-500">{{ row.budgetNote }}</span>
+                  }
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <div class="flex flex-wrap items-center justify-end gap-2">
+                    @if (row.action) {
+                      <button
+                        type="button"
+                        (click)="toggle(row)"
+                        [disabled]="locked() || row.actionBlockedReason !== ''"
+                        [attr.aria-label]="row.actionLabel + ' ' + row.name"
+                        [attr.aria-busy]="pending()?.adSetId === row.adSet.id && pending()?.kind === 'toggle' ? 'true' : null"
+                        [attr.aria-describedby]="row.actionDescribedBy"
+                        class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        [attr.data-testid]="'meta-ad-set-toggle-' + row.adSet.id">
+                        @if (pending()?.adSetId === row.adSet.id && pending()?.kind === 'toggle') {
+                          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                        }
+                        {{ row.actionLabel }}
+                      </button>
+                    } @else {
+                      <span class="text-xs text-gray-500" [attr.data-testid]="'meta-ad-set-no-action-' + row.adSet.id">{{ row.noActionReason }}</span>
+                    }
+                    <!--
+                      Re-sends the status Meta already reports, to record (Pause again) or clear (Resume
+                      again) the deliberate pause. Nothing else changes on Meta.
+                    -->
+                    @if (row.recordAction) {
+                      <button
+                        type="button"
+                        (click)="recordAction(row)"
+                        [disabled]="locked() || row.recordActionBlockedReason !== ''"
+                        [attr.aria-label]="row.recordActionLabel + ' ' + row.name"
+                        [attr.aria-busy]="pending()?.adSetId === row.adSet.id && pending()?.kind === 'record' ? 'true' : null"
+                        [attr.aria-describedby]="row.recordActionDescribedBy"
+                        class="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                        [attr.data-testid]="'meta-ad-set-record-action-' + row.adSet.id">
+                        @if (pending()?.adSetId === row.adSet.id && pending()?.kind === 'record') {
+                          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                        }
+                        {{ row.recordActionLabel }}
+                      </button>
+                    }
+                  </div>
+                </td>
+              </tr>
+              <!-- Read-only: mounted only while expanded, so the ad set's ads are read lazily. -->
+              @if (row.adsExpanded) {
+                <tr class="border-b border-gray-100 bg-gray-50 last:border-0" [attr.data-testid]="'meta-ad-set-ads-row-' + row.adSet.id">
+                  <td colspan="4" class="px-3 py-2" [id]="'meta-ad-set-ads-region-' + campaignId() + '-' + row.adSet.id">
+                    <lfx-meta-ad-set-ads
+                      [projectSlug]="projectSlug()"
+                      [briefId]="briefId()"
+                      [campaignId]="campaignId()"
+                      [adSetId]="row.adSet.id"
+                      [adSetName]="row.name"
+                      [reloadToken]="reloadToken()" />
+                  </td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+</section>

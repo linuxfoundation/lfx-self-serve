@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px: 16px check, the library's toast icon. -->
+@if (variant() === 'dark') {
+  <i class="ui-icon fa-solid fa-circle-check text-[16px] leading-none text-ui-success-400" aria-hidden="true" data-testid="ui-toast-icon"></i>
+}
+<span class="min-w-0 flex-1">
+  <span [class]="messageClasses()" data-testid="ui-toast-message"><ng-content /></span>
+  @if (description()) {
+    <span [class]="descriptionClasses()" data-testid="ui-toast-description">{{ description() }}</span>
+  }
+</span>
+@if (visibleActions().length) {
+  <div class="flex shrink-0 gap-[8px]" data-testid="ui-toast-actions">
+    @for (item of visibleActions(); track item.action) {
+      <button type="button" [class]="item.classes" (click)="run(item.action)" data-testid="ui-toast-action">
+        <span>{{ item.action.label }}</span>
+      </button>
+    }
+  </div>
+}
+<!-- Exact px: 14px glyph, the default-size button icon. -->
+@if (variant() === 'error') {
+  <button type="button" [class]="dismissClasses()" aria-label="Dismiss" (click)="dismiss()" data-testid="ui-toast-dismiss">
+    <i class="ui-icon fa-light fa-xmark text-[14px] leading-none" aria-hidden="true"></i>
+  </button>
+}

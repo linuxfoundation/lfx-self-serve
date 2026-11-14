@@ -22,7 +22,7 @@ import {
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
+import { MENTEE_OVERVIEW_URL, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeTab, stubMenteeApplications } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -69,10 +69,17 @@ async function stubRegisterFlow(page: Page, options: { saveStatus?: number; save
 }
 
 async function addSkill(page: Page, idPrefix: string, skill: string): Promise<void> {
-  await page.locator(`[data-test="${idPrefix}-skill"]`).click();
+  await page.getByTestId(`${idPrefix}-skill`).locator('input').fill(skill);
   await page.getByRole('option', { name: skill, exact: true }).click();
   await page.getByTestId(`${idPrefix}-add-skill`).click();
   await expect(page.getByTestId(`${idPrefix}-skill-list`)).toContainText(skill);
+}
+
+/** Picks a country through the Country card's filterable dropdown. */
+async function pickCountry(page: Page, country: string): Promise<void> {
+  await page.getByTestId('mentorship-mentee-country-select').locator('.p-select').first().click();
+  await page.locator('.p-select-overlay .p-select-filter').fill(country);
+  await page.getByRole('option', { name: country, exact: true }).click();
 }
 
 async function fillRegistrationForm(page: Page): Promise<void> {
@@ -84,6 +91,7 @@ async function fillRegistrationForm(page: Page): Promise<void> {
 
   await addSkill(page, 'mentorship-mentee-have', 'Java');
   await addSkill(page, 'mentorship-mentee-want', 'Python');
+  await pickCountry(page, 'Kenya');
 
   for (const id of CONFIRMATION_INPUT_IDS) {
     await page.locator(`#${id}`).check();
@@ -91,10 +99,6 @@ async function fillRegistrationForm(page: Page): Promise<void> {
 }
 
 test.describe('Mentee registration — save', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test('a valid form saves the profile, toasts success and goes to the Overview', async ({ page }) => {
     await stubMenteeApplications(page, 200, JSON.stringify({ data: [], total: 0 }));
     const saveBodies = await stubRegisterFlow(page, { saveStatus: 204 });
@@ -111,6 +115,7 @@ test.describe('Mentee registration — save', () => {
     expect(body).toMatchObject({
       skillsHave: ['Java'],
       skillsWant: ['Python'],
+      country: 'KE',
       ageEligible: true,
       workAuthorized: true,
       noDuplicateProfile: true,
@@ -118,8 +123,10 @@ test.describe('Mentee registration — save', () => {
       termsAccepted: true,
     });
     expect(String(body['introduction'])).toContain('Test introduction from Test User 1.');
-    // Resume upload is coming soon, so no file name or file leaves the browser.
+    // The form has no resume, so no file name or file leaves the browser.
     expect(Object.keys(body).filter((key) => key.toLowerCase().includes('resume'))).toEqual([]);
+    // The BFF reads the email itself, so the card's fields never carry it.
+    expect(body['lfxProfile'] ?? {}).not.toHaveProperty('email');
   });
 
   test('a profile that already exists shows the profile-exists banner and keeps Submit usable', async ({ page }) => {

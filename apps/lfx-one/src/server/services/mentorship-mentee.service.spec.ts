@@ -3,7 +3,11 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+} from '@lfx-one/shared/constants';
 import type { MentorshipMenteeRegisterRequest, MentorshipUpstreamApplication, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
@@ -23,6 +27,7 @@ vi.mock('./logger.service', () => ({
 
 const { MentorshipMenteeService } = await import('./mentorship-mentee.service');
 const { MicroserviceProxyService } = await import('./microservice-proxy.service');
+const { EmailVerificationService } = await import('./email-verification.service');
 const { logger } = await import('./logger.service');
 const { MicroserviceError } = await import('../errors');
 
@@ -37,6 +42,11 @@ function upstreamError(status: number, body: unknown) {
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentee/apply-target' } as Request;
+}
+
+/** A signed-in caller, so the service looks up their primary email by sub. */
+function signedInReq(): Request {
+  return { path: '/api/mentorship/mentee/profile', impersonationActive: false, oidc: { user: { sub: 'auth0|test-user-1' } } } as unknown as Request;
 }
 
 function listOf<T>(data: T[]) {
@@ -95,6 +105,7 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
     skillsHave: ['Java'],
     skillsWant: ['Python'],
     additionalNotes: 'Test notes',
+    country: 'KE',
     demographics: { age: '20-39', education: 'college' },
     ageEligible: true,
     workAuthorized: true,
@@ -104,10 +115,17 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
   };
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+  let getUserEmails: MockInstance<InstanceType<typeof EmailVerificationService>['getUserEmails']>;
+  let listIdentitiesSafe: MockInstance<InstanceType<typeof EmailVerificationService>['listIdentitiesSafe']>;
 
   beforeEach(() => {
     vi.restoreAllMocks();
     proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    getUserEmails = vi.spyOn(EmailVerificationService.prototype, 'getUserEmails').mockResolvedValue({
+      primary_email: 'test.user@example.com',
+      alternate_emails: [],
+    });
+    listIdentitiesSafe = vi.spyOn(EmailVerificationService.prototype, 'listIdentitiesSafe').mockResolvedValue([]);
     service = new MentorshipMenteeService();
   });
 
@@ -126,9 +144,66 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
       age_eligible: true,
       work_eligible: true,
       skill_set: { skills: ['Java'], improvementSkills: ['Python'], comments: 'Test notes' },
+      address: { country: 'KE' },
       demographics: { age: '20-39' },
       socioeconomics: { educationLevel: 'college' },
     });
+  });
+
+  it("adds the caller's verified primary email, looked up by their sub, to the profile it puts", async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await service.registerMenteeProfile(signedInReq(), { ...request, lfxProfile: { firstName: 'Test' } });
+
+    expect(getUserEmails).toHaveBeenCalledWith(expect.anything(), 'auth0|test-user-1');
+    expect(proxyRequest).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      MENTEE_PROFILE_PATH,
+      'PUT',
+      undefined,
+      expect.objectContaining({ first_name: 'Test', email: 'test.user@example.com' })
+    );
+  });
+
+  it('leaves the email out when the lookup fails, and still registers', async () => {
+    getUserEmails.mockResolvedValueOnce(null);
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await expect(service.registerMenteeProfile(signedInReq(), request)).resolves.toBeUndefined();
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('email');
+  });
+
+  it("adds the caller's connected GitHub link to the profile it puts", async () => {
+    listIdentitiesSafe.mockResolvedValue([
+      { provider: 'github', user_id: 'github-1', connection: 'github', isSocial: true, profileData: { nickname: 'test-user' } },
+    ]);
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await service.registerMenteeProfile(signedInReq(), request);
+
+    expect(listIdentitiesSafe).toHaveBeenCalledWith(expect.anything());
+    expect(proxyRequest.mock.calls[1][5]).toMatchObject({ profile_links: { githubProfileLink: 'https://github.com/test-user' } });
+  });
+
+  it('sends no profile links when the caller has no GitHub account connected', async () => {
+    routeProxy(proxyRequest, {
+      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => ({}),
+    });
+
+    await service.registerMenteeProfile(signedInReq(), request);
+
+    expect(proxyRequest.mock.calls[1][5]).not.toHaveProperty('profile_links');
   });
 
   it('refuses with a 409 profile-exists conflict, without writing, when a mentee profile exists', async () => {
@@ -136,11 +211,13 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
       [PROFILES_PATH]: () => listOf([{ id: 'profile-1', profile_type: 'mentee' }]),
     });
 
-    await expect(service.registerMenteeProfile(buildReq(), request)).rejects.toMatchObject({
+    await expect(service.registerMenteeProfile(signedInReq(), request)).rejects.toMatchObject({
       statusCode: 409,
       code: MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
     });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(getUserEmails).not.toHaveBeenCalled();
+    expect(listIdentitiesSafe).not.toHaveBeenCalled();
   });
 
   it('fails closed when the existing-profile check fails', async () => {
@@ -169,12 +246,13 @@ describe('MentorshipMenteeService.registerMenteeProfile', () => {
       [MENTEE_PROFILE_PATH]: () => ({}),
     });
 
-    await service.registerMenteeProfile(buildReq(), request);
+    await service.registerMenteeProfile(signedInReq(), request);
 
     const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls);
     expect(logged).not.toContain('Test intro');
     expect(logged).not.toContain('Test notes');
     expect(logged).not.toContain('college');
+    expect(logged).not.toContain('test.user@example.com');
   });
 });
 
@@ -183,6 +261,7 @@ describe('MentorshipMenteeService apply', () => {
   const programTermId = '8e2d4c6a-1b3f-4a5c-8d7e-9f0a1b2c3d4e';
   const programPath = `${PROGRAMS_PATH}/${programId}`;
   const termPath = `${programPath}/terms/${programTermId}`;
+  const applyTargetPath = `${termPath}/apply-target`;
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
 
@@ -192,11 +271,9 @@ describe('MentorshipMenteeService apply', () => {
     service = new MentorshipMenteeService();
   });
 
-  it('builds the apply target from the program and the term', async () => {
+  it('builds the apply target from the single apply-target read', async () => {
     routeProxy(proxyRequest, {
-      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published', project_name: 'Test Project' }),
-      // No window dates, so the term takes applications whatever today is.
-      [termPath]: () => ({ id: programTermId, program_id: programId, name: 'Fall 2026', status: 'open' }),
+      [applyTargetPath]: () => ({ program_name: 'Test Program', project_name: 'Test Project', term_name: 'Fall 2026', accepting_applications: true }),
     });
 
     await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).resolves.toEqual({
@@ -205,14 +282,13 @@ describe('MentorshipMenteeService apply', () => {
       termName: 'Fall 2026',
       acceptingApplications: true,
     });
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', programPath, 'GET', undefined, undefined);
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', termPath, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', applyTargetPath, 'GET', undefined, undefined);
   });
 
-  it('reports a closed term as not accepting applications', async () => {
+  it('passes through a term that upstream reports as not accepting applications', async () => {
     routeProxy(proxyRequest, {
-      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published' }),
-      [termPath]: () => ({ id: programTermId, program_id: programId, name: 'Fall 2026', status: 'closed' }),
+      [applyTargetPath]: () => ({ program_name: 'Test Program', term_name: 'Fall 2026', accepting_applications: false }),
     });
 
     await expect(service.getMenteeApplyTarget(buildReq(), programId, programTermId)).resolves.toMatchObject({
@@ -221,11 +297,10 @@ describe('MentorshipMenteeService apply', () => {
     });
   });
 
-  it('propagates a 404 on the term read', async () => {
+  it('propagates a 404 on the apply-target read', async () => {
     const error = upstreamError(404, { error: 'not found' });
     routeProxy(proxyRequest, {
-      [programPath]: () => ({ id: programId, name: 'Test Program', status: 'published' }),
-      [termPath]: () => {
+      [applyTargetPath]: () => {
         throw error;
       },
     });
@@ -254,6 +329,7 @@ describe('MentorshipMenteeService apply', () => {
 });
 
 describe('MentorshipMenteeService profile reads', () => {
+  const MENTEE_PROFILE_PATH = `${PROFILES_PATH}/mentee`;
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
 
@@ -276,6 +352,12 @@ describe('MentorshipMenteeService profile reads', () => {
     await expect(service.hasMenteeProfile(buildReq())).resolves.toEqual({ hasProfile: false });
   });
 
+  it('reports no profile when upstream sends the list data as null', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: null, meta: { total: 0, limit: 1, offset: 0 } });
+
+    await expect(service.hasMenteeProfile(buildReq())).resolves.toEqual({ hasProfile: false });
+  });
+
   it.each([
     ['a gateway 404', 404, undefined],
     ['a 500', 500, { error: 'internal server error' }],
@@ -286,22 +368,19 @@ describe('MentorshipMenteeService profile reads', () => {
     await expect(service.hasMenteeProfile(buildReq())).rejects.toBe(error);
   });
 
-  it("maps the caller's mentee row and fills the history from their applications", async () => {
+  it("maps the caller's mentee row from the typed read and fills the history from their applications", async () => {
     routeProxy(proxyRequest, {
-      [PROFILES_PATH]: () =>
-        listOf([
-          {
-            id: 'prof-1',
-            user_id: 'user-1',
-            profile_type: 'mentee',
-            introduction: 'Test mentee introduction.',
-            skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
-            terms_and_conditions: true,
-            number_of_projects: 0,
-            created_on: '2026-01-01T00:00:00Z',
-            updated_on: '2026-01-01T00:00:00Z',
-          },
-        ]),
+      [MENTEE_PROFILE_PATH]: () => ({
+        id: 'prof-1',
+        user_id: 'user-1',
+        profile_type: 'mentee',
+        introduction: 'Test mentee introduction.',
+        skill_set: { skills: ['Go'], improvementSkills: ['Code Review'] },
+        terms_and_conditions: true,
+        number_of_projects: 0,
+        created_on: '2026-01-01T00:00:00Z',
+        updated_on: '2026-01-01T00:00:00Z',
+      }),
       [ME_APPLICATIONS_PATH]: () => listOf([upstreamApplication()]),
     });
 
@@ -311,7 +390,7 @@ describe('MentorshipMenteeService profile reads', () => {
     expect(result.history).toEqual([
       { id: 'app-1', programId: 'prog-1', programName: 'Test Program', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'pending' },
     ]);
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'GET', undefined, undefined);
     expect(proxyRequest).toHaveBeenCalledWith(
       expect.anything(),
       'LFX_V2_SERVICE',
@@ -322,8 +401,13 @@ describe('MentorshipMenteeService profile reads', () => {
     );
   });
 
-  it("returns an empty profile when the caller's mentee list is empty, so the apply page loads straight after registering", async () => {
-    routeProxy(proxyRequest, { [PROFILES_PATH]: () => listOf([]), [ME_APPLICATIONS_PATH]: () => listOf([]) });
+  it('returns an empty profile when upstream has no mentee row for the caller (404), so the apply page loads straight after registering', async () => {
+    routeProxy(proxyRequest, {
+      [MENTEE_PROFILE_PATH]: () => {
+        throw upstreamError(404, { error: 'profile not found' });
+      },
+      [ME_APPLICATIONS_PATH]: () => listOf([]),
+    });
 
     await expect(service.getMenteeProfile(buildReq())).resolves.toEqual({
       profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
@@ -332,12 +416,12 @@ describe('MentorshipMenteeService profile reads', () => {
   });
 
   it.each([
-    ['a gateway 404', 404, undefined],
+    ["upstream's 409 for more than one mentee profile, rather than pick one,", 409, { error: 'multiple mentee profiles exist for user' }],
     ['a 500', 500, { error: 'internal server error' }],
   ])('propagates %s on the profile read', async (_label, status, body) => {
     const error = upstreamError(status, body);
     routeProxy(proxyRequest, {
-      [PROFILES_PATH]: () => {
+      [MENTEE_PROFILE_PATH]: () => {
         throw error;
       },
       [ME_APPLICATIONS_PATH]: () => listOf([]),
@@ -348,7 +432,9 @@ describe('MentorshipMenteeService profile reads', () => {
 
   it('leaves the history empty when the applications read fails on the profile read', async () => {
     routeProxy(proxyRequest, {
-      [PROFILES_PATH]: () => listOf([]),
+      [MENTEE_PROFILE_PATH]: () => {
+        throw upstreamError(404, { error: 'profile not found' });
+      },
       [ME_APPLICATIONS_PATH]: () => {
         throw upstreamError(500, { error: 'internal server error' });
       },
@@ -448,40 +534,6 @@ describe('MentorshipMenteeService.getMenteeApplications', () => {
     );
   });
 
-  it('stops paging on an empty page even when the total says there are more', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: (query) =>
-        query?.['offset'] === 0
-          ? { data: [upstreamApplication()], meta: { total: 5, limit: 100, offset: 0 } }
-          : { data: [], meta: { total: 5, limit: 100, offset: 1 } },
-    });
-
-    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
-  });
-
-  it('stops after one page when the page carries no total', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: () => ({ data: [upstreamApplication()] }),
-    });
-
-    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 1 });
-    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_APPLICATIONS_PATH)).toHaveLength(1);
-  });
-
-  it('stops at the page cap when upstream keeps returning rows', async () => {
-    routeProxy(proxyRequest, {
-      [ME_APPLICATIONS_PATH]: () => ({ data: [upstreamApplication()], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } }),
-    });
-
-    await expect(service.getMenteeApplications(buildReq(), false)).resolves.toMatchObject({ total: 50 });
-    expect(proxyRequest.mock.calls.filter(([, , path]) => path === ME_APPLICATIONS_PATH)).toHaveLength(50);
-    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_list_all_pages', expect.any(String), {
-      path: ME_APPLICATIONS_PATH,
-      max_pages: 50,
-      count: 50,
-    });
-  });
-
   it('reads tasks a few applications at a time', async () => {
     const applications = Array.from({ length: 7 }, (_, index) => upstreamApplication({ id: `app-${index}` }));
     let inFlight = 0;
@@ -579,6 +631,7 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     created_on: '2026-01-01T00:00:00Z',
     updated_on: '2026-01-02T00:00:00Z',
   };
+  const bareStoredRow = { id: 'prof-1', user_id: 'user-1', profile_type: 'mentee' };
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -587,12 +640,12 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
   });
 
   it('reads the stored row, then patches the single-type mentee route with only the built upstream body', async () => {
-    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
+    proxyRequest.mockResolvedValueOnce(bareStoredRow).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), { skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'], additionalNotes: 'Test notes.' } });
 
     expect(proxyRequest).toHaveBeenCalledTimes(2);
-    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', PROFILES_PATH, 'GET', { profile_type: 'mentee', limit: 1 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'GET', undefined, undefined);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
       skill_set: { skills: ['Go'], improvementSkills: ['Rust'], comments: 'Test notes.' },
     });
@@ -604,7 +657,7 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
       skill_set: { skills: ['C'], improvementSkills: ['Zig'], comments: 'Old notes.', legacyLevel: 'beginner' },
       demographics: { age: 30, gender: 'female', legacyField: 'kept' },
     };
-    proxyRequest.mockResolvedValueOnce({ data: [storedRow], meta: { total: 1, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
+    proxyRequest.mockResolvedValueOnce(storedRow).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), { skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] }, demographics: { gender: 'male' } });
 
@@ -614,25 +667,41 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     });
   });
 
-  it('does not patch when the stored row cannot be read before a JSON column change', async () => {
-    const error = upstreamError(500, { error: 'boom' });
+  it('reads the stored row before a country change and keeps the legacy address keys', async () => {
+    const storedRow = { ...updatedRow, address: { country: 'US', city: 'Test City', zipCode: '00000' } };
+    proxyRequest.mockResolvedValueOnce(storedRow).mockResolvedValueOnce({ ...updatedRow, address: { country: 'KE', city: 'Test City', zipCode: '00000' } });
+
+    const result = await service.updateMenteeProfile(buildReq(), { country: 'KE' });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
+      address: { country: 'KE', city: 'Test City', zipCode: '00000' },
+    });
+    expect(result.profile.country).toBe('KE');
+  });
+
+  it.each([
+    ['a 500', 500, { error: 'boom' }],
+    ["upstream's 409 for more than one mentee profile", 409, { error: 'multiple mentee profiles exist for user' }],
+  ])('does not patch when the stored-row read before a JSON column change fails with %s', async (_label, status, body) => {
+    const error = upstreamError(status, body);
     proxyRequest.mockRejectedValueOnce(error);
 
     await expect(service.updateMenteeProfile(buildReq(), { demographics: { age: '20-39' } })).rejects.toBe(error);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('converts the introduction to HTML and maps demographics keys on the way upstream', async () => {
-    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
+  it('sends the introduction HTML as is and maps demographics keys on the way upstream', async () => {
+    proxyRequest.mockResolvedValueOnce(bareStoredRow).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), {
-      introduction: 'Hello & welcome',
+      introduction: '<p>Hello &amp; <strong>welcome</strong></p>',
       demographics: { age: '20-39', raceEthnicity: 'asian' },
       socioeconomics: { education: 'college' },
     });
 
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', MENTEE_PROFILE_PATH, 'PATCH', undefined, {
-      introduction: '<p>Hello &amp; welcome</p>',
+      introduction: '<p>Hello &amp; <strong>welcome</strong></p>',
       demographics: { age: '20-39', race: 'asian' },
       socioeconomics: { educationLevel: 'college' },
     });
@@ -641,11 +710,11 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
   it('never sends profile_links or a key for a group the caller did not change, and skips the stored read', async () => {
     proxyRequest.mockResolvedValueOnce(updatedRow);
 
-    await service.updateMenteeProfile(buildReq(), { introduction: '' });
+    await service.updateMenteeProfile(buildReq(), { introduction: '<p>Hello</p>' });
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
     const body = proxyRequest.mock.calls[0][5] as Record<string, unknown>;
-    expect(body).toEqual({ introduction: '' });
+    expect(body).toEqual({ introduction: '<p>Hello</p>' });
     expect(Object.keys(body)).not.toContain('profile_links');
   });
 
@@ -660,8 +729,6 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
         skillsHave: ['Go'],
         skillsWant: ['Rust'],
         additionalNotes: 'Test notes.',
-        resumeUrl: 'https://example.com/files/test-resume.pdf',
-        resumeFileName: 'test-resume.pdf',
       },
       demographics: { age: '20-39', gender: 'female', raceEthnicity: 'asian', income: 'workingClass', education: 'college' },
     });
@@ -696,7 +763,7 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
     );
     proxyRequest.mockRejectedValueOnce(notProvisioned).mockResolvedValueOnce({}).mockResolvedValueOnce(updatedRow);
 
-    await expect(service.updateMenteeProfile(buildReq(), { introduction: 'x' })).resolves.toMatchObject({ profile: { skillsHave: ['Go'] } });
+    await expect(service.updateMenteeProfile(buildReq(), { introduction: '<p>x</p>' })).resolves.toMatchObject({ profile: { skillsHave: ['Go'] } });
 
     expect(proxyRequest).toHaveBeenCalledTimes(3);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
@@ -704,7 +771,7 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
   });
 
   it('logs group names only, never the values', async () => {
-    proxyRequest.mockResolvedValueOnce({ data: [], meta: { total: 0, limit: 1, offset: 0 } }).mockResolvedValueOnce(updatedRow);
+    proxyRequest.mockResolvedValueOnce(bareStoredRow).mockResolvedValueOnce(updatedRow);
 
     await service.updateMenteeProfile(buildReq(), { introduction: 'Private text', skillSet: { skillsHave: ['Go'], skillsWant: ['Rust'] } });
 
@@ -717,8 +784,14 @@ describe('MentorshipMenteeService.updateMenteeProfile', () => {
 describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
   const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
   const TASKS_PATH = '/mentorship/v1/tasks';
+  const TASK_PATH = `${TASKS_PATH}/${taskId}`;
+  const SUBMISSION_PATH = `${TASK_PATH}/submission`;
   let service: InstanceType<typeof MentorshipMenteeService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  /** The caller's applications: `app-1`, whose term takes applications until 2026-09-30. */
+  const applicationsClosingSeptember30 = () =>
+    listOf([upstreamApplication({ term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-09-30' } })]);
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -727,29 +800,179 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
   });
 
   it('patches the task submission route with a body of only the status', async () => {
-    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'incomplete' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
       status: 'in_progress',
     });
   });
 
   it('never sends file, even when submitting', async () => {
-    proxyRequest.mockResolvedValueOnce(
-      upstreamTask({ id: taskId, status: 'submitted', submit_file: 'required', file: 'https://files.example.com/upload.pdf' })
-    );
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', submit_file: 'required', file: 'https://files.example.com/upload.pdf' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted', submit_file: 'required', file: 'https://files.example.com/upload.pdf' }));
 
     await service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted');
 
-    const body = proxyRequest.mock.calls[0][5];
+    const body = proxyRequest.mock.calls[1][5];
     expect(body).toEqual({ status: 'submitted' });
     expect(Object.keys(body as object)).toEqual(['status']);
   });
 
+  it('reads the task before a submit and patches it while its due date has not ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}`, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
+      status: 'submitted',
+    });
+  });
+
+  it('submits a non-prerequisite task with no due date, without reading the applications', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, application_id: 'app-1', category: 'non_prerequisite', status: 'in_progress' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest.mock.calls[1][3]).toBe('PATCH');
+  });
+
+  it('refuses a prerequisite with no due date once its term application close has ended in UTC, without patching', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: applicationsClosingSeptember30,
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('submits a prerequisite with no due date until its term application close has ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: applicationsClosingSeptember30,
+      [SUBMISSION_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'submitted' }),
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'LFX_V2_SERVICE',
+      ME_APPLICATIONS_PATH,
+      'GET',
+      { role: 'mentee', limit: 100, offset: 0 },
+      undefined
+    );
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', SUBMISSION_PATH, 'PATCH', undefined, { status: 'submitted' });
+  });
+
+  it('checks a prerequisite with a due date of its own against that date, without reading the applications', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress', due_date: '2026-10-01' }),
+      [SUBMISSION_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'submitted' }),
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it("submits a prerequisite with no due date whose application is not among the caller's", async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-2', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: applicationsClosingSeptember30,
+      [SUBMISSION_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-2', status: 'submitted' }),
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('propagates a failed applications read without patching', async () => {
+    const error = upstreamError(500, { error: 'internal error' });
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: () => {
+        throw error;
+      },
+    });
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a submit once the due date has ended in UTC, without patching', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('still lets a past-due pending task be started', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'incomplete', due_date: '2026-09-30' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', SUBMISSION_PATH, 'PATCH', undefined, { status: 'in_progress' });
+  });
+
+  it('reopens a submitted task before its due date has ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted', due_date: '2026-09-30' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', SUBMISSION_PATH, 'PATCH', undefined, { status: 'in_progress' });
+  });
+
+  it('refuses to reopen a submitted task once its due date has ended in UTC, without patching', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [404, 'not found'],
+  ])('propagates a failed task read (%i) without patching', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('URL-encodes the task id in the path', async () => {
-    proxyRequest.mockResolvedValueOnce(upstreamTask());
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ status: 'incomplete' })).mockResolvedValueOnce(upstreamTask());
 
     await service.updateMenteeTaskStatus(buildReq(), 'a/b?c', 'in_progress');
 
@@ -760,12 +983,13 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     proxyRequest
       .mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }))
       .mockResolvedValueOnce({})
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'incomplete' }))
       .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
-    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
-    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
+    expect(proxyRequest).toHaveBeenNthCalledWith(4, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
       status: 'in_progress',
     });
   });
@@ -775,11 +999,216 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     [403, 'forbidden'],
     [404, 'not found'],
     [409, 'invalid state transition: cannot transition task from "submitted" to "in_progress"'],
-  ])('propagates an upstream %i', async (status, message) => {
+  ])('propagates an upstream %i from the patch', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockRejectedValueOnce(error);
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('MentorshipMenteeService.uploadMenteeTaskFile', () => {
+  const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const TASK_PATH = `/mentorship/v1/tasks/${taskId}`;
+  const UPLOAD_PATH = `${TASK_PATH}/file-upload`;
+  const fileName = 'private-report-name.pdf';
+  const file = Buffer.from('%PDF-1.7 private-file-bytes');
+  const stored = { filename: 'private-report-name.pdf', content_type: 'application/pdf', size: file.byteLength };
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  /** The multipart body sent upstream on the given call, as text, so its part headers can be read. */
+  const sentForm = (call: number): { headers: Record<string, string>; body: string } => {
+    const form = proxyRequest.mock.calls[call][5] as { getHeaders: () => Record<string, string>; getBuffer: () => Buffer };
+    return { headers: form.getHeaders(), body: form.getBuffer().toString('latin1') };
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(logger.debug).mockClear();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('reads the task, then posts the bytes as the multipart part `file` with the transfer timeout, and maps the stored file', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockResolvedValueOnce(stored);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toEqual({
+      fileName: 'private-report-name.pdf',
+      contentType: 'application/pdf',
+      size: file.byteLength,
+    });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', UPLOAD_PATH, 'POST', undefined, expect.anything(), undefined, {
+      timeoutMs: 120_000,
+    });
+    const { headers, body } = sentForm(1);
+    expect(headers['content-type']).toMatch(/^multipart\/form-data; boundary=/);
+    expect(body).toContain(`Content-Disposition: form-data; name="file"; filename="${fileName}"`);
+    expect(body).toContain('Content-Type: application/octet-stream');
+    expect(body).toContain('%PDF-1.7 private-file-bytes');
+  });
+
+  it('returns empty values when upstream answers with no body', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId })).mockResolvedValueOnce(undefined);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toEqual({ fileName: '', contentType: '', size: 0 });
+  });
+
+  it('uploads on the last day of the due date', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' })).mockResolvedValueOnce(stored);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toMatchObject({ size: file.byteLength });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses the upload once the due date has ended in UTC, without uploading', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+      message: MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls.map((call) => call[2])).not.toContain(UPLOAD_PATH);
+  });
+
+  it('refuses the upload on a prerequisite with no due date once its term application close has ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    routeProxy(proxyRequest, {
+      [TASK_PATH]: () => upstreamTask({ id: taskId, application_id: 'app-1', status: 'in_progress' }),
+      [ME_APPLICATIONS_PATH]: () =>
+        listOf([upstreamApplication({ term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-09-30' } })]),
+    });
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [404, 'not found'],
+  ])('propagates a failed task read (%i) without uploading', async (status, message) => {
     const error = upstreamError(status, { error: message });
     proxyRequest.mockRejectedValueOnce(error);
 
-    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'submitted')).rejects.toBe(error);
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toBe(error);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [409, 'task is completed'],
+    [413, 'file exceeds 20 MB'],
+    [415, 'File must be PDF, DOC, DOCX or plain text'],
+    [503, 'storage is not configured'],
+  ])('propagates an upstream %i from the upload', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockRejectedValueOnce(error);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('provisions the user and resends the same form with the timeout, with no timeout on the provisioning call', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }))
+      .mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }))
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce(stored);
+
+    await expect(service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file)).resolves.toMatchObject({ fileName });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest.mock.calls[3][5]).toBe(proxyRequest.mock.calls[1][5]);
+    expect(proxyRequest.mock.calls[3][7]).toEqual({ timeoutMs: 120_000 });
+    expect(sentForm(3).body).toContain(`filename="${fileName}"`);
+  });
+
+  it('URL-encodes the task id in both paths', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask()).mockResolvedValueOnce(stored);
+
+    await service.uploadMenteeTaskFile(buildReq(), 'a/b?c', fileName, file);
+
+    expect(proxyRequest.mock.calls.map((call) => call[2])).toEqual(['/mentorship/v1/tasks/a%2Fb%3Fc', '/mentorship/v1/tasks/a%2Fb%3Fc/file-upload']);
+  });
+
+  it('logs the task id and size, never the file name or the bytes', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId })).mockResolvedValueOnce(stored);
+
+    await service.uploadMenteeTaskFile(buildReq(), taskId, fileName, file);
+
+    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls.map((call) => call.slice(1)));
+    expect(logged).toContain(taskId);
+    expect(logged).toContain(`"sizeBytes":${file.byteLength}`);
+    expect(logged).not.toContain('private-report-name');
+    expect(logged).not.toContain('private-file-bytes');
+  });
+});
+
+describe('MentorshipMenteeService.deleteMenteeTaskFile', () => {
+  const taskId = '7a9b1c3d-5e6f-4a8b-9c0d-1e2f3a4b5c6d';
+  const TASK_PATH = `/mentorship/v1/tasks/${taskId}`;
+  const FILE_PATH = `${TASK_PATH}/file`;
+  let service: InstanceType<typeof MentorshipMenteeService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipMenteeService();
+  });
+
+  it('reads the task, then deletes its file', async () => {
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' })).mockResolvedValueOnce(undefined);
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).resolves.toBeUndefined();
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', TASK_PATH, 'GET', undefined, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', FILE_PATH, 'DELETE', undefined, undefined);
+  });
+
+  it('refuses the delete once the due date has ended in UTC, without deleting', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+      message: MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+    });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls.map((call) => call[3])).not.toContain('DELETE');
+  });
+
+  it('propagates a failed task read without deleting', async () => {
+    const error = upstreamError(404, { error: 'not found' });
+    proxyRequest.mockRejectedValueOnce(error);
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, 'forbidden'],
+    [404, 'not found'],
+    [409, 'task is submitted'],
+  ])('propagates an upstream %i from the delete', async (status, message) => {
+    const error = upstreamError(status, { error: message });
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted' })).mockRejectedValueOnce(error);
+
+    await expect(service.deleteMenteeTaskFile(buildReq(), taskId)).rejects.toBe(error);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
   });
 });

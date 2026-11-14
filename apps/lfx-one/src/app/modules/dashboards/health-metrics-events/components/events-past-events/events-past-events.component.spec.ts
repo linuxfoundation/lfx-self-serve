@@ -14,7 +14,7 @@ import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-
 
 import { EventsPastEventsComponent } from './events-past-events.component';
 
-import type { HealthMetricsEventsPast, HealthMetricsEventsPastEvent, HealthMetricsEventsSectionKey } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsPast, HealthMetricsEventsPastEvent } from '@lfx-one/shared/interfaces';
 
 function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): HealthMetricsEventsPastEvent {
   return {
@@ -59,9 +59,8 @@ describe('EventsPastEventsComponent', () => {
   let fixture: ComponentFixture<EventsPastEventsComponent>;
   let getEventsPast: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let counts: (number | null)[];
   let lifecycle: string[];
-  let picked: HealthMetricsEventsSectionKey[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEventsPast | Error = past()): Promise<void> {
     getEventsPast = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -79,10 +78,11 @@ describe('EventsPastEventsComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EventsPastEventsComponent);
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -103,9 +103,8 @@ describe('EventsPastEventsComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
-    counts = [];
     lifecycle = [];
-    picked = [];
+    verdicts = [];
   });
 
   it("reads the foundation once and renders the period's header from the view", async () => {
@@ -126,11 +125,30 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-revenue-past-2')).toBe('$0');
   });
 
-  it('reports the period count for the badge and settles once the list lands', async () => {
+  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
     await render();
 
-    expect(counts).toEqual([null, 2]);
+    expect(text('events-past-events-goal-past-1')).toBe('1,200 / 1,000');
+    expect(query('events-past-events-goal-past-1')?.querySelector('b')?.textContent).toBe('1,200');
+    expect(query('events-past-events-goal-past-2')?.querySelector('b')?.textContent).toBe('300');
+    expect(text('events-past-events-goal-past-2')).toContain('no goal set');
+    expect(text('events-past-events-goal-past-2')).not.toContain('/');
+    expect(query('events-past-events-row-past-1')?.querySelector('[style*="width"]')).toBeNull();
+  });
+
+  it('shows the total unboxed, captioned below, with Hit goal as a side stat', async () => {
+    await render();
+
+    expect(query('events-past-events-card')?.classList).not.toContain('border');
+    expect(query('events-past-events-headline')?.lastElementChild?.textContent?.trim()).toBe('Total registrations, past events');
+    expect(query('events-past-events-goal-met')?.querySelector('dt')?.textContent?.trim()).toBe('Hit goal');
+  });
+
+  it('settles once the list lands', async () => {
+    await render();
+
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('re-projects a period change off the loaded response without re-reading', async () => {
@@ -140,7 +158,6 @@ describe('EventsPastEventsComponent', () => {
     await settle();
 
     expect(getEventsPast).toHaveBeenCalledTimes(1);
-    expect(counts).toEqual([null, 2, 1]);
     expect(query('events-past-events-row-past-1')).toBeNull();
     expect(query('events-past-events-row-past-2')).not.toBeNull();
     expect(text('events-past-events-goal-met-value')).toBe('no goals set');
@@ -173,39 +190,38 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-goal-met-value')).toBe('0 of 1');
   });
 
-  it('shows the empty state for a period with no closed events', async () => {
+  it('settles empty, with no body, for a period with no closed events', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_2');
     await settle();
 
-    expect(query('events-past-events-empty')).not.toBeNull();
-    expect(query('events-past-events-unmeasured')).toBeNull();
-    expect(counts.at(-1)).toBe(0);
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-past-events-card')).toBeNull();
+    expect(query('events-past-events-table')).toBeNull();
   });
 
-  it('shows the unavailable state, not a measured zero, for a period the view has not measured', async () => {
+  it('settles empty, with no body, for a period never measured', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
     await settle();
 
-    expect(query('events-past-events-unmeasured')).not.toBeNull();
-    expect(query('events-past-events-empty')).toBeNull();
-    expect(counts.at(-1)).toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-past-events-card')).toBeNull();
+    expect(query('events-past-events-table')).toBeNull();
   });
 
-  it('shows the error state and keeps the badge unmeasured when the read fails', async () => {
+  it('shows the error state and does not re-settle a failed read on a period change', async () => {
     await render(new Error('warehouse down'));
 
     expect(query('events-past-events-error')).not.toBeNull();
-    expect(query('events-past-events-empty')).toBeNull();
-    expect(counts).toEqual([null]);
+    expect(verdicts).toEqual([false]);
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
 
-    expect(counts).toEqual([null]);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton until a foundation resolves', async () => {
@@ -217,11 +233,9 @@ describe('EventsPastEventsComponent', () => {
     expect(lifecycle).toEqual(['reading']);
   });
 
-  it('cross-links back to the forecast', async () => {
+  it('captions the table order as most recent first', async () => {
     await render();
 
-    query('events-past-events-forecast-link')?.click();
-
-    expect(picked).toEqual(['forecast']);
+    expect(query('events-past-events-order')?.textContent?.trim()).toBe('most recent first');
   });
 });

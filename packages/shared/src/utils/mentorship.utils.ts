@@ -7,10 +7,18 @@ import {
   MENTORSHIP_CHALLENGE_URL_REQUIRED,
   MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX,
   MENTORSHIP_CUSTOM_PREREQ_NAME_MAX,
+  createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL,
   MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_ENROLL_LOGO_EMPTY,
   MENTORSHIP_ENROLL_LOGO_EXTENSIONS,
+  MENTORSHIP_ENROLL_LOGO_MAX_BYTES,
+  MENTORSHIP_ENROLL_LOGO_MIME_TYPES,
+  MENTORSHIP_ENROLL_LOGO_TOO_LARGE,
+  MENTORSHIP_ENROLL_LOGO_TYPE_ERROR,
   MENTORSHIP_ENROLL_NAME_MAX,
   MENTORSHIP_ENROLL_NAME_MIN,
+  MENTORSHIP_ENROLL_PROJECT_REQUIRED,
   MENTORSHIP_INVALID_URL,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
@@ -18,14 +26,18 @@ import {
   MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
   MENTORSHIP_SKILL_OPTIONS,
   MENTORSHIP_TERM_NAME_MAX,
-  MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
 import {
   MENTORSHIP_MENTEE_APPLICATION_PROGRESS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
+  MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
+  MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
+  MENTORSHIP_MENTEE_COUNTRY_CODES,
+  MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
+  MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_GROUPS,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
@@ -33,71 +45,103 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
-  MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL,
-  MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
+  MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
+  MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+  MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
   MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES,
 } from '../constants/mentorship-mentee.constants';
-import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
-  MENTORSHIP_APPLICANT_ACTIONS,
+  MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+  MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH,
+  MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS,
+  MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS,
+} from '../constants/mentorship-mentor.constants';
+import {
+  MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE,
+  MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE,
+  MENTORSHIP_ADMIN_PATH,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
-  MENTORSHIP_CURRENT_MENTEE_STATUSES,
-  MENTORSHIP_MENTEE_ACTIONS,
-  MENTORSHIP_PAST_MENTEE_STATUSES,
+  MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
+  MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROJECT_PROGRAMS_PATH,
+  MENTORSHIP_REGISTER_ERROR_CONFLICT,
+  MENTORSHIP_REGISTER_ERROR_FALLBACK,
+  MENTORSHIP_REGISTER_ERROR_READ_ONLY,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE,
+  MENTORSHIP_TASK_FILE_VIEW_TYPES,
+  MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
-import type { FilterOption } from '../interfaces/filter.interface';
 import type {
-  MentorshipApplicantAction,
   MentorshipApplicantDisplayStatus,
   MentorshipApplicantTask,
   MentorshipApplicantTaskRow,
+  MentorshipApplicantTaskStatus,
   MentorshipApplicationProgress,
+  MentorshipEnrollCreateRequest,
+  MentorshipEnrollCreateTerm,
+  MentorshipEnrollEditBaseline,
   MentorshipEnrollFieldErrors,
+  MentorshipEnrollForm,
+  MentorshipEnrollImport,
+  MentorshipEnrollSavedTerm,
   MentorshipEnrollStep,
+  MentorshipEnrollUpdateRequest,
   MentorshipEnrollValidationInput,
-  MentorshipMenteeAction,
-  MentorshipMenteeStatus,
+  MentorshipLfProject,
+  MentorshipNoteDisplay,
+  MentorshipPrerequisite,
+  MentorshipProgramMentee,
+  MentorshipProgramTerm,
+  MentorshipPublicPage,
+  MentorshipRegisterFailureOptions,
+  MentorshipRegisterSubmitFailure,
+  MentorshipRowAction,
+  MentorshipTaskFormValue,
+  MentorshipTaskUpdate,
+  MentorshipTermDateErrors,
+} from '../interfaces/mentorship.interface';
+import type {
+  MentorshipProgramDetailTabDefinition,
+  MentorshipProgramMentor,
+  MentorshipProgramStatus,
+  MentorshipProgramTermRow,
+  MentorshipUpstreamReasonMessage,
+} from '../interfaces/mentorship-admin.interface';
+import type {
+  MentorshipMentorProfileDetails,
+  MentorshipMentorProfileFieldErrors,
+  MentorshipMentorProfileUpdateRequest,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
   MentorshipMentorProgramTabCounts,
   MentorshipMentorReviewTask,
   MentorshipMentorRegisterFieldErrors,
+  MentorshipMentorTaskReviewDecision,
   MentorshipMentorRegisterForm,
-  MentorshipNoteDisplay,
-  MentorshipProgram,
-  MentorshipProgramDetail,
-  MentorshipProgramLists,
-  MentorshipProgramMentee,
-  MentorshipProgramMentor,
-  MentorshipProgramTabCounts,
-  MentorshipProgramTerm,
-  MentorshipProgramTermRow,
-  MentorshipRowAction,
-  MentorshipTermDateErrors,
-} from '../interfaces/mentorship.interface';
+  MentorshipMentorRegisterRequest,
+} from '../interfaces/mentorship-mentor.interface';
+import type { Lens } from '../interfaces/lens.interface';
+import type { MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type {
   MentorshipMenteeApplication,
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
+  MentorshipMenteeApplyBlockedReason,
+  MentorshipMenteeApplyBlockedState,
   MentorshipMenteeApplicationView,
   MentorshipMenteeDemographicGroupName,
   MentorshipMenteeDemographics,
@@ -110,14 +154,14 @@ import type {
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeRegisterRequest,
-  MentorshipMenteeRegisterSubmitFailure,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTaskStatusOptionsState,
   MentorshipMenteeTaskView,
   MentorshipMenteeUpdatableTaskStatus,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
-import { escapeHtml, stripHtml } from './html-utils';
+import { isMailtoSafeEmail } from './email.utils';
+import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
 const MENTORSHIP_ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -134,6 +178,33 @@ function isBlank(value: string): boolean {
  */
 export function toMentorshipUtcInstant(value: string): string {
   return MENTORSHIP_ISO_DATE.test(value) ? `${value}T00:00:00Z` : value;
+}
+
+/**
+ * A date-only value (`YYYY-MM-DD`) as the last millisecond of its UTC day, the instant a term's application window closes,
+ * so applications stay open through the whole end date. Milliseconds are the finest precision `Date` reads. Any other
+ * value comes back unchanged.
+ */
+export function toMentorshipUtcEndOfDayInstant(value: string): string {
+  return MENTORSHIP_ISO_DATE.test(value) ? `${value}T23:59:59.999Z` : value;
+}
+
+/**
+ * The instant (ms) a task closes: the end of its due date's UTC day, so a task due `2026-09-30` closes at
+ * `2026-10-01T00:00:00Z`. Takes a date-only value or an ISO instant (only its UTC calendar day counts);
+ * a missing or unparseable due date never closes, so it returns `null`.
+ */
+export function mentorshipTaskDueCutoffMs(dueDate: string | null | undefined): number | null {
+  if (!dueDate) return null;
+  const due = new Date(toMentorshipUtcInstant(dueDate));
+  if (Number.isNaN(due.getTime())) return null;
+  return Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate() + 1);
+}
+
+/** Whether a task's due date has passed at `nowMs`, per `mentorshipTaskDueCutoffMs`; a task with no usable due date is never past due. */
+export function isMentorshipTaskPastDue(dueDate: string | null | undefined, nowMs: number): boolean {
+  const cutoff = mentorshipTaskDueCutoffMs(dueDate);
+  return cutoff !== null && nowMs >= cutoff;
 }
 
 /** Exact `YYYY-MM-DD` that exists on the calendar (rejects `2026-02-31` and `9999-z`). */
@@ -157,9 +228,70 @@ export function isMentorshipHttpUrl(value: string): boolean {
   return normalizeToUrl(value.trim()) !== null;
 }
 
+/**
+ * The mentorship site's `page` listing at `base`, or one entry's public page when `id` is given.
+ * A trailing `/` on `base` is dropped, so the join never doubles it.
+ */
+export function buildMentorshipPublicUrl(base: string, page: MentorshipPublicPage, id?: string): string {
+  // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
+  let end = base.length;
+  while (end > 0 && base[end - 1] === '/') end--;
+  const listing = `${base.slice(0, end)}/${page}`;
+  return id ? `${listing}/${encodeURIComponent(id)}` : listing;
+}
+
+/** The mentorship site's program listing at `base`, or one program's page when `programId` is given. */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  return buildMentorshipPublicUrl(base, 'programs', programId);
+}
+
+/**
+ * Where a lens keeps its admin program list, program pages and wizard: the Project or Foundation lens's Mentorship Programs
+ * (lfx-mentorship#398), or the Me lens's Admin for every other lens.
+ */
+export function getMentorshipAdminBasePath(lens: Lens | undefined): string {
+  if (lens === 'project') return MENTORSHIP_PROJECT_PROGRAMS_PATH;
+  if (lens === 'foundation') return MENTORSHIP_FOUNDATION_PROGRAMS_PATH;
+  return MENTORSHIP_ADMIN_PATH;
+}
+
+/**
+ * The `?project=` a lens's Mentorship Programs navigation carries, so every list, program and wizard URL names its project
+ * or foundation (lfx-mentorship#398). Set from the lens context rather than kept from the current URL: an in-place project
+ * switch rewrites `?project=` with `Location.replaceState`, so the router's copy is stale. `{}` on the Me lens, or before
+ * the lens resolves its project.
+ */
+export function getMentorshipLensQueryParams(lens: Lens | undefined, slug: string | undefined): Record<string, string> {
+  return (lens === 'project' || lens === 'foundation') && slug ? { project: slug } : {};
+}
+
+/** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
+export function getMentorshipProgramDetailTabs(status: MentorshipProgramStatus): readonly MentorshipProgramDetailTabDefinition[] {
+  return status === 'pending-review' ? MENTORSHIP_PROGRAM_DETAIL_TABS.filter((tab) => tab.value === 'terms') : MENTORSHIP_PROGRAM_DETAIL_TABS;
+}
+
 export function isMentorshipLogoFileName(fileName: string): boolean {
   const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
   return (MENTORSHIP_ENROLL_LOGO_EXTENSIONS as readonly string[]).includes(ext);
+}
+
+/**
+ * The message for a logo the wizard, the partial-save banner or the program card refuses to send, or `''` when the file is fine.
+ * The upload sends `type` as its Content-Type, so a file whose type is empty or not on the route's list is refused here too.
+ */
+export function getMentorshipEnrollLogoError(file: { name: string; size: number; type: string }): string {
+  if (!isMentorshipLogoFileName(file.name) || !(MENTORSHIP_ENROLL_LOGO_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return MENTORSHIP_ENROLL_LOGO_TYPE_ERROR;
+  }
+  if (file.size === 0) return MENTORSHIP_ENROLL_LOGO_EMPTY;
+  if (file.size > MENTORSHIP_ENROLL_LOGO_MAX_BYTES) return MENTORSHIP_ENROLL_LOGO_TOO_LARGE;
+  return '';
+}
+
+/** Upstream create refuses a single-day application window. The window may run into the term; the shared rules keep it within the end month. */
+function getMentorshipEnrollTermWindowError(term: Pick<MentorshipProgramTerm, 'applicationStartDate' | 'applicationEndDate'>): string {
+  if (term.applicationEndDate <= term.applicationStartDate) return 'Application end date must be after the application start date.';
+  return '';
 }
 
 export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
@@ -167,6 +299,209 @@ export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
   if (!parsed) return isoMonthStart;
   const last = new Date(Number(parsed.year), Number(parsed.month), 0);
   return toMentorshipDateOnly(last);
+}
+
+/**
+ * The wizard form as the upstream create body. Technologies go to `industry` as one `', '`-joined string and never
+ * into `skills`; terms and prerequisites carry no id (upstream generates its own). The caller sends this only once the
+ * form says the terms are accepted, so `termsAccepted` is always `true`.
+ */
+export function toMentorshipEnrollCreateRequest(form: MentorshipEnrollValidationInput, project: MentorshipLfProject): MentorshipEnrollCreateRequest {
+  return {
+    ...toMentorshipEnrollProgramFields(form, project),
+    terms: form.terms.map((term) => toMentorshipEnrollRequestTerm(term)),
+    termsAccepted: true,
+  };
+}
+
+/**
+ * The wizard form as the edit wizard's update body: the program fields as create sends them, and the open terms as the program's
+ * full set. A term in `saved` keeps its id, so upstream changes that term; while its dates are as loaded it sends the stored dates,
+ * not the month-start ones the wizard shows, so editing anything else never moves them. A term the admin added goes without an id
+ * and is created, and a saved term left out is deleted. With no open terms, `terms` is left out and upstream keeps them as they are.
+ */
+export function toMentorshipEnrollUpdateRequest(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject,
+  saved: ReadonlyMap<string, MentorshipEnrollSavedTerm>
+): MentorshipEnrollUpdateRequest {
+  const request: MentorshipEnrollUpdateRequest = toMentorshipEnrollProgramFields(form, project);
+  if (form.terms.length) {
+    request.terms = form.terms.map((term) => {
+      const savedTerm = saved.get(term.id);
+      if (!savedTerm) return toMentorshipEnrollRequestTerm(term);
+      const datesUnchanged =
+        savedTerm.term.startDate === term.startDate &&
+        savedTerm.term.endDate === term.endDate &&
+        savedTerm.term.applicationStartDate === term.applicationStartDate &&
+        savedTerm.term.applicationEndDate === term.applicationEndDate;
+      return { id: term.id, ...(datesUnchanged ? { name: term.name.trim(), ...savedTerm.stored } : toMentorshipEnrollRequestTerm(term)) };
+    });
+  }
+  return request;
+}
+
+/** A saved open term as the edit wizard keeps it: the term as the form shows it, and the dates upstream holds. */
+export function toMentorshipEnrollSavedTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipEnrollSavedTerm {
+  return {
+    term: toMentorshipEnrollTerm(row),
+    stored: { startDate: row.startDate, endDate: row.endDate, applicationStartDate: row.applicationStartDate, applicationEndDate: row.applicationEndDate },
+  };
+}
+
+/** A wizard term as create and update send it: the name trimmed and the end month as its last day. */
+function toMentorshipEnrollRequestTerm(term: MentorshipProgramTerm): MentorshipEnrollCreateTerm {
+  return {
+    name: term.name.trim(),
+    startDate: term.startDate,
+    endDate: lastDayOfMentorshipMonth(term.endDate),
+    applicationStartDate: term.applicationStartDate,
+    applicationEndDate: term.applicationEndDate,
+  };
+}
+
+/** The program fields create and update share. A blank optional field is left out; the BFF sends an update's as `''`, which clears it. */
+function toMentorshipEnrollProgramFields(
+  form: MentorshipEnrollValidationInput,
+  project: MentorshipLfProject
+): Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> {
+  const request: Omit<MentorshipEnrollCreateRequest, 'terms' | 'termsAccepted'> = {
+    projectId: project.id,
+    projectSlug: project.slug,
+    projectName: project.name,
+    name: form.name.trim(),
+    description: form.description,
+    repositoryUrl: form.repositoryUrl.trim(),
+    skills: uniqueMentorshipList(form.skills),
+    prerequisites: form.prerequisites.map((item) => {
+      const description = item.description.trim();
+      const challengeUrl = item.challengeUrl?.trim();
+      return {
+        name: item.name.trim(),
+        description: challengeUrl ? `${description}\n\nChallenge: ${challengeUrl}` : description,
+        required: item.required,
+        requireFile: item.requireFile === true,
+        dueDate: item.dueDate || null,
+        custom: item.custom === true,
+      };
+    }),
+  };
+
+  if (project.logoUrl) request.projectLogoUrl = project.logoUrl;
+  const websiteUrl = form.websiteUrl.trim();
+  if (websiteUrl) request.websiteUrl = websiteUrl;
+  const codeOfConductUrl = form.codeOfConductUrl.trim();
+  if (codeOfConductUrl) request.codeOfConductUrl = codeOfConductUrl;
+  const ciiProjectId = form.ciiProjectId.trim();
+  if (ciiProjectId) request.ciiProjectId = ciiProjectId;
+  const industry = uniqueMentorshipList(form.technologies).join(', ');
+  if (industry) request.industry = industry;
+  return request;
+}
+
+/** A saved term as the wizard holds it. The term dialog picks months, so both term dates become the first of their month. */
+export function toMentorshipEnrollTerm(
+  row: Pick<MentorshipProgramTermRow, 'id' | 'name' | 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipProgramTerm {
+  const toMonthStart = (date: string): string => {
+    const parsed = parseMentorshipMonthYear(date);
+    return parsed ? mentorshipMonthYearToStartDate(parsed.month, parsed.year) : date;
+  };
+  return {
+    id: row.id,
+    name: row.name,
+    startDate: toMonthStart(row.startDate),
+    endDate: toMonthStart(row.endDate),
+    applicationStartDate: row.applicationStartDate,
+    applicationEndDate: row.applicationEndDate,
+  };
+}
+
+/** Whether `after` is the saved term `before` unchanged: the same name (trimmed) and dates. `false` when there is no saved term. */
+export function isSameMentorshipTerm(before: MentorshipProgramTerm | undefined, after: MentorshipProgramTerm): boolean {
+  return (
+    before !== undefined &&
+    before.name.trim() === after.name.trim() &&
+    before.startDate === after.startDate &&
+    before.endDate === after.endDate &&
+    before.applicationStartDate === after.applicationStartDate &&
+    before.applicationEndDate === after.applicationEndDate
+  );
+}
+
+/**
+ * The wizard form for an imported program. The template's details and prerequisites are copied; the terms are not, so the
+ * form starts with no terms, and the logo is not, so the admin picks one. `termsAccepted` starts over as `false`.
+ */
+export function formFromMentorshipEnrollImport(importProgramId: string, data: MentorshipEnrollImport): MentorshipEnrollForm {
+  return {
+    ...createEmptyMentorshipEnrollForm(),
+    importProgramId,
+    name: data.name,
+    projectId: data.project?.id ?? '',
+    technologies: [...data.technologies],
+    description: data.description,
+    repositoryUrl: data.repositoryUrl,
+    websiteUrl: data.websiteUrl,
+    ciiProjectId: data.ciiProjectId,
+    codeOfConductUrl: data.codeOfConductUrl,
+    skills: [...data.skills],
+    prerequisites: mergeImportedMentorshipPrerequisites(data.prerequisites),
+  };
+}
+
+/**
+ * The wizard form for editing a program: its details and prerequisites as import copies them, its open terms, and its current
+ * logo as the preview. The terms were accepted when the program was created, so `termsAccepted` is `true`.
+ */
+export function formFromMentorshipEnrollEdit(data: MentorshipEnrollImport, terms: MentorshipProgramTerm[]): MentorshipEnrollForm {
+  return {
+    ...formFromMentorshipEnrollImport('', data),
+    terms: terms.map((term) => ({ ...term })),
+    logoFileName: data.logoUrl ? MENTORSHIP_ENROLL_CURRENT_LOGO_LABEL : '',
+    logoPreviewUrl: data.logoUrl,
+    termsAccepted: true,
+  };
+}
+
+/**
+ * Lays the imported prerequisites over the standard list. An imported item selects a standard row only when it is that row
+ * as create sends it: the same name (ignoring case), description and file requirement, and no due date. The Coding
+ * Challenge is compared without the `Challenge:` line create appends to its description, and gets that URL back. A
+ * standard row's text, file requirement and due date cannot be edited, so any other imported item, a changed standard one
+ * included, becomes a custom prerequisite that keeps its stored values. The standard rows the program did not use stay in
+ * the list unselected.
+ */
+function mergeImportedMentorshipPrerequisites(imported: MentorshipPrerequisite[]): MentorshipPrerequisite[] {
+  const standard = createEmptyMentorshipEnrollForm().prerequisites;
+  const custom: MentorshipPrerequisite[] = [];
+  for (const item of imported) {
+    const name = item.name.trim().toLowerCase();
+    const index = standard.findIndex((entry) => !entry.required && entry.name.toLowerCase() === name);
+    const entry = index === -1 ? undefined : standard[index];
+    const challenge = entry?.challengeUrl !== undefined ? splitImportedChallenge(item.description) : { text: item.description.trim(), url: '' };
+    const isStandard = entry !== undefined && challenge.text === entry.description && Boolean(item.requireFile) === Boolean(entry.requireFile) && !item.dueDate;
+    if (!isStandard) {
+      custom.push({ ...item });
+      continue;
+    }
+    standard[index] = { ...entry, required: true, ...(entry.challengeUrl !== undefined ? { challengeUrl: challenge.url } : {}) };
+  }
+  return [...standard, ...custom];
+}
+
+/**
+ * Splits a Coding Challenge description into its text and the URL on its last line when that line is `Challenge: <url>`.
+ * Without such a line the URL is `''` and the text is the whole description. Only the last line is matched, so a long
+ * stored description never makes the pattern backtrack.
+ */
+function splitImportedChallenge(description: string): { text: string; url: string } {
+  const text = description.trim();
+  const newline = text.lastIndexOf('\n');
+  const url = newline === -1 ? '' : (/^[ \t]*Challenge:[ \t]*(\S+)$/.exec(text.slice(newline + 1))?.[1] ?? '');
+  return url ? { text: text.slice(0, newline).trimEnd(), url } : { text, url: '' };
 }
 
 /**
@@ -184,35 +519,19 @@ export function isMentorshipRichTextOverRawMax(html: string): boolean {
   return html.length > MENTORSHIP_RICH_TEXT_RAW_MAX;
 }
 
-/**
- * Plain text as the rich editor's HTML: `''` for blank input; otherwise CRLF and lone CR are
- * normalised, the text is trimmed, each non-blank line becomes an escaped `<p>` and a run of blank
- * lines becomes ONE `<p><br></p>`. That shape round-trips through `htmlClipboardToText`, which
- * turns `<br>` and `</p>` into newlines and collapses three or more to two. Escaping means a
- * caller can never store markup through this path.
- */
-export function mentorshipPlainTextToHtml(text: string | null | undefined): string {
-  const normalized = normalizeMentorshipPlainText(text);
-  if (!normalized) return '';
-
-  const paragraphs: string[] = [];
-  let previousBlank = false;
-  for (const line of normalized.split('\n')) {
-    const blank = isBlank(line);
-    if (blank && !previousBlank) paragraphs.push('<p><br></p>');
-    if (!blank) paragraphs.push(`<p>${escapeHtml(line)}</p>`);
-    previousBlank = blank;
-  }
-  return paragraphs.join('');
-}
-
-/** CRLF and lone CR to LF, then trimmed. Both sides of the introduction comparison go through it. */
-function normalizeMentorshipPlainText(text: string | null | undefined): string {
-  return (text ?? '').replace(/\r\n?/g, '\n').trim();
-}
-
 function cleanMentorshipSkillList(skills: readonly string[] | null | undefined): string[] {
   return (skills ?? []).map((skill) => skill.trim()).filter((skill) => skill !== '');
+}
+
+/** Trims each item and drops blanks and case-insensitive repeats, keeping the first spelling and the order. */
+function uniqueMentorshipList(items: readonly string[] | null | undefined): string[] {
+  const seen = new Set<string>();
+  return cleanMentorshipSkillList(items).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function isSameMentorshipList(a: readonly string[], b: readonly string[]): boolean {
@@ -220,23 +539,21 @@ function isSameMentorshipList(a: readonly string[], b: readonly string[]): boole
 }
 
 /**
- * The changed groups of a mentee profile edit, or `{}` when nothing changed. `introduction` is
- * omitted when it equals `seededIntroduction` once both go through the same CRLF and trim
- * normalisation, so an untouched introduction is never sent (and its stored rich text is never
- * rewritten as plain paragraphs). `skillSet` is present when the skills (trimmed, blanks dropped,
- * order-sensitive) or the trimmed notes differ from `seed`, and then always carries all three
- * fields, since upstream replaces the whole column. Never emits demographics or socioeconomics.
+ * The changed groups of a mentee profile edit, or `{}` when nothing changed. `introduction` is the
+ * editor's HTML and is sent when it differs from the stored `seed.aboutMe`: the editor writes to the
+ * form only when the mentee types, so an untouched introduction is never sent. `skillSet` is present
+ * when the skills (trimmed, blanks dropped, order-sensitive) or the trimmed notes differ from `seed`,
+ * and then always carries all three fields, since upstream replaces the whole column. `country` is sent
+ * when the picked code differs from `seed.country`. Never emits demographics or socioeconomics.
  */
 export function buildMentorshipMenteeProfileUpdate(
   seed: MentorshipMenteeProfileDetails,
-  seededIntroduction: string,
   value: MentorshipMenteeProfileFormValue
 ): MentorshipMenteeProfileUpdateRequest {
   const request: MentorshipMenteeProfileUpdateRequest = {};
 
-  const introduction = normalizeMentorshipPlainText(value.introduction);
-  if (introduction !== normalizeMentorshipPlainText(seededIntroduction)) {
-    request.introduction = introduction;
+  if (value.introduction !== (seed.aboutMe ?? '')) {
+    request.introduction = value.introduction;
   }
 
   const skillsHave = cleanMentorshipSkillList(value.skillsHave);
@@ -248,6 +565,10 @@ export function buildMentorshipMenteeProfileUpdate(
     additionalNotes !== (seed.additionalNotes ?? '').trim();
   if (skillsChanged) {
     request.skillSet = { skillsHave, skillsWant, ...(additionalNotes ? { additionalNotes } : {}) };
+  }
+
+  if (value.country !== (seed.country ?? '')) {
+    request.country = value.country;
   }
 
   return request;
@@ -325,12 +646,17 @@ export function mentorshipDateOnlyFloor(today = new Date()): string {
   return toMentorshipDateOnly(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1));
 }
 
+/**
+ * Date rules for one term. A saved term being edited (`original`) skips the not-before-today and current-month floors,
+ * since an admin may edit a term that is already under way; the ordering rules still apply.
+ */
 export function getMentorshipTermDateErrors(
   term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
   today = new Date(),
   original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
 ): MentorshipTermDateErrors {
   const errors: MentorshipTermDateErrors = {};
+  const checkFloors = original === undefined;
   const todayFloor = mentorshipDateOnlyFloor(today);
   const floorDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   const currentMonthStart = `${floorDate.getFullYear()}-${String(floorDate.getMonth() + 1).padStart(2, '0')}-01`;
@@ -341,7 +667,7 @@ export function getMentorshipTermDateErrors(
 
   if (!startValid) {
     errors.startDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.startDate < currentMonthStart && term.startDate !== original?.startDate) {
+  } else if (checkFloors && term.startDate < currentMonthStart) {
     errors.startDate = 'Start month should be greater than or equal to current month.';
   }
   if (!endValid) {
@@ -351,14 +677,14 @@ export function getMentorshipTermDateErrors(
   }
   if (!appStartValid) {
     errors.applicationStartDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationStartDate < todayFloor && term.applicationStartDate !== original?.applicationStartDate) {
+  } else if (checkFloors && term.applicationStartDate < todayFloor) {
     errors.applicationStartDate = 'Application start date cannot be before today.';
   } else if (startValid && term.applicationStartDate >= term.startDate) {
     errors.applicationStartDate = 'Application start date must be before the term start month.';
   }
   if (!appEndValid) {
     errors.applicationEndDate = MENTORSHIP_ISO_DATE_ERROR;
-  } else if (term.applicationEndDate < todayFloor && term.applicationEndDate !== original?.applicationEndDate) {
+  } else if (checkFloors && term.applicationEndDate < todayFloor) {
     errors.applicationEndDate = 'Application end date cannot be before today.';
   } else if (appStartValid && term.applicationEndDate < term.applicationStartDate) {
     errors.applicationEndDate = 'Application end date must be on or after the application start date.';
@@ -369,13 +695,40 @@ export function getMentorshipTermDateErrors(
 }
 
 /**
+ * Term date errors for the enroll wizard: the shared term rules, then the application windows upstream create refuses,
+ * reported on `applicationEndDate`. The term dialog and the setup step both use it, so a term the dialog saves passes Next.
+ * A saved term (`original`) whose dates are all unchanged has nothing to check, so renaming it never trips a rule its dates
+ * were saved under, such as the one-day application window the Terms tab allows.
+ */
+export function getMentorshipEnrollTermDateErrors(
+  term: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>,
+  today = new Date(),
+  original?: Pick<MentorshipProgramTerm, 'startDate' | 'endDate' | 'applicationStartDate' | 'applicationEndDate'>
+): MentorshipTermDateErrors {
+  const datesUnchanged =
+    original !== undefined &&
+    term.startDate === original.startDate &&
+    term.endDate === original.endDate &&
+    term.applicationStartDate === original.applicationStartDate &&
+    term.applicationEndDate === original.applicationEndDate;
+  if (datesUnchanged) return {};
+  const errors = getMentorshipTermDateErrors(term, today, original);
+  if (Object.keys(errors).length) return errors;
+  const windowError = getMentorshipEnrollTermWindowError(term);
+  return windowError ? { applicationEndDate: windowError } : errors;
+}
+
+/**
  * Field-keyed validation errors for a single enroll wizard step.
  *
- * **Note:** The `details` step validates `projectId` against `MOCK_MENTORSHIP_LF_PROJECTS`
- * — a temporary mock-backed allowlist that must be replaced with server-side validation
- * when the upstream mentorship-service project endpoint is wired up (see GH-2717).
+ * The `details` step only requires a selected project; the picker offers live query-service
+ * projects, so there is no client-side allowlist to check the id against.
  */
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
+export function getMentorshipEnrollStepErrors(
+  step: MentorshipEnrollStep,
+  form: MentorshipEnrollValidationInput,
+  edit?: MentorshipEnrollEditBaseline
+): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -385,13 +738,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     }
     const projectId = form.projectId.trim();
     if (!projectId) {
-      errors.projectId = 'Select a Linux Foundation project.';
-    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
-      // Temporary mock-backed allowlist — replace with server-side validation
-      // when the upstream mentorship-service project endpoint is wired up (GH-2717).
-      errors.projectId = 'Select a valid Linux Foundation project.';
+      errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
+    else if (isMentorshipSkillListOverLimit(form.technologies)) errors.technologies = MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE;
     const descriptionError = mentorshipRichTextError(
       form.description,
       MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -410,9 +760,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     if (form.codeOfConductUrl.trim() && !isMentorshipHttpUrl(form.codeOfConductUrl)) {
       errors.codeOfConductUrl = MENTORSHIP_INVALID_URL;
     }
-    if (isBlank(form.logoFileName)) {
+    // An edit keeps the program's logo unless a new file is picked, and a picked file is checked as it is picked.
+    if (!edit && isBlank(form.logoFileName)) {
       errors.logoFileName = 'Logo is required.';
-    } else if (!isMentorshipLogoFileName(form.logoFileName)) {
+    } else if (!edit && !isMentorshipLogoFileName(form.logoFileName)) {
       errors.logoFileName = 'Program logo is not the right file type.';
     }
     if (form.ciiProjectId.trim() && !isMentorshipCiiProjectId(form.ciiProjectId)) {
@@ -424,7 +775,9 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
-    if (!form.terms.length) {
+    else if (isMentorshipSkillListOverLimit(form.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
+    // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
+    if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
     } else if (form.terms.length > MENTORSHIP_MAX_OPEN_TERMS) {
       errors.terms = MENTORSHIP_MAX_OPEN_TERMS_MESSAGE;
@@ -436,7 +789,12 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
             ? `Term name must be ${MENTORSHIP_TERM_NAME_MAX} characters or fewer.`
             : MENTORSHIP_TERM_FIELDS_ERROR;
       } else {
-        const firstTermError = form.terms.map((term) => Object.values(getMentorshipTermDateErrors(term))[0]).find(Boolean);
+        // An edit sends nothing for a saved term the admin left as it was, so only new and changed terms are checked.
+        const savedTerms = new Map((edit?.terms ?? []).map((term) => [term.id, term]));
+        const firstTermError = form.terms
+          .filter((term) => !isSameMentorshipTerm(savedTerms.get(term.id), term))
+          .map((term) => Object.values(getMentorshipEnrollTermDateErrors(term, new Date(), savedTerms.get(term.id)))[0])
+          .find(Boolean);
         if (firstTermError) errors.terms = firstTermError;
       }
     }
@@ -445,11 +803,14 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
 
   const errors: MentorshipEnrollFieldErrors = {};
   const todayFloor = mentorshipDateOnlyFloor();
+  const savedPrerequisites = new Map((edit?.prerequisites ?? []).map((item) => [item.id, item]));
   const incompleteCustom = form.prerequisites.some((item) => {
     if (!item.custom) return false;
     if (isBlank(item.name) || item.name.trim().length > MENTORSHIP_CUSTOM_PREREQ_NAME_MAX) return true;
-    if (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? '')) return true;
-    if ((item.dueDate ?? '') < todayFloor) return true;
+    // A due date the program already had, even none or a past one, stays valid while it is left unchanged.
+    const keepsSavedDueDate = savedPrerequisites.has(item.id) && (savedPrerequisites.get(item.id)?.dueDate ?? '') === (item.dueDate ?? '');
+    if (!keepsSavedDueDate && (isBlank(item.dueDate ?? '') || !isMentorshipIsoDate(item.dueDate ?? ''))) return true;
+    if (!keepsSavedDueDate && (item.dueDate ?? '') < todayFloor) return true;
     return isBlank(item.description) || item.description.trim().length > MENTORSHIP_CUSTOM_PREREQ_DESCRIPTION_MAX;
   });
   const coding = form.prerequisites.find((item) => item.id === 'prereq-coding');
@@ -474,35 +835,94 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
   return errors;
 }
 
-export function isMentorshipResumeFileName(fileName: string): boolean {
-  const ext = fileName.trim().split('.').pop()?.toLowerCase() ?? '';
-  return (MENTORSHIP_MENTOR_RESUME_EXTENSIONS as readonly string[]).includes(ext);
-}
-
 /**
- * Validates the Become a Mentor form.
+ * Validates the Become a Mentor form, and the `POST /api/mentorship/mentor/profile` body the BFF
+ * receives, so the two are held to one rule set.
  *
- * Two things a mentor supplies are deliberately unvalidated. Program requests are
- * optional: a mentor may register a profile now and apply to programs later, so the
- * request list is not checked here and does not reach this function at all. The resume
- * is optional too, and its picker rejects a bad type or an oversized file at selection
- * time rather than letting either reach submit.
+ * Program requests are deliberately unvalidated. They are optional: a mentor may register
+ * a profile now and apply to programs later, so the request list is not checked here and
+ * does not reach this function at all.
  */
-export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
-  const errors: MentorshipMentorRegisterFieldErrors = {};
-
-  const introductionError = mentorshipRichTextError(
-    form.introduction,
-    MENTORSHIP_MENTOR_INTRODUCTION_MAX,
-    'Introduction is required.',
-    `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
-  );
-  if (introductionError) errors.introduction = introductionError;
-  if (!form.skills.length) errors.skills = 'Add at least one skill.';
+export function getMentorshipMentorRegisterErrors(
+  form: Pick<MentorshipMentorRegisterForm, 'introduction' | 'skills' | 'complianceAccepted' | 'termsAccepted'>
+): MentorshipMentorRegisterFieldErrors {
+  const errors: MentorshipMentorRegisterFieldErrors = getMentorshipMentorProfileErrors({ introduction: form.introduction, skills: form.skills });
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
   return errors;
+}
+
+/**
+ * The introduction and skills rules a mentor profile is held to, on register and on edit, in the browser
+ * and in the BFF. Only the fields present are checked, so an edit that leaves one out is not refused for
+ * what is already stored. Skills are free-form, held only to `MENTORSHIP_SKILLS_MAX_ITEMS` and
+ * `MENTORSHIP_SKILL_MAX_LENGTH`.
+ */
+export function getMentorshipMentorProfileErrors(input: MentorshipMentorProfileUpdateRequest): MentorshipMentorProfileFieldErrors {
+  const errors: MentorshipMentorProfileFieldErrors = {};
+
+  if (input.introduction !== undefined) {
+    const introductionError = mentorshipRichTextError(
+      input.introduction,
+      MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+      'Introduction is required.',
+      `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
+    );
+    if (introductionError) errors.introduction = introductionError;
+  }
+  if (input.skills !== undefined) {
+    if (!input.skills.length) errors.skills = 'Add at least one skill.';
+    else if (isMentorshipSkillListOverLimit(input.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
+  }
+
+  return errors;
+}
+
+/**
+ * The changed fields of a mentor profile edit, or `{}` when nothing changed. `introduction` is the
+ * editor's HTML and is sent when it differs from the stored one: the editor writes to the form only
+ * when the mentor types, so an untouched introduction is never sent. `skills` is sent when the list
+ * (trimmed, blanks dropped, order-sensitive) differs from `seed`, and then whole, since upstream
+ * replaces the list.
+ */
+export function buildMentorshipMentorProfileUpdate(
+  seed: MentorshipMentorProfileDetails,
+  value: { introduction: string; skills: readonly string[] }
+): MentorshipMentorProfileUpdateRequest {
+  const request: MentorshipMentorProfileUpdateRequest = {};
+
+  if (value.introduction !== (seed.aboutMe ?? '')) {
+    request.introduction = value.introduction;
+  }
+
+  const skills = cleanMentorshipSkillList(value.skills);
+  if (!isSameMentorshipList(skills, cleanMentorshipSkillList(seed.skills))) {
+    request.skills = skills;
+  }
+
+  return request;
+}
+
+/** True when no field of the mentor profile update is present, so there is nothing to send. */
+export function isMentorshipMentorProfileUpdateEmpty(request: MentorshipMentorProfileUpdateRequest): boolean {
+  return MENTORSHIP_MENTOR_PROFILE_UPDATE_KEYS.every((key) => request[key] === undefined);
+}
+
+/**
+ * Builds the `POST /api/mentorship/mentor/profile` body from the register form.
+ */
+export function buildMentorshipMentorRegisterRequest(
+  form: MentorshipMentorRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMentorRegisterRequest {
+  return {
+    introduction: form.introduction,
+    skills: [...form.skills],
+    complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
+    termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
+  };
 }
 
 function trimmedParam(params: { get(name: string): string | null }, name: string): string {
@@ -519,6 +939,30 @@ export function mentorshipMenteeApplyIds(params: { get(name: string): string | n
   const programTermId = trimmedParam(params, 'programTermId');
   if (!programId || !programTermId) return null;
   return { programId, programTermId };
+}
+
+/**
+ * The state the apply page shows for a refused application: the entry of
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` whose fragment the upstream message contains, or the
+ * status's own state when there is no message or none matches.
+ */
+export function mentorshipMenteeApplyBlockedState(
+  reason: MentorshipMenteeApplyBlockedReason,
+  upstreamMessage?: string | null
+): MentorshipMenteeApplyBlockedState {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  const match = message ? MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES.find((entry) => message.includes(entry.match)) : undefined;
+  return match?.state ?? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason];
+}
+
+/**
+ * The copy of the first entry whose `match` the mentorship service's error text contains, ignoring case, or
+ * `undefined` when there is no text or no entry matches.
+ */
+export function mentorshipUpstreamReasonMessage(entries: readonly MentorshipUpstreamReasonMessage[], upstreamMessage?: string | null): string | undefined {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  if (!message) return undefined;
+  return entries.find((entry) => message.includes(entry.match.toLowerCase()))?.message;
 }
 
 /**
@@ -548,7 +992,7 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
     skillsHave: [],
     skillsWant: [],
     additionalNotes: '',
-    resumeFileName: '',
+    country: '',
     ageConsent: false,
     age: '',
     raceEthnicityConsent: false,
@@ -575,42 +1019,57 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
  * `skillsWant` describes what they want to grow, and both sides feed the mentor-match.
  * The demographic fields (age, gender, income, education) are never checked here: each
  * is optional and gated behind its own consent checkbox, so declining one is a valid
- * answer rather than an error. The resume is optional too, and validated at selection
- * time by its picker, same as the mentor form.
+ * answer rather than an error.
  */
 export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
   return getMentorshipMenteeRegisterRequestErrors(form);
 }
 
 /**
- * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
- * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
- * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
- * so it gets its own message after the required check. Each list is held to the profile edit's
- * `MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS`: the picker offers more options than that, and a profile
- * registered over the cap could never be saved from the profile drawer again.
+ * The rule a mentee introduction (the rich editor's HTML) is held to, on register and in the profile
+ * edit drawer, in the browser and in the BFF. Returns the message, or `undefined` when valid.
  */
-export function getMentorshipMenteeRegisterRequestErrors(
-  input: Pick<
-    MentorshipMenteeRegisterRequest,
-    'introduction' | 'skillsHave' | 'skillsWant' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
-  >
-): MentorshipMenteeRegisterFieldErrors {
-  const errors: MentorshipMenteeRegisterFieldErrors = {};
-
-  const introductionError = mentorshipRichTextError(
-    input.introduction,
+export function getMentorshipMenteeIntroductionError(html: string): string | undefined {
+  return mentorshipRichTextError(
+    html,
     MENTORSHIP_MENTEE_INTRODUCTION_MAX,
     'Introduction is required.',
     `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`
   );
+}
+
+/**
+ * The rule a mentee country is held to, on register and in the profile edit drawer, in the browser and in
+ * the BFF: required, and one of the assigned ISO 3166-1 alpha-2 codes the dropdown offers. Returns the
+ * message, or `undefined` when valid.
+ */
+export function getMentorshipMenteeCountryError(country: string): string | undefined {
+  if (isBlank(country)) return MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE;
+  return MENTORSHIP_MENTEE_COUNTRY_CODES.has(country) ? undefined : MENTORSHIP_MENTEE_COUNTRY_UNKNOWN_MESSAGE;
+}
+
+/**
+ * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
+ * assigned in form order because the submit toast shows `Object.values(errors)[0]`. Skills are
+ * free-form, and each list is held to the same `MENTORSHIP_SKILLS_MAX_ITEMS` and
+ * `MENTORSHIP_SKILL_MAX_LENGTH` as the profile edit, so a registered profile stays editable.
+ */
+export function getMentorshipMenteeRegisterRequestErrors(
+  input: Pick<
+    MentorshipMenteeRegisterRequest,
+    'introduction' | 'skillsHave' | 'skillsWant' | 'country' | 'ageEligible' | 'workAuthorized' | 'noDuplicateProfile' | 'complianceAccepted' | 'termsAccepted'
+  >
+): MentorshipMenteeRegisterFieldErrors {
+  const errors: MentorshipMenteeRegisterFieldErrors = {};
+
+  const introductionError = getMentorshipMenteeIntroductionError(input.introduction);
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
-  else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (isMentorshipSkillListOverLimit(input.skillsHave)) errors.skillsHave = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
-  else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_MENTEE_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (isMentorshipSkillListOverLimit(input.skillsWant)) errors.skillsWant = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
+  const countryError = getMentorshipMenteeCountryError(input.country);
+  if (countryError) errors.country = countryError;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
   if (!isMentorshipTermsAccepted(input.workAuthorized)) errors.workAuthorized = 'Please confirm you are authorized to work in your country of residence.';
   if (!isMentorshipTermsAccepted(input.noDuplicateProfile)) errors.noDuplicateProfile = 'Please confirm you do not already have a mentee profile.';
@@ -620,17 +1079,28 @@ export function getMentorshipMenteeRegisterRequestErrors(
   return errors;
 }
 
-function hasUnknownMentorshipSkill(skills: string[]): boolean {
-  return skills.some((skill) => !MENTORSHIP_SKILL_OPTIONS.includes(skill));
+/** True when a skill or technology list has more than `MENTORSHIP_SKILLS_MAX_ITEMS` items or an item over `MENTORSHIP_SKILL_MAX_LENGTH`. */
+export function isMentorshipSkillListOverLimit(skills: readonly string[]): boolean {
+  return skills.length > MENTORSHIP_SKILLS_MAX_ITEMS || skills.some((skill) => skill.trim().length > MENTORSHIP_SKILL_MAX_LENGTH);
+}
+
+/** Catalog skills containing `query` (case-insensitive), leaving out any already in `chosen`. */
+export function mentorshipSkillSuggestions(query: string, chosen: readonly string[]): string[] {
+  const needle = query.trim().toLowerCase();
+  const selected = new Set(chosen.map((item) => item.toLowerCase()));
+  return MENTORSHIP_SKILL_OPTIONS.filter((skill) => !selected.has(skill.toLowerCase()) && skill.toLowerCase().includes(needle));
 }
 
 /**
  * Builds the `POST /api/mentorship/mentee/profile` body from the register form. A demographic answer is
  * sent only when its consent box is checked and it is not blank, so declining a question never leaves
- * a stale answer on the wire. `resumeFileName` is never read: resume upload is coming soon and no
- * file metadata is sent.
+ * a stale answer on the wire. `lfxProfile` is the profile card's name and avatar, sent only when it has
+ * at least one of them; the BFF adds the primary email itself.
  */
-export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterRequest {
+export function buildMentorshipMenteeRegisterRequest(
+  form: MentorshipMenteeRegisterForm,
+  lfxProfile?: MentorshipLfxProfileFields
+): MentorshipMenteeRegisterRequest {
   const demographics: MentorshipMenteeDemographics = {};
   for (const row of MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS) {
     const answer = form[row.answerControl];
@@ -644,45 +1114,54 @@ export function buildMentorshipMenteeRegisterRequest(form: MentorshipMenteeRegis
     skillsHave: [...form.skillsHave],
     skillsWant: [...form.skillsWant],
     additionalNotes: form.additionalNotes.trim(),
+    country: form.country,
     ...(Object.keys(demographics).length ? { demographics } : {}),
     ageEligible: isMentorshipTermsAccepted(form.ageEligible),
     workAuthorized: isMentorshipTermsAccepted(form.workAuthorized),
     noDuplicateProfile: isMentorshipTermsAccepted(form.noDuplicateProfile),
     complianceAccepted: isMentorshipTermsAccepted(form.complianceAccepted),
     termsAccepted: isMentorshipTermsAccepted(form.termsAccepted),
+    ...(lfxProfile && Object.keys(lfxProfile).length ? { lfxProfile: { ...lfxProfile } } : {}),
   };
 }
 
 /**
- * Classifies a failed `POST /api/mentorship/mentee/profile` by status and error code, never by message
- * text (upstream wording is not a contract). A 422 has two upstream causes (the eligibility flags, or
- * the user row missing), so it gets one fixed message and the checkboxes are not re-highlighted.
+ * Classifies a failed `POST /api/mentorship/{mentor,mentee}/profile` by status and error code, never by
+ * message text (upstream wording is not a contract). `options` carries what differs by role: the
+ * profile-exists code and copy, the fields a 400 may name, and the 422 copy. The mentee 422 has two
+ * upstream causes (the eligibility flags, or the user row missing), so it gets one fixed message and the
+ * checkboxes are not re-highlighted. The mentor form has no eligibility statements, so without
+ * `ineligibleMessage` a 422 falls through to the fallback.
  */
-export function mapMentorshipMenteeRegisterFailure(status: number, body: unknown): MentorshipMenteeRegisterSubmitFailure {
+export function mapMentorshipRegisterFailure<TFieldErrors extends object>(
+  status: number,
+  body: unknown,
+  options: MentorshipRegisterFailureOptions<TFieldErrors>
+): MentorshipRegisterSubmitFailure<TFieldErrors> {
   const record = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
   const code = record['code'];
 
-  if (status === 409 && code === MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE) {
-    return { kind: 'profile-exists', message: MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS };
+  if (status === 409 && code === options.profileExistsCode) {
+    return { kind: 'profile-exists', message: options.profileExistsMessage };
   }
-  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_MENTEE_REGISTER_ERROR_CONFLICT };
+  if (status === 409) return { kind: 'conflict', message: MENTORSHIP_REGISTER_ERROR_CONFLICT };
   if (status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE) {
-    return { kind: 'read-only', message: MENTORSHIP_MENTEE_REGISTER_ERROR_READ_ONLY };
+    return { kind: 'read-only', message: MENTORSHIP_REGISTER_ERROR_READ_ONLY };
   }
   if (status === 400 && Array.isArray(record['errors'])) {
-    const fieldErrors: MentorshipMenteeRegisterFieldErrors = {};
+    const fieldErrors: Partial<Record<keyof TFieldErrors, string>> = {};
     for (const entry of record['errors'] as unknown[]) {
       const item = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : {};
-      const field = MENTORSHIP_MENTEE_REGISTER_FIELD_KEYS.find((key) => key === item['field']);
+      const field = options.fieldKeys.find((key) => key === item['field']);
       const message = item['message'];
       if (field && typeof message === 'string' && message.trim() && !fieldErrors[field]) fieldErrors[field] = message;
     }
     const firstMessage = Object.values(fieldErrors)[0];
-    if (firstMessage) return { kind: 'field-errors', message: firstMessage, fieldErrors };
+    if (typeof firstMessage === 'string') return { kind: 'field-errors', message: firstMessage, fieldErrors: fieldErrors as TFieldErrors };
   }
-  if (status === 422) return { kind: 'ineligible', message: MENTORSHIP_MENTEE_REGISTER_ERROR_INELIGIBLE };
+  if (status === 422 && options.ineligibleMessage) return { kind: 'ineligible', message: options.ineligibleMessage };
 
-  return { kind: 'error', message: MENTORSHIP_MENTEE_REGISTER_ERROR_FALLBACK };
+  return { kind: 'error', message: MENTORSHIP_REGISTER_ERROR_FALLBACK };
 }
 
 /**
@@ -743,55 +1222,14 @@ export function toMentorshipDateOnly(value: Date): string {
   return toLocalDateOnlyString(value);
 }
 
-export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): MentorshipProgramTabCounts {
-  return {
-    mentees: lists.mentees.length,
-    applicants: lists.applicants.length,
-    mentors: lists.mentors.length,
-    terms: lists.terms.length,
-  };
-}
-
 /**
- * The mentees the program's first tab can show, which is a narrower set than
- * "everyone who is not an applicant".
- *
- * A live program lists the mentees actually taking part — `accepted`, plus the
- * `graduated` ones who finished early. A completed program lists how each
- * participation ended: `withdrawn`, `declined` or `graduated`. `accepted` is
- * deliberately absent from that second set, because closing a program requires
- * every accepted mentee to have been graduated or declined first, so an
- * `accepted` mentee on a completed program is a state the domain does not
- * produce rather than a row to render.
- *
- * A mentee who withdraws or is declined mid-program is therefore not shown while
- * the program is still running, and appears on Past Mentees once it completes.
- * That is intended: the live tab answers "who is taking part", not "who ever was".
+ * Submitted tasks waiting on the mentor: those of `accepted` mentees, so a graduated mentee's leftover
+ * submission is not counted, the same rule as the My Programs card's tasks to review.
  */
-export function mentorshipMenteesForProgram(mentees: MentorshipProgramMentee[], isCompleted: boolean): MentorshipProgramMentee[] {
-  const statuses = isCompleted ? MENTORSHIP_PAST_MENTEE_STATUSES : MENTORSHIP_CURRENT_MENTEE_STATUSES;
-  return mentees.filter((person) => statuses.includes(person.status));
-}
-
-/**
- * Scopes the mentee list to the tab that will render it *before* the counts are
- * taken, so the badge can never promise a row the tab does not show.
- */
-export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: MentorshipProgramLists): MentorshipProgramDetail {
-  const scoped: MentorshipProgramLists = {
-    ...lists,
-    mentees: mentorshipMenteesForProgram(lists.mentees, program.status === 'completed'),
-  };
-
-  return {
-    program,
-    tabCounts: buildMentorshipProgramTabCounts(scoped),
-    ...scoped,
-  };
-}
-
 export function mentorshipMentorSubmittedTaskCount(mentees: MentorshipProgramMentee[]): number {
-  return mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
+  return mentees
+    .filter((mentee) => mentee.status === 'accepted')
+    .reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
 }
 
 export function buildMentorshipMentorProgramTabCounts(lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
@@ -811,8 +1249,9 @@ export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProg
 }
 
 /**
- * Flatten current-mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting
- * Review) and `completed` (Approved). Newest `updatedOn` first.
+ * Flatten mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting Review) on
+ * `accepted` mentees, matching `mentorshipMentorSubmittedTaskCount`, and `completed`
+ * (Approved) on any mentee. Newest `updatedOn` first.
  */
 export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]): MentorshipMentorReviewTask[] {
   const rows: MentorshipMentorReviewTask[] = [];
@@ -820,8 +1259,10 @@ export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]):
   for (const mentee of mentees) {
     for (const task of mentee.tasks ?? []) {
       if (task.status !== 'submitted' && task.status !== 'completed') continue;
+      if (task.status === 'submitted' && mentee.status !== 'accepted') continue;
       rows.push({
         id: `${mentee.id}__${task.id}`,
+        taskId: task.id,
         menteeId: mentee.id,
         menteeName: mentee.name,
         menteeEmail: mentee.email,
@@ -875,12 +1316,13 @@ export function matchesMentorshipPersonSearch(person: MentorshipProgramMentee | 
 }
 
 /**
- * Whether every prerequisite task has been submitted. A person with no tasks assigned
- * has not completed anything, so an empty assignment is never "complete".
+ * Whether every prerequisite task has been submitted, judged as upstream's `tasks_submitted` status filter
+ * judges it: an application with no tasks has none outstanding, so it counts as complete. Without counts (a
+ * cross-program application carries none) nothing is known to be submitted.
  */
 function mentorshipPrerequisitesComplete(person: MentorshipApplicationProgress): boolean {
-  const total = person.tasksTotal ?? 0;
-  return total > 0 && (person.tasksSubmitted ?? 0) >= total;
+  if (person.tasksTotal === undefined) return false;
+  return (person.tasksSubmitted ?? 0) >= person.tasksTotal;
 }
 
 /**
@@ -897,54 +1339,9 @@ export function mentorshipApplicantDisplayStatus(application: MentorshipApplicat
 }
 
 /**
- * Term filter options for a program-detail tab, derived from the rows themselves — a
- * program's terms are whichever ones its people took part in.
- */
-export function mentorshipTermFilterOptions(people: { termName: string }[], allLabel: string): FilterOption[] {
-  const terms = [...new Set(people.map((person) => person.termName))];
-  return [{ label: allLabel, value: null }, ...terms.map((term) => ({ label: term, value: term }))];
-}
-
-/**
- * Row actions offered for an application's current status on the Applicants tab. Each
- * action moves the application to the same-named status, so the one it already holds is
- * never offered, and a mentee who has already graduated can no longer be accepted.
- */
-export function mentorshipApplicantActionsFor(status: MentorshipMenteeStatus): MentorshipApplicantAction[] {
-  return MENTORSHIP_APPLICANT_ACTIONS.filter((action) => {
-    if (action === status) return false;
-    return action !== 'accepted' || status !== 'graduated';
-  });
-}
-
-/**
- * Row actions offered for a mentee's current status on the Current Mentees tab.
- * Each action moves the mentee to the same-named status, so the status a mentee is
- * already in is never offered. `graduated` is terminal, and only an accepted mentee
- * can graduate.
- */
-export function mentorshipMenteeActionsFor(status: MentorshipMenteeStatus): MentorshipMenteeAction[] {
-  if (status === 'graduated') return [];
-  return MENTORSHIP_MENTEE_ACTIONS.filter((action) => {
-    if (action === status) return false;
-    return action !== 'graduated' || status === 'accepted';
-  });
-}
-
-/**
- * Task column label on the Current Mentees tab, e.g. `7 of 12 submitted`.
- * Returns null when no tasks are assigned so the cell can render a dash instead
- * of the misleading `0 of 0 submitted`.
- */
-export function formatMentorshipTaskProgress(submitted?: number, total?: number): string | null {
-  if (!total || total <= 0) return null;
-  return `${submitted ?? 0} of ${total} submitted`;
-}
-
-/**
  * Progress the mentor Mentees tab shows as a bar plus percent. Counts
- * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites
- * so the bar matches the default View Tasks panel (`hidePrerequisite`).
+ * `status === 'completed'` on the embedded `tasks` list, excluding prerequisites,
+ * which the View Tasks panel can hide with its `hidePrerequisite` toggle.
  * `tasksSubmitted` / `tasksTotal` are never used. Without measurable tasks,
  * `{ total: 0 }` means unavailable — callers should render a dash, not `0%`.
  */
@@ -967,6 +1364,16 @@ export function mentorshipApplicantHasTasks(mentee: Pick<MentorshipProgramMentee
   return (mentee.tasksTotal ?? 0) > 0;
 }
 
+/**
+ * Created and Updated copy for one applicant task row, e.g. "Aug 1, 2026". Upstream sends these as full timestamps,
+ * which the BFF keeps for the Tasks tab's relative time, so only the leading `YYYY-MM-DD` is read here (as the UTC day,
+ * like the due date). Anything without one is shown as it came.
+ */
+export function formatMentorshipTaskDateLabel(value: string): string {
+  const day = /^\d{4}-\d{2}-\d{2}/.exec(value)?.[0];
+  return day ? formatIsoDateLabel(day) : value;
+}
+
 /** Due-date copy for one applicant task row. */
 export function formatMentorshipApplicantTaskDueLabel(task: Pick<MentorshipApplicantTask, 'prerequisite' | 'dueOn'>): string {
   if (task.dueOn) return formatIsoDateLabel(task.dueOn);
@@ -986,17 +1393,31 @@ export function mentorshipApplicantTaskRows(tasks: ReadonlyArray<MentorshipAppli
     ...task,
     statusLabel: MENTORSHIP_APPLICANT_TASK_STATUS_LABELS[task.status],
     statusBadgeClass: MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES[task.status],
-    createdLabel: formatIsoDateLabel(task.createdOn),
+    createdLabel: formatMentorshipTaskDateLabel(task.createdOn),
     dueLabel: formatMentorshipApplicantTaskDueLabel(task),
-    updatedLabel: formatIsoDateLabel(task.updatedOn),
-    canView: !!task.hasSubmission,
+    updatedLabel: formatMentorshipTaskDateLabel(task.updatedOn),
     canDownload: !!task.hasSubmission,
   }));
 }
 
-/** Inclusive UTC date range for term / invitation columns, e.g. `Jul 1, 2026 – Aug 31, 2026`. */
-export function formatMentorshipDateRange(start: string, end: string): string {
-  return `${formatIsoDateLabel(start)} – ${formatIsoDateLabel(end)}`;
+/** 1 when the status counts toward upstream's `tasks_submitted` (Submitted or Completed), else 0, so a status change can shift that count by a difference. */
+export function mentorshipTaskSubmittedCount(status: MentorshipApplicantTaskStatus): number {
+  return status === 'submitted' || status === 'completed' ? 1 : 0;
+}
+
+/**
+ * The fields the task-edit dialog changed on a task, as the task update body: a field that still reads as it did is
+ * left out, so saving one change never re-sends (and so never re-validates upstream) the rest. A cleared due date goes as
+ * `''`, which upstream reads as clear it. Empty when nothing changed.
+ */
+export function buildMentorshipTaskUpdate(task: MentorshipApplicantTask, value: MentorshipTaskFormValue): MentorshipTaskUpdate {
+  const update: MentorshipTaskUpdate = {};
+  if (value.name !== task.name) update.name = value.name;
+  if (value.description !== task.description) update.description = value.description;
+  if ((value.dueOn ?? '') !== (task.dueOn ?? '')) update.dueDate = value.dueOn ?? '';
+  if (value.requiresFileSubmission !== !!task.requiresFileSubmission) update.requiresFileSubmission = value.requiresFileSubmission;
+  if (value.status !== undefined && value.status !== task.status) update.status = value.status;
+  return update;
 }
 
 /** Short month-year for the terms table, e.g. `Sep 2026`. */
@@ -1019,12 +1440,20 @@ export function mentorshipTermHasApplications(term: Pick<MentorshipProgramTermRo
 }
 
 /**
- * Resolves a row's action statuses into what its menu renders. Each tab has its own
- * action union and its own label and icon maps, so this takes them as arguments rather
- * than choosing; the shape it returns is what `lfx-mentorship-row-actions` consumes.
+ * Resolves a row's action keys into what its menu renders. It takes the label and icon
+ * maps as arguments so it serves any action union; the shape it returns is what
+ * `lfx-mentorship-row-actions` consumes, and `value` is the key the menu emits back.
  */
 export function mentorshipRowActions<T extends string>(actions: readonly T[], labels: Record<T, string>, icons: Record<T, string>): MentorshipRowAction[] {
-  return actions.map((action) => ({ label: labels[action], icon: icons[action] }));
+  return actions.map((action) => ({ value: action, label: labels[action], icon: icons[action] }));
+}
+
+/**
+ * The Contact Mentee `mailto:` link for a mentee's address, or null when the address is not safe
+ * to put in one, so a row with no usable address offers no Contact Mentee.
+ */
+export function mentorshipContactMenteeUrl(email: string | null | undefined): string | null {
+  return isMailtoSafeEmail(email) ? `mailto:${email}` : null;
 }
 
 /**
@@ -1108,42 +1537,73 @@ export function mentorshipMenteeTaskStatusFields(
 /**
  * Build a display-ready task row from the fields both mentee phases share, so the
  * template reads flat fields instead of recomputing presentation logic in bindings.
- * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
- * (file already uploaded).
+ * `submitFile` is `'required'` when the task needs a file and `hasFile` says whether one
+ * is stored. `nowMs` decides `pastDue`.
  */
-export function buildMentorshipMenteeTaskView(input: {
-  id: string;
-  title: string;
-  description: string;
-  status: MentorshipMenteeTaskStatus;
-  submitFile: string | null;
-  fileUrl?: string;
-  dueDate?: string;
-  submittedDate?: string;
-}): MentorshipMenteeTaskView {
+export function buildMentorshipMenteeTaskView(
+  input: {
+    id: string;
+    title: string;
+    description: string;
+    status: MentorshipMenteeTaskStatus;
+    submitFile: 'required' | null;
+    hasFile: boolean;
+    dueDate?: string;
+    submittedDate?: string;
+  },
+  nowMs: number = Date.now()
+): MentorshipMenteeTaskView {
   // Normalise once so an unrecognised runtime status resolves to a real option
   // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
   // it would read as `pending` in the dropdown yet render unstyled and vanish
   // under the Pending filter (which matches on the normalised status).
   const statusFields = mentorshipMenteeTaskStatusFields(input.status);
-  const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
-  // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
-  // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
-  // so View/Download render for the URL-on-submitFile shape too.
-  const submitFileUrl = input.submitFile && input.submitFile !== 'required' ? input.submitFile : null;
   return {
     id: input.id,
     title: input.title,
     description: input.description,
     ...statusFields,
-    hasUploadedFile,
-    needsUpload: input.submitFile === 'required' && !input.fileUrl,
-    // Raw stored file, not the `fileUrl` display fallback: upstream reads the stored `file` when a request sends none.
-    requiresFile: !!input.submitFile && !input.fileUrl,
-    fileUrl: input.fileUrl ?? submitFileUrl,
+    hasUploadedFile: input.hasFile,
+    requiresFile: input.submitFile === 'required' && !input.hasFile,
+    // Read from the stored status: the normalised one folds `complete` into `submitted`, whose file can still be replaced.
+    fileLocked: input.status === 'complete',
     dueDate: input.dueDate ?? null,
+    pastDue: isMentorshipTaskPastDue(input.dueDate, nowMs),
     submittedDate: input.submittedDate ?? null,
   };
+}
+
+/** Whether a task file's name ends in an extension the picker offers and the BFF accepts, in any case. */
+export function hasMentorshipTaskFileExtension(fileName: string): boolean {
+  const dot = fileName.lastIndexOf('.');
+  return dot !== -1 && MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS.includes(fileName.slice(dot).toLowerCase());
+}
+
+/**
+ * The type a downloaded task file is opened as in a browser tab, or null when browsers cannot show it (DOC, DOCX, or
+ * anything unknown). A specific response type decides; a missing or generic one leaves it to the file name's extension.
+ * Only the map's own keys match, so a type such as `constructor` cannot pick up an inherited value.
+ */
+export function mentorshipTaskFileViewType(contentType: string | null | undefined, fileName: string | null | undefined): string | null {
+  const viewTypeOf = (key: string): string | null => (Object.hasOwn(MENTORSHIP_TASK_FILE_VIEW_TYPES, key) ? MENTORSHIP_TASK_FILE_VIEW_TYPES[key] : null);
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
+  if (type && type !== MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE) return viewTypeOf(type);
+  const dot = fileName?.lastIndexOf('.') ?? -1;
+  if (!fileName || dot === -1) return null;
+  return viewTypeOf(fileName.slice(dot).toLowerCase());
+}
+
+/**
+ * A task file's name made safe to write into the multipart `Content-Disposition` the BFF sends upstream: path
+ * separators, quotes and control characters become `_`, and a run of dots becomes one, so the result passes
+ * `isSafeUploadFileName`. Upstream cleans the name further, to `[A-Za-z0-9._-]`, so nothing a mentee picked is refused here.
+ */
+export function sanitizeMentorshipTaskFileName(fileName: string): string {
+  // eslint-disable-next-line no-control-regex
+  return fileName
+    .replace(/[/\\"\x00-\x1f\x7f]/g, '_')
+    .replace(/\.{2,}/g, '.')
+    .trim();
 }
 
 /** Whether a value is a status a mentee may request (`in_progress` or `submitted`). Narrows for the controller and the row. */
@@ -1151,20 +1611,39 @@ export function isMentorshipMenteeUpdatableTaskStatus(value: unknown): value is 
   return MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES.includes(value as MentorshipMenteeUpdatableTaskStatus);
 }
 
+/** Whether a value is a review decision a mentor may send (`complete` or `incomplete`). Narrows for the controller. */
+export function isMentorshipMentorTaskReviewDecision(value: unknown): value is MentorshipMentorTaskReviewDecision {
+  return MENTORSHIP_MENTOR_TASK_REVIEW_DECISIONS.includes(value as MentorshipMentorTaskReviewDecision);
+}
+
 /**
- * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
- * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
- * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
- * disabled while the task requires a file that is not stored yet, since the BFF never sends `file`.
- * The hint explains a disabled forward move or a locked row; only the file-required hint shows on screen.
+ * Status dropdown state for one task row. A mentee can only move `pending → in_progress`,
+ * `in_progress → submitted` and `submitted → in_progress`, so the current option stays enabled, the
+ * legal moves are enabled and every other option is disabled. A complete task is locked, and so is a
+ * submitted one once it is past due, since reopening it could never be undone. `submitted` is also
+ * disabled while the task requires a file that is not uploaded yet, since upstream refuses that move,
+ * and once the task is past due, when a pending task can still be started. The hint explains a
+ * disabled forward move or a locked row; only the past-due and file-required hints show on screen,
+ * and past due wins over file required.
  */
 export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskView): MentorshipMenteeTaskStatusOptionsState {
   const status = normalizeMentorshipMenteeTaskStatus(task.status);
   const withDisabled = (isDisabled: (value: MentorshipMenteeTaskStatus) => boolean): MentorshipMenteeTaskStatusOptionsState['options'] =>
     MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS.map((option) => ({ ...option, disabled: isDisabled(option.value) }));
 
-  if (status === 'submitted') {
+  // `fileLocked` is set from the stored status, so it tells a reviewer-completed task from a submitted one.
+  if (task.fileLocked) {
     return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_LOCKED, hintVisible: false };
+  }
+  if (status === 'submitted') {
+    if (task.pastDue) {
+      return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE, hintVisible: false };
+    }
+    return { options: withDisabled((value) => value === 'pending'), locked: false, hint: null, hintVisible: false };
+  }
+  if (task.pastDue) {
+    const blocked = (value: MentorshipMenteeTaskStatus): boolean => value === 'submitted' || (status === 'in_progress' && value === 'pending');
+    return { options: withDisabled(blocked), locked: false, hint: MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE, hintVisible: true };
   }
   if (status === 'in_progress') {
     const fileBlocked = task.requiresFile;
@@ -1203,16 +1682,21 @@ export function mentorshipMenteeProgressTasks(app: MentorshipMenteeApplication):
   return (app.tasks ?? []).filter((task) => (task.category === 'prerequisite') === wantPrerequisite);
 }
 
-/** Build the card for a pending, accepted or graduated application with its display status. */
+/**
+ * Build the card for a pending, accepted or graduated application with its display status. Its task
+ * rows are ordered by name, A to Z; `nowMs` decides which of them are past due.
+ */
 export function buildMentorshipMenteeApplicationView(
   app: MentorshipMenteeApplication,
-  status: MentorshipMenteeApplicationStatus
+  status: MentorshipMenteeApplicationStatus,
+  nowMs: number = Date.now()
 ): MentorshipMenteeApplicationView {
   const tasks = mentorshipMenteeProgressTasks(app);
   const submittedCount = countSubmittedMentorshipMenteeTasks(tasks);
   const totalCount = tasks.length;
   return {
     id: app.id,
+    programId: app.programId,
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
@@ -1226,40 +1710,46 @@ export function buildMentorshipMenteeApplicationView(
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
-    decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
-    tasks: tasks.map((task) =>
-      buildMentorshipMenteeTaskView({
-        id: task.id,
-        title: task.name,
-        description: task.description,
-        status: task.status,
-        submitFile: task.submitFile,
-        fileUrl: task.fileUrl,
-        dueDate: task.dueDate,
-        submittedDate: task.submittedOn,
-      })
-    ),
+    tasks: tasks
+      .map((task) =>
+        buildMentorshipMenteeTaskView(
+          {
+            id: task.id,
+            title: task.name,
+            description: task.description,
+            status: task.status,
+            submitFile: task.submitFile,
+            hasFile: task.hasFile,
+            dueDate: task.dueDate,
+            submittedDate: task.submittedOn,
+          },
+          nowMs
+        )
+      )
+      // Pinned to 'en' so the server render and the browser sort titles the same way.
+      .sort((a, b) => a.title.localeCompare(b.title, 'en', { sensitivity: 'base', numeric: true })),
   };
 }
 
 /**
  * Derive the mentee overview from the mentee's applications. Pending, accepted and graduated
  * applications become cards ordered active → graduated → awaiting review → in progress; declined, withdrawn
- * and held applications become Past Applications rows, newest first.
+ * and held applications become Past Applications rows, newest first. `nowMs` decides which tasks are past due.
  */
-export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[]): MentorshipMenteeOverview {
+export function buildMentorshipMenteeOverview(applications: readonly MentorshipMenteeApplication[], nowMs: number = Date.now()): MentorshipMenteeOverview {
   const cards: MentorshipMenteeApplicationView[] = [];
   const past: MentorshipMenteePastApplication[] = [];
   for (const app of applications) {
     const status = mentorshipMenteeDisplayStatus(app);
     if (status) {
-      cards.push(buildMentorshipMenteeApplicationView(app, status));
+      cards.push(buildMentorshipMenteeApplicationView(app, status, nowMs));
       continue;
     }
     const outcome = MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS[app.upstreamStatus];
     if (outcome) {
       past.push({
         id: app.id,
+        programId: app.programId,
         programName: app.programName,
         projectName: app.projectName,
         termName: app.term.name,
@@ -1295,4 +1785,22 @@ function isoInstantMs(value: string): number {
 /** The latest of several ISO instants, returned as given. */
 function latestIsoInstant(values: readonly string[]): string {
   return values.reduce((latest, value) => (isoInstantMs(value) > isoInstantMs(latest) ? value : latest));
+}
+
+/** Whether a value has the shape of an upstream mentor invite token: two base64url parts joined by a dot. */
+export function isMentorshipMentorInviteToken(value: string): boolean {
+  return value.length <= MENTORSHIP_MENTOR_INVITE_TOKEN_MAX_LENGTH && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value);
+}
+
+/**
+ * Graduate confirmation warning from a row's task counts, so no task read is needed. Counts the tasks that are
+ * neither Submitted nor Completed; `undefined` when none are outstanding.
+ */
+export function buildMentorshipGraduateTaskWarning(tasksTotal: number, tasksSubmitted: number): string | undefined {
+  const count = Math.max(tasksTotal - tasksSubmitted, 0);
+  if (count === 0) {
+    return undefined;
+  }
+  const template = count === 1 ? MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE : MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE;
+  return template.replace('{count}', String(count));
 }

@@ -116,6 +116,30 @@ export interface OpenAIChatMessage {
 }
 
 /**
+ * Which sampling parameters a model's contract accepts on the wire.
+ * `temperature` sends `AI_REQUEST_CONFIG.TEMPERATURE` alone; `none` sends no sampling parameter.
+ */
+export type AiSamplingMode = 'temperature' | 'none';
+
+/**
+ * One row of `AI_SAMPLING_COMPATIBILITY` — the first row whose pattern matches a model name decides
+ * that model's sampling mode.
+ */
+export interface AiSamplingCompatibilityRule {
+  /** Matched against the full model name the proxy is sent */
+  pattern: RegExp;
+  /** Sampling parameters a matching model accepts */
+  mode: AiSamplingMode;
+  /** Which models the row covers, for the startup log and for readers of the table */
+  family: string;
+}
+
+/**
+ * The sampling fields of a chat request, as the guard emits them — spread into the request body
+ */
+export type AiSamplingParams = Pick<OpenAIChatRequest, 'temperature' | 'top_p'>;
+
+/**
  * OpenAI chat completion request interface
  */
 export interface OpenAIChatRequest {
@@ -125,8 +149,10 @@ export interface OpenAIChatRequest {
   messages: OpenAIChatMessage[];
   /** Maximum tokens to generate */
   max_tokens?: number;
-  /** Sampling temperature for response variability */
+  /** Sampling temperature for response variability — present only when the model's sampling contract accepts it */
   temperature?: number;
+  /** Nucleus sampling cutoff — never sent today; typed so the sampling guard can name it */
+  top_p?: number;
   /** Response format specification */
   response_format?: {
     /** Type of response format */

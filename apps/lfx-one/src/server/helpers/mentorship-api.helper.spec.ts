@@ -16,7 +16,8 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const { MicroserviceError } = await import('../errors');
-const { proxyMentorshipRequest } = await import('./mentorship-api.helper');
+const { logger } = await import('../services/logger.service');
+const { listAllMentorshipPages, proxyMentorshipRequest, readMentorshipPages } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
@@ -53,6 +54,49 @@ describe('proxyMentorshipRequest', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(3);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
     expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'PATCH', { limit: 5 }, body);
+  });
+
+  it('sends the custom headers on the request and its retry, not on the PUT /me provisioning call', async () => {
+    proxyRequest.mockRejectedValueOnce(upstream401('local user is not provisioned')).mockResolvedValueOnce({}).mockResolvedValueOnce({ ok: true });
+    const bytes = Buffer.from('png');
+    const headers = { 'Content-Type': 'image/png' };
+
+    await expect(proxyMentorshipRequest(proxy, req, path, 'POST', undefined, bytes, path, headers)).resolves.toEqual({ ok: true });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'POST', undefined, bytes, headers);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'POST', undefined, bytes, headers);
+  });
+
+  it('applies the request options to the request and its retry, not to the PUT /me provisioning call', async () => {
+    proxyRequest.mockRejectedValueOnce(upstream401('local user is not provisioned')).mockResolvedValueOnce({}).mockResolvedValueOnce({ ok: true });
+    const form = { file: 'bytes' };
+    const options = { timeoutMs: 120_000 };
+
+    await expect(proxyMentorshipRequest(proxy, req, path, 'POST', undefined, form, undefined, undefined, options)).resolves.toEqual({ ok: true });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'POST', undefined, form, undefined, options);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest.mock.calls[1]).toHaveLength(6);
+    expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', path, 'POST', undefined, form, undefined, options);
+  });
+
+  it('sends both the custom headers and the request options when both are set', async () => {
+    proxyRequest.mockResolvedValueOnce({ ok: true });
+    const headers = { 'Content-Type': 'image/png' };
+    const options = { timeoutMs: 120_000 };
+
+    await proxyMentorshipRequest(proxy, req, path, 'POST', undefined, Buffer.from('png'), path, headers, options);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'POST', undefined, Buffer.from('png'), headers, options);
+  });
+
+  it('calls the proxy with its original six arguments when neither headers nor options are set', async () => {
+    proxyRequest.mockResolvedValueOnce({ ok: true });
+
+    await proxyMentorshipRequest(proxy, req, path, 'DELETE');
+
+    expect(proxyRequest.mock.calls[0]).toHaveLength(6);
   });
 
   it('does not provision an impersonated user, since impersonation is read-only', async () => {
@@ -94,5 +138,91 @@ describe('proxyMentorshipRequest', () => {
 
     await expect(proxyMentorshipRequest(proxy, req, path)).rejects.toBe(bootstrapError);
     expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('listAllMentorshipPages', () => {
+  let proxyRequest: ReturnType<typeof vi.fn>;
+  let proxy: Proxy;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequest = vi.fn();
+    proxy = { proxyRequest } as unknown as Proxy;
+  });
+
+  it('reads every page at the largest page size, keeping the query', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: `row-${index}` }));
+    proxyRequest
+      .mockResolvedValueOnce({ data: firstPage, meta: { total: 101, limit: 100, offset: 0 } })
+      .mockResolvedValueOnce({ data: [{ id: 'row-last' }], meta: { total: 101, limit: 100, offset: 100 } });
+
+    const rows = await listAllMentorshipPages<{ id: string }>(proxy, req, path, { role: 'mentee' });
+
+    expect(rows).toHaveLength(101);
+    expect(rows.at(-1)).toEqual({ id: 'row-last' });
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'GET', { role: 'mentee', limit: 100, offset: 0 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', path, 'GET', { role: 'mentee', limit: 100, offset: 100 }, undefined);
+  });
+
+  it('reads at a smaller page size when the route takes one', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({ id: `row-${index}` }));
+    proxyRequest
+      .mockResolvedValueOnce({ data: firstPage, meta: { total: 51, limit: 50, offset: 0 } })
+      .mockResolvedValueOnce({ data: [{ id: 'row-last' }], meta: { total: 51, limit: 50, offset: 50 } });
+
+    await expect(listAllMentorshipPages(proxy, req, path, {}, 50)).resolves.toHaveLength(51);
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', path, 'GET', { limit: 50, offset: 0 }, undefined);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', path, 'GET', { limit: 50, offset: 50 }, undefined);
+  });
+
+  it('stops on an empty page even when the total says there are more', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ data: [{ id: 'row-1' }], meta: { total: 5, limit: 100, offset: 0 } })
+      .mockResolvedValueOnce({ data: [], meta: { total: 5, limit: 100, offset: 1 } });
+
+    await expect(listAllMentorshipPages(proxy, req, path)).resolves.toEqual([{ id: 'row-1' }]);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops after one page when the page carries no total', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'row-1' }] });
+
+    await expect(listAllMentorshipPages(proxy, req, path)).resolves.toEqual([{ id: 'row-1' }]);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at the page cap and warns when upstream keeps returning rows', async () => {
+    proxyRequest.mockResolvedValue({ data: [{ id: 'row' }], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } });
+
+    await expect(listAllMentorshipPages(proxy, req, path)).resolves.toHaveLength(50);
+    expect(proxyRequest).toHaveBeenCalledTimes(50);
+    expect(logger.warning).toHaveBeenCalledWith(req, 'mentorship_list_all_pages', expect.any(String), { path, max_pages: 50, count: 50 });
+  });
+});
+
+describe('readMentorshipPages', () => {
+  let proxyRequest: ReturnType<typeof vi.fn>;
+  let proxy: Proxy;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequest = vi.fn();
+    proxy = { proxyRequest } as unknown as Proxy;
+  });
+
+  it('says the read is complete when it reaches the total', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [{ id: 'row-1' }], meta: { total: 1, limit: 100, offset: 0 } });
+
+    await expect(readMentorshipPages(proxy, req, path)).resolves.toEqual({ items: [{ id: 'row-1' }], truncated: false });
+  });
+
+  it('says the read is truncated when it stops at the page cap with rows still to come', async () => {
+    proxyRequest.mockResolvedValue({ data: [{ id: 'row' }], meta: { total: Number.MAX_SAFE_INTEGER, limit: 100, offset: 0 } });
+
+    const { items, truncated } = await readMentorshipPages(proxy, req, path);
+
+    expect(items).toHaveLength(50);
+    expect(truncated).toBe(true);
   });
 });

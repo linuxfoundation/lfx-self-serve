@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QUERY_SERVICE_MAX_PAGES } from '@lfx-one/shared/constants';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 
 const MAX_RETRIES = 2;
@@ -48,12 +50,18 @@ async function fetchWithRetry<T>(req: Request, fn: () => Promise<T>, context: Re
 
 export interface FetchAllQueryResourcesOptions {
   /**
-   * If true, throw when any page fetch fails instead of returning partial results.
-   * Callers that rely on complete result sets for correctness (filtering, set
-   * membership, counting) should set this to true and handle the thrown error.
-   * Defaults to false — partial results are returned on later-page failures.
+   * If true, throw when any page fetch fails, or when pagination stops early (the
+   * `QUERY_SERVICE_MAX_PAGES` cap or a repeated `page_token`), instead of returning
+   * partial results. Callers that rely on complete result sets for correctness
+   * (filtering, set membership, counting) should set this to true and handle the
+   * thrown error. Defaults to false — partial results are returned in those cases.
    */
   failOnPartial?: boolean;
+  /**
+   * Called when a later-page failure, the page cap or a repeated `page_token` returns partial
+   * rows; strict callers still throw instead.
+   */
+  onPartial?: () => void;
   /**
    * Stop paging as soon as the accumulated count exceeds this many results, without fetching
    * further pages. For callers that only need to know "is this over N" (e.g. enforcing a size
@@ -75,6 +83,11 @@ export interface FetchAllQueryResourcesOptions {
  * exceeded, bounding the number of upstream calls for callers that only need to
  * know "is this over N", not the true total.
  *
+ * Pagination is bounded (#4964): at most `QUERY_SERVICE_MAX_PAGES` pages are fetched, and a
+ * `page_token` that was already requested stops the drain instead of looping on the same page.
+ * Either stop follows the partial-result contract above — strict callers get a 502
+ * `QUERY_SERVICE_PAGINATION_LIMIT` error, others get the rows fetched so far and a warning log.
+ *
  * @param req - Express request object for log correlation
  * @param fetchPage - Callback that fetches a single page given an optional page_token
  * @param options - Behavior options (see FetchAllQueryResourcesOptions)
@@ -95,12 +108,37 @@ export async function fetchAllQueryResources<T>(
 ): Promise<T[]> {
   const { failOnPartial = false, maxResults } = options;
   const results: T[] = [];
+  const requestedTokens = new Set<string>();
 
   let response = await fetchWithRetry(req, () => fetchPage(), { page: 1 });
   results.push(...response.resources.map((resource) => resource.data));
 
   let page = 1;
   while (response.page_token && !(maxResults !== undefined && results.length > maxResults)) {
+    // A repeated token would re-request the same page forever, and an endless chain of fresh tokens
+    // would grow `results` until the heap is exhausted — stop on either (#4964).
+    let stopReason: 'repeated_page_token' | 'max_pages' | undefined;
+    if (requestedTokens.has(response.page_token)) {
+      stopReason = 'repeated_page_token';
+    } else if (page >= QUERY_SERVICE_MAX_PAGES) {
+      stopReason = 'max_pages';
+    }
+
+    if (stopReason) {
+      const context = { page, accumulated_count: results.length, reason: stopReason, max_pages: QUERY_SERVICE_MAX_PAGES };
+      if (failOnPartial) {
+        logger.warning(req, 'fetch_all_query_resources', 'Pagination stopped early with failOnPartial=true, throwing', context);
+        throw new MicroserviceError(`Query service pagination stopped: ${stopReason}`, 502, 'QUERY_SERVICE_PAGINATION_LIMIT', {
+          operation: 'fetch_all_query_resources',
+          service: 'query_service',
+        });
+      }
+      options.onPartial?.();
+      logger.warning(req, 'fetch_all_query_resources', 'Pagination stopped early, returning partial results', context);
+      break;
+    }
+
+    requestedTokens.add(response.page_token);
     page++;
     logger.debug(req, 'fetch_all_query_resources', 'Fetching next page', {
       page,
@@ -118,6 +156,7 @@ export async function fetchAllQueryResources<T>(
         });
         throw error;
       }
+      options.onPartial?.();
       logger.warning(req, 'fetch_all_query_resources', 'Pagination failed, returning partial results', {
         page,
         accumulated_count: results.length,

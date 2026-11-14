@@ -103,6 +103,23 @@ The CTE is performed by the **lfx-v2-auth-service** via NATS request-reply on su
 
 `exchangeToken()` classifies those lookup-shaped strings as HTTP 404 `TARGET_USER_NOT_FOUND` with user-facing copy. Other `success: false` errors stay 400 `CTE_EXCHANGE_FAILED` with a generic message. Raw upstream text is kept on `errorBody.upstreamError` for logs (`getLogContext`). `toResponse()` does not forward that key, so it never becomes `upstreamCode`. The impersonation dialog maps `TARGET_USER_NOT_FOUND` to the locate copy and never renders the upstream string.
 
+### User Search via NATS
+
+The impersonation picker finds people through **lfx-v2-auth-service** on `lfx.auth-service.user.search` (`NatsSubjects.USER_SEARCH`), which searches Auth0 users by username (LFID), email or name, prefix-matched. This reaches every user with an LFID, not only committee members.
+
+```typescript
+// NATS request payload
+{ subject_token: "<the admin's own access token>", query: "jane doe", limit: 10 }
+
+// NATS response (success): email is present only when the identity provider has verified it
+{ success: true, users: [{ user_id: "auth0|abc", username: "jdoe", name: "Jane Doe", email: "jane.doe@example.com" }] }
+
+// NATS response (failure)
+{ success: false, error: "user search is unavailable" }
+```
+
+The auth-service verifies `subject_token` itself (signature, issuer, expiry, audience and the `can_impersonate` claim) before it queries Auth0, and the search runs with the service's own credentials, so the token must be the **admin's own** and never a token for the user being impersonated. `searchUsers()` classifies the plain-text errors (`classifyImpersonationSearchFailure`) into 403 `IMPERSONATION_SEARCH_FORBIDDEN`, 400 `IMPERSONATION_SEARCH_INVALID`, 503 `IMPERSONATION_SEARCH_UNAVAILABLE` or 502 `IMPERSONATION_SEARCH_FAILED` with fixed public copy; the raw text stays on `errorBody.upstreamError` for logs. The query is free text that can hold a person's name or email, so it is never logged, and the route is a POST so the text travels in the body: a query string would be recorded by the request log (`reqSerializer` logs the URL), by the error handler's warn/error lines, by browser analytics (Datadog RUM resource URLs) and by traces. The service's own debug step logs only the query's length. The subject must be deployed in auth-service before the picker can list anyone beyond the recents. Until then the request fails and the dialog falls back to the recents alone.
+
 Profile enrichment (fetching the target user's name and picture) also uses NATS via the `lfx.auth-service.user_metadata.read` subject — no direct Auth0 Management API calls are made from the UI server.
 
 ## Implementation Layers
@@ -114,6 +131,7 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 - `ImpersonationUser` — target user identity (`sub`, `email`, `username`, `name?`, `picture?`)
 - `Impersonator` — real user identity (`sub`, `email`, `name`)
 - `ImpersonationStartRequest`, `ImpersonationStartResponse`, `ImpersonationStatusResponse`
+- `ImpersonationSuggestion` — a person the picker offers; `ImpersonationUserSearchResult` — one user in the auth-service search reply; `ImpersonationUserSearchResponse` — the `GET /api/impersonate/users` body
 
 **`packages/shared/src/interfaces/auth.interface.ts`** — `AuthContext` has additional fields:
 
@@ -127,7 +145,8 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 
 | Method                                                    | Purpose                                                          |
 | --------------------------------------------------------- | ---------------------------------------------------------------- |
-| `exchangeToken(req, targetUser)`                          | Performs CTE via NATS to `lfx-v2-auth-service`                   |
+| `exchangeToken(req, targetUser, subjectToken?)`           | Performs CTE via NATS to `lfx-v2-auth-service`                   |
+| `searchUsers(req, query, subjectToken, limit)`            | Searches users for the picker via NATS `user.search`             |
 | `fetchTargetUserProfile(req, userId)`                     | Fetches target user's name/picture via NATS `user_metadata.read` |
 | `startImpersonation(req, tokenResponse, claims, profile)` | Stores impersonation state in `appSession`                       |
 | `stopImpersonation(req)`                                  | Clears impersonation state from `appSession`                     |
@@ -138,11 +157,14 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 
 **`apps/lfx-one/src/server/routes/impersonation.route.ts`** — mounted at `/api/impersonate`
 
-| Endpoint                  | Method | Purpose                                                           |
-| ------------------------- | ------ | ----------------------------------------------------------------- |
-| `/api/impersonate`        | POST   | Start impersonation (body: `{ targetUser: "email-or-username" }`) |
-| `/api/impersonate/stop`   | POST   | Stop impersonation, clear session                                 |
-| `/api/impersonate/status` | GET    | Check current impersonation state                                 |
+| Endpoint                        | Method | Purpose                                                              |
+| ------------------------------- | ------ | -------------------------------------------------------------------- |
+| `/api/impersonate`              | POST   | Start impersonation (body: `{ targetUser: "email-or-username" }`)    |
+| `/api/impersonate/stop`         | POST   | Stop impersonation, clear session                                    |
+| `/api/impersonate/status`       | GET    | Check current impersonation state                                    |
+| `/api/impersonate/users/search` | POST   | Search users to impersonate (body: `{ q }`); needs `can_impersonate` |
+
+**Switching users:** `POST /api/impersonate` is also accepted while a session is already active, which replaces the target without a stop in between (the banner's **Switch User** button). The controller resolves the impersonator's own token with `resolveRealAccessToken` and uses it both for the `can_impersonate` check and as the CTE `subject_token`. `req.bearerToken` is the current target's token at that point, so it must not be the subject. If the real token cannot be resolved the request fails with 403, and the new session never chains one target's token into another. The impersonation dialog's single search field (start and switch alike) uses `POST /api/impersonate/users/search` with `{ q }`, which searches through auth-service (see User Search via NATS above) with the same real token (`resolveImpersonatorToken`, shared with the controller above) as the `subject_token`, never the target's, so choosing who to impersonate is not limited to what the current target can see and works the same before and during an impersonation. It requires the `can_impersonate` claim, is limited per admin (`impersonationSearchRateLimiter`, keyed on the real admin's `sub`, 60 per minute per pod, answering 429 `RATE_LIMITED`), refuses a missing, non-string or over-long `q` with a validation error, and drops the people belonging to the signed-in admin and to the current `impersonationUser`, matched by username or email, as well as anyone without a username; the dialog is its only caller, and every other search stays in the target's context. A switch naming the user already being impersonated is refused with 409 `ALREADY_IMPERSONATING_TARGET`, decided after the exchange by comparing `sub` claims.
 
 ### 4. Auth Middleware Override
 
@@ -164,26 +186,28 @@ This is the single choke point — every controller and service uses `req.bearer
 
 **`apps/lfx-one/src/server/utils/auth-helper.ts`**
 
-Many controllers and services read the user's email/username from `req.oidc.user` for server-side filtering (e.g., "get my meetings"). During impersonation, `req.oidc.user` is still the real user. Three helpers resolve the correct identity:
+Many controllers and services read the user's email/username from `req.oidc.user` for server-side filtering (e.g., "get my meetings"). During impersonation, `req.oidc.user` is still the real user. Four helpers resolve the correct identity:
 
-| Helper                      | Returns                                                            | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getEffectiveEmail(req)`    | Impersonated email or OIDC email (lowercased)                      | Email-keyed lookups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `getEffectiveUsername(req)` | Impersonated username or OIDC nickname/username/preferred_username | **Preferred** for identity references (LFID username, e.g. `jdoe`)                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `getEffectiveSub(req)`      | Impersonated sub or OIDC sub                                       | **`@deprecated`** for identity references generally — Auth0 sub (prefixed, e.g. <code>auth0&#124;jdoe</code>); a handful of illustrative (not exhaustive) callers remain, including incidental holdovers (badges' and CLA's auth-service lookups, mktg-agents' internal session-token binding) and a deliberate use for indefinitely-retained server log metadata (weekly-brief share/rating events) — see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub) for the full breakdown |
+| Helper                        | Returns                                                                                                                                                         | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getEffectiveEmail(req)`      | Impersonated email, else the OIDC email (lowercased) only when `email_verified` is `true`                                                                       | Email-keyed lookups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `getEffectiveUsername(req)`   | Impersonated username, else the OIDC LF username claim (Authelia local dev: `preferred_username`); null when absent — never `nickname`/`username`               | **Preferred** for identity references (LFID username, e.g. `jdoe`)                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `getEffectiveLfUsername(req)` | Impersonated username while impersonating, else the OIDC LF username claim (`https://sso.linuxfoundation.org/claims/username`); `''` when that value is missing | Comparisons against an EasyCLA CCLA's CLA Manager list, which EasyCLA matches on this value exactly. No `nickname` / `username` / `preferred_username` fallback, so a session without the claim matches no list                                                                                                                                                                                                                                                                                               |
+| `getEffectiveSub(req)`        | Impersonated sub or OIDC sub                                                                                                                                    | **`@deprecated`** for identity references generally — Auth0 sub (prefixed, e.g. <code>auth0&#124;jdoe</code>); a handful of illustrative (not exhaustive) callers remain, including incidental holdovers (badges' and CLA's auth-service lookups, mktg-agents' internal session-token binding) and a deliberate use for indefinitely-retained server log metadata (weekly-brief share/rating events) — see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub) for the full breakdown |
 
 For the full `username` vs `sub` distinction and the `sub` → `username` migration, see [`authentication.md`](./authentication.md#-identity-claims-username-vs-sub).
 
 These check `req.appSession['impersonationUser']` first, falling back to `req.oidc.user`. `isImpersonating(req)` (active-session predicate) rounds out the set. All controllers/services that filter by user identity use these helpers (meetings, events, committees, votes, surveys, mailing lists, documents, analytics, badges, persona detection).
 
-**Real (non-effective) identity — the deliberate exception (LFXV2-3093):** two helpers do the opposite of the `getEffective*` family — they resolve the real impersonator's own identity, ignoring impersonation state entirely:
+**Real (non-effective) identity — the deliberate exception (LFXV2-3093):** three helpers do the opposite of the `getEffective*` family — they resolve the real impersonator's own identity, ignoring impersonation state entirely:
 
-| Helper                        | Returns                                                                                | Notes                                                                                                                                                                                                                                                                                                                     |
-| ----------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getRealEmail(req)`           | The real user's OIDC email (lowercased), never the impersonation target's              | Use only where the actual actor — not the target — must be attributed for an externally-visible, hard-to-retract action                                                                                                                                                                                                   |
-| `resolveRealAccessToken(req)` | `Promise<string \| null>` — the real user's own bearer token, even while impersonating | Reads `req.oidc.accessToken` directly (never touched by the impersonation-token swap), refreshing it if expired since `extractBearerToken`'s own refresh step is skipped whenever impersonation is active; returns `null` (fail closed) if it can't be resolved — callers must never fall back to the impersonation token |
+| Helper                        | Returns                                                                                                                                 | Notes                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getRealEmail(req)`           | The real user's OIDC email (lowercased), never the impersonation target's; `null` unless `email_verified` is `true`                     | Use only where the actual actor — not the target — must be attributed, or must act as themselves (an externally-visible, hard-to-retract action, or joining a meeting)                                                                                                                                                    |
+| `getRealUsername(req)`        | The real user's OIDC LF username claim (Authelia local dev: `preferred_username`), never the impersonation target's; `null` when absent | Username counterpart of `getRealEmail`; `getEffectiveUsername`'s non-impersonating branch delegates to it                                                                                                                                                                                                                 |
+| `resolveRealAccessToken(req)` | `Promise<string \| null>` — the real user's own bearer token, even while impersonating                                                  | Reads `req.oidc.accessToken` directly (never touched by the impersonation-token swap), refreshing it if expired since `extractBearerToken`'s own refresh step is skipped whenever impersonation is active; returns `null` (fail closed) if it can't be resolved — callers must never fall back to the impersonation token |
 
-The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send — see Limitation 2 below.
+Current callers: `WeeklyBriefService.shareBrief()`'s mailing-list send (see Limitation 2 below); `ImpersonationController.startImpersonation`, which seeds the token exchange when switching users (see § 3); and the meeting join path — `PublicMeetingController.postMeetingJoinUrl` — where the viewer joins as themselves and the client-supplied email (the target's, since SSR overrides the user) is ignored while impersonating.
 
 **Profile & account settings — read-only during impersonation (LFXV2-2572):** The profile controller's **read** endpoints resolve identity through the effective helpers, so Profile pages and Account Settings show the _target_ user's data:
 
@@ -193,14 +217,38 @@ The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send
 - `GET /api/profile/developer` is **suppressed** (403) while impersonating — `req.bearerToken` is the target's live token and must never be surfaced to the impersonator.
 - The Linux.com **forward target** still can't be read during impersonation (needs the impersonator's Flow-C management token); the claimed alias itself is shown from the target's `user_emails.read`.
 
+**Events — visa letter download:** `GET /api/events/visa-letter` is open during impersonation. `VisaLetterService` passes the target's `req.bearerToken` to both the API gateway `/me` profile lookup and the `/users/{sfid}/visaletterrequests` fetch, so the PDF is the target's letter, never the impersonator's. Each impersonated download logs an INFO `generate_visa_letter` line with `impersonator_sub` / `target_sub` / `event_id`.
+
 Profile **writes** cannot act on the target (there is no CTE equivalent for the Auth0 Management API — they use the impersonator's Flow C management token), so they are blocked:
 
 - Every mutating / Flow-C-initiating profile route is guarded by `blockDuringImpersonation` (`middleware/impersonation-readonly.middleware.ts`), returning **403 `IMPERSONATION_READ_ONLY`**.
 - The same guard covers writes that upstream would apply to the target: `POST /api/mentorship/mentee/profile` creates or replaces a profile, so it is refused with the same 403 (see [Mentorship Mentee Registration](./mentorship-mentee-registration.md)).
 - It also covers `PATCH /api/mentorship/mentee/profile`, which upstream would apply to the target's mentee profile, so an impersonated edit is refused with the same 403.
+- It also covers `POST /api/mentorship/mentor/profile`, which would create the target's mentor profile, so it is refused with the same 403 (see [Mentorship Mentor BFF](./mentorship-mentor.md)).
+- It also covers `PATCH /api/mentorship/mentor/profile`, which upstream would apply to the target's mentor profile, so an impersonated edit is refused with the same 403 (see [Profile and Mentoring History](./mentorship-mentor.md#profile-and-mentoring-history)).
+- It also covers `POST /api/mentorship/mentor/requests`, which would ask to mentor a program as the target, so it is refused with the same 403 (see [Program requests](./mentorship-mentor.md#program-requests)).
+- It also covers `POST /api/mentorship/mentor/requests/:requestId/withdraw`, which would withdraw one of the target's mentor requests, so it is refused with the same 403.
+- It also covers `PUT /api/mentorship/mentor/applications/:applicationId/note`, which would save a reviewer note as the target, so it is refused with the same 403 (see [Reviewer notes](./mentorship-mentor.md#reviewer-notes)).
+- It also covers `POST /api/mentorship/tasks` and `PATCH /api/mentorship/tasks/:taskId`, which would create or edit tasks as the target, so they are refused with the same 403 (see [Mentorship Task Writes](./mentorship-tasks.md)).
+- It also covers `POST` and `DELETE /api/mentorship/mentee/tasks/:taskId/file`, which would change the target's submission file. `GET /api/mentorship/tasks/:taskId/file` is a read and stays open (see [Submission files](./mentorship-tasks.md#submission-files)).
+- It also covers `PATCH /api/mentorship/mentor/tasks/:taskId/review`, which would approve or send back a mentee's task as the target, so it is refused with the same 403 (see [Task reviews](./mentorship-mentor.md#task-reviews)).
+- The mentor reads stay open while impersonating: `GET /api/mentorship/mentor/profile`, `GET /api/mentorship/mentor/open-programs` and `GET /api/mentorship/mentor/requests` show the target's profile, picker and requests, and the app shows the server's 403 message when a write is refused.
 - Flow C has a root-level twin (`/passwordless/callback` in `server.ts`) that Auth0 actually redirects to; social-link's callback lives only at `/social/callback` in `server.ts`, with no twin in the `/api` router. Both are redirect-only handlers outside the `/api` error-handler mount, so a `next(err)` there would render as raw JSON in a top-level navigation; they enforce the same guarantee in-handler via `ProfileController.blockCallbackDuringImpersonation`, redirecting to `<returnTo>?error=impersonation_read_only` before any code exchange or token mint (#1936). For social-link, `<returnTo>` is the allowlisted page that started the connect rather than a fixed path, so the redirect lands wherever the Add-identity dialog was opened from.
 - `getIdentities` keeps its CDP read but skips the reconciliation **write** (the `cdpPostsQueued` create + auto-verify) via a `skipCdpMutations` flag (derived from `isImpersonating(req)` inside `reconcileIdentities`), so viewing a target's identities never mutates their CDP records.
 - The frontend renders the corresponding edit affordances **visible but disabled** (gated on `userService.impersonating()`) and shows a read-only banner on the profile shell and Account Settings — except **Edit profile** and **Public profile settings**, which stay enabled and open their drawers in read-only impersonation mode (form disabled client-side, mutations still blocked with 403 `IMPERSONATION_READ_ONLY`).
+
+### Voting ballots in Admin Mode (#4331)
+
+These restrictions apply only while actively impersonating another user, not to EDs or admins acting as themselves. Vote-management permissions and aggregate results visibility are unchanged.
+
+- `POST /api/votes/responses` and `PUT /api/votes/:uid/my-response` use `blockDuringImpersonation` and return **403 `IMPERSONATION_READ_ONLY`** before submission side effects. The PUT resolves the caller's own submitted ballot server-side; personalized-link updates go through `PUT /public/api/votes/link-responses`.
+- `GET /api/votes/:uid/my-ballot` permits read-only inspection only when the vote is explicitly named (`pseudo_anonymity === false`), subject to the existing invitation/access checks. Pseudo-anonymous or unknown privacy returns **403 `IMPERSONATION_BALLOT_PRIVATE`** before fetching ballot content; a failed metadata lookup never grants access.
+- During impersonation, `my-response` returns only invitation identifiers, participation status and removal state, never indexed answers, abstention, comments or submission times. Named content is available through the privacy-checked `my-ballot` endpoint.
+- My Votes Review, the vote page and the Pending Actions inline ballot explain the privacy/read-only restriction instead of showing an editable empty ballot. Normal self-voting, including seeing one's own pseudo-anonymous ballot, is unaffected.
+
+### Newsletter writes in Admin Mode
+
+Creating, updating, deleting, sending, scheduling and test-sending a newsletter, cancelling a schedule, and deleting an opt-out all use `blockDuringImpersonation`, and return **403 `IMPERSONATION_READ_ONLY`** (#4358).
 
 ### 6. SSR Handler
 
@@ -222,8 +270,10 @@ Note that persona detection (step 2) resolves the **target** user's persona even
 
 **Components:**
 
-- **Impersonation banner** (`main-layout.component.html`) — fixed yellow bar at the top showing who is being impersonated and a "Stop" button
-- **Impersonation trigger** (`lens-switcher.component.html`) — user-secret icon in the sidebar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
+- **Impersonation banner** (`shared/components/impersonation-banner/`, mounted in `main-layout` and `meeting-join`) — fixed yellow bar at the top showing who is being impersonated, with a "Switch User" button (reopens the impersonation dialog to swap targets in one request) and a "Stop Impersonating" button. The bar is a fixed 36px single line because the layouts offset content by exactly that height (`top-[36px]` / `pt-[36px]`, and `IMPERSONATION_BANNER_HEIGHT_PX` for computed offsets); on narrow screens lower-priority text hides, the email truncates and the button labels shorten instead of wrapping
+- **Loading state** — starting, switching and stopping each end in a page reload. `ImpersonationService.transition` is set when the request begins and cleared only if it fails, so the banner replaces "Viewing as …" with a spinner and "Switching user..." / "Stopping impersonation..." (buttons disabled) until the reloaded page renders the new identity. The impersonation dialog likewise stays open under its own overlay through the reload, which covers starting from the navbar, where there is no banner. Clearing the state on success would drop the loading UI for the whole reload.
+- **Impersonation trigger** (`navbar.component.html`) — user-secret icon in the navbar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
+- **Impersonation dialog** (`impersonation-dialog.component`) — one search field for a name, email or username. Matching recents (the browser's recent impersonations) lead the list, followed by people the search finds, in the order auth-service ranked them (an exact username or email first), from `ImpersonationService.searchUsers` through the route above; a result with no LFID `username` is left out because it cannot be exchanged. The search starts at three characters, since auth-service ignores shorter terms; below that only the recents are filtered. The typed text is sent as typed. A pick shows the person's name in the field (falling back to their username, then email) with their username and email listed beneath it for context, and submits the username; editing or clearing the name drops the pick. Start is never disabled except while a request is running: with no pick, the trimmed text read from the field is sent as entered for the exchange to resolve as an exact email or username, so an admin can reach someone the search does not list (for example an account with no LFID, or text too short to search), and an unknown user fails with the locate copy. Typed text matching the real admin's own username or email is refused in the dialog; while switching only the admin's email can be matched (the impersonator carries no username), and the current target is sent on for the server's 409. An empty field gets an inline message and no request. Enter starts only a pick, so a half-typed name is left to the suggestion list. `POST /api/impersonate` is unchanged — it still receives one string
 
 **Services:**
 
@@ -287,15 +337,25 @@ Impersonation start/stop events are logged at INFO level:
 impersonation_granted: Impersonation session started
   impersonator_sub: auth0|jsmith
   target_sub: auth0|jdoe
+  previous_target_sub: null
 
 impersonation_stopped: Impersonation session ended
+```
+
+A switch logs no `impersonation_stopped` for the replaced session. Its `impersonation_granted` carries `previous_target_sub` (the replaced target's `sub`, `null` for a fresh start), which is how the end of the earlier session is recorded:
+
+```text
+impersonation_granted: Impersonation session started
+  impersonator_sub: auth0|jsmith
+  target_sub: auth0|jother
+  previous_target_sub: auth0|jdoe
 ```
 
 ## Limitations
 
 1. **Profile viewing is impersonated but read-only (LFXV2-2572)** — Profile pages and Account Settings show the _target_ user's data during impersonation (including CDP work history/identities and the target's individual-enrollment + Linux.com add-on status, fetched with the target's bearer token). All profile writes are blocked (`403 IMPERSONATION_READ_ONLY`), the developer API token is suppressed, and CDP writes (including the `getIdentities` reconciliation create) are suppressed. Edit affordances render visible-but-disabled; editing would act on the real user's account, so it is disabled rather than allowed — except **Edit profile** and **Public profile settings**, which stay enabled and open their drawers in read-only impersonation mode (form disabled client-side, mutations still blocked with 403 `IMPERSONATION_READ_ONLY`). The Linux.com forward target is the one datum that can't be shown (needs the impersonator's Flow-C token). The Flow C and social-link root callbacks enforce the same block, but as a redirect (`?error=impersonation_read_only`) rather than a 403, since they sit outside the `/api` error-handler mount (#1936). Which component reports that error depends on where the flow started, because social-link's `returnTo` is caller-supplied (allowlisted in `ProfileController.allowedProfileReturnPaths`): `ProfileLayoutComponent` toasts it under `/profile`, and `ProfileCardComponent` toasts it on the mentorship registration form, which mounts under the main layout where that shell never renders. A page added to the allowlist has to read these codes itself.
 
-2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name), as is the weekly-brief mailing-list share (LFXV2-3093): `WeeklyBriefService.shareBrief()` authorizes and sends under the real impersonator's identity/token (`resolveRealAccessToken`/`getRealEmail`), not the target's, because it creates a real, persisted, hard-to-retract external send — see that method's doc comment for the full rationale.
+2. **Write operations use the target's identity** — creating meetings, committees, or votes while impersonating will attribute them to the target user (via the bearer token). The `created_by_name` field on committees is an exception (uses the real user's name), as is the weekly-brief mailing-list share (LFXV2-3093): `WeeklyBriefService.shareBrief()` authorizes and sends under the real impersonator's identity/token (`resolveRealAccessToken`/`getRealEmail`), not the target's, because it creates a real, persisted, hard-to-retract external send — see that method's doc comment for the full rationale. Joining a meeting is another exception: the join-url and `.ics` join link resolve the real impersonator's identity (`getRealEmail`/`getRealUsername`), so the impersonator is never joined as the target.
 
 3. **Local dev (Authelia) not supported** — CTE is an Auth0-specific feature. Impersonation won't work with the Authelia dev auth provider.
 

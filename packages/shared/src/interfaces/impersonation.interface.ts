@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaType } from './persona.interface';
-
 /**
  * Decoded claims from an LFX access token (JWT payload).
  */
@@ -42,7 +40,6 @@ export interface Impersonator {
  */
 export interface ImpersonationStartRequest {
   targetUser: string;
-  personaContext?: PersonaType;
 }
 
 /**
@@ -63,14 +60,43 @@ export interface ImpersonationStartResponse {
 }
 
 /**
- * A previously impersonated profile, persisted client-side for quick re-selection.
+ * The page-blocking impersonation change in flight; the page reloads once it completes.
  */
-export interface RecentImpersonation {
+export type ImpersonationTransition = 'starting' | 'switching' | 'stopping';
+
+/**
+ * A person offered by the impersonation picker, from the directory search or the recents list.
+ * `targetUser` is the string the start request sends.
+ */
+export interface ImpersonationSuggestion {
   targetUser: string;
   email: string;
   username: string;
   name?: string;
   picture?: string;
-  personaContext?: PersonaType | null;
+}
+
+/**
+ * A previously impersonated profile, persisted client-side for quick re-selection.
+ */
+export interface RecentImpersonation extends ImpersonationSuggestion {
   lastUsedAt: number;
+}
+
+/**
+ * One user as returned by the auth-service `lfx.auth-service.user.search` reply. `username` is the LFID; `email`
+ * is present only when the identity provider has verified it.
+ */
+export interface ImpersonationUserSearchResult {
+  user_id: string;
+  username: string;
+  name?: string;
+  email?: string;
+}
+
+/**
+ * Response of `GET /api/impersonate/users`: the people the picker can offer, best match first.
+ */
+export interface ImpersonationUserSearchResponse {
+  results: ImpersonationSuggestion[];
 }

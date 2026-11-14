@@ -1,0 +1,83 @@
+{
+  "contract": "faq-output/v1",
+  "kind": "faq",
+  "project": "example-search",
+  "project_name": "Example Search",
+  "version": 1,
+  "mode": "draft",
+  "content": {
+    "faq": [
+      [
+        "About Example Search",
+        [
+          ["What is Example Search?", "Example Search is an open source search and analytics suite.", "Website"],
+          ["Who hosts it?", "The Linux Foundation hosts the project.", "LFX field"],
+          ["How much does membership cost?", null, null]
+        ]
+      ],
+      ["Getting involved", [["How do I contribute?", "Open a pull request on GitHub.", "Docs"]]]
+    ]
+  },
+  "content_sha256": "7bbca0bf74275e181954814ef54c738975173ad12a27ee5c0493095128422d99",
+  "report": {
+    "sources_read": ["https://search.example.org"],
+    "sources_failed": [
+      {
+        "name": "https://search.example.org/members",
+        "reason": "404"
+      }
+    ],
+    "gaps": ["How much does membership cost?"],
+    "notes": ""
+  },
+  "checks": {
+    "findings": [],
+    "unanswered": [
+      {
+        "path": "faq[0][1][2]",
+        "group": "About Example Search",
+        "question": "How much does membership cost?"
+      }
+    ]
+  },
+  "inputs_record": {
+    "date_read": "2026-10-19",
+    "website": {
+      "url": "https://search.example.org",
+      "read": true
+    },
+    "links": [],
+    "documents": [],
+    "notes_given": false,
+    "framework": {
+      "given": true,
+      "avoid_phrases": ["best-in-class"],
+      "open_objections": []
+    },
+    "lfx_records": [],
+    "questions_asked": [],
+    "answers": [],
+    "web_searches": [],
+    "fetched": [
+      {
+        "url": "https://search.example.org",
+        "ok": true
+      }
+    ]
+  },
+  "intake": {
+    "mode": "form",
+    "completed_at": "2026-10-19T12:00:00Z"
+  },
+  "revision": null,
+  "capabilities": {
+    "web_fetch": true,
+    "lfx_mcp": false
+  },
+  "generated_at": "2026-10-19T12:00:00Z",
+  "agent": {
+    "identifier": "linux-foundation~faq",
+    "agent_version": "1.0.0",
+    "prompt_manifest_sha256": "f4a3e897ce6d975391f8608488f1676994e28681e3f043a76d89c29fc4abb04b"
+  }
+}

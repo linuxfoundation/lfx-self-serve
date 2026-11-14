@@ -15,6 +15,7 @@ function groupRow(overrides: Partial<HealthMetricsEngagementGroupRow> = {}): Hea
   return {
     committeeId: 'c-1',
     committeeName: 'Technical Steering Committee',
+    projectId: 'p-1',
     projectSlug: 'acme-core',
     projectName: 'Acme Core',
     groupTypeLabel: 'Technical Steering Committee',

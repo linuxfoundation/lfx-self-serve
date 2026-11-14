@@ -30,7 +30,7 @@ import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from
 import type { PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, Route, test } from '@playwright/test';
 
-import { stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingsRedesignFlag, stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const PROJECT_UID = 'p0000000-0000-0000-0000-00000000f001';
@@ -132,6 +132,8 @@ async function stubProjectContext(page: Page): Promise<void> {
  */
 async function gotoProjectMeetings(page: Page, flagEnabled: boolean): Promise<void> {
   await stubMeetingsV2Flag(page, flagEnabled);
+  // The redesign flag also enables the composer, so it is pinned off to isolate this one.
+  await stubMeetingsRedesignFlag(page);
   await seedContextCookies(page);
   await stubProjectContext(page);
 

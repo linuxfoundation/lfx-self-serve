@@ -4,10 +4,10 @@
 import { AriaHaspopup, ButtonRootPassThrough } from '../interfaces/components.interface';
 
 /**
- * Resolves the `pt` passthrough forwarding `aria-pressed` / `aria-expanded` / `aria-haspopup` to the
+ * Resolves the `pt` passthrough forwarding disclosure/toggle state, controlled-region IDs and description IDs to the
  * native `<button>` PrimeNG's `<p-button>` renders internally.
  *
- * Returns `undefined` — not an object with undefined values inside it — when all three are unset, so
+ * Returns `undefined` — not an object with undefined values inside it — when all attributes are unset, so
  * an ordinary button (the vast majority of `<lfx-button>` usages) doesn't get handed a `pt` object at
  * all. `undefined` is the "no pt config" value PrimeNG expects; some PrimeNG versions stringify an
  * `undefined` attribute value, and a component-level `pt.root` shallowly shadows individual global
@@ -16,11 +16,15 @@ import { AriaHaspopup, ButtonRootPassThrough } from '../interfaces/components.in
 export function resolveButtonAriaPt(
   pressed: boolean | undefined,
   expanded: boolean | undefined,
-  haspopup: AriaHaspopup | undefined = undefined
+  haspopup: AriaHaspopup | undefined = undefined,
+  controls: string | undefined = undefined,
+  describedBy: string | null | undefined = undefined
 ): ButtonRootPassThrough | undefined {
   const root: ButtonRootPassThrough['root'] = {};
   if (pressed !== undefined) root['aria-pressed'] = pressed;
   if (expanded !== undefined) root['aria-expanded'] = expanded;
   if (haspopup !== undefined) root['aria-haspopup'] = haspopup;
+  if (controls !== undefined) root['aria-controls'] = controls;
+  if (describedBy !== undefined) root['aria-describedby'] = describedBy;
   return Object.keys(root).length === 0 ? undefined : { root };
 }

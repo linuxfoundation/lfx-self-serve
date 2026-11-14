@@ -4,20 +4,23 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  HEALTH_METRICS_BASE_PATH,
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
 import {
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementCount,
-  formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
   resolveHealthMetricsEngagementDeltaDirection,
@@ -35,6 +38,7 @@ import type {
   FilterPillOption,
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementParticipationMode,
+  HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRowView,
   HealthMetricsEngagementSectionKey,
@@ -47,7 +51,7 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-meeting-participation',
-  imports: [EmptyStateComponent, FilterPillsComponent, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, RouterLink, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
   templateUrl: './engagement-meeting-participation.component.html',
 })
 export class EngagementMeetingParticipationComponent {
@@ -58,13 +62,19 @@ export class EngagementMeetingParticipationComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The hero's cross-links; the L2 shell owns scrolling so both sections stay in one pane. */
+  /** The hero's cross-links; the L2 shell owns scrolling, so both land the same way. */
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  protected readonly boardRoute = [HEALTH_METRICS_BASE_PATH, 'members'];
+  /** Clears a cohort or page the URL already carries, so the row lands on board attendance itself. */
+  protected readonly boardQueryParams = {
+    [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardCohort]: null,
+    [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardPage]: null,
+  };
   protected readonly modeOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES.map((mode) => ({
     id: mode.key,
     label: mode.label,
@@ -84,6 +94,8 @@ export class EngagementMeetingParticipationComponent {
     const total = this.response().total;
     return total ? selectHealthMetricsEngagementParticipationPeriod(total, this.chrome.selectedRange()) : null;
   });
+  /** No meetings were held in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.totalPeriod()));
   /** `null` when the roll-up row itself carries no group total — kept distinct from a measured 0. */
   protected readonly totalGroups = computed(() => this.response().total?.totalGroups ?? null);
   /** Shared "12 / 27" ratio cell — "—" when the roll-up hasn't measured either side. */
@@ -93,8 +105,17 @@ export class EngagementMeetingParticipationComponent {
   // once per row per response instead of on every change-detection pass.
   protected readonly rowViews = computed<HealthMetricsEngagementParticipationRowView[]>(() => {
     const range = this.chrome.selectedRange();
-    return this.response().rows.map((row) => ({ row, period: selectHealthMetricsEngagementParticipationPeriod(row, range) }));
+    const rules = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES;
+    return this.response().rows.map((row) => ({
+      row,
+      period: selectHealthMetricsEngagementParticipationPeriod(row, range),
+      // Own keys only: a group named like an Object.prototype member must not pick up a non-rule.
+      attendanceRule: row.group !== null && Object.hasOwn(rules, row.group) ? rules[row.group] : HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
+    }));
   });
+
+  /** Meetings mode's bar scale: the busiest type row, not the roll-up, so one row always fills the track. */
+  protected readonly maxTypeMeetings = computed(() => Math.max(0, ...this.rowViews().map((view) => view.period?.meetingsHeld ?? 0)));
 
   protected readonly attendanceMode = computed(() => this.mode() === 'attendance');
   protected readonly heroValue = computed(() => {
@@ -105,19 +126,10 @@ export class EngagementMeetingParticipationComponent {
     return formatHealthMetricsEngagementCount(period.meetingsHeld);
   });
   protected readonly heroLabel = computed(() => (this.attendanceMode() ? 'All-meeting attendance' : 'Meetings held'));
-  protected readonly heroDelta = computed(() => {
-    const period = this.totalPeriod();
-    if (!period) return '—';
-
-    return this.attendanceMode()
-      ? formatHealthMetricsEngagementPpDelta(period.attendanceChangePp)
-      : formatHealthMetricsEngagementPctDelta(period.meetingsChangePct);
-  });
-  protected readonly heroDeltaDirection = computed(() => {
-    const period = this.totalPeriod();
-    const change = this.attendanceMode() ? (period?.attendanceChangePp ?? null) : (period?.meetingsChangePct ?? null);
-    return resolveHealthMetricsEngagementDeltaDirection(change);
-  });
+  /** Attendance only: the design shows no delta for meetings held. */
+  protected readonly heroDelta = computed(() => formatHealthMetricsEngagementPpDelta(this.totalPeriod()?.attendanceChangePp ?? null));
+  protected readonly heroDeltaDirection = computed(() => resolveHealthMetricsEngagementDeltaDirection(this.totalPeriod()?.attendanceChangePp ?? null));
+  protected readonly neverAttendedFlagged = computed(() => (this.totalPeriod()?.neverAttended ?? 0) > 0);
   /** The side row carries whichever measure the hero is not showing. */
   protected readonly secondaryLabel = computed(() => (this.attendanceMode() ? 'Meetings held' : 'All-meeting attendance'));
   protected readonly secondaryValue = computed(() => {
@@ -160,6 +172,27 @@ export class EngagementMeetingParticipationComponent {
     this.sectionPicked.emit(key);
   }
 
+  /** Lands on Representatives with the Never attended filter already applied. */
+  protected onNeverAttended(): void {
+    void this.router
+      .navigate([], {
+        relativeTo: this.route,
+        queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: 'never' },
+        queryParamsHandling: 'merge',
+        preserveFragment: true,
+        replaceUrl: true,
+      })
+      .then(() => this.sectionPicked.emit('reps'));
+  }
+
+  protected onRowPicked(governance: boolean): void {
+    if (governance) {
+      void this.router.navigate(this.boardRoute, { fragment: 'board', queryParams: this.boardQueryParams, queryParamsHandling: 'merge' });
+      return;
+    }
+    this.sectionPicked.emit('committees');
+  }
+
   private initQuery(): HealthMetricsEngagementParticipationQuery {
     return {
       foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
@@ -199,13 +232,17 @@ export class EngagementMeetingParticipationComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
               // the hero cannot report an unread period as having no meetings.
               this.loading.set(!foundationSeen);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) {
+                this.settled.emit(
+                  !this.loadFailed() && isEmptyPeriod(response.total && selectHealthMetricsEngagementParticipationPeriod(response.total, query.range))
+                );
+              }
             })
           )
         )
@@ -232,4 +269,9 @@ export class EngagementMeetingParticipationComponent {
     const match = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES.find((mode) => mode.key === key);
     return match ? match.key : 'attendance';
   }
+}
+
+/** No roll-up for the period, or one that held no meetings; an unmeasured count is not a zero. */
+function isEmptyPeriod(period: HealthMetricsEngagementParticipationPeriod | null): boolean {
+  return !period || period.meetingsHeld === 0;
 }

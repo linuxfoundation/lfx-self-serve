@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ColumnarTable } from './compact-cache.interface';
+import type { OrgTraineeFormerOnPeopleListCounts } from './org-people-trainees.interface';
 import type { HealthScore, InfluenceBand, InfluenceTrendDirection, OrgLensProjectMetricsState } from './org-lens-projects.interface';
 
 // Stored (Valkey) shapes for the per-org, 1-hour Org Lens caches (GH-1906). None of these is a wire
@@ -105,18 +106,15 @@ export interface CompactOrgAllEmployeesRawCache {
   accountId: string | null;
   /** Roster rows, columnar and without `ACCOUNT_ID`. */
   rowsRaw: ColumnarTable;
-  /** The single-row `ORG_PEOPLE_ALL_STATS` aggregate, columnar for shape uniformity. */
-  statsRaw: ColumnarTable;
   /** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pairs, columnar. */
   foundationRaw: ColumnarTable;
 }
 
 /** Cached form of the Event Attendees raw warehouse reads. */
 export interface CompactOrgEventAttendeesRawCache {
-  attendeeRows: ColumnarTable;
   /** Distinct event-level field sets (name, location, city, country, url, dates, foundation), once each. */
   events: ColumnarTable;
-  /** Per-(person, event) rows reduced to the fields that actually vary per row: `PERSON_KEY`, `IS_SPEAKER`, `IS_PAST_EVENT`. */
+  /** Per-(person, event) rows reduced to the fields that actually vary per row: `PARTICIPANT_REF`, `PERSON_KEY`, `DISPLAY_NAME`, `JOB_TITLE`, `IS_SPEAKER`. */
   details: ColumnarTable;
   /** Aligned to `details.r`: which entry of `events.r` each detail row belongs to. */
   detailEvents: number[];
@@ -127,14 +125,21 @@ export interface CompactOrgEventAttendeesRawCache {
 /** Cached form of the Trainees raw warehouse reads. */
 export interface CompactOrgTraineesRawCache {
   traineeRows: ColumnarTable;
-  /** Distinct course-level field sets (`COURSE_ID`, `COURSE_NAME`, `FOUNDATION_ID`, `FOUNDATION_NAME`), once each. */
+  /** Learners outside the people list: `LEARNER_NAME`, `IS_CERTIFIED` only (lfx-self-serve#4287). Their warehouse key is never stored, and no detail rows are read for them. */
+  outsideLearnerRows: ColumnarTable;
+  /** Distinct course-level field sets (course, foundation, project, level and format columns), once each. */
   courses: ColumnarTable;
-  /** Per-(person, course-or-cert) rows reduced to `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID`, `ACTIVITY_TS`. */
+  /**
+   * Per-(person, course-or-cert) rows reduced to `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID`, `ACTIVITY_TS`, for people with a current-employee
+   * row only (the trainee rows): a former employee's key and enrollment or certificate ids are never stored.
+   */
   details: ColumnarTable;
   /** Aligned to `details.r`: which entry of `courses.r` each detail row belongs to. */
   detailCourses: number[];
-  foundationRows: ColumnarTable;
-  courseRows: ColumnarTable;
+  /** Counts only (`OrgTraineesResponse.formerOnPeopleList`): no key of an unlisted former employee is stored. */
+  formerOnPeopleList: OrgTraineeFormerOnPeopleListCounts;
+  /** ISO build time of the training table, or null (`OrgTraineesResponse.asOf`). */
+  asOf: string | null;
 }
 
 /** Cached form of the Contributors per-(person, project) aggregate rows. */

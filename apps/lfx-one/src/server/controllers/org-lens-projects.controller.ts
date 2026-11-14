@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { parseOrgScope, parseOrgTeamMembers } from '../helpers/org-commit-filters.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -21,10 +22,20 @@ export class OrgLensProjectsController {
 
     try {
       assertOrgUid(orgUid, 'get_org_lens_projects');
-      const response = await this.service.getProjects(orgUid, getStringQueryParam(req, 'orgName') ?? '', this.parseSlugList(getStringQueryParam(req, 'slugs')));
+      const orgScope = parseOrgScope(req, 'get_org_lens_projects');
+      const teamMembers = parseOrgTeamMembers(req, 'get_org_lens_projects');
+      const response = await this.service.getProjects(
+        orgUid,
+        getStringQueryParam(req, 'orgName') ?? '',
+        this.parseSlugList(getStringQueryParam(req, 'slugs')),
+        orgScope,
+        teamMembers
+      );
 
       logger.success(req, 'get_org_lens_projects', startTime, {
         org_uid: orgUid,
+        org_scope: orgScope,
+        team_members: teamMembers,
         project_count: response.projects.length,
       });
 
@@ -230,7 +241,12 @@ export class OrgLensProjectsController {
     return value;
   }
 
-  /** Read-only gate: mirrors `OrgLensAccessService.resolveCanManage`; write endpoints stay guarded by Heimdall. */
+  /**
+   * Switches `getWorkspaces` between a pure read and its default-workspace bootstrap + seed writes.
+   * Deliberately the caller's own roster (direct or roll-up admin), NOT `resolveOrgLensEdit`: a
+   * company-wide writer (`global_org_admin`, #3136) may edit workspaces explicitly, but merely opening
+   * Projects on any organization must not write to it. Write endpoints stay guarded by Heimdall.
+   */
   private async resolveCanEdit(req: Request, orgUid: string): Promise<boolean> {
     const username = getEffectiveUsername(req);
     if (!username) return false;

@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
+  MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+} from '@lfx-one/shared/constants';
 import { MentorshipUpstreamUserProfile } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
@@ -51,16 +56,32 @@ describe('parseMentorshipMenteeProfileUpdate', () => {
   });
 
   it('rejects null and undefined for every allowlisted key', () => {
-    for (const key of ['introduction', 'skillSet', 'demographics', 'socioeconomics']) {
+    for (const key of ['introduction', 'skillSet', 'demographics', 'socioeconomics', 'country']) {
       expectRejected({ [key]: null }, key);
       expectRejected({ [key]: undefined }, key);
     }
   });
 
+  describe('country', () => {
+    it('accepts an assigned ISO code', () => {
+      expect(parseMentorshipMenteeProfileUpdate({ country: 'KE' }, OPERATION)).toEqual({ country: 'KE' });
+    });
+
+    it.each([
+      ['a number', 254],
+      ['a blank string', '  '],
+      ['a country name', 'Kenya'],
+      ['a lowercase code', 'ke'],
+      ['an unassigned code', 'ZZ'],
+    ])('rejects %s', (_label, country) => {
+      expectRejected({ country }, 'country');
+    });
+  });
+
   describe('introduction', () => {
-    it('accepts an empty string as a clear and trims other text', () => {
-      expect(parseMentorshipMenteeProfileUpdate({ introduction: '' }, OPERATION)).toEqual({ introduction: '' });
-      expect(parseMentorshipMenteeProfileUpdate({ introduction: '  Hello there \n' }, OPERATION)).toEqual({ introduction: 'Hello there' });
+    it('keeps the rich editor HTML as sent', () => {
+      const introduction = '<p>Hello <strong>there</strong></p><ul><li>One</li></ul>';
+      expect(parseMentorshipMenteeProfileUpdate({ introduction }, OPERATION)).toEqual({ introduction });
     });
 
     it('rejects a non-string introduction', () => {
@@ -68,22 +89,22 @@ describe('parseMentorshipMenteeProfileUpdate', () => {
       expectRejected({ introduction: ['x'] }, 'introduction');
     });
 
-    it('rejects text over 3000 code points and accepts exactly 3000', () => {
-      expect(parseMentorshipMenteeProfileUpdate({ introduction: 'a'.repeat(3000) }, OPERATION).introduction).toHaveLength(3000);
-      expectRejected({ introduction: 'a'.repeat(3001) }, 'introduction');
+    it('rejects an empty or text-free introduction, as register does', () => {
+      expect(validationError({ introduction: '' }).validationErrors[0].message).toBe('Introduction is required.');
+      expectRejected({ introduction: '<p></p>' }, 'introduction');
     });
 
-    it('counts code points, not UTF-16 units', () => {
-      expect(parseMentorshipMenteeProfileUpdate({ introduction: '\u{1F600}'.repeat(3000) }, OPERATION).introduction).toBeDefined();
+    it('counts the text, not the markup, against 3000 characters', () => {
+      expect(parseMentorshipMenteeProfileUpdate({ introduction: `<p><strong>${'a'.repeat(3000)}</strong></p>` }, OPERATION).introduction).toBeDefined();
+      expect(validationError({ introduction: `<p>${'a'.repeat(3001)}</p>` }).validationErrors[0].message).toBe(
+        'Introduction must be 3000 characters or fewer.'
+      );
     });
 
-    it('rejects text whose generated HTML exceeds the raw max, with the specific message', () => {
-      const error = validationError({ introduction: 'a\n\n'.repeat(1000) });
-      expect(error.validationErrors[0].message).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_HTML_TOO_LONG_MESSAGE);
-    });
-
-    it('accepts 3000 ampersands, which stay under the raw max once escaped', () => {
-      expect(parseMentorshipMenteeProfileUpdate({ introduction: '&'.repeat(3000) }, OPERATION).introduction).toHaveLength(3000);
+    it('rejects HTML over the raw max, with the specific message', () => {
+      const error = validationError({ introduction: `<p>a</p>${'<p></p>'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}` });
+      expect(error.validationErrors[0].field).toBe('introduction');
+      expect(error.validationErrors[0].message).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
     });
   });
 
@@ -103,13 +124,21 @@ describe('parseMentorshipMenteeProfileUpdate', () => {
     it('rejects non-string, blank and over-long items', () => {
       expectRejected({ skillSet: { skillsHave: [1], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
       expectRejected({ skillSet: { skillsHave: ['Go', '  '], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
-      expectRejected({ skillSet: { skillsHave: ['x'.repeat(101)], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
-      expect(parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: ['x'.repeat(100)], skillsWant: ['Rust'] } }, OPERATION).skillSet).toBeDefined();
+      expectRejected({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)], skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
+      expect(
+        validationError({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1)], skillsWant: ['Rust'] } }).validationErrors[0].message
+      ).toBe(MENTORSHIP_SKILLS_LIMIT_MESSAGE);
+      expect(
+        parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: ['x'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)], skillsWant: ['Rust'] } }, OPERATION).skillSet
+      ).toBeDefined();
     });
 
     it('rejects more than 100 skills and accepts exactly 100', () => {
       const skills = (count: number): string[] => Array.from({ length: count }, (_, index) => `Skill ${index}`);
       expectRejected({ skillSet: { skillsHave: skills(101), skillsWant: ['Rust'] } }, 'skillSet.skillsHave');
+      expect(validationError({ skillSet: { skillsHave: skills(101), skillsWant: ['Rust'] } }).validationErrors[0].message).toBe(
+        MENTORSHIP_SKILLS_LIMIT_MESSAGE
+      );
       expect(parseMentorshipMenteeProfileUpdate({ skillSet: { skillsHave: skills(100), skillsWant: ['Rust'] } }, OPERATION).skillSet?.skillsHave).toHaveLength(
         100
       );
@@ -200,14 +229,10 @@ describe('buildMentorshipUpstreamMenteeProfileUpdate', () => {
     expect(buildMentorshipUpstreamMenteeProfileUpdate({ demographics: { age: '61+' } })).toEqual({ demographics: { age: '61+' } });
   });
 
-  it('converts the introduction to escaped Quill-shaped HTML', () => {
-    expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: `Hi <b>there</b> & 'you'\n\nSecond line` })).toEqual({
-      introduction: '<p>Hi &lt;b&gt;there&lt;/b&gt; &amp; &#39;you&#39;</p><p><br></p><p>Second line</p>',
+  it('sends the introduction HTML as is', () => {
+    expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: '<p>Hi <strong>there</strong></p><p>Second line</p>' })).toEqual({
+      introduction: '<p>Hi <strong>there</strong></p><p>Second line</p>',
     });
-  });
-
-  it('sends an empty introduction as an empty string so upstream clears it', () => {
-    expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: '' })).toEqual({ introduction: '' });
   });
 
   it('emits only the present groups and never profile_links or null', () => {
@@ -255,7 +280,16 @@ describe('buildMentorshipUpstreamMenteeProfileUpdate', () => {
     });
 
     it('does not add a column the update leaves out', () => {
-      expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: 'Hi' }, storedRow)).toEqual({ introduction: '<p>Hi</p>' });
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ introduction: '<p>Hi</p>' }, storedRow)).toEqual({ introduction: '<p>Hi</p>' });
+    });
+
+    it('writes the country into address over the stored legacy keys', () => {
+      expect(
+        buildMentorshipUpstreamMenteeProfileUpdate({ country: 'KE' }, { ...storedRow, address: { country: 'US', city: 'Test City', address1: '1 Test St' } })
+      ).toEqual({
+        address: { country: 'KE', city: 'Test City', address1: '1 Test St' },
+      });
+      expect(buildMentorshipUpstreamMenteeProfileUpdate({ country: 'KE' }, storedRow)).toEqual({ address: { country: 'KE' } });
     });
 
     it('ignores a stored column that is not an object', () => {

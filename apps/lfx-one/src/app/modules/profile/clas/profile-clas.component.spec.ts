@@ -11,7 +11,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink } from '@angular/router';
-import { GITLAB_UNSUPPORTED_HEADER, MY_CLAS_M2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { GITLAB_UNSUPPORTED_HEADER } from '@lfx-one/shared/constants';
 import type {
   ClaGroupOption,
   ClaGroupOrg,
@@ -32,7 +32,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { MyClasService } from '@services/my-clas.service';
 import { UserService } from '@services/user.service';
 import { MenuItem, MessageService } from 'primeng/api';
@@ -61,11 +60,15 @@ describe('ProfileClasComponent', () => {
   /** The list's own manager flags come from the row, so this stays uncalled unless the dialog opens. */
   let getClaManagersSpy: ReturnType<typeof vi.fn>;
 
-  async function render(agreements: MyClaAgreement[], options: { m2Enabled?: boolean; impersonating?: boolean } = {}): Promise<void> {
+  async function render(
+    agreements: MyClaAgreement[],
+    options: { impersonating?: boolean; githubLinked?: boolean; myClas$?: Observable<MyClasResponse> } = {}
+  ): Promise<void> {
     const response: MyClasResponse = {
       agreements,
-      identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: true },
+      identity: { matchedUserIds: agreements.length > 0 ? 1 : 0, unmatched: agreements.length === 0, githubLinked: options.githubLinked ?? true },
     };
+    const myClas$ = options.myClas$ ?? of(response);
     const getClaManagers = vi.fn((id: string) => of<ClaManagerList>({ signatureId: id, managers: [], resultCount: 0 }));
     getClaManagersSpy = getClaManagers;
 
@@ -75,15 +78,10 @@ describe('ProfileClasComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: MyClasService, useValue: { getMyClas: () => of(response), getPdfUrl: vi.fn(), getClaManagers } },
+        { provide: MyClasService, useValue: { getMyClas: () => myClas$, getPdfUrl: vi.fn(), getClaManagers } },
         // Stubbed rather than real: the Sign CLA action reads impersonating(), and the real
         // service would drag HttpClient into a TestBed that has no reason to make requests.
         { provide: UserService, useValue: { impersonating: signal(options.impersonating ?? false) } },
-        // Existing tests document M2 overlay behaviour; pin the flag on unless a case opts out.
-        {
-          provide: FeatureFlagService,
-          useValue: { getBooleanFlag: vi.fn((key: string) => signal(key === MY_CLAS_M2_ENABLED_FLAG ? (options.m2Enabled ?? true) : false)) },
-        },
       ],
     }).compileComponents();
 
@@ -161,6 +159,53 @@ describe('ProfileClasComponent', () => {
     const urlTree = ctaButton.injector.get(RouterLink).urlTree;
     if (!urlTree) throw new Error('empty state CTA resolved no urlTree');
     expect(TestBed.inject(Router).serializeUrl(urlTree)).toBe('/docs/account/my-clas');
+  });
+
+  describe('account-linking banner (#4191)', () => {
+    const LINK_TEXT = 'Link your Email or GitHub accounts →';
+
+    /** The banner's Identities link, or null when no banner rendered. */
+    function bannerLink(): { text: string; url: string } | null {
+      const banner = fixture.debugElement.query(By.css('[data-testid="my-clas-info-banner"]'));
+      if (!banner) return null;
+      const link = banner.query(By.directive(RouterLink));
+      if (!link) throw new Error('banner rendered no router link');
+      const urlTree = link.injector.get(RouterLink).urlTree;
+      if (!urlTree) throw new Error('banner link resolved no urlTree');
+      return { text: (link.nativeElement as HTMLElement).textContent?.trim() ?? '', url: TestBed.inject(Router).serializeUrl(urlTree) };
+    }
+
+    it('limits linking to Email and GitHub while explaining already-connected GitLab matching', async () => {
+      await render([agreement()]);
+
+      expect(bannerLink()).toEqual({ text: LINK_TEXT, url: '/profile/identities' });
+      const banner = fixture.nativeElement.querySelector('[data-testid="my-clas-info-banner"]') as HTMLElement;
+      expect(banner.textContent?.replace(/\s+/g, ' ')).toContain('Already-connected GitLab accounts are matched too; new GitLab linking is coming soon.');
+    });
+
+    it('stays visible for a caller without a linked GitHub account, alongside GitLab-signed agreements', async () => {
+      await render([agreement({ id: 's-gl', signedVia: 'gitlab', signedAs: 'tanuki-dev' })], { githubLinked: false });
+
+      expect(bannerLink()).toEqual({ text: LINK_TEXT, url: '/profile/identities' });
+      expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-gl"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="agreement-signed-as-s-gl"]')?.textContent?.trim()).toBe('Signed as tanuki-dev (GitLab)');
+    });
+
+    it('shows above the empty state and while the list is still loading', async () => {
+      await render([], { githubLinked: false });
+      expect(bannerLink()?.text).toBe(LINK_TEXT);
+      expect(fixture.nativeElement.querySelector('[data-testid="my-clas-empty-state"]')).toBeTruthy();
+
+      await render([], { myClas$: NEVER });
+      expect(bannerLink()?.text).toBe(LINK_TEXT);
+    });
+
+    it('gives way to the error state when the list fails to load', async () => {
+      await render([], { myClas$: throwError(() => new Error('boom')) });
+
+      expect(fixture.nativeElement.querySelector('[data-testid="my-clas-error"]')).toBeTruthy();
+      expect(bannerLink()).toBeNull();
+    });
   });
 
   it('shows the mockup sentence only for a completed Approved List miss', async () => {
@@ -517,49 +562,6 @@ describe('ProfileClasComponent', () => {
     expect(signedOn('s-empty')?.textContent?.trim()).toBe('—');
     expect(signedOn('s-bad')?.textContent?.trim()).toBe('—');
   });
-
-  it('hides Sign CLA, Status, kebab, and Signed as when my-clas-m2-enabled is off', async () => {
-    await render(
-      [
-        agreement({
-          id: 's-m1',
-          signedOn: '2022-01-01T18:40:42Z',
-          signedVia: 'github',
-          signedAs: 'jellis',
-          pdfAvailable: true,
-        }),
-      ],
-      { m2Enabled: false }
-    );
-
-    expect(headers()).toEqual(['Project', 'Type', 'Signed', 'Document']);
-    expect(fixture.nativeElement.querySelector('[data-testid="sign-cla-action"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-status-s-m1"]')).toBeNull();
-    expect(actionsTrigger('s-m1')).toBeNull();
-    expect(rowMenu('s-m1')).toBeNull();
-    expect(signedAs('s-m1')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-m1"]')).toBeTruthy();
-    expect(fixture.nativeElement.textContent).toContain('Project One');
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-row-s-m1"]')?.textContent).toMatch(/2021|2022/);
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-document-s-m1"]')?.textContent).toContain('Download PDF');
-  });
-
-  it('restores the M1 Document column when my-clas-m2-enabled is off', async () => {
-    await render(
-      [
-        agreement({ id: 's-icla', kind: 'ICLA', pdfAvailable: true }),
-        agreement({ id: 's-ecla', kind: 'ECLA', pdfAvailable: false, companyName: 'Acme' }),
-        agreement({ id: 's-nopdf', kind: 'ICLA', pdfAvailable: false }),
-      ],
-      { m2Enabled: false }
-    );
-
-    expect(headers()).toEqual(['Project', 'Type', 'Signed', 'Document']);
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-document-s-icla"]')?.textContent).toContain('Download PDF');
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-document-s-ecla"]')?.textContent?.trim()).toBe('Covered by Corporate CLA (CCLA)');
-    expect(fixture.nativeElement.querySelector('[data-testid="agreement-document-s-nopdf"]')?.textContent?.trim()).toBe('PDF unavailable');
-    expect(actionsTrigger('s-icla')).toBeNull();
-  });
 });
 
 /**
@@ -622,7 +624,6 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
   async function setup(
     options: {
       impersonating?: boolean;
-      m2Enabled?: boolean;
       accounts?: () => Observable<GithubAccountOptions>;
       prepare?: () => Observable<PrepareSignResponse>;
       closesWith?: ClaGroupOption | null;
@@ -717,12 +718,6 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
           useValue: {
             impersonating: signal(options.impersonating ?? false),
             viewerUsername: signal('viewerUsername' in options ? options.viewerUsername : VIEWER_USERNAME),
-          },
-        },
-        {
-          provide: FeatureFlagService,
-          useValue: {
-            getBooleanFlag: vi.fn((key: string) => signal(key === MY_CLAS_M2_ENABLED_FLAG ? (options.m2Enabled ?? true) : false)),
           },
         },
         {
@@ -823,15 +818,6 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     await sign(fixture);
     expect(opened).toEqual([]);
     expect(prepareSign).not.toHaveBeenCalled();
-  });
-
-  it('withholds Sign CLA when my-clas-m2-enabled is off', async () => {
-    const fixture = await setup({ m2Enabled: false });
-
-    expect(query(fixture, 'sign-cla-action')).toBeNull();
-    (fixture.componentInstance as any).openSignDialog();
-    await fixture.whenStable();
-    expect(opened).toEqual([]);
   });
 
   it('opens the picker through DialogService rather than a template dialog', async () => {
@@ -1135,6 +1121,21 @@ describe('ProfileClasComponent — Sign CLA hand-off and identity selection (#12
     // Same tab, not a new one: the Console returns the contributor here afterwards.
     expect(location.href).toBe(SIGN_URL);
   });
+
+  it.each(['javascript:alert(1)', ' javascript:alert(1)', 'JaVaScRiPt:alert(1)', 'http://evil.example', ''])(
+    'never navigates to a prepared address of %p, and reports a failed prepare',
+    async (signUrl) => {
+      const fixture = await setup({ prepare: () => of({ ...PREPARED, signUrl }) });
+
+      await sign(fixture);
+
+      expect(location.href).toBe(HOME);
+      expect(messageAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', summary: 'Could not start signing', detail: 'We could not open the CLA signing page. Please try again.' })
+      );
+      expect(isStarting(fixture)).toBe(false);
+    }
+  );
 
   it('stops the hand-off when the verified account is not the chosen one', async () => {
     // The picker closes with 12345; the prepare answers with a different account. Upstream is

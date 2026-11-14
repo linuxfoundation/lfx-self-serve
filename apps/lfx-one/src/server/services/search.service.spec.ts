@@ -65,11 +65,37 @@ describe('SearchService (server)', () => {
 
     await service.searchUsers(req, { name: 'kim', type: 'committee_member', sort: 'best_match' });
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      name: 'kim',
-      sort: 'best_match',
-      type: 'committee_member',
-    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        name: 'kim',
+        sort: 'best_match',
+        type: 'committee_member',
+      },
+      undefined,
+      undefined,
+      undefined
+    );
+  });
+
+  it('forwards a per-request bearer token override to the query service', async () => {
+    proxyRequest.mockResolvedValue(upstream([]));
+
+    await service.searchUsers(req, { name: 'kim', type: 'committee_member', sort: 'best_match' }, { bearerToken: 'real-admin-token' });
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { name: 'kim', sort: 'best_match', type: 'committee_member' },
+      undefined,
+      undefined,
+      { bearerToken: 'real-admin-token' }
+    );
   });
 
   it('forwards an exact email tag lookup without a sort', async () => {
@@ -77,13 +103,22 @@ describe('SearchService (server)', () => {
 
     await service.searchUsers(req, { tags: 'email:kim.park@partner-corp.example', type: 'committee_member' });
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      tags: 'email:kim.park@partner-corp.example',
-      type: 'committee_member',
-    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        tags: 'email:kim.park@partner-corp.example',
+        type: 'committee_member',
+      },
+      undefined,
+      undefined,
+      undefined
+    );
   });
 
-  it('maps committee members and collapses repeated memberships of the same person', async () => {
+  it('maps committee members without committee attribution and collapses repeated memberships of the same person', async () => {
     proxyRequest.mockResolvedValue(
       upstream([
         member({}),
@@ -102,11 +137,39 @@ describe('SearchService (server)', () => {
       last_name: 'Park',
       job_title: 'Counsel',
       organization: { name: 'Partner Corp', website: 'https://partner-corp.example' },
-      committee: { uid: 'committee:1', name: 'Governing Board' },
+      committee: null,
       type: 'committee_member',
       username: 'kim.park',
     });
     expect(response.results[1]).toEqual(expect.objectContaining({ uid: 'member:3', username: null, organization: null }));
+  });
+
+  it('drops committee-member rows that matched only on an indexed alias such as the committee name', async () => {
+    proxyRequest.mockResolvedValue(
+      upstream([member({}), member({ uid: 'member:2', username: 'gov.chair', email: 'gc@partner-corp.example', first_name: 'Governor', last_name: 'Chair' })])
+    );
+
+    const byCommittee = await service.searchUsers(req, { name: 'Governing Board', type: 'committee_member', sort: 'best_match' });
+    expect(byCommittee).toEqual({ results: [], total: 0 });
+
+    const byPerson = await service.searchUsers(req, { name: 'gover', type: 'committee_member', sort: 'best_match' });
+    expect(byPerson.results.map((r) => r.uid)).toEqual(['member:2']);
+  });
+
+  it('does not let a committee-name query pass members whose email domain shares the name', async () => {
+    proxyRequest.mockResolvedValue(upstream([member({})]));
+
+    const response = await service.searchUsers(req, { name: 'partner', type: 'committee_member', sort: 'best_match' });
+
+    expect(response).toEqual({ results: [], total: 0 });
+  });
+
+  it('does not filter exact email tag lookups', async () => {
+    proxyRequest.mockResolvedValue(upstream([member({})]));
+
+    const response = await service.searchUsers(req, { tags: 'email:kim.park@partner-corp.example', type: 'committee_member' });
+
+    expect(response.total).toBe(1);
   });
 
   it('maps meeting registrants and forwards the v1_meeting_registrant type verbatim', async () => {
@@ -119,11 +182,20 @@ describe('SearchService (server)', () => {
 
     const response = await service.searchUsers(req, { name: 'rosa', type: 'v1_meeting_registrant', sort: 'best_match' });
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      name: 'rosa',
-      sort: 'best_match',
-      type: 'v1_meeting_registrant',
-    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        name: 'rosa',
+        sort: 'best_match',
+        type: 'v1_meeting_registrant',
+      },
+      undefined,
+      undefined,
+      undefined
+    );
     expect(response.results[0]).toEqual({
       uid: 'registrant:1',
       email: 'rosa.diaz@vendor-corp.example',

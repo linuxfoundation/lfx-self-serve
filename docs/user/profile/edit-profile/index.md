@@ -3,8 +3,8 @@ title: Edit Your Profile
 description: How to update your personal information, photo, location, and contact details in LFX Self Serve, including the About Me character limit.
 audience: [all]
 product_area: Profile
-tags: [profile, edit, about-me, bio, photo, location]
-last_updated: 2026-08-12
+tags: [profile, edit, about-me, bio, photo, location, lfid, username]
+last_updated: 2026-11-06
 intercom_collection: Profile
 ---
 
@@ -40,13 +40,17 @@ Select the pencil button on your avatar to upload a new image. The upload happen
 | **About Me**     | Optional | Up to **2,000 characters** (see below)                                  |
 | **First Name**   | Optional | Up to 50 characters                                                     |
 | **Last Name**    | Optional | Up to 50 characters                                                     |
-| **Username**     | —        | Read-only — you cannot change it here                                   |
+| **Username**     | —        | Your LFID. Read-only — you cannot change it here                        |
 | **Job Title**    | Optional | Up to 100 characters                                                    |
 | **Organization** | Optional | Chosen from your work experience; add a work experience first to set it |
 
+### Find your LFID (username)
+
+Your LFID (Linux Foundation ID) is the same as your **Username**. When a form or a Linux Foundation team asks for your LFID, give them this username, not your email address. It is shown in the **Username (read-only)** field of the **Edit Profile** drawer, in the profile panel under your name, and in your account menu in the sidebar. You can't change it.
+
 ### Primary email address
 
-Select which of your verified email addresses is primary. Your primary email is used for notifications and account communications. Choosing a new primary email applies immediately — it is saved as soon as you select it, not on **Save Changes**. To add or verify a new address, use the **Settings** tab — see [Settings](../../account/settings/).
+Select which of your verified email addresses is primary. Your primary email is used for notifications and account communications. Choosing a new primary email applies immediately — it is saved as soon as you select it, not on **Save Changes**. To add or verify a new address, use the **Settings** tab — see [Settings](../../account/settings/). Changing your primary email doesn't change where meeting invitations go — they stay on their current address.
 
 ### Location information
 

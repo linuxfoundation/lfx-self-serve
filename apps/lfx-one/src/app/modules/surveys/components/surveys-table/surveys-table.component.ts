@@ -5,6 +5,7 @@ import { DatePipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -21,6 +22,7 @@ import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/scheduled-send-tooltip.pipe';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
+import { resolveSurveyCommitteeCandidates } from '@shared/utils/write-access.util';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -36,6 +38,7 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     ButtonComponent,
     DatePipe,
     ReactiveFormsModule,
+    RouterLink,
     InputTextComponent,
     SelectComponent,
     SurveyStatusLabelPipe,
@@ -61,7 +64,7 @@ export class SurveysTableComponent {
   protected readonly SurveyStatus = SurveyStatus;
   // Viewer-local zone so countdown chips count the viewer's day, matching the adjacent local date (pipe fallback is the legacy-vote Pacific zone)
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
-  protected readonly statusTabOptions: FilterPillOption[] = [
+  private readonly baseStatusTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'open', label: 'Open' },
     { id: 'closed', label: 'Closed' },
@@ -76,8 +79,7 @@ export class SurveysTableComponent {
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
-  // Viewed-committee override (committee tab): rows stamp committees[0] by default, but a
-  // committee writer's guard fallback must probe the committee they're actually viewing (GH-1569).
+  // Prefer the viewed associated committee when building canonical edit links.
   public readonly committeeUid = input<string>('');
 
   // === Outputs ===
@@ -106,6 +108,9 @@ export class SurveysTableComponent {
   private readonly typeFilter: Signal<string | null> = this.initTypeFilter();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
+  // Rows matching search/group/type but not the status tab, so tab counts reflect the other active filters.
+  private readonly rowsBeforeStatusFilter: Signal<SurveyTableRow[]> = this.initRowsBeforeStatusFilter();
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly filteredSurveys: Signal<SurveyTableRow[]> = this.initFilteredSurveys();
   protected readonly isFiltered = computed(
     () => this.searchTerm() !== '' || this.statusTab() !== 'all' || this.groupFilter() !== null || this.typeFilter() !== null
@@ -159,7 +164,7 @@ export class SurveysTableComponent {
   }
 
   protected getGroupName(survey: Survey): string {
-    return survey.committees?.[0]?.committee_name || 'Unknown';
+    return survey.committees?.[0]?.committee_name || 'No group';
   }
 
   protected getResponseTooltip(survey: Survey): string {
@@ -248,8 +253,26 @@ export class SurveysTableComponent {
     });
   }
 
-  private initFilteredSurveys(): Signal<SurveyTableRow[]> {
+  private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
+      const rows = this.rowsBeforeStatusFilter();
+      const counts: Record<string, number> = {
+        all: rows.length,
+        open: rows.filter((row) => row.displayStatus === SurveyStatus.OPEN).length,
+        closed: rows.filter((row) => row.displayStatus === SurveyStatus.CLOSED).length,
+      };
+
+      // Show counts only once data is loaded; a confirmed zero keeps the plain label, matching votes.
+      if (this.loading()) return this.baseStatusTabOptions;
+      return this.baseStatusTabOptions.map((option) => (counts[option.id] > 0 ? { ...option, label: `${option.label} (${counts[option.id]})` } : option));
+    });
+  }
+
+  private initRowsBeforeStatusFilter(): Signal<SurveyTableRow[]> {
+    return computed(() => {
+      // displayStatus depends on the current time (a cutoff can pass while the page is open). Reading the tab
+      // re-evaluates it on every tab change, as it did when this lived in filteredSurveys.
+      this.statusTab();
       // Precompute displayStatus once per row so the template, filter, and sort
       // all agree on cutoff/case-normalized status (matches what the badge pipe shows).
       // Also stamp the per-row edit link: canonical commands derive from the SURVEY's owning
@@ -260,20 +283,14 @@ export class SurveysTableComponent {
         displayStatus: getSurveyDisplayStatus(survey),
         editCommands: getEntityCommands('surveys', survey.uid, survey.is_foundation, 'edit') ?? ['/surveys', survey.uid, 'edit'],
         editQueryParams: this.buildEditQueryParams(survey),
+        groupName: survey.committees?.[0]?.committee_name || null,
+        groupCommands: this.buildGroupCommands(survey),
+        groupQueryParams: survey.project_slug ? { project: survey.project_slug } : null,
       }));
 
       const searchTerm = this.searchTerm()?.toLowerCase() || '';
       if (searchTerm) {
         filtered = filtered.filter((survey) => survey.survey_title.toLowerCase().includes(searchTerm));
-      }
-
-      const statusTab = this.statusTab();
-      if (statusTab !== 'all') {
-        if (statusTab === 'open') {
-          filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.OPEN);
-        } else if (statusTab === 'closed') {
-          filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.CLOSED);
-        }
       }
 
       const group = this.groupFilter();
@@ -286,6 +303,21 @@ export class SurveysTableComponent {
         filtered = filtered.filter((survey) => (type === 'nps' ? survey.is_nps_survey : !survey.is_nps_survey));
       }
 
+      return filtered;
+    });
+  }
+
+  private initFilteredSurveys(): Signal<SurveyTableRow[]> {
+    return computed(() => {
+      let filtered = this.rowsBeforeStatusFilter();
+
+      const statusTab = this.statusTab();
+      if (statusTab === 'open') {
+        filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.OPEN);
+      } else if (statusTab === 'closed') {
+        filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.CLOSED);
+      }
+
       return this.sortSurveys(filtered);
     });
   }
@@ -293,15 +325,23 @@ export class SurveysTableComponent {
   // === Private Helpers ===
   // Mirrors meeting-card's per-row params: the row's own project slug + committee scope, so the
   // edit page opens in the survey's project context even from a context-less list (GH-1569).
-  // Without a viewed-committee override (global list) the scope resolves to the primary committee,
-  // so a writer of a non-primary committee is fail-closed denied from the list and edits via their
-  // committee tab instead — iterating committees[] per row is follow-up work (GH-2190).
+  // Without a viewed-committee override, the primary committee is only the first probe candidate.
+  // writerGuard and the edit page check every associated committee, admitting non-primary writers
+  // from the global list too.
   private buildEditQueryParams(survey: Survey): Record<string, string> {
     const params: Record<string, string> = {};
     if (survey.project_slug) params['project'] = survey.project_slug;
-    const committeeUid = this.committeeUid() || survey.committees?.[0]?.committee_uid;
+    const committeeUid = resolveSurveyCommitteeCandidates(survey.committees, this.committeeUid()).find((uid) => uid.trim().length > 0);
     if (committeeUid) params['committee_uid'] = committeeUid;
     return params;
+  }
+
+  // Group details link for the primary committee shown in the Group column. Derives from the survey's
+  // owning tier like the edit link; unenriched rows fall back to the flat path, which lensRedirectGuard prefixes.
+  private buildGroupCommands(survey: Survey): string[] | null {
+    const committeeUid = survey.committees?.[0]?.committee_uid?.trim();
+    if (!committeeUid) return null;
+    return getEntityCommands('groups', committeeUid, survey.is_foundation) ?? ['/groups', committeeUid];
   }
 
   private sortSurveys<T extends SurveyTableRow>(surveys: T[]): T[] {

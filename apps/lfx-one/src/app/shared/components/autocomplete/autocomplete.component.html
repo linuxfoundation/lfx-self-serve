@@ -3,6 +3,7 @@
 
 <ng-container [formGroup]="form()">
   <p-autocomplete
+    #autoComplete
     [formControlName]="control()"
     [suggestions]="suggestions()"
     [placeholder]="placeholder() ?? ''"
@@ -32,6 +33,7 @@
     [showEmptyMessage]="showEmptyMessage()"
     [optionDisabled]="optionDisabled()"
     [invalid]="invalid()"
+    [maxlength]="maxLength()"
     [size]="size()">
     <!-- Empty message template -->
     @if (emptyTemplate) {

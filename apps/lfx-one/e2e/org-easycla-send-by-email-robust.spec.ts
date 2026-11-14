@@ -5,8 +5,8 @@
  * Org Lens EasyCLA send-by-email — structural E2E (GH-2365).
  *
  * The structural half of the repository's dual E2E architecture; `org-easycla-send-by-email.spec.ts`
- * is the content half. This one asserts the `data-testid` contract, the two entry points, and the
- * request that goes on the wire — not the copy — so the pair fails independently: reworded copy
+ * is the content half. This one asserts the `data-testid` contract and the request that goes on
+ * the wire — not the copy — so the pair fails independently: reworded copy
  * breaks only the content spec, and a dialog rebuilt behind the same testids leaves this one green.
  *
  * Same standing constraint as the content spec: the signing request is stubbed, so no run emails
@@ -61,7 +61,14 @@ async function reachPreview(page: Page): Promise<void> {
   await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
   await page.getByTestId('org-easycla-group-continue').locator('button').click();
 
-  await expect(page.getByTestId('org-easycla-detail-identify-someone-else')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page.getByTestId('org-easycla-detail-start-cla')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+async function openSendByEmail(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-start-cla').locator('button').click();
+  await expect(page.getByTestId(ATTESTATION)).toBeVisible();
+  await page.getByTestId('org-easycla-attestation-not-authorized').locator('button').click();
+  await expect(page.getByTestId(SEND_DIALOG)).toBeVisible();
 }
 
 async function onlySendState(page: Page, expected: string): Promise<void> {
@@ -76,18 +83,15 @@ test.describe('Org Lens EasyCLA send-by-email — structure', () => {
 
   test.beforeEach(() => skipWithoutCredentials());
 
-  test('opens send-by-email from Identify someone else, never the hand-off', async ({ page }) => {
+  test('renders no Identify someone else control on the unsigned overview', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubPage(p);
-      await stubHandoff(p, { sign: { status: 200, body: { signUrl: '', signatureId: '' } } });
+      await stubHandoff(p);
     });
 
     await reachPreview(page);
-    await page.getByTestId('org-easycla-detail-identify-someone-else').click();
 
-    await expect(page.getByTestId(SEND_DIALOG)).toBeVisible();
-    await expect(page.getByTestId(ATTESTATION)).toHaveCount(0);
-    await expect(page.getByTestId(HANDOFF)).toHaveCount(0);
+    await expect(page.getByTestId('org-easycla-detail-identify-someone-else')).toHaveCount(0);
   });
 
   test('replaces attestation with send-by-email from I am not authorized', async ({ page }) => {
@@ -116,7 +120,7 @@ test.describe('Org Lens EasyCLA send-by-email — structure', () => {
     const signRequest = page.waitForRequest((request: Request) => request.url().includes('/lens/cla-groups/sign') && request.method() === 'POST');
 
     await reachPreview(page);
-    await page.getByTestId('org-easycla-detail-identify-someone-else').click();
+    await openSendByEmail(page);
     await nameInput(page).fill(SIGNATORY_NAME);
     await emailInput(page).fill(SIGNATORY_EMAIL);
     await page.getByTestId('org-easycla-send-by-email-send').locator('button').click();
@@ -142,7 +146,7 @@ test.describe('Org Lens EasyCLA send-by-email — structure', () => {
     const pagesBefore = context.pages().length;
     const urlBefore = page.url();
 
-    await page.getByTestId('org-easycla-detail-identify-someone-else').click();
+    await openSendByEmail(page);
     await nameInput(page).fill(SIGNATORY_NAME);
     await emailInput(page).fill(SIGNATORY_EMAIL);
     await page.getByTestId('org-easycla-send-by-email-send').locator('button').click();
@@ -160,7 +164,7 @@ test.describe('Org Lens EasyCLA send-by-email — structure', () => {
     });
 
     await reachPreview(page);
-    await page.getByTestId('org-easycla-detail-identify-someone-else').click();
+    await openSendByEmail(page);
     await nameInput(page).fill(SIGNATORY_NAME);
     await emailInput(page).fill(SIGNATORY_EMAIL);
     await page.getByTestId('org-easycla-send-by-email-send').locator('button').click();

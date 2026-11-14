@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="vote-mailing-list-reminder-dialog">
+  <p class="text-sm text-gray-500 -mt-1">This group has several mailing lists. Choose which one to email about "{{ voteName }}".</p>
+
+  <div class="flex flex-col gap-3" role="radiogroup" aria-label="Mailing list" data-testid="vote-mailing-list-reminder-lists">
+    @for (option of listOptions; track option.uid) {
+      <lfx-radio-button
+        [form]="listForm"
+        control="listUid"
+        name="vote-mailing-list"
+        [inputId]="'vote-mailing-list-reminder-list-' + option.uid"
+        [value]="option.uid"
+        [label]="option.label"></lfx-radio-button>
+    }
+  </div>
+</div>
+
+<div class="flex items-center justify-end gap-2 mt-4">
+  <lfx-button
+    label="Cancel"
+    severity="secondary"
+    [outlined]="true"
+    size="small"
+    (onClick)="cancel()"
+    data-testid="vote-mailing-list-reminder-cancel"></lfx-button>
+  <lfx-button
+    label="Open in email"
+    icon="fa-light fa-envelope"
+    severity="info"
+    size="small"
+    [disabled]="!selectedList()"
+    (onClick)="openInEmail()"
+    data-testid="vote-mailing-list-reminder-open-email"></lfx-button>
+</div>

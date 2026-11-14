@@ -14,7 +14,7 @@ import {
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
   ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
-  ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE,
+  ORG_CLA_INVALIDATE_CONFLICT_MESSAGE,
   ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
   ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_REVIEW_COPY_FILENAME,
@@ -50,6 +50,7 @@ import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { sanitizeFoundationSfid } from '../services/org-cla-foundation-pair';
 import { OrgClaPermissionsService } from '../services/org-cla-permissions.service';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
@@ -176,6 +177,42 @@ export class OrgClasController {
 
       logger.success(req, 'get_org_cla_pdf_url', startTime, { org_uid: orgUid, signature_id: signatureId, found: true });
       res.json(pdf);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:claGroupId/catalogue
+  // The unsigned overview for a pasted group address (#2293). A 404 — unknown id, or the
+  // producer route not deployed yet — is not a load failure. Other upstream failures are.
+  public async getClaGroupCatalogue(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_group_catalogue');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_group_catalogue' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_group_catalogue');
+
+      const claGroupId = (req.params['claGroupId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(claGroupId)) {
+        throw ServiceValidationError.forField('claGroupId', 'A CLA group identifier is required', { operation: 'get_org_cla_group_catalogue' });
+      }
+
+      const option = await this.orgClaService.getClaGroupCatalogue(req, claGroupId);
+      // The 404 included: before the producer route deploys every lookup misses, and a cached miss
+      // would keep a valid link on the not-found state after it lands.
+      res.setHeader('Cache-Control', 'no-store');
+      if (!option) {
+        logger.success(req, 'get_org_cla_group_catalogue', startTime, { org_uid: orgUid, cla_group_id: claGroupId, found: false });
+        res.status(404).json({ code: 'CLA_GROUP_NOT_FOUND' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_group_catalogue', startTime, { org_uid: orgUid, cla_group_id: claGroupId, found: true });
+      res.json(option);
     } catch (error) {
       next(error);
     }
@@ -519,7 +556,9 @@ export class OrgClasController {
    * PUT /api/orgs/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create
    *
    * Turns Auto ECLA on or off for one signed CCLA (#1988). The route is behind
-   * `blockDuringImpersonation` + `requireOrgLensAccess`; the service raises a 403 with the
+   * `blockDuringImpersonation` + `requireOrgLensAccess`. A caller not named on the agreement's
+   * CLA Manager list comes back from the service as `forbidden`, answered here as a 403 with
+   * this application's own sentence before EasyCLA is called. The service raises a 403 with the
    * producer's own refusal sentence on the sanctions path, and this handler leaves that error
    * to the shared error handler rather than translating it here — the producer's copy is what
    * belongs on screen.
@@ -559,7 +598,13 @@ export class OrgClasController {
 
       if (result.outcome === 'not-signed') {
         logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
-        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto Acknowledge setting cannot be changed' });
+        return;
+      }
+
+      if (result.outcome === 'forbidden') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting' });
         return;
       }
 
@@ -775,9 +820,9 @@ export class OrgClasController {
         return;
       }
 
-      if (result.outcome === 'not-approved') {
-        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, approved: false });
-        res.status(409).json({ message: ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE });
+      if (result.outcome === 'conflict') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, conflict: true });
+        res.status(409).json({ message: ORG_CLA_INVALIDATE_CONFLICT_MESSAGE });
         return;
       }
 
@@ -812,7 +857,7 @@ export class OrgClasController {
       const orgUid = req.params['orgUid'];
       assertOrgUid(orgUid, 'check_org_cla_permission');
 
-      const raw = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
+      const raw = req.body as { action?: unknown; projectSfid?: unknown; foundationSfid?: unknown } | undefined;
       const action = raw?.action;
       if (!isOrgClaPermissionAction(action)) {
         logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, rejected: 'unknown_action' });
@@ -821,11 +866,23 @@ export class OrgClasController {
       }
 
       const projectSfid = typeof raw?.projectSfid === 'string' ? raw.projectSfid.trim() : undefined;
+      const foundationSfid = typeof raw?.foundationSfid === 'string' ? raw.foundationSfid.trim() : undefined;
       const request: OrgClaPermissionCheckRequest = {
         action,
         ...(projectSfid ? { projectSfid } : {}),
+        ...(foundationSfid ? { foundationSfid } : {}),
       };
-      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid);
+      // The browser attaches `foundationSfid` from the row it is rendering, but a preview endpoint
+      // that trusts that id turns into an authorization-exploration oracle (the viewer can be
+      // asked whether they hold `cla-manager` on any `(project, foundation)` pair of their
+      // choosing). Re-derive the authoritative pair from the organization's own CLA Group list
+      // and only pass the client's value through when it matches — otherwise drop it and let ACS
+      // answer the project pair alone, which preserves the preview's "200 with `{ allowed }`,
+      // never 5xx" contract. `OrgClaPermissionsService.check` ignores the foundation half for
+      // `sign`, so skip the extra upstream fetch on sign previews (fired per row on hot views).
+      const sanitizedFoundationSfid =
+        request.action === 'sign' ? undefined : await sanitizeFoundationSfid(req, this.orgClaService, orgUid, request.projectSfid, request.foundationSfid);
+      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid, sanitizedFoundationSfid);
 
       logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
       res.setHeader('Cache-Control', 'no-store');

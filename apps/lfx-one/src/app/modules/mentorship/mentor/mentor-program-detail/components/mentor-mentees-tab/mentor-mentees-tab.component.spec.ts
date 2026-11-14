@@ -3,18 +3,29 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipNoteRequest, MentorshipProgramMentee, MentorshipTaskDialogAssignee, MentorshipTaskFormValue } from '@lfx-one/shared/interfaces';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
+import { environment } from '@environments/environment';
+import {
+  MentorshipTaskCreateRequest,
+  MentorshipNoteRequest,
+  MentorshipProgramMentee,
+  MentorshipTaskDialogAssignee,
+  MentorshipTaskFormValue,
+} from '@lfx-one/shared/interfaces';
+import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
+import { MessageService } from 'primeng/api';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipTaskDialogService } from '../../../../services/mentorship-task-dialog.service';
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
+import { MentorshipTaskUpdateService } from '../../../../services/mentorship-task-update.service';
 import { MentorMenteesTabComponent } from './mentor-mentees-tab.component';
 
 describe('MentorMenteesTabComponent', () => {
   const mentee = (overrides: Partial<MentorshipProgramMentee> = {}): MentorshipProgramMentee => ({
     id: 'mnt_1',
     name: 'Alex Rivera',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     email: 'alex.rivera@example.com',
     status: 'accepted',
     termName: 'Fall 2026',
@@ -57,6 +68,8 @@ describe('MentorMenteesTabComponent', () => {
   let openCreate: ReturnType<typeof vi.fn>;
   let openCreateGroup: ReturnType<typeof vi.fn>;
   let openEdit: ReturnType<typeof vi.fn>;
+  let update: ReturnType<typeof vi.fn>;
+  let taskSaved: ReturnType<typeof vi.fn>;
 
   const setup = (
     mentees: MentorshipProgramMentee[] = [mentee(), mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated', tasks: [], tasksTotal: 0 })]
@@ -64,15 +77,24 @@ describe('MentorMenteesTabComponent', () => {
     openCreate = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
     openCreateGroup = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
     openEdit = vi.fn().mockReturnValue(of(undefined) satisfies Observable<MentorshipTaskFormValue | undefined>);
+    update = vi.fn().mockReturnValue(of(null));
+    taskSaved = vi.fn();
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorMenteesTabComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } }],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: MentorshipTaskDialogService, useValue: { openCreate, openCreateGroup, openEdit } },
+        { provide: MentorshipTaskUpdateService, useValue: { update, isUpdating: () => false } },
+        { provide: MentorshipTaskFileService, useValue: { download: vi.fn() } },
+      ],
     });
 
     fixture = TestBed.createComponent(MentorMenteesTabComponent);
     fixture.componentRef.setInput('mentees', mentees);
+    fixture.componentRef.setInput('taskSaved', taskSaved);
     fixture.detectChanges();
   };
 
@@ -87,10 +109,15 @@ describe('MentorMenteesTabComponent', () => {
       (row.getAttribute('data-testid') ?? '').replace('mentorship-mentor-mentee-row-', '')
     );
 
+  it("links the mentee's name to the public mentee page", () => {
+    const link = element().querySelector('[data-testid="mentorship-mentor-mentee-link-mnt_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentees', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
+  });
+
   it('renders the header card, group-create action, and mentee columns', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-heading"]')?.textContent?.trim()).toBe('Current Mentees');
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-create-group-task"]')).not.toBeNull();
-    expect(headerLabels()).toEqual(['Mentee', 'Term', 'Progress', 'Status', 'Task']);
+    expect(headerLabels()).toEqual(['Mentee', 'Term', 'Progress', 'Status', 'Actions']);
     expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Current mentees');
   });
 
@@ -129,7 +156,7 @@ describe('MentorMenteesTabComponent', () => {
     expect(requests).toEqual([{ personId: 'mnt_2', personName: 'Priya Shah' }]);
   });
 
-  it('expands assigned tasks when View Tasks is clicked and hides prerequisite tasks by default', () => {
+  it('expands assigned tasks when View Tasks is clicked and shows prerequisite tasks by default', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-tasks-expanded-mnt_1"]')).toBeNull();
 
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-view-tasks-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
@@ -137,62 +164,107 @@ describe('MentorMenteesTabComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-tasks-expanded-mnt_1"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_1"]')?.textContent).toContain('Resume');
-    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_3"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-applicant-task-row-tsk_3"]')).not.toBeNull();
+  });
+
+  it('saves a task edited from an expanded row and hands it to the page', () => {
+    const saved = { ...mentee().tasks![1], name: 'Midterm Report (revised)' };
+    openEdit.mockReturnValue(
+      of({ taskId: 'tsk_2', name: saved.name, description: saved.description, requiresFileSubmission: false, assignedMenteeIds: [], status: 'completed' })
+    );
+    update.mockReturnValue(of(saved));
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-view-tasks-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
+    fixture.detectChanges();
+
+    element().querySelector<HTMLElement>('[data-testid="mentorship-applicant-task-edit-tsk_2"]')?.querySelector<HTMLButtonElement>('button')?.click();
+
+    expect(update).toHaveBeenCalledWith('tsk_2', { name: 'Midterm Report (revised)' }, true);
+    expect(taskSaved).toHaveBeenCalledWith('mnt_1', saved);
   });
 
   it("opens the task-form dialog with just the row's mentee when the plus control is clicked", () => {
-    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-create-task-mnt_2"]')?.querySelector<HTMLButtonElement>('button')?.click();
+    element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentee-create-task-mnt_1"]')?.querySelector<HTMLButtonElement>('button')?.click();
 
     expect(openCreate).toHaveBeenCalledTimes(1);
     const arg = openCreate.mock.calls[0][0] as MentorshipTaskDialogAssignee;
-    expect(arg.id).toBe('mnt_2');
-    expect(arg.name).toBe('Priya Shah');
+    expect(arg.id).toBe('mnt_1');
+    expect(arg.name).toBe('Alex Rivera');
   });
 
-  it('opens group create with every listed mentee preselected', () => {
+  it('offers no task create on a graduated mentee', () => {
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-create-task-mnt_2"]')).toBeNull();
+  });
+
+  it('offers Contact Mentee as a mailto: link on accepted and graduated mentees, in a new tab', () => {
+    for (const id of ['mnt_1', 'mnt_2']) {
+      expect(element().querySelector(`[data-testid="mentorship-mentor-mentee-contact-${id}"] a`)?.getAttribute('href')).toBe('mailto:alex.rivera@example.com');
+    }
+    const link = element().querySelector('[data-testid="mentorship-mentor-mentee-contact-mnt_1"] a');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('aria-label')).toBe('Contact Mentee: Alex Rivera');
+  });
+
+  it('drops Contact Mentee when the address is not safe to put in a mailto: link', () => {
+    setup([mentee({ email: 'alex@example.com%0D%0ABcc:other@example.com' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-contact-mnt_1"]')).toBeNull();
+  });
+
+  it('opens group create with every accepted mentee preselected', () => {
+    setup([mentee(), mentee({ id: 'mnt_3', name: 'Sam Lee' }), mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated' })]);
+
     element().querySelector<HTMLElement>('[data-testid="mentorship-mentor-mentees-create-group-task"]')?.querySelector<HTMLButtonElement>('button')?.click();
 
     expect(openCreateGroup).toHaveBeenCalledTimes(1);
     const assignees = openCreateGroup.mock.calls[0][0] as MentorshipTaskDialogAssignee[];
-    expect(assignees.map((person) => person.id)).toEqual(['mnt_1', 'mnt_2']);
+    expect(assignees.map((person) => person.id)).toEqual(['mnt_1', 'mnt_3']);
   });
 
-  it('routes a created group task to the coming-soon toast until the write endpoint lands', () => {
+  it('disables group create when no listed mentee is accepted', () => {
+    setup([mentee({ id: 'mnt_2', name: 'Priya Shah', status: 'graduated' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentees-create-group-task"] button')?.hasAttribute('disabled')).toBe(true);
+  });
+
+  it('asks the parent to create a group task for the mentees chosen in the dialog', () => {
     openCreateGroup.mockReturnValue(
       of({
-        taskId: undefined,
         name: 'Submit ingestion benchmark report',
         description: 'Upload the benchmark output.',
-        requiresFileSubmission: false,
-        assignedMenteeIds: ['mnt_1', 'mnt_2'],
+        dueOn: '2026-11-30',
+        requiresFileSubmission: true,
+        assignedMenteeIds: ['mnt_1', 'mnt_3'],
       } satisfies MentorshipTaskFormValue)
     );
-    const messageService = TestBed.inject(MessageService);
-    const addSpy = vi.spyOn(messageService, 'add');
+    const requests: MentorshipTaskCreateRequest[] = [];
+    fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
 
     fixture.componentInstance['onCreateGroupTask']();
 
-    expect(addSpy).toHaveBeenCalledTimes(1);
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create group task "Submit ingestion benchmark report" for 2 mentees');
-  });
-
-  it('singularizes the group-task toast when only one mentee is assigned', () => {
-    setup([mentee()]);
-    openCreateGroup.mockReturnValue(
-      of({
-        taskId: undefined,
+    expect(requests).toEqual([
+      {
+        applicationIds: ['mnt_1', 'mnt_3'],
         name: 'Submit ingestion benchmark report',
         description: 'Upload the benchmark output.',
-        requiresFileSubmission: false,
-        assignedMenteeIds: ['mnt_1'],
-      } satisfies MentorshipTaskFormValue)
+        dueDate: '2026-11-30',
+        requiresFileSubmission: true,
+      },
+    ]);
+  });
+
+  it("asks the parent to create the row's task, and nothing when the dialog is cancelled", () => {
+    const requests: MentorshipTaskCreateRequest[] = [];
+    fixture.componentInstance.taskCreateRequested.subscribe((request) => requests.push(request));
+
+    fixture.componentInstance['onCreateTask'](mentee());
+    expect(requests).toEqual([]);
+
+    openCreate.mockReturnValue(
+      of({ name: 'Resume', description: 'Upload it.', requiresFileSubmission: false, assignedMenteeIds: ['mnt_1'] } satisfies MentorshipTaskFormValue)
     );
-    const messageService = TestBed.inject(MessageService);
-    const addSpy = vi.spyOn(messageService, 'add');
+    fixture.componentInstance['onCreateTask'](mentee());
 
-    fixture.componentInstance['onCreateGroupTask']();
-
-    expect((addSpy.mock.calls[0][0] as ToastMessageOptions).summary).toBe('Create group task "Submit ingestion benchmark report" for 1 mentee');
+    expect(requests).toEqual([{ applicationIds: ['mnt_1'], name: 'Resume', description: 'Upload it.', dueDate: undefined, requiresFileSubmission: false }]);
   });
 
   it('shows the empty state when no current mentees are present', () => {

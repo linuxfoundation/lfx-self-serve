@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { MailingListController } from '../controllers/mailing-list.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 const router = Router();
 
@@ -26,12 +27,23 @@ router.post('/', (req, res, next) => mailingListController.createMailingList(req
 router.put('/:id', (req, res, next) => mailingListController.updateMailingList(req, res, next));
 router.delete('/:id', (req, res, next) => mailingListController.deleteMailingList(req, res, next));
 
+// Committee ↔ Mailing List Sync routes
+router.get('/:id/sync-diff', (req, res, next) => mailingListController.getSyncDiff(req, res, next));
+router.post('/:id/sync-apply', blockDuringImpersonation, (req, res, next) => mailingListController.applySyncDiff(req, res, next));
+router.post('/:id/sync-diff/start', (req, res, next) => mailingListController.startSyncDiff(req, res, next));
+router.get('/:id/sync-diff/:jobId/status', (req, res, next) => mailingListController.getSyncDiffStatus(req, res, next));
+router.post('/:id/sync-apply/start', blockDuringImpersonation, (req, res, next) => mailingListController.startSyncApply(req, res, next));
+router.get('/:id/sync-apply/:jobId/status', (req, res, next) => mailingListController.getSyncApplyStatus(req, res, next));
+
 // Mailing List Member routes
 router.get('/:id/members', (req, res, next) => mailingListController.getMembers(req, res, next));
 router.get('/:id/members/count', (req, res, next) => mailingListController.getMembersCount(req, res, next));
 router.get('/:id/members/:memberId', (req, res, next) => mailingListController.getMemberById(req, res, next));
-router.post('/:id/members', (req, res, next) => mailingListController.createMember(req, res, next));
-router.put('/:id/members/:memberId', (req, res, next) => mailingListController.updateMember(req, res, next));
-router.delete('/:id/members/:memberId', (req, res, next) => mailingListController.deleteMember(req, res, next));
+// Member mutations include a self-service path keyed off the caller's own identity (see
+// assertMemberWriteAccess in mailing-list.service.ts) — block them during impersonation so an
+// LF staff impersonator can't use that path to mutate the target user's own memberships.
+router.post('/:id/members', blockDuringImpersonation, (req, res, next) => mailingListController.createMember(req, res, next));
+router.put('/:id/members/:memberId', blockDuringImpersonation, (req, res, next) => mailingListController.updateMember(req, res, next));
+router.delete('/:id/members/:memberId', blockDuringImpersonation, (req, res, next) => mailingListController.deleteMember(req, res, next));
 
 export default router;

@@ -1,25 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { ApplicationRef, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRouteSnapshot, convertToParamMap, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, convertToParamMap, RedirectCommand, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
 import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@shared/services/persona.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
+import { ProjectRecoveryService } from '@shared/services/project-recovery.service';
 import { ProjectService } from '@shared/services/project.service';
-import { firstValueFrom, Observable, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { reconcileRouteProjectContext } from '@shared/utils/entity-project-context.util';
+import { defer, EMPTY, firstValueFrom, Observable, of, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { newsletterAccessGuard } from './newsletter-access.guard';
 
 // Covers the GH-1570 resolution order: the route's own `:projectUid` wins over a stale
 // `?project=` / cookie-restored context (including at the lens mount, where the param lives on
 // the child snapshot), a confirmed-missing uid lookup (400/404) degrades to the legacy slug
-// chain while a transient failure fails closed. Only route-project (`:projectUid`) denials
-// carry `_notice: 'access'` for AppComponent to toast; legacy-chain denials keep the plain
-// pre-GH-1570 redirect so list/create behave exactly as before.
+// chain while a transient failure fails closed with `_notice: 'error'` (GH-2592). Resolved
+// route-project denials carry `_notice: 'access'` for AppComponent to toast; legacy-chain
+// denials keep the plain pre-GH-1570 redirect so list/create behave exactly as before.
 describe('newsletterAccessGuard', () => {
   let currentPersona: ReturnType<typeof signal<string>>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
@@ -32,22 +35,31 @@ describe('newsletterAccessGuard', () => {
   let projectsByKey: Record<string, Partial<Project> | null>;
 
   const route = (
-    options: { query?: Record<string, string>; params?: Record<string, string>; childParams?: Record<string, string>; lens?: 'foundation' | 'project' } = {}
+    options: {
+      query?: Record<string, string>;
+      params?: Record<string, string>;
+      childParams?: Record<string, string>;
+      lens?: 'foundation' | 'project';
+      mountPath?: string;
+    } = {}
   ): ActivatedRouteSnapshot =>
     ({
       queryParamMap: convertToParamMap(options.query ?? {}),
       paramMap: convertToParamMap(options.params ?? {}),
       firstChild: options.childParams ? ({ paramMap: convertToParamMap(options.childParams) } as unknown as ActivatedRouteSnapshot) : null,
       parent: options.lens ? ({ data: { lens: options.lens } } as unknown as ActivatedRouteSnapshot) : null,
+      routeConfig: options.mountPath ? { path: options.mountPath } : null,
       data: {},
     }) as unknown as ActivatedRouteSnapshot;
 
-  const runGuard = async (r: ActivatedRouteSnapshot): Promise<boolean | UrlTree> => {
-    const result = TestBed.runInInjectionContext(() => newsletterAccessGuard(r, {} as RouterStateSnapshot));
+  const runGuard = async (r: ActivatedRouteSnapshot): Promise<boolean | UrlTree | RedirectCommand> => {
+    const result = TestBed.runInInjectionContext(() =>
+      newsletterAccessGuard(r, { url: '/project/newsletters?project=query-slug#section' } as RouterStateSnapshot)
+    );
     // The no-:projectUid ED fast path returns `true` synchronously and the no-context
     // fallback a bare UrlTree; every other branch returns an Observable.
     if (result instanceof Observable) {
-      return firstValueFrom(result as Observable<boolean | UrlTree>);
+      return firstValueFrom(result as Observable<boolean | UrlTree | RedirectCommand>);
     }
     return result as boolean | UrlTree;
   };
@@ -77,6 +89,49 @@ describe('newsletterAccessGuard', () => {
     });
   });
 
+  afterEach(() => vi.useRealTimers());
+
+  it.each([400, 401, 403, 404])('renders in-place not-found for a query-slug HTTP %s', async (status) => {
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
+
+    const result = await runGuard(route({ query: { project: 'missing-project' } }));
+
+    expect(result).toBeInstanceOf(RedirectCommand);
+    expect(router.parseUrl).toHaveBeenCalledWith('/not-found');
+    expect((result as RedirectCommand).navigationBehaviorOptions).toEqual({ skipLocationChange: true });
+    expect(router.createUrlTree).not.toHaveBeenCalled();
+  });
+
+  it('allows a query-slug writer when the shared transient retry succeeds', async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of({ slug: 'query-slug', writer: true }));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = runGuard(route({ query: { project: 'query-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it('keeps a persistent query-slug failure in-place with the full retry destination', async () => {
+    vi.useFakeTimers();
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+    const result = runGuard(route({ query: { project: 'query-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    const redirect = (await result) as RedirectCommand;
+    expect(redirect).toBeInstanceOf(RedirectCommand);
+    expect(redirect.navigationBehaviorOptions?.skipLocationChange).toBe(true);
+    expect(TestBed.inject(ProjectRecoveryService).retryUrl).toBe('/project/newsletters?project=query-slug#section');
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
   it('allows the executive-director persona synchronously on routes without a :projectUid', async () => {
     currentPersona.set('executive-director');
 
@@ -99,10 +154,9 @@ describe('newsletterAccessGuard', () => {
     expect(getProjectStrict).toHaveBeenCalledWith('uid-a');
   });
 
-  it('does not deny the executive-director persona when the route-project resolution fails', async () => {
-    // Fail-open: 'uid-gone' is intentionally unseeded, so the strict lookup errors 404 —
-    // a deleted/unknown project or fetch error must not deny the ED fast path.
+  it.each([404, 503])('does not deny the executive-director persona when the route-project lookup fails with HTTP %s', async (status) => {
     currentPersona.set('executive-director');
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
 
     const result = await runGuard(route({ params: { projectUid: 'uid-gone', id: 'n1' } }));
 
@@ -135,12 +189,10 @@ describe('newsletterAccessGuard', () => {
     expect(getProjectStrict).toHaveBeenCalledWith('uid-a');
   });
 
-  it('degrades to the legacy slug chain when the uid lookup confirms the project missing', async () => {
+  it.each([400, 404])('degrades to the legacy slug chain when the uid lookup confirms HTTP %s', async (status) => {
     activeContext.set({ uid: 'uid-ctx', slug: 'ctx-slug', name: 'Context Project' });
-    projectsByKey = {
-      'uid-gone': null, // deleted/unknown project → getProjectStrict 404s
-      'ctx-slug': { slug: 'ctx-slug', writer: true },
-    };
+    projectsByKey = { 'ctx-slug': { slug: 'ctx-slug', writer: true } };
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
 
     const result = await runGuard(route({ params: { projectUid: 'uid-gone', id: 'n1' } }));
 
@@ -159,19 +211,143 @@ describe('newsletterAccessGuard', () => {
     expect(getProject).not.toHaveBeenCalled();
   });
 
-  it('fails closed without consulting the stale context when the uid lookup errors transiently', async () => {
-    // The pre-review behavior rechecked the writer bit against the restored context on ANY
-    // failure — a transient 5xx could deny a legitimate route-project writer or authorize
-    // against an unrelated project (GH-1570). Only a confirmed 400/404 may degrade.
+  it.each([0, 408, 429, 500, 503])('allows the route-project writer when a UID HTTP %s retry recovers', async (status) => {
+    vi.useFakeTimers();
+    activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
+    const request = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status })))
+      .mockReturnValueOnce(of({ slug: 'route-project', writer: true }));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = runGuard(route({ params: { projectUid: 'uid-a' }, query: { project: 'stale-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toBe(true);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getProject).not.toHaveBeenCalled();
+    expect(router.createUrlTree).not.toHaveBeenCalled();
+  });
+
+  it('denies access to the resolved route project when the UID retry recovers a non-writer', async () => {
+    vi.useFakeTimers();
+    const request = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockReturnValueOnce(of({ slug: 'route-project', writer: false }));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = runGuard(route({ params: { projectUid: 'uid-a' }, query: { project: 'stale-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'route-project', _notice: 'access' } } });
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it.each(['browser', 'server'])('reuses a recovered UID lookup across stacked guards and context reconciliation on %s', async (platform) => {
+    vi.useFakeTimers();
+    const project = { uid: 'uid-a', slug: 'route-project', name: 'Route Project', writer: true, parent_uid: '', logo_url: '' };
+    const request = vi
+      .fn<() => Observable<Partial<Project>>>(() => throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockImplementationOnce(() => throwError(() => new HttpErrorResponse({ status: 503 })))
+      .mockImplementationOnce(() => of(project));
+    const routeLensKind = signal<'foundation' | 'project'>('project');
+    activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get: () => defer(request) } }] });
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: platform });
+    TestBed.overrideProvider(ProjectService, { useFactory: () => new ProjectService() });
+    TestBed.overrideProvider(ProjectContextService, {
+      useValue: {
+        activeContext,
+        activeRouteLensKind: routeLensKind,
+        setRouteLensKind: (kind: 'foundation' | 'project') => routeLensKind.set(kind),
+        setProject: (context: ProjectContext) => activeContext.set(context),
+        setFoundation: (context: ProjectContext) => activeContext.set(context),
+      },
+    });
+    TestBed.overrideProvider(Router, {
+      useValue: { ...router, events: EMPTY, url: '/project/newsletters/uid-a/n1/edit', parseUrl: () => ({ queryParams: {} }) },
+    });
+
+    const mountResult = runGuard(route({ childParams: { projectUid: 'uid-a' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    expect(await mountResult).toBe(true);
+
+    const childResult = runGuard(route({ params: { projectUid: 'uid-a' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+    expect(await childResult).toBe(true);
+
+    TestBed.runInInjectionContext(() =>
+      reconcileRouteProjectContext(signal('uid-a'), inject(ProjectService), inject(ProjectContextService), inject(Router), inject(DestroyRef))
+    );
+    TestBed.tick();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(activeContext()).toEqual({ uid: 'uid-a', slug: 'route-project', name: 'Route Project', parent_uid: '', logoUrl: '' });
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([0, 408, 429, 500, 503])('explains a UID HTTP %s outage without consulting or serializing a stale writable project', async (status) => {
+    vi.useFakeTimers();
     activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
     projectsByKey = { 'stale-slug': { slug: 'stale-slug', writer: true } };
-    getProjectStrict.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    const request = vi.fn(() => throwError(() => new HttpErrorResponse({ status })));
+    getProjectStrict.mockReturnValue(defer(request));
 
-    const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' } }));
+    const result = runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' }, query: { project: 'stale-slug' } }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
 
-    // Plain overview redirect — no `_notice: 'access'`, since a blip is not a denial.
-    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(await result).toEqual({ denied: '/project/overview', opts: { queryParams: { _notice: 'error' } } });
+    expect(request).toHaveBeenCalledTimes(2);
     expect(getProject).not.toHaveBeenCalled();
+    expect(router.parseUrl).not.toHaveBeenCalled();
+    expect(router.createUrlTree).toHaveBeenCalledExactlyOnceWith(['/project/overview'], { queryParams: { _notice: 'error' } });
+  });
+
+  it.each([
+    { lens: 'foundation' as const, platform: 'browser', uidOwner: 'route' },
+    { lens: 'foundation' as const, platform: 'server', uidOwner: 'child' },
+    { lens: 'project' as const, platform: 'browser', uidOwner: 'child' },
+    { lens: 'project' as const, platform: 'server', uidOwner: 'route' },
+  ])('carries the error notice for $lens/$platform with a $uidOwner-owned UID', async ({ lens, platform, uidOwner }) => {
+    vi.useFakeTimers();
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: platform });
+    getProjectStrict.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    const params = { projectUid: 'uid-a', id: 'n1' };
+
+    const result = runGuard(route({ lens, ...(uidOwner === 'route' ? { params } : { childParams: params }) }));
+    await vi.advanceTimersByTimeAsync(TRANSIENT_RETRY_DELAY_MS);
+
+    expect(await result).toEqual({ denied: `/${lens}/overview`, opts: { queryParams: { _notice: 'error' } } });
+    expect(getProject).not.toHaveBeenCalled();
+    expect(router.parseUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 403])('keeps the plain fail-closed redirect for UID HTTP %s without consulting stale context', async (status) => {
+    activeContext.set({ uid: 'uid-stale', slug: 'stale-slug', name: 'Stale Project' });
+    projectsByKey = { 'stale-slug': { slug: 'stale-slug', writer: true } };
+    const request = vi.fn(() => throwError(() => new HttpErrorResponse({ status })));
+    getProjectStrict.mockReturnValue(defer(request));
+
+    const result = await runGuard(route({ params: { projectUid: 'uid-a' }, query: { project: 'stale-slug' } }));
+
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
+    expect(getProject).not.toHaveBeenCalled();
+    expect(router.createUrlTree).not.toHaveBeenCalled();
+  });
+
+  it('does not classify an unknown non-HTTP UID lookup error as an outage', async () => {
+    getProjectStrict.mockReturnValue(throwError(() => new Error('Synthetic lookup failure')));
+
+    const result = await runGuard(route({ params: { projectUid: 'uid-a' } }));
+
+    expect(result).toEqual({ redirect: '/project/overview' });
+    expect(getProjectStrict).toHaveBeenCalledExactlyOnceWith('uid-a');
+    expect(getProject).not.toHaveBeenCalled();
+    expect(router.createUrlTree).not.toHaveBeenCalled();
   });
 
   it('denies with the resolved slug and the access notice when the route project is not writable', async () => {
@@ -193,7 +369,7 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ query: { project: 'query-slug' } }));
 
     expect(result).toBe(true);
-    expect(getProject).toHaveBeenCalledWith('query-slug', false);
+    expect(getProjectStrict).toHaveBeenCalledWith('query-slug');
     expect(getProject).not.toHaveBeenCalledWith('ctx-slug', false);
   });
 
@@ -230,5 +406,27 @@ describe('newsletterAccessGuard', () => {
     const result = await runGuard(route({ params: { projectUid: 'uid-a', id: 'n1' }, lens: 'foundation' }));
 
     expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'route-project', _notice: 'access' } } });
+  });
+
+  it('defers to the browser during SSR on the gw embed mounts, without persona or project lookups (GH-3274)', async () => {
+    // On the server a transient lookup failure became a real HTTP 302 that bounced
+    // the Gatewaze embed's sign-in return to overview. On the gw mounts the guard
+    // must not evaluate anything during SSR; the client re-runs it after hydration.
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const result = await runGuard(route({ query: { project: 'agentic-ai-foundation' }, lens: 'foundation', mountPath: 'foundation/gw' }));
+    expect(result).toBe(true);
+    expect(getProject).not.toHaveBeenCalled();
+    expect(getProjectStrict).not.toHaveBeenCalled();
+  });
+
+  it('keeps full SSR enforcement on non-gw routes: analytics and recipient engagement fetch during SSR (GH-3274)', async () => {
+    // Writer-gated newsletter pages DO load data during SSR, and the page policy is
+    // stricter than some upstream read permissions — so the server must still deny
+    // non-writers there rather than defer to the browser.
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    projectsByKey['aaif'] = { slug: 'aaif', writer: false };
+    const result = await runGuard(route({ query: { project: 'aaif' }, lens: 'foundation' }));
+    expect(result).toEqual({ denied: '/foundation/overview', opts: { queryParams: { project: 'aaif' } } });
+    expect(getProjectStrict).toHaveBeenCalledWith('aaif');
   });
 });

@@ -42,6 +42,12 @@
         <p class="text-sm text-gray-500">Use the project selector in the sidebar to choose a foundation</p>
       </div>
     </div>
+  } @else if (emptyState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      testId="dashboard-organization-involvement-empty"
+      [values]="{ orgName: accountName() }"
+      (retry)="retry()"></lfx-org-lens-empty-state>
   } @else {
     <div class="relative overflow-hidden">
       <div lfxScrollShadow class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="dashboard-involvement-carousel">

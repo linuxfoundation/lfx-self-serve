@@ -8,8 +8,10 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
+import { PROJECT_PERMISSION_ROLE_OPTIONS, PROJECT_USER_ALREADY_ON_PROJECT_CODE, PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE } from '@lfx-one/shared/constants';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -42,11 +44,8 @@ export class UserFormComponent {
   public user = computed(() => (this.config.data?.user as ProjectPermissionUser) || null);
   public project = computed(() => this.projectContextService.activeContext());
 
-  // Permission options - simplified to only View/Manage
-  public permissionLevelOptions = [
-    { label: 'View', value: 'view' },
-    { label: 'Manage', value: 'manage' },
-  ];
+  // A user holds exactly one role
+  public permissionLevelOptions = PROJECT_PERMISSION_ROLE_OPTIONS;
 
   public constructor() {
     // Initialize form with data when component is created
@@ -82,9 +81,14 @@ export class UserFormComponent {
     // For editing, update role only
     if (this.isEditing()) {
       this.permissionsService
-        .updateUserRole(project.uid, this.user()!.username || this.user()!.email, {
-          role: formValue.role,
-        } as UpdateUserRoleRequest)
+        .updateUserRole(
+          project.uid,
+          this.user()!.username || this.user()!.email,
+          {
+            role: formValue.role,
+          } as UpdateUserRoleRequest,
+          this.user()!.duplicateIdentifiers
+        )
         .pipe(take(1))
         .subscribe({
           next: () => {
@@ -99,7 +103,7 @@ export class UserFormComponent {
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
-              detail: error.error?.message || 'Failed to update user. Please try again.',
+              detail: getHttpErrorDetail(error, 'Failed to update user. Please try again.'),
             });
             this.submitting.set(false);
           },
@@ -130,12 +134,7 @@ export class UserFormComponent {
             if (error.status === 404 && error.error?.code === 'NOT_FOUND') {
               this.handleUserNotFound(formValue);
             } else {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: error.error?.message || 'Failed to add user. Please try again.',
-              });
-              this.submitting.set(false);
+              this.handleAddUserError(error);
             }
           },
         });
@@ -227,15 +226,21 @@ export class UserFormComponent {
           });
           this.dialogRef.close(true);
         },
-        error: (error: HttpErrorResponse) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: error.error?.message || 'Failed to add user. Please try again.',
-          });
-          this.submitting.set(false);
-        },
+        error: (error: HttpErrorResponse) => this.handleAddUserError(error),
       });
+  }
+
+  /**
+   * Shows why an add failed. The BFF's error envelope carries its reason under `error` (and no `message`), so
+   * the shared reader is used rather than `error.error?.message`, which is empty for these failures and left
+   * every one on the generic text. Someone already on the project gets the way to change their role.
+   */
+  private handleAddUserError(error: HttpErrorResponse): void {
+    const alreadyOnProject = error.status === 409 && error.error?.code === PROJECT_USER_ALREADY_ON_PROJECT_CODE;
+    const detail = alreadyOnProject ? PROJECT_USER_ALREADY_ON_PROJECT_MESSAGE : getHttpErrorDetail(error, 'Failed to add user. Please try again.');
+
+    this.messageService.add({ severity: 'error', summary: 'Error', detail });
+    this.submitting.set(false);
   }
 
   private createUserFormGroup(): FormGroup {

@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex items-center justify-between gap-[12pt] border-b border-black/10 pb-[6pt] text-[7.5pt] uppercase tracking-[0.18em]"
+  data-testid="mktg-print-running-head">
+  <span class="opacity-75">{{ label() }}</span>
+  @if (brand().logoOnLight; as logo) {
+    <img class="h-[16pt] max-w-[1.6in] object-contain object-right" [src]="logo.src" [alt]="logo.alt" />
+  } @else if (versionLabel()) {
+    <span class="opacity-75">{{ versionLabel() }}</span>
+  }
+</div>

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Provider, signal } from '@angular/core';
-import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 
@@ -38,6 +38,7 @@ export function headerTestProviders(): Provider[] {
     { provide: UserService, useValue: { authenticated: signal(false), getCurrentUserProfile: vi.fn(() => of(null)) } },
     { provide: LensService, useValue: { setLens: vi.fn() } },
     { provide: ProjectService, useValue: { searchProjects: vi.fn(() => of([])) } },
-    { provide: AppService, useValue: { toggleMobileSidebar: vi.fn() } },
+    // The header's Support button (lfxOpenIntercom) toasts through MessageService when support is unavailable.
+    { provide: MessageService, useValue: { add: vi.fn() } },
   ];
 }

@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { provideHttpClient } from '@angular/common/http';
+import { HttpResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MentorshipApplicantTask, MentorshipTaskCreateResponse } from '@lfx-one/shared/interfaces';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipService } from './mentorship.service';
 
@@ -37,6 +38,24 @@ describe('MentorshipService — lookup error mapping', () => {
     expect(failed).toBe(true);
   });
 
+  it('keeps a plus sign in the name, the project search and the cursor instead of letting Express read it as a space', () => {
+    service.isProgramNameAvailable('C++ Mentorship').subscribe();
+    service.getLfProjects({ search: 'C++', pageToken: 'ab+cd/ef=' }).subscribe();
+
+    expect(http.expectOne((req) => req.url === '/api/mentorship/programs/name-available').request.urlWithParams).toContain('name=C%2B%2B%20Mentorship');
+    const projects = http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.urlWithParams;
+    expect(projects).toContain('search=C%2B%2B');
+    expect(projects).toContain('page_token=ab%2Bcd%2Fef%3D');
+  });
+
+  it('asks for one project’s sub-projects only when given a parent, and leaves the parent off otherwise', () => {
+    service.getLfProjects({ parentUid: 'parent-1' }).subscribe();
+    expect(http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.params.get('parentUid')).toBe('parent-1');
+
+    service.getLfProjects().subscribe();
+    expect(http.expectOne((req) => req.url === '/api/mentorship/lf-projects').request.params.has('parentUid')).toBe(false);
+  });
+
   it('maps a missing CII project to null and lets other CII failures propagate', () => {
     let missing: unknown = 'unset';
     service.getCiiBadge('1842').subscribe((badge) => {
@@ -53,70 +72,6 @@ describe('MentorshipService — lookup error mapping', () => {
       },
     });
     http.expectOne('/api/mentorship/cii/1842').flush('down', { status: 502, statusText: 'Bad Gateway' });
-    expect(failed).toBe(true);
-  });
-
-  it('lets mentor-program loading failures propagate so the page can render a retry state', () => {
-    let failed = false;
-    service.getMentorPrograms().subscribe({
-      next: () => undefined,
-      error: () => {
-        failed = true;
-      },
-    });
-
-    http.expectOne('/api/mentorship/mentor/programs').flush('down', { status: 503, statusText: 'Service Unavailable' });
-    expect(failed).toBe(true);
-  });
-
-  it('lets mentor-profile loading failures propagate so the page can render a retry state', () => {
-    // Parallels the mentor-programs test above — a future `catchError` refactor in
-    // `MentorshipService` must not silently swallow profile errors, or the profile page
-    // would degrade to the empty-response shape without ever surfacing the retry state.
-    let failed = false;
-    service.getMentorProfile().subscribe({
-      next: () => undefined,
-      error: () => {
-        failed = true;
-      },
-    });
-
-    http.expectOne('/api/mentorship/mentor/profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
-    expect(failed).toBe(true);
-  });
-
-  it('encodes the mentor program id in the detail URL', () => {
-    let loaded: unknown = 'unset';
-    service.getMentorProgram('mp_apicurio/fall26').subscribe((detail) => {
-      loaded = detail;
-    });
-
-    const detail = { id: 'mp_apicurio/fall26' };
-    http.expectOne('/api/mentorship/mentor/programs/mp_apicurio%2Ffall26').flush(detail);
-    expect(loaded).toEqual(detail);
-  });
-
-  it('lets mentor-program detail 503 and 404 errors propagate so the page can distinguish retry from not-found', () => {
-    // Unlike getProgram, getMentorProgram must not swallow 404 into a null fallback.
-    // MentorProgramDetailComponent depends on the error status for not-found vs retry.
-    let failed = false;
-    service.getMentorProgram('mp_gridflow_fall26').subscribe({
-      next: () => undefined,
-      error: () => {
-        failed = true;
-      },
-    });
-    http.expectOne('/api/mentorship/mentor/programs/mp_gridflow_fall26').flush('down', { status: 503, statusText: 'Service Unavailable' });
-    expect(failed).toBe(true);
-
-    failed = false;
-    service.getMentorProgram('missing').subscribe({
-      next: () => undefined,
-      error: () => {
-        failed = true;
-      },
-    });
-    http.expectOne('/api/mentorship/mentor/programs/missing').flush('missing', { status: 404, statusText: 'Not Found' });
     expect(failed).toBe(true);
   });
 });
@@ -157,5 +112,145 @@ describe('MentorshipService — program review', () => {
     req.flush({ error: 'cannot transition program from rejected to rejected' }, { status: 409, statusText: 'Conflict' });
 
     expect(status).toBe(409);
+  });
+});
+
+describe('MentorshipService — LFX profile sync', () => {
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('patches the fields onto the caller mentorship profiles and surfaces a failure', () => {
+    const fields = { firstName: 'Test', lastName: 'User' };
+    let status = 0;
+    service.syncLfxProfileFields(fields).subscribe({ error: (err) => (status = err.status) });
+
+    const req = http.expectOne('/api/mentorship/me/lfx-profile');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(fields);
+    req.flush({ error: 'forbidden' }, { status: 403, statusText: 'Forbidden' });
+
+    expect(status).toBe(403);
+  });
+});
+
+describe('MentorshipService — task writes', () => {
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+    vi.restoreAllMocks();
+  });
+
+  it('posts a task create and returns the created and failed ids', () => {
+    const request = { applicationIds: ['app_1', 'app_2'], name: 'Read the guide', description: 'Start with chapter one', dueDate: '2030-01-31' };
+    let result: MentorshipTaskCreateResponse | undefined;
+    service.createTasks(request).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/tasks');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(request);
+    req.flush({ created: ['app_1'], failed: ['app_2'] } satisfies MentorshipTaskCreateResponse);
+    expect(result).toEqual({ created: ['app_1'], failed: ['app_2'] });
+  });
+
+  it('logs a failed task create by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service
+      .createTasks({ applicationIds: ['app_1'], name: 'Read the guide', description: 'private-task-text' })
+      .subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/tasks').flush({ message: 'private-task-text' }, { status: 404, statusText: 'Not Found' });
+
+    expect(status).toBe(404);
+    expect(logged).toHaveBeenCalledWith('[MentorshipService] createTasks failed', { status: 404, statusText: 'Not Found' });
+  });
+
+  it('patches one task, with an encoded id, and returns the updated task', () => {
+    const body = { name: 'Read the guide', status: 'completed' } as const;
+    const updated = { id: 'task 1', name: 'Read the guide', status: 'completed' } as MentorshipApplicantTask;
+    let result: MentorshipApplicantTask | undefined;
+    service.updateTask('task 1', body).subscribe((response) => (result = response));
+
+    const req = http.expectOne('/api/mentorship/tasks/task%201');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual(body);
+    req.flush(updated);
+    expect(result).toEqual(updated);
+  });
+
+  it('logs a failed task edit by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.updateTask('task_1', { status: 'submitted' }).subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/tasks/task_1').flush({ message: 'private-task-text' }, { status: 400, statusText: 'Bad Request' });
+
+    expect(status).toBe(400);
+    expect(logged).toHaveBeenCalledWith('[MentorshipService] updateTask failed', { status: 400, statusText: 'Bad Request' });
+  });
+});
+
+describe('MentorshipService — task file download', () => {
+  let service: MentorshipService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MentorshipService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(MentorshipService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+    vi.restoreAllMocks();
+  });
+
+  it('reads the file as a blob, with an encoded id, and keeps the response headers', () => {
+    const blob = new Blob(['data'], { type: 'application/pdf' });
+    let response: HttpResponse<Blob> | undefined;
+    service.downloadTaskFile('task 1').subscribe((res) => (response = res));
+
+    const req = http.expectOne('/api/mentorship/tasks/task%201/file');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(blob, { headers: { 'Content-Disposition': 'attachment; filename="report.pdf"' } });
+
+    expect(response?.body).toBe(blob);
+    expect(response?.headers.get('Content-Disposition')).toBe('attachment; filename="report.pdf"');
+  });
+
+  it('logs a failed download by status only and lets it reach the caller', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let status: number | undefined;
+    service.downloadTaskFile('task_1').subscribe({ error: (err: { status: number }) => (status = err.status) });
+
+    http.expectOne('/api/mentorship/tasks/task_1/file').flush(new Blob(['{"error":"private-task-text"}']), { status: 403, statusText: 'Forbidden' });
+
+    expect(status).toBe(403);
+    expect(logged).toHaveBeenCalledWith('[MentorshipService] downloadTaskFile failed', { status: 403, statusText: 'Forbidden' });
   });
 });

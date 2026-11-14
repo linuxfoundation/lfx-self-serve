@@ -46,17 +46,24 @@ Request → Controller → Service → Microservice/Data Layer
 | [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management    |
 | [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
 | [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
+| [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution |
+| [Marketing OS Downstream Rebuild](./mktg-rebuild.md)                  | Current-revision staleness, ordered rebuild sessions, questions and Drafts      |
 | [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
 | [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
 | [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
 | [NATS Integration](./nats-integration.md)                             | Inter-service messaging, project slug resolution, lazy connections              |
 | [Snowflake Integration](./snowflake-integration.md)                   | Analytics queries, connection pooling, query deduplication                      |
 | [Public Meetings](./public-meetings.md)                               | Unauthenticated meeting access, M2M token flow                                  |
+| [Login-Free Vote Links](./vote-links.md)                              | Token-in-fragment ballots, public proxy routes, send-ballots flow               |
 | [Mentorship Mentee Registration](./mentorship-mentee-registration.md) | Register BFF, replace-all upsert pre-check, error mapping, impersonation block  |
+| [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source              |
+| [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |
 | [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
-| [Gatewaze Embed Proxy](./gw-proxy.md)                                 | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
-| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, M2M Key Contact check, fail-closed eligibility               |
+| [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, routes, BFF proxies, authorization, keys, flag    |
+| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                         |
 | [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
+| [LinkedIn Post Agent](./mktg-linkedin-post.md)                        | User profile lifecycle, source ingestion, one-off documents, privacy boundaries |
+| [One-off Result Hook](./mktg-one-off-landing.md)                      | Current-turn terminal facts, root replies, creator-only failure text            |
 
 ### Committee Management
 
@@ -166,6 +173,7 @@ Infrastructure services that don't map to a single HTTP boundary:
 - **`nats.service.ts`** — generic NATS request/reply client (consumed by `project.service.ts` and others for slug resolution, user lookup, etc.).
 - **`snowflake.service.ts`** — singleton Snowflake connection pool with query deduplication.
 - **`etag.service.ts`** — ETag-based optimistic concurrency control for CRUD resources.
+- **`launchdarkly-server.service.ts`** — lazy singleton LaunchDarkly Node SDK client for per-user flag evaluation on the server (needs `LD_SDK_KEY`; fails closed to the caller's default).
 - **`persona-detection.service.ts` / `persona-enrichment.service.ts`** — persona classification used by the lens system.
 - **`auth0.service.ts`, `supabase.service.ts`, `cdp.service.ts`, `credly.service.ts`, `ti.service.ts`** — third-party integrations (authentication, profile email, analytics, badging).
 
@@ -232,7 +240,7 @@ See [Logging & Monitoring](./logging-monitoring.md) for full details.
 
 ## Quick Links
 
-- [Server Configuration](../../CLAUDE.md#backend-stack)
-- [Logging System](../../CLAUDE.md#logging-system)
+- [Server Configuration](#server-stack)
+- [Logging System](#logging-rules)
 - [Shared Interfaces](../shared/package-architecture.md)
 - [Frontend Integration](../frontend/README.md)

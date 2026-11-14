@@ -2,29 +2,28 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4" data-testid="engagement-non-member-participation">
-  <!-- 13px caption is the design's own pixel size. -->
-  <span class="text-[13px] text-gray-500 sm:self-end" data-testid="engagement-non-member-participation-count">
-    @if (loading() || loadFailed()) {
-      &mdash;
-    } @else {
-      {{ countLabel() }}
-    }
-  </span>
+  <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <!-- 13px caption is the design's own pixel size. -->
+    <span class="text-[13px] text-gray-500 sm:ml-auto" data-testid="engagement-non-member-participation-count">
+      @if (loading() || loadFailed()) {
+        &mdash;
+      } @else {
+        {{ countLabel() }}
+      }
+    </span>
+  </div>
 
   @if (loadFailed()) {
     <lfx-empty-state
+      variant="compact"
       icon="fa-light fa-triangle-exclamation"
       title="Non-member participation unavailable"
       subtitle="We could not load non-member participation for this foundation. Refresh the page to try again."
       data-testid="engagement-non-member-participation-error" />
-  } @else if (!loading() && totalRecords() === 0) {
-    <lfx-empty-state
-      icon="fa-light fa-building"
-      title="No non-member organizations recorded for this foundation"
-      subtitle="The analytics model has no non-member participation records for this foundation."
-      data-testid="engagement-non-member-participation-empty" />
-  } @else {
+  } @else if (!empty()) {
     <lfx-table
+      styleClass="hm-table"
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [paginator]="totalRecords() > size()"
@@ -38,10 +37,10 @@
       data-testid="engagement-non-member-participation-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">People</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Membership</span></th>
+          <th scope="col">Organization</th>
+          <th scope="col">Meetings attended</th>
+          <th scope="col">People</th>
+          <th scope="col">Membership</th>
         </tr>
       </ng-template>
 
@@ -50,17 +49,21 @@
         @let period = view.period;
         <tr [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId">
           <td>
-            <span class="text-sm font-medium text-gray-900">{{ row.accountName }}</span>
+            <span class="text-[13px] font-medium text-gray-900">{{ row.accountName }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsAttended ?? '—' }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.meetingsAttended ?? '—' }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.distinctPeople ?? '—' }}</span>
+            <span class="text-[13px] tabular-nums text-gray-900">{{ period?.distinctPeople ?? '—' }}</span>
           </td>
           <td>
-            <!-- The view's own status string, rendered as-is rather than re-derived client-side. -->
-            <span class="text-sm text-gray-800">{{ row.membershipStatus }}</span>
+            <!-- The design's `memStat`; the status string is the view's own, rendered as-is. -->
+            <span
+              class="text-[12px] text-gray-400 lg:whitespace-nowrap"
+              [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId + '-status'"
+              ><span aria-hidden="true">○ </span>{{ row.membershipStatus }}</span
+            >
           </td>
         </tr>
       </ng-template>

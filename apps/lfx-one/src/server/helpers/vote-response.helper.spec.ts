@@ -247,6 +247,37 @@ describe('fetchCurrentUserVoteResponses', () => {
 
     await expect(fetchCurrentUserVoteResponses(req, proxy)).resolves.toEqual([{ uid: 'vr-1', user_email: 'spec-user@example.org' }]);
   });
+
+  it('reports a later-page failure without discarding owned rows after all 5xx retries fail', async () => {
+    const onPartial = vi.fn();
+    const failure = Object.assign(new Error('Temporary query failure'), { statusCode: 503 });
+    proxyRequest.mockResolvedValueOnce(page([{ uid: 'vr-1', username: 'spec-user' }], 'cursor-2')).mockRejectedValue(failure);
+
+    await expect(fetchCurrentUserVoteResponses(req, proxy, { onPartial })).resolves.toEqual([{ uid: 'vr-1', username: 'spec-user' }]);
+    expect(onPartial).toHaveBeenCalledExactlyOnceWith();
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not report partial results when a later-page retry succeeds', async () => {
+    const onPartial = vi.fn();
+    const failure = Object.assign(new Error('Temporary query failure'), { statusCode: 503 });
+    proxyRequest
+      .mockResolvedValueOnce(page([{ uid: 'vr-1', username: 'spec-user' }], 'cursor-2'))
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValueOnce(page([{ uid: 'vr-2', username: 'spec-user' }]));
+
+    const rows = await fetchCurrentUserVoteResponses(req, proxy, { onPartial });
+    expect(rows.map((row) => row.uid)).toEqual(['vr-1', 'vr-2']);
+    expect(onPartial).not.toHaveBeenCalled();
+  });
+
+  it('preserves strict failure semantics without reporting a returned partial feed', async () => {
+    const onPartial = vi.fn();
+    proxyRequest.mockResolvedValueOnce(page([], 'cursor-2')).mockRejectedValueOnce(new Error('boom'));
+
+    await expect(fetchCurrentUserVoteResponses(req, proxy, { failOnPartial: true, onPartial })).rejects.toThrow('boom');
+    expect(onPartial).not.toHaveBeenCalled();
+  });
 });
 
 describe('getParentVoteId', () => {

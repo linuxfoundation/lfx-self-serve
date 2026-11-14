@@ -1,0 +1,120 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import {
+  HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
+  HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD,
+  HEALTH_METRICS_NON_MEMBERS_SECTIONS,
+} from '../constants/health-metrics-non-members.constants';
+import { formatIsoDateLabel } from './date-time.utils';
+import { formatCurrency } from './number.utils';
+
+import type {
+  HealthMetricsNonMembersConversion,
+  HealthMetricsNonMembersConversionView,
+  HealthMetricsNonMembersOrg,
+  HealthMetricsNonMembersOrgRowView,
+  HealthMetricsNonMembersPerson,
+  HealthMetricsNonMembersPersonRowView,
+  HealthMetricsNonMembersSubNavItem,
+  HealthMetricsNonMembersWarmOrg,
+  HealthMetricsNonMembersWarmOrgRowView,
+} from '../interfaces/health-metrics-non-members.interface';
+
+/** Sub-nav items for the Non-Members tab; no section here carries a note. */
+export function buildHealthMetricsNonMembersSubNavItems(): HealthMetricsNonMembersSubNavItem[] {
+  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
+}
+
+/** Company participation rows. A zero or NULL count renders a dash. */
+export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMembersOrg[]): HealthMetricsNonMembersOrgRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    meetingsLabel: formatCount(row.meetingsAttended),
+    peopleLabel: formatCount(row.distinctPeople),
+    contributionsLabel: formatCount(row.contributions),
+    lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
+    membershipLabel: row.membershipStatus?.trim() || 'Non-member',
+    ...buildFit(row.fitBand),
+  }));
+}
+
+/** The unfiltered count line: "412 organizations · 37 new this period". */
+export function buildHealthMetricsNonMembersOrgsSummary(scopeTotal: number, newCount: number): string {
+  return `${pluralize(scopeTotal, 'organization')} · ${newCount.toLocaleString('en-US')} new this period`;
+}
+
+/** The amber chip when too few organizations are active to rank by fit; `null` at or above the threshold, or with none. */
+export function buildHealthMetricsNonMembersOrgsLowConfidence(scopeTotal: number): string | null {
+  if (scopeTotal <= 0 || scopeTotal >= HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD) return null;
+  return `Only ${pluralize(scopeTotal, 'active organization')} — too early to rank by fit.`;
+}
+
+/** People rows. A person with no matched organization, or no attended date, renders a dash. */
+export function buildHealthMetricsNonMembersPersonRows(rows: HealthMetricsNonMembersPerson[]): HealthMetricsNonMembersPersonRowView[] {
+  return rows.map((row) => ({
+    rowKey: row.rowKey,
+    displayName: row.displayName,
+    jobTitle: row.jobTitle?.trim() || null,
+    organizationLabel: row.accountName || row.accountId || '—',
+    meetingsLabel: formatCount(row.meetingsAttended),
+    lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+  }));
+}
+
+/** The People count line: "214 engaged individuals". */
+export function buildHealthMetricsNonMembersPeopleCountLabel(count: number | null): string {
+  if (count === null) return 'Engaged individuals not available';
+  return `${count.toLocaleString('en-US')} engaged ${count === 1 ? 'individual' : 'individuals'}`;
+}
+
+/** Conversion opportunity. The estimate always carries its qualifier, and a NULL figure reads "not available", never 0. */
+export function buildHealthMetricsNonMembersConversionView(conversion: HealthMetricsNonMembersConversion): HealthMetricsNonMembersConversionView {
+  const pipeline = conversion.estimatedPipelineUsd;
+  const hasEstimate = pipeline !== null;
+  return {
+    measured: conversion.measured,
+    summary:
+      conversion.organizationsTracked === null
+        ? `Organizations tracked ${HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE}`
+        : `${pluralize(conversion.organizationsTracked, 'organization')} tracked`,
+    pipelineValue: hasEstimate ? formatCurrency(pipeline) : '—',
+    pipelineLabel: hasEstimate ? 'Estimated pipeline' : 'Estimated pipeline · not enough data',
+    hasEstimate,
+    side: [
+      { key: 'high-fit', label: 'High-fit organizations', value: formatStat(conversion.highFitCount) },
+      { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
+    ],
+    warmest: buildWarmestRows(conversion.warmest),
+  };
+}
+
+function formatCount(value: number | null): string {
+  return value === null || value <= 0 ? '—' : Math.round(value).toLocaleString('en-US');
+}
+
+function pluralize(count: number, noun: string): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : `${noun}s`}`;
+}
+
+// Name and value only, as the design's ranked list; a NULL count reads as not available.
+function buildWarmestRows(orgs: HealthMetricsNonMembersWarmOrg[]): HealthMetricsNonMembersWarmOrgRowView[] {
+  return orgs.map((org) => ({
+    accountId: org.accountId,
+    label: `${org.accountName} · ${org.meetingsAttended === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.meetingsAttended, 'meeting')}`,
+    valueLabel: org.contributions === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.contributions, 'contribution'),
+  }));
+}
+
+function formatStat(value: number | null): string {
+  return value === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : Math.round(value).toLocaleString('en-US');
+}
+
+function buildFit(fitBand: string | null): Pick<HealthMetricsNonMembersOrgRowView, 'fitLabel' | 'fitDotClass'> {
+  const band = fitBand?.trim();
+  if (!band) return { fitLabel: '—', fitDotClass: null };
+  const dots = HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS;
+  return { fitLabel: band, fitDotClass: Object.hasOwn(dots, band) ? dots[band] : dots['Low'] };
+}

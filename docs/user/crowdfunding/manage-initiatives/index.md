@@ -3,8 +3,8 @@ title: Manage Initiatives
 description: How to view initiative details, edit settings, and archive or activate an initiative in LFX Self Serve.
 audience: [all]
 product_area: Crowdfunding
-tags: [crowdfunding, initiatives, manage, edit, archive, activate]
-last_updated: 2026-07-21
+tags: [crowdfunding, initiatives, manage, edit, attribution, archive, activate]
+last_updated: 2026-11-11
 intercom_collection: Crowdfunding
 ---
 
@@ -19,55 +19,79 @@ This article explains how to edit, archive, and activate crowdfunding initiative
 
 The detail page is organized into a header and two tabs.
 
+Select **Back to Initiatives** above the header to return to your initiatives list.
+
 **Header** shows:
 
 - Initiative name and fund type — see [Fund types](#fund-types) below
 - Description and industry tags
 - Initiative logo or fund-type icon
 - Current status badge
+- **On behalf of** and the organization or project name, for an attributed initiative
+- Actions: **View Public Page** (opens the initiative on the public crowdfunding site in a new tab), **Edit attribution** (see [Change an initiative's attribution](#change-an-initiatives-attribution)), **Settings**, and the **More** menu (⋯)
 
-**Overview tab** — sponsors, financial summary, and announcements.
+**Overview tab** — a financial summary with the current balance, amount raised against the goal, percent funded, and sponsor count, followed by the **Funding goals** for the initiative (when set), each showing its goal, amount donated, and amount spent. Below it, **About this Initiative** shows the full description with its formatting (headings, bold, lists, and links). A **Recent donations** sidebar lists the five most recent donations with the donor, date, and amount.
 
-**Financials tab** — detailed funding goals, distribution breakdown, and transaction history.
+**Financials tab** — total received, total expenses, and balance, followed by the **Donations received** and **Expense breakdown** tables. Use **Load more** to page through either table. A donor who chose to hide their name is listed as **Anonymous**, here and in **Recent donations**; the amount still shows, and an organization donation keeps the organization's name.
+
+If the detail page can't load, it shows one of these messages instead:
+
+- **Initiative not found** — no initiative has that address. The link may be out of date, or the initiative was renamed or deleted.
+- **You don't have access to this initiative** — only its creator and writers on the project or organization it's attributed to can manage it.
+- **Initiative couldn't be loaded** — LFX Crowdfunding is unavailable right now. Select **Try again** after a moment.
 
 ## Edit an initiative
 
 1. Open an initiative from the [View Initiatives](../view-initiatives/) page.
-1. Select **Edit Initiative** to open the settings drawer.
+1. Select **Settings** in the initiative header to open the **Initiative Settings** drawer.
 1. Update fields across the settings tabs:
-   - **Initiative Details** — name, description, topics, website URL
+   - **Initiative details** — name, elevator pitch, topics, website URL. The elevator pitch uses a rich-text editor (headings, bold, italic, underline, strikethrough, lists, and links) and is limited to 500 characters of text. If heavy formatting makes the pitch too long to save, the field shows an error; remove some formatting or shorten the text.
    - **Branding** — logo image
    - **Beneficiaries** — add or remove by name and email
    - **Funding** — goal amount and distribution percentages across Development, Marketing, Meetups, Bug Bounty, Travel, and Documentation
    - **Sponsorship Tiers** — choose a donation option (open amount or tiered), then configure the goal and benefits for each enabled tier
    - **Announcements** — add, edit, or delete announcements shown to sponsors on the initiative's Overview tab
-1. Save your changes.
+1. Select **Save changes**.
 
-> **Note:** The Announcements tab isn't part of the drawer's shared Save step. Each add, edit, or delete uses its own **Add**, **Save**, or delete-confirmation action and takes effect right away, independent of the drawer's Save button.
+> **Note:** The Announcements tab isn't part of the drawer's shared Save step. Each add, edit, or delete uses its own **Add**, **Save**, or delete-confirmation action and takes effect right away, independent of the drawer's **Save changes** button.
+
+## Change an initiative's attribution
+
+An initiative can be attributed to you personally, to an organization, or to a project or foundation. An attributed initiative shows that organization's or project's name and logo on its public page. In LFX Self Serve, the initiative header shows it as **On behalf of** followed by the name, and the initiatives list shows a building (organization) or folder (project) icon next to the initiative name; hover over either for details. Personal initiatives show neither.
+
+Only the person who created the initiative can change its attribution, and only while the initiative is **Submitted**. Once it moves on, the attribution is fixed. **Edit attribution** appears only when you open the initiative from **Crowdfunding → Initiatives** in the **Me** lens, not from a [lens-scoped Initiatives](../lens-initiatives/) page.
+
+1. Open a **Submitted** initiative from the [View Initiatives](../view-initiatives/) page.
+1. Select **Edit attribution** in the initiative header.
+1. Choose **Personal**, **On behalf of an organization**, or **On behalf of a project or foundation**.
+1. If you chose an organization or a project, select it from the list. The list shows the organizations where you've been granted a role, and the projects and foundations where you've been granted access directly.
+1. Select **Save**.
+
+> **Note:** Changing the attribution is separate from the settings drawer and its Save button. The change takes effect as soon as you select **Save** in the Edit attribution dialog. If the save is rejected, the dialog explains why, for example when you aren't affiliated with the organization or project you chose.
 
 ## Archive an initiative
 
-Archiving an initiative changes its status to Hidden. The initiative no longer appears publicly and stops accepting new donations. Existing recurring donors are not automatically notified and their subscriptions are not cancelled — they will need to cancel their recurring donations manually. See [Manage Recurring Donations](../manage-recurring-donations/) for how donors can cancel a subscription.
+Archiving an initiative changes its status to Hidden. The initiative no longer appears publicly and stops accepting new donations. All active recurring donations to the initiative are cancelled, so donors are not charged again. This cannot be undone: if you later reactivate the initiative, donors must subscribe again. See [Manage Recurring Donations](../manage-recurring-donations/) for how donors manage a subscription.
 
 1. Open a **Published** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
 3. Select **Archive Initiative**.
-4. Confirm the action.
+4. Select **Archive** to confirm.
 
 The initiative moves to the **Archived** group in the initiatives list.
 
 ## Activate an archived initiative
 
-Activating an initiative changes its status back to Published. The initiative becomes publicly visible and resumes accepting donations.
+Activating an initiative changes its status back to Published. The initiative becomes publicly visible and resumes accepting donations. Recurring donations cancelled while it was archived are not restored.
 
 1. Open an **Archived** initiative from the [View Initiatives](../view-initiatives/) page.
 2. Select the **More** menu (⋯) in the initiative header.
 3. Select **Activate Initiative**.
-4. Confirm the action.
+4. Select **Activate** to confirm.
 
 The initiative moves to the **Active** group in the initiatives list.
 
-> **Note:** The **More** menu is only available for Published or Archived initiatives. Initiatives with a Pending or Submitted status do not have status-change actions available.
+> **Note:** The **More** menu is only available for Published or Archived (Hidden) initiatives. Initiatives with a Pending, Submitted, or Declined status do not have status-change actions available.
 
 ## Fund types
 
@@ -81,15 +105,16 @@ Each initiative has a fund type that describes its purpose:
 ## Frequently asked
 
 **What happens to recurring donors when I archive an initiative?**
-Archiving an initiative stops the initiative from accepting new donations, but it does not automatically cancel the recurring subscriptions of existing donors. Donors who have an active recurring donation to the initiative will continue to be charged until they cancel their subscriptions manually.
+Archiving an initiative stops it from accepting new donations and cancels all active recurring donations to it. Donors are not charged again, and they must subscribe again if you reactivate the initiative.
 
 **Can I reactivate an archived initiative?**
 Yes. An archived initiative can be reactivated at any time by selecting **Activate Initiative** from the **More** menu (⋯). The initiative will return to Published status and resume accepting donations.
 
 **Why can't I see the More menu on my initiative?**
-The **More** menu for archiving and activating is only available for initiatives with a Published or Archived (Hidden) status. Initiatives that are Pending or Submitted are still under review and cannot be manually archived or activated until the review is complete.
+The **More** menu for archiving and activating is only available for initiatives with a Published or Archived (Hidden) status. Initiatives that are Pending or Submitted are still under review and cannot be manually archived or activated until the review is complete. Declined initiatives have no status-change actions.
 
 ## Related
 
 - [View Initiatives](../view-initiatives/) — browse and filter your full list of initiatives
-- [My Donations](../my-donations/) — view your donation history and manage payment methods
+- [Lens-scoped Initiatives](../lens-initiatives/) — initiatives run on behalf of a project, foundation, or organization
+- [Donations](../my-donations/) — view your donation history and manage payment methods

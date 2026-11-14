@@ -4,6 +4,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import {
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
   MENTORSHIP_MENTEE_TASK_STATUS_ERROR_FALLBACK,
   MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES,
   MENTORSHIP_MENTEE_TASK_STATUS_ERROR_SUMMARY,
@@ -79,6 +81,16 @@ describe('MenteeTaskStatusService', () => {
       life: MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE,
     });
     // A 400 means the cached task no longer says whether a file is needed, so the tasks are re-read.
+    expect(clearMenteeCaches).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the past-due copy for the BFF past-due 400 and re-reads the applications', () => {
+    updateMenteeTaskStatus.mockReturnValueOnce(throwError(() => httpError(400, { error: 'server text', code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE })));
+
+    expect(change('submitted')).toEqual([false]);
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE }));
+    // The task was past due when submitted, so its row should re-read and lock Submitted.
     expect(clearMenteeCaches).toHaveBeenCalledTimes(1);
   });
 

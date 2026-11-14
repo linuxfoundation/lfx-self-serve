@@ -5,7 +5,7 @@
  * My Groups list↔card view toggle — LFXV2-1715.
  *
  * Coverage:
- *   - Card grid renders role badge / member count / relative "last updated" per card.
+ *   - Filtering/reset and progressive reveal preserve the expected group identities.
  *   - Toggling List↔Card switches the rendered view.
  *   - The last-selected view persists across a page reload (localStorage).
  *   - Search still narrows results in card view.
@@ -18,6 +18,7 @@
 import type { MyCommittee, PersistedPersonaState, PersonaType } from '@lfx-one/shared/interfaces';
 import { GROUPS_CARD_GRID_PAGE_SIZE, GROUPS_VIEW_MODE_STORAGE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 test.setTimeout(60_000);
 
@@ -129,6 +130,7 @@ function skipWhenAuthMissing(): void {
 }
 
 async function gotoMyGroups(page: Page): Promise<void> {
+  await suppressCookieBanner(page);
   skipWhenAuthMissing();
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
@@ -146,6 +148,78 @@ test.describe('My Groups — list↔card view toggle', () => {
     await stubPendingInvitations(page);
     await stubMyCommittees(page, buildMyCommittees());
     await gotoMyGroups(page);
+  });
+
+  test('Cards contain long informational chat identifiers without creating links or mobile overflow', async ({ page }) => {
+    const identifier = '#' + 'synthetic-channel'.repeat(40);
+    const committees = buildMyCommittees();
+    committees[0].chat_channel = identifier;
+    await stubMyCommittees(page, committees);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.setViewportSize({ width: 375, height: 850 });
+    await page.getByTestId('groups-view-card-btn').click();
+    const channels = page.getByTestId(`groups-card-grid-channels-${MOCK_COMMITTEE_UID_A}`);
+    await expect(channels).toContainText(identifier);
+    await expect(channels.getByRole('link')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const bounds = await channels.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+  });
+
+  test('Board Members can open My Groups through keyboard title navigation', async ({ page }) => {
+    await setPersonaCookie(page, ['board-member']);
+    await stubPersona(page, ['board-member']);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByTestId('groups-view-list-btn').click();
+    const title = page.getByTestId('committees-me-table').getByRole('link', { name: 'Technical Steering Committee', exact: true });
+    await expect(title).toBeVisible();
+    await title.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/groups/${MOCK_COMMITTEE_UID_A}(?:[?#]|$)`));
+  });
+
+  test('List stacks readable labeled cells on mobile without overflow and retains desktop table rows', async ({ page }) => {
+    await page.getByTestId('groups-view-list-btn').click();
+    const table = page.getByTestId('committees-me-table');
+    const row = table.locator('tbody > tr').first();
+    await page.setViewportSize({ width: 375, height: 850 });
+    await expect(row).toHaveCSS('display', 'flex');
+    await expect(row).toHaveCSS('flex-direction', 'column');
+    for (const label of ['Group', 'My Role', 'Type', 'Members', 'Channels', 'Voting', 'Updated', 'Actions']) {
+      const cell = row.locator(`td[data-label="${label}"]`);
+      await expect(cell).toBeVisible();
+      const style = await cell.evaluate((element) => {
+        const before = getComputedStyle(element, '::before');
+        return { content: before.content, visibility: before.visibility, display: before.display };
+      });
+      expect(style.content).toBe(`"${label}"`);
+      expect(style.visibility).toBe('visible');
+      expect(style.display).not.toBe('none');
+    }
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 850 });
+    await expect(row).toHaveCSS('display', 'table-row');
+    await expect(table.locator('thead')).toBeVisible();
+    await expect(table.locator('table')).toHaveCSS('display', 'table');
+  });
+
+  test('long search chips keep their remove action in the mobile viewport and retain the full query', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 850 });
+    const query = 'unbroken-search-'.repeat(40);
+    const search = page.getByTestId('committee-search-input').getByRole('textbox');
+    await search.fill(query);
+    const remove = page.getByRole('button', { name: `Remove Search: ${query} filter`, exact: true });
+    await expect(remove).toBeVisible();
+    await expect(search).toHaveValue(query);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const bounds = await remove.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+    await remove.click();
+    await expect(search).toHaveValue('');
+    await expect(page.getByText('Technical Steering Committee', { exact: true })).toBeVisible();
   });
 
   test('defaults to list view, and Card switches to the card grid', async ({ page }) => {
@@ -173,28 +247,6 @@ test.describe('My Groups — list↔card view toggle', () => {
 
     await expect(listButton, 'list should no longer be pressed after switching to card').toHaveAttribute('aria-pressed', 'false');
     await expect(cardButton, 'card should be pressed after switching to it').toHaveAttribute('aria-pressed', 'true');
-  });
-
-  test('card grid shows role badge, member count, and relative last-updated text per card', async ({ page }) => {
-    await page.getByTestId('groups-view-card-btn').click();
-
-    const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`);
-    await expect(card, 'card for the seeded committee should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    await expect(card, 'card should show the caller role').toContainText('Chair');
-    await expect(card, 'card should show the member count').toContainText('12');
-    await expect(card, 'card should show a relative last-updated label').toContainText(/hr ago|min ago|just now/);
-  });
-
-  test("a card's aria-label carries every field the aria-label override on the link would otherwise hide", async ({ page }) => {
-    await page.getByTestId('groups-view-card-btn').click();
-
-    const card = page.getByTestId(`groups-card-grid-item-${MOCK_COMMITTEE_UID_A}`);
-    await expect(card, 'card for the seeded committee should render').toBeVisible({ timeout: ELEMENT_TIMEOUT });
-    // The behavioral-class label ("Oversight") is decorated client-side from the seeded category
-    // ("Technical Steering Committee"), same as the project name, role, and member count — none of
-    // this visible content reaches assistive tech once aria-label replaces the accessible name, so
-    // it must all be present in the label itself.
-    await expect(card).toHaveAttribute('aria-label', /Open Technical Steering Committee.*Oversight.*Test Project.*Chair.*12 members/);
   });
 
   test('the selected view persists across a page reload', async ({ page }) => {
@@ -272,18 +324,14 @@ test.describe('My Groups — card view "Show more" pagination', () => {
     await expect(page.getByTestId('groups-card-grid')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
   });
 
-  test('caps the initial page and reveals the rest via Show more, updating the count copy', async ({ page }) => {
-    await expect(page.getByTestId('groups-card-grid-count'), 'count line should reflect the first page').toHaveText(
-      `Showing ${GROUPS_CARD_GRID_PAGE_SIZE} of ${TOTAL_COMMITTEES} groups`
-    );
-
+  test('caps the initial page and reveals the remaining groups via Show more', async ({ page }) => {
+    const cards = page.getByTestId('groups-card-grid').locator('[data-testid^="groups-card-grid-item-"]');
+    await expect(cards).toHaveCount(GROUPS_CARD_GRID_PAGE_SIZE);
     const showMore = page.getByTestId('groups-card-grid-show-more');
     await expect(showMore).toBeVisible();
     await showMore.click();
 
-    await expect(page.getByTestId('groups-card-grid-count'), 'count line should reflect every group after revealing').toHaveText(
-      `Showing ${TOTAL_COMMITTEES} of ${TOTAL_COMMITTEES} groups`
-    );
+    await expect(cards).toHaveCount(TOTAL_COMMITTEES);
     await expect(showMore, 'Show more should disappear once every group is revealed').toHaveCount(0);
   });
 });

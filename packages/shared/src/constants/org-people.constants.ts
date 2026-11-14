@@ -6,21 +6,28 @@ import type {
   OrgAccessRole,
   OrgAccessTypeFilterOption,
   OrgAllEmployeeActivityOption,
+  OrgAllEmployeeCompanyEmailFilter,
+  OrgAllEmployeeCompanyEmailOption,
+  OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeKeyContactFilter,
+  OrgAllEmployeeKeyContactOption,
+  OrgAllEmployeeEmploymentOption,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
   OrgContributorsResponse,
   OrgContributorStatsBaseline,
-  OrgContributorTimeRange,
-  OrgContributorTimeRangeOption,
+  OrgEmploymentFilter,
+  OrgEmploymentOption,
   OrgEventAttendeesResponse,
-  OrgEventAttendeeTimeWindow,
-  OrgEventAttendeeTimeWindowOption,
+  OrgScopeFilter,
+  OrgScopeOption,
+  OrgTeamMembersFilter,
+  OrgTeamMembersOption,
   OrgTraineesResponse,
-  OrgTraineeTimeWindow,
-  OrgTraineeTimeWindowOption,
   PeopleTabConfig,
   PeopleTabId,
 } from '../interfaces';
+import { ORG_LENS_DEFAULT_TIME_RANGE } from './org-lens-time-range.constants';
 
 /** Org People page tabs in visible order (`all` is the default). */
 export const PEOPLE_TABS: readonly PeopleTabConfig[] = [
@@ -43,6 +50,9 @@ export const VALID_PEOPLE_TAB_IDS: ReadonlySet<PeopleTabId> = new Set(PEOPLE_TAB
 
 /** Initial visible-row cap on the All Employees table before "Show All" is clicked. */
 export const ORG_ALL_EMPLOYEES_INITIAL_LIMIT = 30;
+
+/** Display name of a roster row whose stored name is blank or a bracketed placeholder and that carries no address. */
+export const ORG_PEOPLE_UNKNOWN_MEMBER_NAME = 'Unknown member';
 
 /** Zero-valued OrgAllEmployeeStats — fallback when the stats query returns no rows. */
 export const EMPTY_ORG_ALL_EMPLOYEE_STATS: OrgAllEmployeeStats = {
@@ -70,30 +80,190 @@ export const ORG_ALL_EMPLOYEE_ACTIVITY_OPTIONS: readonly OrgAllEmployeeActivityO
   { label: 'Training', value: 'training' },
 ] as const;
 
+/** Employment-filter dropdown options for the All Employees table (lfx-self-serve#4311). */
+export const ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS: readonly OrgAllEmployeeEmploymentOption[] = [
+  { label: 'Current employees', value: 'current' },
+  { label: 'Former employees', value: 'former' },
+  { label: 'All employees', value: 'all' },
+] as const;
+
+/**
+ * Default employment filter on All Employees — everyone credited to the org at the time, as LFX Insights counts
+ * (lfx-self-serve#4694). The URL drops `?employment=` when it is active.
+ */
+export const DEFAULT_ORG_ALL_EMPLOYEE_EMPLOYMENT: OrgAllEmployeeEmploymentFilter = 'all';
+
+/**
+ * Company email filter options for the All Employees table: what the person drawer's company-email lookup answers for
+ * each row. Rows without a status (the server could not read the company-email keys) are listed only under `all`.
+ */
+export const ORG_ALL_EMPLOYEE_COMPANY_EMAIL_OPTIONS: readonly OrgAllEmployeeCompanyEmailOption[] = [
+  { label: 'All email statuses', value: 'all' },
+  { label: 'Has company email', value: 'has' },
+  { label: 'No verified company email', value: 'none' },
+  { label: 'Unlinked profile', value: 'unconfirmed' },
+] as const;
+
+/** Default Company email filter on All Employees; the URL drops `?companyEmail=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL: OrgAllEmployeeCompanyEmailFilter = 'all';
+
+/** Most LF usernames bound in one All Employees Company email filter read of the LF-account views. */
+export const ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE = 500;
+
+/**
+ * Key Contact filter options for the All Employees table: everyone, anyone holding a role, anyone holding none, then each
+ * of the nine canonical roles. A role string outside the nine is matched only by `any`.
+ */
+export const ORG_ALL_EMPLOYEE_KEY_CONTACT_OPTIONS: readonly OrgAllEmployeeKeyContactOption[] = [
+  { label: 'All key contact roles', value: 'all' },
+  { label: 'Any key contact role', value: 'any' },
+  { label: 'Not a key contact', value: 'none' },
+  { label: 'Representative/Voting Contact', value: 'Representative/Voting Contact' },
+  { label: 'Authorized Signatory', value: 'Authorized Signatory' },
+  { label: 'Billing Contact', value: 'Billing Contact' },
+  { label: 'Marketing Contact', value: 'Marketing Contact' },
+  { label: 'Technical Contact', value: 'Technical Contact' },
+  { label: 'PO Contact', value: 'PO Contact' },
+  { label: 'PR Contact', value: 'PR Contact' },
+  { label: 'Legal Contact', value: 'Legal Contact' },
+  { label: 'Event Sponsorship Contact', value: 'Event Sponsorship Contact' },
+] as const;
+
+/** Default Key Contact filter on All Employees; the URL drops `?keyContact=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT: OrgAllEmployeeKeyContactFilter = 'all';
+
+/** Most key-contact record ids one drawer company-email lookup takes (`by-key-contact/company-emails?ids=`). */
+export const ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS = 50;
+
+/**
+ * Hint on an All Employees row for someone with code credited to the company but no employment record there
+ * (lfx-self-serve#4730): neither current nor former, so listed only under "All employees".
+ */
+export const ORG_ALL_EMPLOYEE_UNCLASSIFIED_ROW_NOTE =
+  'No employment record at this company: listed for code credited to it, only under "All employees", not as a current or former employee.';
+
+/** Employment-filter dropdown options for any People tab — the All Employees options, one list for every tab. */
+export const ORG_EMPLOYMENT_OPTIONS: readonly OrgEmploymentOption[] = ORG_ALL_EMPLOYEE_EMPLOYMENT_OPTIONS;
+
+/** Accessible label of a People tab's employment filter. */
+export const ORG_EMPLOYMENT_LABEL = 'Employment';
+
+/**
+ * Default employment filter on People → Contributors and Org Lens Access (lfx-self-serve#4627) — the URL drops
+ * `?employment=` when it is active. Everyone, former employees included: Contributors keeps matching the Overview's
+ * Active Contributors card, and Access lists every principal. All Employees has the same default.
+ */
+export const DEFAULT_ORG_EMPLOYMENT: OrgEmploymentFilter = 'all';
+
+/**
+ * Team members filter on People → Contributors, People → All Employees, the Code Contributions page (lfx-self-serve#4685)
+ * and the Projects page's Contributors column (lfx-self-serve-ops#1246): people marked as team members in the Community
+ * Data Platform (CDP). Excluded by default, on LFX Insights' rule, which leaves them out of code-based numbers only: code
+ * counts, contributors and maintainer roles. Seats, events and training are not affected. The Overview's contributors
+ * and maintainer roles follow the default.
+ */
+export const ORG_TEAM_MEMBERS_OPTIONS: readonly OrgTeamMembersOption[] = [
+  { label: 'Exclude team members', value: 'exclude' },
+  { label: 'Include team members', value: 'include' },
+] as const;
+
+/** Default team members filter — the URL drops `?teamMembers=` when it is active. */
+export const DEFAULT_ORG_TEAM_MEMBERS: OrgTeamMembersFilter = 'exclude';
+
+/** URL query parameter of the team members filter. */
+export const ORG_TEAM_MEMBERS_QUERY_PARAM = 'teamMembers';
+
+/** Accessible label of the team members filter. */
+export const ORG_TEAM_MEMBERS_LABEL = 'Team members';
+
+/** Tooltip on the team members filter. */
+export const ORG_TEAM_MEMBERS_TOOLTIP =
+  'People marked as team members in the Community Data Platform. LFX Insights leaves them out of code contributions and maintainer roles; Org Lens does too by default. Seats, events and training are not affected.';
+
+/** Tooltip on the Projects page's team members filter, where only the Contributors column follows the pick (lfx-self-serve-ops#1246). */
+export const ORG_TEAM_MEMBERS_PROJECTS_TOOLTIP = `${ORG_TEAM_MEMBERS_TOOLTIP} On this page it applies to the Contributors column only.`;
+
+/** Note shown when Exclude team members is picked but the team-member data cannot be read (lfx-self-serve#4685). */
+export const ORG_TEAM_MEMBERS_UNAVAILABLE_NOTE = 'Team-member data is unavailable; counts include team members.';
+
+/** Hint on the Contributors empty state at the default view, where team members are excluded and may be the only coders (lfx-self-serve#4685). */
+export const ORG_TEAM_MEMBERS_EMPTY_HINT = 'CDP team members are excluded. Choose Include team members to see them.';
+
+/** The person-level CDP team-member flag lf-dbt adds to the Org Lens People, code and maintainer-roles models (lfx-self-serve#4685). */
+export const ORG_CDP_TEAM_MEMBER_COLUMN = 'IS_CDP_TEAM_MEMBER';
+
+/**
+ * Organization-scope filter on the Org Lens pages with contributor counts — People → Contributors and All Employees (code
+ * only), Code Contributions, Projects and Project Detail (lfx-self-serve-ops#1219); the Overview counts the default. `insights`, the default, counts
+ * only the crowd.dev organization behind the account's LFX Insights page and only repositories LFX Insights counts, as
+ * that page does; `all` counts every organization linked to the account in every repository. Maintainer roles, seats,
+ * events and training are not affected.
+ */
+export const ORG_SCOPE_OPTIONS: readonly OrgScopeOption[] = [
+  { label: 'Insights organization', value: 'insights' },
+  { label: 'All related organizations', value: 'all' },
+] as const;
+
+/** Default organization scope — the URL drops `?orgScope=` when it is active. */
+export const DEFAULT_ORG_SCOPE: OrgScopeFilter = 'insights';
+
+/** URL query parameter of the organization-scope filter. */
+export const ORG_SCOPE_QUERY_PARAM = 'orgScope';
+
+/** Accessible label of the organization-scope filter. */
+export const ORG_SCOPE_LABEL = 'Organization scope';
+
+/** Tooltip on the organization-scope filter while All related organizations is picked. */
+export const ORG_SCOPE_ALL_TOOLTIP =
+  'Counts every organization linked to this company account (subsidiaries, acquisitions and duplicate records), in every repository.';
+
+/** Added to the organization-scope tooltip on People → All Employees, whose other columns are not code. */
+export const ORG_SCOPE_CODE_ONLY_NOTE = 'Applies to code contributions only.';
+
+/** Added to the organization-scope tooltip on Projects, where only the Contributors column follows the pick. */
+export const ORG_SCOPE_PROJECTS_NOTE = 'Applies to the Contributors column only.';
+
+/** Added to the organization-scope tooltip on Project Detail, where maintainer roles, health and influence scores do not follow the pick. */
+export const ORG_SCOPE_PROJECT_DETAIL_NOTE = "Applies to contributor, commit and pull request counts, and to which leaderboard row is this company's.";
+
+/**
+ * Note on the info button of a disabled organization-scope filter (its tooltip and accessible label): the account has no
+ * Insights organization, or its Insights organization has no code activity on the account in the past 730 days (lf-dbt
+ * `HAS_INSIGHTS_ORG`), so only All related organizations is offered.
+ */
+export const ORG_SCOPE_UNAVAILABLE_NOTE =
+  'This company has no LFX Insights organization with code activity in the past two years; counts include every related organization.';
+
+/** The sentence a count's caption or tooltip adds for the organization scope it counts (lfx-self-serve-ops#1219). */
+export const ORG_SCOPE_CAPTION_PHRASE: Readonly<Record<OrgScopeFilter, string>> = {
+  insights: "Only the company's LFX Insights organization, in repositories LFX Insights counts.",
+  all: 'Every organization related to the company, in every repository.',
+};
+
 // Trainees tab (LFXV2-1876) — bulk-load + client-side filter pattern.
 
-/** Initial visible-row cap on the Trainees table before "Show All" is clicked. */
-export const ORG_TRAINEES_INITIAL_LIMIT = 30;
+/** Rows-per-page options of the Trainees table and of its learners-not-on-the-people-list section. */
+export const ORG_TRAINEES_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50];
 
-/** Default Trainees time-window — Past 12 Months per Item 2 lock (matches prototype default). */
-export const ORG_TRAINEE_DEFAULT_TIME_WINDOW: OrgTraineeTimeWindow = '12m';
+/** Default rows per page of the Trainees table and of its learners-not-on-the-people-list section. */
+export const ORG_TRAINEES_DEFAULT_PAGE_SIZE = 10;
 
-/** Time-window dropdown options for Trainees / Event Attendees families — ordered narrowest-first as the prototype renders them. */
-export const ORG_TRAINEE_TIME_WINDOW_OPTIONS: readonly OrgTraineeTimeWindowOption[] = [
-  { label: 'Past 3 Months', value: '3m' },
-  { label: 'Past 6 Months', value: '6m' },
-  { label: 'Past 12 Months', value: '12m' },
-  { label: 'Past 2 Years', value: '2y' },
-  { label: 'All Time', value: 'all' },
-] as const;
+/**
+ * Prefix of the per-response key the BFF gives a Trainees learner not on the people list (`outside:1`, `outside:2`, …)
+ * in place of their warehouse key (lfx-self-serve#4287). The `:` fails `PERSON_KEY_PATTERN`, so the person endpoints
+ * reject it with a 400.
+ */
+export const ORG_TRAINEE_OUTSIDE_KEY_PREFIX = 'outside:';
 
 /** Zero-valued Trainees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   accountId: '',
+  timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
   details: [],
-  foundationOptions: [],
-  courseOptions: [],
+  outsideLearners: [],
+  formerOnPeopleList: { people: 0, pairs: 0 },
+  asOf: null,
 };
 
 // Event Attendees tab (LFXV2-1875) — same bundle-then-client-filter pattern as Trainees.
@@ -101,46 +271,23 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
 /** Initial visible-row cap on the Event Attendees table before "Show All" is clicked. */
 export const ORG_EVENT_ATTENDEES_INITIAL_LIMIT = 30;
 
-/** Default Event Attendees time-window — Past 12 Months per Item 2 R2.4 lock (matches prototype default). */
-export const ORG_EVENT_ATTENDEE_DEFAULT_TIME_WINDOW: OrgEventAttendeeTimeWindow = '12m';
-
-/** Time-window dropdown options for the Event Attendees tab — ordered narrowest-first. */
-export const ORG_EVENT_ATTENDEE_TIME_WINDOW_OPTIONS: readonly OrgEventAttendeeTimeWindowOption[] = [
-  { label: 'Past 3 Months', value: '3m' },
-  { label: 'Past 6 Months', value: '6m' },
-  { label: 'Past 12 Months', value: '12m' },
-  { label: 'Past 2 Years', value: '2y' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 /** Zero-valued Event Attendees response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_EVENT_ATTENDEES_RESPONSE: OrgEventAttendeesResponse = {
   accountId: '',
-  attendees: [],
   details: [],
+  summary: { attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 },
   foundationOptions: [],
   eventOptions: [],
 };
 
-// Contributors tab (LFXV2-1874) — A1: one BFF slice per timeRange, filter trio client-side; stats anchored on BFF (Item 3); window vocab 30d/90d/12mo/all.
+// Contributors tab (LFXV2-1874) — A1: one BFF slice per range, filter trio client-side; stats anchored on BFF (Item 3).
 
 /** Initial visible-row cap on the Contributors table before "Show All" is clicked. */
 export const ORG_CONTRIBUTORS_INITIAL_LIMIT = 30;
 
-/** Default Contributors time-range — Past 12 Months per the prototype default. */
-export const ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE: OrgContributorTimeRange = '12mo';
-
-/** Time-range dropdown options for the Contributors tab — ordered narrowest-first, matches Dano's JIRA description. */
-export const ORG_CONTRIBUTOR_TIME_RANGE_OPTIONS: readonly OrgContributorTimeRangeOption[] = [
-  { label: 'Last 30 Days', value: '30d' },
-  { label: 'Last 90 Days', value: '90d' },
-  { label: 'Last 12 Months', value: '12mo' },
-  { label: 'All Time', value: 'all' },
-] as const;
-
 /** Zero-valued Contributors stats baseline — fallback when stats query returns no rows. */
 export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
-  maintainers: 0,
+  maintainerRoles: 0,
   contributors: 0,
   projects: 0,
   foundations: 0,
@@ -149,7 +296,7 @@ export const EMPTY_ORG_CONTRIBUTOR_STATS: OrgContributorStatsBaseline = {
 /** Zero-valued Contributors response — `toSignal` initialValue + empty-account fallback. */
 export const EMPTY_ORG_CONTRIBUTORS_RESPONSE: OrgContributorsResponse = {
   accountId: '',
-  timeRange: ORG_CONTRIBUTOR_DEFAULT_TIME_RANGE,
+  timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   contributors: [],
   projects: [],
   foundationOptions: [],

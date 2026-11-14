@@ -120,6 +120,7 @@
         placeholder="YYYY-MM-DD"
         dateFormat="yy-mm-dd"
         [minDate]="minApplicationDate()"
+        [maxDate]="maxApplicationEndDate()"
         appendTo="body"
         styleClass="w-full" />
       @if (showErrors() && (form.controls.applicationEndDate.invalid || dateErrors()['applicationEndDate'])) {

@@ -324,11 +324,11 @@
             <lfx-button label="Edit" severity="secondary" (onClick)="onEdit()" data-testid="weekly-brief-card-edit-button" />
             <lfx-button label="Copy & Share" severity="info" icon="fa-light fa-copy" (onClick)="onCopyAndShare()" data-testid="weekly-brief-card-copy-button" />
             <lfx-button
-              label="Share to Mailing List"
+              label="Email Group Members"
               severity="info"
               icon="fa-light fa-paper-plane"
               [loading]="sharing()"
-              [disabled]="!committee().has_mailing_list"
+              [disabled]="!committee().has_mailing_list || shareBlockedByAccess()"
               (onClick)="onShareToMailingList()"
               data-testid="weekly-brief-card-share-button" />
             @if (slackShareEnabled()) {
@@ -353,6 +353,22 @@
           }
           @if (!committee().has_mailing_list) {
             <span class="text-xs text-gray-500" data-testid="weekly-brief-card-share-disabled-hint">No mailing list configured for this committee</span>
+          }
+          @if (committee().has_mailing_list && shareAccessDenied()) {
+            <span class="text-xs text-gray-500" data-testid="weekly-brief-card-share-access-hint"
+              >Only project writers can email the brief to group members. Ask a project administrator.</span
+            >
+          }
+          @if (committee().has_mailing_list && shareAccessFailed()) {
+            <div class="flex flex-wrap items-center gap-2" data-testid="weekly-brief-card-share-access-error">
+              <span class="text-xs text-gray-500">Unable to verify sharing access. Please retry.</span>
+              <lfx-button
+                label="Retry"
+                severity="secondary"
+                [text]="true"
+                (onClick)="shareAccessRetryRequested.emit()"
+                data-testid="weekly-brief-card-share-access-retry" />
+            </div>
           }
           @if (slackShareEnabled() && impersonating()) {
             <span class="text-xs text-gray-500" data-testid="weekly-brief-card-share-slack-impersonating-hint"

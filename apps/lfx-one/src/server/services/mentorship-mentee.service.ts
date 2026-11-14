@@ -5,6 +5,9 @@ import {
   EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE,
   MENTORSHIP_MENTEE_PROFILE_EXISTS_ERROR_CODE,
   MENTORSHIP_MENTEE_REGISTER_ERROR_PROFILE_EXISTS,
+  MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+  MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplicationsResponse,
@@ -13,47 +16,53 @@ import {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeRegisterRequest,
   MentorshipMenteeProfileUpdateRequest,
+  MentorshipMenteeTaskFileUploadResponse,
   MentorshipMenteeProfileUpdateResponse,
   MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
-  MentorshipUpstreamProgram,
-  MentorshipUpstreamProgramTerm,
+  MentorshipUpstreamProgramTermApplyTarget,
   MentorshipUpstreamTask,
+  MentorshipUpstreamTaskFileUpload,
   MentorshipUpstreamTaskSubmissionUpdate,
   MentorshipUpstreamUserProfile,
 } from '@lfx-one/shared/interfaces';
+import { isMentorshipTaskPastDue } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import FormData from 'form-data';
 
 import {
   MENTORSHIP_APPLICATIONS_PATH,
-  MENTORSHIP_LIST_MAX_PAGES,
-  MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_ME_APPLICATIONS_PATH,
   MENTORSHIP_ME_MENTEE_PROFILE_PATH,
   MENTORSHIP_ME_PROFILES_PATH,
   MENTORSHIP_MENTEE_TASK_READ_CONCURRENCY,
   MENTORSHIP_MENTEE_TASK_TRACKED_STATUSES,
   MENTORSHIP_PROGRAMS_PATH,
+  MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS,
   MENTORSHIP_TASKS_PATH,
 } from '../constants';
-import { ConflictError } from '../errors';
-import { proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
+import { ConflictError, InvalidRequestError, MicroserviceError } from '../errors';
+import { listAllMentorshipPages, proxyMentorshipRequest } from '../helpers/mentorship-api.helper';
 import {
   mapMentorshipMenteeApplication,
   mapMentorshipMenteeApplicationHistory,
   mapMentorshipMenteeApplyTarget,
+  resolveMentorshipMenteeTaskDueDate,
 } from '../helpers/mentorship-mentee-application.helper';
 import { mapMentorshipMenteeProfile } from '../helpers/mentorship-mentee-profile.helper';
+import { resolveMentorshipGithubProfileLink, resolveMentorshipPrimaryEmail } from '../helpers/mentorship-lfx-profile.helper';
 import { buildMentorshipUpstreamMenteeProfile } from '../helpers/mentorship-mentee-register.helper';
 import { buildMentorshipUpstreamMenteeProfileUpdate } from '../helpers/mentorship-mentee-profile-update.helper';
 
+import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /** BFF for the mentee pages at `/mentorship/mentee/*`. Every read and write calls the mentorship service with the caller's token. */
 export class MentorshipMenteeService {
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly emailVerificationService = new EmailVerificationService();
 
   /**
    * Whether the signed-in user has a mentee profile. A user has at most one, so the check
@@ -74,7 +83,9 @@ export class MentorshipMenteeService {
    * rows are listed first and an existing profile is refused with a 409 the register page reads.
    * A failed check propagates rather than falling through to the write. Upstream's own 400, 403
    * and 422 also pass through. The check and the write are two requests, so two simultaneous
-   * registrations by the same user can both pass the check; the later write wins.
+   * registrations by the same user can both pass the check; the later write wins. The email and the
+   * GitHub link are the caller's verified primary email and connected GitHub account, looked up
+   * here, and each is left out when its lookup fails.
    */
   public async registerMenteeProfile(req: Request, request: MentorshipMenteeRegisterRequest): Promise<void> {
     logger.debug(req, 'mentorship_register_mentee_profile', 'Checking for an existing mentee profile');
@@ -84,8 +95,16 @@ export class MentorshipMenteeService {
       });
     }
 
-    const body = buildMentorshipUpstreamMenteeProfile(request);
-    logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', { has_demographics: body.demographics !== undefined });
+    const [email, githubProfileLink] = await Promise.all([
+      resolveMentorshipPrimaryEmail(req, this.emailVerificationService),
+      resolveMentorshipGithubProfileLink(req, this.emailVerificationService),
+    ]);
+    const body = buildMentorshipUpstreamMenteeProfile(request, email, githubProfileLink);
+    logger.debug(req, 'mentorship_register_mentee_profile', 'Creating mentee profile', {
+      has_demographics: body.demographics !== undefined,
+      has_email: body.email !== undefined,
+      has_github: body.profile_links !== undefined,
+    });
     await proxyMentorshipRequest<unknown>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH, 'PUT', undefined, body);
     logger.debug(req, 'mentorship_register_mentee_profile', 'Mentee profile created');
   }
@@ -142,43 +161,93 @@ export class MentorshipMenteeService {
 
   /**
    * Changes the status of one of the signed-in user's tasks through the assignee route,
-   * `PATCH /tasks/{id}/submission`. The body is only the status: upload is not wired, so `file` is never
-   * sent, and upstream checks a required file against the one already stored on the task. Its 400 (a
+   * `PATCH /tasks/{id}/submission`. The body is only the status: upstream refuses `file` there, and checks a
+   * required file against the one already uploaded through the file route. Its 400 (a
    * required file is missing), 403 (the gateway or the service refuses a non-assignee; the assignee grant
    * is written asynchronously, so a fresh task can briefly answer 403), 404 and 409 (not a legal move
    * from the task's status) propagate so the row can say why. The returned task is dropped and the pages
    * re-read their applications instead.
+   *
+   * Upstream enforces no deadline, so the task is read first and the change is refused with a 400
+   * (`TASK_PAST_DUE`) once the end of its due date's UTC day has passed, when it is a submit or it reopens a
+   * submitted task, which could then never be submitted again. Starting a past-due pending task stays allowed.
+   * The due date resolves as it does on the page: the task's own `due_date`, else, for a prerequisite, its
+   * term's application close, read from the caller's applications because a task carries no term dates. A
+   * failed read propagates rather than skip the check.
    */
   public async updateMenteeTaskStatus(req: Request, taskId: string, status: MentorshipMenteeUpdatableTaskStatus): Promise<void> {
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Updating mentee task status', { taskId, status });
-    const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
-    await proxyMentorshipRequest<MentorshipUpstreamTask>(
-      this.microserviceProxy,
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    await this.assertTaskNotPastDue(
       req,
-      `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}/submission`,
-      'PATCH',
-      undefined,
-      body
+      taskPath,
+      MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE,
+      'mentorship_update_mentee_task_status',
+      (task) => status === 'submitted' || task.status === 'submitted'
     );
+
+    const body: MentorshipUpstreamTaskSubmissionUpdate = { status };
+    await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, `${taskPath}/submission`, 'PATCH', undefined, body);
     logger.debug(req, 'mentorship_update_mentee_task_status', 'Mentee task status updated', { taskId, status });
   }
 
   /**
-   * The signed-in user's mentee profile and application history. Upstream lists only the
-   * caller's own rows, off their token, so no other user's profile is reachable from here. A
-   * user has at most one profile, so the read asks for `limit: 1`, the same as the has-profile
-   * check. The history comes from the caller's applications, which embed the program and term
-   * names it shows, so it needs no task or program reads.
+   * Uploads, or replaces, the submission file of one of the signed-in user's tasks. The bytes go upstream as the
+   * multipart part `file` under the browser's file name, which upstream cleans to `[A-Za-z0-9._-]`. Upstream decides the
+   * type from the bytes and refuses a non-assignee (403), a completed task (409), more than 20 MB (413), a type that is
+   * not PDF, DOC, DOCX or text (415), and unconfigured storage (503); each passes through.
    *
-   * An empty list returns an empty profile rather than an error: the apply page is reachable
-   * before a profile exists, and it reads the profile that `POST /api/mentorship/mentee/profile`
-   * writes. A failed profile read propagates; a failed applications
+   * Like a submit, it is refused with a 400 (`TASK_PAST_DUE`) once the task is past due, since upstream enforces no
+   * deadline. The file name and the bytes are never logged.
+   */
+  public async uploadMenteeTaskFile(req: Request, taskId: string, fileName: string, file: Buffer): Promise<MentorshipMenteeTaskFileUploadResponse> {
+    logger.debug(req, 'mentorship_upload_mentee_task_file', 'Uploading mentee task file', { taskId, sizeBytes: file.byteLength });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    await this.assertTaskNotPastDue(req, taskPath, MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE, 'mentorship_upload_mentee_task_file');
+
+    const form = new FormData();
+    form.append('file', file, { filename: fileName, contentType: 'application/octet-stream' });
+    const uploaded = await proxyMentorshipRequest<MentorshipUpstreamTaskFileUpload>(
+      this.microserviceProxy,
+      req,
+      `${taskPath}/file-upload`,
+      'POST',
+      undefined,
+      form,
+      undefined,
+      undefined,
+      { timeoutMs: MENTORSHIP_TASK_FILE_TRANSFER_TIMEOUT_MS }
+    );
+    return { fileName: uploaded?.filename ?? '', contentType: uploaded?.content_type ?? '', size: uploaded?.size ?? 0 };
+  }
+
+  /**
+   * Removes the submission file of one of the signed-in user's tasks. Upstream allows it only while the task is not
+   * started or in progress (409 once submitted, when the file can only be replaced) and answers 204 when there is no
+   * file; its status passes through. Refused with a 400 (`TASK_PAST_DUE`) once the task is past due.
+   */
+  public async deleteMenteeTaskFile(req: Request, taskId: string): Promise<void> {
+    logger.debug(req, 'mentorship_delete_mentee_task_file', 'Removing mentee task file', { taskId });
+    const taskPath = `${MENTORSHIP_TASKS_PATH}/${encodeURIComponent(taskId)}`;
+    await this.assertTaskNotPastDue(req, taskPath, MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE, 'mentorship_delete_mentee_task_file');
+    await proxyMentorshipRequest<void>(this.microserviceProxy, req, `${taskPath}/file`, 'DELETE');
+  }
+
+  /**
+   * The signed-in user's mentee profile and application history. Upstream reads only the
+   * caller's own row, off their token, so no other user's profile is reachable from here. The
+   * history comes from the caller's applications, which embed the program and term names it
+   * shows, so it needs no task or program reads.
+   *
+   * Upstream's 404 (no mentee profile) returns an empty profile rather than an error: the apply page
+   * is reachable before a profile exists, and it reads the profile that `POST /api/mentorship/mentee/profile`
+   * writes. Any other failed profile read propagates, including upstream's 409 for more than one; a failed applications
    * read logs a warning and leaves the history empty, since the apply page reads this profile too
    * and never shows the history.
    */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
-    const [[profile], applications] = await Promise.all([this.listMenteeProfiles(req), this.listMenteeApplicationsForHistory(req)]);
+    const [profile, applications] = await Promise.all([this.findStoredMenteeProfile(req), this.listMenteeApplicationsForHistory(req)]);
     const history = mapMentorshipMenteeApplicationHistory(applications);
     if (!profile) {
       logger.debug(req, 'mentorship_get_mentee_profile', 'No mentee profile for the signed-in user, returning an empty profile', {
@@ -198,7 +267,7 @@ export class MentorshipMenteeService {
   /**
    * Saves the changed groups of the signed-in user's mentee profile. Upstream keeps every column the body
    * omits and replaces a JSON column whole, so only the groups the caller changed are forwarded, and never
-   * `profile_links` (the resume is not editable yet). When a JSON column is among them, the stored row is
+   * `profile_links`, which the LFX profile sync owns. When a JSON column is among them, the stored row is
    * read first and each column is layered over its stored value, so keys this BFF does not model survive;
    * a failed read propagates rather than risk dropping them. The two calls are not atomic, so an edit made
    * elsewhere in between can be overwritten. The response is the re-mapped row: no history, since the caller
@@ -208,8 +277,9 @@ export class MentorshipMenteeService {
   public async updateMenteeProfile(req: Request, request: MentorshipMenteeProfileUpdateRequest): Promise<MentorshipMenteeProfileUpdateResponse> {
     // Group names only: the values are personal data.
     logger.debug(req, 'mentorship_update_mentee_profile', 'Updating mentee profile', { changed_groups: Object.keys(request) });
-    const writesJsonColumn = request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined;
-    const [stored] = writesJsonColumn ? await this.listMenteeProfiles(req) : [];
+    const writesJsonColumn =
+      request.skillSet !== undefined || request.demographics !== undefined || request.socioeconomics !== undefined || request.country !== undefined;
+    const stored = writesJsonColumn ? await this.getStoredMenteeProfile(req) : undefined;
     const upstream = await proxyMentorshipRequest<MentorshipUpstreamUserProfile>(
       this.microserviceProxy,
       req,
@@ -224,24 +294,23 @@ export class MentorshipMenteeService {
   }
 
   /**
-   * Header fields for the mentee apply page, from the program and the term read in parallel. The
-   * term read 404s when the term is not in that program, is deleted, or the program is not visible
-   * to the caller; that and any other failure propagate so the page can say why. Only the program
-   * and term names are read, never the program's applicants.
+   * Header fields for the mentee apply page, from upstream's apply-target read, which returns the program
+   * and term names and whether the term takes applications in one call. Its 404 (the term is not in that
+   * program, is deleted, or the program is not visible to the caller) and any other failure propagate so
+   * the page can say why. Only the program and term names are read, never the program's applicants.
    */
   public async getMenteeApplyTarget(req: Request, programId: string, programTermId: string): Promise<MentorshipMenteeApplyTarget> {
     logger.debug(req, 'mentorship_get_mentee_apply_target', 'Resolving mentee apply target', { programId, programTermId });
-    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`;
-    const [program, term] = await Promise.all([
-      proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
-      proxyMentorshipRequest<MentorshipUpstreamProgramTerm>(this.microserviceProxy, req, `${programPath}/terms/${encodeURIComponent(programTermId)}`),
-    ]);
+    const upstream = await proxyMentorshipRequest<MentorshipUpstreamProgramTermApplyTarget>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(programTermId)}/apply-target`
+    );
 
-    const target = mapMentorshipMenteeApplyTarget(program, term, new Date());
+    const target = mapMentorshipMenteeApplyTarget(upstream);
     logger.debug(req, 'mentorship_get_mentee_apply_target', 'Mentee apply target resolved', {
       programId,
       programTermId,
-      termStatus: term.status,
       acceptingApplications: target.acceptingApplications,
     });
     return target;
@@ -249,7 +318,7 @@ export class MentorshipMenteeService {
 
   /**
    * Applies the signed-in user to a program term as a mentee. Upstream takes the applicant from the
-   * token, so the body carries only the role. Its 422 (the term is not taking applications), 409
+   * token, so the body carries only the role. Its 422 (an eligibility rule failed, named in the message), 409
    * (the user already has an application for the term) and 404 (the term is not in the program)
    * propagate so the page can say why. The created application carries no program or term, so it is
    * dropped and the pages re-read the applications instead.
@@ -267,7 +336,10 @@ export class MentorshipMenteeService {
     logger.debug(req, 'mentorship_apply_to_mentee_term', 'Applied to mentee term', { programId, programTermId });
   }
 
-  /** The caller's own mentee `user_profiles` rows; at most one, since a user has one mentee profile. */
+  /**
+   * The caller's own mentee `user_profiles` rows, for checking whether one exists; `limit: 1` is enough for that.
+   * Upstream can send `data` as null for none.
+   */
   private async listMenteeProfiles(req: Request): Promise<MentorshipUpstreamUserProfile[]> {
     const { data } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<MentorshipUpstreamUserProfile>>(
       this.microserviceProxy,
@@ -276,7 +348,25 @@ export class MentorshipMenteeService {
       'GET',
       { profile_type: 'mentee', limit: 1 }
     );
-    return data;
+    return data ?? [];
+  }
+
+  /**
+   * The caller's mentee profile through upstream's typed read, which answers 409 when there is more than one
+   * rather than pick one, and 404 when there is none.
+   */
+  private async getStoredMenteeProfile(req: Request): Promise<MentorshipUpstreamUserProfile> {
+    return proxyMentorshipRequest<MentorshipUpstreamUserProfile>(this.microserviceProxy, req, MENTORSHIP_ME_MENTEE_PROFILE_PATH);
+  }
+
+  /** As `getStoredMenteeProfile`, with upstream's 404 (no mentee profile) read as none. */
+  private async findStoredMenteeProfile(req: Request): Promise<MentorshipUpstreamUserProfile | undefined> {
+    try {
+      return await this.getStoredMenteeProfile(req);
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 404) return undefined;
+      throw error;
+    }
   }
 
   /** The caller's applications for the profile's history, or none when the read fails. */
@@ -291,39 +381,46 @@ export class MentorshipMenteeService {
 
   /** The caller's own mentee applications, every page. */
   private listMenteeApplications(req: Request): Promise<MentorshipUpstreamApplication[]> {
-    return this.listAllPages<MentorshipUpstreamApplication>(req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+    return listAllMentorshipPages<MentorshipUpstreamApplication>(this.microserviceProxy, req, MENTORSHIP_ME_APPLICATIONS_PATH, { role: 'mentee' });
+  }
+
+  /**
+   * Reads the task and refuses the change with a 400 (`TASK_PAST_DUE`) once the end of its due date's UTC day has
+   * passed. The due date resolves as it does on the page; a failed read propagates rather than skip the check.
+   * `applies` limits the check to the tasks it holds for; any other task passes once read.
+   */
+  private async assertTaskNotPastDue(
+    req: Request,
+    taskPath: string,
+    message: string,
+    operation: string,
+    applies: (task: MentorshipUpstreamTask) => boolean = () => true
+  ): Promise<void> {
+    const task = await proxyMentorshipRequest<MentorshipUpstreamTask>(this.microserviceProxy, req, taskPath);
+    if (!applies(task)) return;
+    const applicationEndDate = await this.getTaskApplicationEndDate(req, task);
+    if (isMentorshipTaskPastDue(resolveMentorshipMenteeTaskDueDate(task, applicationEndDate), Date.now())) {
+      throw new InvalidRequestError(message, MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE, { operation });
+    }
+  }
+
+  /**
+   * The term's application close for a prerequisite task with no due date of its own, from the caller's
+   * applications, since a task carries no term dates. Nothing is read for any other task, and a task whose
+   * application is not among the caller's gets no fallback date.
+   */
+  private async getTaskApplicationEndDate(req: Request, task: MentorshipUpstreamTask): Promise<string | undefined> {
+    if (task.due_date || task.category !== 'prerequisite' || !task.application_id) return undefined;
+    const applications = await this.listMenteeApplications(req);
+    return applications.find((application) => application.id === task.application_id)?.term?.application_end_date ?? undefined;
   }
 
   /** Every task on one of the caller's applications; upstream lets an applicant list their own. */
   private listApplicationTasks(req: Request, applicationId: string): Promise<MentorshipUpstreamTask[]> {
-    return this.listAllPages<MentorshipUpstreamTask>(req, `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`);
-  }
-
-  /**
-   * Reads an upstream list to the end at the largest page size, stopping once the rows read reach
-   * the reported total, a page comes back empty, or the page carries no usable total. A list still
-   * going after `MENTORSHIP_LIST_MAX_PAGES` pages logs a warning and returns the rows read so far.
-   */
-  private async listAllPages<T>(req: Request, path: string, query: Record<string, unknown> = {}): Promise<T[]> {
-    const items: T[] = [];
-    for (let page = 0; page < MENTORSHIP_LIST_MAX_PAGES; page++) {
-      const { data, meta } = await proxyMentorshipRequest<MentorshipUpstreamListResponse<T>>(this.microserviceProxy, req, path, 'GET', {
-        ...query,
-        limit: MENTORSHIP_LIST_PAGE_SIZE,
-        offset: items.length,
-      });
-      const rows = data ?? [];
-      items.push(...rows);
-      const total = meta?.total;
-      if (rows.length === 0 || typeof total !== 'number' || !Number.isFinite(total) || items.length >= total) {
-        return items;
-      }
-    }
-    logger.warning(req, 'mentorship_list_all_pages', 'Upstream list exceeded the page cap, returning the rows read so far', {
-      path,
-      max_pages: MENTORSHIP_LIST_MAX_PAGES,
-      count: items.length,
-    });
-    return items;
+    return listAllMentorshipPages<MentorshipUpstreamTask>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_APPLICATIONS_PATH}/${encodeURIComponent(applicationId)}/tasks`
+    );
   }
 }

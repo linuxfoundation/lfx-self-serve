@@ -46,7 +46,14 @@ export class FormationApiMockHelper {
         // specs exercise the editable drawer; without it the assignee/due-date fields render
         // read-only and every editing flow fails. can_set_status likewise mirrors the GH-2705
         // writer ∧ team:formation pair; without it every status control is hidden.
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: opts.canWrite ?? true, can_set_status: true }),
+        body: JSON.stringify({
+          formation,
+          template: mockFormationTemplate,
+          items,
+          can_write: opts.canWrite ?? true,
+          can_set_status: true,
+          can_edit_record: true,
+        }),
       });
     };
 

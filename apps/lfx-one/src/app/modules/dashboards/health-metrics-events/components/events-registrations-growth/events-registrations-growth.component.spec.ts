@@ -16,11 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventsRegistrationsGrowthComponent } from './events-registrations-growth.component';
 
 import type { ChartData } from 'chart.js';
-import type {
-  HealthMetricsEventsRegistrationsGrowth,
-  HealthMetricsEventsRegistrationsGrowthYear,
-  HealthMetricsEventsSectionKey,
-} from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsRegistrationsGrowth, HealthMetricsEventsRegistrationsGrowthYear } from '@lfx-one/shared/interfaces';
 
 /** Chart.js needs a canvas jsdom does not have; the stub only records the datasets it is handed. */
 @Component({ selector: 'lfx-chart', template: '<div data-testid="chart-stub"></div>' })
@@ -70,7 +66,6 @@ describe('EventsRegistrationsGrowthComponent', () => {
   let getEventsRegistrationsGrowth: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
-  let picked: HealthMetricsEventsSectionKey[];
 
   async function render(payload: HealthMetricsEventsRegistrationsGrowth | Error = growth(), platform = 'browser'): Promise<void> {
     getEventsRegistrationsGrowth = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -90,7 +85,6 @@ describe('EventsRegistrationsGrowthComponent', () => {
     fixture = TestBed.createComponent(EventsRegistrationsGrowthComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
-    fixture.componentInstance.sectionPicked.subscribe((key) => picked.push(key));
     await settle();
   }
 
@@ -117,7 +111,6 @@ describe('EventsRegistrationsGrowthComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
-    picked = [];
   });
 
   it('reads the foundation once and settles once the years land', async () => {
@@ -147,10 +140,15 @@ describe('EventsRegistrationsGrowthComponent', () => {
     await render();
 
     expect(text('events-registrations-growth-virtual-2019')).toBe('—');
-    expect(text('events-registrations-growth-gap-2021')).toBe('no events recorded');
     expect(text('events-registrations-growth-total-2021')).toBe('—');
     expect(text('events-registrations-growth-in-person-2021')).toBe('—');
-    expect(query('events-registrations-growth-gap-2020')).toBeNull();
+  });
+
+  it('labels each year cell with the year alone, partial and gap years included', async () => {
+    await render();
+
+    expect(query('events-registrations-growth-row-2021')?.querySelector('td')?.textContent?.trim()).toBe('2021');
+    expect(query('events-registrations-growth-row-2026')?.querySelector('td')?.textContent?.trim()).toBe('2026');
   });
 
   it('switches the table and chart to attendees from the toggle', async () => {
@@ -164,24 +162,6 @@ describe('EventsRegistrationsGrowthComponent', () => {
     expect(text('events-registrations-growth-virtual-2020')).toBe('2,200');
     expect(chartData().datasets[0].data[1]).toBe(3000);
     expect(getEventsRegistrationsGrowth).toHaveBeenCalledTimes(1);
-  });
-
-  it('tags the partial year and links its footnote to the forecast', async () => {
-    await render();
-
-    expect(text('events-registrations-growth-partial-2026')).toBe('partial');
-    expect(query('events-registrations-growth-partial-2022')).toBeNull();
-    expect(text('events-registrations-growth-footnote')).toContain('A partial year is still open');
-
-    (query('events-registrations-growth-forecast-link') as HTMLButtonElement).click();
-
-    expect(picked).toEqual(['forecast']);
-  });
-
-  it('leaves out the footnote when every year is complete', async () => {
-    await render({ years: [year(), year({ year: 2022 })] });
-
-    expect(query('events-registrations-growth-footnote')).toBeNull();
   });
 
   it('explains the pandemic peak in the selected metric only when a pandemic year was mostly virtual', async () => {

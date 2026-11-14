@@ -23,8 +23,12 @@ import {
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
   CascadingRoleGrant,
+  OrgFamilyRoot,
+  OrgLensLookupOutcome,
   OrgLensStaffCheck,
   OrgRolePersona,
+  OrgRollUpSetFamily,
+  OrgRollUpSetResponse,
   QueryServiceResponse,
   ResolvedOrgRole,
   RoleGrantsResponse,
@@ -139,13 +143,7 @@ export class OrgRoleGrantsService {
       bypassCache
     );
     const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
-    if (upstreamFailed) {
-      response.lookupOutcome = 'failed';
-    } else if (degraded) {
-      response.lookupOutcome = 'partial';
-    } else {
-      response.lookupOutcome = 'ok';
-    }
+    response.lookupOutcome = OrgRoleGrantsService.toLookupOutcome(upstreamFailed, degraded);
     response.staffCheck = staffCheck;
     response.isContractor = isContractor;
     if (staffCheck === 'failed' && correlationId) {
@@ -154,16 +152,111 @@ export class OrgRoleGrantsService {
     return response;
   }
 
+  public async getRollUpSet(req: Request, username: string, bypassCache = false): Promise<OrgRollUpSetResponse> {
+    return this.toRollUpSet(await this.getAccessAwareOrgs(req, username, bypassCache));
+  }
+
+  /** Builds the roll-up set from a roster already loaded, for a caller that also needs the roster itself. */
+  public toRollUpSet({ resolved, orgDocByUid, familyRoots, degraded, upstreamFailed }: AccessAwareOrgsResult): OrgRollUpSetResponse {
+    return {
+      families: OrgRoleGrantsService.buildRollUpFamilies(resolved, orgDocByUid, familyRoots),
+      degraded: degraded || upstreamFailed,
+      lookupOutcome: OrgRoleGrantsService.toLookupOutcome(upstreamFailed, degraded),
+    };
+  }
+
   /**
-   * LFXV2-3029 — the single "editor from any source" check: true for a direct writer grant OR a
-   * cascading (inherited) writer grant reachable through the connected component. Every
-   * organization edit surface is meant to widen along with this feature, so a gate that needs a
-   * hard "direct only" answer should not be added against this helper without a documented
-   * exception; a missed call site that still inlines `writers.includes(uid)` silently stays
-   * narrower than the platform authorizer now allows.
+   * LFXV2-3029 — the caller's roster editors: a direct writer grant OR a cascading (inherited)
+   * writer grant reachable through the connected component. This is only the roster half of the
+   * edit decision: Org Lens edit gates call `resolveOrgLensEdit` (#3136), which asks this first and
+   * then the authorizer's `b2b_org#writer`, so company-wide writers the roster never lists are
+   * included. Gate on this directly only where roster membership itself is the rule — the Projects
+   * workspace bootstrap (`OrgLensProjectsController.resolveCanEdit`) is the documented case.
    */
   public static hasEditorAccess(grants: Pick<RoleGrantsResponse, 'writers' | 'cascadingWriters'>, orgUid: string): boolean {
     return grants.writers.includes(orgUid) || grants.cascadingWriters.some((entry) => entry.uid === orgUid);
+  }
+
+  private static toLookupOutcome(upstreamFailed: boolean, degraded: boolean): OrgLensLookupOutcome {
+    if (upstreamFailed) return 'failed';
+    return degraded ? 'partial' : 'ok';
+  }
+
+  private static buildRollUpFamilies(
+    resolved: Map<string, ResolvedOrgRole>,
+    orgDocByUid: Map<string, B2bOrgIndexedDoc>,
+    familyRoots: Map<string, OrgFamilyRoot>
+  ): OrgRollUpSetFamily[] {
+    const families = new Map<string, OrgRollUpSetFamily>();
+    for (const uid of resolved.keys()) {
+      const doc = orgDocByUid.get(uid);
+      if (!doc) continue;
+      const root = familyRoots.get(uid) ?? { rootUid: uid, rootName: doc.name || null, rootLogoUrl: doc.logo_url || null };
+      let family = families.get(root.rootUid);
+      if (!family) {
+        family = { rootUid: root.rootUid, rootName: root.rootName, rootLogoUrl: root.rootLogoUrl, orgs: [] };
+        families.set(root.rootUid, family);
+      }
+      family.orgs.push({ uid, accountId: uid, name: doc.name ?? '', logoUrl: doc.logo_url ?? null });
+    }
+
+    const byNameThenUid = (aName: string | null, aUid: string, bName: string | null, bUid: string): number => {
+      if (aName !== bName) {
+        if (aName === null) return 1;
+        if (bName === null) return -1;
+        const byName = aName.localeCompare(bName);
+        if (byName !== 0) return byName;
+      }
+      if (aUid === bUid) return 0;
+      return aUid < bUid ? -1 : 1;
+    };
+
+    const sorted = [...families.values()].sort((a, b) => byNameThenUid(a.rootName, a.rootUid, b.rootName, b.rootUid));
+    for (const family of sorted) {
+      family.orgs.sort((a, b) => byNameThenUid(a.name, a.uid, b.name, b.uid));
+    }
+    return sorted;
+  }
+
+  private static resolveFamilyRoots(grantedUids: Iterable<string>, docByUid: Map<string, B2bOrgIndexedDoc>): Map<string, OrgFamilyRoot> {
+    const rootUidByUid = new Map<string, string>();
+    const familyRoots = new Map<string, OrgFamilyRoot>();
+    for (const uid of grantedUids) {
+      const rootUid = OrgRoleGrantsService.findFamilyRootUid(uid, docByUid, rootUidByUid);
+      const rootDoc = docByUid.get(rootUid);
+      familyRoots.set(uid, { rootUid, rootName: rootDoc?.name || null, rootLogoUrl: rootDoc?.logo_url || null });
+    }
+    return familyRoots;
+  }
+
+  private static findFamilyRootUid(uid: string, docByUid: Map<string, B2bOrgIndexedDoc>, rootUidByUid: Map<string, string>): string {
+    const chain: string[] = [];
+    const onChain = new Set<string>();
+    let current = uid;
+    let rootUid: string | undefined;
+
+    while (rootUid === undefined) {
+      const known = rootUidByUid.get(current);
+      if (known !== undefined) {
+        rootUid = known;
+      } else if (onChain.has(current)) {
+        rootUid = chain.slice(chain.indexOf(current)).reduce((min, member) => (member < min ? member : min));
+      } else {
+        chain.push(current);
+        onChain.add(current);
+        const parentUid = docByUid.get(current)?.parent_uid;
+        if (!parentUid || !docByUid.has(parentUid)) {
+          rootUid = current;
+        } else {
+          current = parentUid;
+        }
+      }
+    }
+
+    for (const member of chain) {
+      rootUidByUid.set(member, rootUid);
+    }
+    return rootUid;
   }
 
   /** Builds the username-bound, namespaced, versioned cache key, or null when the username is not filter-safe. */
@@ -208,6 +301,7 @@ export class OrgRoleGrantsService {
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
       // connected-component classification. Rejecting it recomputes instead.
       typeof entry.degraded === 'boolean' &&
+      OrgRoleGrantsService.isEntryTupleArray(entry.familyRoots, OrgRoleGrantsService.isOrgFamilyRoot) &&
       // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
       // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
       // correlation id it was logged under — without it the page would render `Reference: —` — and
@@ -257,6 +351,16 @@ export class OrgRoleGrantsService {
     );
   }
 
+  private static isOrgFamilyRoot(value: object): boolean {
+    const root = value as Partial<OrgFamilyRoot>;
+    return (
+      typeof root.rootUid === 'string' &&
+      root.rootUid.length > 0 &&
+      (root.rootName === null || typeof root.rootName === 'string') &&
+      (root.rootLogoUrl === null || typeof root.rootLogoUrl === 'string')
+    );
+  }
+
   /** Maps → ordered entry arrays for JSON storage (insertion order preserved). */
   private static serializeAccessResult(result: AccessAwareOrgsResult): AccessAwareOrgsCacheEntry {
     return {
@@ -269,6 +373,7 @@ export class OrgRoleGrantsService {
       isContractor: result.isContractor,
       degraded: result.degraded,
       staffCheck: result.staffCheck,
+      familyRoots: [...result.familyRoots],
       ...(result.staffCheck === 'failed' && result.correlationId ? { correlationId: result.correlationId } : {}),
     };
   }
@@ -285,6 +390,7 @@ export class OrgRoleGrantsService {
       isContractor: entry.isContractor,
       degraded: entry.degraded,
       staffCheck: entry.staffCheck,
+      familyRoots: new Map(entry.familyRoots),
       correlationId: entry.correlationId,
     };
   }
@@ -305,6 +411,7 @@ export class OrgRoleGrantsService {
       isContractor: false,
       degraded: false,
       staffCheck: 'ok',
+      familyRoots: new Map(),
     };
 
     if (!isFilterSafeUsername(username)) {
@@ -382,6 +489,7 @@ export class OrgRoleGrantsService {
         isContractor,
         degraded: directRosterTruncated,
         staffCheck,
+        familyRoots: new Map(),
         correlationId,
       };
     }
@@ -429,6 +537,7 @@ export class OrgRoleGrantsService {
 
     const resolved = this.buildResolvedMap(directWriters, directAuditors, classified);
     const orgDocByUid = this.mergeOrgDocs(directOrgDocs, classified, walk.docByUid);
+    const familyRoots = OrgRoleGrantsService.resolveFamilyRoots(resolved.keys(), walk.docByUid);
 
     return {
       resolved,
@@ -440,13 +549,14 @@ export class OrgRoleGrantsService {
       isContractor,
       degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
       staffCheck,
+      familyRoots,
       correlationId,
     };
   }
 
   /**
    * Asks the platform authorizer whether the caller belongs to any team in `ORG_WIDE_READ_TEAM_IDS`:
-   * the teams that read every `b2b_org`, through a plain `auditor` grant (`LF_TEAM_IDS`, `lf-staff`) or
+   * the teams that read every `b2b_org`, through a plain `auditor` grant (`LF_TEAM_IDS`: `lf-staff`, `global-org-auditors`) or
    * the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`, #3077). One batched `checkAccessStrict` over
    * that list plus `LF_CONTRACTOR_TEAM_ID` (#2961), which rides the same batch only to set
    * `isContractor`: it explains an empty Org Lens and grants nothing.

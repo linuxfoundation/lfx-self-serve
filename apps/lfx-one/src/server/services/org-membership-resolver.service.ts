@@ -138,14 +138,18 @@ export class OrgMembershipResolverService {
   // Performs the actual paginated, FGA-filtered project_membership fetch (the cache fetcher).
   private async runMembershipFetch(req: Request, b2bOrgUid: string, slug: string): Promise<ProjectMembershipDoc[]> {
     const tScanStart = Date.now();
-    const docs = await fetchAllQueryResources<ProjectMembershipDoc>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project_membership',
-        tags: `b2b_org_uid:${b2bOrgUid}`,
-        filters_all: `project_slug:${slug}`,
-        page_size: OrgMembershipResolverService.membershipsPageSize,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // Membership selection and its cache entry must never be based on an incomplete scan.
+    const docs = await fetchAllQueryResources<ProjectMembershipDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<ProjectMembershipDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project_membership',
+          tags: `b2b_org_uid:${b2bOrgUid}`,
+          filters_all: `project_slug:${slug}`,
+          page_size: OrgMembershipResolverService.membershipsPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
     logger.info(req, 'resolve_membership_context_timing', 'project_membership slug-scoped fetch complete', {
       b2b_org_uid: b2bOrgUid,

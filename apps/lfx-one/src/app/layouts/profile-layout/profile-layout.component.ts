@@ -2,25 +2,37 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
-  MY_CLAS_ENABLED_FLAG,
+  EMAIL_ALREADY_CONNECTED_MESSAGE,
+  EMAIL_ALREADY_CONNECTED_STATUS,
+  EMAIL_ALREADY_CONNECTED_SUMMARY,
+  EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
+  EMAIL_CALLBACK_RETRY_MESSAGE,
+  EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
+  EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_TITLE,
+  EMAIL_LINKED_SUPPORT_TOAST_KEY,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   normalizeTShirtSize,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
   PENDING_PROFILE_SAVE_KEY,
   PROFILE_AUTH_ERROR_MESSAGES,
+  PROFILE_TABS,
   TSHIRT_SIZES,
 } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
+import { buildDisplayName, buildLinkedEmailSupportMessage, formatMemberSince } from '@lfx-one/shared/utils';
 import { DataDogRumService } from '@services/datadog-rum.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
+import { ToastModule } from 'primeng/toast';
+import { BehaviorSubject, catchError, distinctUntilChanged, EMPTY, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
 import { ProfileEditDrawerComponent } from '../../modules/profile/components/profile-edit-drawer/profile-edit-drawer.component';
@@ -29,6 +41,8 @@ import { ProfileVisibilityDrawerComponent } from '../../modules/profile/componen
 import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { OpenProfileBannerComponent } from './open-profile-banner/open-profile-banner.component';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
+import { ToastMessageComponent } from '@components/toast-message/toast-message.component';
 
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
@@ -53,12 +67,17 @@ import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
     ProfileEditDrawerComponent,
     ProfileVisibilityDrawerComponent,
     OpenProfileBannerComponent,
+    PageHeaderComponent,
+    ToastModule,
+    ToastMessageComponent,
+    OpenIntercomDirective,
   ],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
   // is left; each drawer child shares this injector instance via the providers below. MessageService
-  // is deliberately NOT scoped here — the app's only <p-toast/> lives in AppComponent and reads from
+  // is deliberately NOT scoped here — the app's unkeyed <p-toast/> lives in AppComponent and reads from
   // the root MessageService, so a layout-local instance would shadow it and every toast raised by the
-  // drawer/panel/visibility-drawer would be added to a MessageService no <p-toast/> ever consumes.
+  // drawer/panel/visibility-drawer would be added to a MessageService no <p-toast/> ever consumes. The
+  // layout's own keyed <p-toast> (already-linked support) reads the same root instance.
   providers: [ProfileEditDrawerService, ProfileVisibilityDrawerService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
@@ -74,12 +93,13 @@ export class ProfileLayoutComponent {
   // Private injections
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly userService = inject(UserService);
   private readonly editDrawer = inject(ProfileEditDrawerService);
   private readonly visibilityDrawer = inject(ProfileVisibilityDrawerService);
   private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly rumService = inject(DataDogRumService);
   private readonly intercomService = inject(IntercomService);
 
@@ -93,10 +113,8 @@ export class ProfileLayoutComponent {
   // the initial GET, so we stash it and re-apply once a GET lands (see reapplyPendingOptimisticUpdate).
   private pendingOptimisticMetadata: Partial<UserMetadata> | null = null;
 
-  // Tab configuration. The read-only "CLAs" tab is appended (before Transactions/Settings)
-  // only when the `my-clas-enabled` flag is on — matching the route's CanMatch guard.
-  private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
-  public readonly tabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
+  protected readonly tabs: ProfileTab[] = PROFILE_TABS;
+  protected readonly linkedSupportToastKey = EMAIL_LINKED_SUPPORT_TOAST_KEY;
 
   // Profile data from the service (server-fetched). The profile GET is eventually consistent
   // (read-after-write lag in the auth-service), so after a save we apply an optimistic override
@@ -144,7 +162,9 @@ export class ProfileLayoutComponent {
 
   public readonly organization = computed(() => this.profileData()?.organization || '');
 
-  public readonly emailInfo = computed(() => this.profileData()?.email || '');
+  // Prefer the same primary row as Identities, including after a primary change or an optimistic
+  // metadata save that still holds the previous email in profileData.
+  public readonly emailInfo = computed(() => this.identities().find((identity) => identity.isPrimary)?.value || this.profileData()?.email || '');
 
   public readonly fullAddress: Signal<string[]> = this.initFullAddress();
 
@@ -163,9 +183,12 @@ export class ProfileLayoutComponent {
   // Connected identities — fetched once and reused for the tab notification dots and the GitHub handle
   private readonly identities: Signal<EnrichedIdentity[]> = this.initIdentities();
 
-  // Tab notification dots — show when identities are unverified
+  // Tab notification dots — show when identities are unverified. The primary email is skipped: an
+  // unverified primary has no action on the Identities tab, so it must not nag.
   public readonly tabNotifications: Signal<Map<string, boolean>> = computed(() => {
-    const hasUnverified = this.identities().some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified');
+    const hasUnverified = this.identities().some(
+      (id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified' && !id.isPrimary
+    );
     return new Map<string, boolean>([['identities', hasUnverified]]);
   });
 
@@ -188,8 +211,11 @@ export class ProfileLayoutComponent {
 
     // Handle Flow C return — restore saved form state and auto-save
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
-      if (params['success'] === 'profile_token_obtained') {
+      // Keep callback markers intact during SSR; server-side query cleanup becomes an HTTP redirect.
+      if (isPlatformBrowser(this.platformId) && params['success'] === 'profile_token_obtained') {
         this.handleProfileAuthReturn();
+        // Only read alongside the authorization flag, which on its own never implies an email outcome.
+        this.handleEmailCallbackStatus(params[EMAIL_CALLBACK_STATUS_PARAM], params[EMAIL_LINKED_SUPPORT_CONTEXT_PARAM]);
         this.clearAuthQueryParams();
       }
 
@@ -247,6 +273,8 @@ export class ProfileLayoutComponent {
    * drawer is correct too) and sets it as the optimistic header override.
    */
   private applyOptimisticProfileUpdate(metadata: Partial<UserMetadata>): void {
+    this.syncSharedUserName(metadata);
+
     // No base profile to merge into yet (Flow C cold load, or a user-only GET with no profile record
     // where merging would fabricate one and flip the drawer's metadataLoaded true). Stash the save +
     // refetch; reapplyPendingOptimisticUpdate merges it once a base profile lands, so an eventually-
@@ -279,6 +307,24 @@ export class ProfileLayoutComponent {
     this.optimisticProfileData.set(this.mapToHeaderData(mergedProfile));
     // The merge supersedes any stash; clear it so a later GET doesn't re-apply a now-stale overlay.
     this.pendingOptimisticMetadata = null;
+  }
+
+  // The navbar and account popover read UserService.user().name, which is seeded once from the SSR
+  // OIDC claims and never refetched, so push a saved name change into it for the current session.
+  private syncSharedUserName(metadata: Partial<UserMetadata>): void {
+    const currentUser = this.userService.user();
+    if (!currentUser || this.impersonating() || (metadata.given_name === undefined && metadata.family_name === undefined)) {
+      return;
+    }
+
+    const givenName = metadata.given_name ?? this.combinedProfile?.user.first_name ?? '';
+    const familyName = metadata.family_name ?? this.combinedProfile?.user.last_name ?? '';
+    const name = buildDisplayName(givenName, familyName);
+    if (name) {
+      // `saved` latches the name so the post-hydration profile fetch can't overwrite it with a stale
+      // body — even when the name is already the one shown, so this must not be skipped on equality.
+      this.userService.applyDisplayName(givenName, familyName, true);
+    }
   }
 
   // After a GET populates combinedProfile, re-apply a save that was stashed because no base profile
@@ -376,6 +422,50 @@ export class ProfileLayoutComponent {
     });
   }
 
+  /**
+   * Surface the outcome of an email verification the Flow C callback replayed after authorization.
+   * The marker is presentation-only (no email, code, or token), so unknown values are ignored and
+   * no outcome changes identity state locally — already-connected re-fetches the canonical list, while
+   * already-linked and retry outcomes leave identities untouched. Already-linked goes to the layout's
+   * keyed sticky toast after rendering; its private, one-shot context supplies only the proven address.
+   */
+  private handleEmailCallbackStatus(status: unknown, supportHandle?: unknown): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    if (status === EMAIL_ALREADY_CONNECTED_STATUS) {
+      this.messageService.add({ severity: 'success', summary: EMAIL_ALREADY_CONNECTED_SUMMARY, detail: EMAIL_ALREADY_CONNECTED_MESSAGE });
+      this.userService.refreshUserIdentities();
+    } else if (status === EMAIL_CALLBACK_ALREADY_LINKED_STATUS) {
+      const subject = this.userService.user()?.sub;
+      // MessageService does not replay: the layout's keyed Toast must subscribe before we publish.
+      afterNextRender(
+        () => {
+          this.userService
+            .consumeLinkedEmailSupportContext(supportHandle)
+            .pipe(
+              takeUntilDestroyed(this.destroyRef),
+              filter(() => this.userService.user()?.sub === subject && !this.userService.impersonating())
+            )
+            .subscribe(({ email }) => {
+              this.messageService.add({
+                key: EMAIL_LINKED_SUPPORT_TOAST_KEY,
+                severity: 'warn',
+                summary: EMAIL_LINKED_SUPPORT_TITLE,
+                detail: EMAIL_ALREADY_LINKED_MESSAGE,
+                sticky: true,
+                data: { supportMessage: buildLinkedEmailSupportMessage(email) },
+              });
+            });
+        },
+        { injector: this.injector }
+      );
+    } else if (status === EMAIL_CALLBACK_RETRY_REQUIRED_STATUS) {
+      this.messageService.add({ severity: 'warn', summary: 'Email not verified', detail: EMAIL_CALLBACK_RETRY_MESSAGE });
+    }
+  }
+
   // Legacy { savedAt, form } envelope (pre-LFXV2-2933 bundle) stored the raw form value. Map it with
   // the prior `|| undefined` omit-empties rules so a save started before a mid-Flow-C deploy replays
   // with its original (non-clearing) semantics rather than being silently dropped by the new parser.
@@ -397,7 +487,7 @@ export class ProfileLayoutComponent {
     };
   }
 
-  // Strip the Flow C query params (success/error) while staying on the current tab.
+  // Strip the Flow C query params (success/error/email_status) while staying on the current tab.
   // Navigating relative to this.route would resolve to the parent /profile route and
   // bounce the user to the default tab — so re-navigate to the current path sans query.
   // Keep the fragment (e.g. #password): router.url serializes as path?query#fragment, so a
@@ -416,6 +506,9 @@ export class ProfileLayoutComponent {
         switchMap(() =>
           user$.pipe(
             filter((user) => user !== null),
+            // Key on identity, not object: syncSharedUserName replaces the user object on a name save, and
+            // that must not refetch the eventually-consistent profile over the optimistic merge.
+            distinctUntilChanged((previous, current) => previous?.sub === current?.sub),
             switchMap(() =>
               this.userService.getCurrentUserProfile().pipe(
                 map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
@@ -455,6 +548,11 @@ export class ProfileLayoutComponent {
   // Re-fetch identities on the Identities tab's refresh signal (LFXV2-2767) so the panel's GitHub
   // handle and tab-notification dots stay current without a full reload.
   private initIdentities(): Signal<EnrichedIdentity[]> {
+    // Browser only, like the Identities tab: an SSR fetch is a second GET that re-runs the server's
+    // CDP identity reconcile alongside the browser's (#4523).
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal([] as EnrichedIdentity[]);
+    }
     return toSignal(
       this.userService.identitiesRefresh$.pipe(
         startWith(undefined),

@@ -16,6 +16,7 @@ import {
 import { formatRelativeTime } from '@lfx-one/shared/utils';
 import { InsightsTokensService } from '@services/insights-tokens.service';
 import { UserService } from '@services/user.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -27,14 +28,14 @@ import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dia
 /**
  * LFX Insights API tokens group (IN-1233), rendered inside the Developer Settings API Token card
  * behind the `insights-public-api` flag. Relies on the parent's ConfirmationService, MessageService
- * and DialogService (and its `<p-toast>` / `<p-confirmDialog>`). Key Contacts only: the list loads
- * once eligibility allows it, matching the server gate. Read-only while impersonating: the list and
+ * and DialogService (and its `<p-toast>` / `<p-confirmDialog>`). Flag-enabled users only: the list
+ * loads once eligibility allows it, matching the server gate. Read-only while impersonating: the list and
  * eligibility still load for the impersonated user, but create and revoke are disabled (the server
  * blocks them too).
  */
 @Component({
   selector: 'lfx-insights-tokens',
-  imports: [DatePipe, ButtonComponent],
+  imports: [DatePipe, ButtonComponent, OpenIntercomDirective],
   templateUrl: './insights-tokens.component.html',
 })
 export class InsightsTokensComponent {
@@ -67,7 +68,7 @@ export class InsightsTokensComponent {
     this.loading.set(true);
     this.loadError.set(false);
 
-    // Tokens are Key-Contact-only on the server too, so the list is fetched only once eligibility allows it.
+    // The server applies the same access flag, so the list is fetched only once eligibility allows it.
     this.insightsTokensService
       .getEligibility()
       .pipe(
@@ -142,17 +143,30 @@ export class InsightsTokensComponent {
     });
   }
 
+  /** An expired token no longer works, so removing it needs no confirmation. It is the same DELETE as revoke. */
+  protected remove(token: InsightsToken): void {
+    if (this.impersonating()) {
+      return;
+    }
+    this.delete(token, 'Token removed.', { summary: 'Remove failed', detail: "We couldn't remove the token. Please try again." });
+  }
+
   private initItems(): Signal<InsightsTokenListItem[]> {
     return computed(() =>
       this.tokens().map((token) => ({
         token,
         maskedValue: `${INSIGHTS_TOKEN_PREFIX}${token.lookupId}${'*'.repeat(8)}`,
         lastUsedLabel: token.lastUsedAt ? `Last used ${formatRelativeTime(new Date(token.lastUsedAt))}` : 'Never used',
+        expired: token.expiresAt !== null && new Date(token.expiresAt).getTime() <= Date.now(),
       }))
     );
   }
 
   private revoke(token: InsightsToken): void {
+    this.delete(token, 'Token revoked.', { summary: 'Revoke failed', detail: "We couldn't revoke the token. Please try again." });
+  }
+
+  private delete(token: InsightsToken, success: string, failure: { summary: string; detail: string }): void {
     this.revokingUid.set(token.uid);
 
     this.insightsTokensService
@@ -160,7 +174,7 @@ export class InsightsTokensComponent {
       .pipe(
         map(() => true),
         catchError((error) => {
-          console.error('Failed to revoke LFX Insights API token:', error);
+          console.error('Failed to delete LFX Insights API token:', error);
           return of(false);
         }),
         finalize(() => this.revokingUid.set(null)),
@@ -169,10 +183,10 @@ export class InsightsTokensComponent {
       .subscribe((revoked) => {
         if (revoked) {
           this.tokens.update((tokens) => tokens.filter((t) => t.uid !== token.uid));
-          this.messageService.add({ severity: 'success', summary: 'Token revoked.' });
+          this.messageService.add({ severity: 'success', summary: success });
           return;
         }
-        this.messageService.add({ severity: 'error', summary: 'Revoke failed', detail: "We couldn't revoke the token. Please try again." });
+        this.messageService.add({ severity: 'error', ...failure });
       });
   }
 

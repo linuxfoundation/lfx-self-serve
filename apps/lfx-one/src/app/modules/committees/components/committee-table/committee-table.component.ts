@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, input, output, PLATFORM_ID } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, computed, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,12 +13,18 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeTableRowVm } from '@lfx-one/shared/interfaces';
-import { getGroupCommands } from '@lfx-one/shared/utils';
+import { JOIN_MODE_TOOLTIPS } from '@lfx-one/shared/constants';
+import { getCommitteeMailingListLink, getGroupCommands, resolveJoinModeSeverity, resolveRoleChip, resolveTypeDisplay } from '@lfx-one/shared/utils';
+import { JoinModeLabelPipe } from '@app/shared/pipes/join-mode-label.pipe';
 import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
 import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
+import { ValidExternalUrlPipe } from '@app/shared/pipes/valid-external-url.pipe';
+import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
+import { committeeLeaveErrorMessage } from '@shared/utils/http-error.utils';
 
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-filter-bar.component';
 
@@ -33,8 +40,11 @@ import { CommitteeFilterBarComponent } from '../committee-filter-bar/committee-f
     TagComponent,
     CommitteeFilterBarComponent,
     TooltipModule,
+    ConfirmDialogModule,
+    JoinModeLabelPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
+    ValidExternalUrlPipe,
     EmptyStateComponent,
   ],
   templateUrl: './committee-table.component.html',
@@ -44,6 +54,8 @@ export class CommitteeTableComponent {
   // Injected services
   private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly committeeService = inject(CommitteeService);
   private readonly platformId = inject(PLATFORM_ID);
 
   // Inputs
@@ -52,8 +64,12 @@ export class CommitteeTableComponent {
   public canManageCommittee = input<boolean>(false);
   public myCommitteeUids = input<Set<string>>(new Set());
   public readonly committeeLabel = COMMITTEE_LABEL;
+  /** Scopes the leave confirmation to this table's dialog host so it can't surface in another `<p-confirmDialog>` on the page. */
+  protected readonly leaveConfirmKey = 'committee-table-leave';
   public searchForm = input.required<FormGroup>();
   public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
+  public joinModeOptions = input<{ label: string; value: string | null }[]>([]);
+  public showJoinModeFilter = input<boolean>(false);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
@@ -62,13 +78,20 @@ export class CommitteeTableComponent {
   public showFilterBar = input<boolean>(true);
   /** `data-testid` for the internal `<lfx-table>`. Defaults to the pre-existing fixed id — every caller that renders a single instance is unaffected. The foundation-grouped view renders one `<lfx-committee-table>` per group, so it must pass a per-group value to keep each table's testid unique (a fixed id would repeat once per group and turn `getByTestId` into a Playwright strict-mode violation). */
   public tableTestId = input<string>('committee-dashboard-table');
+  /** True when this table is rendered inside the Me Lens (My Groups). Used to attach router navigation state so `CommitteeViewComponent` can detect the transition. */
+  public isMeLens = input<boolean>(false);
 
   // Outputs
   public readonly refresh = output<void>();
+  /** Emits the committee uid once the user has left it, so the parent can wait for the membership index to catch up before reloading. */
+  public readonly left = output<string>();
   public readonly rowClick = output<Committee>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
   public readonly resetRequested = output<void>();
+
+  /** Committee uids with a leave in flight (kept after success until the reloaded list drops the row) so a second click can't fire a duplicate request. */
+  private readonly leavingUids = signal<ReadonlySet<string>>(new Set());
 
   protected readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.committees().length > 10 ? [10, 25, 50] : undefined));
@@ -80,22 +103,66 @@ export class CommitteeTableComponent {
    * Rows without tier data keep the flat `/groups/:uid` fallback (the `??` inside the mapping),
    * which `lensRedirectGuard` handles as before. Pre-computed once per input change rather than
    * per change-detection cycle (angular-reactive-data §3.5).
+   * `joinModeSeverity` and `joinModeTooltip` are also pre-computed here so the template stays
+   * binding-only with no per-render method calls (frontend-checklist §63-65).
    */
   protected readonly tableRows = computed<CommitteeTableRowVm[]>(() =>
     this.committees().map((committee) => ({
       ...committee,
       viewCommands: getGroupCommands(committee) ?? ['/groups', committee.uid],
       editCommands: getGroupCommands(committee, 'edit') ?? ['/groups', committee.uid, 'edit'],
+      mailingListLink: getCommitteeMailingListLink(committee),
       linkQueryParams: committee.project_slug ? { project: committee.project_slug } : null,
+      join_mode: committee.join_mode ?? 'invite_only',
+      joinModeSeverity: resolveJoinModeSeverity(committee.join_mode ?? 'invite_only'),
+      joinModeTooltip: JOIN_MODE_TOOLTIPS[committee.join_mode ?? 'invite_only'],
+      typeDisplay: resolveTypeDisplay(committee),
+      roleChip: resolveRoleChip(committee.my_role),
+      isMember: this.myCommitteeUids().has(committee.uid),
+      isLeaving: this.leavingUids().has(committee.uid),
     }))
   );
+
+  /** Show the Role column only when the input data carries `my_role` (i.e. Me Lens — MyCommittee rows). */
+  protected readonly hasRoleColumn = computed(() => this.tableRows().some((r) => r.my_role != null));
+
+  protected onLeave(event: Event, committee: CommitteeTableRowVm): void {
+    event.stopPropagation();
+
+    this.confirmationService.confirm({
+      key: this.leaveConfirmKey,
+      message: `Are you sure you want to leave ${committee.name}? You will lose access to its meetings, votes and documents.`,
+      header: `Leave ${this.committeeLabel.singular}`,
+      acceptLabel: 'Leave',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm p-button-danger',
+      rejectButtonStyleClass: 'p-button-sm p-button-secondary',
+      accept: () => {
+        this.setLeaving(committee.uid, true);
+        this.committeeService.leaveCommittee(committee.uid).subscribe({
+          next: () => {
+            this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
+            this.left.emit(committee.uid);
+          },
+          error: (err: HttpErrorResponse) => {
+            this.setLeaving(committee.uid, false);
+            this.messageService.add({ severity: 'error', summary: 'Unable to Leave', detail: committeeLeaveErrorMessage(err, committee.name), life: 6000 });
+          },
+        });
+      },
+    });
+  }
 
   protected onRowSelect(event: { data: CommitteeTableRowVm }): void {
     this.rowClick.emit(event.data);
   }
 
   protected resetFilters(): void {
-    this.searchForm().patchValue({ search: '', votingStatus: null, foundationFilter: null, projectFilter: null });
+    if (this.isMeLens()) {
+      this.resetRequested.emit();
+      return;
+    }
+    this.searchForm().patchValue({ search: '', votingStatus: null, joinModeFilter: null, foundationFilter: null, projectFilter: null });
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
     this.resetRequested.emit();
@@ -113,5 +180,17 @@ export class CommitteeTableComponent {
     } catch {
       this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: 'Could not access clipboard.' });
     }
+  }
+
+  private setLeaving(uid: string, leaving: boolean): void {
+    this.leavingUids.update((current) => {
+      const next = new Set(current);
+      if (leaving) {
+        next.add(uid);
+      } else {
+        next.delete(uid);
+      }
+      return next;
+    });
   }
 }

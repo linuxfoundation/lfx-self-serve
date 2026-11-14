@@ -1,0 +1,20 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Keep a visible track in WebKit, including systems with overlay scrollbars.
+.ranking-scroll {
+  scrollbar-width: auto;
+
+  &::-webkit-scrollbar {
+    display: block;
+    height: 12px;
+  }
+
+  &::-webkit-scrollbar-track {
+    @apply rounded bg-gray-100;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    @apply rounded bg-gray-400;
+  }
+}

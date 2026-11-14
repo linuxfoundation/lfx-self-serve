@@ -6,19 +6,29 @@ import { ChangeDetectionStrategy, Component, Type, computed, inject, input, Sign
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
 import { EventRequestStatusSeverityPipe } from '@app/shared/pipes/event-request-status-severity.pipe';
+import { readBlobErrorCode } from '@app/shared/utils/http-error.utils';
+import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DEFAULT_EVENTS_PAGE_SIZE, EMPTY_TRAVEL_FUND_REQUESTS_RESPONSE, EMPTY_VISA_REQUESTS_RESPONSE } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_EVENTS_PAGE_SIZE,
+  EMPTY_TRAVEL_FUND_REQUESTS_RESPONSE,
+  EMPTY_VISA_REQUESTS_RESPONSE,
+  VISA_LETTER_DOWNLOADABLE_STATUS,
+  VISA_LETTER_MANUAL_ERROR_CODE,
+  VISA_LETTER_NOT_ISSUED_ERROR_CODE,
+} from '@lfx-one/shared/constants';
 import { PageChangeEvent, RequestType, VisaRequestsResponse } from '@lfx-one/shared/interfaces';
+import { downloadFromUrl, parseContentDispositionFilename } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, finalize, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, finalize, of, skip, switchMap, take, tap } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TravelFundApplicationDialogComponent } from '../travel-fund-application-dialog/travel-fund-application-dialog.component';
 import { VisaRequestApplicationDialogComponent } from '../visa-request-application-dialog/visa-request-application-dialog.component';
 @Component({
   selector: 'lfx-event-request-list',
-  imports: [TableComponent, TagComponent, DynamicDialogModule, EventRequestStatusSeverityPipe, EmptyStateComponent, DatePipe],
+  imports: [TableComponent, TagComponent, ButtonComponent, DynamicDialogModule, EventRequestStatusSeverityPipe, EmptyStateComponent, DatePipe],
   providers: [DialogService],
   templateUrl: './event-request-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -35,12 +45,24 @@ export class EventRequestListComponent {
   public readonly initialEventId = input<string | null>(null);
 
   protected readonly loading = signal(false);
+  /** Event id of the visa letter currently downloading, so only that row's button spins. */
+  protected readonly downloadingLetterId = signal<string | null>(null);
   protected readonly sortField = signal<string>('APPLICATION_DATE');
   protected readonly sortOrder = signal<'ASC' | 'DESC'>('DESC');
   protected readonly page = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   protected readonly requestsResponse: Signal<VisaRequestsResponse> = this.initRequests();
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.requestsResponse().total > 10 ? [10, 25, 50] : undefined));
+
+  // TODO(#2740): gate on 'Issued' and hide for manual letters once the dbt model exposes both.
+  protected readonly downloadableLetters = computed<Readonly<Record<string, boolean>>>(() => {
+    if (this.requestType() !== 'visa') return {};
+    return Object.fromEntries(
+      this.requestsResponse()
+        .data.filter((request) => request.status === VISA_LETTER_DOWNLOADABLE_STATUS && !request.eventEnded)
+        .map((request) => [request.id, true])
+    );
+  });
 
   /** True while loading or when at least one result exists — parent uses this to decide whether to show the filter bar. */
   public readonly hasData = computed(() => this.loading() || this.requestsResponse().data.length > 0);
@@ -89,6 +111,38 @@ export class EventRequestListComponent {
       closeOnEscape: true,
       data: { initialEventId: this.initialEventId() },
     });
+  }
+
+  protected downloadVisaLetter(eventId: string): void {
+    this.downloadingLetterId.set(eventId);
+    this.eventsService
+      .getVisaLetter(eventId)
+      .pipe(
+        take(1),
+        finalize(() => this.downloadingLetterId.set(null))
+      )
+      .subscribe({
+        next: (response) => {
+          const blob = response.body;
+          if (!blob) return;
+          const fileName = parseContentDispositionFilename(response.headers.get('Content-Disposition')) ?? `visa-letter-${eventId}.pdf`;
+          const url = URL.createObjectURL(blob);
+          downloadFromUrl(url, fileName);
+          // Deferred so browsers that start the download asynchronously still read the blob URL.
+          setTimeout(() => URL.revokeObjectURL(url), 0);
+        },
+        error: (error: unknown) => {
+          void readBlobErrorCode(error).then((code) => {
+            if (code === VISA_LETTER_MANUAL_ERROR_CODE) {
+              this.messageService.add({ severity: 'info', summary: 'Visa letter', detail: 'The events team will email you this visa letter.' });
+            } else if (code === VISA_LETTER_NOT_ISSUED_ERROR_CODE) {
+              this.messageService.add({ severity: 'info', summary: 'Visa letter', detail: 'Your visa letter is not ready yet.' });
+            } else {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to download visa letter. Please try again.' });
+            }
+          });
+        },
+      });
   }
 
   protected onPageChange(event: { first: number; rows: number }): void {

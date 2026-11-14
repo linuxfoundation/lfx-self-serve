@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location, NgClass } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -9,7 +10,12 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
-import { FORMATION_CHECKLIST_GRID_CLASSES, FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_GRID_CLASSES,
+  FORMATION_CHECKLIST_HEADING,
+  FORMATION_ITEM_QUERY_PARAM,
+  getFormationNoChecklistCopy,
+} from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -71,6 +77,12 @@ export class FormationChecklistSectionComponent {
    */
   public readonly projectSlug = input<string | null>(null);
 
+  /** Section heading. Defaults to "Formation Checklist" (`/project/formation`); the foundation drill-down passes the neutral "Formation items" (#5635). */
+  public readonly heading = input<string>(FORMATION_CHECKLIST_HEADING);
+
+  /** The project's stage when the host knows it (the foundation drill-down does), so the not-found empty state can say why there is nothing to track (#5635). */
+  public readonly stage = input<string | null>(null);
+
   /** The full-tier grid template (#2774) — the same one `lfx-formation-checklist-row` binds, so the header captions sit over the columns they label. */
   protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;
 
@@ -88,7 +100,9 @@ export class FormationChecklistSectionComponent {
   public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
-  private readonly loadFailed = signal(false);
+  /** How the last read failed: `not-found` (the BFF's masked 403/404) shows the neutral no-checklist state, anything else the retryable error. */
+  private readonly loadFailure = signal<'not-found' | 'error' | null>(null);
+  protected readonly noChecklistCopy = computed(() => getFormationNoChecklistCopy(this.stage()));
   // Starts true — both hosts guarantee a slug on the very first combineLatest emission
   // (`/project/formation`'s `formationProjectEnabledGuard` confirmed a Formation-stage project
   // context; the foundation drill-down only renders this component once its `projectSlug` input is
@@ -179,7 +193,8 @@ export class FormationChecklistSectionComponent {
 
   protected readonly pageState: Signal<FormationChecklistPageState> = computed(() => {
     if (this.loading()) return 'loading';
-    if (this.loadFailed()) return 'error';
+    if (this.loadFailure() === 'not-found') return 'no-checklist';
+    if (this.loadFailure()) return 'error';
     // response() is null before the first fetch lands (loading.set(true) runs post-CD, so there
     // is a brief window where loading=false and response=null). Treat that as loading so
     // initDeepLink's terminal-state filter doesn't fire before data has arrived.
@@ -191,6 +206,11 @@ export class FormationChecklistSectionComponent {
 
   constructor() {
     this.initDeepLink();
+  }
+
+  /** Re-reads the checklist in place (no skeleton) — the hosts call this after a formation-record save (#5134) so the card and checklist reflect the new stage. */
+  public reload(): void {
+    this.refresh$.next();
   }
 
   protected onRetry(): void {
@@ -381,7 +401,7 @@ export class FormationChecklistSectionComponent {
     // drawer it just opened.
     toObservable(this.pageState)
       .pipe(
-        filter((state) => state === 'ready' || state === 'no-template' || state === 'no-items'),
+        filter((state) => state === 'ready' || state === 'no-checklist' || state === 'no-template' || state === 'no-items'),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -444,7 +464,7 @@ export class FormationChecklistSectionComponent {
             return of(null);
           }
 
-          this.loadFailed.set(false);
+          this.loadFailure.set(null);
           if (slug !== lastSlug) {
             const isSwitch = lastSlug !== null;
             lastSlug = slug;
@@ -472,7 +492,7 @@ export class FormationChecklistSectionComponent {
             }),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);
-              this.loadFailed.set(true);
+              this.loadFailure.set(error instanceof HttpErrorResponse && error.status === 404 ? 'not-found' : 'error');
               this.responseLoaded.emit(null);
               return of(null);
             }),

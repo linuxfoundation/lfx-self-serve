@@ -1,0 +1,398 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { HttpErrorResponse } from '@angular/common/http';
+import { signal, WritableSignal } from '@angular/core';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { provideRouter, RouterLink } from '@angular/router';
+import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
+import { MyDocumentItem, Project, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency } from '@lfx-one/shared/utils';
+import { DocumentService } from '@services/document.service';
+import { LensService } from '@services/lens.service';
+import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { MessageService } from 'primeng/api';
+import { of, throwError } from 'rxjs';
+import type { Mock } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { DocumentsDashboardComponent } from './documents-dashboard.component';
+
+describe('DocumentsDashboardComponent', () => {
+  let fixture: ComponentFixture<DocumentsDashboardComponent>;
+  let activeContext: WritableSignal<ProjectContext | null>;
+  let canWrite: WritableSignal<boolean>;
+  let routeLens: WritableSignal<string | null>;
+  let projectDocuments: ProjectDocument[];
+  let legacyDocuments: MyDocumentItem[];
+  let messageService: { add: Mock };
+  let getProjectDocuments: Mock;
+  let deleteProjectDocument: Mock;
+  /**
+   * The context's resolved project. `canUpload` requires its uid to match `activeContext`'s uid,
+   * so the default agrees with the rendered project and only the staleness test drives them apart
+   * (mirrors the gate in project-staff-card.component.spec.ts).
+   */
+  let activeProject: WritableSignal<Project | null>;
+
+  function buildContext(uid: string): ProjectContext {
+    return { uid, slug: uid, name: 'Project One' } as ProjectContext;
+  }
+
+  beforeEach(() => {
+    activeContext = signal<ProjectContext | null>(buildContext('project-1'));
+    canWrite = signal(true);
+    activeProject = signal<Project | null>({ uid: 'project-1', writer: true } as Project);
+    routeLens = signal<string | null>('project');
+    projectDocuments = [];
+    legacyDocuments = [];
+    messageService = { add: vi.fn() };
+    getProjectDocuments = vi.fn(() => of(projectDocuments));
+    deleteProjectDocument = vi.fn(() => of(undefined));
+  });
+
+  async function render(): Promise<void> {
+    await TestBed.configureTestingModule({
+      imports: [DocumentsDashboardComponent],
+      providers: [
+        provideRouter([]),
+        { provide: DocumentService, useValue: { getMyDocuments: vi.fn(() => of(legacyDocuments)) } },
+        { provide: ProjectService, useValue: { getProjectDocuments, deleteProjectDocument } },
+        { provide: MessageService, useValue: messageService },
+        {
+          provide: ProjectContextService,
+          useValue: { activeContext, canWrite, activeProject, activeRouteLensKind: routeLens },
+        },
+        { provide: LensService, useValue: { activeLens: signal('project') } },
+        { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(DocumentsDashboardComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  function toolbar(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="documents-dashboard-toolbar"]');
+  }
+
+  it('shows the upload toolbar when project-scoped with write access', async () => {
+    await render();
+    expect(toolbar()).toBeTruthy();
+  });
+
+  it('hides the upload toolbar when the active project is read-only', async () => {
+    canWrite.set(false);
+    activeProject.set({ uid: 'project-1', writer: false } as Project);
+    await render();
+    expect(toolbar()).toBeFalsy();
+  });
+
+  it('hides the upload toolbar while canWrite still reflects the previous project (GH-305)', async () => {
+    // Simulates the mid-switch window described in project-context.service.ts's
+    // initActiveProjectDetails(): activeContext has already moved to the new (read-only) project,
+    // but activeProject()/canWrite() still describe the previous (writable) one.
+    activeContext.set(buildContext('project-2'));
+    await render();
+    expect(toolbar()).toBeFalsy();
+  });
+
+  function document(uid: string, date: string, overrides: Partial<ProjectDocument> = {}): ProjectDocument {
+    return { uid, type: 'link', name: uid, created_at: date, ...overrides };
+  }
+
+  function legacyDocument(id: string, date: string, overrides: Partial<MyDocumentItem> = {}): MyDocumentItem {
+    return { id, name: id, date, source: 'link', foundationName: '', groupOrMeetingName: '', groupOrMeetingUid: '', ...overrides };
+  }
+
+  function visibleIds(): string[] {
+    return fixture.componentInstance['filteredDocuments']().map((doc) => doc.id);
+  }
+
+  it('keeps alphabetical folders first and sorts mixed-source root documents by displayed date without mutating the response', async () => {
+    projectDocuments = [
+      document('old', '2026-01-01', { name: 'A file', updated_at: '2026-12-01' }),
+      document('z-folder', '2026-10-01', { type: 'folder' }),
+      document('new', '2026-10-01', { name: 'Z file', document_source: 'meeting' }),
+      document('a-folder', '2026-01-01', { type: 'folder' }),
+      document('nested', '2026-11-01', { parent_uid: 'a-folder' }),
+      document('fallback', '2026-06-01', { created_at: undefined, updated_at: '2026-06-01', document_source: 'committee' }),
+    ];
+    const original = structuredClone(projectDocuments);
+    await render();
+
+    expect(visibleIds()).toEqual(['project_folder:a-folder', 'project_folder:z-folder', 'project_link:new', 'project_link:fallback', 'project_link:old']);
+    expect(fixture.componentInstance['filteredDocuments']()[0].childCount).toBe(1);
+    expect(projectDocuments).toEqual(original);
+  });
+
+  it('sorts folder contents newest-first and retains root ordering on breadcrumb navigation', async () => {
+    projectDocuments = [
+      document('folder', '', { type: 'folder' }),
+      document('old', '2026-01-01', { parent_uid: 'folder' }),
+      document('new', '2026-10-01', { parent_uid: 'folder' }),
+      document('root', '2026-11-01'),
+    ];
+    await render();
+    fixture.componentInstance['onFolderOpen'](fixture.componentInstance['filteredDocuments']()[0]);
+    await fixture.whenStable();
+    expect(visibleIds()).toEqual(['project_link:new', 'project_link:old']);
+
+    fixture.componentInstance['onBreadcrumbHome']();
+    await fixture.whenStable();
+    expect(visibleIds()).toEqual(['project_folder:folder', 'project_link:root']);
+  });
+
+  it('preserves newest-first ordering through source filtering, root search across folders, and refresh', async () => {
+    projectDocuments = [
+      document('folder', '', { type: 'folder' }),
+      document('old', '2026-01-01', { name: 'Report old', document_source: 'meeting' }),
+      document('new', '2026-10-01', { name: 'Report new', document_source: 'meeting' }),
+      document('nested', '2026-11-01', { name: 'Report nested', parent_uid: 'folder', document_source: 'meeting' }),
+      document('other', '2026-12-01', { document_source: 'committee' }),
+    ];
+    await render();
+    const component = fixture.componentInstance;
+    component['onProjectSourceTabChange']('meeting');
+    expect(visibleIds()).toEqual(['project_link:new', 'project_link:old']);
+
+    component['filterForm'].controls.search.setValue('Report');
+    await vi.waitFor(() => expect(visibleIds()).toEqual(['project_link:nested', 'project_link:new', 'project_link:old']));
+
+    projectDocuments = [...projectDocuments, document('latest', '2026-12-01', { name: 'Report latest', document_source: 'meeting' })];
+    component['refreshTrigger'].update((value) => value + 1);
+    await fixture.whenStable();
+    expect(visibleIds()).toEqual(['project_link:latest', 'project_link:nested', 'project_link:new', 'project_link:old']);
+  });
+
+  it('shows per-source counts on the project pills, follows the search, and filters rows when selected', async () => {
+    projectDocuments = [
+      document('p1', '2026-01-01', { name: 'Plan one' }),
+      document('c1', '2026-01-02', { name: 'Plan two', document_source: 'committee' }),
+      document('m1', '2026-01-03', { name: 'Notes', document_source: 'meeting' }),
+      document('r1', '2026-01-04', { name: 'Recording', document_source: 'recording' }),
+      document('ml1', '2026-01-05', { name: 'List', document_source: 'mailing_list' }),
+    ];
+    await render();
+    const component = fixture.componentInstance;
+    const labels = () => component['projectSourceTabOptions']().map((option) => option.label);
+
+    expect(labels()).toEqual(['All (5)', 'Project (1)', 'Groups (1)', 'Meetings (2)', 'Mailing Lists (1)']);
+    expect(fixture.nativeElement.querySelector('[data-testid="documents-dashboard-source-filter"]')).toBeNull();
+
+    component['onProjectSourceTabChange']('meeting');
+    expect(visibleIds()).toEqual(['project_link:r1', 'project_link:m1']);
+    // Counts ignore the selected pill so every pill keeps showing what it would list.
+    expect(labels()).toEqual(['All (5)', 'Project (1)', 'Groups (1)', 'Meetings (2)', 'Mailing Lists (1)']);
+
+    component['filterForm'].controls.search.setValue('Plan');
+    await vi.waitFor(() => expect(labels()).toEqual(['All (2)', 'Project (1)', 'Groups (1)', 'Meetings', 'Mailing Lists']));
+  });
+
+  it('sorts the legacy My Documents feed globally across sources before pagination and after filtering', async () => {
+    routeLens.set('me');
+    legacyDocuments = [
+      legacyDocument('old-link', '2026-01-01'),
+      ...Array.from({ length: 11 }, (_, index) => legacyDocument(`meeting-${index}`, `2026-10-${String(index + 1).padStart(2, '0')}`, { source: 'meeting' })),
+      legacyDocument('latest-link', '2026-11-01'),
+    ];
+    const original = structuredClone(legacyDocuments);
+    await render();
+    expect(visibleIds()).toEqual(['latest-link', ...Array.from({ length: 11 }, (_, index) => `meeting-${10 - index}`), 'old-link']);
+    expect(fixture.componentInstance['rppOptions']()).toEqual([10, 25, 50]);
+    expect(legacyDocuments).toEqual(original);
+
+    fixture.componentInstance['onSourceTabChange']('link');
+    expect(visibleIds()).toEqual(['latest-link', 'old-link']);
+  });
+
+  describe('names in the project and foundation Documents view', () => {
+    const link = (uid: string): HTMLAnchorElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="documents-dashboard-source-link-project_link:${uid}"]`);
+
+    beforeEach(async () => {
+      projectDocuments = [
+        document('committee-doc', '2026-10-09', {
+          document_source: 'committee',
+          document_source_name: 'Technical Steering Committee',
+          committee_uid: 'group-1',
+        }),
+        document('list-doc', '2026-10-08', { document_source: 'mailing_list', document_source_name: 'Maintainers', mailing_list_uid: 'list-7' }),
+        document('unresolved-list-doc', '2026-10-07', { document_source: 'mailing_list', document_source_name: '' }),
+        document('summary-doc', '2026-10-06', { document_source: 'summary', document_source_name: 'Weekly sync', past_meeting_id: 'occ-3' }),
+        document('recording-doc', '2026-10-05', { document_source: 'recording', document_source_name: 'Weekly sync', past_meeting_id: 'occ-4' }),
+        document('attachment-doc', '2026-10-04', { document_source: 'meeting' }),
+        document('native-doc', '2026-10-03', { document_source: 'project' }),
+      ];
+      await render();
+    });
+
+    it('opens the real group, mailing list and past meeting, never the project', () => {
+      expect(link('committee-doc')?.getAttribute('href')).toBe('/groups/group-1');
+      expect(link('list-doc')?.getAttribute('href')).toBe('/mailing-lists/list-7');
+      expect(link('summary-doc')?.getAttribute('href')).toBe('/meetings/occ-3/details');
+      expect(link('recording-doc')?.getAttribute('href')).toBe('/meetings/occ-4/details');
+      expect(fixture.nativeElement.innerHTML).not.toContain('/groups/project-1');
+    });
+
+    it('leaves names that are only the project name as plain text, with no link to guess at', () => {
+      expect(link('native-doc')).toBeNull();
+      expect(link('attachment-doc')).toBeNull();
+      expect(link('unresolved-list-doc')).toBeNull();
+    });
+
+    it('returns to Documents from a group without switching the lens', () => {
+      const state = fixture.debugElement
+        .query(By.css('[data-testid="documents-dashboard-source-link-project_link:committee-doc"]'))
+        .injector.get(RouterLink).state;
+
+      expect(state).toEqual({ backLabel: 'Documents', backPath: '/documents', fromMeLens: false });
+    });
+  });
+
+  it('links the group, meeting and mailing list names in the My Documents feed to their details pages', async () => {
+    routeLens.set('me');
+    legacyDocuments = [
+      legacyDocument('group-doc', '2026-10-03', { groupOrMeetingName: 'Technical Steering Committee', groupOrMeetingUid: 'group-1' }),
+      legacyDocument('meeting-doc', '2026-10-02', { source: 'meeting', groupOrMeetingName: 'Weekly sync', groupOrMeetingUid: 'm-1', meetingId: 'm-1' }),
+      legacyDocument('list-doc', '2026-10-01', {
+        source: 'mailing_list',
+        groupOrMeetingName: 'Maintainers',
+        groupOrMeetingUid: 'group-1',
+        mailingListUid: 'list-7',
+      }),
+      legacyDocument('nameless-doc', '2026-09-30', { source: 'mailing_list', groupOrMeetingName: '', groupOrMeetingUid: 'group-1' }),
+    ];
+    await render();
+
+    const href = (id: string): string | null | undefined =>
+      fixture.nativeElement.querySelector(`[data-testid="documents-source-link-${id}"]`)?.getAttribute('href');
+    expect(href('group-doc')).toBe('/groups/group-1');
+    expect(href('meeting-doc')).toBe('/meetings/m-1');
+    expect(href('list-doc')).toBe('/mailing-lists/list-7');
+    expect(href('nameless-doc')).toBeUndefined();
+  });
+
+  it('sends back state so a group page returns to Documents', async () => {
+    routeLens.set('me');
+    legacyDocuments = [legacyDocument('group-doc', '2026-10-03', { groupOrMeetingName: 'Technical Steering Committee', groupOrMeetingUid: 'group-1' })];
+    await render();
+
+    const link = fixture.debugElement.query(By.css('[data-testid="documents-source-link-group-doc"]')).injector.get(RouterLink);
+    expect(link.state).toEqual({ backLabel: 'Documents', backPath: '/documents', fromMeLens: false });
+  });
+
+  it('uses name and ID tie-breakers and places missing or invalid dates after all valid dates', async () => {
+    await render();
+    // Exercise malformed-date ordering independently: DatePipe cannot render malformed dates.
+    const documents = [
+      legacyDocument('missing-z', '', { name: 'Z' }),
+      legacyDocument('same-b', '2026-10-01T00:00:00Z', { name: 'Same' }),
+      legacyDocument('invalid', 'not-a-date', { name: 'A' }),
+      legacyDocument('epoch', '1960-01-01'),
+      legacyDocument('same-a', '2026-09-30T20:00:00-04:00', { name: 'Same' }),
+      legacyDocument('alpha', '2026-10-01T00:00:00Z', { name: 'Alpha' }),
+      legacyDocument('missing-a', '', { name: 'A' }),
+    ];
+    expect(documents.sort(compareDocumentsByRecency).map((doc) => doc.id)).toEqual(['alpha', 'same-a', 'same-b', 'epoch', 'invalid', 'missing-a', 'missing-z']);
+  });
+
+  describe('deleting project documents', () => {
+    const tableInstance = (): DocumentsTableComponent => fixture.debugElement.query(By.directive(DocumentsTableComponent)).componentInstance;
+    const rowFor = (id: string): MyDocumentItem => fixture.componentInstance['filteredDocuments']().find((doc) => doc.id === id)!;
+
+    beforeEach(() => {
+      projectDocuments = [
+        document('own-link', '2026-10-01'),
+        document('own-folder', '2026-09-01', { type: 'folder' }),
+        document('meeting-file', '2026-08-01', { type: 'file', document_source: 'meeting' }),
+        document('group-link', '2026-07-01', { document_source: 'committee' }),
+      ];
+    });
+
+    it('offers row actions only on the project’s own folders, links and files', async () => {
+      await render();
+
+      expect(rowFor('project_link:own-link').manageableType).toBe('link');
+      expect(rowFor('project_folder:own-folder').manageableType).toBe('folder');
+      expect(rowFor('project_file:meeting-file').manageableType).toBeUndefined();
+      expect(rowFor('project_link:group-link').manageableType).toBeUndefined();
+    });
+
+    it('turns row management on for a writer and off for a read-only viewer', async () => {
+      await render();
+      expect(tableInstance().canManage()).toBe(true);
+
+      TestBed.resetTestingModule();
+      canWrite.set(false);
+      activeProject.set({ uid: 'project-1', writer: false } as Project);
+      await render();
+      expect(tableInstance().canManage()).toBe(false);
+    });
+
+    it('deletes the confirmed row through the project API, says so, and reloads the list', async () => {
+      await render();
+      expect(getProjectDocuments).toHaveBeenCalledTimes(1);
+
+      tableInstance().documentDelete.emit(rowFor('project_link:own-link'));
+      await fixture.whenStable();
+
+      expect(deleteProjectDocument).toHaveBeenCalledWith('project-1', 'own-link', 'link');
+      expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Deleted' }));
+      expect(getProjectDocuments).toHaveBeenCalledTimes(2);
+    });
+
+    it('shows the server’s reason and keeps the list as it was when the delete fails', async () => {
+      deleteProjectDocument.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { error: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE, code: 'FOLDER_NOT_EMPTY' } }))
+      );
+      await render();
+
+      tableInstance().documentDelete.emit(rowFor('project_folder:own-folder'));
+      await fixture.whenStable();
+
+      expect(messageService.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE }));
+      expect(getProjectDocuments).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a deleted row hidden when the reload straight after still returns it', async () => {
+      // getProjectDocuments keeps answering with the deleted link, as the index can for a moment after the delete.
+      await render();
+      expect(visibleIds()).toContain('project_link:own-link');
+
+      tableInstance().documentDelete.emit(rowFor('project_link:own-link'));
+      await fixture.whenStable();
+
+      expect(getProjectDocuments).toHaveBeenCalledTimes(2);
+      expect(visibleIds()).not.toContain('project_link:own-link');
+    });
+
+    it('updates a folder’s count when its last document is deleted and the reload still returns it', async () => {
+      projectDocuments = [document('folder', '', { type: 'folder' }), document('inside', '2026-10-01', { parent_uid: 'folder' })];
+      await render();
+      expect(rowFor('project_folder:folder').childCount).toBe(1);
+
+      fixture.componentInstance['onFolderOpen'](rowFor('project_folder:folder'));
+      await fixture.whenStable();
+      tableInstance().documentDelete.emit(rowFor('project_link:inside'));
+      fixture.componentInstance['onBreadcrumbHome']();
+      await fixture.whenStable();
+
+      expect(rowFor('project_folder:folder')?.childCount).toBe(0);
+    });
+
+    it('ignores a row the page cannot manage', async () => {
+      await render();
+
+      tableInstance().documentDelete.emit(rowFor('project_link:group-link'));
+      await fixture.whenStable();
+
+      expect(deleteProjectDocument).not.toHaveBeenCalled();
+    });
+  });
+});

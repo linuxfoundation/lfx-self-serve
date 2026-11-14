@@ -3,16 +3,20 @@
 
 import '@angular/compiler';
 
-import { ApplicationRef, computed, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ApplicationRef, computed, signal, TransferState, untracked } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { IntercomService } from '@services/intercom.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
@@ -22,6 +26,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaComponent } from './org-easycla.component';
+
+function roleMissingError(): HttpErrorResponse {
+  return new HttpErrorResponse({
+    status: 403,
+    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
+  });
+}
 
 describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
@@ -61,6 +72,7 @@ describe('OrgEasyclaComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
+      viewerIsClaManager: false,
       ...overrides,
     };
   }
@@ -137,6 +149,15 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).toContain('EasyCLA');
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).toContain('Vertex Robotics');
+    });
+
+    it('links the page to the EasyCLA documentation', async () => {
+      const fixture = await render();
+
+      const link = byTestId(fixture, 'org-easycla-docs-link') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('/docs/organization/easycla');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.textContent?.trim()).toBe('Learn more about EasyCLA →');
     });
 
     it('falls back to the bare title before an account resolves', async () => {
@@ -226,6 +247,18 @@ describe('OrgEasyclaComponent', () => {
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
+    });
+
+    it('cannot be used when EasyCLA refused the list for a missing role, and says so', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toBe("Sign a corporate CLA — you don't have an EasyCLA role at this organization");
+      consoleError.mockRestore();
     });
 
     // Pair grain lives on attestation Continue. A company-level inventory would hide Sign from
@@ -602,7 +635,7 @@ describe('OrgEasyclaComponent', () => {
   });
 
   describe('access and org-selection states', () => {
-    // The route guard only checks the dark-launch flag, so the component owns the access answer.
+    // The component owns the access answer.
     // Telling an unauthorized caller "No CLAs signed yet" would describe their CLAs rather than
     // their access, and imply the org has none.
     it('says the lens is unavailable, not that no CLAs exist, when the caller holds no org access', async () => {
@@ -721,24 +754,18 @@ describe('OrgEasyclaComponent', () => {
     });
 
     it('overlays the card link rather than wrapping the card in it', async () => {
-      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ needsClaManager: true, claManagersCount: 0 })] }));
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
 
       const fixture = await render();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement;
 
-      // The "Needs a CLA Manager" tag carries a tooltip and so takes `tabindex="0"`. Inside the
-      // anchor it would be a second tab stop within the link, and a click on it would be
-      // ambiguous with following the agreement.
       expect(link.querySelector('[data-testid="org-easycla-card"]')).toBeNull();
-      expect(link.querySelector('[tabindex]')).toBeNull();
+      expect(link.querySelector('button')).toBeNull();
       expect(link.getAttribute('aria-label')).toBe('Open Nimbus Foundation CLA');
 
-      // Layering per the me-selector in sidebar.component.html: the anchor sits beneath the card,
-      // the card's content has pointer events off so a click anywhere reaches the link, and the
-      // tooltip'd tag re-enables them so hovering it still opens the tooltip.
       const card = byTestId(fixture, 'org-easycla-card') as HTMLElement;
       expect(card.closest('.pointer-events-none')).not.toBeNull();
-      expect(byTestId(fixture, 'org-easycla-card-needs-manager')?.querySelector('.pointer-events-auto')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-card-coverage-link')?.classList.contains('pointer-events-auto')).toBe(true);
     });
 
     // The card shows the signing entity as a visible subline precisely because the CLA Group name is
@@ -802,6 +829,49 @@ describe('OrgEasyclaComponent', () => {
 
       expect(openDialog).toHaveBeenCalledOnce();
       expect(openDialog.mock.calls[0][1].data.projects).toEqual([{ projectName: 'Fathom' }, { projectName: 'Gantry' }, { projectName: 'Halyard' }]);
+    });
+
+    // A self-removal recorded on the detail page must reach the card too, because EasyCLA can go on
+    // listing the viewer as a CLA Manager after the removal and the card would drop the marker the
+    // detail header still shows.
+    describe('after the viewer removed themselves as CLA Manager', () => {
+      it('marks the row they left View only even while EasyCLA still lists them', async () => {
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'left', viewerIsClaManager: true })] }));
+
+        const fixture = await render();
+        TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'left');
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-card-view-only')?.textContent?.trim()).toBe('View only');
+      });
+
+      it('leaves a row they still manage unmarked', async () => {
+        getClaGroups.mockReturnValue(
+          of({
+            orgUid: SELECTED_ACCOUNT.uid,
+            claGroups: [claGroup({ id: 'left', viewerIsClaManager: true }), claGroup({ id: 'kept', viewerIsClaManager: true })],
+          })
+        );
+
+        const fixture = await render();
+        TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'left');
+        fixture.detectChanges();
+
+        const cards = allByTestId(fixture, 'org-easycla-card');
+        expect(cards).toHaveLength(2);
+        expect(cards[0].querySelector('[data-testid="org-easycla-card-view-only"]')).not.toBeNull();
+        expect(cards[1].querySelector('[data-testid="org-easycla-card-view-only"]')).toBeNull();
+      });
+
+      it('does not carry a removal at one organization over to another', async () => {
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'left', viewerIsClaManager: true })] }));
+
+        const fixture = await render();
+        TestBed.inject(OrgClaSelfRemovalsService).record('another-org-uid', 'left');
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-card-view-only')).toBeNull();
+      });
     });
 
     it('fetches once for the selected organization', async () => {
@@ -886,6 +956,53 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
       // Sign CLA is in the header rather than the toolbar, so the failure state does not take it.
       expect(byTestId(fixture, 'org-easycla-sign-cla')).toBeTruthy();
+      consoleError.mockRestore();
+    });
+
+    it('shows the missing-role state, not the load failure, when EasyCLA refuses the list', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+      const state = byTestId(fixture, 'org-easycla-role-missing-state');
+
+      expect(state).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
+      expect(byTestId(fixture, 'org-easycla-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+      );
+      expect(state?.textContent).not.toContain('Refresh');
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
+      consoleError.mockRestore();
+    });
+
+    it('opens the Intercom messenger from the contact support link', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = await render();
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+      const openMessenger = vi.spyOn(TestBed.inject(IntercomService), 'openMessenger').mockImplementation(() => undefined);
+      const link = byTestId(fixture, 'org-easycla-role-missing-contact-support') as HTMLButtonElement | null;
+
+      expect(link?.tagName).toBe('BUTTON');
+      expect(link?.getAttribute('type')).toBe('button');
+      expect(link?.textContent?.trim()).toBe('contact support');
+      link?.click();
+
+      expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
+      consoleError.mockRestore();
+    });
+
+    it('keeps the load failure for a 403 without the missing-role code', async () => {
+      getClaGroups.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } })));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')).toBeNull();
       consoleError.mockRestore();
     });
   });
@@ -1115,7 +1232,13 @@ describe('OrgEasyclaComponent', () => {
       const setAccount = vi.fn();
       const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
       const items = signal(catalogue.map(toCatalogueItem));
-      const resetAndReload = vi.fn();
+      const navGeneration = signal(1);
+      // A first page landing is what replaces the list, so the landed generation follows `items`.
+      const firstPageLandedGeneration = computed(() => {
+        items();
+        return untracked(navGeneration);
+      });
+      const resetAndReload = vi.fn(() => navGeneration.update((g) => g + 1));
       const navigate = vi.fn();
 
       selectedAccount.set(BETA_COASTAL);
@@ -1141,7 +1264,10 @@ describe('OrgEasyclaComponent', () => {
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          {
+            provide: OrgNavigationService,
+            useValue: { items, loaded: navLoaded, claOnlyPending: signal(false), generation: navGeneration, firstPageLandedGeneration, resetAndReload },
+          },
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           {

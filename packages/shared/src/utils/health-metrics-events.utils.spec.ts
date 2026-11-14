@@ -85,12 +85,12 @@ function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): Healt
 }
 
 describe('buildHealthMetricsEventsSubNavItems', () => {
-  it('lists every section in render order, with its label and no badge', () => {
+  it('lists every section in render order, with its label and no note', () => {
     const items = buildHealthMetricsEventsSubNavItems();
 
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.key));
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.label));
-    expect(items.every((item) => item.count === null && item.note === '')).toBe(true);
+    expect(items.every((item) => item.note === '')).toBe(true);
   });
 
   it('puts a note on the section it names', () => {
@@ -98,13 +98,6 @@ describe('buildHealthMetricsEventsSubNavItems', () => {
 
     expect(items.find((item) => item.key === 'forecast')?.note).toBe('2 will miss goal');
     expect(items.filter((item) => item.note !== '')).toHaveLength(1);
-  });
-
-  it('puts a badge on the section it counts, and none on the rest', () => {
-    const items = buildHealthMetricsEventsSubNavItems({}, { past: 12 });
-
-    expect(items.find((item) => item.key === 'past')?.count).toBe(12);
-    expect(items.filter((item) => item.count !== null)).toHaveLength(1);
   });
 });
 
@@ -195,23 +188,23 @@ describe('forecast table helpers', () => {
     expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'suspect']);
   });
 
-  it('sorts an unmeasured registration count last rather than as zero, and draws it no progress', () => {
+  it('sorts an unmeasured registration count last rather than as zero, labelled with a dash', () => {
     const unmeasured = event({ eventId: 'unmeasured', eventName: 'A unmeasured', registrationsNow: null });
     const sorted = sortHealthMetricsEventsForecastRows([unmeasured, event({ eventId: 'behind', registrationsNow: 50 })]);
 
     expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'unmeasured']);
-    expect(buildHealthMetricsEventsForecastRowViews([unmeasured])[0]).toMatchObject({ progressPct: null, progressClass: 'bg-gray-200' });
+    expect(buildHealthMetricsEventsForecastRowViews([unmeasured])[0]).toMatchObject({ registrationsLabel: '—' });
   });
 
-  it('resolves labels and caps the progress bar at 100%', () => {
+  it('resolves labels and flags whether a goal is set', () => {
     const [row] = buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 1200.4, forecastAvg: 1300, forecastHigh: 1400, goal: 1000 })]);
 
-    expect(row).toMatchObject({ statusLabel: 'On track', registrationsLabel: '1,200', goalLabel: '1,000', progressPct: 100, dateLabel: 'Nov 4, 2026' });
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
+    expect(row).toMatchObject({ statusLabel: 'On track', registrationsLabel: '1,200', goalLabel: '1,000', hasGoal: true, dateLabel: 'Nov 4, 2026' });
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', hasGoal: false });
   });
 
   it.each([0, -5])('reads a goal of %i as no goal, labelled with a dash', (goal) => {
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', hasGoal: false });
   });
 
   it('truncates long pill names with an ellipsis', () => {
@@ -313,7 +306,7 @@ describe('buildHealthMetricsEventsPastView', () => {
 
     expect(view.rows.map((row) => row.status)).toEqual(['hit', 'unmeasured', 'near-miss']);
     expect(view).toMatchObject({ goalMetCount: 1, goalSetCount: 2, hasGoals: true });
-    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not tracked', registrationsLabel: '—', progressPct: null });
+    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not tracked', registrationsLabel: '—' });
   });
 
   it('reads a period of only unset and untracked goals as having goals, none of them tracked', () => {
@@ -332,7 +325,7 @@ describe('buildHealthMetricsEventsPastView', () => {
     expect(view).toMatchObject({ goalMetCount: 0, goalSetCount: 0, hasGoals: true });
   });
 
-  it('resolves row labels, capping the bar and drawing none without a goal', () => {
+  it('resolves row labels and flags a missing goal', () => {
     const [hit, noGoal] = buildHealthMetricsEventsPastView(past, 'YTD').rows;
 
     expect(hit).toMatchObject({
@@ -340,17 +333,16 @@ describe('buildHealthMetricsEventsPastView', () => {
       registrationsLabel: '1,200',
       goalLabel: '1,000',
       revenueLabel: '$125K',
-      progressPct: 100,
-      progressClass: 'bg-emerald-500',
+      hasGoal: true,
       dateLabel: 'Mar 10, 2026',
     });
-    expect(noGoal).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null, progressClass: 'bg-gray-200' });
+    expect(noGoal).toMatchObject({ status: 'no-goal', goalLabel: '—', hasGoal: false });
   });
 
-  it.each([0, -5])('labels a past goal of %i with a dash and draws no bar', (goal) => {
+  it.each([0, -5])('labels a past goal of %i with a dash and as no goal set', (goal) => {
     const view = buildHealthMetricsEventsPastView({ ...past, events: [pastEvent({ goal, goalMet: null, registrations: 120 })] }, 'YTD');
 
-    expect(view.rows[0]).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null });
+    expect(view.rows[0]).toMatchObject({ status: 'no-goal', goalLabel: '—', hasGoal: false });
   });
 });
 
@@ -422,11 +414,17 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
     expect(showUp).toMatchObject({ value: '75%', delta: '+2.2 pp', deltaDirection: 'up' });
   });
 
-  it('flags Attendees and Speakers only below a 30% fall, and a change that rounds to zero as flat', () => {
+  it('reads a change that rounds to zero as flat', () => {
     const tiles = buildHealthMetricsEventsAtAGlanceView(glance(), 'YTD').tiles;
 
-    expect(tiles.filter((tile) => tile.warn).map((tile) => tile.key)).toEqual(['attendees']);
     expect(tiles.find((tile) => tile.key === 'organizations')).toMatchObject({ delta: '0%', deltaDirection: 'neutral' });
+  });
+
+  it('counts past and upcoming events in the Events stat, with no year-over-year delta', () => {
+    const events = (range: 'YTD' | 'COMPLETED_YEAR') => buildHealthMetricsEventsAtAGlanceView(glance(), range).side.find((stat) => stat.key === 'events');
+
+    expect(events('YTD')).toEqual({ key: 'events', label: 'Events', value: '9', delta: null, deltaDirection: 'neutral' });
+    expect(events('COMPLETED_YEAR')).toMatchObject({ value: '14', delta: null });
   });
 
   it('gives a completed year no upcoming events and compares it with the year before', () => {
@@ -440,7 +438,7 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
     const view = buildHealthMetricsEventsAtAGlanceView(glance(), 'COMPLETED_YEAR_2');
 
     expect(view.baselineLabel).toBe('no year-over-year comparison for this period');
-    expect([view.headline, ...view.side, ...view.tiles].every((stat) => stat.delta === null && !stat.warn)).toBe(true);
+    expect([view.headline, ...view.side, ...view.tiles].every((stat) => stat.delta === null)).toBe(true);
   });
 
   it('reads every unmeasured figure as not available, never as zero', () => {
@@ -456,7 +454,7 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
     expect(view.headline).toMatchObject({ value: 'not available', delta: 'not available', deltaDirection: 'neutral' });
     expect(view.side[1]).toMatchObject({ value: 'not available', delta: 'not available' });
     expect(view.tiles.find((tile) => tile.key === 'past-upcoming')?.value).toBe('not available');
-    expect(view.tiles.some((tile) => tile.warn)).toBe(false);
+    expect(view.side.find((stat) => stat.key === 'events')?.value).toBe('not available');
   });
 
   it('marks a period missing from the read as unmeasured', () => {
@@ -491,6 +489,8 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       hasUnconverted: false,
       registrationGoalWithheld: false,
       sponsorshipGoalWithheld: false,
+      isPastEvent: true,
+      goalMet: null,
       ranges: ['YTD'],
       ...overrides,
     };
@@ -515,6 +515,25 @@ describe('buildHealthMetricsEventsRevenueView', () => {
       expect.objectContaining({ key: 'sponsorship', value: '$78K', delta: '−9%', deltaDirection: 'down' }),
       expect.objectContaining({ key: 'split', value: '70 / 30', delta: null }),
     ]);
+  });
+
+  it('reports revenue only when the period has an event or a non-zero figure', () => {
+    const zero = revenuePeriod({
+      range: 'COMPLETED_YEAR',
+      totalUsd: 0,
+      registrationUsd: 0,
+      sponsorshipUsd: 0,
+      registrationShare: null,
+      sponsorshipShare: null,
+    });
+
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(false);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [{ ...zero, registrationUsd: -500 }], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
+    expect(
+      buildHealthMetricsEventsRevenueView(revenue({ periods: [{ ...zero, totalUsd: null, hasUnconverted: true }], events: [] }), 'COMPLETED_YEAR').hasRevenue
+    ).toBe(true);
   });
 
   it('lists only the events in the period, with each goal only where one is set', () => {
@@ -567,6 +586,41 @@ describe('buildHealthMetricsEventsRevenueView', () => {
 
     expect(view.rows[0]).toMatchObject({ registrationGoalLabel: 'goal not in USD', sponsorshipGoalLabel: '' });
     expect(view.hasUnconverted).toBe(false);
+  });
+
+  it('lists upcoming events soonest first, then past events latest first, in one table', () => {
+    const events = [
+      revenueEvent({ eventId: 'past-early', eventStartDate: '2026-01-15' }),
+      revenueEvent({ eventId: 'later', eventStartDate: '2027-02-01', isPastEvent: false, ranges: [] }),
+      revenueEvent({ eventId: 'past-undated', eventStartDate: null }),
+      revenueEvent({ eventId: 'undated', eventStartDate: null, isPastEvent: false, ranges: [] }),
+      revenueEvent({ eventId: 'past-late', eventStartDate: '2026-06-01' }),
+      revenueEvent({ eventId: 'sooner', eventStartDate: '2026-11-20', isPastEvent: false, ranges: [] }),
+    ];
+
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events }), 'YTD').rows.map((row) => row.event.eventId)).toEqual([
+      'sooner',
+      'later',
+      'undated',
+      'past-late',
+      'past-early',
+      'past-undated',
+    ]);
+  });
+
+  it('lists upcoming events on the current-year view only, since they fall in no period', () => {
+    const events = [
+      revenueEvent({ eventId: 'past', ranges: ['COMPLETED_YEAR'] }),
+      revenueEvent({ eventId: 'upcoming', eventStartDate: '2026-11-20', isPastEvent: false, ranges: [] }),
+    ];
+
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events }), 'COMPLETED_YEAR').rows.map((row) => row.event.eventId)).toEqual(['past']);
+  });
+
+  it('shows the unconverted note for an upcoming event that is short', () => {
+    const events = [revenueEvent({ eventId: 'upcoming', isPastEvent: false, hasUnconverted: true, ranges: [] })];
+
+    expect(buildHealthMetricsEventsRevenueView(revenue({ events }), 'YTD').hasUnconverted).toBe(true);
   });
 
   it('carries whether the read had per-event figures at all', () => {
@@ -643,9 +697,7 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
   it('flags a partial year', () => {
     const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(), growthYear({ year: 2024, isPartialYear: true })] }, 'registrations');
 
-    expect(view.hasPartialYear).toBe(true);
     expect(view.rows.map((row) => row.isPartialYear)).toEqual([false, true]);
-    expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').hasPartialYear).toBe(false);
   });
 
   it('explains the pandemic years only when one was mostly virtual for the metric', () => {
@@ -682,7 +734,6 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
     expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [] }, 'registrations')).toEqual({
       rows: [],
       yearCount: 0,
-      hasPartialYear: false,
       pandemicNote: null,
     });
   });
@@ -762,12 +813,11 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'in-review').countLabel).toBe('1 proposal');
   });
 
-  it('ranks the status bars by count, scaled against the largest', () => {
+  it('ranks the status rows by count, largest first', () => {
     const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
 
-    expect(view.statusBars.map((bar) => bar.key)).toEqual(['in-review', 'declined', 'accepted']);
-    expect(view.statusBars[0]).toMatchObject({ label: 'In review', valueLabel: '3,447', widthPct: 100, barClass: 'bg-amber-500' });
-    expect(view.statusBars[2].widthPct).toBeCloseTo((348 / 3447) * 100);
+    expect(view.statusRows.map((row) => row.key)).toEqual(['in-review', 'declined', 'accepted']);
+    expect(view.statusRows[0]).toEqual({ key: 'in-review', label: 'In review', valueLabel: '3,447' });
   });
 
   it('charts the four years oldest first, marking the open one partial', () => {
@@ -801,8 +851,8 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
 
     expect(view.organizations).toEqual([
-      { key: 'org-a', label: 'Acme Motors', valueLabel: '400', widthPct: 100, barClass: 'bg-blue-500' },
-      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200', widthPct: 50, barClass: 'bg-blue-500' },
+      { key: 'org-a', label: 'Acme Motors', valueLabel: '400' },
+      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200' },
     ]);
     expect(view.individualLabel).toBe('1,351 proposals submitted');
     expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
@@ -895,15 +945,41 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
     expect(buildHealthMetricsEventsOrganizationRowView(organization())).toEqual({
       accountId: '0014100000AcmeAAAA',
       accountName: 'Acme Motors',
-      logoUrl: 'https://acme-motors.example/logo.png',
       memberLabel: 'Member',
-      memberClass: 'bg-emerald-50 text-emerald-700',
+      memberGlyph: '●',
+      memberClass: 'text-emerald-600',
       registrationsLabel: '1,204',
       barWidthPct: 50,
       sponsorshipLabel: '$150K',
       proposalsLabel: '12',
       speakersLabel: '4',
       eventsLabel: '3',
+      link: {
+        commands: ['/foundation/health-metrics', 'members'],
+        fragment: 'list',
+        queryParams: { memSearch: 'Acme Motors', memTier: null, memNps: null, memPage: null },
+      },
+      linkLabel: 'Open Acme Motors in Members',
+    });
+  });
+
+  it('opens a non-member in Non-Members company participation, searched by name with its filters cleared', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false }));
+
+    expect(row.link).toEqual({
+      commands: ['/foundation/health-metrics', 'non-members'],
+      fragment: 'orgs',
+      queryParams: { nonSearch: 'Acme Motors', nonFit: null, nonPage: null },
+    });
+    expect(row.linkLabel).toBe('Open Acme Motors in Non-Members');
+  });
+
+  it('caps the search it opens with at the target search box length', () => {
+    const name = 'A'.repeat(140);
+
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ accountName: name })).link.queryParams).toMatchObject({ memSearch: 'A'.repeat(100) });
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ accountName: name, isMember: false })).link.queryParams).toMatchObject({
+      nonSearch: 'A'.repeat(100),
     });
   });
 
@@ -916,12 +992,10 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
     expect(row.speakersLabel).toBe('0');
   });
 
-  it('labels a non-member, drops a missing logo and keeps the bar inside its track', () => {
-    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false, logoUrl: null, registrationsShare: 1.2, sponsorshipUsd: null }));
+  it('labels a non-member with a hollow dot in grey and keeps the bar inside its track', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false, registrationsShare: 1.2, sponsorshipUsd: null }));
 
-    expect(row.memberLabel).toBe('Non-member');
-    expect(row.memberClass).toBe('bg-gray-100 text-gray-600');
-    expect(row.logoUrl).toBe('');
+    expect(row).toMatchObject({ memberLabel: 'Non-member', memberGlyph: '○', memberClass: 'text-gray-400' });
     expect(row.barWidthPct).toBe(100);
     expect(row.sponsorshipLabel).toBe('—');
   });
@@ -966,7 +1040,7 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     return { periods: periods.length ? periods : [sponsorshipPeriod()] };
   }
 
-  it('builds the headline, side stats, progress and tier bars scaled to the top tier', () => {
+  it('builds the headline, side stats, progress and tier rows', () => {
     const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'YTD');
 
     expect(view.foundationMeasured).toBe(true);
@@ -980,10 +1054,10 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     ]);
     expect(view.goalSet).toBe(true);
     expect(view.progress).toEqual({ pctLabel: '75%', widthPct: 75 });
-    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel, tier.widthPct])).toEqual([
-      ['Gold', '5', 100],
-      ['Silver', '5', 100],
-      ['Platinum', '2', 40],
+    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel])).toEqual([
+      ['Gold', '5'],
+      ['Silver', '5'],
+      ['Platinum', '2'],
     ]);
   });
 
@@ -1076,26 +1150,18 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     return { periods: periods.length ? periods : [geographyPeriod()] };
   }
 
-  it('builds the headline, the pill and bars scaled to the top country', () => {
+  it('builds the headline, the pill and the top-country rows', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
 
     expect(view.foundationMeasured).toBe(true);
     expect(view.measured).toBe(true);
-    expect(view.countries).toBe(42);
     expect(view.countriesLabel).toBe('42 countries');
     expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
-    expect(view.bars.map((bar) => [bar.label, bar.valueLabel, bar.widthPct])).toEqual([
-      ['Canada', '800', 100],
-      ['Germany', '400', 50],
-      ['Japan', '200', 25],
+    expect(view.topCountries.map((row) => [row.label, row.valueLabel])).toEqual([
+      ['Canada', '800'],
+      ['Germany', '400'],
+      ['Japan', '200'],
     ]);
-    expect(view.moreLabel).toBe('+37 more');
-  });
-
-  it('shows no tail line when the bars cover every country', () => {
-    const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ rankedCountries: 3 })), 'YTD');
-
-    expect(view.moreLabel).toBe('');
   });
 
   it('uses the singular for one country', () => {
@@ -1123,11 +1189,9 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, topCountries: [], rankedCountries: 0 })), 'YTD');
 
     expect(view.measured).toBe(false);
-    expect(view.countries).toBeNull();
     expect(view.countriesLabel).toBe('');
     expect(view.headline).toMatchObject({ value: 'not available', delta: null });
-    expect(view.bars).toEqual([]);
-    expect(view.moreLabel).toBe('');
+    expect(view.topCountries).toEqual([]);
   });
 
   it('reads as unmeasured for a period missing from the response', () => {

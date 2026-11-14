@@ -1,0 +1,166 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-4" data-testid="non-members-orgs">
+  @if (loadFailed()) {
+    <lfx-empty-state
+      variant="compact"
+      icon="fa-light fa-triangle-exclamation"
+      title="Company participation unavailable"
+      subtitle="We could not load this foundation's non-member organizations. Refresh the page to try again."
+      data-testid="non-members-orgs-error" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
+  } @else {
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="non-members-orgs-controls">
+      <div class="w-full sm:w-64">
+        <label class="sr-only" for="non-members-orgs-search">Search organization</label>
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          inputId="non-members-orgs-search"
+          [maxlength]="maxSearchLength"
+          placeholder="Search organization…"
+          icon="fa-light fa-search"
+          size="small"
+          styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
+          dataTest="non-members-orgs-search" />
+      </div>
+      <lfx-filter-pills
+        variant="track"
+        [options]="filterOptions"
+        [selectedFilter]="filter()"
+        (filterChange)="onFilterChange($event)"
+        data-testid="non-members-orgs-filter" />
+    </div>
+
+    <p class="text-[13px] text-gray-500" data-testid="non-members-orgs-count">
+      @if (loading()) {
+        &mdash;
+      } @else if (filtered()) {
+        <strong class="font-semibold text-gray-900">{{ totalRecordsLabel() }}</strong> of {{ scopeTotalLabel() }} organizations match &middot;
+        <button type="button" class="text-blue-600 hover:underline" (click)="clearFilters()" data-testid="non-members-orgs-clear">clear</button>
+      } @else {
+        {{ summary() }}
+      }
+    </p>
+
+    @if (lowConfidence(); as message) {
+      <!-- The design's .lowconf chip at its exact 12px type, 6px radius and 6px 10px padding. -->
+      <p
+        class="inline-flex items-center gap-[6px] self-start rounded-[6px] bg-amber-50 px-[10px] py-[6px] text-[12px] text-amber-700"
+        data-testid="non-members-orgs-low-confidence">
+        <span aria-hidden="true">&#9680;</span>
+        <span>{{ message }}</span>
+      </p>
+    }
+
+    <lfx-table
+      styleClass="hm-table"
+      [rowHover]="false"
+      [value]="rowViews()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > pageSizeOptions[0]"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [rowsPerPageOptions]="pageSizeOptions"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      [scrollable]="true"
+      [tableStyle]="{ 'min-width': '680px' }"
+      (onPage)="onTablePage($event)"
+      data-testid="non-members-orgs-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col">Organization</th>
+          <th scope="col">Membership</th>
+          <th scope="col" class="text-right">Meetings attended</th>
+          <th scope="col" class="text-right">People</th>
+          <th scope="col" class="text-right">Contributions</th>
+          <th scope="col" class="text-right">Last engaged</th>
+          <th scope="col" class="text-right">Fit</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'non-members-orgs-row-' + view.accountId">
+          <td>
+            <span class="text-[13px] font-semibold text-gray-900" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-name'">{{
+              view.accountName
+            }}</span>
+          </td>
+          <td>
+            <span class="whitespace-nowrap text-[12px] text-gray-400" [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-membership'"
+              >&#9675; {{ view.membershipLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="text-[13px] tabular-nums"
+              [class.text-gray-900]="view.meetingsLabel !== '—'"
+              [class.text-gray-400]="view.meetingsLabel === '—'"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-meetings'"
+              >{{ view.meetingsLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="text-[13px] tabular-nums"
+              [class.text-gray-900]="view.peopleLabel !== '—'"
+              [class.text-gray-400]="view.peopleLabel === '—'"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-people'"
+              >{{ view.peopleLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="text-[13px] tabular-nums"
+              [class.text-gray-900]="view.contributionsLabel !== '—'"
+              [class.text-gray-400]="view.contributionsLabel === '—'"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-contributions'"
+              >{{ view.contributionsLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="whitespace-nowrap text-[13px] tabular-nums text-gray-500"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-last-engaged'"
+              >{{ view.lastEngagedLabel }}</span
+            >
+          </td>
+          <td class="text-right">
+            <span
+              class="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px]"
+              [class.text-gray-900]="view.fitDotClass"
+              [class.text-gray-400]="!view.fitDotClass"
+              [attr.data-testid]="'non-members-orgs-row-' + view.accountId + '-fit'">
+              @if (view.fitDotClass) {
+                <span class="h-2 w-2 rounded-full" [class]="view.fitDotClass" aria-hidden="true"></span>
+              }
+              {{ view.fitLabel }}
+            </span>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="py-6 text-center text-[13px] text-gray-500" data-testid="non-members-orgs-no-match">
+            @if (!loading()) {
+              {{ noMatchLabel() }}
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+
+    <lfx-health-metrics-footnote tone="caution" [parts]="footnote" data-testid="non-members-orgs-provisional">
+      <span class="block" data-testid="non-members-orgs-all-time">{{ allTimeNote }}</span>
+    </lfx-health-metrics-footnote>
+  }
+</div>

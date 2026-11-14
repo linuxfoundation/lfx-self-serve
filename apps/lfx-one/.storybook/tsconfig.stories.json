@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["../src/app/shared/uikit/**/*.ts", "../src/app/shared/components/chunk-load-recovery/chunk-load-recovery-drawer.stories.ts"]
+}

@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div
+  class="w-max max-w-[280px] rounded-[12px] bg-white px-[12px] py-[8px] shadow-[0_0_0_1px_var(--ui-neutral-alpha-200),0_1px_2px_rgba(15,23,43,0.04),0_4px_8px_-4px_rgba(15,23,43,0.08),0_16px_32px_-8px_rgba(15,23,43,0.14)]"
+  data-testid="health-metrics-chart-tip">
+  <p class="m-0 text-[12px] font-semibold leading-[16px] text-gray-900" data-testid="health-metrics-chart-tip-title">{{ tip().title }}</p>
+  @for (row of tip().rows; track $index) {
+    @if (row.separated) {
+      <div class="mt-[8px] h-px bg-[var(--ui-neutral-alpha-200)]" data-testid="health-metrics-chart-tip-rule"></div>
+    }
+    @if (row.inline) {
+      <div class="mt-[6px] flex items-center gap-[6px]" data-testid="health-metrics-chart-tip-row">
+        @if (row.color !== null) {
+          <span class="h-[8px] w-[8px] flex-none rounded-full" [style.background]="row.color"></span>
+        }
+        <span class="whitespace-nowrap text-[12px] leading-[16px] text-gray-500"
+          >{{ row.label }}: <strong class="font-semibold text-gray-900">{{ row.value }}</strong></span
+        >
+      </div>
+    } @else {
+      <div class="mt-[6px] flex items-center justify-between gap-[20px]" data-testid="health-metrics-chart-tip-row">
+        <!-- A long tier name wraps rather than spilling past the popup's edge. -->
+        <span class="inline-flex min-w-0 items-center gap-[6px] text-[12px] leading-[16px] text-gray-500">
+          @if (row.color !== null) {
+            <span class="h-[8px] w-[8px] flex-none rounded-full" [style.background]="row.color"></span>
+          }
+          <span class="min-w-0">{{ row.label }}</span>
+        </span>
+        <span class="whitespace-nowrap text-right text-[12px] leading-[16px] text-gray-900">{{ row.value }}</span>
+      </div>
+    }
+  }
+</div>

@@ -13,36 +13,36 @@ describe('MailingListEmailPipe', () => {
     pipe = new MailingListEmailPipe();
   });
 
-  it('returns a mailto-ready email address when service domain is present', () => {
+  it('returns an address from the indexed domain even without an enriched service', () => {
     const ml = {
       group_name: 'my-list',
-      service: { domain: 'lists.example.org' },
+      domain: 'lists.example.org',
     } as GroupsIOMailingList;
 
     expect(pipe.transform(ml)).toBe('my-list@lists.example.org');
   });
 
-  it('returns an empty string when service domain is absent', () => {
+  it('returns an empty string when the indexed domain is absent, even if the service has a domain', () => {
     const ml = {
       group_name: 'my-list',
-      service: {},
+      service: { domain: 'lists.example.org' },
     } as GroupsIOMailingList;
 
     expect(pipe.transform(ml)).toBe('');
   });
 
-  it('returns an empty string when service is null', () => {
+  it('returns an empty string for an empty domain', () => {
     const ml = {
       group_name: 'my-list',
-      service: null,
-    } as unknown as GroupsIOMailingList;
+      domain: '  ',
+    } as GroupsIOMailingList;
 
     expect(pipe.transform(ml)).toBe('');
   });
 
-  it('returns an empty string when service is undefined', () => {
+  it('returns an empty string when the group name is absent', () => {
     const ml = {
-      group_name: 'my-list',
+      domain: 'lists.example.org',
     } as GroupsIOMailingList;
 
     expect(pipe.transform(ml)).toBe('');

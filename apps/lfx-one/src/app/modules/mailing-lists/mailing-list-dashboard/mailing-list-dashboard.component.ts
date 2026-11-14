@@ -13,6 +13,7 @@ import { MailingListMemberDeliveryMode } from '@lfx-one/shared/enums';
 import {
   CommitteeReference,
   FilterOption,
+  FilterPillOption,
   GroupsIOMailingList,
   GroupsIOService,
   MailingListTableRowVm,
@@ -32,6 +33,7 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MailingListTableComponent } from '../components/mailing-list-table/mailing-list-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
@@ -44,6 +46,7 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
     StatCardGridComponent,
     SkeletonModule,
     OpenIntercomDirective,
+    PageHeaderComponent,
   ],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
@@ -81,6 +84,7 @@ export class MailingListDashboardComponent {
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
   public myMailingListsLoading = signal<boolean>(true);
+  public myMailingListsError = signal<boolean>(false);
 
   // Foundation + Project filter (Me lens only)
   public foundationFilter: WritableSignal<string | null> = signal<string | null>(null);
@@ -93,8 +97,9 @@ export class MailingListDashboardComponent {
   protected readonly canWrite = this.projectContextService.canWrite;
   public readonly mailingLists: Signal<GroupsIOMailingList[]> = this.initMailingLists();
   public readonly myMailingLists: Signal<MyMailingList[]> = this.initMyMailingLists();
+  public readonly myMailingListUids: Signal<Set<string>> = computed(() => new Set(this.myMailingLists().map((ml) => ml.uid)));
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
-  public readonly statusOptions: Signal<FilterOption[]> = this.initStatusOptions();
+  public readonly statusOptions: Signal<FilterPillOption[]> = this.initStatusOptions();
   public readonly filteredMailingLists: Signal<GroupsIOMailingList[]> = this.initFilteredMailingLists();
   protected readonly isFiltered = computed(
     () => !!this.searchTerm() || !!this.committeeFilter() || !!this.statusFilter() || !!this.foundationFilter() || !!this.projectFilter()
@@ -110,6 +115,8 @@ export class MailingListDashboardComponent {
   public readonly myStatCards: Signal<StatCardItem[]> = this.initMyStatCards();
   public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();
   public readonly hasNoServices: Signal<boolean> = this.initHasNoServices();
+  public readonly showNoServicesState: Signal<boolean> = this.initShowNoServicesState();
+  protected readonly canCreateMailingList: Signal<boolean> = computed(() => this.canWrite() && !this.hasNoServices());
 
   /**
    * Open create mailing list dialog/page
@@ -140,7 +147,7 @@ export class MailingListDashboardComponent {
     // Canonical tier-prefixed view link comes pre-computed on the row VM, flat fallback included (GH-1567).
     this.router.navigate(mailingList.viewCommands, {
       queryParams: mailingList.linkQueryParams,
-      state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural },
+      state: { backLabel: this.mailingListLabelPlural, fromMeLens: this.isMeLens() },
     });
   }
 
@@ -242,7 +249,7 @@ export class MailingListDashboardComponent {
     });
   }
 
-  private initStatusOptions(): Signal<FilterOption[]> {
+  private initStatusOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
       const mailingListsData = this.isMeLens() ? this.myMailingLists() : this.mailingLists();
 
@@ -251,9 +258,8 @@ export class MailingListDashboardComponent {
       const privateCount = mailingListsData.filter((ml) => !ml.public).length;
 
       return [
-        { label: 'All Status', value: null },
-        { label: `Public (${publicCount})`, value: 'public' },
-        { label: `Private (${privateCount})`, value: 'private' },
+        { id: 'public', label: `Public (${publicCount})`, color: 'green' },
+        { id: 'private', label: `Private (${privateCount})`, color: 'purple' },
       ];
     });
   }
@@ -393,6 +399,11 @@ export class MailingListDashboardComponent {
     return computed(() => this.servicesLoaded() && this.availableServices().length === 0);
   }
 
+  private initShowNoServicesState(): Signal<boolean> {
+    // A non-public service is hidden from non-auditors while its public lists stay readable.
+    return computed(() => this.hasNoServices() && this.mailingLists().length === 0);
+  }
+
   private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
       const items = this.myMailingLists();
@@ -425,20 +436,19 @@ export class MailingListDashboardComponent {
     });
   }
 
+  /**
+   * Fetches unconditionally (not gated to Me lens) because `myMailingListUids` — derived from this
+   * signal — feeds the Join/Leave state on the Foundation/Project/Org tables too, not just Me lens.
+   */
   private initMyMailingLists(): Signal<MyMailingList[]> {
-    const lens$ = toObservable(this.lensService.activeLens);
-
     return toSignal(
-      combineLatest([lens$, this.refresh]).pipe(
-        switchMap(([lens]) => {
-          if (lens !== 'me') {
-            this.myMailingListsLoading.set(false);
-            return of([] as MyMailingList[]);
-          }
+      this.refresh.pipe(
+        switchMap(() => {
           this.myMailingListsLoading.set(true);
+          this.myMailingListsError.set(false);
           return this.mailingListService.getMyMailingLists().pipe(
             catchError(() => {
-              this.myMailingListsLoading.set(false);
+              this.myMailingListsError.set(true);
               return of([] as MyMailingList[]);
             }),
             finalize(() => this.myMailingListsLoading.set(false))

@@ -4,20 +4,17 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="foundation-event-dashboard">
   <div class="flex flex-col gap-6">
     <!-- Page Header -->
-    <div class="flex items-start justify-between mt-3">
-      <div class="flex flex-col gap-1">
-        <h1 class="font-display font-light text-2xl" data-testid="foundation-event-page-title">Foundation Events</h1>
-        @let foundation = userFoundation();
-        <p class="text-sm text-gray-500" data-testid="foundation-event-page-subtitle">
-          @if (foundation) {
-            Events hosted by {{ foundation }} and its ecosystem.
-          } @else {
-            Events hosted across this foundation portfolio.
-          }
-        </p>
-      </div>
-      <lfx-discover-events-button testId="foundation-event-discover-button" />
-    </div>
+    @let foundation = userFoundation();
+    <lfx-page-header title="Foundation Events" titleTestId="foundation-event-page-title">
+      <span pageHeaderDescription data-testid="foundation-event-page-subtitle">
+        @if (foundation) {
+          Events hosted by {{ foundation }} and its ecosystem.
+        } @else {
+          Events hosted across this foundation portfolio.
+        }
+      </span>
+      <lfx-discover-events-button pageHeaderActions testId="foundation-event-discover-button" />
+    </lfx-page-header>
 
     <!-- Summary Stat Cards -->
     <div data-testid="foundation-events-stats">

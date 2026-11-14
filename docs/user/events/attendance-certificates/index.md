@@ -8,7 +8,7 @@ last_updated: 2026-08-19
 intercom_collection: Events
 ---
 
-After you attend a Linux Foundation event, you can download a Certificate of Attendance from the **Past** tab on the My Events page. The certificate downloads as a PDF.
+After you attend a Linux Foundation event, you can download a Certificate of Attendance from the **Past** tab on the Events page. The certificate downloads as a PDF.
 
 ## Steps
 

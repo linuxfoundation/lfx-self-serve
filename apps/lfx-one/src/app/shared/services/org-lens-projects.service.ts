@@ -4,13 +4,13 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
-  HealthScore,
   OrgLensProjectSearchResponse,
   OrgLensProjectsResponse,
   OrgProjectsWorkspace,
   OrgProjectsWorkspacesResponse,
+  OrgScopeFilter,
+  OrgTeamMembersFilter,
 } from '@lfx-one/shared/interfaces';
-import { mapV1BandToV2 } from '@lfx-one/shared/utils';
 import { map, Observable } from 'rxjs';
 
 @Injectable({
@@ -19,20 +19,25 @@ import { map, Observable } from 'rxjs';
 export class OrgLensProjectsService {
   private readonly http = inject(HttpClient);
 
-  public getProjects(orgUid: string, orgName: string, slugs: readonly string[] = []): Observable<OrgLensProjectsResponse> {
-    let params = new HttpParams().set('orgName', orgName);
+  /** `orgScope` (lfx-self-serve-ops#1219) and `teamMembers` (lfx-self-serve-ops#1246) apply to the contributors only. */
+  public getProjects(
+    orgUid: string,
+    orgName: string,
+    slugs: readonly string[],
+    orgScope: OrgScopeFilter,
+    teamMembers: OrgTeamMembersFilter
+  ): Observable<OrgLensProjectsResponse> {
+    let params = new HttpParams().set('orgName', orgName).set('orgScope', orgScope).set('teamMembers', teamMembers);
     if (slugs.length) {
       params = params.set('slugs', slugs.join(','));
     }
     return this.http.get<OrgLensProjectsResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/projects`, { params }).pipe(
-      // Normalizes legacy v1 band names (stable/unsteady) a rolling-deploy old BFF may still emit, so the frontend never
-      // sees them; a pre-v2-breakdown BFF also emits a band without `healthOverallScore`, which the badge must treat as
-      // unavailable so it agrees with the popup and accessible name.
+      // Mirrors the BFF rule: no `healthOverallScore` means unavailable, so badge and popup agree.
       map((response) => ({
         ...response,
         projects: response.projects.map((project) => ({
           ...project,
-          health: project.healthOverallScore == null ? ('unavailable' as HealthScore) : (mapV1BandToV2(project.health) as HealthScore),
+          health: project.healthOverallScore == null ? 'unavailable' : project.health,
         })),
       }))
     );

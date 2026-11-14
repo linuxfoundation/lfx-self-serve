@@ -15,6 +15,7 @@ export * from './org-cache-compact.interface';
 
 // Member interfaces
 export * from './member.interface';
+export * from './member-import.interface';
 
 // Organization interfaces
 export * from './organization.interface';
@@ -31,6 +32,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Object store (S3 or file-backed) interfaces
+export * from './object-store.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
@@ -39,12 +43,14 @@ export * from './api.interface';
 
 // Campaign interfaces
 export * from './campaign.interface';
+export * from './campaign-optimize.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';
 
 // Meeting interfaces
 export * from './meeting.interface';
+export * from './meeting-list.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
@@ -112,6 +118,7 @@ export * from './server-request-context.interface';
 
 // Poll interfaces
 export * from './poll.interface';
+export * from './vote-presenter.interface';
 
 // Survey interfaces
 export * from './survey.interface';
@@ -206,8 +213,17 @@ export * from './health-metrics-l2.interface';
 // Health Metrics Members page interfaces
 export * from './health-metrics-members.interface';
 
+// Health Metrics Non-Members page interfaces
+export * from './health-metrics-non-members.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
+
+// Health Metrics Training page interfaces
+export * from './health-metrics-training.interface';
+
+// Health Metrics shared table cells
+export * from './health-metrics-table.interface';
 
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
@@ -227,11 +243,11 @@ export * from './stat-card.interface';
 // Download-card (PNG export) interfaces
 export * from './download-card.interface';
 
+// Transcend consent-manager (CMP) interfaces
+export * from './transcend.interface';
+
 // Intercom interfaces
 export * from './intercom.interface';
-
-// Osano cookie-consent (CMP) interfaces
-export * from './osano.interface';
 
 // Org involvement interfaces (cross-foundation org overview)
 export * from './org-involvement.interface';
@@ -250,7 +266,14 @@ export * from './github-url.interface';
 export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
+export * from './mktg-document-store.interface';
+export * from './mktg-document-comments.interface';
+export * from './mktg-document-redraft.interface';
+export * from './mktg-document-run.interface';
+export * from './mktg-print.interface';
+export * from './mktg-portrait-print.interface';
 export * from './mktg-run.interface';
+export * from './mktg-slides-export.interface';
 
 // Enrollment interfaces
 export * from './enrollment.interface';
@@ -260,8 +283,13 @@ export * from './org-memberships.interface';
 export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
+export * from './org-lens-time-range.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+export * from './org-maintainer-roles.internal.interface';
+
+// Org Lens commit filters (lfx-self-serve#4164, #4322)
+export * from './org-commit-filters.interface';
 
 // Org Lens per-caller cache stored shapes (GH-1906)
 export * from './org-lens-cache.interface';
@@ -294,9 +322,15 @@ export * from './person-detail-drawer.interface';
 
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
+export * from './org-contributions.internal.interface';
+
+// Project Lens — Participating Organizations (#2091)
+export * from './project-participating-orgs.interface';
+export * from './project-participating-orgs.internal.interface';
 
 // Org Events interfaces
 export * from './org-events.interface';
+export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
@@ -318,7 +352,9 @@ export * from './crowdfunding.interface';
 
 // Mentorship interfaces
 export * from './mentorship.interface';
+export * from './mentorship-admin.interface';
 export * from './mentorship-mentee.interface';
+export * from './mentorship-mentor.interface';
 export * from './mentorship-lfx-profile-card.interface';
 
 // EasyCLA "CLAs" interfaces (Me lens)
@@ -361,6 +397,7 @@ export * from './activity-event.internal.interface';
 // Committee member engagement/attendance rollup (LFXV2-1705)
 export * from './committee-engagement.interface';
 export * from './committee-engagement.internal.interface';
+export * from './health-metrics-engagement.internal.interface';
 
 // Weekly Brief interfaces
 export * from './weekly-brief.interface';
@@ -372,17 +409,28 @@ export * from './profile-visibility.interface';
 export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
+export * from './boilerplates.interface';
+export * from './brand-kit-icons.interface';
+export * from './brand-kit-portrait.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
+export * from './faq.interface';
 export * from './foundation-message.interface';
 export * from './icp.interface';
+
+// Marketing OS asset print documents (Download PDF)
+
+// Marketing OS Export to Google Slides (slides-export-output/v1)
 
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
 
 // Gatewaze admin embed host-context contract (embedded React-in-Angular pilot)
 export * from './gw-embed.interface';
+
+// Gatewaze host-session mode: the server-held Gatewaze session (#2738)
+export * from './gw-host-session.interface';
 
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
@@ -397,3 +445,25 @@ export * from './project-application.interface';
 
 // LFX Insights API tokens (IN-1233)
 export * from './insights-tokens.interface';
+
+// Server log scrubber walk state
+export * from './log-scrub.interface';
+
+// App navbar (sidebar v2)
+export * from './navbar.interface';
+export * from './mktg-asset.interface';
+export * from './mktg-kit.interface';
+export * from './mktg-family-actions.interface';
+export * from './mktg-rebuild.interface';
+export * from './mktg-breadcrumb.interface';
+export * from './linkedin-post.interface';
+export * from './member-360.interface';
+export * from './mktg-family-export.interface';
+export * from './mktg-family-print.interface';
+export * from './aeo-geo.interface';
+export * from './mktg-last-intake.interface';
+export * from './mktg-project-roles.interface';
+export * from './uikit.interface';
+export * from './social-share.interface';
+export * from './org-training-view.interface';
+export * from './formation-pipeline.interface';

@@ -16,14 +16,16 @@ import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { OrgRoiAnnualTrendComponent } from './components/org-roi-annual-trend/org-roi-annual-trend.component';
-import { OrgRoiAssumptionsDrawerComponent } from './components/org-roi-assumptions-drawer/org-roi-assumptions-drawer.component';
 import { OrgRoiCategoryDonutComponent } from './components/org-roi-category-donut/org-roi-category-donut.component';
 import { OrgRoiEmptyStateComponent } from './components/org-roi-empty-state/org-roi-empty-state.component';
 import { OrgRoiKpiCardsComponent } from './components/org-roi-kpi-cards/org-roi-kpi-cards.component';
+import { OrgRoiModelOverviewComponent } from './components/org-roi-model-overview/org-roi-model-overview.component';
 import { OrgRoiProjectsDonutComponent } from './components/org-roi-projects-donut/org-roi-projects-donut.component';
 import { OrgRoiProjectsSectionComponent } from './components/org-roi-projects-section/org-roi-projects-section.component';
+import { OrgRoiSettingsDrawerComponent } from './components/org-roi-settings-drawer/org-roi-settings-drawer.component';
 
 const EMPTY_SUMMARY: OrgLensRoiSummary = {
   orgUid: '',
@@ -47,12 +49,14 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
 @Component({
   selector: 'lfx-org-roi',
   imports: [
+    PageHeaderComponent,
     OrgRoiKpiCardsComponent,
     OrgRoiAnnualTrendComponent,
     OrgRoiCategoryDonutComponent,
     OrgRoiProjectsDonutComponent,
     OrgRoiProjectsSectionComponent,
-    OrgRoiAssumptionsDrawerComponent,
+    OrgRoiModelOverviewComponent,
+    OrgRoiSettingsDrawerComponent,
     OrgRoiEmptyStateComponent,
     EmptyStateComponent,
     OrgLensEmptyStateComponent,

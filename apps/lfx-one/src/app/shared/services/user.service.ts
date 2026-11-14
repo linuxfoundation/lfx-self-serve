@@ -3,8 +3,14 @@
 
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
+import {
+  CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS,
+  EMAIL_LINKED_SUPPORT_HANDLE_PATTERN,
+  USER_MEETINGS_INCLUDE_ATTENDANCE,
+  USER_PAST_MEETINGS_INCLUDE_ARTIFACTS,
+} from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
   ChangePasswordRequest,
@@ -18,8 +24,11 @@ import {
   EnrichedIdentity,
   Impersonator,
   LinuxAliasData,
+  LinkedEmailSupportDraft,
   Meeting,
   MeetingInviteEmail,
+  MeetingRegistrationRemovalResult,
+  MeetingRsvp,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -34,7 +43,34 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, EMPTY, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
+import {
+  buildDisplayName,
+  currentEmployerFromWorkExperiences,
+  isRsvpSupersededBy,
+  resolveRsvpOccurrenceId,
+  retainConfirmedRsvp,
+  selectApplicableRsvp,
+} from '@lfx-one/shared/utils';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  distinctUntilChanged,
+  EMPTY,
+  map,
+  Observable,
+  of,
+  shareReplay,
+  skip,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+  throwError,
+  timeout,
+} from 'rxjs';
 
 import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
 
@@ -64,20 +100,53 @@ export class UserService {
    */
   public readonly effectiveAvatarUrl: Signal<string> = computed(() => this.uploadedAvatarUrl() || this.user()?.picture || '');
   /**
+   * The identity a meeting join is performed as — the real viewer, never the impersonation target.
+   * While impersonating, `user` is the target (SSR overrides it), so the join link's display name
+   * (`uname`/`un`) and email must come from the operator instead. Null while impersonating without
+   * a known operator, so a join fails closed rather than falling back to the target.
+   */
+  public readonly meetingJoinIdentity: Signal<Pick<User, 'name' | 'email'> | null> = computed(() => {
+    if (!this.impersonating()) {
+      return this.user();
+    }
+    const impersonator = this.impersonator();
+    return impersonator ? { name: impersonator.name, email: impersonator.email } : null;
+  });
+  /**
    * The viewer's LFID as it appears on meeting `created_by` / host records — null when unresolved.
    * Single source for viewer-identity comparisons (e.g. the "Organized by you" chip and the
    * "Organized by me" meetings filter), so those surfaces can never resolve identity differently.
    */
   public readonly viewerUsername: Signal<string | null> = this.initViewerUsername();
+  /**
+   * Identity the personal meeting feeds belong to: the subject plus the canonical-first LFID, so a
+   * subject swap without LFID claims and late LFID resolution both change it. Consumers holding a
+   * personal feed reconnect when it changes.
+   */
+  public readonly meetingFeedIdentity: Signal<string> = computed(() => `${this.user()?.sub ?? ''}\0${this.viewerUsername() ?? ''}`);
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
+  private profileNameSaved = false;
   private readonly userMeetingsRefresh$ = new Subject<void>();
+  private readonly confirmedMeetingRsvps$ = new BehaviorSubject(new Map<string, MeetingRsvp[]>());
+  private readonly confirmedMeetingRsvpMap = toSignal(this.confirmedMeetingRsvps$, { requireSync: true });
+  private readonly endedMeetingRegistrantIds = signal(new Map<string, ReadonlySet<string>>());
+  private readonly indexedMeetingRegistrantIds = new Map<string, Set<string>>();
+  // Bumped on every complete removal, so a write submitted before it cannot outlive it.
+  private readonly meetingRegistrationGenerations = new Map<string, number>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
-  // Shared identities refresh trigger — tab and shell each run their own getIdentities() fetch off
-  // this so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
+  // Shared identities refresh trigger — tab and shell re-subscribe to getIdentities() off this (one
+  // shared GET) so the shell's GitHub handle / dots update after a link/verify/add/remove (LFXV2-2767).
   private readonly userIdentitiesRefresh$ = new Subject<void>();
   public readonly identitiesRefresh$: Observable<void> = this.userIdentitiesRefresh$.asObservable();
+  /** Emits on every refreshUserMeetings() fetch, so a consumer whose feed failed can subscribe again. */
+  public readonly meetingsRefresh$: Observable<void> = this.userMeetingsRefresh$.asObservable();
+  /** Emits on every refreshUserPastMeetings() call. */
+  public readonly pastMeetingsRefresh$: Observable<void> = this.userPastMeetingsRefresh$.asObservable();
+  // One shared identities GET for every consumer on the page: the endpoint reconciles into CDP, so
+  // each extra concurrent GET re-sends the same CDP identity writes (#4523).
+  private userIdentities$: Observable<EnrichedIdentity[]> | null = null;
   // Per-chain destroy signals so that on user change we can tear down the old shareReplay
   // chain (which stays alive under refCount:false) instead of leaking abandoned subscriptions
   // to the refresh subjects. A fresh Subject is created for each new chain.
@@ -85,29 +154,30 @@ export class UserService {
   private userPastMeetingsDestroy$ = new Subject<void>();
   private userLatestPastMeetingsDestroy$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
+  private userMeetingsWithAttendance$: Observable<Meeting[]> | null = null;
+  private userMeetingsDirty = false;
+  private userMeetingsSubject: string | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsWithDetails$: Observable<PastMeeting[]> | null = null;
+  private userPastMeetingsSubject: string | null = null;
   private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userLatestPastMeetingsSubject: string | null = null;
 
   public constructor() {
+    // A late LFID claim changes meeting identity, not the effective subject's uploaded avatar.
+    // Still reset on login/logout and impersonation swaps, including unchanged LFID claims.
+    toObservable(computed(() => this.user()?.sub || this.viewerUsername()))
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
+      .subscribe(() => this.uploadedAvatarUrl.set(null));
+
     // Invalidate cached user-scoped observables when the authenticated user or
     // impersonation changes, so existing subscribers don't see stale data from
-    // the previous user. Keyed on username (covers both login/logout and
-    // impersonation start/stop). Skip the initial emission since the caches
-    // are lazy-initialized and haven't been populated yet.
-    toObservable(this.user)
-      .pipe(
-        map((u) => u?.username ?? null),
-        distinctUntilChanged(),
-        skip(1),
-        takeUntilDestroyed()
-      )
+    // the previous user. Keyed on `meetingFeedIdentity`, so subject swaps without LFID
+    // claims and late LFID resolution both invalidate every personal feed. Skip the
+    // initial emission since the caches are lazy-initialized and haven't been populated yet.
+    toObservable(this.meetingFeedIdentity)
+      .pipe(distinctUntilChanged(), skip(1), takeUntilDestroyed())
       .subscribe(() => {
-        // Drop the previous user's uploaded avatar — impersonation start/stop swaps `user` without
-        // a page reload, and without this reset the new user's sidebar/header would briefly (or
-        // permanently, if they never uploaded one themselves) show the previous user's avatar
-        // until/unless a fresh post-hydration fetch happens to overwrite it (LFXV2-2628).
-        this.uploadedAvatarUrl.set(null);
-
         // Tear down the old chains first — their shareReplay keeps the source alive under
         // refCount:false, so nulling the field alone would leave them subscribed to refresh$.
         this.userMeetingsDestroy$.next();
@@ -117,8 +187,12 @@ export class UserService {
         this.userLatestPastMeetingsDestroy$.next();
         this.userLatestPastMeetingsDestroy$ = new Subject<void>();
         this.userMeetings$ = null;
+        this.userMeetingsWithAttendance$ = null;
+        this.userMeetingsDirty = false;
         this.userPastMeetings$ = null;
+        this.userPastMeetingsWithDetails$ = null;
         this.userLatestPastMeetings$ = null;
+        this.userIdentities$ = null;
       });
 
     // Client-only, one-time: user_metadata.picture isn't part of the OIDC claims transferred from
@@ -146,8 +220,32 @@ export class UserService {
           if (profile.profile?.picture && this.uploadedAvatarUrl() === null) {
             this.uploadedAvatarUrl.set(profile.profile.picture);
           }
+          // The SSR `user.name` is the OIDC claim, which Auth0 only refreshes on the next login, so
+          // a saved name change reverts on reload. The profile body carries the stored name — but only
+          // trust it when the stored metadata loaded: on a failed read `/api/profile` still returns 200
+          // with `profile: null` and OIDC-derived names, which would replace the correct SSR name.
+          if (profile.profile && !this.impersonating() && !this.profileNameSaved) {
+            this.applyDisplayName(profile.user?.first_name, profile.user?.last_name);
+          }
         });
     });
+  }
+
+  /**
+   * Override the display name (navbar, account menu, initials) that SSR seeded from the OIDC `name`
+   * claim, which is stale after a profile save until the next login. No-op when both parts are empty.
+   */
+  public applyDisplayName(firstName: string | null | undefined, lastName: string | null | undefined, saved = false): void {
+    const name = buildDisplayName(firstName, lastName);
+    const current = this.user();
+    if (!name || !current) {
+      return;
+    }
+    // A name just saved in-session must win over the (eventually consistent) post-hydration fetch.
+    this.profileNameSaved = this.profileNameSaved || saved;
+    if (name !== current.name) {
+      this.user.set({ ...current, name });
+    }
   }
 
   // Create a new user with permissions
@@ -211,7 +309,11 @@ export class UserService {
    * @param email - The email address to make primary
    */
   public setPrimaryEmail(email: string): Observable<{ message: string }> {
-    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
+    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(
+      take(1),
+      // The Identities tab and profile sidebar both read the current primary from this feed.
+      tap(() => this.refreshUserIdentities())
+    );
   }
 
   /**
@@ -280,41 +382,195 @@ export class UserService {
   }
 
   /**
+   * Capture before submitting a write; a complete removal in the meantime makes that write's acknowledgement stale.
+   * After partial removal, pending writes for surviving registrations remain valid.
+   */
+  public meetingRegistrationGeneration(meetingId: string, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): number {
+    return this.meetingRegistrationGenerations.get(`${subject}\0${meetingId}`) ?? 0;
+  }
+
+  /**
+   * Retain a successful write beyond the route that submitted it, under its captured effective subject.
+   * Pass the generation captured at submit time: a complete removal makes a late acknowledgement stale;
+   * a partial removal rejects acknowledgements only for deleted registrations.
+   * Returns the retained copy, stamped to sort after earlier confirmations, or null when the write was not retained.
+   */
+  public recordConfirmedMeetingRsvp(
+    rsvp: MeetingRsvp,
+    subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '',
+    generation?: number
+  ): MeetingRsvp | null {
+    if (!subject || !rsvp.registrant_id) return null;
+    const key = `${subject}\0${rsvp.meeting_id}`;
+    if (generation !== undefined && generation !== this.meetingRegistrationGeneration(rsvp.meeting_id, subject)) {
+      this.endMeetingRegistrants(key, [rsvp.registrant_id]);
+      return null;
+    }
+    const ended = this.endedMeetingRegistrantIds().get(key);
+    if (ended?.has(rsvp.registrant_id)) return null;
+    const current = this.confirmedMeetingRsvps$.value;
+    const retained = retainConfirmedRsvp(
+      (current.get(key) ?? []).filter((saved) => !ended?.has(saved.registrant_id)),
+      rsvp
+    );
+    const next = new Map(current);
+    next.set(key, retained);
+    this.confirmedMeetingRsvps$.next(next);
+    return retained[0];
+  }
+
+  /**
+   * Reactive read of retained answers for one subject and meeting, including recovered survivor history.
+   * Lets surfaces outside the personal feed (recreated cards and controls in Foundation/Project) keep a
+   * successful write while the query index catches up. Callers still filter by registration and date.
+   */
+  public confirmedMeetingRsvps(meetingId: string, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): MeetingRsvp[] {
+    return (subject && this.confirmedMeetingRsvpMap().get(`${subject}\0${meetingId}`)) || [];
+  }
+
+  /** End confirmed deletions only; a partial removal leaves surviving registrations and their in-flight writes live. */
+  public clearConfirmedMeetingRsvps(meetingId: string, subject: string, result: MeetingRegistrationRemovalResult): void {
+    if (!subject) return;
+    const key = `${subject}\0${meetingId}`;
+    const current = this.confirmedMeetingRsvps$.value;
+    const complete = result.remaining_registrant_ids.length === 0;
+    if (complete) this.meetingRegistrationGenerations.set(key, (this.meetingRegistrationGenerations.get(key) ?? 0) + 1);
+    this.endMeetingRegistrants(key, result.removed_registrant_ids);
+    const surviving = complete ? [] : (current.get(key) ?? []).filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id));
+    const recovered = complete
+      ? []
+      : (result.remaining_rsvps ?? []).filter(
+          (rsvp) =>
+            rsvp.meeting_id === meetingId &&
+            result.remaining_registrant_ids.includes(rsvp.registrant_id) &&
+            !this.endedMeetingRegistrantIds().get(key)?.has(rsvp.registrant_id)
+        );
+    // History is not a new write: keep its timestamps and prefer a newer local copy of the same row.
+    const retained = [
+      ...surviving.filter((saved) => !recovered.some((indexed) => indexed.id === saved.id && isRsvpSupersededBy(saved, indexed))),
+      ...recovered.filter((indexed) => !surviving.some((saved) => saved.id === indexed.id && !isRsvpSupersededBy(saved, indexed))),
+    ];
+    const next = new Map(current);
+    if (retained.length > 0) next.set(key, retained);
+    else next.delete(key);
+    this.confirmedMeetingRsvps$.next(next);
+  }
+
+  /** Reject responses from ended registrations; missing enrichment does not invalidate a confirmation. */
+  public isMeetingRsvpCurrent(rsvp: MeetingRsvp, meeting: Meeting, subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || ''): boolean {
+    const key = `${subject}\0${meeting.id}`;
+    if (this.endedMeetingRegistrantIds().get(key)?.has(rsvp.registrant_id)) return false;
+    if (meeting.my_registrant_ids === undefined || meeting.my_registrant_ids.includes(rsvp.registrant_id)) return true;
+    // A successful write can precede this registration's first indexed appearance.
+    return (
+      !this.indexedMeetingRegistrantIds.get(key)?.has(rsvp.registrant_id) &&
+      this.confirmedMeetingRsvps$.value.get(key)?.some((saved) => saved.registrant_id === rsvp.registrant_id) === true
+    );
+  }
+
+  /**
    * Gets all meetings for the current authenticated user.
    * Returns a shared, cached observable. Call refreshUserMeetings() after
-   * any mutation that could change the list (e.g. new registration) to
-   * push fresh data to all subscribers.
+   * mutations to push fresh data to subscribers, or pass false outside the Me
+   * lens to invalidate the replay and fetch when a personal consumer returns.
+   * @param options - `includeAttendance` adds `rsvp_summary` to the dates of meetings the viewer organizes, cached apart from the plain feed
    */
-  public getUserMeetings(): Observable<Meeting[]> {
-    if (!this.userMeetings$) {
+  public getUserMeetings(options?: { includeAttendance?: boolean }): Observable<Meeting[]> {
+    const includeAttendance = options?.includeAttendance === true;
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    if (this.userMeetingsDirty || ((this.userMeetings$ || this.userMeetingsWithAttendance$) && this.userMeetingsSubject !== subject)) {
+      this.userMeetingsDestroy$.next();
+      this.userMeetingsDestroy$ = new Subject<void>();
+      this.userMeetings$ = null;
+      this.userMeetingsWithAttendance$ = null;
+      this.userMeetingsDirty = false;
+    }
+    const cached = includeAttendance ? this.userMeetingsWithAttendance$ : this.userMeetings$;
+    if (!cached) {
       // Capture the current destroy$ at build time — when the user changes, we swap the field
       // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
+      // Both caches share it, so a viewer change or invalidation tears down either chain.
       const destroy$ = this.userMeetingsDestroy$;
-      this.userMeetings$ = this.userMeetingsRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() => this.http.get<Meeting[]>('/api/user/meetings')),
+      this.userMeetingsSubject = subject;
+      const params = includeAttendance ? { include: USER_MEETINGS_INCLUDE_ATTENDANCE } : undefined;
+      const setCache = (value: Observable<Meeting[]> | null): void => {
+        if (includeAttendance) this.userMeetingsWithAttendance$ = value;
+        else this.userMeetings$ = value;
+      };
+      const dropIfCurrent = (): void => {
+        // Guarded so a stale response can't drop a newer chain (e.g. a user/identity change
+        // that already rebuilt it while this one was still erroring out).
+        if ((includeAttendance ? this.userMeetingsWithAttendance$ : this.userMeetings$) === meetings$) {
+          setCache(null);
+        }
+      };
+      const meetings$: Observable<Meeting[]> = combineLatest([
+        this.userMeetingsRefresh$.pipe(
+          startWith(undefined),
+          switchMap(() =>
+            this.http.get<Meeting[]>('/api/user/meetings', { params }).pipe(tap((meetings) => this.reconcileMeetingRegistrations(meetings, subject)))
+          )
+        ),
+        this.confirmedMeetingRsvps$,
+      ]).pipe(
+        map(([meetings, confirmed]) => this.applyConfirmedMeetingRsvps(meetings, subject, confirmed)),
         takeUntil(destroy$),
+        // Never cache a failure — shareReplay otherwise replays it to every subscriber
+        // forever, so the dashboard's Retry control (GH-4780) would just re-show the same
+        // stale error instead of issuing a new request. Drop the cached reference so the
+        // next caller rebuilds the chain and actually re-fetches.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      setCache(meetings$);
+      return meetings$;
     }
-    return this.userMeetings$;
+    return cached;
   }
 
   /**
    * Gets past meetings for the current authenticated user.
    * Call refreshUserPastMeetings() to re-fetch.
+   * @param options - `includeArtifactsAndAttendance` adds `has_recording` / `recording_share_url` / `has_ai_summary`, and
+   *   `attendance_summary` on meetings the viewer organizes, cached apart from the plain feed
    */
-  public getUserPastMeetings(): Observable<PastMeeting[]> {
-    if (!this.userPastMeetings$) {
-      const destroy$ = this.userPastMeetingsDestroy$;
-      this.userPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
-        startWith(undefined),
-        switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings')),
-        takeUntil(destroy$),
-        shareReplay({ bufferSize: 1, refCount: false })
-      );
+  public getUserPastMeetings(options?: { includeArtifactsAndAttendance?: boolean }): Observable<PastMeeting[]> {
+    const includeDetails = options?.includeArtifactsAndAttendance === true;
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    // Rebuilt for a new viewer here too, so a read before the identity effect runs never replays the previous viewer's rows.
+    if (this.userPastMeetingsSubject !== subject) {
+      this.userPastMeetingsDestroy$.next();
+      this.userPastMeetingsDestroy$ = new Subject<void>();
+      this.userPastMeetings$ = null;
+      this.userPastMeetingsWithDetails$ = null;
+      this.userPastMeetingsSubject = subject;
     }
-    return this.userPastMeetings$;
+    const cached = includeDetails ? this.userPastMeetingsWithDetails$ : this.userPastMeetings$;
+    if (cached) return cached;
+
+    // Both caches share the destroy signal, so a viewer change tears down either chain.
+    const destroy$ = this.userPastMeetingsDestroy$;
+    const params = includeDetails ? { include: `${USER_PAST_MEETINGS_INCLUDE_ARTIFACTS},${USER_MEETINGS_INCLUDE_ATTENDANCE}` } : undefined;
+    const setCache = (value: Observable<PastMeeting[]> | null): void => {
+      if (includeDetails) this.userPastMeetingsWithDetails$ = value;
+      else this.userPastMeetings$ = value;
+    };
+    const pastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
+      startWith(undefined),
+      switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings', { params })),
+      takeUntil(destroy$),
+      // Never cache a failure — see getUserMeetings() for why.
+      catchError((error: unknown) => {
+        if ((includeDetails ? this.userPastMeetingsWithDetails$ : this.userPastMeetings$) === pastMeetings$) setCache(null);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    setCache(pastMeetings$);
+    return pastMeetings$;
   }
 
   /**
@@ -325,25 +581,48 @@ export class UserService {
    * rows when many concurrently-ongoing meetings sit at the head of the sort.
    */
   public getUserLatestPastMeetings(): Observable<PastMeeting[]> {
+    const subject = this.user()?.sub || this.viewerUsername() || this.user()?.email || '';
+    if (this.userLatestPastMeetingsSubject !== subject) {
+      this.userLatestPastMeetingsDestroy$.next();
+      this.userLatestPastMeetingsDestroy$ = new Subject<void>();
+      this.userLatestPastMeetings$ = null;
+      this.userLatestPastMeetingsSubject = subject;
+    }
     if (!this.userLatestPastMeetings$) {
       const destroy$ = this.userLatestPastMeetingsDestroy$;
+      const dropIfCurrent = (): void => {
+        if (this.userLatestPastMeetings$ === latestPastMeetings$) {
+          this.userLatestPastMeetings$ = null;
+        }
+      };
       // Shares `userPastMeetingsRefresh$` with `getUserPastMeetings()` on purpose — the two
       // caches represent different slices of the same underlying data, so `refreshUserPastMeetings()`
       // invalidates both together and they re-fetch in lockstep.
-      this.userLatestPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
+      const latestPastMeetings$: Observable<PastMeeting[]> = this.userPastMeetingsRefresh$.pipe(
         startWith(undefined),
         switchMap(() => this.http.get<PastMeeting[]>('/api/user/latest-past-meetings')),
         takeUntil(destroy$),
+        // Never cache a failure — see getUserMeetings() for why.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
         shareReplay({ bufferSize: 1, refCount: false })
       );
+      this.userLatestPastMeetings$ = latestPastMeetings$;
     }
     return this.userLatestPastMeetings$;
   }
 
   /**
-   * Re-fetch the user's upcoming meetings. All current subscribers receive the new data.
+   * Re-fetch the user's upcoming meetings, or invalidate them for the next personal consumer.
    */
-  public refreshUserMeetings(): void {
+  public refreshUserMeetings(fetchImmediately = true): void {
+    if (!fetchImmediately) {
+      this.userMeetingsDirty = true;
+      return;
+    }
+    this.userMeetingsDirty = false;
     this.userMeetingsRefresh$.next();
   }
 
@@ -360,6 +639,7 @@ export class UserService {
    * tab in sync (LFXV2-2767).
    */
   public refreshUserIdentities(): void {
+    this.userIdentities$ = null;
     this.userIdentitiesRefresh$.next();
   }
 
@@ -368,6 +648,25 @@ export class UserService {
    */
   public getWorkExperience(): Observable<WorkExperience[]> {
     return this.http.get<WorkExperience[]>('/api/profile/work-experience').pipe(catchError(() => of([])));
+  }
+
+  /**
+   * The name of the signed-in user's current employer, for prefilling a form. A quiet read: it is
+   * bounded by {@link CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS} and every failure (error, timeout, no history)
+   * is a null, never a toast, so a convenience lookup cannot interrupt the form it serves. Not
+   * {@link getWorkExperiences}, which toasts on failure.
+   */
+  public getCurrentEmployerName(): Observable<string | null> {
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      // Only a job with no end date: the helper's fallback to the latest past job would prefill a company the user has left.
+      map((experiences) => currentEmployerFromWorkExperiences(experiences.filter((experience) => !experience.endDate))?.name ?? null),
+      catchError((error) => {
+        console.warn('[UserService] getCurrentEmployerName failed; leaving the organization blank', error);
+        return of(null);
+      })
+    );
   }
 
   /**
@@ -402,10 +701,35 @@ export class UserService {
   }
 
   /**
-   * Get user's enriched identities (CDP cross-referenced with Auth0)
+   * Get user's enriched identities (CDP cross-referenced with Auth0).
+   * Returns a shared, cached request that completes; refreshUserIdentities() invalidates it.
    */
   public getIdentities(): Observable<EnrichedIdentity[]> {
-    return this.http.get<EnrichedIdentity[]>('/api/profile/identities');
+    if (!this.userIdentities$) {
+      const dropIfCurrent = (): void => {
+        // Guarded so a stale response can't drop a newer request.
+        if (this.userIdentities$ === identities$) {
+          this.userIdentities$ = null;
+        }
+      };
+      const identities$: Observable<EnrichedIdentity[]> = this.http.get<EnrichedIdentity[]>('/api/profile/identities').pipe(
+        // Synthetic `auth0:` rows get real CDP ids once the server's background create lands, and removal
+        // skips CDP for the synthetic id — so share them with current subscribers only, never later ones.
+        tap((identities) => {
+          if (identities.some((identity) => identity.id.startsWith('auth0:'))) {
+            dropIfCurrent();
+          }
+        }),
+        // Never cache a failure — the next caller re-fetches.
+        catchError((error: unknown) => {
+          dropIfCurrent();
+          return throwError(() => error);
+        }),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+      this.userIdentities$ = identities$;
+    }
+    return this.userIdentities$;
   }
 
   /**
@@ -426,7 +750,11 @@ export class UserService {
     }
     // Auth0 identity IDs contain URL-reserved characters (e.g. `|` in `auth0|abc123`);
     // encode before interpolating so the PATCH route resolves reliably.
-    return this.http.patch<{ success: boolean }>(`/api/profile/identities/${encodeURIComponent(identityId)}`, body);
+    // Drop the cache on failure too: the Auth0 unlink can succeed before a later step fails, so the
+    // cached list may already be wrong either way.
+    return this.http
+      .patch<{ success: boolean }>(`/api/profile/identities/${encodeURIComponent(identityId)}`, body)
+      .pipe(tap({ next: () => (this.userIdentities$ = null), error: () => (this.userIdentities$ = null) }));
   }
 
   /**
@@ -457,6 +785,19 @@ export class UserService {
     return this.http.patch<{ success: boolean }>(`/api/profile/project-affiliations/${projectId}`, body);
   }
 
+  /** Consume the callback's private, user/attempt-bound address; missing context keeps support available. */
+  public consumeLinkedEmailSupportContext(handle: unknown): Observable<LinkedEmailSupportDraft> {
+    if (typeof handle !== 'string' || !EMAIL_LINKED_SUPPORT_HANDLE_PATTERN.test(handle)) return of({});
+    return this.http.post<LinkedEmailSupportDraft>('/api/profile/auth/email-support-context', { handle }).pipe(
+      take(1),
+      catchError(() => {
+        // Do not log the HTTP error: its body may contain sensitive response data.
+        console.error('Linked-email support context unavailable; using the generic support draft.');
+        return of({});
+      })
+    );
+  }
+
   /**
    * Send email verification code for identity linking
    */
@@ -468,7 +809,12 @@ export class UserService {
    * Verify email OTP and link identity
    */
   public verifyAndLinkEmail(email: string, otp: string): Observable<VerifyAndLinkEmailResponse> {
-    return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(take(1));
+    return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(
+      take(1),
+      // Callers outside the Identities tab (account settings) don't emit a refresh; drop the cache. On
+      // failure too — the link may have landed before a later step failed.
+      tap({ next: () => (this.userIdentities$ = null), error: () => (this.userIdentities$ = null) })
+    );
   }
 
   /**
@@ -478,12 +824,66 @@ export class UserService {
     return this.http.get<SalesforceIdResponse>('/api/user/salesforce-id').pipe(take(1));
   }
 
+  private applyConfirmedMeetingRsvps(meetings: Meeting[], subject: string, saved: Map<string, MeetingRsvp[]>): Meeting[] {
+    if (saved.size === 0 && this.endedMeetingRegistrantIds().size === 0 && meetings.every((meeting) => meeting.my_registrant_ids === undefined))
+      return meetings;
+    return meetings.map((meeting) => {
+      const confirmed = saved.get(`${subject}\0${meeting.id}`) ?? [];
+      const candidates = (meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed).filter((rsvp) => this.isMeetingRsvpCurrent(rsvp, meeting, subject));
+      const occurrenceId = resolveRsvpOccurrenceId(meeting);
+      const applicable = meeting.recurrence && !occurrenceId ? candidates.filter((rsvp) => rsvp.scope === 'all') : candidates;
+      const myRsvp =
+        selectApplicableRsvp(occurrenceId, applicable) ?? selectApplicableRsvp(undefined, applicable) ?? (meeting.my_rsvp === undefined ? undefined : null);
+      return myRsvp === meeting.my_rsvp ? meeting : { ...meeting, my_rsvp: myRsvp };
+    });
+  }
+
+  private reconcileMeetingRegistrations(meetings: Meeting[], subject: string): void {
+    const current = this.confirmedMeetingRsvps$.value;
+    let next: Map<string, MeetingRsvp[]> | undefined;
+    for (const meeting of meetings) {
+      const registrantIds = meeting.my_registrant_ids;
+      if (registrantIds === undefined) continue;
+      const key = `${subject}\0${meeting.id}`;
+      if (registrantIds.length > 0) {
+        let indexedIds = this.indexedMeetingRegistrantIds.get(key);
+        if (!indexedIds) {
+          indexedIds = new Set<string>();
+          this.indexedMeetingRegistrantIds.set(key, indexedIds);
+        }
+        for (const id of registrantIds) indexedIds.add(id);
+      }
+      const confirmed = current.get(key) ?? [];
+      const candidates = meeting.my_rsvp ? [...confirmed, meeting.my_rsvp] : confirmed;
+      const endedIds = candidates.filter((rsvp) => !this.isMeetingRsvpCurrent(rsvp, meeting, subject)).map((rsvp) => rsvp.registrant_id);
+      if (endedIds.length > 0) this.endMeetingRegistrants(key, endedIds);
+      // A newer indexed answer from an indexed registration retires the retained answers it covers,
+      // so a later enrichment outage (`my_rsvp: undefined`) cannot resurface them.
+      const indexed = meeting.my_rsvp && registrantIds.includes(meeting.my_rsvp.registrant_id) ? meeting.my_rsvp : null;
+      const retained = confirmed.filter((rsvp) => !endedIds.includes(rsvp.registrant_id) && !(indexed && isRsvpSupersededBy(rsvp, indexed)));
+      if (retained.length === confirmed.length) continue;
+      next ??= new Map(current);
+      if (retained.length > 0) next.set(key, retained);
+      else next.delete(key);
+    }
+    if (next) this.confirmedMeetingRsvps$.next(next);
+  }
+
+  private endMeetingRegistrants(key: string, registrantIds: string[]): void {
+    if (registrantIds.length === 0 || registrantIds.every((id) => this.endedMeetingRegistrantIds().get(key)?.has(id))) return;
+    this.endedMeetingRegistrantIds.update((current) => {
+      const next = new Map(current);
+      next.set(key, new Set([...(current.get(key) ?? []), ...registrantIds]));
+      return next;
+    });
+  }
+
   private initViewerUsername(): Signal<string | null> {
     return computed(() => {
       const user = this.user();
-      // The optional `username` alias is often absent; the namespaced LFID claim is the canonical
-      // identity (it matches meeting created_by/host usernames), so fall back to it.
-      return user?.username || user?.['https://sso.linuxfoundation.org/claims/username'] || null;
+      // Meeting owner/creator records use the canonical LFID; keep the alias-only fallback for
+      // sessions without the namespaced claim.
+      return user?.['https://sso.linuxfoundation.org/claims/username'] || user?.username || null;
     });
   }
 

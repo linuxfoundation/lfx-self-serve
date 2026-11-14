@@ -1,0 +1,33 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<!-- Bleeds over the card's 20px padding. -->
+@if (context.organizer() || roster() === undefined || rsvpAttendance()) {
+  <div class="-mx-[20px] h-px bg-gray-200" aria-hidden="true"></div>
+}
+@if (roster() === undefined) {
+  <div class="flex flex-col gap-[6px]" aria-busy="true" data-testid="meeting-details-rsvp-loading">
+    <lfx-ui-skeleton width="60%" height="16px" />
+    <lfx-ui-skeleton height="5px" />
+  </div>
+} @else if (rsvpAttendance(); as rsvp) {
+  <div class="flex flex-col gap-[16px]">
+    <lfx-meeting-home-attendance [attendance]="rsvp" data-testid="meeting-details-rsvp" />
+    <lfx-meeting-attendee-grid
+      [people]="rows()"
+      [columns]="8"
+      fluid
+      [showStats]="false"
+      viewAllVariant="tertiary-accent"
+      viewAllSize="large"
+      (viewAll)="context.tab.set('guests')"
+      data-testid="meeting-details-rsvp-grid" />
+  </div>
+}
+<!-- The editor needs the project slug, as Edit Meeting does. -->
+@if (context.organizer() && context.meeting().project_slug) {
+  <lfx-ui-button variant="secondary" size="large" icon="fa-light fa-user-plus" fullWidth (click)="invitePeople()" data-testid="meeting-details-invite"
+    >Invite people</lfx-ui-button
+  >
+}

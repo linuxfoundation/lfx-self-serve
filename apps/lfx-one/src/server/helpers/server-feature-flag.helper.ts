@@ -156,6 +156,256 @@ export enum ServerFeatureFlag {
   CampaignServiceDemandGen = 'LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN',
 
   /**
+   * Gates whether a Performance Max, Video or Display Google campaign may be OFFERED at all.
+   *
+   * Offering is not unlocking. On, this permits a Performance Max or Display create and lets the
+   * Video box render disabled-with-a-reason instead of vanishing; no value of it permits a Video
+   * CREATE, which `GOOGLE_VIDEO_CREATE_SUPPORTED` refuses unconditionally one layer up.
+   *
+   * The same question `CampaignServiceDemandGen` asks, about a later set of channels: does the
+   * DEPLOYED campaign-service understand `googleAdsConfig.channel` values beyond `search` and
+   * `demand-gen`? Those three ship with linuxfoundation/lfx-v2-campaign-service#272.
+   *
+   * The failure it prevents depends on HOW old that service is, and the two cases differ:
+   *
+   *   - Before LFXV2-3257 there is no `channel` field to decode. Go's JSON decoder drops the
+   *     unknown key, the dispatcher builds its default SEARCH campaign — real budget, no
+   *     keywords, and per its own `googleAdsConfig.Keywords` doc it "can never serve" — and the
+   *     job reports SUCCESS. The wrong campaign is found later in Google Ads, money spent. This
+   *     silent case is the one `CampaignServiceDemandGen` was written for.
+   *   - From LFXV2-3257 the field exists and an unrecognised value is REFUSED by name
+   *     (`unsupported channel "performance-max" (want "search" or "demand-gen")`) before Google
+   *     is contacted, so nothing is created and nothing is charged. Noisy, not silent.
+   *
+   * Default-deny covers both, because nothing on this side can tell the two apart: there is no
+   * version endpoint, and a successful create proves nothing about WHICH channel it created.
+   *
+   * SEPARATE from the Demand Gen flag rather than widened into it. A deployment running
+   * LFXV2-3257 has had Demand Gen for months and its flag is on; folding these three into that
+   * same flag would turn them on everywhere Demand Gen already is, which is precisely the
+   * guess this mechanism exists to avoid. OFF by default.
+   */
+  CampaignServiceGoogleChannels = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS',
+
+  /**
+   * Gates the per-platform Bidding control in the create flow (#3299): Automatic or Manual with a
+   * max CPC bid, sent as `bidding` on `linkedInConfig`, `metaConfig`, `microsoftConfig` and
+   * `redditConfig`. Not Google Ads, which has its own bidding plan.
+   *
+   * A CAPABILITY flag, like `CampaignServiceDemandGen`: it says the DEPLOYED campaign-service
+   * understands `bidding` (linuxfoundation/lfx-v2-campaign-service#332). An older one drops the
+   * unknown key — Go's decoder ignores it — and creates every campaign on automatic bidding, so a
+   * Manual choice would be silently lost and the job would report success. Turn it on only once
+   * #332 is deployed in the target environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator does
+   * not read `bidding` either, which is why the capability the client sees
+   * (`CampaignListResult.biddingEnabled`) needs both. With it off the control is hidden and the
+   * create route refuses a request that carries `bidding` rather than dropping it.
+   *
+   * Turning it back off strands nothing: campaigns already created keep the bidding they were
+   * created with, and new creates are automatic again. OFF by default. Same accepted values as the
+   * flags above.
+   */
+  CampaignServiceBidding = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING',
+
+  /**
+   * Applies the create flow's flight dates to Microsoft Ads, sent as `startDate` and `endDate`
+   * (`"YYYY-MM-DD"`) on `microsoftConfig` — the same keys and format `metaConfig` carries.
+   *
+   * A CAPABILITY flag, like `CampaignServiceBidding`: it says the DEPLOYED campaign-service
+   * understands the two keys and sets them on the Microsoft ad group
+   * (linuxfoundation/lfx-v2-campaign-service#409). An older one drops the unknown keys — Go's
+   * decoder ignores them — and creates the campaign with no flight, so the dates would be silently
+   * lost and the job would report success. Turn it on only once #409 is deployed in the target
+   * environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator does
+   * not read Microsoft dates either, which is why the capability the client sees
+   * (`CampaignListResult.microsoftScheduleEnabled`) needs both. With it off the form sends no
+   * Microsoft dates and keeps its "ignores the flight dates" warning, and the create route refuses
+   * a request that carries either key rather than dropping it.
+   *
+   * Turning it back off strands nothing: campaigns already created keep their flight, and new
+   * creates have none again. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceMicrosoftSchedule = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_SCHEDULE',
+
+  /**
+   * Offers X (`twitter-ads`) in the create flow: the Plan picker lets it be chosen and the
+   * Implement tab builds a `twitterConfig` (budget, flight dates, an authored promoted-only tweet,
+   * an optional tweet image and, with `CampaignServiceBidding`, a bidding choice).
+   *
+   * A PRODUCT switch more than a capability one: every campaign-service from v1.0.21 dispatches an
+   * X create (`TwitterDispatcher`), so turning it on is a decision to let operators create X
+   * campaigns, not a wait for a release. Two things it does not change, and both are deliberate:
+   * the static `disabled: true` on X in `CAMPAIGN_PLATFORMS`, which stays the default every client
+   * falls back to, and the Monitor tab, which offers X on `monitorable` whatever this says.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator has no
+   * X path at all, so the capability the client sees (`CampaignListResult.twitterCreateEnabled`)
+   * needs both. With it off X stays "Coming soon" in the picker, and the create route refuses a
+   * request carrying `twitterConfig` or selecting `twitter-ads` with a 400 naming the field.
+   *
+   * Turning it back off strands nothing: X campaigns already created stay where they are, paused
+   * or live, and are still listed, monitored and pausable. OFF by default. Same accepted values as
+   * the flags above.
+   */
+  CampaignServiceTwitterCreate = 'LFX_CUTOVER_CAMPAIGN_SERVICE_TWITTER_CREATE',
+
+  /**
+   * Offers the Meta Instagram account id and the EU Digital Services Act beneficiary/payor in the
+   * create flow, sent as `metaConfig.instagramUserId`, `dsaBeneficiary` and `dsaPayor`.
+   *
+   * A CAPABILITY flag, like `CampaignServiceMicrosoftSchedule`: it says the DEPLOYED campaign-service
+   * applies the launch-readiness rules (linuxfoundation/lfx-v2-campaign-service#414) — it refuses with a 400 a Meta create whose
+   * geo targets include an EU country without both disclosures, or that carries a one-sided pair
+   * or a malformed Instagram id. With it on, the form asks for the Instagram id when an Instagram
+   * placement is enabled and for both disclosures when an EU or EEA country is targeted, and blocks Create
+   * until they are filled in.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`); the capability the client
+   * sees (`CampaignListResult.metaInstagramDsaEnabled`) needs both. With it off the form shows none
+   * of the three inputs and sends none of the keys, and the create route refuses a request that
+   * carries any of them. Turning it back off strands nothing: campaigns already created keep their
+   * disclosures. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaInstagramDsa = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INSTAGRAM_DSA',
+
+  /**
+   * Replaces the Implement tab's typed postal-code geo target id with a SEARCH of Google's geo target
+   * table, served by `GET /api/campaigns/google/geo-targets`.
+   *
+   * A CAPABILITY flag, like `CampaignServiceMicrosoftSchedule`: it says the DEPLOYED campaign-service
+   * has `GET /projects/{project_id}/google-ads/geo-targets`
+   * (linuxfoundation/lfx-v2-campaign-service#411). An older one has no such route, so every search
+   * would fail. Turn it on only once #411 is released and deployed in the target environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): postal-code ids reach the
+   * campaign only on the campaign-service road, which is why the capability the client sees
+   * (`CampaignListResult.googleGeoSearchEnabled`) needs both. With it off the tab keeps the typed-id
+   * box and the search route answers 404 as if it were not mounted.
+   *
+   * Turning it back off strands nothing: ids already picked stay on the draft and dispatch as typed
+   * ones do. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceGoogleGeoSearch = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_GEO_SEARCH',
+
+  /**
+   * Offers an image UPLOAD in the Reddit section of the create flow, sent as
+   * `redditConfig.imageAssetId` instead of a pasted `imageUrl` (decision D3).
+   *
+   * A CAPABILITY flag, like `CampaignServiceBidding`: it says the DEPLOYED campaign-service has
+   * creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` and
+   * `CREATIVE_ASSET_PUBLIC_BASE_URL`, LFXV2-2665). Without them campaign-service refuses every
+   * `imageAssetId` with a 400, because Reddit can only fetch an image from a public URL and the
+   * signed URL is how a stored asset becomes one. Turn it on only once both are set.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator never
+   * reads `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.redditAssetUploadEnabled`) needs both. With it off the upload control is
+   * hidden, the upload route refuses, and the create route refuses a request carrying
+   * `redditConfig.imageAssetId` rather than dropping it. The pasted image URL is unaffected either
+   * way. OFF by default. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS',
+
+  /**
+   * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
+   * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
+   * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
+   * `performanceMaxCreative.marketingImages` and the rest).
+   *
+   * A CAPABILITY flag like `CampaignServiceRedditAssets`, but it asserts something DIFFERENT, and
+   * the difference matters enough to state rather than inherit. It does NOT say URL signing is
+   * configured: Google's dispatch path reads the stored bytes and POSTs them base64-encoded to
+   * `assets:mutate`, so no URL ever leaves the service and the signing settings are irrelevant to
+   * it (`internal/dispatch/googleads_creative_assets.go` and `googleads_image_ref.go` hold no signer
+   * reference; the only signing gate in the repo is Reddit's `checkRedditAssetChoice`). What it says
+   * is that the DEPLOYED campaign-service resolves Google creative asset ids, which every release
+   * from v1.0.21 does (lfx-v2-campaign-service#394). An older one types those arrays as strings and
+   * cannot decode an object entry, so its Google create fails rather than launching without the image.
+   *
+   * It is a SIBLING of the Reddit flag rather than a widening of it so the two can ship
+   * independently: they assert different upstream capabilities, and one flag would mean Reddit asset
+   * upload could never be enabled without Google's, or the reverse.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no creative key at all, so the capability the client sees
+   * (`CampaignListResult.googleAssetUploadEnabled`) needs both. With it off the Google library
+   * controls are hidden, Create is blocked while a stored image is still held, and the create route
+   * refuses a request carrying a Google `imageAssetId` rather than dropping it; the upload route
+   * still admits an upload on any other asset flag's authority. It does NOT gate the brief's asset
+   * list, get, plan and delete routes: those are addressed by a campaign-service brief and gate on
+   * `CampaignServiceBriefs` like every other brief route, so a deployment running Reddit uploads
+   * alone can still read and prune the same library. The pasted image URL is unaffected either way.
+   * ON in the chart, like the Meta sibling, because nothing has to be configured on campaign-service
+   * first; same accepted values as the flags above.
+   */
+  CampaignServiceGoogleAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_ASSETS',
+
+  /**
+   * Offers an image UPLOAD in the Meta section of the create flow, sent as
+   * `metaConfig.variants[].imageAssetId` instead of a pasted image URL.
+   *
+   * A CAPABILITY flag like `CampaignServiceGoogleAssets`, and it asserts the same kind of thing: no
+   * URL signing is involved, because Meta's dispatch path reads the stored bytes and uploads them to
+   * the ad account's image library (`internal/dispatch/meta.go`, `resolveVariantAssets`). What it
+   * says is that the DEPLOYED campaign-service resolves Meta asset ids, which every release from
+   * v1.0.21 does. It is its own flag so Meta uploads can be switched off without touching Reddit's
+   * or Google's.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no Meta image at all, so the capability the client sees
+   * (`CampaignListResult.metaAssetUploadEnabled`) needs both. With it off the Meta upload control is
+   * hidden and the create route refuses a request carrying a Meta `imageAssetId` rather than
+   * dropping it; the upload route still admits an upload on either sibling flag's authority. The
+   * pasted image URL is unaffected either way. ON in the chart; same accepted values as the flags
+   * above.
+   */
+  CampaignServiceMetaAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS',
+
+  /**
+   * Offers an image UPLOAD in the LinkedIn section of the create flow, sent as
+   * `linkedInConfig.variants[].imageAssetId` (each variant its own upload).
+   *
+   * A CAPABILITY flag of the Meta kind: no URL signing is involved, because LinkedIn's dispatch path
+   * reads the stored bytes and uploads them once through LinkedIn's Images API, then uses the image
+   * URN as each dark post's article thumbnail (`internal/dispatch/linkedin_creative.go`,
+   * `resolveLinkedInImages`). What it says is that the DEPLOYED campaign-service resolves LinkedIn
+   * asset ids, which every release from v1.0.21 does. Its own flag so LinkedIn uploads can be
+   * switched off without touching the other platforms'.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.linkedInAssetUploadEnabled`) needs both. With it off the LinkedIn upload
+   * control is hidden and the create route refuses a request carrying a LinkedIn `imageAssetId`
+   * rather than dropping it; the upload route still admits an upload on any sibling flag's
+   * authority. ON in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_ASSETS',
+
+  /**
+   * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
+   * `microsoftConfig.imageAssetId`.
+   *
+   * A CAPABILITY flag of the Meta kind: no URL signing is involved, because Microsoft's dispatch path
+   * reads the stored bytes, uploads them to the ad account's media library and attaches them to the
+   * campaign as an image ad extension (`internal/dispatch/microsoft_creative.go`,
+   * `resolveMicrosoftImage`). What it says is that the DEPLOYED campaign-service resolves Microsoft
+   * asset ids, which every release from v1.0.21 does. Its own flag so Microsoft uploads can be
+   * switched off without touching the other platforms'.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator reads
+   * no `imageAssetId`, so the capability the client sees
+   * (`CampaignListResult.microsoftAssetUploadEnabled`) needs both. With it off the Microsoft upload
+   * control is hidden and the create route refuses a request carrying `microsoftConfig.imageAssetId`
+   * rather than dropping it; the upload route still admits an upload on any sibling flag's
+   * authority. ON in the chart; same accepted values as the flags above.
+   */
+  CampaignServiceMicrosoftAssets = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MICROSOFT_ASSETS',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
@@ -177,11 +427,11 @@ export enum ServerFeatureFlag {
    *
    * Two SETS live here and conflating them invites deleting a guard that is doing its job:
    * campaign-service implements a toggle dispatcher for every paid platform upstream, but what
-   * this flag exposes is only the non-disabled entries of `CAMPAIGN_PLATFORMS` — a platform can be
-   * dispatchable upstream and simply not offered by this app (X is, today). Deliberately not
-   * stated as a count: the roster changes whenever a `disabled` flag flips — LFXV2-3312 enabled
-   * Microsoft — and a number here goes stale silently. See
-   * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
+   * this flag exposes is the shared `TOGGLEABLE_CAMPAIGN_PLATFORMS` (create-enabled plus
+   * adoptable platforms) — a platform can be dispatchable upstream and not reachable here.
+   * Deliberately not stated as a count: the roster changes as platforms are enabled or become
+   * adoptable, and a number here goes stale silently. See `CAMPAIGN_SERVICE_STATUS_PLATFORMS`
+   * for why the narrowing is deliberate.
    *
    * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
@@ -223,6 +473,10 @@ export enum ServerFeatureFlag {
    * tables SMALLER, and that is the fix, not a regression: the larger figures were other
    * foundations' spend. Say so when enabling it, because a reader who is not told will file the
    * drop as a bug.
+   *
+   * The legacy arm is ROOT-only (writer or `global_marketing_ops`, lfx-self-serve-ops#54),
+   * independently of the monitor cutover. Non-root callers receive the shared-account restriction
+   * instead of keywords or demographics; enabling this flag retains their project-scoped reads.
    *
    * A project with no campaign-service campaigns reads EMPTY rather than falling back, and that
    * is deliberate. The fallback would be the account-wide read, which is the cross-tenant leak
@@ -281,6 +535,25 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
+   * Serves the Optimize-tab read not yet verified against a published campaign-service endpoint:
+   * `GET /api/campaigns/linkedin/campaign-ref`. OFF answers 404, as if the route did not exist, so no
+   * deployment calls an upstream route that campaign-service does not serve. LinkedIn's campaign-ref
+   * was published after it was gated here and its wire type is still to be re-checked before the
+   * flag is turned on.
+   *
+   * Not a cutover flag: there is no legacy arm. It gates ONLY this route. The other
+   * campaign-service-only Optimize routes (Meta/X/Microsoft/LinkedIn/Reddit audience,
+   * Meta/Reddit/X/Microsoft campaign-ref, the Reddit keyword read, campaign settings, Meta ad sets, keyword
+   * targeting, adopt) are ungated, following the precedent of the Microsoft keyword read and the
+   * budget/bid levers: their upstream endpoints exist, and campaign-service answers 400 itself where
+   * a platform's metrics are switched off.
+   *
+   * Turn it on only once campaign-service serves it in the target environment. Turning it back off
+   * strands nothing: it is a read. Same accepted values as the flags above.
+   */
+  CampaignServiceOptimizeReads = 'LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS',
+
+  /**
    * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
    * BFF's own HubSpot calls.
    *
@@ -329,6 +602,60 @@ export enum ServerFeatureFlag {
   CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 
   /**
+   * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
+   * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
+   * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
+   * they have no legacy path to fall back to). Google (`/monitor`) switches backend too: on, it reads
+   * the project's own Google Ads connection's account through campaign-service (#4526).
+   * `/google/accounts` — campaign-service account discovery for that connection, listed on the
+   * Monitor tab's Google panel — is campaign-service-only, and root-only.
+   *
+   * THE FLAG DOES NOT ISOLATE SHARED ACCOUNTS. Meta, Reddit and X run ONE ad account shared by every
+   * foundation, and campaign-service's `account-monitor` is account-scoped, so either arm returns
+   * every foundation's campaigns. Those monitors (`/meta/monitor`, `/reddit/monitor`,
+   * `/twitter/monitor`) are therefore root-only whatever this flag says — a ROOT writer or ROOT
+   * `global_marketing_ops` holder; everyone else gets a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED` before
+   * any upstream call (lfx-self-serve-ops#54). Google Ads' account is shared too, but campaign-service's
+   * Google monitor returns only the campaigns recorded for the project, so only its legacy (flag OFF)
+   * account-wide arm is root-only; on, it answers the project's `campaign_manager` holders (#4837).
+   * LinkedIn runs one account per foundation, so its campaign-service arm is project-isolated: its
+   * legacy (flag OFF) arm reads LF's shared allowlist account and is root-only too. Microsoft and
+   * HubSpot are not gated.
+   *
+   * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
+   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
+   * OWN connection only — never the LF system fallback — and refuses an account that connection
+   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
+   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
+   * routes check the account id's SHAPE rather than allowlist membership. A project with no
+   * connection of its own for a platform, or whose connection has no account bound, sees that
+   * stated in the panel rather than an error. Verify the foundations that use these tabs have
+   * connections before turning this on.
+   *
+   * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
+   * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH
+   * and LOW on LinkedIn (#3018), and Reddit totals become the sum
+   * of the rows, Reddit conversions become "not measured" instead of a fabricated 0 (still rendered
+   * as 0 — see `conversionsMeasured`), and the always-firing "not converting" item disappears.
+   * LinkedIn loses its creative breakdown and the "no ad creatives" item: campaign-service does not
+   * read LinkedIn creative analytics.
+   *
+   * A MIXED ROLLOUT IS SAFE. The flag is read per pod, and the tab's account picker
+   * (`/monitor/connections`) and its monitor read are separate, load-balanced requests, so during a
+   * rolling change the read can land on a pod whose flag differs from the one that chose the account.
+   * A read whose account came from the connection path carries `accountSource=connection`; a pod
+   * with the flag OFF refuses it with a 409 `MONITOR_CUTOVER_MISMATCH` ("The monitor is switching
+   * data sources; refresh in a moment.") instead of serving it from the legacy path — which would
+   * show LinkedIn's default account under the picked one's name, or refuse Reddit's or Meta's — and
+   * the tab's Retry re-checks the data source. An unmarked (legacy-picker) read reaching a pod with
+   * the flag ON is served as before; allowlist ids pass the shape check.
+   *
+   * Reads only, no persisted state and no id space of their own, so flipping it back strands
+   * nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the
@@ -371,34 +698,60 @@ export enum ServerFeatureFlag {
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 
   /**
-   * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
-   * admin pilot (`GwModuleOutletComponent`, mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`). OFF answers every request under
-   * the prefix with an identical neutral 404 `not_found`, whether or not the caller is
-   * authenticated — the point is that an unauthenticated probe cannot distinguish "flag off"
-   * from "no such route" from "not authenticated".
+   * The master kill switch for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,
+   * mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`) on the server. OFF answers every
+   * `/api/gatewaze/*` request (`gatewaze.route.ts`) with an identical neutral 404 `not_found`,
+   * whether or not the caller is authenticated — the point is that an unauthenticated probe cannot
+   * distinguish "flag off" from "no such route" from "not authenticated". The embed needs this AND
+   * `GatewazeHostSession`; see that flag for why the two stay separate.
    *
    * Deliberately paired with, and independent of, the client-side `gatewaze-embed-enabled`
    * OpenFeature flag (`gatewaze-embed-enabled.guard.ts`). The Web SDK never runs server-side, so
    * the client flag hides the route and nav but leaves the BFF reachable by direct call — this
-   * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
+   * flag is what makes the dark launch a real kill switch.
    *
    * This is a boolean, all-or-nothing gate — it carries no cohort of its own. Tenant scoping is
    * a separate control, and it is **client-side only**: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus
    * `gwEmbedTenantGuard` keep the embed out of the wrong foundation's chrome, which is a
    * UI-correctness concern rather than a rollout cohort. It deliberately is not a flag.
    *
-   * Do not read that allowlist as a boundary on this proxy. It runs in the browser; anyone who can
-   * reach `/api/gw/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant on
-   * ANY foundation or project by design, because a proxied request names a Gatewaze path rather
+   * Do not read that allowlist as a boundary on the BFF. It runs in the browser; anyone who can
+   * reach `/api/gatewaze/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant
+   * on ANY foundation or project by design, because a proxied request names a Gatewaze path rather
    * than an LFX project. What actually bounds the data is `requireGwEmbedAccess` for reachability
-   * plus the upstream's own Supabase auth and RLS for authorization — the embed authenticates the
-   * caller's own bearer, so LFX confers no data access it did not already have.
+   * plus the upstream's own Supabase auth and RLS for authorization — the Gatewaze session is the
+   * caller's own, so LFX confers no data access it did not already have.
    *
    * OFF by default. No overlap hazard during a rolling update: every route this gates is
-   * stateless and read/write-through to the upstream Gatewaze service, so a request either
-   * reaches a flag-on pod and proxies, or a flag-off pod and 404s — never a partial write.
+   * read/write-through to the upstream Gatewaze service, so a request either reaches a flag-on pod
+   * and proxies, or a flag-off pod and 404s — never a partial write.
    */
   GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
+
+  /**
+   * Gatewaze host-session mode (#2738): LFX One gets the Gatewaze (GoTrue) session server-to-server
+   * with GoTrue's `id_token` grant and keeps it in Valkey, so the browser never holds a Gatewaze
+   * token. It is the embed's only mode: with it off, `/api/gatewaze` answers the uniform 404 and the
+   * outlet shows its not-configured panel.
+   *
+   * Requires `GatewazeEmbedEnabled`, the session store (`SESSION_STORE_ENABLED` with `VALKEY_URL`),
+   * `GW_SUPABASE_URL`, a publishable `GW_SUPABASE_ANON_KEY` and `PCC_AUTH0_SECRET`.
+   * `resolveGatewazeHostSessionConfig` (`gatewaze-session.service.ts`) checks them all together; with
+   * any missing, host-session mode is off however this flag is set.
+   *
+   * Kept separate from `GatewazeEmbedEnabled` rather than folded into it plus config presence. Folding
+   * it would turn the embed on in any environment that already has the embed flag and the Supabase
+   * config but has never run host-session mode, and it would take away the switch that turns off
+   * only the server-held sessions. Two flags cost one extra env var.
+   *
+   * Rolling-update overlap is harmless. A page served by a flag-on pod whose calls land on a
+   * flag-off pod gets the uniform 404, which the embed reads as `unavailable` and retries. Nothing
+   * is half-written: a stored session is only ever read by a flag-on pod, and it expires on its own
+   * TTL if the flag goes off.
+   *
+   * OFF by default.
+   */
+  GatewazeHostSession = 'LFX_GATEWAZE_HOST_SESSION',
 
   /**
    * Mint the EasyCLA corporate-signing `return_url` as `/org/{orgUid}/easycla/{claGroupId}?signed=1`

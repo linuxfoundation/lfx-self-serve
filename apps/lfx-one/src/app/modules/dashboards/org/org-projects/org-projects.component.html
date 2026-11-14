@@ -3,18 +3,12 @@
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-projects-page">
   <!-- Page Header -->
-  <header class="flex flex-col gap-2" data-testid="org-projects-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-projects-title">
-      @if (contentVisible() && companyName()) {
-        Projects &mdash; {{ companyName() }}
-      } @else {
-        Projects
-      }
-    </h1>
-    <p class="text-sm text-gray-500" data-testid="org-projects-subtitle">
-      The open source projects your organization influences, contributes to, and depends on.
-    </p>
-  </header>
+  <lfx-page-header
+    [title]="contentVisible() && companyName() ? 'Projects — ' + companyName() : 'Projects'"
+    description="The open source projects your organization influences, contributes to, and depends on."
+    titleTestId="org-projects-title"
+    descriptionTestId="org-projects-subtitle"
+    data-testid="org-projects-header" />
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state
@@ -87,6 +81,11 @@
               placeholder="All Employees"
               data-testid="org-projects-employee-filter" />
           </div>
+          <lfx-more-filters-toggle
+            [(expanded)]="moreFiltersExpanded"
+            [count]="hiddenFilterCount()"
+            controls="org-projects-more-filters"
+            dataTest="org-projects-more-filters-toggle" />
         </div>
         <div class="flex items-center gap-2">
           <lfx-button
@@ -110,8 +109,38 @@
             data-testid="org-projects-add-project" />
         </div>
       </div>
+      <!-- Secondary filters, behind "More filters" (lfx-self-serve#4735) -->
+      <div
+        id="org-projects-more-filters"
+        class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 sm:flex-row sm:items-center"
+        [class.hidden]="!moreFiltersExpanded()"
+        data-testid="org-projects-more-filters">
+        <div class="w-full sm:w-60">
+          <lfx-org-scope-select [form]="scopeForm" control="orgScope" [note]="orgScopeNote" dataTest="org-projects-org-scope-filter" />
+        </div>
+        <div class="w-full sm:w-52">
+          <lfx-select
+            [form]="scopeForm"
+            control="teamMembers"
+            size="small"
+            [options]="teamMembersOptions"
+            styleClass="w-full"
+            [ariaLabel]="teamMembersLabel"
+            [tooltip]="teamMembersTooltip"
+            tooltipPosition="top"
+            dataTest="org-projects-team-members-filter" />
+        </div>
+      </div>
 
       <div class="p-5">
+        @if (maintainerRolesUnavailable()) {
+          <p class="mb-3 text-xs text-gray-500" data-testid="org-projects-maintainer-roles-unavailable">
+            Maintainer data is currently unavailable — the Employees filter matches contributors and participants only.
+          </p>
+        }
+        @if (teamMembersUnavailable()) {
+          <p class="mb-3 text-xs text-gray-500" role="status" data-testid="org-projects-team-members-unavailable">{{ teamMembersUnavailableNote }}</p>
+        }
         @if (workspaceError()) {
           <div class="flex flex-col items-center gap-3 py-10 text-center" data-testid="org-projects-table-error">
             <i class="fa-light fa-triangle-exclamation text-2xl text-amber-500" aria-hidden="true"></i>
@@ -223,7 +252,7 @@
                     type="button"
                     class="flex items-center gap-1 whitespace-nowrap font-semibold"
                     (click)="toggleSort('contributors')"
-                    [pTooltip]="'Our <strong>Contributors</strong> are our employees who have contributed code to this project.'"
+                    [pTooltip]="contributorsTooltip"
                     [escape]="false"
                     tooltipPosition="top"
                     tooltipStyleClass="lfx-tooltip-wide">
@@ -262,6 +291,7 @@
                     } @else {
                       <a
                         [routerLink]="project.projectLink"
+                        [queryParams]="projectDetailQueryParams()"
                         class="flex items-center gap-2 text-left"
                         [attr.aria-label]="'View ' + project.name + ' project detail'">
                         <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
@@ -383,7 +413,7 @@
                   } @else {
                     <a
                       [routerLink]="project.projectLink"
-                      [queryParams]="contributorsDrawerQueryParams"
+                      [queryParams]="contributorsDrawerQueryParams()"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.contributorsAriaLabel"
                       [attr.data-testid]="'org-projects-contributors-' + project.slug"
@@ -399,6 +429,7 @@
                   } @else {
                     <a
                       [routerLink]="project.projectLink"
+                      [queryParams]="projectDetailQueryParams()"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.participantsAriaLabel"
                       [attr.data-testid]="'org-projects-participants-' + project.slug"

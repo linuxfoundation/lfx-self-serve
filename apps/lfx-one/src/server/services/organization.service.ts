@@ -991,6 +991,46 @@ export class OrganizationService {
   }
 
   /**
+   * #4225 — the LF account behind a crowd.dev (CDP) organization id, or `null` when this view does not
+   * list that organization.
+   *
+   * KNOWN GAP: `null` is not proof that the organization has no LF account. This view is
+   * account-grain — its upstream `_silver_dim_cdev_org_to_account_id` keeps one representative
+   * crowd.dev org per Salesforce account (`account_rank = 1`) — so a company's other mapped orgs are
+   * absent even when the account IS a member. Callers must treat a miss as unknown, never as
+   * "not a member". `_silver_dim_cdev_org_to_account_id_all` holds every mapping and is the basis for
+   * the org-keyed consumer view that would close this; none exists yet.
+   *
+   * The reverse of {@link getOrgLensAccountContext}: the caller here holds
+   * no Org Lens grant, so the only identifier they can be described by is the CDP organization on
+   * their own work history, and the one fact wanted is `isMember`.
+   *
+   * `ORG_LENS_ACCOUNT_CONTEXT` is a denormalised one-row-per-account view that already carries both
+   * `ACCOUNT_ID` and `CDEV_ORG_ID`, so this is the same read with the other column in the predicate.
+   * Cached per CDP organization under its own sub-resource, so it never collides with the
+   * account-keyed entry for the same row.
+   *
+   * A row that cannot be found is not an error — never treat it as an outage — but it is not an
+   * answer either: per the KNOWN GAP above, the caller must read it as unknown, never as
+   * "not a member".
+   */
+  public async getOrgLensAccountContextByCdevOrgId(cdevOrgId: string): Promise<OrgLensAccountContextResponse | null> {
+    if (!cdevOrgId) {
+      return null;
+    }
+
+    const rows = await withOrgCache(
+      cdevOrgId,
+      'account-context-by-cdev-org',
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchOrgLensAccountContextByCdevOrgId(cdevOrgId),
+      OrganizationService.isAccountContextArray
+    );
+
+    return rows[0] ?? null;
+  }
+
+  /**
    * Bounds a single CDP lookup to {@link CDP_LOOKUP_TIMEOUT_MS} so a stalled CDP token/lookup
    * request (each independently timing out only after 10s inside `CdpService`) can't make
    * `Promise.allSettled` in `searchOrganizationsWithCdp` wait up to ~20s for it. On timeout the
@@ -1062,7 +1102,48 @@ export class OrganizationService {
 
     const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, [accountId]);
 
-    return result.rows.map((row) => ({
+    return OrganizationService.toAccountContexts(result.rows);
+  }
+
+  /**
+   * #4225 — the same row keyed by the crowd.dev organization id instead of the LF account id.
+   *
+   * `ACCOUNT_ID` is the view's grain, `CDEV_ORG_ID` is not: several LF accounts can point at one
+   * crowd.dev organization, so this predicate can match more than one row and the caller takes the
+   * first. `ORDER BY ... LIMIT 1` makes that choice deterministic rather than leaving it to
+   * Snowflake's unspecified row order, and ordering members first answers the only question asked of
+   * it — whether the employer is a member of anything — instead of whichever sibling account sorted
+   * first. `NULLS LAST` keeps an unset flag from outranking a real `TRUE`.
+   */
+  private async fetchOrgLensAccountContextByCdevOrgId(cdevOrgId: string): Promise<OrgLensAccountContextResponse[]> {
+    const query = `
+      SELECT
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        LOGO_URL,
+        CDEV_ORG_ID,
+        CDEV_ORG_NAME,
+        CDEV_ORG_LOGO,
+        IS_MEMBER,
+        MEMBER_ACCOUNT_TYPE,
+        MEMBERSHIP_ID,
+        MEMBERSHIP_PROJECT_ID,
+        MEMBERSHIP_PROJECT_NAME,
+        MEMBERSHIP_TIER_DISPLAY_NAME,
+        MEMBERSHIP_TIER_CLASS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_LENS_ACCOUNT_CONTEXT
+      WHERE CDEV_ORG_ID = ?
+      ORDER BY IS_MEMBER DESC NULLS LAST, ACCOUNT_ID ASC
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<OrgLensAccountContextRow>(query, [cdevOrgId]);
+
+    return OrganizationService.toAccountContexts(result.rows);
+  }
+
+  private static toAccountContexts(rows: OrgLensAccountContextRow[]): OrgLensAccountContextResponse[] {
+    return rows.map((row) => ({
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME,
       logoUrl: row.LOGO_URL,

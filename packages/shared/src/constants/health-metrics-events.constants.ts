@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsForecastVerdictTone,
+  HealthMetricsEventsForecastVerdictToneStyle,
   HealthMetricsEventsGeography,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsSegmentOption,
@@ -14,98 +17,103 @@ import type {
   HealthMetricsEventsRegistrationsGrowthMetricOption,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsSectionKey,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPeriodOption,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
- * allowlist; the DOM id is `sec-evt-<key>`. Footnotes land with each section's data.
+ * allowlist; the DOM id is `sec-evt-<key>`.
  */
 export const HEALTH_METRICS_EVENTS_SECTIONS = [
   {
     key: 'forecast',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Registration forecast',
     heading: 'Registration forecast',
     description:
       'The most decision-sensitive view in Events: where registrations will land, while there is still time to act. Plotted against days to event so a small meetup and KubeCon can be read the same way.',
-    footnote:
-      'The forecast is a projection from historical pacing curves, not a promise — the band is the confidence range. An event with no last-year curve is projected from comparable events, which is why its range is wider.',
-    footnoteCaution: false,
   },
   {
     key: 'past',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Past events',
     heading: 'Past events',
     description:
       'Final performance for events that have already closed — the record the registration forecast was projecting toward while they were still open.',
-    footnote: '',
-    footnoteCaution: false,
   },
   {
     key: 'kpi',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'At a glance',
     heading: 'Events at a glance',
     description: 'Reach across every event this period.',
-    footnote: '',
-    footnoteCaution: false,
   },
   {
     key: 'reg',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event, snapshot: true },
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
     description: 'Registrations by year, split in-person versus virtual.',
-    footnote: '',
-    footnoteCaution: false,
   },
   {
     key: 'rev',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Revenue',
     heading: 'Event revenue',
     description:
       'The two money lines events generate. Registration revenue is what attendees pay; sponsorship is what companies pay. They are driven by different teams and behave differently, so they are never merged into one figure.',
-    footnote: '',
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    provisional: true,
   },
   {
     key: 'spon',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Sponsorship',
     heading: 'Sponsorship',
     description: 'What companies paid to sponsor events, and what they bought.',
-    footnote: '',
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    provisional: true,
   },
   {
     key: 'spk',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Speakers & proposals',
     heading: 'Speakers & proposals',
     description:
       'The speaking pipeline, kept separate from sponsorship — proposals measure community supply, sponsorship measures revenue. Acceptance rate shows how much choice the programme committee had.',
-    footnote: '',
-    footnoteCaution: false,
   },
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Organizations',
     heading: 'Organizations at events',
     description:
       'Which organizations show up, sponsor and speak. This is the events view of an organization — the same company also has a membership, meeting and contribution record in Members.',
-    footnote: '',
-    footnoteCaution: false,
   },
   {
     key: 'geo',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Geographic distribution',
     heading: 'Geographic distribution',
     description: 'Where registrations come from — useful for deciding where the next event should be and which regions are under-served.',
-    footnote: '',
-    footnoteCaution: false,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_EVENTS_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-ticket',
+  noun: 'event',
+  lead: 'Event results appear once the foundation has events on the calendar.',
+  reasons: [
+    'No event has been scheduled for the foundation yet',
+    'Events run under another foundation are counted there',
+    'Your LF Events contact can help plan one',
+  ],
+  pastActivity: 'event activity',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
@@ -122,14 +130,6 @@ export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [
   'orgs',
   'geo',
 ] as const satisfies readonly HealthMetricsEventsSectionKey[];
-
-/** Note under the sub-nav items, linking to the Members list. */
-export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE: HealthMetricsL2CrossReference = {
-  text: "An organization's event record also appears in",
-  linkLabel: 'Members',
-  route: 'members',
-  fragment: 'list',
-};
 
 /** Query params the Events sections read; `event` lets a finding link open one event's forecast. */
 export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {
@@ -154,6 +154,40 @@ export const HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO = 3;
 /** Goal and forecast this far apart, either way, is a data-entry problem: the chip is withheld. */
 export const HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO = 10;
 
+/** The verdict banner per tone, with its urgency icon and colours; `none` is the design's untinted grey Summary. */
+export const HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES: Readonly<
+  Record<HealthMetricsEventsForecastVerdictTone, HealthMetricsEventsForecastVerdictToneStyle>
+> = {
+  ok: {
+    label: 'Healthy',
+    icon: 'fa-light fa-circle-check',
+    accentClass: 'border-l-emerald-500',
+    textClass: 'text-emerald-600',
+    tintClass: 'bg-emerald-50/50',
+  },
+  watch: {
+    label: 'Needs attention',
+    icon: 'fa-light fa-triangle-exclamation',
+    accentClass: 'border-l-amber-500',
+    textClass: 'text-amber-600',
+    tintClass: 'bg-amber-50/50',
+  },
+  act: {
+    label: 'Needs action',
+    icon: 'fa-light fa-circle-exclamation',
+    accentClass: 'border-l-red-500',
+    textClass: 'text-red-600',
+    tintClass: 'bg-red-50/50',
+  },
+  none: {
+    label: 'Summary',
+    icon: 'fa-light fa-circle-info',
+    accentClass: 'border-l-gray-400',
+    textClass: 'text-gray-500',
+    tintClass: '',
+  },
+};
+
 /** Event pills truncate past this many characters. */
 export const HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX = 34;
 
@@ -171,11 +205,11 @@ export const HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED: HealthMetricsEvent
 
 /** Outcome chips for a closed event. A missed goal splits on the model's pace band at close; `unmeasured` has no outcome read. */
 export const HEALTH_METRICS_EVENTS_PAST_STATUSES = {
-  hit: { label: 'Hit goal', badgeClass: 'bg-emerald-50 text-emerald-700', progressClass: 'bg-emerald-500' },
-  'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700', progressClass: 'bg-amber-500' },
-  missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700', progressClass: 'bg-red-400' },
-  'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
-  unmeasured: { label: 'Not tracked', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
+  hit: { label: 'Hit goal', badgeClass: 'bg-emerald-50 text-emerald-700' },
+  'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700' },
+  missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700' },
+  'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600' },
+  unmeasured: { label: 'Not tracked', badgeClass: 'bg-gray-100 text-gray-600' },
 } as const;
 
 /** The model's pace band for an event that finished within reach of its goal. */
@@ -193,10 +227,10 @@ export const HEALTH_METRICS_EVENTS_PAST_UNMEASURED: HealthMetricsEventsPast = { 
 /** The periods the at-a-glance view compares with the year before; the two oldest carry no change columns. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
 
-/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as "No events yet". */
+/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as a foundation without events. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
 
-/** A year-over-year fall steeper than this flags the Attendees and Speakers tiles. */
+/** A year-over-year fall in speakers steeper than this sets the sub-nav note. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE = -0.3;
 
 /** Years read per foundation; one past it flags a truncated read. The longest history spans under ten. */
@@ -257,15 +291,12 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 5;
 /** Recent proposals listed per period and tab. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS = 10;
 
-/** Status groups as the view names them, with each group's badge and status-bar fill. */
+/** Status groups as the view names them, with each group's badge. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS = {
-  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700', barClass: 'bg-emerald-500' },
-  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700', barClass: 'bg-amber-500' },
-  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600', barClass: 'bg-gray-400' },
+  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700' },
+  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700' },
+  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600' },
 } as const;
-
-/** Fill for the top-organizations bars. */
-export const HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS = 'bg-blue-500';
 
 /** Badge for a proposal whose status the view left ungrouped. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS = 'bg-gray-100 text-gray-600';
@@ -300,14 +331,14 @@ export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Membership pills. */
+/** Membership as the design's text status: a filled dot for a member, a hollow one otherwise. */
 export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP = {
-  member: { label: 'Member', badgeClass: 'bg-emerald-50 text-emerald-700' },
-  nonMember: { label: 'Non-member', badgeClass: 'bg-gray-100 text-gray-600' },
+  member: { label: 'Member', glyph: '●', textClass: 'text-emerald-600' },
+  nonMember: { label: 'Non-member', glyph: '○', textClass: 'text-gray-400' },
 } as const;
 
 /** Fill for the registrations mini bar. */
-export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-500';
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-300';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED: HealthMetricsEventsSponsorship = { periods: [] };
@@ -318,14 +349,27 @@ export const HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES: readonly HealthM
 /** Stands in for a goal that is not set, so it never reads as a goal of zero. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET = 'not set';
 
-/** Fill for the tier bars and the progress-to-goal bar. */
-export const HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS = 'bg-blue-600';
+/** Fill for the progress-to-goal bar. */
+export const HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS = 'bg-blue-500';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeography = { periods: [] };
 
-/** Countries ranked in the bars; the rest collapse into a `+N more` line. */
+/** Countries ranked in the list. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
 
-/** Fill for the country bars. */
-export const HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS = 'bg-blue-600';
+/** The event dialog Snapshot's periods, as the design orders them. */
+export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [
+  { value: '7d', label: '7d', days: 7 },
+  { value: '30d', label: '30d', days: 30 },
+  { value: '90d', label: '90d', days: 90 },
+];
+
+/** An event the snapshot views hold nothing for: no weeks, no packages and no revenue. */
+export const HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED: HealthMetricsEventsSnapshot = {
+  today: null,
+  weeks: [],
+  packages: [],
+  sponsorshipRevenueUsd: 0,
+  sponsorshipRevenueInPeriodUsd: { '7d': 0, '30d': 0, '90d': 0 },
+};

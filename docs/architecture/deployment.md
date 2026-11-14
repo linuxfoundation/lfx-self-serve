@@ -49,6 +49,34 @@ the yarn/npm caches used to build it. This shrinks the image that every
 workflow above pulls; see [`ssr-startup.md`](backend/ssr-startup.md) for
 the cold-start measurement that motivated it.
 
+### Build inputs and cache reuse
+
+The builder declares `APP_VERSION` only after dependency installation and the
+shared-package build. Changing a release version therefore leaves those layers
+cacheable; the Angular build still receives the requested version, and the
+runtime stage independently exposes it through `APP_VERSION`.
+`BUILD_ENV` is also declared after installation, allowing the same dependency
+layer to serve main/preview (`dev-cluster`) and release (`production`) builds;
+the compilation layers still select their respective environment.
+
+Application TypeScript inputs exclude `*.stories.ts`, and Tailwind excludes those
+files from application content scanning. Storybook uses its own TypeScript
+configuration and sets `LFX_STORYBOOK_BUILD=true` in `.storybook/main.ts` so both
+interactive and static Storybook builds retain story-template utilities.
+ESLint also selects Storybook's TypeScript project for UI kit stories, preserving
+their lint coverage without adding them back to application compilation.
+CI type-checks stories separately with `.storybook/tsconfig.stories.json`;
+its scope omits the Storybook preview, whose Compodoc JSON is generated only
+during a Storybook build.
+
+The Docker workflows retain GitHub Actions cache export with `mode=max`, including
+intermediate builder layers. Compare dependency-layer cache hits, Angular build
+time, and cache preparation/export time in subsequent workflow logs before
+changing that policy. Layer eligibility alone does not guarantee reuse: the
+workflow ref must also have access to a compatible cache.
+
+### Runtime constraints
+
 Four constraints fall out of that split:
 
 - **`pm2` must stay in `dependencies`**, not `devDependencies`
@@ -198,6 +226,21 @@ environment management happens in `lfx-v2-argocd`.
 All images are pushed to the GitHub Container Registry (GHCR) under
 `ghcr.io/linuxfoundation/lfx-self-serve`. Image visibility follows the
 repository's package settings.
+
+### Retention
+
+A weekly scheduled workflow
+([`ghcr-image-cleanup.yaml`](../../.github/workflows/ghcr-image-cleanup.yaml),
+Sundays 00:00 UTC) deletes image versions of the `lfx-self-serve` package that
+are older than 30 days. It is a thin caller of the
+[shared GHCR cleanup workflow](https://github.com/linuxfoundation/lfx-public-workflows/tree/main/docs/ghcr-image-cleanup)
+in `lfx-public-workflows`, which owns the selection, deletion, and summary logic.
+
+Versions carrying any of these tags are never deleted: `development`, `latest`,
+release tags (`x.y.z` and `x.y`), the default-branch tag, and `ui-pr-<N>` for
+pull requests that are still open with the `deploy-preview` label. Manual runs
+default to a dry-run that deletes nothing and accept a custom cut-off; scheduled
+runs always delete.
 
 ## Helm Chart
 

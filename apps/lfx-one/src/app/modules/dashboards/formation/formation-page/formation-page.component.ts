@@ -4,6 +4,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import type { FormationChecklistResponse } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { FormationCardComponent } from '../../components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../components/formation-checklist-section/formation-checklist-section.component';
@@ -11,7 +12,7 @@ import { FormationPeopleCardComponent } from '../../components/formation-people-
 
 @Component({
   selector: 'lfx-formation-page',
-  imports: [FormationCardComponent, FormationChecklistSectionComponent, FormationPeopleCardComponent],
+  imports: [FormationCardComponent, FormationChecklistSectionComponent, FormationPeopleCardComponent, PageHeaderComponent],
   templateUrl: './formation-page.component.html',
   styleUrl: './formation-page.component.scss',
 })

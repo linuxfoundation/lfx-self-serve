@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PendingActionType, TagSeverity } from '../interfaces/components.interface';
+import { PendingActionSection, PendingActionType, TagSeverity } from '../interfaces/components.interface';
 
 /**
  * Per-type tag severity for "My Pending Actions" rows. Read entries directly
@@ -12,9 +12,10 @@ export const PENDING_ACTION_SEVERITY: Record<PendingActionType, TagSeverity> = {
   RSVP: 'warn', // amber — most common row + matches the row's amber background tint
   Vote: 'info', // blue
   Survey: 'warn', // amber — pending survey, action needed
-  Agenda: 'secondary', // gray — informational read-before-meeting cue
+  Agenda: 'secondary', // gray — informational; no longer emitted (#3311)
   Submitted: 'success', // green — completed survey/feedback acknowledgement, distinguishes from pending Survey
   Invitation: 'success', // green — matches the design's green invite pill
+  JoinApplication: 'warn', // amber — awaiting a manager decision
   BriefAction: 'secondary', // gray — AI-suggested follow-up, not a deadline-bound obligation
   FormationItem: 'accent', // violet — the Me-lens design's "Formation item" badge, distinct from the amber action-needed rows (#2732)
 };
@@ -27,6 +28,7 @@ export const PENDING_ACTION_BUTTON_ICON: Record<PendingActionType, string> = {
   Agenda: 'fa-light fa-list',
   Submitted: 'fa-light fa-circle-check',
   Invitation: 'fa-light fa-user-plus',
+  JoinApplication: 'fa-light fa-user-check',
   BriefAction: 'fa-light fa-list-check',
   FormationItem: 'fa-light fa-diagram-project',
 };
@@ -39,9 +41,64 @@ export const PENDING_ACTION_LABEL: Record<PendingActionType, string> = {
   Agenda: 'Agenda',
   Submitted: 'Submitted',
   Invitation: 'Invitation',
+  JoinApplication: 'Join request',
   BriefAction: 'From Weekly Brief',
   FormationItem: 'Formation item',
 };
+
+/**
+ * Maps each pending-action type to its drawer section. Total over `PendingActionType` —
+ * `Submitted`/`BriefAction` (committee-overview surfaces) and `Agenda` (no longer emitted by the
+ * server, #3311) never reach the dashboard drawer today but stay mapped so the grouping computed never needs a fallback.
+ */
+export const PENDING_ACTION_SECTION: Record<PendingActionType, PendingActionSection> = {
+  RSVP: 'meetings',
+  Agenda: 'meetings', // no longer emitted (#3311); would group with the meeting RSVPs
+  Vote: 'votes',
+  Survey: 'surveys',
+  Submitted: 'surveys', // completed-survey acknowledgement; closest kin if it ever reaches the drawer
+  Invitation: 'invitations',
+  JoinApplication: 'applications',
+  FormationItem: 'formation',
+  BriefAction: 'other',
+};
+
+/** Section header labels for the pending-actions drawer. */
+export const PENDING_ACTION_SECTION_LABEL: Record<PendingActionSection, string> = {
+  meetings: 'Meetings',
+  votes: 'Votes',
+  surveys: 'Surveys',
+  invitations: 'Invitations',
+  applications: 'Applications',
+  formation: 'Formation',
+  other: 'Other',
+};
+
+/**
+ * Section render order as a rank per section — meetings first, the catch-all last. A rank map rather
+ * than the exported array so the order is exhaustiveness-checked like its sibling maps: a section added
+ * to {@link PendingActionSection} fails the build here instead of silently dropping its rows.
+ */
+const PENDING_ACTION_SECTION_RANK = {
+  meetings: 0,
+  votes: 1,
+  surveys: 2,
+  invitations: 3,
+  applications: 4,
+  formation: 5,
+  other: 6,
+} as const satisfies Record<PendingActionSection, number>;
+
+/** Fixed render order of the drawer sections; sections with no visible rows are skipped. */
+export const PENDING_ACTION_SECTION_ORDER: PendingActionSection[] = (Object.keys(PENDING_ACTION_SECTION_RANK) as PendingActionSection[]).sort(
+  (a, b) => PENDING_ACTION_SECTION_RANK[a] - PENDING_ACTION_SECTION_RANK[b]
+);
+
+/**
+ * Sections whose rows carry a per-item Dismiss, so the drawer offers a section-level "Dismiss all". Invitations are
+ * resolved with Accept or Decline, applications owe a review decision, and formation items are resolved on the checklist.
+ */
+export const PENDING_ACTION_BULK_DISMISS_SECTIONS: readonly PendingActionSection[] = ['meetings', 'votes', 'surveys', 'other'];
 
 /**
  * Pending-action fade-out + collapse animation duration in milliseconds. MUST match the CSS
@@ -63,3 +120,6 @@ export const PENDING_ACTION_SKELETON_HOLD_MS = 500;
  * so it still collapses — just ~this many ms later.
  */
 export const PENDING_ACTION_EMPTY_GRACE_MS = 250;
+
+/** Total upstream budget for Me-dashboard join-request discovery, including paging, authorization, and enrichment. */
+export const PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS = 5000;

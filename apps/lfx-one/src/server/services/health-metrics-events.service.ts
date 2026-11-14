@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
+  HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
   HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
@@ -22,6 +23,7 @@ import {
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
+  HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
 } from '@lfx-one/shared/constants';
 
@@ -55,6 +57,10 @@ import type {
   HealthMetricsEventsRevenueEvent,
   HealthMetricsEventsRevenuePeriod,
   HealthMetricsEventsRevenueQuery,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPackage,
+  HealthMetricsEventsSnapshotQuery,
+  HealthMetricsEventsSnapshotWeek,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersOrganization,
   HealthMetricsEventsSpeakersPeriod,
@@ -75,6 +81,7 @@ import type { Request } from 'express';
 
 const REGISTRATION_FORECAST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_FORECAST';
 const PAST_EVENTS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS';
+const REGISTRATION_HISTORY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_PREDICTIONS';
 const AT_A_GLANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_AT_A_GLANCE';
 const REGISTRATIONS_GROWTH_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_GROWTH';
 const REVENUE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE';
@@ -84,6 +91,20 @@ const SPEAKERS_LIST_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_P
 const ORGANIZATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS_ORG_OVERVIEW';
 const SPONSORSHIP_SUMMARY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIP_SUMMARY';
 const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATION_COUNTRY';
+const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
+const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
+const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
+
+/**
+ * The forecast view `f` holds closed events and has no end date or past flag of its own; until it does, its reads keep an
+ * event until it ends through the registrations view's past flag, the one the Overview events list reads.
+ */
+const FORECAST_EVENT_NOT_ENDED = `EXISTS (
+          SELECT 1
+          FROM ${EVENT_REGISTRATIONS_VIEW} r
+          WHERE r.event_id = f.event_id
+            AND r.event_is_past = FALSE
+        )`;
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -128,6 +149,39 @@ interface ForecastEventRow {
   GOAL: number | null;
   DAYS_LEFT: number | null;
   IS_NEW_EVENT: boolean | null;
+}
+
+interface RegistrationHistoryRow {
+  DAYS_TO_EVENT: number | null;
+  EVENT_REGISTRATION_TYPE: string | null;
+  REGISTRATIONS: number | null;
+  PRIOR_YEAR: number | null;
+}
+
+interface SnapshotWeekRow {
+  WEEK_START_DATE: string | null;
+  WEEK_END_DATE: string | null;
+  REGISTRATIONS: number | null;
+  REGISTRATIONS_DELTA: number | null;
+  REGISTRATION_REVENUE_USD: number | null;
+  REGISTRATION_REVENUE_DELTA_USD: number | null;
+  IN_7D: boolean | null;
+  IN_30D: boolean | null;
+  IN_90D: boolean | null;
+  TODAY: string | null;
+}
+
+interface SnapshotTierRow {
+  SPONSORSHIP_TIER: string | null;
+  SOLD: number | null;
+  SOLD_7D: number | null;
+  SOLD_30D: number | null;
+  SOLD_90D: number | null;
+  REVENUE_USD: number | null;
+  REVENUE_7D_USD: number | null;
+  REVENUE_30D_USD: number | null;
+  REVENUE_90D_USD: number | null;
+  TODAY: string | null;
 }
 
 interface ForecastCurveRow {
@@ -182,6 +236,9 @@ interface RevenueRow {
   SPONSORSHIP_REVENUE_GOAL: number | null;
   HAS_UNCONVERTED_REGISTRATION_REVENUE: boolean | null;
   HAS_UNCONVERTED_REVENUE_GOAL: boolean | null;
+  COMBINED_REVENUE_GOAL: number | null;
+  IS_PAST_EVENT: boolean | null;
+  IS_REVENUE_GOAL_MET: boolean | null;
   [periodColumn: string]: unknown;
 }
 
@@ -257,11 +314,10 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * Every upcoming event's event-wide headline. The headline columns repeat on every curve row, so
+   * Every event's event-wide headline until the event ends. The headline columns repeat on every curve row, so
    * one modeled row per event is read; the model is a snapshot of now, so no period applies.
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
-    // The start-date filter keeps an event whose day has passed out even before the model drops it.
     // First edition is flagged per format, so an event is new only when all of its formats are.
     const sql = `
       SELECT
@@ -276,10 +332,10 @@ export class HealthMetricsEventsService {
         event_registrations_goal AS goal,
         days_left,
         BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
-      FROM ${REGISTRATION_FORECAST_VIEW}
+      FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-        AND event_start_date >= CURRENT_DATE()
+        AND ${FORECAST_EVENT_NOT_ENDED}
       QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_registration_type ASC NULLS LAST, pred_type ASC, days_to_event ASC) = 1
       ORDER BY event_start_date ASC, event_name ASC NULLS LAST, event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}
@@ -293,7 +349,7 @@ export class HealthMetricsEventsService {
 
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
     if (result.rows.length > HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP) {
-      logger.warning(req, 'get_events_registration_forecast', 'Upcoming event rows hit the read cap', {
+      logger.warning(req, 'get_events_registration_forecast', 'Forecast event rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP,
       });
@@ -322,11 +378,11 @@ export class HealthMetricsEventsService {
         cumulative_low_predicted_registrations AS forecast_low,
         cumulative_high_predicted_registrations AS forecast_high,
         prior_event_cumulative_registrations AS prior_year
-      FROM ${REGISTRATION_FORECAST_VIEW}
+      FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND event_id = ?
-        AND event_start_date >= CURRENT_DATE()
+        AND ${FORECAST_EVENT_NOT_ENDED}
       ORDER BY event_registration_type ASC NULLS LAST, days_to_event ASC
     `;
 
@@ -339,6 +395,130 @@ export class HealthMetricsEventsService {
     if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED;
 
     return { eventId: query.eventId, formats: groupCurveRows(result.rows) };
+  }
+
+  /**
+   * One past event's registrations per format over the trend's window, with last year's beside it. A closed event's
+   * modelled columns hold what it drew, and the view repeats some days, so each day is read once.
+   */
+  public async getRegistrationHistory(req: Request, query: HealthMetricsEventsForecastCurveQuery): Promise<HealthMetricsEventsForecastCurve> {
+    // The view carries no foundation, so the past-events view scopes the event to it.
+    const sql = `
+      SELECT
+        h.days_to_event,
+        NULLIF(TRIM(h.event_registration_type), '') AS event_registration_type,
+        MAX(h.cumulative_avg_predicted_registrations) AS registrations,
+        MAX(h.prior_event_cumulative_registrations) AS prior_year
+      FROM ${REGISTRATION_HISTORY_VIEW} h
+      WHERE h.event_id = ?
+        AND h.days_to_event BETWEEN ? AND 0
+        AND EXISTS (
+          SELECT 1
+          FROM ${PAST_EVENTS_VIEW} p
+          WHERE p.foundation_slug = ?
+            AND p.is_all_projects = TRUE
+            AND p.event_id = h.event_id
+        )
+      GROUP BY NULLIF(TRIM(h.event_registration_type), ''), h.days_to_event
+      ORDER BY event_registration_type ASC NULLS LAST, h.days_to_event ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<RegistrationHistoryRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.eventId, -HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS, query.foundationSlug],
+      {
+        view: REGISTRATION_HISTORY_VIEW,
+        operation: 'get_events_registration_history',
+        clientMessage: 'The registration history is unavailable right now.',
+      }
+    );
+
+    if (result.rows.length === 0) return HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED;
+
+    return { eventId: query.eventId, formats: groupHistoryRows(result.rows) };
+  }
+
+  /**
+   * One event's Snapshot: its registration weeks over the last 90 days and its sponsorship packages with the counts
+   * and revenue sold in each trailing period. The tier view carries no foundation, so the week view scopes the event.
+   */
+  public async getSnapshot(req: Request, query: HealthMetricsEventsSnapshotQuery): Promise<HealthMetricsEventsSnapshot> {
+    const weeksSql = `
+      SELECT
+        TO_VARCHAR(week_start_date, 'YYYY-MM-DD') AS week_start_date,
+        TO_VARCHAR(week_end_date, 'YYYY-MM-DD') AS week_end_date,
+        registrations_count AS registrations,
+        registrations_count_delta AS registrations_delta,
+        registration_revenue_usd,
+        registration_revenue_usd_delta AS registration_revenue_delta_usd,
+        is_in_trailing_7_days AS in_7d,
+        is_in_trailing_30_days AS in_30d,
+        is_in_trailing_90_days AS in_90d,
+        TO_VARCHAR(CURRENT_DATE(), 'YYYY-MM-DD') AS today
+      FROM ${WEEK_OVER_WEEK_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND event_id = ?
+      ORDER BY week_start_date ASC
+    `;
+    // Every tier in the view is USD; a line in another currency would be summed as if it were.
+    const tiersSql = `
+      SELECT
+        t.sponsorship_tier,
+        t.total_sponsorship_count AS sold,
+        t.sponsorship_count_last_7_days AS sold_7d,
+        t.sponsorship_count_last_30_days AS sold_30d,
+        t.sponsorship_count_last_90_days AS sold_90d,
+        t.total_sponsorship_revenue AS revenue_usd,
+        t.sponsorship_rev_last_7_days AS revenue_7d_usd,
+        t.sponsorship_rev_last_30_days AS revenue_30d_usd,
+        t.sponsorship_rev_last_90_days AS revenue_90d_usd,
+        TO_VARCHAR(CURRENT_DATE(), 'YYYY-MM-DD') AS today
+      FROM ${SPONSORSHIPS_BY_TIER_VIEW} t
+      WHERE t.event_id = ?
+        AND t.currency_code = 'USD'
+        AND EXISTS (
+          SELECT 1
+          FROM ${WEEK_OVER_WEEK_VIEW} w
+          WHERE w.foundation_slug = ?
+            AND w.is_all_projects = TRUE
+            AND w.event_id = t.event_id
+        )
+      ORDER BY t.sponsorship_tier ASC
+    `;
+
+    const [weeks, tiers] = await Promise.all([
+      executeSnowflakeViewRead<SnapshotWeekRow>(this.snowflakeService, req, weeksSql, [query.foundationSlug, query.eventId], {
+        view: WEEK_OVER_WEEK_VIEW,
+        operation: 'get_events_snapshot_weeks',
+        clientMessage: 'The event snapshot is unavailable right now.',
+      }),
+      executeSnowflakeViewRead<SnapshotTierRow>(this.snowflakeService, req, tiersSql, [query.eventId, query.foundationSlug], {
+        view: SPONSORSHIPS_BY_TIER_VIEW,
+        operation: 'get_events_snapshot_tiers',
+        clientMessage: 'The event snapshot is unavailable right now.',
+      }),
+    ]);
+
+    if (weeks.rows.length === 0 && tiers.rows.length === 0) return HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED;
+
+    logger.debug(req, 'get_events_snapshot', 'Read snapshot rows', { event_id: query.eventId, weeks: weeks.rows.length, tiers: tiers.rows.length });
+
+    const sum = (pick: (row: SnapshotTierRow) => number | null): number => tiers.rows.reduce((total, row) => total + Number(pick(row) ?? 0), 0);
+
+    return {
+      today: weeks.rows[0]?.TODAY ?? tiers.rows[0]?.TODAY ?? null,
+      weeks: weeks.rows.filter((row) => row.WEEK_START_DATE && row.WEEK_END_DATE).map(mapSnapshotWeek),
+      packages: groupSnapshotPackages(tiers.rows),
+      sponsorshipRevenueUsd: sum((row) => row.REVENUE_USD),
+      sponsorshipRevenueInPeriodUsd: {
+        '7d': sum((row) => row.REVENUE_7D_USD),
+        '30d': sum((row) => row.REVENUE_30D_USD),
+        '90d': sum((row) => row.REVENUE_90D_USD),
+      },
+    };
   }
 
   /**
@@ -446,8 +626,8 @@ export class HealthMetricsEventsService {
   }
 
   /**
-   * Each period's revenue headline and every event in the four periods. Events outside every period sort
-   * last so the headline still has a row to come off, and are dropped before the table sees them.
+   * Each period's revenue headline, every past event in the four periods and every upcoming event. Older
+   * events sort last so the headline still has a row to come off, and are dropped before the table sees them.
    */
   public async getRevenue(req: Request, query: HealthMetricsEventsRevenueQuery): Promise<HealthMetricsEventsRevenue> {
     // Metrics, suffixes and predicates come from constants, never from the request, so interpolating them is safe.
@@ -464,7 +644,7 @@ export class HealthMetricsEventsService {
 
       return [...columns, ...REVENUE_METRICS.map((metric) => `foundation_${metric}_revenue_change_pct_${suffix}`)];
     }).join(',\n        ');
-    const inAnyPeriod = HEALTH_METRICS_L2_RANGES.map((range) => `(${REVENUE_PERIOD_PREDICATES[range]})`).join(' OR ');
+    const listed = ['is_past_event = FALSE', ...HEALTH_METRICS_L2_RANGES.map((range) => `(${REVENUE_PERIOD_PREDICATES[range]})`)].join(' OR ');
 
     const sql = `
       SELECT
@@ -477,10 +657,14 @@ export class HealthMetricsEventsService {
         sponsorship_revenue_goal,
         has_unconverted_registration_revenue,
         has_unconverted_revenue_goal,
+        combined_revenue_goal,
+        is_past_event,
+        is_revenue_goal_met,
         ${periodColumns}
       FROM ${REVENUE_VIEW}
       WHERE foundation_slug = ?
-      ORDER BY IFF(${inAnyPeriod}, 0, 1), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      -- Past events in a period fill the cap before upcoming ones, so history never gives way to upcoming events.
+      ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
     `;
 
@@ -496,9 +680,9 @@ export class HealthMetricsEventsService {
       return { periods: await this.getOverviewRevenuePeriods(req, query), events: [], eventsMeasured: false };
     }
 
-    // In-period events sort first, so the list lost one only when the first row past the cap is in a period.
+    // Listed events sort first, so the list lost one only when the first row past the cap is listed.
     const dropped = result.rows[HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP];
-    if (dropped && HEALTH_METRICS_L2_RANGES.some((range) => dropped[periodColumn('IN_PERIOD', range)] === true)) {
+    if (dropped && (dropped.IS_PAST_EVENT === false || HEALTH_METRICS_L2_RANGES.some((range) => dropped[periodColumn('IN_PERIOD', range)] === true))) {
       logger.warning(req, 'get_events_revenue', 'Event revenue rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
@@ -508,7 +692,7 @@ export class HealthMetricsEventsService {
     const events = result.rows
       .slice(0, HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP)
       .map(mapRevenueEvent)
-      .filter((event): event is HealthMetricsEventsRevenueEvent => event !== null && event.ranges.length > 0);
+      .filter((event): event is HealthMetricsEventsRevenueEvent => event !== null && (!event.isPastEvent || event.ranges.length > 0));
 
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events, eventsMeasured: true };
   }
@@ -822,6 +1006,8 @@ export class HealthMetricsEventsService {
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (is_all_organizations = TRUE OR is_unaffiliated_organization = TRUE OR ${ranked})
+      -- One read serves every period, so SQL gives a stable order; each period then sorts by its own sort_rank.
+      ORDER BY is_all_organizations DESC, is_unaffiliated_organization DESC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
     `;
 
     const result = await executeSnowflakeViewRead<SpeakersDrilldownRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
@@ -910,7 +1096,7 @@ export class HealthMetricsEventsService {
     });
   }
 
-  /** Whether the foundation has ever held an event, has one still to come in any year, or has event revenue recorded. */
+  /** Whether the foundation has ever held an event, has one that has not ended in any year, or has event revenue recorded. */
   private async hasAnyEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
     // The past view keeps every closed event whatever its age; the rollup only covers four periods.
     const pastSql = `
@@ -922,15 +1108,15 @@ export class HealthMetricsEventsService {
     `;
     if (await this.hasRow(req, PAST_EVENTS_VIEW, pastSql, [query.foundationSlug])) return true;
 
-    const upcomingSql = `
+    const notEndedSql = `
       SELECT 1 AS has_event
-      FROM ${REGISTRATION_FORECAST_VIEW}
+      FROM ${REGISTRATION_FORECAST_VIEW} f
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-        AND event_start_date >= CURRENT_DATE()
+        AND ${FORECAST_EVENT_NOT_ENDED}
       LIMIT 1
     `;
-    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, upcomingSql, [query.foundationSlug])) return true;
+    if (await this.hasRow(req, REGISTRATION_FORECAST_VIEW, notEndedSql, [query.foundationSlug])) return true;
 
     // Revenue can outlive the events views' rows; hiding the tab would hide the revenue section with it.
     const revenueSql = `
@@ -1062,6 +1248,10 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
   const hasUnconvertedGoal = row.HAS_UNCONVERTED_REVENUE_GOAL === true;
   const registrationGoal = toRevenueGoal(row.REGISTRATION_REVENUE_GOAL);
   const sponsorshipGoal = toRevenueGoal(row.SPONSORSHIP_REVENUE_GOAL);
+  // The model leaves the flag unset for upcoming events and a zero goal; a withheld goal has no USD to meet.
+  const isPastEvent = row.IS_PAST_EVENT !== false;
+  const hasCombinedGoal = (toNullableNumber(row.COMBINED_REVENUE_GOAL) ?? 0) > 0;
+  const goalMet = isPastEvent && hasCombinedGoal && !hasUnconvertedGoal && typeof row.IS_REVENUE_GOAL_MET === 'boolean' ? row.IS_REVENUE_GOAL_MET : null;
 
   return {
     eventId: row.EVENT_ID,
@@ -1074,6 +1264,8 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     hasUnconverted: row.HAS_UNCONVERTED_REGISTRATION_REVENUE === true,
     registrationGoalWithheld: hasUnconvertedGoal && registrationGoal !== null,
     sponsorshipGoalWithheld: hasUnconvertedGoal && sponsorshipGoal !== null,
+    isPastEvent,
+    goalMet,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
   };
 }
@@ -1277,6 +1469,29 @@ function groupCurveRows(rows: ForecastCurveRow[]): HealthMetricsEventsForecastCu
   return series;
 }
 
+/** A closed event has no forecast, so every day is measured. */
+function groupHistoryRows(rows: RegistrationHistoryRow[]): HealthMetricsEventsForecastCurveSeries[] {
+  const byFormat = new Map<string, HealthMetricsEventsForecastCurveSeries>();
+
+  for (const row of rows) {
+    if (row.DAYS_TO_EVENT === null) continue;
+
+    const format = row.EVENT_REGISTRATION_TYPE ?? UNTYPED_FORMAT_LABEL;
+    const series = byFormat.get(format) ?? { format, points: [] };
+    series.points.push({
+      daysToEvent: Number(row.DAYS_TO_EVENT),
+      actual: toNullableNumber(row.REGISTRATIONS),
+      forecastAvg: null,
+      forecastLow: null,
+      forecastHigh: null,
+      priorYear: toNullableNumber(row.PRIOR_YEAR),
+    });
+    byFormat.set(format, series);
+  }
+
+  return [...byFormat.values()];
+}
+
 /** Starts the forecast and its band at the last measured day, so the dashed line meets the solid one. */
 function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): void {
   const todayIndex = series.points.map((point) => point.actual !== null).lastIndexOf(true);
@@ -1289,10 +1504,11 @@ function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): vo
   today.forecastHigh = today.actual;
 }
 
-/** The model counts days left from yesterday, negative before the event; the UI shows the count from today. */
+/** The model counts days left from yesterday, negative before the event; the UI counts from today and, once a running event is past its start day, shows none. */
 function toDaysLeft(value: unknown): number | null {
   const daysLeft = toNullableNumber(value);
-  return daysLeft === null ? null : Math.max(0, Math.abs(daysLeft) - 1);
+  if (daysLeft === null || daysLeft >= 0) return null;
+  return -daysLeft - 1;
 }
 
 /** A row without a year cannot be placed on the chart, so it is dropped rather than guessed. */
@@ -1311,6 +1527,40 @@ function mapRegistrationsGrowthYear(row: RegistrationsGrowthRow): HealthMetricsE
     inPersonAttendees: toNullableNumber(row.IN_PERSON_ATTENDEES),
     virtualAttendees: toNullableNumber(row.VIRTUAL_ATTENDEES),
   };
+}
+
+function mapSnapshotWeek(row: SnapshotWeekRow): HealthMetricsEventsSnapshotWeek {
+  return {
+    weekStartDate: row.WEEK_START_DATE ?? '',
+    weekEndDate: row.WEEK_END_DATE ?? '',
+    registrations: Number(row.REGISTRATIONS ?? 0),
+    registrationsDelta: Number(row.REGISTRATIONS_DELTA ?? 0),
+    registrationRevenueUsd: Number(row.REGISTRATION_REVENUE_USD ?? 0),
+    registrationRevenueDeltaUsd: Number(row.REGISTRATION_REVENUE_DELTA_USD ?? 0),
+    inPeriod: { '7d': row.IN_7D === true, '30d': row.IN_30D === true, '90d': row.IN_90D === true },
+  };
+}
+
+/**
+ * One package per tier name, its lines across projects added up, and an unnamed tier as Other; tax and fee lines sell
+ * no package, so they drop out here and stay in the revenue. Priciest per package first, so Diamond leads.
+ */
+function groupSnapshotPackages(rows: SnapshotTierRow[]): HealthMetricsEventsSnapshotPackage[] {
+  const byTier = new Map<string, HealthMetricsEventsSnapshotPackage>();
+  for (const row of rows) {
+    const tier = row.SPONSORSHIP_TIER?.trim() || 'Other';
+
+    const current = byTier.get(tier) ?? { tier, sold: 0, soldInPeriod: { '7d': 0, '30d': 0, '90d': 0 }, revenueUsd: 0 };
+    current.sold += Number(row.SOLD ?? 0);
+    current.revenueUsd += Number(row.REVENUE_USD ?? 0);
+    current.soldInPeriod['7d'] += Number(row.SOLD_7D ?? 0);
+    current.soldInPeriod['30d'] += Number(row.SOLD_30D ?? 0);
+    current.soldInPeriod['90d'] += Number(row.SOLD_90D ?? 0);
+    byTier.set(tier, current);
+  }
+
+  const unitPrice = (item: HealthMetricsEventsSnapshotPackage): number => item.revenueUsd / item.sold;
+  return [...byTier.values()].filter((item) => item.sold > 0).sort((a, b) => unitPrice(b) - unitPrice(a) || a.tier.localeCompare(b.tier));
 }
 
 function toNullableNumber(value: unknown): number | null {

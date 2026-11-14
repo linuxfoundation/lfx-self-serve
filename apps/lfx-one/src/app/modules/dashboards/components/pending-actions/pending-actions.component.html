@@ -39,7 +39,14 @@
   </ng-template>
 </p-toast>
 
-@if (!isSectionHidden() && (totalVisible() > 0 || isSectionGracePending() || isSectionFading())) {
+<!-- Applicant and group text is untrusted; never use the default HTML-rendered confirmation message. -->
+<p-confirmdialog [key]="applicationConfirmKey" data-testid="dashboard-pending-actions-application-confirm">
+  <ng-template #message let-confirmation>
+    <span class="p-confirmdialog-message" data-testid="dashboard-pending-actions-application-confirm-message">{{ confirmation.message }}</span>
+  </ng-template>
+</p-confirmdialog>
+
+@if (!isSectionHidden() && (totalVisible() > 0 || drawerVisible() || isSectionGracePending() || isSectionFading())) {
   <section class="pending-actions-section" [class.is-fading]="isSectionFading()" data-testid="dashboard-pending-actions-section">
     <!-- Section header with inline divider -->
     <div class="flex items-center gap-3 mb-6">
@@ -59,10 +66,8 @@
     </div>
 
     <!--
-    Gate the list/drawer on totalVisible() (the unwindowed count) so the drawer's "View all (N)" stays reachable
-    even when displayLimit clamps decoratedActions() to zero. When it's 0 the section is either mid-fade (the outer
-    @if keeps it mounted to play the collapse) or already removed; nothing renders inside in that window. Within the
-    populated branch the inline list only renders when decoratedActions() actually has rows.
+    Gate the list on totalVisible() (the unwindowed count), independently of the display limit.
+    The drawer is mounted outside the section so an open panel survives the final action being resolved.
   -->
     @if (totalVisible() > 0) {
       @if (decoratedActions().length > 0) {
@@ -73,6 +78,8 @@
             <div
               class="pending-action-row"
               [class.is-completing]="completingRowKeys().has(item.rowKey)"
+              [class.is-application]="item.type === 'JoinApplication'"
+              [class.is-vote-expanded]="item.isVoteInlineExpanded && !item.voteUsesDrawer"
               [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
               @if (swappingRowKeys().has(item.rowKey)) {
                 <!-- Skeleton placeholder occupying the row slot while the next action takes over -->
@@ -107,6 +114,10 @@
                         <span class="sm:truncate group-hover:underline">{{ item.text }}</span>
                         <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
                       </a>
+                    } @else if (item.type === 'JoinApplication') {
+                      <div class="sm:flex-1 sm:min-w-0 sm:px-4">
+                        <lfx-join-request-summary [item]="item" testIdPrefix="dashboard-pending-actions-application" />
+                      </div>
                     } @else if (item.isInvitation) {
                       <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
                         <!-- Title comes from the backend-built item.text (same copy as the drawer); the
@@ -116,7 +127,7 @@
                           <a
                             [routerLink]="item.inviteViewCommands"
                             [queryParams]="item.inviteViewQueryParams"
-                            [state]="{ backLabel: 'My Dashboard' }"
+                            [state]="{ backLabel: 'Dashboard' }"
                             (click)="$event.stopPropagation()"
                             class="font-medium text-blue-600 hover:text-blue-700 hover:underline"
                             [attr.aria-label]="'Open group ' + item.inviteGroupName"
@@ -189,7 +200,7 @@
                                 rel="noopener noreferrer"
                                 class="text-xs text-gray-500 hover:text-blue-600"
                                 data-testid="dashboard-pending-actions-vote-pcc-link">
-                                Open in My Votes →
+                                View vote details →
                               </a>
                             }
                           } @else if (item.isVoteLoading || !item.vote) {
@@ -203,6 +214,27 @@
                               data-testid="dashboard-pending-actions-vote-loading" />
                           }
                           <!-- else: inline ballot is rendering below (action column intentionally empty); drawer-bound votes collapse expandedVoteKey synchronously in dispatchLoadedVote so no branch is needed here -->
+                        </div>
+                      } @else if (item.type === 'JoinApplication') {
+                        <div class="flex items-center gap-2">
+                          <lfx-button
+                            size="small"
+                            severity="primary"
+                            [label]="processingApplicationKey() === item.rowKey ? 'Saving' : 'Approve'"
+                            [loading]="processingApplicationKey() === item.rowKey"
+                            [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
+                            [ariaLabel]="'Approve request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
+                            (onClick)="onApproveApplication(item)"
+                            data-testid="dashboard-pending-actions-application-approve" />
+                          <lfx-button
+                            size="small"
+                            severity="danger"
+                            [text]="true"
+                            label="Reject"
+                            [disabled]="processingApplicationKey() !== null || !item.isReviewableApplication"
+                            [ariaLabel]="'Reject request from ' + item.applicationApplicantEmail + ' to join ' + item.badge"
+                            (onClick)="onRejectApplication(item)"
+                            data-testid="dashboard-pending-actions-application-reject" />
                         </div>
                       } @else if (item.isInvitation) {
                         <div class="flex items-center gap-2">
@@ -267,7 +299,8 @@
                       }
                     </div>
                     <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
-                       server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
+                       server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Join requests can be
+                       dismissed (hidden for this user only) so an admin delegating review can clear them. Formation items
                        are resolved on the checklist and stay until done or skipped (#1956, #2732), so they render none either. -->
                     @if (!item.isInvitation && !item.isFormationItem) {
                       @if (item.isRsvpInline && (!item.meeting || item.isLoading)) {
@@ -275,8 +308,9 @@
                       } @else {
                         <button
                           type="button"
-                          class="shrink-0 self-start sm:self-auto sm:ml-4 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap"
+                          class="shrink-0 self-start sm:self-auto sm:ml-4 text-[10px] text-gray-400 hover:text-gray-500 hover:underline transition-colors whitespace-nowrap disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
                           (click)="handleDismiss(item)"
+                          [disabled]="item.type === 'JoinApplication' && (processingApplicationKey() !== null || !item.isReviewableApplication)"
                           [attr.aria-label]="'Dismiss: ' + item.text"
                           [attr.data-testid]="'dashboard-pending-actions-dismiss-' + item.type">
                           Dismiss
@@ -293,14 +327,16 @@
           }
         </div>
       }
-
-      <lfx-pending-actions-drawer
-        [pendingActions]="visibleActionsUnlimited()"
-        [(visible)]="drawerVisible"
-        (actionCompleted)="onDrawerActionCompleted()"
-        (castVoteRequested)="castVoteRequested.emit($event)"
-        (acceptInvitationRequested)="onAcceptInvitation($event)"
-        (declineInvitationRequested)="onDeclineInvitation($event)" />
     }
   </section>
 }
+<lfx-pending-actions-drawer
+  [pendingActions]="visibleActionsUnlimited()"
+  [(visible)]="drawerVisible"
+  [processingApplicationKey]="processingApplicationKey()"
+  (actionCompleted)="onDrawerActionCompleted()"
+  (castVoteRequested)="castVoteRequested.emit($event)"
+  (acceptInvitationRequested)="onAcceptInvitation($event)"
+  (declineInvitationRequested)="onDeclineInvitation($event)"
+  (approveApplicationRequested)="onApproveApplication($event)"
+  (rejectApplicationRequested)="onRejectApplication($event)" />

@@ -10,8 +10,6 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
 const PROFILE: MentorshipMentorProfileDetails = {
   aboutMe: '<p>Test introduction</p>',
   skills: ['Go', 'Kubernetes'],
-  resumeFileName: 'resume.pdf',
-  resumeUrl: 'https://example.com/resume.pdf',
 };
 
 describe('MentorProfileEditDrawerService', () => {

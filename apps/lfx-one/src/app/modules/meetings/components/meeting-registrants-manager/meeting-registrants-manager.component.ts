@@ -18,6 +18,7 @@ import {
   RegistrantState,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId, getShowMeetingAttendeesLockedNote } from '@lfx-one/shared/utils';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { ConfirmationService } from 'primeng/api';
@@ -49,6 +50,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   private readonly meetingService = inject(MeetingService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly inviteResend = inject(MeetingInviteResendService);
 
   // Input signals
   public meetingUid = input.required<string>();
@@ -70,6 +72,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
   // Output events for two-way binding
   public readonly registrantUpdatesChange = output<RegistrantPendingChanges>();
+  public readonly committeeMembersResolvedChange = output<string[] | null>();
 
   // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);
@@ -174,6 +177,10 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
     // Emit updated registrant updates using the conversion logic
     this.emitRegistrantUpdates();
+  }
+
+  public handleRegistrantResend(registrant: MeetingRegistrant): void {
+    this.inviteResend.confirmAndResend(this.confirmationService, this.meetingUid(), registrant);
   }
 
   public handleRegistrantDelete(id: string): void {

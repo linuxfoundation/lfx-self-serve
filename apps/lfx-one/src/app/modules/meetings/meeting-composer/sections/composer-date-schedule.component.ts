@@ -13,7 +13,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
   EARLY_JOIN_CHIP_OPTIONS,
   EARLY_JOIN_TOOLTIP,
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MAX_EARLY_JOIN_TIME,
   MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
@@ -59,10 +59,17 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly formService = inject(MeetingComposerFormService);
 
   public readonly form = input.required<FormGroup>();
-  /** Quick create renders these fields under its own dialog header, where a section heading only repeats it. */
-  public readonly showHeading = input(true);
   /** Early join is an advanced setting the quick create dialog leaves at its default. */
   public readonly showEarlyJoin = input(true);
+  /**
+   * Whether the timezone select and the recurrence toggle are offered.
+   * @description Off for a single-occurrence edit. Both belong to the series: the occurrence endpoint
+   * takes no timezone — the new time is always read in the series' own zone, which is shown as text
+   * instead — and an occurrence cannot change how its series repeats.
+   */
+  public readonly showSeriesSchedule = input(true);
+  /** The series' own timezone, named in place of the select when {@link showSeriesSchedule} is off. */
+  protected readonly seriesTimezone: Signal<string> = computed(() => this.formService.meeting()?.timezone ?? '');
   /**
    * Narrow-column layout for the quick create dialog's right-hand rail.
    * @description Not a media query: the section is the same width on a phone and in the dialog's 2/5
@@ -103,7 +110,7 @@ export class ComposerDateScheduleComponent implements OnInit {
   protected readonly earlyJoinOptions: Signal<{ label: string; value: number }[]> = this.initEarlyJoinOptions();
   protected readonly recurringFeature = RECURRING_MEETING_FEATURE;
   protected readonly minCustomDuration = MIN_CUSTOM_DURATION;
-  protected readonly maxCustomDuration = MAX_CUSTOM_DURATION;
+  protected readonly maxCustomDuration = MAX_MEETING_DURATION;
   protected readonly minEarlyJoinTime = MIN_EARLY_JOIN_TIME;
   protected readonly maxEarlyJoinTime = MAX_EARLY_JOIN_TIME;
   protected readonly earlyJoinTooltip = EARLY_JOIN_TOOLTIP;
@@ -117,10 +124,24 @@ export class ComposerDateScheduleComponent implements OnInit {
   // Both literals live here rather than in a class binding so Tailwind's `content` scan still sees them.
   protected readonly dateTimeGridClass = computed(() => (this.compact() ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'));
 
+  // Minimum date: yesterday, unless the meeting (or occurrence) being edited already started
+  // before that — its own saved start date must stay selectable, and not greyed out, even though
+  // it is in the past (GH-4944). Every day from that saved date through yesterday becomes
+  // selectable too, not only the saved one; editModeDateTimeValidator() still rejects any of
+  // those in-between days (within a minute of the saved value is the only past value it allows).
   protected readonly minDate = computed(() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
+
+    const original = this.formService.originalStartDate();
+    if (original) {
+      const originalDay = new Date(original.getFullYear(), original.getMonth(), original.getDate());
+      if (originalDay < yesterday) {
+        return originalDay;
+      }
+    }
+
     return yesterday;
   });
 
@@ -160,6 +181,9 @@ export class ComposerDateScheduleComponent implements OnInit {
   private readonly startTimeTouched = controlTouchedSignal(this.form, 'startTime');
   private readonly futureDateTimeGroupError = formErrorSignal(this.form, 'futureDateTime');
   protected readonly futureDateTimeError = computed(() => this.futureDateTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
+  // Only an occurrence edit carries this validator — see `MeetingComposerFormService.occurrenceWallTimeValidator`.
+  private readonly nonexistentWallTimeGroupError = formErrorSignal(this.form, 'nonexistentWallTime');
+  protected readonly nonexistentWallTimeError = computed(() => this.nonexistentWallTimeGroupError() && (this.startDateTouched() || this.startTimeTouched()));
 
   /**
    * Ids of the custom-duration errors on screen, for the input's `aria-describedby`.

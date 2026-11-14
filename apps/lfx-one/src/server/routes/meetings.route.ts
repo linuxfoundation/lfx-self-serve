@@ -4,7 +4,7 @@
 import express, { Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
-import { aiRateLimiter } from '../middleware/rate-limit.middleware';
+import { aiRateLimiter, selfResendInviteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -15,6 +15,9 @@ router.get('/', (req, res, next) => meetingController.getMeetings(req, res, next
 
 // GET /meetings/count - get meetings count
 router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req, res, next));
+
+// Roll-up filter options for a foundation or parent project's meetings list (before '/:uid').
+router.get('/rollup-filters', (req, res, next) => meetingController.getRollupFilterOptions(req, res, next));
 
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));
@@ -31,6 +34,9 @@ router.delete('/:uid', (req, res, next) => meetingController.deleteMeeting(req, 
 // DELETE /meetings/:uid/occurrences/:occurrenceId - cancel a meeting occurrence
 router.delete('/:uid/occurrences/:occurrenceId', (req, res, next) => meetingController.cancelOccurrence(req, res, next));
 
+// PUT /meetings/:uid/occurrences/:occurrenceId - reschedule a single meeting occurrence
+router.put('/:uid/occurrences/:occurrenceId', (req, res, next) => meetingController.updateOccurrence(req, res, next));
+
 // Registrant routes
 router.get('/:uid/registrants', (req, res, next) => meetingController.getMeetingRegistrants(req, res, next));
 
@@ -42,6 +48,14 @@ router.post('/:uid/registrants', (req, res, next) => meetingController.addMeetin
 
 // PUT /meetings/:uid/registrants - update registrants (handles single or multiple)
 router.put('/:uid/registrants', (req, res, next) => meetingController.updateMeetingRegistrants(req, res, next));
+
+// DELETE /meetings/:uid/registrants/self - remove the authenticated user as a registrant
+router.delete('/:uid/registrants/self', (req, res, next) => meetingController.removeMyMeetingRegistration(req, res, next));
+
+// POST /meetings/:uid/registrants/self/resend - resend the invitation to the authenticated user's own registrant record.
+// Must stay above the `:registrantId/resend` route below, which would otherwise match `self` as a registrant ID.
+// Every call emails the caller, so it carries a per-user limiter on top of the global /api one.
+router.post('/:uid/registrants/self/resend', selfResendInviteRateLimiter, (req, res, next) => meetingController.resendMyMeetingInvitation(req, res, next));
 
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
 router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));

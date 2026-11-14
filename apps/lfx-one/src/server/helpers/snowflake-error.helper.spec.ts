@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError } from './snowflake-error.helper';
+import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError, isValueConversionError } from './snowflake-error.helper';
 
 describe('isMissingObjectError', () => {
   it('matches a realistically wrapped missing-table error', () => {
@@ -25,6 +25,38 @@ describe('isMissingObjectError', () => {
   it('stringifies a non-Error value before matching', () => {
     expect(isMissingObjectError('Object X does not exist or not authorized.')).toBe(true);
     expect(isMissingObjectError({ some: 'object' })).toBe(false);
+  });
+
+  describe('with an expected object', () => {
+    const missing = (object: string) =>
+      new Error(`Snowflake query execution failed: SQL compilation error: Object '${object}' does not exist or not authorized.`);
+
+    it('matches the blamed object by its unqualified name', () => {
+      expect(isMissingObjectError(missing('ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_COMPANY_EMAILS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+      expect(isMissingObjectError(missing('ORG_PEOPLE_COMPANY_EMAILS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+    });
+
+    // The whole point of the argument: a core table going missing in the same statement must not be
+    // exempted by a caller that only expects its own optional table to be absent.
+    it('does not match a different missing object', () => {
+      expect(isMissingObjectError(missing('ANALYTICS.SILVER_FACT.EVENT_REGISTRATIONS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(false);
+      expect(isMissingObjectError(missing('ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(false);
+    });
+
+    it('requires a dot at the qualified-name boundary', () => {
+      expect(isMissingObjectError(missing('ANALYTICS.SILVER_FACT.LEGACY_EVENT_REGISTRATIONS'), 'EVENT_REGISTRATIONS')).toBe(false);
+    });
+
+    it('does not match when Snowflake names no object', () => {
+      const unnamed = new Error('SQL compilation error: Object does not exist or not authorized.');
+      expect(isMissingObjectError(unnamed)).toBe(true);
+      expect(isMissingObjectError(unnamed, 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(false);
+    });
+
+    it('ignores case and quoting on both sides', () => {
+      expect(isMissingObjectError(missing('analytics.platinum_lfx_one.org_people_company_emails'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+      expect(isMissingObjectError(new Error('Table "ORG_PEOPLE_COMPANY_EMAILS" does not exist or not authorized.'), 'ORG_PEOPLE_COMPANY_EMAILS')).toBe(true);
+    });
   });
 });
 
@@ -58,6 +90,18 @@ describe('isInvalidIdentifierError', () => {
   it('does not match a longer identifier that shares the expected prefix', () => {
     const error = new Error("SQL compilation error: invalid identifier 'LAST_TOUCH_CONVERSIONS_VALUE'");
     expect(isInvalidIdentifierError(error, 'LAST_TOUCH_CONVERSIONS')).toBe(false);
+  });
+
+  // An aliased column comes back qualified with its alias, as written in the query (lfx-self-serve#4685).
+  it('matches a qualified identifier on its last part', () => {
+    const error = Object.assign(new Error("SQL compilation error: error line 9 at position 46\ninvalid identifier 'R.IS_CDP_TEAM_MEMBER'"), { code: '000904' });
+    expect(isInvalidIdentifierError(error, 'IS_CDP_TEAM_MEMBER')).toBe(true);
+    expect(isInvalidIdentifierError(error, 'TEAM_MEMBER')).toBe(false);
+  });
+
+  it('matches a quoted qualified identifier', () => {
+    const error = new Error('SQL compilation error: invalid identifier \'R."IS_CDP_TEAM_MEMBER"\'');
+    expect(isInvalidIdentifierError(error, 'IS_CDP_TEAM_MEMBER')).toBe(true);
   });
 
   it('does not accept an identifier-specific fallback from error code alone', () => {
@@ -105,5 +149,41 @@ describe('isInvalidRowCountError', () => {
 
   it('does not match an unrelated SDK error code', () => {
     expect(isInvalidRowCountError(Object.assign(new Error('SQL compilation error'), { code: '002003' }))).toBe(false);
+  });
+});
+
+describe('isValueConversionError', () => {
+  it.each(['Date', 'Timestamp', 'Time', 'Numeric value', 'Boolean value'])('matches an unrecognized %s by message', (type) => {
+    expect(isValueConversionError(new Error(`Snowflake query execution failed: ${type} 'x' is not recognized`))).toBe(true);
+  });
+
+  it.each([100038, '100038', '0100038'])('matches the confirmed numeric-conversion code %j', (code) => {
+    expect(isValueConversionError(Object.assign(new Error('Conversion failed'), { code }))).toBe(true);
+  });
+
+  it('matches case-insensitive messages and string rejections', () => {
+    expect(isValueConversionError("TIMESTAMP 'x' IS NOT RECOGNIZED")).toBe(true);
+  });
+
+  it.each([
+    "Object 'ANALYTICS.PLATINUM_LFX_ONE.EXAMPLE' does not exist or not authorized.",
+    "SQL compilation error: invalid identifier 'MEMBER_EMAIL'",
+    "SQL compilation error: syntax error line 1 unexpected '-'.",
+    "Invalid row count '10000000000000000000000000' in result offset clause",
+    'max waitingClients count exceeded',
+    'Network error. Could not reach Snowflake.',
+    'Incorrect username or password.',
+    "Session parameter 'EXAMPLE' is not recognized",
+    "Numeric value '345.123' is out of range",
+  ])('does not exempt unrelated failures: %s', (message) => {
+    expect(isValueConversionError(new Error(message))).toBe(false);
+  });
+
+  it.each(['100040', '100035', '002003', '002011', null, undefined])('does not match an unconfirmed or unrelated code alone: %j', (code) => {
+    expect(isValueConversionError(Object.assign(new Error('Other failure'), { code }))).toBe(false);
+  });
+
+  it.each([null, undefined, { message: 'Other failure' }])('handles non-Error rejection values %j', (error) => {
+    expect(isValueConversionError(error)).toBe(false);
   });
 });

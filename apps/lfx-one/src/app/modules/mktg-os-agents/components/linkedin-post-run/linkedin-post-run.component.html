@@ -1,0 +1,309 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<p-confirmdialog [key]="conflictKey" defaultFocus="reject" data-testid="mktg-linkedin-active-run-confirm" />
+
+@if (recordedRequest() && recordedDocumentId()) {
+  <lfx-mktg-run-progress
+    [project]="context.activeContextUid()"
+    [agentKey]="intake().agentId"
+    [documentId]="recordedDocumentId()"
+    [runId]="recordedRunId()"
+    [runPage]="true"
+    [headless]="true"
+    [watchQuestions]="questions().length > 0"
+    (observed)="onRecordedProgress($event)"
+    (readError)="onRecordedReadError()" />
+}
+
+<!-- Pixel spacing follows the approved page-8 boards at the app's 14px root size. -->
+<div class="min-h-full bg-gray-50 text-gray-900" data-testid="mktg-linkedin-page">
+  <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white px-[32px] py-[14px]">
+    <lfx-mktg-breadcrumb [page]="{ kind: 'run', agentId: intake().agentId, label: intakeLabel }" data-testid="mktg-linkedin-breadcrumb" />
+    <div class="grow"></div>
+    <div class="flex h-12 w-72 max-w-full items-center justify-end text-right text-sm text-gray-500" data-testid="mktg-linkedin-identity-slot">
+      @if (loading() || checkingPending()) {
+        <lfx-mktg-skeleton variant="header" label="Checking the run…" class="w-full" data-testid="mktg-linkedin-header-loading" />
+      } @else if (profileResolved() && writingAs()) {
+        <div class="flex min-w-0 items-center gap-1" data-testid="mktg-linkedin-identity">
+          <span class="truncate">Writing as {{ writingAs() }}</span>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            class="shrink-0 text-blue-600 hover:underline disabled:opacity-50"
+            [disabled]="busy() || editing() || questions().length > 0"
+            (click)="onEdit()"
+            data-testid="mktg-linkedin-edit-profile">
+            Edit profile
+          </button>
+        </div>
+      } @else if (profileResolved() && !serverRun()) {
+        <span data-testid="mktg-linkedin-first-run">First run · the profile is yours, not the project's</span>
+      }
+    </div>
+  </header>
+  <section aria-label="LinkedIn drafting" class="flex flex-col gap-5 p-4 sm:px-[32px] sm:py-[24px]">
+    @if (loading() || checkingPending()) {
+      <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-linkedin-loading" />
+    } @else {
+      <div class="h-10 overflow-y-auto" data-testid="mktg-linkedin-note-slot">
+        @if (writer()) {
+          <p role="status" class="text-sm text-gray-500" [class.sr-only]="!intakeNote()" data-testid="mktg-linkedin-intake-note">
+            {{ intakeNote() }}
+          </p>
+        }
+      </div>
+      @if (error() && (runLookupFailed() || serverRun() || !(writer() && !editing() && !questions().length && (saved() || setup())))) {
+        <div
+          role="alert"
+          class="flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700"
+          data-testid="mktg-linkedin-error">
+          <p>{{ error() }}</p>
+          @if (runLookupFailed() || !writer() || (!saved() && !editing() && !setup())) {
+            <lfx-button label="Try again" size="small" (onClick)="reload.set(reload() + 1)" data-testid="mktg-linkedin-retry-load" />
+            <lfx-button
+              label="Open Documents"
+              [routerLink]="documentsLink()"
+              [queryParams]="{ project: context.activeContext()?.slug ?? '' }"
+              data-testid="mktg-linkedin-open-documents" />
+          }
+        </div>
+      }
+      @if (acceptedRequest() && !busy()) {
+        <div class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-gray-700" data-testid="mktg-linkedin-accepted">
+          <p role="status">Your draft was started — open it to follow progress.</p>
+          <lfx-button label="Open draft" (onClick)="onOpenAccepted()" data-testid="mktg-linkedin-open-accepted" />
+        </div>
+      }
+      @if (writer() && pendingNotice(); as pending) {
+        @if (!acceptedRequest()) {
+          <div
+            class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-gray-700"
+            data-testid="mktg-linkedin-pending-notice">
+            <p role="status">
+              @if (pending.state === 'questions') {
+                Your draft is waiting for your answers on its document page
+              } @else {
+                Your draft is being written on its document page
+              }
+              —
+            </p>
+            <lfx-button label="Open the document" (onClick)="onOpenPending()" data-testid="mktg-linkedin-open-pending" />
+          </div>
+        }
+      }
+      @if (!writer() && !error()) {
+        <p class="rounded-lg border border-gray-200 bg-white p-6" data-testid="mktg-linkedin-no-access">
+          You need write access to this project to draft LinkedIn posts.
+        </p>
+      } @else if (writer() && questions().length && !editing()) {
+        <div data-testid="mktg-linkedin-questions">
+          <lfx-mktg-run-questions
+            [questions]="questions()"
+            [projectName]="projectName()"
+            [previousAnswers]="previousAnswers()"
+            [busy]="answering() || runLookupFailed()"
+            [allowNoneFor]="noneAllowedQuestionIds"
+            (answered)="onAnswers($event)" />
+        </div>
+      } @else if (writer() && !runLookupFailed() && !serverRun() && editing()) {
+        <form
+          class="mx-auto flex w-full max-w-[820px] flex-col gap-5"
+          [formGroup]="profileForm"
+          (ngSubmit)="onProfileSubmit()"
+          data-testid="mktg-linkedin-profile-form">
+          <div class="flex flex-col gap-2">
+            <h1 class="font-display font-light text-xl text-gray-900">{{ saved() ? 'Edit your LinkedIn profile' : 'Set up your LinkedIn profile' }}</h1>
+            <p class="max-w-prose text-gray-600">Asked once. Every post is written in your voice; change it any time from Edit profile.</p>
+          </div>
+          <section class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5" aria-labelledby="linkedin-personalization">
+            <h2 id="linkedin-personalization" class="text-lg font-bold">Step 1 · Personalization</h2>
+            @for (field of aboutFields; track field.key) {
+              <div class="flex flex-col gap-1">
+                <label [for]="'linkedin-profile-' + field.key" class="font-semibold"
+                  >{{ field.prompt }}
+                  @if (field.key === 'associated_projects') {
+                    <span class="text-sm font-normal text-gray-500">optional</span>
+                  }
+                  @if (field.key === 'name' && !saved() && !setup()) {
+                    <span class="text-sm font-normal text-gray-500">from LFX · editable</span>
+                  }
+                </label>
+                @if (field.key === 'name' || field.key === 'role') {
+                  <lfx-input-text
+                    [form]="profileForm"
+                    [control]="field.key"
+                    [inputId]="'linkedin-profile-' + field.key"
+                    styleClass="w-full min-h-11"
+                    [maxlength]="maxProfileChars"
+                    [attr.data-testid]="'mktg-linkedin-profile-' + field.key"
+                    [required]="true"
+                    [dataTest]="'linkedin-profile-' + field.key" />
+                } @else {
+                  <lfx-textarea
+                    [form]="profileForm"
+                    [control]="field.key"
+                    [inputId]="'linkedin-profile-' + field.key"
+                    [rows]="2"
+                    styleClass="w-full resize-y"
+                    [maxlength]="maxProfileChars"
+                    [attr.data-testid]="'mktg-linkedin-profile-' + field.key"
+                    [required]="field.key !== 'associated_projects'"
+                    [dataTest]="'linkedin-profile-' + field.key" />
+                }
+              </div>
+            }
+          </section>
+          <section class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5" aria-labelledby="linkedin-voice">
+            <div class="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 id="linkedin-voice" class="text-lg font-bold">Step 2 · Voice and tone</h2>
+              <p class="text-sm text-gray-500">Leave a field empty to use the default shown under it.</p>
+            </div>
+            @for (field of voiceFields; track field.key) {
+              <div class="flex flex-col gap-1">
+                <label [for]="'linkedin-profile-' + field.key" class="font-semibold">{{ field.step2 }}</label>
+                <lfx-input-text
+                  [form]="profileForm"
+                  [control]="field.key"
+                  [inputId]="'linkedin-profile-' + field.key"
+                  [describedBy]="'linkedin-default-' + field.key"
+                  [maxlength]="maxProfileChars"
+                  [attr.data-testid]="'mktg-linkedin-profile-' + field.key"
+                  styleClass="w-full min-h-11"
+                  placeholder="Your answer"
+                  [dataTest]="'linkedin-profile-' + field.key" />
+                <p [id]="'linkedin-default-' + field.key" class="text-sm text-gray-500">Default: {{ field.default }}</p>
+              </div>
+            }
+          </section>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-gray-500">Saved to your profile when your first draft finishes.</p>
+            <div class="ml-auto flex items-center gap-3">
+              @if (saved() || setup()) {
+                <lfx-button label="Cancel" [text]="true" [disabled]="busy()" (onClick)="onCancelEdit()" data-testid="mktg-linkedin-cancel-edit" />
+              }
+              <lfx-button
+                [label]="saved() || explicitProfileSave() ? 'Save profile' : 'Continue to draft a post'"
+                [outlined]="(!!acceptedRequest() && !busy()) || (!acceptedRequest() && !!pendingNotice())"
+                type="submit"
+                data-testid="mktg-linkedin-save-profile" />
+            </div>
+          </div>
+        </form>
+      } @else if (writer() && !runLookupFailed() && !serverRun() && !acceptedRequest() && (saved() || setup())) {
+        <form
+          class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5"
+          [formGroup]="contentForm"
+          (submit)="$event.preventDefault()"
+          data-testid="mktg-linkedin-post-form">
+          <h1 class="font-display font-light text-xl text-gray-900">Draft a post</h1>
+          <div role="group" aria-label="Content source" class="flex w-fit flex-wrap overflow-hidden rounded-lg border border-gray-300">
+            @for (item of sources; track item.value) {
+              <button
+                type="button"
+                class="min-h-10 px-4 font-semibold disabled:opacity-50"
+                [class.bg-blue-50]="source() === item.value"
+                [class.text-blue-700]="source() === item.value"
+                [attr.aria-pressed]="source() === item.value"
+                [disabled]="busy()"
+                (click)="onSource(item.value)"
+                [attr.data-testid]="'mktg-linkedin-source-' + item.value">
+                {{ item.label }}
+              </button>
+            }
+          </div>
+          <div class="flex flex-col gap-1">
+            @if (source() === 'text') {
+              <label for="linkedin-content-text" class="font-semibold">The content to post about</label>
+              <lfx-textarea
+                [form]="contentForm"
+                control="text"
+                inputId="linkedin-content-text"
+                [rows]="5"
+                [maxlength]="maxFileBytes"
+                [readonly]="busy()"
+                styleClass="w-full resize-y"
+                data-testid="mktg-linkedin-content-text"
+                dataTest="mktg-linkedin-content-text" />
+            } @else if (source() === 'url') {
+              <label for="linkedin-content-url" class="font-semibold">The content to post about</label>
+              <lfx-input-text
+                [form]="contentForm"
+                control="url"
+                inputId="linkedin-content-url"
+                describedBy="mktg-linkedin-source-hint"
+                type="url"
+                [maxlength]="2048"
+                [readonly]="busy()"
+                styleClass="w-full min-h-11"
+                placeholder="https://…"
+                data-testid="mktg-linkedin-content-url"
+                dataTest="mktg-linkedin-content-url" />
+              @if (linkWarning(); as warning) {
+                <span class="text-xs text-amber-700" role="status" aria-live="polite" data-testid="mktg-linkedin-link-warning">{{ warning }}</span>
+              }
+              <p id="mktg-linkedin-source-hint" class="text-sm text-gray-500" data-testid="mktg-linkedin-source-hint">
+                {{ sourceLinkHint }} {{ driveSharingHint }}
+              </p>
+            } @else {
+              @if (file(); as selected) {
+                <div class="flex items-center gap-3" data-testid="mktg-linkedin-selected-file">
+                  <span class="min-w-0 break-words">{{ selected.name }}</span>
+                  <lfx-button label="Remove file" [text]="true" [disabled]="busy()" (onClick)="onFile()" data-testid="mktg-linkedin-remove-file" />
+                </div>
+              } @else {
+                <lfx-file-upload
+                  [accept]="fileAccept"
+                  [maxFileSize]="maxFileBytes"
+                  [multiple]="false"
+                  [customUpload]="true"
+                  [showUploadButton]="false"
+                  [disabled]="busy()"
+                  chooseLabel="Choose a file"
+                  (onSelect)="onFile($event)"
+                  (onRemove)="onFile()"
+                  (onClear)="onFile()"
+                  dataTest="mktg-linkedin-file" />
+              }
+              <p class="text-sm text-gray-500">UTF-8 {{ fileTypesLabel }} · up to 1 MB. LFX turns the file into text.</p>
+            }
+            @if (error()) {
+              <p role="alert" aria-live="polite" class="text-sm text-red-700" data-testid="mktg-linkedin-error">{{ error() }}</p>
+            }
+          </div>
+          <div class="flex flex-col gap-1">
+            <label for="linkedin-share-link" class="font-semibold">Link to share <span class="text-sm font-normal text-gray-500">optional</span></label>
+            <lfx-input-text
+              [form]="contentForm"
+              control="share_link"
+              inputId="linkedin-share-link"
+              type="url"
+              (keydown.enter)="onShareLinkEnter($event)"
+              (focusout)="onApplyShareLink()"
+              [invalid]="!!linkError()"
+              describedBy="linkedin-share-hint"
+              [maxlength]="maxShareLinkChars"
+              [readonly]="busy()"
+              styleClass="w-full min-h-11"
+              placeholder="https://…"
+              data-testid="mktg-linkedin-share-link"
+              dataTest="mktg-linkedin-share-link" />
+            <p id="linkedin-share-hint" class="text-sm text-gray-500">{{ shareLinkHint }}</p>
+            @if (linkError()) {
+              <p role="alert" class="text-sm text-red-700" data-testid="mktg-linkedin-share-error">{{ linkError() }}</p>
+            }
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-gray-500">About a minute. Each draft is saved under LinkedIn posts.</p>
+            <lfx-button
+              [label]="busy() ? 'Drafting…' : 'Draft three options'"
+              type="button"
+              class="ml-auto"
+              (onClick)="onDraft()"
+              [outlined]="(!!acceptedRequest() && !busy()) || (!acceptedRequest() && !!pendingNotice())"
+              data-testid="mktg-linkedin-draft" />
+          </div>
+        </form>
+      }
+    }
+  </section>
+</div>

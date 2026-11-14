@@ -5,9 +5,10 @@
  * Basic regex pattern to identify potential URLs in text
  * This is used for initial detection only, followed by proper URL validation.
  * Pattern matches http:// or https:// followed by non-whitespace/control characters.
- * We intentionally exclude common dangerous characters: <>"{}|\^`[]
+ * We intentionally exclude common dangerous characters: <>"{}|\^`
+ * Square brackets are allowed for query parameters, paths, and IPv6 hosts.
  */
-const URL_DETECTION_REGEX = /https?:\/\/[^\s<>"{}|\\^`[\]]+/gi;
+const URL_DETECTION_REGEX = /https?:\/\/[^\s<>"{}|\\^`]+/gi;
 
 /**
  * List of additional dangerous URL patterns to reject
@@ -51,7 +52,8 @@ export function isValidUrl(urlString: string): boolean {
       hostname.startsWith('10.') ||
       hostname.startsWith('172.') ||
       hostname.startsWith('192.168.') ||
-      hostname === '0.0.0.0'
+      hostname === '0.0.0.0' ||
+      (hostname.startsWith('[') && isPrivateHost(hostname))
     ) {
       console.debug('Rejected private/local URL', urlString);
       return false;
@@ -60,6 +62,28 @@ export function isValidUrl(urlString: string): boolean {
     return true;
   } catch (error) {
     console.debug('URL validation failed', urlString, error);
+    return false;
+  }
+}
+
+/**
+ * Whether a value is an absolute `https:` URL.
+ *
+ * For destinations this application hands to the browser to navigate to. An address that arrives
+ * from upstream and is assigned to `location.href` is executable if its scheme says so — a
+ * `javascript:` value runs in this origin, with this session — so the scheme has to be checked
+ * before the value is passed on, not merely its presence.
+ *
+ * Parsed rather than matched against the text. The browser normalizes before it reads the scheme
+ * — it trims leading whitespace and C0 control characters, and the scheme is case-insensitive —
+ * so `" javascript:…"` and `"JaVaScRiPt:…"` both execute while failing a written-out comparison.
+ * Handing the same parser the value is how this stays in step with what will act on it.
+ */
+export function isHttpsUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
     return false;
   }
 }
@@ -90,10 +114,10 @@ const TRAILING_PUNCTUATION_CHARS: ReadonlySet<string> = new Set(['.', ',', ';', 
 /**
  * Trailing bracket closers — only stripped when unmatched inside the URL, so legitimately
  * bracketed paths (e.g. Wikipedia's `https://en.wikipedia.org/wiki/Foo_(bar)`) keep them.
- * Only `)` is listed: the detection regex never admits `[]{}'` into a match, so those
- * closers can never trail one.
+ * Parentheses and square brackets may be part of a URL; curly braces remain excluded
+ * by the detection regex.
  */
-const TRAILING_BRACKETS: Record<string, string> = { ')': '(' };
+const TRAILING_BRACKETS: Record<string, string> = { ')': '(', ']': '[' };
 
 /**
  * Trims sentence punctuation and unmatched closing brackets off the end of a detected URL.
@@ -148,6 +172,68 @@ function trimTrailingPunctuation(url: string): string {
 }
 
 /**
+ * Detects HTTP(S) URL candidates with their original text offsets, trimming prose punctuation.
+ * Candidates are not validated: callers must apply their destination policy before using them.
+ * @param text - The text to scan
+ * @returns Candidate strings and their zero-based offsets in the original text
+ */
+export function extractUrlCandidates(text: string): { url: string; index: number }[] {
+  const candidates: { url: string; index: number }[] = [];
+  const nextUrl = /https?:\/\//gi;
+
+  for (const match of text.matchAll(URL_DETECTION_REGEX)) {
+    const raw = match[0];
+    const labeledLinkStarts = new Set(Array.from(raw.matchAll(/\[[^\[\]]*\]\(https?:\/\//gi), (label) => label.index));
+    let start = 0;
+    let bracketDepth = 0;
+    let parenthesisDepth = 0;
+    let inAuthority = true;
+    let inQueryOrFragment = false;
+
+    // Keep URL brackets, but stop at hostname citations, unmatched prose closers,
+    // and labeled-link delimiters. Query/fragment values may themselves contain nested URLs.
+    for (let end = 0; end <= raw.length; end++) {
+      const char = raw.charAt(end);
+      const authorityStart = start + (raw.slice(start, start + 8).toLowerCase() === 'https://' ? 8 : 7);
+      if (end >= authorityStart && (char === '/' || char === '?' || char === '#')) inAuthority = false;
+      if (end >= authorityStart && (char === '?' || char === '#')) inQueryOrFragment = true;
+      const hostnameCitation = char === '[' && inAuthority && end > authorityStart && raw.charAt(end - 1) !== '@';
+      const followingLabeledLink = char === '[' && bracketDepth === 0 && !inQueryOrFragment && labeledLinkStarts.has(end);
+      const labeledLinkEnd =
+        char === ')' &&
+        parenthesisDepth === 0 &&
+        bracketDepth === 0 &&
+        text.charAt(match.index + start - 2) === ']' &&
+        text.charAt(match.index + start - 1) === '(';
+
+      if (char === '(') parenthesisDepth++;
+      if (char === ')' && parenthesisDepth > 0) parenthesisDepth--;
+
+      if (char === '[' && !hostnameCitation && !followingLabeledLink) {
+        bracketDepth++;
+      } else if (char === ']' && bracketDepth > 0) {
+        bracketDepth--;
+      } else if (hostnameCitation || followingLabeledLink || labeledLinkEnd || char === ']' || end === raw.length) {
+        candidates.push({ url: trimTrailingPunctuation(raw.slice(start, end)), index: match.index + start });
+
+        // Only search beyond a prose boundary, never inside a rejected URL.
+        nextUrl.lastIndex = end + 1;
+        const next = nextUrl.exec(raw);
+        if (!next) break;
+        start = next.index;
+        end = start - 1;
+        bracketDepth = 0;
+        parenthesisDepth = 0;
+        inAuthority = true;
+        inQueryOrFragment = false;
+      }
+    }
+  }
+
+  return candidates;
+}
+
+/**
  * Extracts all valid URLs from a given text string
  * @param text - The text to extract URLs from
  * @returns Array of validated URL strings found in the text
@@ -157,17 +243,9 @@ export function extractUrls(text: string): string[] {
     return [];
   }
 
-  const potentialUrls = [...text.matchAll(URL_DETECTION_REGEX)];
-  const validUrls: string[] = [];
-
-  potentialUrls.forEach((match) => {
-    const url = trimTrailingPunctuation(match[0]);
-    if (isValidUrl(url)) {
-      validUrls.push(url);
-    }
-  });
-
-  return validUrls;
+  return extractUrlCandidates(text)
+    .map(({ url }) => url)
+    .filter(isValidUrl);
 }
 
 /**
@@ -234,7 +312,7 @@ export function normalizeToUrl(input: string): string | null {
   const trimmedInput = input.trim();
 
   // If it already looks like a URL, validate it using existing function
-  if (trimmedInput.startsWith('http://') || trimmedInput.startsWith('https://')) {
+  if (/^https?:\/\//i.test(trimmedInput)) {
     return isValidUrl(trimmedInput) ? trimmedInput : null;
   }
 
@@ -920,4 +998,15 @@ export function isInviteLandingPath(url: string): boolean {
   const path = url.split(/[?#]/)[0];
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return normalized === '/invite' || normalized === '/invite/error';
+}
+
+/**
+ * Whether a URL is the mentorship mentor-invite page (`/mentorship/mentor/invites`), whose
+ * `?token=` is a signed accept/decline credential. Matched like {@link isInviteLandingPath}, but kept
+ * separate so this page does not get that landing's bootstrap shortcuts.
+ */
+export function isMentorshipMentorInvitePath(url: string): boolean {
+  const path = url.split(/[?#]/)[0];
+  const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+  return normalized === '/mentorship/mentor/invites';
 }

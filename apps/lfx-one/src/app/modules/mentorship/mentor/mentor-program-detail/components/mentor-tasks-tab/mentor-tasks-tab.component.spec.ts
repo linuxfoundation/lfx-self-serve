@@ -3,10 +3,11 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
-import { MessageService, ToastMessageOptions } from 'primeng/api';
+import { MentorshipMentorTaskReviewRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
 import { MentorTasksTabComponent } from './mentor-tasks-tab.component';
 
 describe('MentorTasksTabComponent', () => {
@@ -51,12 +52,16 @@ describe('MentorTasksTabComponent', () => {
   });
 
   let fixture: ComponentFixture<MentorTasksTabComponent>;
+  let download: ReturnType<typeof vi.fn>;
+  let view: ReturnType<typeof vi.fn>;
 
   const setup = (mentees: MentorshipProgramMentee[] = [mentee()]): void => {
+    download = vi.fn();
+    view = vi.fn();
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorTasksTabComponent],
-      providers: [provideNoopAnimations(), MessageService],
+      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskFileService, useValue: { download, view } }],
     });
 
     fixture = TestBed.createComponent(MentorTasksTabComponent);
@@ -93,7 +98,7 @@ describe('MentorTasksTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_approved"]')).toBeNull();
   });
 
-  it('lists submitted and completed tasks on All, and hides Open Submission when there is no file', () => {
+  it('lists submitted and completed tasks on All, and hides View and Download Submission when there is no file', () => {
     setup([
       mentee({
         tasks: [
@@ -136,33 +141,58 @@ describe('MentorTasksTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_done"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_wip"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-view-submission-mnt_1__tsk_awaiting"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-view-submission-mnt_1__tsk_done"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')).not.toBeNull();
   });
 
-  it('routes approve, request-changes, and open-submission to the coming-soon toast', () => {
-    const messageService = TestBed.inject(MessageService);
-    const addSpy = vi.spyOn(messageService, 'add');
+  const button = (testId: string): HTMLButtonElement | null =>
+    element().querySelector<HTMLElement>(`[data-testid="${testId}"]`)?.querySelector<HTMLButtonElement>('button') ?? null;
 
-    element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')
-      ?.querySelector<HTMLButtonElement>('button')
-      ?.click();
-    element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting"]')
-      ?.querySelector<HTMLButtonElement>('button')
-      ?.click();
-    element()
-      .querySelector<HTMLElement>('[data-testid="mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting"]')
-      ?.querySelector<HTMLButtonElement>('button')
-      ?.click();
+  it('asks the page to approve, or to request changes on, the upstream task, without a toast', () => {
+    const addSpy = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const requests: MentorshipMentorTaskReviewRequest[] = [];
+    fixture.componentInstance.reviewRequested.subscribe((request) => requests.push(request));
 
-    expect(addSpy).toHaveBeenCalledTimes(3);
-    const summaries = addSpy.mock.calls.map((call) => (call[0] as ToastMessageOptions).summary);
-    expect(summaries).toEqual([
-      'Approve "Backpressure design note" for Hana Suzuki',
-      'Request changes on "Backpressure design note" for Hana Suzuki',
-      'Open submission for "Backpressure design note" from Hana Suzuki',
+    button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
+    button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.click();
+
+    // The row id is unique across mentees; the request carries the upstream task id.
+    expect(requests).toEqual([
+      { taskId: 'tsk_awaiting', status: 'complete' },
+      { taskId: 'tsk_awaiting', status: 'incomplete' },
     ]);
+    expect(addSpy).not.toHaveBeenCalled();
+  });
+
+  it('disables both review buttons, and emits nothing, while the page is reviewing the task', () => {
+    const requests: MentorshipMentorTaskReviewRequest[] = [];
+    fixture.componentInstance.reviewRequested.subscribe((request) => requests.push(request));
+    fixture.componentRef.setInput('reviewingTaskIds', ['tsk_awaiting']);
+    fixture.detectChanges();
+
+    expect(button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.disabled).toBe(true);
+    expect(button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.disabled).toBe(true);
+    button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
+    expect(requests).toEqual([]);
+
+    fixture.componentRef.setInput('reviewingTaskIds', []);
+    fixture.detectChanges();
+
+    expect(button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.disabled).toBe(false);
+  });
+
+  it('downloads the submission by its upstream task id', () => {
+    button('mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting')?.click();
+
+    expect(download).toHaveBeenCalledWith('tsk_awaiting');
+  });
+
+  it('views the submission by its upstream task id', () => {
+    button('mentorship-mentor-task-view-submission-mnt_1__tsk_awaiting')?.click();
+
+    expect(view).toHaveBeenCalledWith('tsk_awaiting');
+    expect(download).not.toHaveBeenCalled();
   });
 
   it('shows the empty state when no tasks match the filter', () => {

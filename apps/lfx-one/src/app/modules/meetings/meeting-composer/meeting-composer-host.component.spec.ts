@@ -7,15 +7,17 @@ import { computed, signal, type WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { Router } from '@angular/router';
-import { MEETING_COMPOSER_SECTIONS, MEETING_COMPOSER_TOAST_KEY } from '@lfx-one/shared/constants';
-import type { Meeting, MeetingWriteAccess } from '@lfx-one/shared/interfaces';
+import { NavigationEnd, NavigationStart, Router } from '@angular/router';
+import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
+import type { Meeting, MeetingWriteAccess, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { Drawer } from 'primeng/drawer';
@@ -39,9 +41,13 @@ describe('MeetingComposerHostComponent', () => {
   let composer: MeetingComposerService;
   let formService: MeetingComposerFormService;
   let messageService: { add: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
+  let toast: { show: ReturnType<typeof vi.fn> };
+  let navigateByUrl: ReturnType<typeof vi.fn>;
+  let routerEvents: Subject<unknown>;
   let meetingWriteAccess: WritableSignal<MeetingWriteAccess>;
   let currentPersona: WritableSignal<string>;
   let clearContextLens: ReturnType<typeof vi.fn>;
+  let setLauncherHidden: ReturnType<typeof vi.fn>;
 
   const createdMeeting = { id: 'meeting-1', title: 'Weekly sync' } as Meeting;
 
@@ -88,17 +94,28 @@ describe('MeetingComposerHostComponent', () => {
   };
 
   const lastToast = () => messageService.add.mock.calls[messageService.add.mock.calls.length - 1][0];
+  const lastUiToast = (): UiToastConfig => toast.show.mock.calls[toast.show.mock.calls.length - 1][0];
+  const runAction = (label: string): void => {
+    const action = lastUiToast().actions?.find((candidate) => candidate.label === label);
+    expect(action, `toast action "${label}"`).toBeDefined();
+    action?.run();
+  };
   const setWriteAccess = (patch: Partial<MeetingWriteAccess>) => meetingWriteAccess.update((current) => ({ ...current, ...patch }));
 
   beforeEach(async () => {
     messageService = { add: vi.fn(), clear: vi.fn() };
+    toast = { show: vi.fn(() => ({ id: 'toast', dismiss: vi.fn() })) };
+    navigateByUrl = vi.fn(() => Promise.resolve(true));
+    routerEvents = new Subject();
     meetingWriteAccess = signal<MeetingWriteAccess>({ contextUid: 'project-1', canWrite: true });
     currentPersona = signal('maintainer');
     clearContextLens = vi.fn();
+    setLauncherHidden = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: messageService },
+        { provide: UiToastService, useValue: toast },
         { provide: CommitteeService, useValue: {} },
         {
           provide: MeetingService,
@@ -131,7 +148,8 @@ describe('MeetingComposerHostComponent', () => {
         // The create picker's lens override is the only one the host ends; the real service reads
         // cookies and the router to work out a lens nothing here asks it for.
         { provide: LensService, useValue: { clearContextLens } },
-        { provide: Router, useValue: { events: new Subject(), url: '/meetings', parseUrl: () => ({ queryParams: {} }) } },
+        { provide: IntercomService, useValue: { setLauncherHidden } },
+        { provide: Router, useValue: { events: routerEvents, url: '/meetings', parseUrl: () => ({ queryParams: {} }), navigateByUrl } },
       ],
     });
     // `set` replaces only the listed metadata keys, so the component's own `providers` survive and the
@@ -241,6 +259,25 @@ describe('MeetingComposerHostComponent', () => {
       await flush();
 
       expect(clearContextLens).toHaveBeenCalledTimes(1);
+    });
+
+    // Intercom's launcher bubble covers the drawer footer's actions (#5416).
+    it('hides the Intercom launcher while the composer is open and restores it on close', async () => {
+      await openCreate();
+      expect(setLauncherHidden).toHaveBeenLastCalledWith(true);
+
+      component['onVisibleChange'](false);
+      await flush();
+
+      expect(setLauncherHidden).toHaveBeenLastCalledWith(false);
+    });
+
+    it('restores the Intercom launcher when the host is destroyed with the composer open', async () => {
+      await openCreate();
+
+      fixture.destroy();
+
+      expect(setLauncherHidden).toHaveBeenLastCalledWith(false);
     });
 
     it('leaves the override alone while the composer is still open', async () => {
@@ -392,41 +429,86 @@ describe('MeetingComposerHostComponent', () => {
       vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
     });
 
-    it('raises a sticky keyed toast carrying the created meeting', () => {
+    it('raises a timed bottom-right uikit toast carrying the created meeting', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
 
       component['onSubmit']();
 
-      expect(lastToast()).toMatchObject({
-        key: MEETING_COMPOSER_TOAST_KEY,
-        severity: 'success',
-        summary: 'Meeting created',
-        detail: 'Weekly sync',
-        sticky: true,
-        closable: true,
-        data: { meetingUid: 'meeting-1', meetingTitle: 'Weekly sync', meetingUrl: '/meetings/meeting-1' },
+      expect(lastUiToast()).toMatchObject({
+        variant: 'success',
+        position: 'bottom-right',
+        message: 'Meeting created',
+        description: 'Weekly sync',
       });
-      // A meeting with no password carries no navigation state at all, so the link is a plain route.
-      expect(lastToast().data.meetingLinkState).toBeUndefined();
+      expect(lastUiToast().duration).toBeUndefined();
+      expect(lastUiToast().actions?.map((action) => action.label)).toEqual(['Edit meeting', 'View meeting']);
+      expect(messageService.add).not.toHaveBeenCalled();
     });
 
-    it('retires the previous announcement before raising its own', () => {
+    it('opens the meeting as a plain route when it has no password', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
 
       component['onSubmit']();
+      runAction('View meeting');
 
-      // Sticky toasts never expire, so creating several meetings in a row would stack them over the page.
-      expect(messageService.clear).toHaveBeenCalledWith(MEETING_COMPOSER_TOAST_KEY);
+      expect(navigateByUrl).toHaveBeenCalledWith('/meetings/meeting-1', { state: undefined });
+    });
+
+    it('retires the announcement when the composer opens again', async () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      await flush();
+      const first = toast.show.mock.results[0].value;
+      expect(first.dismiss).not.toHaveBeenCalled();
+
+      await openCreate();
+
+      // A toast still on screen would otherwise sit over the reopened drawer.
+      expect(first.dismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the announcement through events that stay on the same route', () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      const created = toast.show.mock.results[0].value;
+      routerEvents.next(new NavigationStart(1, '/project/overview'));
+      routerEvents.next(new NavigationEnd(2, '/meetings?time=past', '/meetings?time=past'));
+
+      expect(created.dismiss).not.toHaveBeenCalled();
+    });
+
+    it('retires the announcement when the user navigates to another route', () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      const created = toast.show.mock.results[0].value;
+      routerEvents.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+
+      expect(created.dismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('retires the announcement once View meeting has navigated', () => {
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+
+      component['onSubmit']();
+      const created = toast.show.mock.results[0].value;
+      runAction('View meeting');
+      routerEvents.next(new NavigationEnd(1, '/meetings/meeting-1', '/meetings/meeting-1'));
+
+      expect(created.dismiss).toHaveBeenCalledTimes(1);
     });
 
     it('carries the password to the meeting link when the meeting has one', () => {
       vi.spyOn(formService, 'submit').mockReturnValue(of({ ...createdMeeting, password: 'secret' } as Meeting));
 
       component['onSubmit']();
+      runAction('View meeting');
 
       // Without it the join page bounces every private or restricted meeting to /meetings/not-found.
       // Router state, not a query param, so the shared secret never reaches the address bar.
-      expect(lastToast().data.meetingLinkState).toEqual({ password: 'secret' });
+      expect(navigateByUrl).toHaveBeenCalledWith('/meetings/meeting-1', { state: { password: 'secret' } });
     });
 
     it('names an untitled meeting rather than showing a blank toast', () => {
@@ -434,7 +516,7 @@ describe('MeetingComposerHostComponent', () => {
 
       component['onSubmit']();
 
-      expect(lastToast().data.meetingTitle).toBe('Untitled meeting');
+      expect(lastUiToast().description).toBe('Untitled meeting');
     });
 
     it('falls back to a plain confirmation when the create returns no meeting', () => {
@@ -444,7 +526,7 @@ describe('MeetingComposerHostComponent', () => {
 
       // A keyed toast here would offer two actions that dead-end: there is no uid to link to.
       expect(lastToast()).toEqual({ severity: 'success', summary: 'Meeting created', detail: 'Open it from the list to review the details.' });
-      expect(lastToast().key).toBeUndefined();
+      expect(toast.show).not.toHaveBeenCalled();
     });
 
     it('confirms an edit instead of announcing a creation', () => {
@@ -472,7 +554,7 @@ describe('MeetingComposerHostComponent', () => {
 
       // The handler closes the composer, so a second emission would announce a meeting over a surface
       // that has already moved on.
-      expect(messageService.add).toHaveBeenCalledTimes(1);
+      expect(toast.show).toHaveBeenCalledTimes(1);
       expect(composer.saveCount()).toBe(1);
     });
   });
@@ -511,14 +593,14 @@ describe('MeetingComposerHostComponent', () => {
       expect(composer.context()).toMatchObject({ mode: 'create' });
     });
 
-    it('clears the toast and reopens the composer in edit mode', () => {
-      component['onEditCreatedMeeting']({
-        meetingUid: 'meeting-1',
-        meetingTitle: 'Weekly sync',
-        meetingUrl: '/meetings/meeting-1',
-      });
+    it('reopens the composer in edit mode from the toast action', async () => {
+      await openCreate();
+      vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
+      vi.spyOn(formService, 'submit').mockReturnValue(of(createdMeeting));
+      component['onSubmit']();
 
-      expect(messageService.clear).toHaveBeenCalledWith(MEETING_COMPOSER_TOAST_KEY);
+      runAction('Edit meeting');
+
       expect(composer.context()).toEqual({ mode: 'edit', meetingUid: 'meeting-1' });
     });
   });
@@ -553,6 +635,78 @@ describe('MeetingComposerHostComponent', () => {
 
       expect(composer.isOpen()).toBe(true);
       expect(formService.form().get('startTime')?.value).toBe('10:00 AM');
+    });
+  });
+
+  describe('edit scope', () => {
+    const OCCURRENCE = { occurrence_id: '1894114800', start_time: '2030-01-09T15:00:00Z', duration: 60 };
+    const RECURRING = {
+      id: 'meeting-1',
+      title: 'Weekly sync',
+      organizer: true,
+      start_time: '2030-01-02T15:00:00Z',
+      timezone: 'America/New_York',
+      meeting_type: 'Technical',
+      recurrence: { type: 2, repeat_interval: 1 },
+      occurrences: [OCCURRENCE],
+    } as unknown as Meeting;
+
+    let updateOccurrence: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      const meetingService = TestBed.inject(MeetingService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      meetingService['getMeeting'].mockImplementation(() => of(RECURRING));
+      updateOccurrence = vi.fn(() => of(undefined));
+      meetingService['updateOccurrence'] = updateOccurrence;
+    });
+
+    it('states nothing for a create', async () => {
+      await openCreate();
+
+      expect(component['editScope']()).toBeNull();
+    });
+
+    it('says the whole series is being edited when a recurring meeting opens without an occurrence', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      await flush();
+
+      expect(component['editScope']()).toEqual({ kind: 'series' });
+      expect(component['sections']().length).toBe(MEETING_COMPOSER_SECTIONS.length);
+    });
+
+    it('names the occurrence and narrows the sections for an occurrence edit', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: OCCURRENCE.occurrence_id });
+      await flush();
+
+      expect(component['editScope']()).toEqual({ kind: 'occurrence', label: 'Wed, Jan 9, 2030 · 10:00 AM EST' });
+      expect(component['sections']().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'guests', 'agenda-resources']);
+    });
+
+    it('reopens on the whole series when the organizer switches scope', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: OCCURRENCE.occurrence_id });
+      await flush();
+
+      component['onEditSeriesInstead']();
+      await flush();
+
+      expect(composer.context()).toEqual({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      expect(component['editScope']()).toEqual({ kind: 'series' });
+    });
+
+    it('saves the occurrence and says only it changed', async () => {
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: OCCURRENCE.occurrence_id });
+      await flush();
+      formService.form().get('title')?.setValue('Planning special');
+      await flush();
+
+      expect(component['canSubmit']()).toBe(true);
+
+      component['onSubmit']();
+      await flush();
+
+      expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', OCCURRENCE.occurrence_id, expect.objectContaining({ title: 'Planning special' }));
+      expect(lastToast()).toEqual(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
+      expect(composer.isOpen()).toBe(false);
     });
   });
 });
@@ -612,9 +766,7 @@ describe('MeetingComposerHostComponent — a refused edit load', () => {
         provideHttpClientTesting(),
         // `p-drawer` binds synthetic animation listeners, which throw without an animations module.
         provideNoopAnimations(),
-        // The real service, not a double: this suite renders the template, and `p-toast` subscribes
-        // to `messageObserver` on init — a stub with only `add`/`clear` fails the drawer's first
-        // change detection before the error block is ever reached.
+        // The real service: the host still raises its plain confirmations through it.
         MessageService,
         { provide: CommitteeService, useValue: {} },
         {
@@ -649,6 +801,10 @@ describe('MeetingComposerHostComponent — a refused edit load', () => {
     fixture = TestBed.createComponent(MeetingComposerHostComponent);
     composer = TestBed.inject(MeetingComposerService);
     await flush();
+  });
+
+  it('mounts no p-toast of its own, because the create toast goes through the uikit toast service', () => {
+    expect(fixture.nativeElement.querySelector('p-toast')).toBeNull();
   });
 
   it('tells a revoked organizer their access is gone, not that the request broke', async () => {
@@ -726,8 +882,7 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
         provideHttpClientTesting(),
         // `p-drawer` binds synthetic animation listeners, which throw without an animations module.
         provideNoopAnimations(),
-        // The real service: `p-toast` subscribes to `messageObserver` on init, and a stub without it
-        // fails the drawer's first change detection before any of this is on screen.
+        // The real service: the host still raises its plain confirmations through it.
         MessageService,
         { provide: CommitteeService, useValue: { getCommittees: vi.fn(() => of([])) } },
         {
@@ -780,7 +935,8 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
     expect(body()?.hasAttribute('inert')).toBe(false);
     expect(cancelButton()?.disabled).toBe(false);
     expect(closeIcon()).not.toBeNull();
-    expect(drawer().dismissible).toBe(true);
+    // A backdrop click never closes the composer — only the X, Cancel or Escape do.
+    expect(drawer().dismissible).toBe(false);
     expect(drawer().closeOnEscape).toBe(true);
   });
 
@@ -854,7 +1010,8 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
     expect(body()?.hasAttribute('inert')).toBe(false);
     expect(cancelButton()?.disabled).toBe(false);
     expect(closeIcon()).not.toBeNull();
-    expect(drawer().dismissible).toBe(true);
+    // A backdrop click never closes the composer — only the X, Cancel or Escape do.
+    expect(drawer().dismissible).toBe(false);
     expect(drawer().closeOnEscape).toBe(true);
   });
 });

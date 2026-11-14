@@ -1,0 +1,767 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
+  <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
+  <div class="flex flex-col gap-5 mt-3">
+    <lfx-mktg-breadcrumb [page]="breadcrumbPage()" />
+    <!-- Document title and revision metadata; Up lives only in the breadcrumb. -->
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="mktg-document-view-title-card">
+      <div class="flex min-w-0 flex-col gap-1">
+        @if (loading() || (!title() && !errorText())) {
+          <div class="h-6 w-56 overflow-hidden" data-testid="mktg-document-view-title-loading">
+            <lfx-mktg-skeleton variant="header" />
+          </div>
+        } @else {
+          <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">
+            {{ isAeoDocument() && title() ? aeoHeaderTitle() : title() || 'Document' }}
+          </h1>
+        }
+        @if (header(); as meta) {
+          @if (!isLinkedinDocument() && hasAssetMetadata()) {
+            <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
+          }
+        }
+        @if (view()) {
+          <p class="text-xs text-gray-500" data-testid="mktg-document-view-readiness">{{ readiness() }}</p>
+        }
+      </div>
+      <div class="grow"></div>
+      @if (loading()) {
+        <div class="ml-auto h-6 w-40 overflow-hidden" data-testid="mktg-document-view-action-loading">
+          <lfx-mktg-skeleton variant="header" />
+        </div>
+      }
+      @if (!loading() && hasAssetView() && proseView(); as current) {
+        <div class="ml-auto flex flex-wrap items-center justify-end gap-4" data-testid="mktg-document-view-title-actions">
+          @if (runAgainLink(); as link) {
+            <a
+              [routerLink]="link"
+              [queryParams]="runAgainParams()"
+              class="text-base font-medium text-blue-700 hover:text-blue-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+              data-testid="mktg-document-view-run-again"
+              >Create a new version</a
+            >
+          }
+          <ng-container [ngTemplateOutlet]="frameworkView()?.titleActions() ?? brandKitView()?.titleActions() ?? null" />
+          @if (mayApprove()) {
+            <div class="flex flex-col gap-2">
+              <lfx-button
+                label="Approve"
+                [loading]="approvingId() === current.revision.id"
+                [disabled]="writePending()"
+                data-testid="mktg-document-view-approve"
+                (onClick)="requestApproval()" />
+              @if (approvalError()) {
+                <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
+              }
+            </div>
+          }
+        </div>
+      }
+      @if (linkedinContent(); as content) {
+        @if (content.author; as author) {
+          <span class="text-sm text-gray-500" data-testid="mktg-linkedin-document-author">
+            {{ content.isAuthor ? 'Writing as' : 'Drafted by' }} {{ author.name || 'name unavailable' }}
+            @if (view()?.revision?.createdAt; as storedAt) {
+              · <span data-testid="mktg-linkedin-document-date">{{ storedAt | date: 'd MMM y' }}</span>
+            }
+            @if (content.isAuthor) {
+              ·
+              <button
+                type="button"
+                class="text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-600"
+                (click)="onEditProfile()"
+                data-testid="mktg-linkedin-document-edit-profile">
+                Edit profile
+              </button>
+            }
+          </span>
+        }
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-linkedin-draft-another">
+          <button type="button" class="text-sm font-medium text-blue-700 hover:underline" (click)="onDraftAnother()">Draft another post</button>
+        </div>
+      } @else if (view(); as current) {
+        @if (!isLinkedinDocument() && !isAeoDocument() && !hasAssetView() && current.revision.format !== 'json') {
+          <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
+            Revision {{ current.revision.number }} of {{ current.revisions.length }}
+            @if (current.revision.latest) {
+              · Current
+            }
+            @if (current.revision.status) {
+              · {{ current.revision.status }}
+            }
+          </span>
+        }
+      }
+      @if (isAeoDocument() && view()?.aeoGeoReport) {
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="mktg-aeo-report-actions">
+          <a
+            [routerLink]="['../../..', runAgent()?.id]"
+            [queryParams]="runAgainParams()"
+            queryParamsHandling="merge"
+            class="text-sm font-medium text-blue-700 hover:underline"
+            data-testid="mktg-document-view-run-again"
+            (click)="onRunAgain()"
+            >Audit again</a
+          >
+          <lfx-button label="Download PDF" icon="fa-light fa-file-pdf" (onClick)="onDownload()" data-testid="mktg-document-view-download" />
+        </div>
+      }
+      @if (memberResult(); as result) {
+        <div class="ml-auto flex flex-wrap items-center gap-4" data-testid="member-360-result-actions">
+          <a
+            [routerLink]="result.runRoute()"
+            [queryParams]="result.projectParams()"
+            class="text-sm font-medium text-blue-700 hover:underline"
+            data-testid="member-360-new-run"
+            >Create another Member 360</a
+          >
+          <lfx-button
+            label="Download workbook"
+            icon="fa-light fa-download"
+            [loading]="downloadingWorkbook()"
+            [disabled]="!writer()"
+            (onClick)="onDownloadWorkbook()"
+            data-testid="member-360-download" />
+        </div>
+      }
+    </div>
+    @if (workbookError()) {
+      <lfx-message severity="error" [text]="workbookError()" data-testid="mktg-document-view-workbook-error" />
+    }
+
+    @if (!closedRun() && !loading() && (view() || runState() || restoreNotice()) && runAgentId() && !hasAssetView() && !isLinkedinDocument()) {
+      <a
+        [routerLink]="runAgainLink()"
+        [queryParams]="runAgainParams()"
+        class="w-fit text-sm font-semibold text-blue-600 hover:text-blue-800"
+        data-testid="mktg-document-view-run-again"
+        >{{ restoreNotice() && !view() && !runState() ? 'Open intake' : 'Run again' }}</a
+      >
+    }
+
+    @if (closedRun(); as run) {
+      <section class="flex flex-col gap-3 text-sm text-gray-600" data-testid="mktg-document-view-closed-run">
+        <lfx-mktg-closed-run-message [run]="run" messageTestId="mktg-document-view-closed-message" />
+        <a
+          [routerLink]="newerRunsLink()"
+          [queryParams]="newerRunsParams()"
+          class="w-fit font-medium text-blue-700 hover:underline"
+          data-testid="mktg-document-view-newer-run"
+          >{{ run.replacedBy ? 'Open the newer run' : 'View started runs' }}</a
+        >
+      </section>
+    }
+    @if (!closedRun()) {
+      <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
+    }
+    @if (!isAeoDocument()) {
+      @if (memberQuestionsCreator() && selectedRun()?.state === 'questions') {
+        <p class="text-sm text-gray-500" role="status" data-testid="member-360-needs-input">
+          Member 360 needs your answers — continue from the Member 360 page in the tab where you started it.
+        </p>
+      }
+      <lfx-mktg-run-progress
+        [project]="projectUid()"
+        [projectName]="projectName()"
+        [announceState]="false"
+        [agentKey]="params().agentKey"
+        [documentId]="params().documentId"
+        [runId]="runParam() || handoffRunId()"
+        [polling]="publicProgressPolling()"
+        [continuous]="publicProgressPolling()"
+        [refreshKey]="progressRefreshKey()"
+        [loadRevision]="readStoredBody()"
+        [revisionId]="revisionParam()"
+        [expectedPending]="!!generationParam()"
+        [viewSnapshot]="view()"
+        [snapshot]="runDetail()"
+        [localProgress]="localProgress()"
+        [failureText]="failureText()"
+        [unconfirmed]="unconfirmed()"
+        [submittingGeneration]="submittingGeneration()"
+        [retrying]="retrying()"
+        [errorText]="errorText()"
+        [waitingForQuestions]="waitingForQuestions()"
+        [answersSupported]="params().agentKey === 'member-360' ? false : null"
+        [runAgentId]="runAgentId()"
+        [externalActivity]="visibleRunActivity()"
+        [suppressCard]="runFailed() || !!closedRun() || (memberQuestionsCreator() && selectedRun()?.state === 'questions')"
+        [headless]="loading() || !!closedRun() || (publicProgressPolling() && runState() !== 'failed')"
+        (observed)="onPublicProgress($event)"
+        (readError)="onPublicProgressError($event)"
+        (retry)="onRetryRun()"
+        (openIntake)="onOpenIntake()"
+        (refresh)="onRefreshProgress()" />
+    }
+    @if (!publicProgressPolling() && refreshWarning()) {
+      <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">
+        <p class="text-xs text-gray-500">{{ refreshWarning() }}</p>
+        <lfx-button
+          label="Refresh"
+          [text]="true"
+          [disabled]="submittingGeneration()"
+          (onClick)="onRefreshProgress()"
+          data-testid="mktg-document-view-refresh-progress" />
+      </div>
+    }
+
+    @if (answeredNotice(); as concurrent) {
+      <lfx-message severity="info" [text]="concurrent.message" data-testid="mktg-document-view-answered-note" />
+    }
+    @if (restoreNotice()) {
+      <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />
+    }
+    @if (errorText() && (runFailed() || runState() !== 'failed')) {
+      <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
+      @if (runFailed()) {
+        <a
+          [routerLink]="runAgainLink()"
+          [queryParams]="runAgainParams()"
+          class="font-semibold text-blue-600 hover:text-blue-800"
+          data-testid="member-360-run-again"
+          >Run again</a
+        >
+        @if (failureDetails()) {
+          <details class="rounded-lg border border-gray-200 bg-white p-4" data-testid="member-360-failure-details">
+            <summary class="cursor-pointer font-semibold text-gray-600">Details</summary>
+            <p class="mt-3 whitespace-pre-wrap break-words text-sm text-gray-600" data-testid="member-360-failure-message">{{ failureDetails() }}</p>
+          </details>
+        }
+      } @else if (!isAeoDocument()) {
+        <lfx-button label="Retry" [text]="true" [disabled]="submittingGeneration()" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
+      }
+    }
+    @if (profileWarning()) {
+      <lfx-message
+        severity="warn"
+        text="Your post is saved, but your profile is not saved. Edit profile to save the settings explicitly when writes are available."
+        data-testid="mktg-linkedin-profile-warning" />
+    }
+    @if (notice()) {
+      <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
+    }
+
+    <!-- AEO/GEO presentation seam: no other document type enters this block. -->
+    @if (isAeoDocument()) {
+      @if (!loading() && errorText()) {
+        <a
+          [routerLink]="['../../..', runAgent()?.id]"
+          (click)="onRunAgain()"
+          [queryParams]="runAgainParams()"
+          queryParamsHandling="merge"
+          class="text-blue-600 underline"
+          data-testid="mktg-document-view-run-again"
+          >Run again</a
+        >
+      }
+      @if (retryGenerating()) {
+        <button
+          type="button"
+          class="self-start min-h-10 rounded-lg border border-gray-300 px-4 text-blue-600"
+          data-testid="mktg-document-view-retry"
+          (click)="reload.set(reload() + 1)">
+          Check again
+        </button>
+      }
+      @if (loading()) {
+        @if (generating() && activity().length > 0) {
+          <lfx-mktg-run-activity
+            [activity]="activity()"
+            [startedAt]="aeoActivityStartedAt()"
+            [title]="'Auditing the site…'"
+            [icon]="runAgent()?.icon ?? ''"
+            [iconClass]="activityIconClass()"
+            data-testid="mktg-document-view-activity" />
+        } @else if (runFirstPaint()) {
+          <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-document-view-run-loading" />
+        } @else {
+          <div
+            class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500"
+            role="status"
+            data-testid="mktg-document-view-loading">
+            <span class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-gray-200 border-t-blue-600" aria-hidden="true"></span>
+            @if (generating()) {
+              <div data-testid="mktg-document-view-generating">
+                <h2 class="font-semibold text-gray-900">Generating your report</h2>
+                <p>The agent is auditing the site. This view will open the report once it is stored. Three to six minutes.</p>
+              </div>
+            } @else {
+              Loading the document…
+            }
+          </div>
+        }
+      }
+    }
+    <ng-template #auditReport>
+      @if (view()?.aeoGeoReport; as report) {
+        <section
+          class="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white px-6 py-6"
+          data-testid="mktg-document-view-report-summary"
+          aria-label="Audit summary">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <ng-container [ngTemplateOutlet]="auditTitle" />
+            </div>
+          </div>
+          <!-- The title and its facts open the web summary and the printed report alike (the print drops the storage note). -->
+          <ng-template #auditTitle let-print="print">
+            <h2
+              class="text-2xl font-bold break-after-avoid text-gray-900"
+              [attr.data-testid]="print ? 'mktg-document-view-print-headline' : 'mktg-document-view-headline'">
+              {{ report.report?.headline ?? aeoTitle() }}
+            </h2>
+            <p class="text-sm text-gray-500" [attr.data-testid]="print ? 'mktg-document-view-print-subline' : 'mktg-document-view-audit-subline'">
+              AEO/GEO report — {{ view()?.revision?.createdAt | date: 'd MMM y' }}
+              @if (report.auditCounts; as counts) {
+                ·
+                @if (counts.keyPagesNamed === 0) {
+                  no key pages named,
+                } @else {
+                  {{ counts.keyPagesNamed }} key pages named,
+                }
+                {{ counts.pagesAudited }} audited
+              }
+              @if (!print) {
+                · stored under AEO/GEO reports
+              }
+            </p>
+          </ng-template>
+          <ng-template #auditHero let-print="print">
+            <!-- 200px summary column matches the design board; stack it on narrow screens. The score card never splits across printed pages. -->
+            <div class="grid grid-cols-1 gap-6 break-inside-avoid md:grid-cols-[200px_1fr]">
+              <div class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-center">
+                <span class="text-xs uppercase tracking-wider text-gray-500">Overall score</span>
+                <div
+                  class="text-4xl font-bold tabular-nums"
+                  [ngClass]="report.overall_score >= 7 ? 'text-emerald-700' : 'text-amber-700'"
+                  [attr.data-testid]="print ? 'mktg-document-view-print-overall' : 'mktg-document-view-overall'">
+                  {{ report.overall_score | number: '1.1-1' }}<span class="text-lg text-gray-500"> / 10</span>
+                </div>
+                <p class="text-sm text-gray-700" [attr.data-testid]="print ? 'mktg-document-view-print-verdict' : 'mktg-document-view-verdict'">
+                  {{ report.verdict }}
+                </p>
+              </div>
+              <div class="flex min-w-0 flex-col gap-3" [attr.data-testid]="print ? 'mktg-document-view-print-scorecard' : 'mktg-document-view-scorecard'">
+                <!-- Page-7 AeoGeoResult.dc.html specifies 220px labels and 56px score columns. -->
+                @for (row of scoreRows(); track row.key) {
+                  <div
+                    class="grid grid-cols-[1fr_56px] items-center gap-3 text-sm sm:grid-cols-[minmax(0,220px)_1fr_56px]"
+                    [attr.data-testid]="(print ? 'mktg-document-view-print-score-' : 'mktg-document-view-score-') + row.key">
+                    <span>{{ row.label }}</span>
+                    <div class="hidden h-2.5 overflow-hidden rounded-full bg-gray-100 sm:block" aria-hidden="true">
+                      <div class="h-full rounded-full" [ngClass]="row.score >= 7 ? 'bg-emerald-600' : 'bg-amber-600'" [style.width.%]="row.score * 10"></div>
+                    </div>
+                    <span class="text-right font-mono">{{ row.score }}/10</span>
+                  </div>
+                }
+                <p class="text-xs text-gray-500">
+                  Six categories, scored out of 10; the overall is their simple average to one decimal. Green at 7 and above, amber below.
+                </p>
+              </div>
+            </div>
+          </ng-template>
+          <ng-container [ngTemplateOutlet]="auditHero" />
+          @if (report.report; as typed) {
+            <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
+          }
+          <p class="text-sm text-gray-500">Report · one-off document · never revised. Audit again creates a separate report.</p>
+        </section>
+        <!-- Reuse the asset pages' print-only CSS and browser-print service; never download Markdown. The report flows
+             through one sheet row: the sheet repeats the page's top and bottom room on every page it runs over, and its
+             head group carries the running head the other Marketing OS prints wear (Chromium repeats it per page; WebKit
+             prints a table's head once). A typed report opens with its title, then the score card, then the report without
+             its own headline; a legacy Markdown report keeps the heading its Markdown carries. No page numbers: the
+             zero-margin Chromium page setup leaves no margin area for a counter. -->
+        <div [class]="aeoPrintOnlyClass" data-testid="mktg-document-view-print">
+          <article class="lfx-framework-print bg-white text-gray-900 print:[print-color-adjust:exact] print:[-webkit-print-color-adjust:exact]">
+            <lfx-mktg-print-sheet [head]="auditRunningHead">
+              <lfx-mktg-print-sheet-row [flows]="true">
+                <div class="flex flex-col gap-5">
+                  @if (report.report; as typed) {
+                    <!-- The typed report: its title and facts open the print, then the score card, then the report without its own headline. -->
+                    <div class="flex flex-col break-inside-avoid">
+                      <ng-container [ngTemplateOutlet]="auditTitle" [ngTemplateOutletContext]="{ print: true }" />
+                    </div>
+                    <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
+                    <lfx-aeo-geo-report [report]="typed" [showHeadline]="false" />
+                  } @else {
+                    <!-- A legacy report without a typed sidecar: the score card, then its Markdown, which carries its own title. -->
+                    <ng-container [ngTemplateOutlet]="auditHero" [ngTemplateOutletContext]="{ print: true }" />
+                    <lfx-markdown-renderer [content]="view()?.markdown ?? ''" />
+                  }
+                </div>
+              </lfx-mktg-print-sheet-row>
+            </lfx-mktg-print-sheet>
+          </article>
+        </div>
+        <ng-template #auditRunningHead>
+          <lfx-mktg-print-running-head
+            [brand]="printBrand()"
+            [label]="projectName() + ' AEO/GEO report · ' + (view()?.revision?.createdAt | date: 'd MMM y')" />
+        </ng-template>
+      }
+    </ng-template>
+    @if (isAeoDocument() && !view()?.aeoGeoReport?.report) {
+      <ng-container [ngTemplateOutlet]="auditReport" />
+    }
+
+    @if (loading() && !isAeoDocument()) {
+      @if (runFirstPaint()) {
+        <lfx-mktg-skeleton variant="run-page" label="Checking the run…" data-testid="mktg-document-view-run-loading" />
+      } @else {
+        <lfx-mktg-skeleton
+          variant="card"
+          label="Loading the document…"
+          class="rounded-xl border border-gray-200 bg-white px-6 py-5"
+          data-testid="mktg-document-view-loading" />
+      }
+    } @else if (linkedinContent(); as content) {
+      <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
+        <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">
+          @if (content.source; as source) {
+            <p class="min-w-0 grow break-words text-sm" data-testid="mktg-linkedin-document-source">
+              <span class="font-semibold">Drafted from</span> {{ source.label }}
+              @if (source.label !== 'pasted text') {
+                · {{ source.fetched ? 'fetched' : 'provided' }}
+              }
+              @if (source.words) {
+                · {{ source.words }} words
+              }
+            </p>
+          }
+          <p class="text-sm text-gray-500">A new draft is a new run, stored under LinkedIn posts.</p>
+          <div class="flex w-full flex-wrap items-center gap-3">
+            <label for="linkedin-document-share-link" class="font-semibold">Link to share</label>
+            <lfx-input-text
+              [form]="linkForm"
+              control="share_link"
+              inputId="linkedin-document-share-link"
+              (keydown.enter)="$event.preventDefault(); onSaveLink()"
+              type="url"
+              [readonly]="!editingLink() || savingLink()"
+              [maxlength]="maxShareLinkChars"
+              describedBy="linkedin-document-share-hint"
+              placeholder="No link saved"
+              styleClass="w-full min-h-10"
+              class="min-w-0 grow"
+              data-testid="mktg-linkedin-share-link" />
+            @if (editingLink()) {
+              <lfx-button label="Save link" [disabled]="savingLink()" [loading]="savingLink()" (onClick)="onSaveLink()" data-testid="mktg-linkedin-save-link" />
+              <lfx-button label="Cancel" [text]="true" [disabled]="savingLink()" (onClick)="onCancelLink()" data-testid="mktg-linkedin-cancel-link" />
+            } @else {
+              <lfx-button label="Edit link" [text]="true" (onClick)="onEditLink()" data-testid="mktg-linkedin-edit-link" />
+            }
+            <p id="linkedin-document-share-hint" class="text-sm text-gray-500">{{ shareLinkHint }}</p>
+            @if (linkError()) {
+              <p role="alert" class="w-full text-sm text-red-700" data-testid="mktg-linkedin-share-error">{{ linkError() }}</p>
+            }
+          </div>
+        </section>
+        <h2 class="text-lg font-bold">Three options</h2>
+        <lfx-linkedin-post-options
+          [options]="content.options"
+          [shareLink]="content.answers[shareLinkAnswerKey]"
+          [notes]="content.notes"
+          [addLinkDisabled]="savingLink()"
+          (addLink)="onEditLink()" />
+      </section>
+    } @else if (isLinkedinDocument() && view(); as current) {
+      <!-- Older one-off posts stay readable without inheriting kit-asset approval chrome. -->
+      <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+        @if (current.revision.format === 'json') {
+          <lfx-message
+            severity="error"
+            [text]="'This revision could not be displayed. Revision ' + current.revision.number + '.'"
+            data-testid="mktg-document-view-unreadable-json" />
+        } @else {
+          <lfx-markdown-renderer [content]="current.markdown" [headingLevelOffset]="1" />
+        }
+      </article>
+    } @else if (proseView(); as current) {
+      <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
+      <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
+        @if (exportLookupTarget() && !contentReady()) {
+          <lfx-mktg-skeleton
+            variant="card"
+            [rows]="3"
+            class="min-h-80 rounded-xl border border-gray-200 bg-white p-6"
+            data-testid="mktg-document-view-content-skeleton" />
+        }
+        <!-- Readers stay mounted while the whole exportable document area waits for its first answers. -->
+        <section
+          aria-label="Document content"
+          class="flex min-w-0 flex-col gap-3 print:block"
+          [class.hidden]="exportLookupTarget() && !contentReady()"
+          data-testid="mktg-document-view-content">
+          @if (isAeoDocument() && current.aeoGeoReport?.report) {
+            <ng-container [ngTemplateOutlet]="auditReport" />
+          }
+          @if (asset(); as framework) {
+            <lfx-mktg-framework-view
+              class="block min-w-0"
+              [projectName]="projectName()"
+              [asset]="framework"
+              state="ready"
+              [version]="current.revision.number"
+              [showMetadata]="false"
+              [kitRead]="printKitRead()"
+              [approvedAsset]="approvedFramework()"
+              [approvedVersion]="approvedVersion()"
+              [approvedCreatedAt]="approvedCreatedAt()"
+              [approvedAt]="approvedAt()"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
+              [approvedError]="approvedView().error"
+              [exportTarget]="exportTarget()"
+              [exportLookupTarget]="exportLookupTarget()"
+              (exportLookupAnswered)="exportLookupAnsweredKey.set($event)"
+              [viewingDraft]="!current.revision.approval"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-framework" />
+          } @else if (boilerplates(); as boilerplatesAsset) {
+            <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
+            <lfx-mktg-boilerplates-view
+              class="block min-w-0"
+              [projectName]="projectName()"
+              [asset]="boilerplatesAsset"
+              [commentsEnabled]="commentScope() !== null"
+              [version]="current.revision.number"
+              [showMetadata]="false"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-boilerplates" />
+          } @else if (faq(); as faqAsset) {
+            <lfx-mktg-faq-view
+              class="block min-w-0"
+              [projectName]="projectName()"
+              [asset]="faqAsset"
+              [revisions]="revisionRows()"
+              [commentsEnabled]="commentScope() !== null"
+              [version]="current.revision.number"
+              [showMetadata]="false"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-faq" />
+          } @else if (brandKit(); as kit) {
+            <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
+            <lfx-brand-kit-web-view
+              class="block min-w-0"
+              [kit]="kit"
+              [commentsEnabled]="commentScope() !== null"
+              [version]="current.revision.number"
+              [showMetadata]="false"
+              [approvedKit]="approvedKit()"
+              [approvedVersion]="approvedVersion()"
+              [approvedApproval]="approvedApproval()"
+              [approvedCreatedAt]="approvedCreatedAt()"
+              [approvedLoading]="approvedView().loading && approvedReadIsExplicit()"
+              [approvedError]="approvedView().error"
+              [exportTarget]="exportTarget()"
+              [exportLookupTarget]="exportLookupTarget()"
+              (exportLookupAnswered)="exportLookupAnsweredKey.set($event)"
+              [viewingDraft]="!current.revision.approval"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-brand-kit" />
+          } @else if (unsupportedAsset()) {
+            <div data-testid="mktg-document-view-unsupported-asset">
+              <lfx-message
+                severity="warn"
+                [text]="
+                  'This revision could not be displayed. Revision ' +
+                  current.revision.number +
+                  '. This stored asset cannot be rendered in its structured view. Generate a new revision; the stored history is unchanged.'
+                "
+                data-testid="mktg-document-view-unreadable-json" />
+            </div>
+          } @else if (!current.aeoGeoReport?.report) {
+            <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+              @if (current.revision.format === 'json') {
+                <lfx-message
+                  severity="error"
+                  [text]="'This revision could not be displayed. Revision ' + current.revision.number + '.'"
+                  data-testid="mktg-document-view-unreadable-json" />
+              } @else {
+                <lfx-markdown-renderer [content]="current.markdown" [headingLevelOffset]="1" />
+              }
+            </article>
+          }
+        </section>
+
+        <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4">
+          @if (commentScope(); as scope) {
+            @if (!railReady()) {
+              <lfx-mktg-skeleton
+                variant="card"
+                [rows]="2"
+                class="min-h-96 rounded-xl border border-gray-200 bg-white p-4"
+                data-testid="mktg-document-view-comments-skeleton" />
+            }
+            <lfx-mktg-comments-panel
+              class="block"
+              [class.hidden]="!railReady()"
+              [scope]="scope"
+              [content]="commentContent()"
+              [priorVersion]="current.revision.draftVersion ?? null"
+              (ready)="onRedraftReady(scope, $event)" />
+          }
+          <!-- Revisions: open or restore any other revision -->
+          <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
+            <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
+              @for (revision of visibleRevisionRows(); track revision.id) {
+                <!-- Reserve two label lines: font settling can move Current between an inline and wrapped pill. -->
+                <li
+                  class="flex min-h-16 items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
+                  [ngClass]="revision.id === current.revision.id && !isAeoDocument() ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
+                  [class.bg-gray-50]="isAeoDocument()"
+                  [attr.data-testid]="'mktg-document-view-revision-' + revision.number">
+                  <div class="min-w-0 flex-1 break-words">
+                    <span [attr.data-testid]="'mktg-document-view-revision-label-' + revision.number">
+                      @if (isAeoDocument()) {
+                        <span>{{ revision.createdAt | date: 'd MMM y, HH:mm' }}</span>
+                      } @else {
+                        <span class="font-mono" [textContent]="'v' + revision.number"></span>
+                      }
+                      <span [textContent]="revision.approval ? ' · Approved' : ' · Draft'"></span>
+                      @if (revision.createdAt && !isAeoDocument()) {
+                        <span [textContent]="' · ' + (revision.createdAt | date: 'd MMM')"></span>
+                      }
+                      @if (revision.latest) {
+                        <span [textContent]="' · '"></span>
+                        <!-- The design specifies 12px pill type; text-xs undershoots at the app's 14px root size. -->
+                        <span
+                          class="inline-flex items-center rounded-full px-2 py-px text-[12px]"
+                          [ngClass]="isAeoDocument() ? 'bg-blue-100 font-semibold text-blue-700' : 'bg-blue-700 font-bold text-white'"
+                          [attr.data-testid]="'mktg-document-view-current-' + revision.number"
+                          >Current</span
+                        >
+                      }
+                    </span>
+                  </div>
+                  @if (revision.id === current.revision.id) {
+                    <span class="flex w-16 shrink-0 flex-col items-end gap-1 text-right text-gray-500">
+                      <span>here</span>
+                      @if (!revision.latest && current.type.kind === 'living') {
+                        <button
+                          type="button"
+                          data-testid="mktg-document-view-viewed-make-current"
+                          class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          [disabled]="writePending()"
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="hover"
+                          tooltipPosition="top"
+                          aria-describedby="mktg-document-view-make-current-help"
+                          (click)="onRestore(revision)">
+                          @if (restoringId() === revision.id) {
+                            Saving…
+                          } @else {
+                            Make current
+                          }
+                        </button>
+                      }
+                    </span>
+                  } @else {
+                    <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
+                    <span
+                      class="flex w-16 shrink-0 flex-col items-end gap-1 text-right font-normal"
+                      [attr.data-testid]="'mktg-document-view-row-actions-' + revision.number">
+                      <a
+                        [routerLink]="submittingGeneration() ? null : []"
+                        [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+                        [attr.tabindex]="submittingGeneration() ? -1 : null"
+                        [queryParams]="{ revision: revision.id }"
+                        queryParamsHandling="merge"
+                        class="text-blue-600 hover:text-blue-800"
+                        [attr.aria-label]="'Open revision ' + revision.number"
+                        [attr.data-testid]="'mktg-document-view-open-' + revision.number"
+                        >Open</a
+                      >
+                      @if (!revision.latest && current.type.kind === 'living') {
+                        <button
+                          type="button"
+                          class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          [disabled]="writePending()"
+                          [attr.aria-label]="'Make revision ' + revision.number + ' current'"
+                          [attr.data-testid]="'mktg-document-view-restore-' + revision.number"
+                          [pTooltip]="makeCurrentHint"
+                          lfxTooltipHostFocus
+                          tooltipEvent="hover"
+                          tooltipPosition="top"
+                          aria-describedby="mktg-document-view-make-current-help"
+                          (click)="onRestore(revision)">
+                          {{ restoringId() === revision.id ? 'Saving…' : 'Make current' }}
+                        </button>
+                      }
+                    </span>
+                  }
+                </li>
+              }
+            </ol>
+            @if (revisionRows().length > revisionPreviewCount) {
+              <button
+                type="button"
+                class="self-start text-sm text-blue-700 underline hover:text-blue-900"
+                aria-controls="mktg-document-view-revision-list"
+                [attr.aria-expanded]="showAllRevisions()"
+                data-testid="mktg-document-view-show-all-revisions"
+                (click)="onToggleAllRevisions()">
+                {{ showAllRevisions() ? 'Show fewer ▴' : 'Show all ' + revisionRows().length + ' ▾' }}
+              </button>
+            }
+            <p id="mktg-document-view-make-current-help" class="sr-only">{{ makeCurrentHint }}</p>
+          </div>
+
+          @if (current.type.agentKey === frameworkKey) {
+            @if (!railReady()) {
+              <lfx-mktg-skeleton
+                variant="card"
+                [rows]="2"
+                class="min-h-56 rounded-xl border border-gray-200 bg-white p-4"
+                data-testid="mktg-document-view-downstream-skeleton" />
+            }
+            <lfx-mktg-downstream
+              class="block empty:hidden"
+              [class.hidden]="!railReady()"
+              [project]="current.project"
+              [projectSlug]="projectSlug()"
+              [refreshKey]="current.approvedCurrent?.revisionId ?? ''"
+              [writer]="writer()"
+              (settled)="downstreamSettledKey.set($event)" />
+          }
+
+          <!-- Reveal the lower rail and exportable content together after all first reads answer. -->
+          @if (!railReady()) {
+            <lfx-mktg-skeleton
+              variant="card"
+              [rows]="2"
+              class="min-h-56 rounded-xl border border-gray-200 bg-white p-4"
+              data-testid="mktg-document-view-about-skeleton" />
+          }
+          <div
+            class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4"
+            [class.hidden]="!railReady()"
+            data-testid="mktg-document-view-about">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">About this document</h2>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+              <dt class="text-gray-500">Agent</dt>
+              <dd>{{ current.type.agentName }}</dd>
+              <dt class="text-gray-500">Stored</dt>
+              <dd>{{ current.revision.createdAt | date: 'd MMM y, HH:mm' }}</dd>
+            </dl>
+          </div>
+        </section>
+      </div>
+    }
+    @if (!loading()) {
+      @if (view(); as current) {
+        @if (current.member360; as envelope) {
+          @if (historyError()) {
+            <lfx-message severity="warn" [text]="historyError()" data-testid="mktg-document-view-history-error" />
+          }
+          <lfx-member-360-result [envelope]="envelope" [history]="runHistory()" [documentId]="current.documentId" />
+        }
+      }
+    }
+  </div>
+</div>

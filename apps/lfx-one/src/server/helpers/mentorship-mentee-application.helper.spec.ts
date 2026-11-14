@@ -5,7 +5,7 @@
 // partially-compiled @angular/common and needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import { MentorshipUpstreamApplication, MentorshipUpstreamProgram, MentorshipUpstreamProgramTerm, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
+import { MentorshipUpstreamApplication, MentorshipUpstreamProgramTermApplyTarget, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -13,6 +13,7 @@ import {
   mapMentorshipMenteeApplicationHistory,
   mapMentorshipMenteeApplicationTask,
   mapMentorshipMenteeApplyTarget,
+  resolveMentorshipMenteeTaskDueDate,
 } from './mentorship-mentee-application.helper';
 
 const baseTask: MentorshipUpstreamTask = {
@@ -41,6 +42,23 @@ const baseApplication: MentorshipUpstreamApplication = {
   term: { id: 'term-1', name: 'Fall 2026', status: 'open', application_end_date: '2026-08-01' },
 };
 
+describe('resolveMentorshipMenteeTaskDueDate', () => {
+  it("uses the task's own due date over the term's application close", () => {
+    expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, due_date: '2026-07-15' }, '2026-08-01')).toBe('2026-07-15T00:00:00Z');
+  });
+
+  it("falls back to the term's application close, as the end of its UTC day, for a prerequisite with no due date", () => {
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01')).toBe('2026-08-01T23:59:59.999Z');
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, '2026-08-01T23:59:59Z')).toBe('2026-08-01T23:59:59Z');
+  });
+
+  it('gives no due date to a non-prerequisite or uncategorized task, or when the term has no application close', () => {
+    expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, category: 'non_prerequisite' }, '2026-08-01')).toBeUndefined();
+    expect(resolveMentorshipMenteeTaskDueDate({ ...baseTask, category: undefined }, '2026-08-01')).toBeUndefined();
+    expect(resolveMentorshipMenteeTaskDueDate(baseTask, undefined)).toBeUndefined();
+  });
+});
+
 describe('mapMentorshipMenteeApplicationTask', () => {
   it('maps an open task with no submission', () => {
     expect(mapMentorshipMenteeApplicationTask(baseTask, '2026-08-01')).toEqual({
@@ -50,8 +68,8 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       category: 'prerequisite',
       status: 'incomplete',
       submitFile: null,
-      fileUrl: undefined,
-      dueDate: '2026-08-01T00:00:00Z',
+      hasFile: false,
+      dueDate: '2026-08-01T23:59:59.999Z',
       submittedOn: undefined,
       updatedOn: '2026-06-05T10:00:00Z',
     });
@@ -68,12 +86,18 @@ describe('mapMentorshipMenteeApplicationTask', () => {
       {
         ...baseTask,
         submit_file: 'required',
-        file: 'https://example.com/files/answer.pdf',
+        file: '/mentorship/v1/tasks/task-1/file-download',
         due_date: '2026-07-15',
       },
       '2026-08-01'
     );
-    expect(task).toMatchObject({ submitFile: 'required', fileUrl: 'https://example.com/files/answer.pdf', dueDate: '2026-07-15T00:00:00Z' });
+    expect(task).toMatchObject({ submitFile: 'required', hasFile: true, dueDate: '2026-07-15T00:00:00Z' });
+    // The upstream download route needs the caller's token, so it never reaches the browser.
+    expect(JSON.stringify(task)).not.toContain('file-download');
+  });
+
+  it('reads any submit_file value as required, since upstream does', () => {
+    expect(mapMentorshipMenteeApplicationTask({ ...baseTask, submit_file: 'yes' }, '2026-08-01').submitFile).toBe('required');
   });
 
   it('gives a non-prerequisite task without its own due date no due date', () => {
@@ -103,7 +127,6 @@ describe('mapMentorshipMenteeApplication', () => {
       upstreamStatus: 'pending',
       createdOn: '2026-06-28T10:00:00Z',
       updatedOn: '2026-06-29T10:00:00Z',
-      decisionExpectedDate: '2026-08-01T00:00:00Z',
       tasks: [mapMentorshipMenteeApplicationTask(baseTask, '2026-08-01')],
     });
   });
@@ -121,7 +144,7 @@ describe('mapMentorshipMenteeApplication', () => {
 
   it('falls back to the term id on the row when the term is not embedded', () => {
     const result = mapMentorshipMenteeApplication({ ...baseApplication, program: undefined, term: undefined }, []);
-    expect(result).toMatchObject({ programId: '', programName: '', term: { id: 'term-1', name: '' }, decisionExpectedDate: undefined });
+    expect(result).toMatchObject({ programId: '', programName: '', term: { id: 'term-1', name: '' } });
   });
 });
 
@@ -154,50 +177,24 @@ describe('mapMentorshipMenteeApplicationHistory', () => {
 });
 
 describe('mapMentorshipMenteeApplyTarget', () => {
-  const program: MentorshipUpstreamProgram = { id: 'prog-1', name: 'Test Program', status: 'published', project_name: 'Test Project' };
-  const term: MentorshipUpstreamProgramTerm = {
-    id: 'term-1',
-    program_id: 'prog-1',
-    name: 'Fall 2026',
-    status: 'open',
-    active_users: 0,
-    application_start_date: '2026-06-01',
-    application_end_date: '2026-08-01',
-    created_on: '2026-05-01T10:00:00Z',
-    updated_on: '2026-05-01T10:00:00Z',
+  const target: MentorshipUpstreamProgramTermApplyTarget = {
+    program_name: 'Test Program',
+    project_name: 'Test Project',
+    term_name: 'Fall 2026',
+    accepting_applications: true,
   };
-  const insideWindow = new Date('2026-07-01T12:00:00Z');
 
-  it('maps the program and term names, and accepts applications inside the window of an open term', () => {
-    expect(mapMentorshipMenteeApplyTarget(program, term, insideWindow)).toEqual({
+  it('maps the names and whether upstream accepts applications', () => {
+    expect(mapMentorshipMenteeApplyTarget(target)).toEqual({
       programName: 'Test Program',
       projectName: 'Test Project',
       termName: 'Fall 2026',
       acceptingApplications: true,
     });
+    expect(mapMentorshipMenteeApplyTarget({ ...target, accepting_applications: false }).acceptingApplications).toBe(false);
   });
 
   it('leaves the project empty when the program has none', () => {
-    expect(mapMentorshipMenteeApplyTarget({ ...program, project_name: undefined }, term, insideWindow).projectName).toBe('');
-  });
-
-  it.each([
-    ['a closed term', { status: 'closed' as const }, insideWindow],
-    ['a deleted term', { status: 'deleted' as const }, insideWindow],
-    ['a window that has not opened', {}, new Date('2026-05-31T23:59:59Z')],
-    ['a window that has closed', {}, new Date('2026-08-01T00:00:01Z')],
-  ])('does not accept applications for %s', (_label, overrides, now) => {
-    expect(mapMentorshipMenteeApplyTarget(program, { ...term, ...overrides }, now).acceptingApplications).toBe(false);
-  });
-
-  it('reads the window dates as UTC midnight, as upstream does, so both edges still accept', () => {
-    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-06-01T00:00:00Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T00:00:00Z')).acceptingApplications).toBe(true);
-  });
-
-  it('leaves a side of the window open when its date is missing', () => {
-    const openEnded = { ...term, application_start_date: undefined, application_end_date: undefined };
-    expect(mapMentorshipMenteeApplyTarget(program, openEnded, new Date('2020-01-01T00:00:00Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, openEnded, new Date('2030-01-01T00:00:00Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget({ ...target, project_name: undefined }).projectName).toBe('');
   });
 });

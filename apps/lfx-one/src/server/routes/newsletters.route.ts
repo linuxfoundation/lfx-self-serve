@@ -4,6 +4,8 @@
 import { Router } from 'express';
 
 import { NewsletterController } from '../controllers/newsletter.controller';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
+import { newsletterTestSendRateLimiter } from '../middleware/rate-limit.middleware';
 
 // `mergeParams: true` so the controller sees `:projectUid` even though the
 // sub-router is mounted under `/api/projects/:projectUid/newsletters` in
@@ -15,6 +17,9 @@ const newsletterController = new NewsletterController();
 // Heimdall + OpenFGA (gates by `project:{project_uid}` from the path) and by
 // the corresponding frontend route guards. We don't gate on persona here —
 // newsletters are accessible to Executive Directors AND project writers.
+//
+// Every write is blocked while impersonating (#4358 F3), so an admin viewing as
+// an ED can't create, change or send a newsletter that is attributed to that ED.
 
 // AI body generation. Doesn't proxy to the Go newsletter-service so there's
 // no downstream FGA check; relies on the global auth middleware + /api rate
@@ -27,25 +32,35 @@ router.post('/generate', (req, res, next) => newsletterController.generate(req, 
 // parse them as `:newsletterUid`.
 router.post('/recipient-count', (req, res, next) => newsletterController.getRecipientCount(req, res, next));
 router.post('/recipients', (req, res, next) => newsletterController.getRecipients(req, res, next));
-router.post('/test-send', (req, res, next) => newsletterController.testSend(req, res, next));
+router.post('/test-send', blockDuringImpersonation, newsletterTestSendRateLimiter, (req, res, next) => newsletterController.testSend(req, res, next));
+router.post('/render-preview', (req, res, next) => newsletterController.renderPreview(req, res, next));
+
+// Editor template sets (embedded in the newsletter service). Static segments
+// registered before `/:newsletterUid` so Express doesn't parse "templates" as
+// a newsletter uid.
+router.get('/templates', (req, res, next) => newsletterController.getTemplates(req, res, next));
+router.get('/templates/:templateKey/manifest', (req, res, next) => newsletterController.getTemplateManifest(req, res, next));
 
 // Newsletter list + create.
 router.get('/', (req, res, next) => newsletterController.listNewsletters(req, res, next));
-router.post('/', (req, res, next) => newsletterController.createNewsletter(req, res, next));
+router.post('/', blockDuringImpersonation, (req, res, next) => newsletterController.createNewsletter(req, res, next));
 
-// Opt-out (unsubscribe) list and individual opt-out deletion. Static segments
-// registered before the `/:newsletterUid` catch-alls so Express doesn't parse
-// them as newsletter UIDs.
+// Tab counts, opt-out (unsubscribe) list and individual opt-out deletion. Static
+// segments registered before the `/:newsletterUid` catch-alls so Express doesn't
+// parse them as newsletter UIDs.
+router.get('/status-counts', (req, res, next) => newsletterController.getStatusCounts(req, res, next));
 router.get('/opt-outs', (req, res, next) => newsletterController.listOptOuts(req, res, next));
-router.delete('/opt-outs/:optOutId', (req, res, next) => newsletterController.deleteOptOut(req, res, next));
+router.delete('/opt-outs/:optOutId', blockDuringImpersonation, (req, res, next) => newsletterController.deleteOptOut(req, res, next));
 
 // Per-newsletter CRUD + send + analytics.
 router.get('/:newsletterUid', (req, res, next) => newsletterController.getNewsletter(req, res, next));
-router.put('/:newsletterUid', (req, res, next) => newsletterController.updateNewsletter(req, res, next));
-router.delete('/:newsletterUid', (req, res, next) => newsletterController.deleteNewsletter(req, res, next));
-router.post('/:newsletterUid/send', (req, res, next) => newsletterController.sendNewsletter(req, res, next));
-router.post('/:newsletterUid/schedule', (req, res, next) => newsletterController.scheduleNewsletter(req, res, next));
-router.post('/:newsletterUid/cancel-schedule', (req, res, next) => newsletterController.cancelScheduleNewsletter(req, res, next));
+router.put('/:newsletterUid', blockDuringImpersonation, (req, res, next) => newsletterController.updateNewsletter(req, res, next));
+router.delete('/:newsletterUid', blockDuringImpersonation, (req, res, next) => newsletterController.deleteNewsletter(req, res, next));
+router.post('/:newsletterUid/audience', blockDuringImpersonation, (req, res, next) => newsletterController.resolveAudience(req, res, next));
+router.get('/:newsletterUid/audience', (req, res, next) => newsletterController.getAudience(req, res, next));
+router.post('/:newsletterUid/send', blockDuringImpersonation, (req, res, next) => newsletterController.sendNewsletter(req, res, next));
+router.post('/:newsletterUid/schedule', blockDuringImpersonation, (req, res, next) => newsletterController.scheduleNewsletter(req, res, next));
+router.post('/:newsletterUid/cancel-schedule', blockDuringImpersonation, (req, res, next) => newsletterController.cancelScheduleNewsletter(req, res, next));
 router.get('/:newsletterUid/analytics', (req, res, next) => newsletterController.getAnalytics(req, res, next));
 router.get('/:newsletterUid/analytics/recipients', (req, res, next) => newsletterController.getRecipientEngagement(req, res, next));
 

@@ -4,10 +4,14 @@
 import express, { Router } from 'express';
 
 import { ProjectController } from '../controllers/project.controller';
+import { ProjectParticipatingOrgsController } from '../controllers/project-participating-orgs.controller';
+import { requireExecutiveOrLFStaff } from '../middleware/require-dashboard-access.middleware';
+import { requireProjectParticipatingOrgsAccess } from '../middleware/require-project-participating-orgs-access.middleware';
 
 const router = Router();
 
 const projectController = new ProjectController();
+const participatingOrgsController = new ProjectParticipatingOrgsController();
 
 // Project CRUD routes - using new controller pattern
 router.get('/', (req, res, next) => projectController.getProjects(req, res, next));
@@ -22,6 +26,20 @@ router.get('/slugs', (req, res, next) => projectController.getProjectSlugs(req, 
 
 router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req, res, next));
 
+// ── Project Lens → Participating Organizations (#2091), executive director / LF staff + project#viewer gated ──
+router.get('/:slug/participating-orgs/summary', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getSummary(req, res, next)
+);
+router.get('/:slug/participating-orgs/export', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.export(req, res, next)
+);
+router.get('/:slug/participating-orgs/org-lens-links', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getOrgLensLinks(req, res, next)
+);
+router.get('/:slug/participating-orgs', requireExecutiveOrLFStaff, requireProjectParticipatingOrgsAccess, (req, res, next) =>
+  participatingOrgsController.getList(req, res, next)
+);
+
 router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));
 
 router.post('/:uid/permissions', (req, res, next) => projectController.addUserToProjectPermissions(req, res, next));
@@ -31,6 +49,8 @@ router.put('/:uid/permissions/:username', (req, res, next) => projectController.
 router.delete('/:uid/permissions/:username', (req, res, next) => projectController.removeUserFromProjectPermissions(req, res, next));
 
 router.put('/:uid/staff', (req, res, next) => projectController.updateProjectStaff(req, res, next));
+
+router.put('/:uid/formation-record', (req, res, next) => projectController.updateFormationRecord(req, res, next));
 
 router.get('/:uid/sfid', (req, res, next) => projectController.getProjectSfid(req, res, next));
 

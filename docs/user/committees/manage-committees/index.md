@@ -1,48 +1,152 @@
 ---
-title: Manage Committees
-description: How to view and manage project committees in LFX Self Serve.
-audience: [maintainer, board-member, executive-director]
+title: Manage Groups
+description: How to view a group's tabs, edit a group, manage members and applications, import members from a CSV, and delete a group.
+audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
-tags: [committees, manage, members, governance]
-last_updated: 2026-05-22
+tags: [committees, manage, members, governance, csv, import]
+last_updated: 2026-11-12
 intercom_collection: Committees
 ---
 
-This article applies to users with **maintainer**, **board-member**, or **executive-director** roles. Use the Committees section to view committee membership, update details, and manage your project's governance groups.
+This article applies to managers of a group, and to users with write access to the selected foundation or project. Use the Groups section to view a group's details, update it, and manage its members.
 
-## View all committees
+## View all groups
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Select **Groups** from the left navigation sidebar.
-3. The committees dashboard lists all committees for your active project or foundation context.
-4. Select a committee name to open its detail view.
+3. The page lists the groups for your active lens: your own memberships in **Me**, or all groups for the project or foundation in the **Project** and **Foundation** lenses.
+4. Select a group name to open it.
 
-## View committee details
+## The group page
 
-The committee detail view (route: `/groups/:id`) shows:
+A group's page (route: `/groups/:id`) shows its name, a **Public** or **Private** tag, your membership badge, and tabs. Tabs depend on your access:
 
-- Committee name and description
-- Current members and their roles
+| Tab           | Who sees it                                                                                                 |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Overview**  | Everyone who can open the group                                                                             |
+| **About**     | Everyone who can open the group                                                                             |
+| **Members**   | Managers and auditors, anyone when Member Visibility is **Basic Profile**, and members who can send invites |
+| **Votes**     | Members and managers, only when the group has voting enabled                                                |
+| **Meetings**  | Members and managers; also visitors when the group's calendar is public                                     |
+| **Surveys**   | Members and managers                                                                                        |
+| **Documents** | Everyone who can open the group                                                                             |
+| **Settings**  | Managers and auditors (auditors view only)                                                                  |
 
-## Edit a committee
+See [Group Overview and About](../group-overview-and-about/) for the first two tabs and [Group Settings](../group-settings/) for the last.
 
-1. Open a committee from the committees dashboard.
-2. Select the edit option from the committee detail page.
-3. Update the committee name, description, or other fields.
-4. Save your changes.
+To link directly to a tab, append `?tab=members` to the group URL for the Members roster, or use `tab=votes`, `tab=meetings`, or `tab=documents` for those tabs. Missing or invalid tab values open Overview. A recognized tab that is not visible to you also falls back to Overview; deep links do not change your access to the group.
+
+## Edit a group
+
+1. Open the group.
+2. Select **Edit Group** in the header. The button appears for managers who also have write access to the group's project or foundation; other managers can use the **Settings** tab instead. The edit page (route: `/groups/:id/edit`) is the same four-step wizard used to create a group, filled in with the group's current values.
+3. Move between steps freely; in edit mode the steps are not locked in order. See [Create a Group](../create-committee/) for what each step contains.
+4. On the last step, select **Update Group** to save your changes together with any staged member changes.
+
+When you rename a group in the edit wizard, a public-facing name that matched the original group name follows the new name, including when you make the group public in the same update. A distinct public-facing alias is preserved.
+
+To change only the name, type, parent, join mode, features, or chat channel, you can also use the group's **Settings** tab, which saves with **Save Changes**. Changing the group type there asks you to confirm first; the edit wizard saves it when you select **Update Group**, without a separate confirmation. Associated mailing lists are managed on the **Settings** tab and save as soon as you confirm them, without **Save Changes**.
 
 ## Add or remove members
 
-1. Open the committee you want to update.
-2. Navigate to the members section of the committee detail view.
-3. Select the add member option, search for the person by name or email, and confirm.
-4. Save your changes.
+1. Open the group and go to the **Members** tab.
+2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. If the group has voting, you can also set the new member's **Voting status** when adding them. Voting status dates can still be set from **Edit**. (This applies when you add members directly, not when you send invitations.) For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead.
+3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
-## Switch project context
+The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
 
-Committees are scoped to a specific project or foundation. Use the lens switcher in the top navigation to change between your **Foundation**, **Project**, or **Me** views. The committees list updates automatically to reflect the selected context.
+The Members tab loads the complete roster before enabling **Add Member** and **Import Members**. If loading fails, a persistent error offers **Retry**, and those actions stay unavailable instead of treating a partial or failed load as an empty group. A successful empty roster still offers **Add the first member**. If Retry repeatedly reaches the safe loading limit for a very large group, contact support. The separate **Invite Someone** flow for members whose roster is hidden is unchanged.
+
+### Pending invitations
+
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires, or **No expiration** for an older invitation that never expires, which can be revoked but not resent. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original.
+
+### Pending applications
+
+In a group whose join mode is **Apply & Review**, managers see a **Pending Applications** section whenever applications are waiting.
+
+1. Select **Approve** on an application and confirm. The applicant becomes a member.
+2. Or select **Reject**, optionally add a note, and select **Reject Application**.
+
+See [Join, Apply to, and Leave a Group](../join-and-leave-a-group/) for what the applicant sees.
+
+## Import members from a CSV
+
+If you can manage a group's members, you can add many people at once from a CSV file. Import is available on an existing group's **Members** tab, in **Edit Group → Add Members**, and on the **Add Members** step when you create a new group. It does not send invitations or create groups.
+
+### Import from the Members tab
+
+1. Open the group and go to its **Members** tab.
+2. Select **Import Members**, after **Add Member** on the right of the member filter pills. The button becomes available after the complete member roster and pending invitations finish loading. If the roster fails, use **Retry** in its error message. Import also refreshes both lists before opening the dialog; if either fresh list cannot be loaded completely, no import opens and you can try again.
+3. Select **Download template**. The template contains only the columns that apply to this group. Open **Column reference** to see which columns are required and the complete accepted role and appointed-by values.
+4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Column order and capitalization don't matter, and spaces, hyphens and underscores in column names are ignored, so `First Name` matches `first_name` and `E-mail` matches `email`. Columns the import doesn't use are ignored and listed in a notice above the preview.
+5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.
+6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. Select a status pill above the table, such as **Invalid (3)**, to show only those rows, or **All** to show every row again. Invalid rows don't block the import: they are skipped and nothing is sent for them. To fix them, select **Download invalid rows** to save a CSV with their original values and an **errors** column describing each problem, or correct your file and choose it again. You can also remove a row from the preview.
+7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
+8. Select **Add _N_ members**. If the file has invalid rows, the button says how many are skipped, for example **Add 27 members (skip 3 invalid)**. Rows are added in batches, one batch at a time. While the import runs, each row shows **Not yet submitted**, **Adding…**, or **Waiting to resume** until it settles. A retry run preserves **Outcome unknown** for an unconfirmed earlier attempt until that row is sent again.
+
+Status filters stay available while the import runs and in the results. If the selected status no longer has rows, the table returns to **All** and keeps showing all rows until you select another status.
+
+### Fix and re-import downloaded rows
+
+The invalid-rows download keeps the group's template columns plus any other known columns supplied on invalid rows, including voting values that must be cleared for a non-voting group. The **errors** column describes the problems; it is ignored on re-import, and validation runs again against the corrected member values.
+
+Keep the **lfx_import_encoding** column and its **text-v1** values unchanged. To prevent spreadsheet formulas without changing member identities, formula-leading values and values already starting with **lfx-text:** have one **lfx-text:** safety prefix added. Keep that first prefix when editing the value after it. For example, **lfx-text:+person@example.com** is restored to **+person@example.com** on import, not to an address with an extra apostrophe. Other values, including literal apostrophes, are unchanged.
+
+Correct the member values, save as **CSV UTF-8 (comma delimited)**, and choose the downloaded file again. You do not need to remove **errors** or the encoding column. An unsupported or missing encoding value is rejected rather than guessing how to restore the values.
+
+### Import while creating or editing a group
+
+1. When creating a group, select **Create Group** on the **Settings** step to reach **Add Members**. When editing, open **Edit Group** and go to the **Add Members** step.
+2. Select **Import Members** alongside **Invite by email** and **Add with details**.
+3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the form.
+4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
+5. Select **Import _N_ members**. As on the Members tab, invalid rows are skipped and the button says how many, for example **Import 27 members (skip 3 invalid)**; use **Download invalid rows** to fix them later. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
+6. Select **Done** (when creating) or **Update Group** (when editing) to save the pending member additions along with your other changes. Cancelling the CSV preview, selecting **Skip For Now**, or leaving without saving does not add those members or revoke their invitations. When creating, the group itself has already been saved; only the pending members are discarded.
+
+**Done** and **Update Group** stay unavailable while member or group details are loading or could not be loaded. No pending changes are submitted in that state. Once the members step loads successfully, you can save; your staged additions, edits, removals, and invitations remain pending.
+
+People already in the group or already staged in the form are skipped. Imports use the form's normal save flow rather than the Members tab's per-row results. After an imported member is successfully added, matching pending invitations are revoked. If cleanup fails, a warning directs you to revoke them from the **Pending** tab; the added member is not resubmitted when you retry other failed changes.
+
+### What the CSV needs
+
+- `email` is always required and must contain one valid email address, not a comma- or semicolon-separated list. Names, job title, LinkedIn profile, role and its dates, and appointed by are optional.
+- Groups with voting or a business email requirement need `organization_name` and a full `https://` `organization_website` for every row. In any group, if you give one of the two you must give both.
+- Voting groups also need `role` and `voting_status` (Voting Rep, Alternate Voting Rep, Observer, or Emeritus) for every row. Leave the voting columns empty for groups without voting.
+- Dates use `YYYY-MM-DD`, and an end date cannot be before its start date.
+- A file can have up to 500 member rows and be up to 5 MB. Split larger lists into several files.
+- Role, voting status, and appointed by values are not case-sensitive, and extra spaces are ignored: `chair` is read as **Chair**. Ready rows in the preview show the value that will be saved.
+- If a file isn't saved as UTF-8 (for example, Excel's **CSV (Comma delimited)**), it is read as Windows (Western European) text and a notice says so. Check that names with accents look right in the preview before adding anyone.
+- Usernames, member status, and group permissions can't be set from a CSV. Imported people get standard member access; change permissions afterwards from the member's **Edit** option.
+
+### Members-tab results and retry
+
+- People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
+- After the import, each row shows **Added**, **Skipped**, **Failed**, **Outcome unknown**, or **Not yet submitted** with the reason. Skipped invalid rows stay listed as **Invalid**, and **Download invalid rows** is still available. Select a status pill, such as **Failed**, to show only those rows. Select **Retry _N_** to send the **Not yet submitted** rows, unresolved attempts and any failed rows that can still succeed. Added and skipped rows are never resubmitted, and rows the service rejected as invalid are not retried — fix them in the file and import it again.
+- If the service asks the import to slow down, or a batch hits a temporary problem, the import pauses and resumes on its own, up to 3 times per run. The dialog shows when it will resume. A server cooldown longer than two minutes stops automatic recovery rather than retrying early; the dialog shows the earliest retry time. **Retry** stays unavailable until a known cooldown ends, even after **Stop import**. The cooldown notice disappears and **Retry** becomes available when the wait ends. Once the pause budget is exhausted, review the outcomes before retrying.
+- Select **Stop import** at any time during the import to end it. During a pause, the import stops right away. Otherwise the button shows **Stopping…** while the batch already being sent finishes, and later rows are not sent. Rows that were never sent stay **Not yet submitted**. A submitted row whose response was lost stays **Outcome unknown**, not Failed or Added; close the dialog to refresh and review the roster before retrying.
+- When recovery finds an existing membership, the row is **Skipped**, not proof that this import added the person or applied the CSV details. Review the existing member and any pending invitation; skipped rows do not trigger invitation cleanup.
+- If your session expires, you lose permission to manage the group, or the group can no longer be found, the import stops with the next step to take, and rows that were not sent are marked **Not yet submitted** so you can retry them later.
+- If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab. Session, permission, and missing-invitation errors during cleanup also stop new member requests, but never resubmit the members already added. The error appears immediately, even while other invitation cleanup requests finish; **Stopping…** is reserved for selecting **Stop import** yourself. A cleanup that is rate limited only adds the warning and does not stop the import.
+- Select **Close** to return to the roster, which refreshes to show the new members. When the import added anyone, a confirmation shows how many members were added to the group and that new members may take a moment to appear. No confirmation shows when nobody was added.
+
+## Delete a group
+
+Managers can delete a group themselves.
+
+1. Open the group and go to the **Settings** tab.
+2. In the **Danger Zone** at the bottom, select **Delete Group**.
+3. Confirm in the **Delete Group** dialog.
+
+Deleting permanently removes the group and its associated meetings, votes, surveys, and member records. It cannot be undone, so confirm that you have the right group first.
+
+## Switch context
+
+Groups are scoped to a project or foundation. Use the lens switcher in the top navigation to change between your **Foundation**, **Project**, or **Me** views. The list updates to match the selected context.
 
 ## Related
 
-- [Create a Committee](../create-committee/) — steps to create a new committee
-- [Votes](../../votes/) — run polls for committee decisions
+- [Create a Group](../create-committee/) — steps to create a new group
+- [Group Settings](../group-settings/) — join mode, mailing lists, features, and deletion
+- [Group Overview and About](../group-overview-and-about/) — the first two tabs
+- [Votes](../../votes/) — run polls for group decisions

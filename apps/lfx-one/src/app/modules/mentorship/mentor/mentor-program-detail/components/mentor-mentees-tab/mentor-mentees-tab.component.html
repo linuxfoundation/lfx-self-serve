@@ -36,7 +36,7 @@
           <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Term</th>
           <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Progress</th>
           <th class="w-[15%] px-4 py-3 !text-sm !font-medium !text-gray-600">Status</th>
-          <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-600 text-end">Task</th>
+          <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-600 text-end">Actions</th>
         </tr>
       </ng-template>
 
@@ -49,6 +49,8 @@
               [initials]="row.initials"
               [avatarStyleClass]="row.avatarStyleClass"
               [avatarUrl]="row.avatarUrl"
+              [href]="row.userId | mentorshipPublicUrl: 'mentees'"
+              [linkTestId]="'mentorship-mentor-mentee-link-' + row.id"
               [noteLabel]="row.noteLabel"
               [hasNote]="row.hasNote"
               [noteTestId]="'mentorship-mentor-mentee-note-' + row.id"
@@ -97,21 +99,38 @@
                   (onClick)="toggleTasksExpanded(row.id)"
                   [attr.data-testid]="'mentorship-mentor-mentee-view-tasks-' + row.id" />
               }
-              <lfx-button
-                icon="fa-light fa-plus"
-                severity="primary"
-                size="small"
-                [outlined]="true"
-                [ariaLabel]="'Create a task for ' + row.name"
-                (onClick)="onCreateTask(row)"
-                [attr.data-testid]="'mentorship-mentor-mentee-create-task-' + row.id" />
+              @if (row.canCreateTask) {
+                <lfx-button
+                  icon="fa-light fa-plus"
+                  severity="primary"
+                  size="small"
+                  [outlined]="true"
+                  [tooltip]="'Create a task for ' + row.name"
+                  [ariaLabel]="'Create a task for ' + row.name"
+                  (onClick)="onCreateTask(row)"
+                  [attr.data-testid]="'mentorship-mentor-mentee-create-task-' + row.id" />
+              }
+              @if (row.contactUrl) {
+                <!-- A new tab, as on the admin Current Mentees tab, so the table stays in place. -->
+                <lfx-button
+                  [icon]="contactIcon"
+                  severity="primary"
+                  size="small"
+                  [outlined]="true"
+                  [href]="row.contactUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  [tooltip]="contactLabel"
+                  [ariaLabel]="contactLabel + ': ' + row.name"
+                  [attr.data-testid]="'mentorship-mentor-mentee-contact-' + row.id" />
+              }
             </div>
           </td>
         </tr>
         @if (tasksExpanded && row.hasTasks) {
           <tr class="bg-gray-50" [attr.data-testid]="'mentorship-mentor-mentee-tasks-expanded-' + row.id">
             <td colspan="5" class="px-4 py-3 pl-8">
-              <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" />
+              <lfx-mentorship-applicant-tasks-panel [applicantId]="row.id" [applicantName]="row.name" [tasks]="row.taskRows" [taskSaved]="taskSaved()" />
             </td>
           </tr>
         }

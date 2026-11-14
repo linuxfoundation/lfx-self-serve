@@ -22,7 +22,8 @@ import {
   DATA_LOAD_TIMEOUT,
   ELIGIBLE,
   EXISTING_TOKENS,
-  NOT_KEY_CONTACT,
+  EXPIRED_TOKEN,
+  NOT_ENABLED,
   openDeveloperSettingsWithInsightsFlagOff,
   openInsightsTokens,
 } from './helpers/insights-tokens.helper';
@@ -61,16 +62,27 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
       await expect(page.getByTestId('insights-tokens-error')).toHaveCount(0);
     });
 
-    test('hides the list and never requests it for a user who is not a Key Contact', async ({ page }) => {
+    test('gives an expired token a remove action instead of revoke', async ({ page }) => {
+      await openInsightsTokens(page, { tokens: [...EXISTING_TOKENS, EXPIRED_TOKEN], eligibility: ELIGIBLE });
+
+      const row = page.getByTestId(`insights-tokens-row-${EXPIRED_TOKEN.uid}`);
+      await expect(row).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(row.getByTestId('insights-tokens-remove-button')).toHaveCount(1);
+      await expect(row.getByTestId('insights-tokens-revoke-button')).toHaveCount(0);
+    });
+
+    test('hides the list and never requests it for a user without access', async ({ page }) => {
       const listRequests: string[] = [];
       page.on('request', (request) => {
         if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/profile/insights-tokens') {
           listRequests.push(request.url());
         }
       });
-      await openInsightsTokens(page, { tokens: EXISTING_TOKENS, eligibility: NOT_KEY_CONTACT });
+      await openInsightsTokens(page, { tokens: EXISTING_TOKENS, eligibility: NOT_ENABLED });
 
-      await expect(page.getByTestId('insights-tokens-lock-notice')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      const notice = page.getByTestId('insights-tokens-lock-notice');
+      await expect(notice).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(notice.getByTestId('insights-tokens-contact-support')).toHaveCount(1);
       await expect(page.getByTestId('insights-tokens-list')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-revoke-button')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-new-button')).toHaveCount(0);

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MailingListAudienceAccess, MailingListType } from '../enums/mailing-list.enum';
+import { MailingListAudienceAccess, MailingListMemberDeliveryMode, MailingListType } from '../enums/mailing-list.enum';
 
 /**
  * Configurable labels for mailing lists displayed throughout the UI
@@ -17,6 +17,19 @@ export const MAILING_LIST_LABEL = {
   singular: 'Mailing List',
   plural: 'Mailing Lists',
 } as const;
+
+/**
+ * Shown when the user lacks the access needed to manage mailing lists for a project.
+ * Same wording as the access-denied toast the route guard raises, so an in-page denial reads the same.
+ */
+export const MAILING_LIST_ACCESS_DENIED_MESSAGE = "You don't have permission to manage mailing lists for this project.";
+
+/**
+ * Allowed shape of the name a user types for a mailing list.
+ * Groups.io only accepts letters, numbers and single hyphens, so consecutive, leading and
+ * trailing hyphens are rejected. Uppercase is allowed: existing lists use it.
+ */
+export const MAILING_LIST_NAME_PATTERN = /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/;
 
 /**
  * Configurable labels for mailing list members displayed throughout the UI
@@ -61,6 +74,19 @@ export const MAILING_LIST_AUDIENCE_ACCESS_LABELS = {
 } as const;
 
 /**
+ * Delivery mode display labels
+ * @description Human-readable labels for a member's mailing list delivery mode
+ */
+export const MAILING_LIST_DELIVERY_MODE_LABELS = {
+  [MailingListMemberDeliveryMode.NORMAL]: 'Individual',
+  [MailingListMemberDeliveryMode.DIGEST]: 'Digest',
+  [MailingListMemberDeliveryMode.NONE]: 'None',
+  [MailingListMemberDeliveryMode.SPECIAL]: 'Special',
+  [MailingListMemberDeliveryMode.HTML_DIGEST]: 'HTML Digest',
+  [MailingListMemberDeliveryMode.SUMMARY]: 'Summary',
+} as const;
+
+/**
  * Visibility display labels
  * @description Human-readable labels for mailing list visibility options
  */
@@ -85,3 +111,16 @@ export const MAILING_LIST_TOTAL_STEPS = MAILING_LIST_STEP_TITLES.length;
  * explicitly. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
  */
 export const MAILING_LIST_DETAIL_CACHE_TTL_MS = 10 * 1000;
+
+/**
+ * Delay before re-fetching membership after a self-service join, giving the query-service index
+ * time to catch up with the write (PR #3211 review).
+ */
+export const MAILING_LIST_JOIN_REFRESH_DELAY_MS = 1000;
+
+/**
+ * Upper bound on how long a sync-diff/sync-apply job is polled before giving up — the sync preview
+ * dialog gives the user no escape hatch while a poll is active, so a stuck upstream job must not
+ * trap them in an unclosable dialog forever (PR #5489 review).
+ */
+export const MAILING_LIST_SYNC_POLL_DEADLINE_MS = 10 * 60 * 1000;

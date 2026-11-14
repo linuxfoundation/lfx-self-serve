@@ -4,8 +4,16 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { WRITER_SUMMARY_TIMEOUT_MS } from '@lfx-one/shared/constants';
-import { CreateProjectDocumentRequest, PendingActionItem, Project, ProjectDocument, WriterSummary } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, timeout } from 'rxjs';
+import {
+  CreateProjectDocumentRequest,
+  PendingActionItem,
+  Project,
+  ProjectDocument,
+  ProjectDocumentType,
+  UpdateFormationRecordRequest,
+  WriterSummary,
+} from '@lfx-one/shared/interfaces';
+import { BehaviorSubject, catchError, map, Observable, of, shareReplay, take, tap, throwError, timeout } from 'rxjs';
 
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
 
@@ -21,6 +29,31 @@ export class ProjectService {
   private readonly strictProjectCache = new Map<string, Observable<Project>>();
   private readonly projectsCache = new Map<string, Observable<Project[]>>();
   private slugsCache$: Observable<string[] | null> | null = null;
+
+  /**
+   * Uncached read of a project's current record for the formation edit drawer (#5134) — it must
+   * show what is stored now, not a session-pinned copy, and errors surface to the caller.
+   */
+  public getProjectRecord(uid: string): Observable<Project> {
+    return this.http.get<Project>(`/api/projects/${encodeURIComponent(uid)}`).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch project record:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Changes a project's stage / legal-entity fields (#5134). Only the keys in `request` change
+   * upstream. Drops this service's cached copies of the project so the next read reflects the write.
+   */
+  public updateFormationRecord(uid: string, request: UpdateFormationRecordRequest): Observable<Project> {
+    return this.http.put<Project>(`/api/projects/${encodeURIComponent(uid)}/formation-record`, request).pipe(
+      tap(() => {
+        this.evictProjectCaches();
+      })
+    );
+  }
 
   public getProjects(params?: HttpParams): Observable<Project[]> {
     const cacheKey = params?.toString() || '';
@@ -70,7 +103,8 @@ export class ProjectService {
   }
 
   /**
-   * Fail-closed on error, mirroring getProjects. One retry, transient errors only — this is the
+   * Fail-closed on error: emits `null` (grants nothing), which `WriterGrantsService` surfaces as a
+   * failed lookup the menu can offer to retry, rather than as "no writer grants". One retry, transient errors only — this is the
    * bootstrap-critical fast path (LFXV2-2857), so a bare blip shouldn't leave the caller's lens
    * set narrowed until the (much slower) deferred sweep eventually resolves it instead.
    *
@@ -82,13 +116,14 @@ export class ProjectService {
    * hang here would silently starve the sweep — the recovery path for a stalled fast path — for
    * the whole session.
    */
-  public getWriterSummary(): Observable<WriterSummary> {
+  public getWriterSummary(): Observable<WriterSummary | null> {
     return this.http.get<WriterSummary>('/api/projects/writer-summary').pipe(
       retryTransientHttpError(),
       timeout(WRITER_SUMMARY_TIMEOUT_MS),
       catchError((error) => {
         console.error('Failed to fetch writer summary:', error);
-        return of({ hasWriterFoundation: false, hasWriterProject: false });
+        // null rather than two `false` grants, so the caller can tell "couldn't check" from "none".
+        return of(null);
       })
     );
   }
@@ -97,8 +132,14 @@ export class ProjectService {
    * Fetches a project by slug OR uid — the BFF `GET /api/projects/:slug` route sniffs UUIDs and
    * resolves them via getProjectById, so callers holding either identifier can use this method.
    * Note the two identifiers cache under separate keys for the same project.
+   * `strictWriter` opts into a failure-preserving writer check, isolated from ordinary cached
+   * lookups. A failed check emits null and evicts the entry, so the caller can offer a retry.
    */
-  public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project | null> {
+  public getProject(
+    slugOrUid: string,
+    current: boolean = true,
+    options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }
+  ): Observable<Project | null> {
     const cacheKey = `${slugOrUid}:${current}${this.roleCheckCacheSuffix(options)}`;
     if (!this.projectCache.has(cacheKey)) {
       const params = this.buildRoleCheckParams(options);
@@ -156,7 +197,7 @@ export class ProjectService {
    * `options` mirrors getProject's role-check query params, with matching `:mc`/`:aud`
    * cache-key suffixes so a role-scoped entry never collides with the plain one.
    */
-  public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project> {
+  public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): Observable<Project> {
     const cacheKey = `${slugOrUid}${this.roleCheckCacheSuffix(options)}`;
     if (!this.strictProjectCache.has(cacheKey)) {
       const params = this.buildRoleCheckParams(options);
@@ -287,10 +328,10 @@ export class ProjectService {
   }
 
   /**
-   * Deletes a project folder or link. Files are not deletable via this endpoint
-   * — the BFF only accepts `'folder'` and `'link'` for the `type` parameter.
+   * Deletes a project folder, link or uploaded file. A folder must be empty: the BFF answers 409
+   * (`FOLDER_NOT_EMPTY`) when it still holds documents.
    */
-  public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
+  public deleteProjectDocument(projectUid: string, documentId: string, documentType: ProjectDocumentType): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
   }
@@ -300,7 +341,7 @@ export class ProjectService {
    * check fails (HTTP 200, not an error), so absence on a requested check means "unknown", not "no
    * role". Writers skip the checks server-side and unrequested checks legitimately omit the field.
    */
-  private roleCheckFailed(project: Project, options?: { meetingCoordinator?: boolean; auditor?: boolean }): boolean {
+  private roleCheckFailed(project: Project, options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): boolean {
     if (project.writer === true) {
       return false;
     }
@@ -311,7 +352,7 @@ export class ProjectService {
    * Role-check query params shared by getProject/getProjectStrict — one builder so a future
    * role flag can't be added to one lookup but not the other.
    */
-  private buildRoleCheckParams(options?: { meetingCoordinator?: boolean; auditor?: boolean }): HttpParams | undefined {
+  private buildRoleCheckParams(options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): HttpParams | undefined {
     let params: HttpParams | undefined;
     if (options?.meetingCoordinator) {
       params = new HttpParams().set('meeting_coordinator', 'true');
@@ -319,11 +360,21 @@ export class ProjectService {
     if (options?.auditor) {
       params = (params ?? new HttpParams()).set('auditor', 'true');
     }
+    if (options?.strictWriter) {
+      params = (params ?? new HttpParams()).set('strict_writer', 'true');
+    }
     return params;
   }
 
   /** Cache-key suffix for the role-check variants — a role-scoped entry never collides with the plain one. */
-  private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean }): string {
-    return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
+  private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean; strictWriter?: boolean }): string {
+    return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}${options?.strictWriter ? ':writer-strict' : ''}`;
+  }
+
+  // A formation-record write changes the project's stage, which role-check and slug lookups pin per session — drop them all.
+  private evictProjectCaches(): void {
+    this.projectCache.clear();
+    this.strictProjectCache.clear();
+    this.projectsCache.clear();
   }
 }

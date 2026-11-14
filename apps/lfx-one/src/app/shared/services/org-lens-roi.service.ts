@@ -12,6 +12,7 @@ import type {
   OrgLensRoiProjectDetail,
   OrgLensRoiProjects,
   OrgLensRoiSummary,
+  OrgLensRoiValueDrivers,
 } from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
@@ -60,6 +61,13 @@ export class OrgLensRoiService {
    */
   public getProjects(orgUid: string, method: OrgLensRoiMethod): Observable<OrgLensRoiProjects> {
     return this.http.get<OrgLensRoiProjects>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/projects`, {
+      params: new HttpParams().set('method', method),
+    });
+  }
+
+  /** Portfolio-wide: how far each value driver category sits above or below the typical organization-project pair. */
+  public getValueDrivers(orgUid: string, method: OrgLensRoiMethod): Observable<OrgLensRoiValueDrivers> {
+    return this.http.get<OrgLensRoiValueDrivers>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/roi/value-drivers`, {
       params: new HttpParams().set('method', method),
     });
   }

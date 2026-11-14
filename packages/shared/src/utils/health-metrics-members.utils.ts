@@ -1,22 +1,37 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
-  HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
+  HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES,
+  HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
+  HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
+  HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+  HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
-  HEALTH_METRICS_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR,
+  HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS,
+  HEALTH_METRICS_MEMBERS_GROWTH_PLOT,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP,
+  HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+  HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
-  HEALTH_METRICS_MEMBERS_TIERS_COLORS,
 } from '../constants/health-metrics-members.constants';
-import { formatIsoDateLabel } from './date-time.utils';
+import { formatIsoDateLabel, formatIsoDateShortLabel } from './date-time.utils';
+import { resolveHealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.utils';
 import { formatCurrency } from './number.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsChartTipRowView, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRiskAging,
   HealthMetricsMembersAtRiskAgingView,
@@ -24,177 +39,216 @@ import type {
   HealthMetricsMembersAtRiskRowView,
   HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersAtRiskSummaryView,
-  HealthMetricsMembersBridge,
-  HealthMetricsMembersBridgeBarView,
-  HealthMetricsMembersBridgeStep,
-  HealthMetricsMembersBridgeTone,
-  HealthMetricsMembersBridgeView,
+  HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
+  HealthMetricsMembersBoardMeetingRowView,
+  HealthMetricsMembersBoardSummaryView,
+  HealthMetricsMembersBoardTrendBarView,
+  HealthMetricsMembersBreakdownColumnView,
+  HealthMetricsMembersBreakdownRowView,
+  HealthMetricsMembersBreakdownView,
+  HealthMetricsMembersChurn,
+  HealthMetricsMembersChurnDeparture,
+  HealthMetricsMembersChurnDepartureRowView,
+  HealthMetricsMembersChurnInversionView,
+  HealthMetricsMembersChurnMode,
+  HealthMetricsMembersChurnSideView,
+  HealthMetricsMembersChurnTier,
+  HealthMetricsMembersChurnTierRowView,
+  HealthMetricsMembersChurnTrendPointView,
+  HealthMetricsMembersChurnView,
+  HealthMetricsMembersChurnYear,
   HealthMetricsMembersDirectoryCellView,
   HealthMetricsMembersDirectoryMember,
   HealthMetricsMembersDirectoryRowView,
+  HealthMetricsMembersGrowth,
+  HealthMetricsMembersGrowthColumnView,
+  HealthMetricsMembersGrowthLineView,
+  HealthMetricsMembersGrowthView,
   HealthMetricsMembersSectionKey,
-  HealthMetricsMembersMovement,
-  HealthMetricsMembersMovementListType,
-  HealthMetricsMembersMovementRowView,
+  HealthMetricsMembersNpsAudience,
+  HealthMetricsMembersNpsAudienceOption,
+  HealthMetricsMembersNpsQuarter,
+  HealthMetricsMembersNpsSegmentView,
+  HealthMetricsMembersNpsSummaryView,
+  HealthMetricsMembersNpsTrendNote,
+  HealthMetricsMembersNpsTrendPointView,
+  HealthMetricsMembersRenewal,
+  HealthMetricsMembersRenewalRowView,
+  HealthMetricsMembersRenewalsSummary,
+  HealthMetricsMembersRenewalsSummaryView,
+  HealthMetricsMembersReservedTier,
   HealthMetricsMembersSubNavItem,
   HealthMetricsMembersTiers,
-  HealthMetricsMembersTiersMode,
-  HealthMetricsMembersTiersStatView,
-  HealthMetricsMembersTiersTierView,
-  HealthMetricsMembersTiersView,
-  HealthMetricsMembersTiersYearSummary,
-  HealthMetricsMembersTiersYearView,
   HealthMetricsMembersTierYear,
 } from '../interfaces/health-metrics-members.interface';
 
-/** Sub-nav items for the Members tab; a section badges only once it reports a count, and notes only once it reports a note. */
-export function buildHealthMetricsMembersSubNavItems(
-  counts: Partial<Record<HealthMetricsMembersSectionKey, number | null>> = {},
-  notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}
-): HealthMetricsMembersSubNavItem[] {
-  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({
-    key: section.key,
-    label: section.label,
-    count: counts[section.key] ?? null,
-    note: notes[section.key] ?? '',
-  }));
+/** Sub-nav items for the Members tab; a section notes only once it reports a note. */
+export function buildHealthMetricsMembersSubNavItems(notes: Partial<Record<HealthMetricsMembersSectionKey, string>> = {}): HealthMetricsMembersSubNavItem[] {
+  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: notes[section.key] ?? '' }));
+}
+
+/** The Members sections, with the running year in any copy that names it. */
+export function buildHealthMetricsMembersSections(year: number): HealthMetricsL2Section[] {
+  return HEALTH_METRICS_MEMBERS_SECTIONS.map((section) => ({ ...section, description: section.description.replace('{year}', String(year)) }));
 }
 
 /**
- * `#tiers` — the hero for the selected period, plus every year as a tier × year matrix and a
- * composition chart. Pure over the loaded response, so a period or mode change never re-reads.
+ * `#breakdown` — members per tier at each year's end, from the first year shown to the running one, as PCC tables it:
+ * every tier with a member in a year shown, in rank order, then the totals. Nothing here follows the period.
  */
-export function buildHealthMetricsMembersTiersView(
-  tiers: HealthMetricsMembersTiers,
-  range: HealthMetricsRange,
-  mode: HealthMetricsMembersTiersMode
-): HealthMetricsMembersTiersView {
-  const years = [...new Set(tiers.rows.map((row) => row.year))].sort((a, b) => a - b);
-  const tierNames = orderTiers(tiers.rows);
-  const rowsByYear = new Map(years.map((year) => [year, tiers.rows.filter((row) => row.year === year)]));
-
-  const selectedYear = getYearForRange(range);
+export function buildHealthMetricsMembersBreakdownView(tiers: HealthMetricsMembersTiers): HealthMetricsMembersBreakdownView {
   const currentYear = getYearForRange('YTD');
-  const selected = summarizeYear(rowsByYear.get(selectedYear) ?? []);
-  const prior = summarizeYear(rowsByYear.get(selectedYear - 1) ?? []);
-  const yearMeasured = rowsByYear.has(selectedYear);
+  const rows = tiers.rows.filter((row) => row.year >= HEALTH_METRICS_MEMBERS_BREAKDOWN_FIRST_YEAR && row.year <= currentYear);
+  if (rows.length === 0) return { measured: false, columns: [], rows: [] };
 
-  const yearViews: HealthMetricsMembersTiersYearView[] = years.map((year) => {
-    const summary = summarizeYear(rowsByYear.get(year) ?? []);
-    return {
+  const firstYear = Math.min(...rows.map((row) => row.year));
+  const years = Array.from({ length: currentYear - firstYear + 1 }, (_, index) => firstYear + index);
+  // Totals count every row, so a measured zero stays zero after the empty tiers drop out of the table.
+  const totals = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.memberCount)));
+  const revenue = years.map((year) => sumNullable(rows.filter((row) => row.year === year).map((row) => row.revenueUsd)));
+
+  const tierRows = collectBreakdownTiers(rows).map(
+    (tier, index): HealthMetricsMembersBreakdownRowView => ({
+      key: `tier-${tier.label}`,
+      label: tier.label,
+      kind: 'tier',
+      icon: tier.reserved,
+      striped: index % 2 === 1,
+      cells: years.map((year) => formatCount(tier.members.get(year) ?? null)),
+    })
+  );
+
+  return {
+    measured: true,
+    columns: years.map((year): HealthMetricsMembersBreakdownColumnView => ({ year, label: year === currentYear ? `${year} YTD` : String(year) })),
+    rows: [
+      ...tierRows,
+      { key: 'members', label: 'Total members', kind: 'total', icon: null, striped: false, cells: totals.map((total) => formatCount(total)) },
+      { key: 'revenue', label: 'Total revenue', kind: 'total', icon: null, striped: false, cells: revenue.map((value) => formatUsd(value)) },
+    ],
+  };
+}
+
+/**
+ * `#growth` — cumulative new members by month, one line per year as PCC draws it: the period's year solid, every
+ * other year dashed, newest in accent. This year stops at `today`'s month, which may still be in progress.
+ */
+export function buildHealthMetricsMembersGrowthView(
+  growth: HealthMetricsMembersGrowth,
+  range: HealthMetricsRange,
+  today: Date = new Date()
+): HealthMetricsMembersGrowthView {
+  const currentYear = today.getFullYear();
+  const now = today.getMonth();
+  const selectedYear = currentYear - (getYearForRange('YTD') - getYearForRange(range));
+  const colors = HEALTH_METRICS_MEMBERS_GROWTH_LINE_COLORS;
+  const firstYear = Math.max(HEALTH_METRICS_MEMBERS_GROWTH_FIRST_YEAR, currentYear - colors.length + 1);
+
+  const raw = new Map<number, (number | null)[]>();
+  for (const row of growth.months) {
+    if (row.year < firstYear || row.year > currentYear || row.month < 1 || row.month > 12) continue;
+    const months = raw.get(row.year) ?? Array<number | null>(12).fill(null);
+    months[row.month - 1] = row.cumulative;
+    raw.set(row.year, months);
+  }
+  // A year with no measured total is missing, never a year of zeros.
+  const years = [...raw.keys()]
+    .sort((a, b) => a - b)
+    .flatMap((year): [number, number[]][] => {
+      const months = raw.get(year)?.slice(0, year === currentYear ? now + 1 : 12) ?? [];
+      return months.some((value) => value !== null) ? [[year, fillCumulative(months)]] : [];
+    });
+  if (years.length === 0) return emptyGrowthView();
+
+  const top = chartScaleStep(Math.max(1, ...years.flatMap(([, values]) => values))) * 4;
+  const plot = HEALTH_METRICS_MEMBERS_GROWTH_PLOT;
+  const spacing = (plot.width - 2 * plot.insetX) / 11;
+  const x = (month: number): number => plot.insetX + month * spacing;
+  const y = (value: number): number => plot.height - (Math.min(value, top) / top) * plot.height;
+
+  const lines = years.map(
+    ([year, values]): HealthMetricsMembersGrowthLineView => ({
       year,
-      isCurrent: year === currentYear,
-      isPartial: summary.isPartial,
-      totalMembers: summary.members,
-      totalMembersLabel: formatCount(summary.members),
-      totalRevenueLabel: formatUsd(summary.revenue),
+      color: colors[currentYear - year],
+      dashed: year !== selectedYear,
+      d: growthCurve(values.map((value, month): [number, number] => [x(month), y(value)])),
+      points: values.map((value, month) => ({
+        month: month + 1,
+        leftPct: (x(month) / plot.width) * 100,
+        topPct: (y(value) / plot.height) * 100,
+        label: formatCount(value),
+      })),
+    })
+  );
+
+  const columns = MONTH_NAMES.map((label, month): HealthMetricsMembersGrowthColumnView => {
+    const rows: HealthMetricsChartTipRowView[] = [...lines]
+      .reverse()
+      .filter((line) => month < line.points.length)
+      .map((line) => ({ label: String(line.year), value: line.points[month].label, color: line.color, separated: false }));
+    return {
+      month: month + 1,
+      label,
+      leftPct: (x(month) / plot.width) * 100,
+      widthPct: (spacing / plot.width) * 100,
+      tip: { title: label, rows },
+      ariaLabel: `${label}. ${rows.map((row) => `${row.label}: ${row.value}`).join(', ')}`,
     };
   });
 
-  const tierViews: HealthMetricsMembersTiersTierView[] = tierNames.map((tier, index) => ({
-    tier,
-    color: HEALTH_METRICS_MEMBERS_TIERS_COLORS[index % HEALTH_METRICS_MEMBERS_TIERS_COLORS.length],
-    cells: yearViews.map((yearView) => {
-      const count = (rowsByYear.get(yearView.year) ?? []).find((row) => row.tier === tier)?.memberCount ?? null;
-      const total = yearView.totalMembers ?? 0;
-      return { year: yearView.year, count, label: count ? formatCount(count) : '—', sharePct: sharePercent(count, total) };
-    }),
-  }));
-
-  // A partial year has no same-window prior to compare with, so its delta is not available.
-  const comparable = yearMeasured && !selected.isPartial && prior.measured;
-  const baseline = `vs ${selectedYear - 1}`;
-  const membersStat = buildStat('members', 'Members', formatCount(selected.members), comparable, baseline, selected.members, prior.members);
-  const revenueStat = buildStat('revenue', 'Annual revenue', formatUsd(selected.revenue), comparable, baseline, selected.revenue, prior.revenue);
-  const newStat: HealthMetricsMembersTiersStatView = {
-    key: 'new',
-    label: range === 'YTD' ? 'New this year' : `New in ${selectedYear}`,
-    value: formatCount(selected.newMembers),
-    delta: null,
-    deltaDirection: 'neutral',
-    baseline: null,
-    positive: selected.newMembers !== null && selected.newMembers > 0,
-  };
-  const shareStat: HealthMetricsMembersTiersStatView = {
-    key: 'share',
-    label: 'Share of foundation revenue',
-    value: formatShare(selected.revenue, tiers.foundationRevenue.find((period) => period.range === range)?.totalUsd ?? null),
-    delta: null,
-    deltaDirection: 'neutral',
-    baseline: null,
-    positive: false,
-  };
-
-  const headline = mode === 'members' ? membersStat : revenueStat;
-  const side = [
-    mode === 'members'
-      ? { ...revenueStat, delta: null, deltaDirection: 'neutral' as const, baseline: null }
-      : { ...membersStat, delta: null, deltaDirection: 'neutral' as const, baseline: null },
-    newStat,
-    shareStat,
-  ];
-
+  const first = lines[0].year;
+  const last = lines[lines.length - 1].year;
   return {
-    measured: tiers.rows.length > 0,
-    yearMeasured,
-    metaLabel: `${pluralize(tierNames.length, 'tier')} · ${pluralize(years.length, 'year')}`,
-    headline,
-    side,
-    years: yearViews,
-    tiers: tierViews,
+    measured: true,
+    yMax: formatCount(top),
+    lines,
+    columns,
+    ariaLabel: `Cumulative new members by month, one line per year, ${first === last ? first : `${first} to ${last}`}`,
   };
+}
+
+function emptyGrowthView(): HealthMetricsMembersGrowthView {
+  return { measured: false, yMax: '', lines: [], columns: [], ariaLabel: '' };
 }
 
 /**
- * The selected period's membership bridge. Bars keep the model's figures as they are; when start plus
- * the signed movements misses the end total, the view carries a note instead of adjusting a bar.
+ * A smooth path through the points, as the design curves it, with monotone (Fritsch–Carlson) handles: each segment
+ * stays between its two totals, so a flat month before a jump never dips or overshoots.
  */
-export function buildHealthMetricsMembersBridgeView(bridge: HealthMetricsMembersBridge, range: HealthMetricsRange): HealthMetricsMembersBridgeView {
-  const year = getYearForRange(range);
-  const isCurrentYear = year === getYearForRange('YTD');
-  const steps = bridge.steps.filter((step) => step.year === year).sort((a, b) => a.sortOrder - b.sortOrder);
-  const endLabel = isCurrentYear || steps.some((step) => step.isPartialYear) ? 'Today' : `End of ${year}`;
+function growthCurve(points: [number, number][]): string {
+  if (points.length === 0) return '';
+  const slopes = points.slice(1).map(([x, y], index) => (y - points[index][1]) / (x - points[index][0]));
+  const tangents = points.map((_, index) => {
+    if (index === 0) return slopes[0] ?? 0;
+    if (index === points.length - 1) return slopes[index - 1];
+    return slopes[index - 1] * slopes[index] <= 0 ? 0 : (slopes[index - 1] + slopes[index]) / 2;
+  });
+  slopes.forEach((slope, index) => {
+    if (slope === 0) {
+      tangents[index] = 0;
+      tangents[index + 1] = 0;
+      return;
+    }
+    const a = tangents[index] / slope;
+    const b = tangents[index + 1] / slope;
+    const length = a * a + b * b;
+    if (length > 9) {
+      const scale = 3 / Math.sqrt(length);
+      tangents[index] = scale * a * slope;
+      tangents[index + 1] = scale * b * slope;
+    }
+  });
 
-  return {
-    measured: bridge.steps.length > 0,
-    yearMeasured: steps.length > 0,
-    year,
-    heading: range === 'YTD' ? 'How the base changed this year' : `How the base changed in ${year}`,
-    bars: buildBridgeBars(steps, endLabel),
-    reconcileNote: buildReconcileNote(steps, endLabel),
-  };
-}
-
-/** A movement drawer's title: the design's "this year" wording for the running year, the year otherwise. */
-export function buildHealthMetricsMembersMovementDrawerTitle(listType: HealthMetricsMembersMovementListType, year: number): string {
-  const copy = HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY[listType];
-  return year === getYearForRange('YTD') ? copy.title : `${copy.pastTitle} ${year}`;
-}
-
-/** Drawer rows: tier and movement date under the name, and the dues change signed by direction. */
-export function buildHealthMetricsMembersMovementRows(
-  rows: HealthMetricsMembersMovement[],
-  listType: HealthMetricsMembersMovementListType
-): HealthMetricsMembersMovementRowView[] {
-  const { verb } = HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY[listType];
-  const loss = listType === 'downgrade';
-
-  return rows.map((row) => ({
-    accountId: row.accountId,
-    accountName: row.accountName,
-    detail: [row.membershipTier ?? 'No tier recorded', row.movementDate ? `${verb} ${formatIsoDateLabel(row.movementDate)}` : null]
-      .filter((part): part is string => part !== null)
-      .join(' · '),
-    duesLabel: formatSignedUsd(row.duesImpactUsd, listType === 'new' ? 'neutral' : toneFor(listType)),
-    loss,
-  }));
-}
-
-/** Set when the list and its bar disagree; the list still shows every organization it has. */
-export function buildHealthMetricsMembersMovementCountNote(totalRecords: number, barCount: number | null): string | null {
-  if (barCount === null || barCount === totalRecords) return null;
-
-  return `${pluralize(totalRecords, 'organization')} listed, while the bar counts ${barCount.toLocaleString('en-US')}. The list and the bar are counted separately, so they can differ slightly.`;
+  let d = `M${round1(points[0][0])} ${round1(points[0][1])}`;
+  for (let index = 0; index < points.length - 1; index++) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[index + 1];
+    const third = (x2 - x1) / 3;
+    d += ` C${round1(x1 + third)} ${round1(y1 + tangents[index] * third)} ${round1(x2 - third)} ${round1(y2 - tangents[index + 1] * third)} ${round1(x2)} ${round1(y2)}`;
+  }
+  return d;
 }
 
 /** Directory rows. A NULL activity count is not tracked for the foundation and renders as a dash, never 0. */
@@ -279,149 +333,454 @@ export function buildHealthMetricsMembersAtRiskCountLabel(totalRecords: number):
   return pluralize(totalRecords, 'member');
 }
 
-function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
-  return { key, label: format(value), tracked: value !== null };
+/** The renewals hero: the known dues up for renewal, the count, and how many renewals have no dues on record. */
+export function buildHealthMetricsMembersRenewalsSummary(summary: HealthMetricsMembersRenewalsSummary): HealthMetricsMembersRenewalsSummaryView {
+  const withoutDues = summary.withoutDuesCount ?? 0;
+  return {
+    valueLabel: formatUsd(summary.valueUsd),
+    renewalCountLabel: formatCount(summary.renewalCount),
+    coverageNote: withoutDues > 0 ? `${pluralize(withoutDues, 'renewal')} without dues on record, so the value counts only the known dues.` : '',
+  };
 }
 
-function formatIsoDate(value: string | null): string {
-  return value ? formatIsoDateLabel(value) : '—';
+/** Renewal rows; a missing tier, date or dues renders as a dash, never $0. */
+export function buildHealthMetricsMembersRenewalRows(rows: HealthMetricsMembersRenewal[]): HealthMetricsMembersRenewalRowView[] {
+  return rows.map((row) => ({
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    renewalDateLabel: formatIsoDate(row.renewalDate),
+    duesLabel: formatUsd(row.duesUsd),
+    hasOutstandingBalance: row.hasOutstandingBalance,
+    hasRenewed: row.hasRenewed,
+  }));
 }
 
-function buildBridgeBars(steps: HealthMetricsMembersBridgeStep[], endLabel: string): HealthMetricsMembersBridgeBarView[] {
-  // Each movement floats from the running total, as a waterfall; the two totals stand on zero.
-  let running = 0;
-  const spans = steps.map((step) => {
-    if (step.movementType === 'start_of_year' || step.movementType === 'today') {
-      const total = Math.max(0, step.memberCount ?? 0);
-      if (step.movementType === 'start_of_year') running = total;
-      return { step, low: 0, high: total };
-    }
+/** The "N renewals" line over the table. */
+export function buildHealthMetricsMembersRenewalsCountLabel(totalRecords: number): string {
+  return pluralize(totalRecords, 'renewal');
+}
 
-    const from = running;
-    running = Math.max(0, running + (step.signedMemberCount ?? 0));
-    return { step, low: Math.min(from, running), high: Math.max(from, running) };
-  });
+/** The board hero for the selected cohort, with the other cohort's latest share beside it. */
+export function buildHealthMetricsMembersBoardSummary(
+  cohort: HealthMetricsMembersBoardCohort,
+  selected: HealthMetricsMembersBoardCohortSummary | null,
+  other: HealthMetricsMembersBoardCohortSummary | null
+): HealthMetricsMembersBoardSummaryView {
+  const isBelowExpectedLevel = isHealthMetricsMembersBoardBelowLevel(cohort, selected);
+  const latestTone = isBelowExpectedLevel ? HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].tone : 'ok';
+  const neverAttendedCount = Math.max(0, selected?.neverAttendedCount ?? 0);
+  const noun = HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort];
+  const attended = selected?.latestAttendedCount ?? null;
+  const invited = selected?.latestInvitedCount ?? null;
+  const meetings = selected?.meetingsInRangeCount ?? null;
+  return {
+    meetingsLabel: meetings === null ? '—' : `${pluralize(meetings, 'meeting')} in range`,
+    latestPctLabel: formatPct(selected?.latestAttendancePct ?? null),
+    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ` · ${HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS[cohort]}` : ''}`,
+    isBelowExpectedLevel,
+    latestTone,
+    latestTextClass: HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS[latestTone],
+    otherCohortLabel: HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS.find((option) => option.id !== cohort)?.label ?? '',
+    otherCohortPctLabel: formatPct(other?.latestAttendancePct ?? null),
+    attendedInvitedLabel: attended === null || invited === null ? '—' : `${formatCount(attended)} / ${formatCount(invited)}`,
+    neverAttendedLabel: formatCount(selected?.neverAttendedCount ?? null),
+    neverAttendedCount,
+  };
+}
 
-  // Headroom above the tallest bar leaves space for its labels.
-  const scale = Math.max(1, ...spans.map((span) => span.high)) * 1.12;
+/**
+ * Whether the latest meeting is below the cohort's rule, on the whole percent shown. The view's flag
+ * draws the board's 90% line for both cohorts, so it stands in only for a board share that is missing.
+ */
+export function isHealthMetricsMembersBoardBelowLevel(
+  cohort: HealthMetricsMembersBoardCohort,
+  summary: HealthMetricsMembersBoardCohortSummary | null
+): boolean {
+  const pct = toWholePct(summary?.latestAttendancePct ?? null);
+  if (pct === null) return cohort === 'board' && summary?.isBelowExpectedLevel === true;
+  return pct < Math.round(HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold * 100);
+}
 
-  return spans.map(({ step, low, high }) => {
-    const tone = toneFor(step.movementType);
-    const label = step.movementType === 'today' ? endLabel : HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS[step.movementType];
-    const countLabel = formatSignedCount(step.memberCount, tone);
-    const duesLabel = formatSignedUsd(step.revenueImpactUsd, tone);
-    const hasMembers = (step.memberCount ?? 0) > 0;
-    const listType = hasMembers ? (HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES.find((type) => type === step.movementType) ?? null) : null;
-    const opensChurn = hasMembers && step.movementType === 'churned';
-    const action = listType ? ', opens the list' : '';
-
+/** Meeting rows; the rate bar takes the Engagement attendance tones under the cohort's rule. */
+export function buildHealthMetricsMembersBoardMeetingRows(
+  rows: HealthMetricsMembersBoardMeeting[],
+  cohort: HealthMetricsMembersBoardCohort
+): HealthMetricsMembersBoardMeetingRowView[] {
+  const rule = HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort];
+  return rows.map((row) => {
+    const ratePct = toWholePct(row.attendancePct);
     return {
-      movementType: step.movementType,
-      label,
-      countLabel,
-      duesLabel,
-      tone,
-      bottomPct: (low / scale) * 100,
-      heightPct: ((high - low) / scale) * 100,
-      listType,
-      opensChurn,
-      memberCount: step.memberCount,
-      ariaLabel: `${label}: ${countLabel} members${duesLabel ? `, ${duesLabel} in dues` : ''}${opensChurn ? ', goes to churn' : action}`,
+      meetingId: row.meetingId,
+      committeeName: row.committeeName ?? '—',
+      dateLabel: formatIsoDate(row.meetingDate),
+      attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct, rule)],
     };
   });
 }
 
-/** Checked, never assumed: a year missing either total or a movement's signed count cannot be checked. */
-function buildReconcileNote(steps: HealthMetricsMembersBridgeStep[], endLabel: string): string | null {
-  const start = steps.find((step) => step.movementType === 'start_of_year')?.memberCount ?? null;
-  const end = steps.find((step) => step.movementType === 'today')?.memberCount ?? null;
-  const movements = steps.filter((step) => step.movementType !== 'start_of_year' && step.movementType !== 'today');
-  if (start === null || end === null || movements.some((step) => step.signedMemberCount === null)) return null;
-
-  const expected = movements.reduce((sum, step) => sum + (step.signedMemberCount ?? 0), start);
-  if (expected === end) return null;
-
-  const endPhrase = endLabel === 'Today' ? 'today' : `at the ${endLabel.toLowerCase()}`;
-  return `These figures don't reconcile: ${formatCount(start)} at the start of the year plus the movements comes to ${formatCount(expected)}, but ${formatCount(end)} are recorded ${endPhrase}. The bars show the recorded figures.`;
+/** Trend bars, labelled by short date; the rate is clamped like the table's. */
+export function buildHealthMetricsMembersBoardTrend(trend: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardTrendBarView[] {
+  return trend.map((meeting) => {
+    const pct = toWholePct(meeting.attendancePct);
+    return {
+      meetingId: meeting.meetingId,
+      label: formatIsoDateShortLabel(meeting.meetingDate) ?? '—',
+      dateLabel: formatIsoDate(meeting.meetingDate),
+      committeeName: meeting.committeeName ?? '—',
+      pct,
+      pctLabel: pct === null ? '—' : `${pct}%`,
+      isLatest: meeting.isLatestMeeting,
+    };
+  });
 }
 
-function toneFor(movementType: HealthMetricsMembersBridgeStep['movementType']): HealthMetricsMembersBridgeTone {
-  if (movementType === 'new' || movementType === 'upgrade') return 'gain';
-  if (movementType === 'downgrade' || movementType === 'churned') return 'loss';
-  return 'neutral';
+/** The sub-nav note, from the board cohort: unused seats first, else the latest share when below its level. */
+export function buildHealthMetricsMembersBoardNote(board: HealthMetricsMembersBoardCohortSummary | null): string {
+  if (!board) return '';
+  const never = board.neverAttendedCount ?? 0;
+  if (never > 0) return `${pluralize(never, 'seat')} unused`;
+  if (isHealthMetricsMembersBoardBelowLevel('board', board) && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
+  return '';
 }
 
-/** Counts arrive unsigned, so a movement's sign comes from its direction. */
-function formatSignedCount(value: number | null, tone: HealthMetricsMembersBridgeTone): string {
-  if (value === null) return '—';
-  if (value === 0 || tone === 'neutral') return formatCount(value);
-  return `${tone === 'gain' ? '+' : '−'}${formatCount(value)}`;
+/** The audience toggle, in the read's order. */
+export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMetricsMembersNpsAudience[]): HealthMetricsMembersNpsAudienceOption[] {
+  return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
 }
 
-/** Empty for an unmeasured figure, so the bar shows only its count. */
-function formatSignedUsd(value: number | null, tone: HealthMetricsMembersBridgeTone): string {
-  if (value === null) return '';
-  const amount = formatCurrency(Math.abs(value));
-  if (value === 0 || tone === 'neutral') return amount;
-  return `${tone === 'gain' ? '+' : '−'}${amount}`;
-}
+/** The NPS hero, banner and footer for one audience; a sample below the rate floor keeps its score, marked as low confidence. */
+export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
+  const isUnscored = !audience || audience.npsScore === null;
+  const recipients = audience?.recipientsCount ?? null;
+  const responses = audience?.responsesCount ?? null;
+  const ratePct = toWholePct(audience?.responseRatePct ?? null);
+  const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+  // The view's flag sits at 40%, so it stands in only when the rate itself is missing.
+  const isSampleTooSmall = ratePct === null ? audience?.isSampleTooSmall === true : isRateBelowFloor;
+  const change = isUnscored ? null : (audience?.scoreChangePp ?? null);
+  const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
+  const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
 
-function summarizeYear(rows: HealthMetricsMembersTierYear[]): HealthMetricsMembersTiersYearSummary {
   return {
-    measured: rows.length > 0,
-    isPartial: rows.some((row) => row.isPartialYear),
-    members: sumMeasured(rows.map((row) => row.memberCount)),
-    newMembers: sumMeasured(rows.map((row) => row.newMemberCount)),
-    revenue: sumMeasured(rows.map((row) => row.revenueUsd)),
+    isUnscored,
+    isLowConfidence: !isUnscored && isSampleTooSmall,
+    scoreLabel: isUnscored ? '—' : formatSignedScore(audience?.npsScore ?? null),
+    changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
+    changeDirection: directionOf(change),
+    caption: isUnscored ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
+    respondedLabel,
+    rateLabel,
+    isRateBelowFloor,
+    lowSampleNote:
+      isSampleTooSmall && !isUnscored
+        ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold, so read this score with caution.`
+        : null,
+    lastUpdatedLabel: audience?.lastUpdatedQuarter ? `Last updated ${audience.lastUpdatedQuarter}` : '',
+    surveyedLabel: `out of ${formatCount(recipients)} surveyed`,
+    footer: isRateBelowFloor
+      ? {
+          isBelowFloor: true,
+          lead: `${formatCount(audience?.noResponseCount ?? null)} of ${formatCount(recipients)} did not respond.`,
+          text: `A score computed on ${pluralize(Math.max(0, responses ?? 0), 'reply', 'replies')} is not a foundation-wide signal.`,
+        }
+      : {
+          isBelowFloor: false,
+          lead: null,
+          text: 'Non-responses are rendered as the grey segment so the sample size is visible without reading a caption.',
+        },
   };
 }
 
-/** Sum of the measured values; `null` when none is measured, so an unread year never reads as zero. */
-function sumMeasured(values: (number | null)[]): number | null {
-  const measured = values.filter((value): value is number => value !== null);
-  return measured.length === 0 ? null : measured.reduce((sum, value) => sum + value, 0);
+/** Promoters, passives, detractors and non-responses as shares of everyone surveyed. */
+export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSegmentView[] {
+  const counts: Record<(typeof HEALTH_METRICS_MEMBERS_NPS_SEGMENTS)[number]['key'], number | null> = {
+    promoters: audience?.promotersCount ?? null,
+    passives: audience?.passivesCount ?? null,
+    detractors: audience?.detractorsCount ?? null,
+    noResponse: audience?.noResponseCount ?? null,
+  };
+  const recipients = audience?.recipientsCount ?? 0;
+  return HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => {
+    const count = counts[segment.key];
+    return {
+      key: segment.key,
+      label: segment.label,
+      countLabel: formatCount(count),
+      widthPct: recipients > 0 && count !== null ? Math.min(100, Math.max(0, (count / recipients) * 100)) : 0,
+      colorClass: segment.colorClass,
+    };
+  });
 }
 
-/** Tier names by their lowest sort rank across years, then by name, so every year lists tiers in one order. */
-function orderTiers(rows: HealthMetricsMembersTierYear[]): string[] {
-  const rankByTier = new Map<string, number>();
-  for (const row of rows) rankByTier.set(row.tier, Math.min(rankByTier.get(row.tier) ?? Infinity, row.sortRank));
-
-  return [...rankByTier.entries()].sort(([a, rankA], [b, rankB]) => rankA - rankB || a.localeCompare(b, 'en-US')).map(([tier]) => tier);
+/** Trend points, oldest first; a below-floor wave, or a flagged one with no rate, keeps its score as low confidence. */
+export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
+  return trend.map((quarter) => {
+    const score = quarter.npsScore;
+    const ratePct = toWholePct(quarter.responseRatePct);
+    const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+    const isLowConfidence = score !== null && (ratePct === null ? quarter.isSampleTooSmall === true : isRateBelowFloor);
+    const scoreLabel = score === null ? '—' : formatSignedScore(score);
+    return {
+      quarterStartDate: quarter.quarterStartDate,
+      label: quarter.quarterLabel ?? '—',
+      score,
+      scoreLabel,
+      scoreDescription: isLowConfidence ? `${scoreLabel} (low response)` : scoreLabel,
+      ratePct,
+      rateLabel: ratePct === null ? '—' : `${ratePct}%`,
+      isRateBelowFloor,
+      isLowConfidence,
+    };
+  });
 }
 
-function buildStat(
-  key: string,
-  label: string,
-  value: string,
-  comparable: boolean,
-  baseline: string,
-  current: number | null,
-  previous: number | null
-): HealthMetricsMembersTiersStatView {
-  const change = comparable && current !== null && previous !== null && previous > 0 ? (current - previous) / previous : null;
-  return { key, label, value, ...formatDelta(change), baseline: change === null ? null : baseline, positive: false };
+/**
+ * The sentence under the trend: a rising score on a falling rate that fell materially or ended below the floor
+ * is flagged; else a below-floor rate, or a rate that moved under the drop threshold. `null` when neither applies.
+ */
+export function buildHealthMetricsMembersNpsTrendNote(points: HealthMetricsMembersNpsTrendPointView[]): HealthMetricsMembersNpsTrendNote | null {
+  const rated = points.filter((point) => point.ratePct !== null);
+  const latest = rated.at(-1);
+  if (points.length < 2 || !latest) return null;
+
+  const scored = rated.filter((point) => point.score !== null);
+  const first = scored[0];
+  const last = scored.at(-1);
+  if (first && last && first !== last) {
+    const scoreUp = (last.score ?? 0) - (first.score ?? 0);
+    const rateDrop = (first.ratePct ?? 0) - (last.ratePct ?? 0);
+    if (scoreUp > 0 && rateDrop > 0 && (rateDrop >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP || last.isRateBelowFloor)) {
+      return { kind: 'diverging', scoreChangeLabel: pluralize(scoreUp, 'point'), fromRateLabel: first.rateLabel, toRateLabel: last.rateLabel };
+    }
+  }
+
+  if (latest.isRateBelowFloor) return { kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
+  const rateMove = Math.abs((rated[0].ratePct ?? 0) - (latest.ratePct ?? 0));
+  if (rated.length < 2 || rateMove >= HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP) return null;
+  return { kind: 'holding', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: latest.rateLabel };
 }
 
-/** A tier's share of its year; an unmeasured count stays `null` rather than reading as 0%. */
-function sharePercent(count: number | null, total: number): number | null {
-  if (count === null) return null;
-  return total > 0 ? (count / total) * 100 : 0;
+/**
+ * The selected period's churn in one mode. A change against the year before needs that year in the read;
+ * without it the hero shows no change rather than one the data cannot back.
+ */
+export function buildHealthMetricsMembersChurnView(
+  churn: HealthMetricsMembersChurn,
+  range: HealthMetricsRange,
+  mode: HealthMetricsMembersChurnMode
+): HealthMetricsMembersChurnView {
+  const year = getYearForRange(range);
+  const current = churn.years.find((row) => row.year === year) ?? null;
+  const prior = churn.years.find((row) => row.year === year - 1) ?? null;
+  const lostCount = Math.max(0, Math.round(current?.lostCount ?? 0));
+  const rateOf = (row: HealthMetricsMembersChurnYear | null): number | null => (mode === 'revenue' ? row?.revenueNotRenewedRate : row?.logoChurnRate) ?? null;
+  const rate = rateOf(current);
+  const priorRate = rateOf(prior);
+  const change = churnDifference(rate, priorRate);
+  const isCurrentYear = year === getYearForRange('YTD');
+  const changeTone = churnChangeTone(change);
+
+  return {
+    measured: churn.years.length > 0,
+    // A null count is unmeasured, so it must not read as "no churn".
+    yearMeasured: current !== null && current.lostCount !== null,
+    year,
+    hasChurn: lostCount > 0,
+    lostCount,
+    metaLabel:
+      current?.openingCount === null || current?.openingCount === undefined
+        ? `${pluralize(lostCount, 'membership')} lost`
+        : `${formatCount(lostCount)} of ${pluralize(Math.round(current.openingCount), 'membership')} lost`,
+    heroLabel: formatChurnRate(rate),
+    changeLabel: change === null ? null : `${formatChurnChange(change)} vs ${year - 1}`,
+    changeTone,
+    caption: buildChurnCaption(mode, year, isCurrentYear),
+    sides: buildChurnSides(current, mode, year, isCurrentYear),
+    tiers: buildChurnTierRows(churn.tiers.filter((row) => row.year === year)),
+    inversion: buildChurnInversion(churn.tiers.filter((row) => row.year === year)),
+    trendTitle: mode === 'revenue' ? 'Revenue churn trend' : 'Logo churn trend',
+    trendSubtitle: mode === 'revenue' ? 'share of dues not renewed, by year' : 'share of memberships lost, by year',
+    trend: buildChurnTrend(churn.years, year, rateOf),
+    // Follows the hero's change, so the bar and the hero never disagree on direction.
+    trendRose: changeTone === 'bad',
+  };
 }
 
-/** A change as a whole percent (`−25%`); the sign follows the rounded value. */
-function formatDelta(fraction: number | null): Pick<HealthMetricsMembersTiersStatView, 'delta' | 'deltaDirection'> {
-  if (fraction === null) return { delta: HEALTH_METRICS_MEMBERS_NOT_AVAILABLE, deltaDirection: 'neutral' };
-
-  const rounded = Math.round(fraction * 100);
-  if (rounded === 0) return { delta: '0%', deltaDirection: 'neutral' };
-
-  return { delta: `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}%`, deltaDirection: rounded > 0 ? 'up' : 'down' };
+/** "Who left" rows: dues lost, the lapse and the last engagement, a dash where the model has none. */
+export function buildHealthMetricsMembersChurnDepartureRows(rows: HealthMetricsMembersChurnDeparture[]): HealthMetricsMembersChurnDepartureRowView[] {
+  return rows.map((row) => ({
+    key: row.key,
+    accountId: row.accountId,
+    accountName: row.accountName,
+    tierLabel: row.membershipTier ?? '—',
+    duesLabel: formatUsd(row.duesLostUsd),
+    lapsedLabel: formatIsoDate(row.lapsedDate),
+    lastEngagedLabel: formatIsoDate(row.lastEngagedDate),
+  }));
 }
 
-function formatShare(revenue: number | null, foundationTotal: number | null): string {
-  if (revenue === null || foundationTotal === null || foundationTotal <= 0) return HEALTH_METRICS_MEMBERS_NOT_AVAILABLE;
-  return `${Math.round((revenue / foundationTotal) * 100)}%`;
+/** "Who left"'s subtitle; it claims the churn count only when the list carries exactly that many. */
+export function buildHealthMetricsMembersChurnDeparturesSubtitle(totalRecords: number, lostCount: number): string {
+  return totalRecords === lostCount ? `largest dues lost first · the same ${formatCount(lostCount)} as lost above` : 'largest dues lost first';
+}
+
+/** Shown when "Who left" and the churn count disagree, so the gap reads as a counting difference. */
+export function buildHealthMetricsMembersChurnCountNote(totalRecords: number, lostCount: number): string | null {
+  if (totalRecords === lostCount) return null;
+
+  return `${pluralize(totalRecords, 'membership')} listed, while churn counts ${formatCount(lostCount)} lost. The list and the churn count are counted separately, so they can differ slightly.`;
+}
+
+function churnDifference(current: number | null, previous: number | null): number | null {
+  return current === null || previous === null ? null : current - previous;
+}
+
+function buildChurnCaption(mode: HealthMetricsMembersChurnMode, year: number, isCurrentYear: boolean): string {
+  if (mode === 'logo')
+    return isCurrentYear ? 'of the memberships held at the start of the year lapsed' : `of the memberships held at the start of ${year} lapsed`;
+  return isCurrentYear ? "of last year's dues did not renew" : `of ${year - 1}'s dues did not renew`;
+}
+
+/** Dues lost this year and last, then the other mode's rate, so the toggle never hides a figure. */
+function buildChurnSides(
+  current: HealthMetricsMembersChurnYear | null,
+  mode: HealthMetricsMembersChurnMode,
+  year: number,
+  isCurrentYear: boolean
+): HealthMetricsMembersChurnSideView[] {
+  const lost = current?.lostCount ?? null;
+  const opening = current?.openingCount ?? null;
+  const other: HealthMetricsMembersChurnSideView =
+    mode === 'revenue'
+      ? {
+          key: 'logo',
+          label: 'Logo churn',
+          value: formatChurnRate(current?.logoChurnRate ?? null),
+          note: lost === null || opening === null ? null : `(${formatCount(lost)} of ${formatCount(opening)})`,
+          isLoss: false,
+        }
+      : { key: 'revenue', label: 'Revenue churn', value: formatChurnRate(current?.revenueNotRenewedRate ?? null), note: null, isLoss: false };
+
+  return [
+    {
+      key: 'dues-lost',
+      label: isCurrentYear ? 'Dues lost this year' : `Dues lost in ${year}`,
+      value: formatUsd(current?.duesLostUsd ?? null),
+      note: null,
+      isLoss: true,
+    },
+    {
+      key: 'dues-lost-prior',
+      label: isCurrentYear ? 'Dues lost last year' : `Dues lost in ${year - 1}`,
+      value: formatUsd(current?.duesLostPriorUsd ?? null),
+      note: null,
+      isLoss: false,
+    },
+    other,
+  ];
+}
+
+/** Most dues lost first, then the model's tier order; a tiny share keeps a visible stub, a zero share none. */
+function buildChurnTierRows(tiers: HealthMetricsMembersChurnTier[]): HealthMetricsMembersChurnTierRowView[] {
+  return [...tiers]
+    .sort((a, b) => (b.duesLostUsd ?? -1) - (a.duesLostUsd ?? -1) || a.tierSortRank - b.tierSortRank || a.tier.localeCompare(b.tier, 'en-US'))
+    .map((row) => {
+      const raw = row.shareOfLossPct === null ? null : Math.min(100, Math.max(0, row.shareOfLossPct));
+      const share = raw === null ? null : Math.round(raw);
+      return {
+        tier: row.tier,
+        lostLabel: formatCount(row.lostCount),
+        rateLabel: formatChurnRate(row.churnRate),
+        isHighRate: row.churnRate !== null && row.churnRate >= HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
+        duesLabel: formatUsd(row.duesLostUsd),
+        shareLabel: formatChurnShare(raw, share),
+        shareWidthPct: raw === null || raw === 0 ? 0 : Math.max(raw, 1),
+      };
+    });
+}
+
+/** Set only when one tier clearly lost the most memberships and another clearly lost the most dues. */
+function buildChurnInversion(tiers: HealthMetricsMembersChurnTier[]): HealthMetricsMembersChurnInversionView | null {
+  const lost = tiers.filter((row) => (row.lostCount ?? 0) > 0);
+  const byCount = soleTop(lost, (row) => row.lostCount ?? 0);
+  const byDues = soleTop(lost, (row) => row.duesLostUsd ?? 0);
+  if (!byCount || !byDues || byCount === byDues) return null;
+
+  const duesTierLost = Math.round(byDues.lostCount ?? 0);
+  return {
+    countLead: `${byCount.tier} lost ${pluralize(Math.round(byCount.lostCount ?? 0), 'membership')}`,
+    duesLead: `${byDues.tier} lost the money`,
+    text: `${formatCount(duesTierLost)} ${byDues.tier} ${duesTierLost === 1 ? 'departure' : 'departures'} cost ${formatUsd(byDues.duesLostUsd)} against ${byCount.tier}'s ${formatUsd(byCount.duesLostUsd)}. That inversion is the whole argument for leading on revenue churn rather than logo churn.`,
+  };
+}
+
+/** The row with the highest value, or `null` when none is positive or the top is tied. */
+function soleTop<T>(rows: T[], value: (row: T) => number): T | null {
+  const sorted = [...rows].sort((a, b) => value(b) - value(a));
+  const [first, second] = sorted;
+  if (!first || value(first) <= 0 || (second && value(second) === value(first))) return null;
+  return first;
+}
+
+/** The years up to the selected one, oldest first, capped to the trend's window. */
+function buildChurnTrend(
+  years: HealthMetricsMembersChurnYear[],
+  year: number,
+  rateOf: (row: HealthMetricsMembersChurnYear | null) => number | null
+): HealthMetricsMembersChurnTrendPointView[] {
+  return years
+    .filter((row) => row.year <= year && row.year > year - HEALTH_METRICS_MEMBERS_CHURN_TREND_YEARS)
+    .sort((a, b) => a.year - b.year)
+    .map((row) => {
+      const value = rateOf(row);
+      return {
+        year: row.year,
+        label: String(row.year),
+        value,
+        valueLabel: value === null ? '—' : `${Math.round(value)}%`,
+        isSelected: row.year === year,
+      };
+    });
+}
+
+/** A percentage to one decimal, dropping a trailing `.0`. */
+function formatChurnRate(pct: number | null): string {
+  return pct === null ? '—' : `${pct.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
+
+/** A whole-percent share; a loss too small to round up still reads as one. */
+function formatChurnShare(raw: number | null, share: number | null): string {
+  if (raw === null || share === null) return '—';
+  return raw > 0 && share === 0 ? '<1%' : `${share}%`;
+}
+
+/** A point change to one decimal with its sign, e.g. `+1.4pp`. */
+function formatChurnChange(pp: number): string {
+  const rounded = Math.round(pp * 10) / 10;
+  if (rounded === 0) return '0.0pp';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}pp`;
+}
+
+/** A rise in churn is bad; a change that rounds to zero is neither. */
+function churnChangeTone(pp: number | null): HealthMetricsMembersChurnView['changeTone'] {
+  if (pp === null || Math.round(pp * 10) === 0) return 'neutral';
+  return pp > 0 ? 'bad' : 'good';
+}
+
+function activityCell(key: string, value: number | null, format: (value: number | null) => string): HealthMetricsMembersDirectoryCellView {
+  return { key, label: format(value), tracked: value !== null };
+}
+
+function toWholePct(share: number | null): number | null {
+  return share === null ? null : Math.min(100, Math.max(0, Math.round(share * 100)));
+}
+
+function formatIsoDate(value: string | null): string {
+  return value ? formatIsoDateLabel(value) : '—';
 }
 
 function formatCount(value: number | null): string {
@@ -432,6 +791,80 @@ function formatUsd(value: number | null): string {
   return value === null ? '—' : formatCurrency(value);
 }
 
-function pluralize(count: number, noun: string): string {
-  return `${count.toLocaleString('en-US')} ${noun}${count === 1 ? '' : 's'}`;
+function formatPct(fraction: number | null): string {
+  const pct = toWholePct(fraction);
+  return pct === null ? '—' : `${pct}%`;
+}
+
+function pluralize(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? noun : plural}`;
+}
+
+/** A score or change with its sign; zero carries none. */
+function formatSignedScore(value: number | null): string {
+  if (value === null) return '—';
+  const rounded = Math.round(value);
+  if (rounded === 0) return '0';
+  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded)}`;
+}
+
+function directionOf(value: number | null): 'up' | 'down' | 'neutral' {
+  if (value === null || Math.round(value) === 0) return 'neutral';
+  return value > 0 ? 'up' : 'down';
+}
+
+/** A tier as the breakdown shows it: its rows merged under one label, with its members per year. */
+interface BreakdownTier {
+  label: string;
+  reserved: HealthMetricsMembersReservedTier | null;
+  rank: number;
+  members: Map<number, number | null>;
+}
+
+/** The tier's name without a trailing "Membership" or "Member", so "Platinum Membership" reads as Platinum. */
+function breakdownTierLabel(raw: string): { label: string; reserved: HealthMetricsMembersReservedTier | null } {
+  const trimmed = raw.trim();
+  const suffix = [' membership', ' member'].find((candidate) => trimmed.toLowerCase().endsWith(candidate));
+  const label = (suffix ? trimmed.slice(0, -suffix.length).trim() : trimmed) || trimmed;
+  const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === label.toLowerCase()) ?? null;
+  return { label: reserved ? HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[reserved] : label, reserved };
+}
+
+/** Tiers with a member in any year shown, highest-paying first; rows with the same label merge. */
+function collectBreakdownTiers(rows: HealthMetricsMembersTierYear[]): BreakdownTier[] {
+  const byLabel = new Map<string, BreakdownTier>();
+  for (const row of rows) {
+    const { label, reserved } = breakdownTierLabel(row.tier);
+    const tier = byLabel.get(label) ?? { label, reserved, rank: row.sortRank, members: new Map<number, number | null>() };
+    tier.rank = Math.min(tier.rank, row.sortRank);
+    tier.members.set(row.year, sumNullable([tier.members.get(row.year) ?? null, row.memberCount]));
+    byLabel.set(label, tier);
+  }
+
+  return [...byLabel.values()]
+    .filter((tier) => [...tier.members.values()].some((count) => (count ?? 0) > 0))
+    .sort((a, b) => a.rank - b.rank || a.label.localeCompare(b.label));
+}
+
+/** The smallest whole, evenly readable step (e.g. 750 for a 3,000 top) whose four steps reach the top. */
+function chartScaleStep(top: number): number {
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(top, 4) / 4));
+  return (
+    [1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 8, 10].map((factor) => factor * magnitude).find((step) => Number.isInteger(step) && step * 4 >= top) ?? magnitude * 10
+  );
+}
+
+function sumNullable(values: (number | null)[]): number | null {
+  const measured = values.filter((value): value is number => value !== null);
+  return measured.length === 0 ? null : measured.reduce((sum, value) => sum + value, 0);
+}
+
+/** A year's running totals with gaps carried forward from the month before, starting from none. */
+function fillCumulative(months: (number | null)[]): number[] {
+  let last = 0;
+  return months.map((value) => (last = value ?? last));
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
 }

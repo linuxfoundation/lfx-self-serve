@@ -4,7 +4,19 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aiRateLimiter } from './rate-limit.middleware';
+import {
+  aiRateLimiter,
+  apiRateLimiter,
+  emailSendCodeTargetRateLimiter,
+  emailSendCodeUserRateLimiter,
+  impersonationSearchRateLimiter,
+  newsletterTestSendRateLimiter,
+  selfResendInviteRateLimiter,
+} from './rate-limit.middleware';
+import { IMPERSONATION_SEARCH_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/impersonation.constants';
+import { SELF_RESEND_INVITE_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/meeting-registrant.constants';
+import { NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/newsletter.constants';
+import { EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX, EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX } from '../../../../../packages/shared/src/constants/profile.constants';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
@@ -45,13 +57,13 @@ function testIpv6Prefix(): string {
   return prefix;
 }
 
-// Minimal Express stand-ins. express-rate-limit only reads `req.ip`, `req.oidc` (through our
-// keyGenerator) and `req.app.get('trust proxy')`, and only writes through `res.setHeader` plus
-// `res.status().send()` on the reject path.
-function buildReq(opts: { sub?: string; ip?: string }): Request {
+// Minimal Express stand-ins include headers for the default IP-key validations.
+function buildReq(opts: { sub?: string; ip?: string; email?: unknown }): Request {
   return {
     ip: opts.ip ?? '203.0.113.10',
+    headers: {},
     app: { get: () => undefined },
+    body: { email: opts.email },
     ...(opts.sub ? { oidc: { user: { sub: opts.sub } } } : {}),
   } as unknown as Request;
 }
@@ -77,13 +89,18 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
     json: vi.fn(),
     end: vi.fn(),
     on: vi.fn(),
+    // express-rate-limit registers its close/finish/error handlers with `once` when skipFailedRequests is set.
+    once: vi.fn(),
   };
 
   return res as unknown as Response & { statusCode?: number; headers: Record<string, string> };
 }
 
 /** Drives the limiter once and reports whether the request was allowed through. */
-async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
+async function request(
+  opts: { sub?: string; ip?: string; email?: unknown; downstreamStatus?: number } = {},
+  limiter: typeof aiRateLimiter = aiRateLimiter
+): Promise<{
   allowed: boolean;
   statusCode?: number;
   headers: Record<string, string>;
@@ -93,7 +110,21 @@ async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
 
-  await aiRateLimiter(req, res, next);
+  await limiter(req, res, next);
+
+  // Let an outcome-dependent limiter's finish handler run; without this, skipFailedRequests
+  // could regress to true while these in-memory request tests still passed.
+  if (opts.downstreamStatus !== undefined && (next as unknown as ReturnType<typeof vi.fn>).mock.calls.length > 0) {
+    res.statusCode = opts.downstreamStatus;
+    const listeners = [res.on, res.once].flatMap((register) => (register as unknown as ReturnType<typeof vi.fn>).mock.calls);
+    for (const [event, listener] of listeners) {
+      if (event === 'finish') {
+        await listener();
+      }
+    }
+    // The limiter refunds a failed request in a follow-up task of its own; let it land before the next request counts.
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 
   const sent = res.send as unknown as ReturnType<typeof vi.fn>;
 
@@ -171,5 +202,142 @@ describe('aiRateLimiter', () => {
     // A different /56 is a different caller and keeps its own budget. The fourth group's *high* byte
     // is what has to differ — `0100` and above leave the exhausted /56.
     expect((await request({ ip: `${prefix}:0100:0:0:0:1` })).allowed).toBe(true);
+  });
+});
+
+describe('apiRateLimiter', () => {
+  const API_LIMIT = 500;
+
+  // A throttled request never reached a handler, so it must read as a definite refusal. The campaign
+  // write levers treat a 4xx WITHOUT the app's `{ error, code }` envelope as a proxy's answer, i.e.
+  // "may have applied", so the 429 has to carry the envelope.
+  it("rejects the request over the limit with 429 in the app's JSON error envelope", async () => {
+    const ip = `${testIpv6Prefix()}:0001::1`;
+
+    for (let attempt = 1; attempt <= API_LIMIT; attempt++) {
+      const result = await request({ ip }, apiRateLimiter);
+      if (!result.allowed) {
+        throw new Error(`request ${attempt} should be allowed`);
+      }
+    }
+
+    const rejected = await request({ ip }, apiRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many requests, please try again later.', code: 'RATE_LIMITED' });
+  });
+});
+
+describe('emailSendCodeUserRateLimiter', () => {
+  it.each([200, 400, 503])('counts every request even when downstream answers %s', async (downstreamStatus) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, downstreamStatus }, emailSendCodeUserRateLimiter)).allowed).toBe(true);
+    }
+    const rejected = await request({ sub }, emailSendCodeUserRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many verification code requests. Please try again later.', code: 'RATE_LIMITED' });
+    expect((await request({ sub: `${sub}-another-user` }, emailSendCodeUserRateLimiter)).allowed).toBe(true);
+  });
+});
+
+describe('emailSendCodeTargetRateLimiter', () => {
+  it('shares a normalized target budget across users and all downstream outcomes', async () => {
+    const email = `${testSub()}@example.test`;
+    const spellings = [email.toUpperCase(), email.toLowerCase(), ` ${email} `];
+    const outcomes = [200, 400, 503];
+    for (let attempt = 0; attempt < EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX; attempt++) {
+      const result = await request(
+        { sub: `${testSub()}-${attempt}`, email: spellings[attempt % spellings.length], downstreamStatus: outcomes[attempt % outcomes.length] },
+        emailSendCodeTargetRateLimiter
+      );
+      expect(result.allowed).toBe(true);
+    }
+    const rejected = await request({ sub: `${testSub()}-over-limit`, email }, emailSendCodeTargetRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many verification code requests. Please try again later.', code: 'RATE_LIMITED' });
+    expect((await request({ sub: `${testSub()}-over-limit`, email: `other-${email}` }, emailSendCodeTargetRateLimiter)).allowed).toBe(true);
+  });
+
+  it.each([undefined, 42])('falls back to the user budget when email is %s', async (email) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, email }, emailSendCodeTargetRateLimiter)).allowed).toBe(true);
+    }
+    const rejected = await request({ sub, email }, emailSendCodeTargetRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect((await request({ sub: `${sub}-another-user`, email }, emailSendCodeTargetRateLimiter)).allowed).toBe(true);
+  });
+});
+
+describe('selfResendInviteRateLimiter', () => {
+  it('allows the per-window budget of resends per user, then rejects with the 429 envelope', async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, downstreamStatus: 200 }, selfResendInviteRateLimiter)).allowed).toBe(true);
+    }
+    const rejected = await request({ sub }, selfResendInviteRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'You have resent your invitation too many times. Please try again later.', code: 'RATE_LIMITED' });
+  });
+
+  it("does not let one user's resends spend another user's budget", async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX; attempt++) {
+      await request({ sub, downstreamStatus: 200 }, selfResendInviteRateLimiter);
+    }
+
+    expect((await request({ sub }, selfResendInviteRateLimiter)).allowed).toBe(false);
+    expect((await request({ sub: `${sub}-another-user` }, selfResendInviteRateLimiter)).allowed).toBe(true);
+  });
+
+  it.each([400, 403, 404, 500, 503])('does not spend budget on a request that fails with %s', async (downstreamStatus) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < SELF_RESEND_INVITE_RATE_LIMIT_MAX + 3; attempt++) {
+      expect((await request({ sub, downstreamStatus }, selfResendInviteRateLimiter)).allowed, `failed request ${attempt}`).toBe(true);
+    }
+  });
+});
+
+describe('newsletterTestSendRateLimiter', () => {
+  it.each([200, 400, 503])('counts every test send, even when downstream answers %s, per user', async (downstreamStatus) => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < NEWSLETTER_TEST_SEND_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub, downstreamStatus }, newsletterTestSendRateLimiter)).allowed, `attempt ${attempt}`).toBe(true);
+    }
+    const rejected = await request({ sub }, newsletterTestSendRateLimiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect((await request({ sub: `${sub}-another-user` }, newsletterTestSendRateLimiter)).allowed).toBe(true);
+  });
+});
+
+describe('impersonationSearchRateLimiter', () => {
+  it('allows the per-window budget of searches per admin, then rejects with the 429 envelope', async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < IMPERSONATION_SEARCH_RATE_LIMIT_MAX; attempt++) {
+      expect((await request({ sub }, impersonationSearchRateLimiter)).allowed, `search ${attempt}`).toBe(true);
+    }
+
+    const rejected = await request({ sub }, impersonationSearchRateLimiter);
+
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.body).toEqual({ error: 'Too many searches. Please wait a moment and try again.', code: 'RATE_LIMITED' });
+  });
+
+  it("keys on the admin's sub, so another admin behind the same IP keeps their own budget", async () => {
+    const sub = testSub();
+    for (let attempt = 0; attempt < IMPERSONATION_SEARCH_RATE_LIMIT_MAX; attempt++) {
+      await request({ sub }, impersonationSearchRateLimiter);
+    }
+
+    expect((await request({ sub }, impersonationSearchRateLimiter)).allowed).toBe(false);
+    expect((await request({ sub: `${sub}-another-admin` }, impersonationSearchRateLimiter)).allowed).toBe(true);
   });
 });

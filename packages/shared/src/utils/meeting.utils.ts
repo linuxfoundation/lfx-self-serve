@@ -22,7 +22,9 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
+import { isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 import type {
+  BatchRegistrantOperationResponse,
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
   CardSelectorOption,
@@ -30,13 +32,16 @@ import type {
   Meeting,
   MeetingAllowedVotingStatus,
   MeetingCommittee,
+  MeetingGuestRole,
   MeetingHostCandidate,
   MeetingOccurrence,
+  MeetingOccurrenceOption,
   MeetingOccurrenceRoute,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
   MeetingRegistrant,
+  MeetingRsvp,
   MeetingUserInfo,
   OccurrenceNavItem,
   PastMeeting,
@@ -386,7 +391,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const joinableOccurrence = activeOccurrences.find((occurrence) => {
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   });
@@ -401,6 +406,44 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
     .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
 
   return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+}
+
+/**
+ * Formats an occurrence's start for a picker row, in the series' own timezone.
+ * @description e.g. `Tue, Oct 14, 2026 · 10:00 AM PDT`. The zone name is part of the label because the
+ * occurrence endpoints take no timezone — the series' zone is the one every occurrence is edited in.
+ */
+export function formatMeetingOccurrenceLabel(occurrence: MeetingOccurrence, timezone?: string | null): string {
+  const start = new Date(occurrence.start_time);
+
+  if (isNaN(start.getTime())) {
+    return occurrence.occurrence_id;
+  }
+
+  const zone = timezone ? { timeZone: timezone } : {};
+  const date = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', ...zone });
+  const time = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short', ...zone });
+
+  return `${date} · ${time}`;
+}
+
+/**
+ * Picker rows for the occurrences of a recurring meeting an organizer can still edit or cancel.
+ * @description Active (not cancelled) occurrences that have not ended yet, earliest first. `includeId`
+ * keeps one more occurrence in the list even when it has ended — the card's own occurrence stays
+ * "current" through its join window, which runs past its end, and the picker opens preselected on it.
+ */
+export function buildMeetingOccurrenceOptions(meeting: Meeting, includeId?: string | null, now: Date = new Date()): MeetingOccurrenceOption[] {
+  const active = getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences);
+
+  return active
+    .filter((occurrence) => {
+      // Indexed occurrences can omit `duration` when they inherit the series'; zero would end a running one at its start.
+      const end = new Date(occurrence.start_time).getTime() + (occurrence.duration || meeting.duration || 0) * 60000;
+      return end > now.getTime() || (!!includeId && isSameOccurrenceId(occurrence.occurrence_id, includeId));
+    })
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
+    .map((occurrence) => ({ label: formatMeetingOccurrenceLabel(occurrence, meeting.timezone), value: occurrence.occurrence_id }));
 }
 
 /**
@@ -545,6 +588,43 @@ export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: Meeti
 }
 
 /**
+ * Occurrence id of the date an upcoming card displays, for acting on exactly that date.
+ *
+ * A card that shows the next occurrence without being handed one (Groups Overview passes only the meeting)
+ * still has a date on screen, and anything done "to this meeting" has to name that date, or a registration
+ * scoped to a different date can be picked instead. The date is the one {@link getUpcomingMeetingStartTime}
+ * resolves; this finds its id:
+ * 1. an explicit `occurrence` wins;
+ * 2. otherwise the meeting's own occurrence that starts at that instant;
+ * 3. otherwise the start's Unix seconds, which is what an occurrence id is. The list payload's `occurrences`
+ *    array is not always usable (LFXV2-2054), so the id cannot be required to be in it. Consumers compare ids
+ *    with `isSameOccurrenceId`, so seconds against milliseconds is not a mismatch.
+ *
+ * A one-time meeting has no occurrences to tell apart, so it resolves to null.
+ *
+ * @param meeting The meeting the card shows
+ * @param occurrence Optional already-resolved occurrence (explicit or current/next)
+ * @returns The displayed occurrence's id, or null when the meeting is not recurring or has no usable start
+ */
+export function resolveShownOccurrenceId(meeting: Meeting, occurrence?: MeetingOccurrence | null): string | null {
+  if (occurrence?.occurrence_id) {
+    return occurrence.occurrence_id;
+  }
+  if (!meeting?.recurrence && !meeting?.occurrences?.length) {
+    return null;
+  }
+
+  const start = getUpcomingMeetingStartTime(meeting);
+  const startMs = start ? Date.parse(start) : Number.NaN;
+  if (Number.isNaN(startMs)) {
+    return null;
+  }
+
+  const matched = meeting.occurrences?.find((item) => Date.parse(item.start_time) === startMs);
+  return matched?.occurrence_id || String(Math.floor(startMs / 1000));
+}
+
+/**
  * Duration (minutes) for the start {@link getUpcomingMeetingStartTime} resolves.
  *
  * An explicit occurrence's duration wins. Otherwise the occurrence whose start instant matches
@@ -586,7 +666,7 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
     const now = new Date();
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   }
@@ -599,7 +679,7 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
   const now = new Date();
   const startTime = new Date(meeting.start_time);
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
+  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
 
   return now >= earliestJoinTime && now <= latestJoinTime;
 }
@@ -616,12 +696,11 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  */
 export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
   const now = new Date();
-  const buffer = 40 * 60000; // 40 minutes in milliseconds
 
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -631,7 +710,7 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
 
@@ -819,7 +898,7 @@ export interface BuildJoinUrlOptions {
  * The display name is built from: options.name > user.name > user.email
  * If organization is provided, it's appended as "Name (Organization)"
  */
-export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, options?: BuildJoinUrlOptions): string {
+export function buildJoinUrlWithParams(joinUrl: string, user?: Pick<User, 'name' | 'email'> | null, options?: BuildJoinUrlOptions): string {
   if (!joinUrl) {
     return joinUrl;
   }
@@ -1107,6 +1186,63 @@ export function isMeetingInviteResponsesEnabled(meeting: Pick<Meeting, 'is_invit
 }
 
 /**
+ * True when the viewer's applicable RSVP declines every occurrence (`scope: 'all'`).
+ * @description Reads the BFF-resolved `my_rsvp`, which already prefers the RSVP that applies to the
+ * current/next occurrence. A `single` or `this_and_following` decline leaves other dates open, so
+ * it does not count. Declining does not remove the viewer's access grant, so the meeting keeps
+ * coming back from the query service; My Meetings can hide it with the explicit hide-declined filter.
+ */
+export function isMeetingDeclinedForAllOccurrences(meeting: Pick<Meeting, 'my_rsvp'> | null | undefined): boolean {
+  const rsvp = meeting?.my_rsvp;
+  return rsvp?.response_type === 'declined' && rsvp.scope === 'all';
+}
+
+/**
+ * The viewer's RSVP for the current/next meeting date. An unresolved recurring
+ * date can only be answered by an all-dates response, not aggregate selection.
+ */
+export function getApplicableMeetingRsvp(meeting: Meeting | null | undefined): MeetingRsvp | null {
+  if (!meeting?.my_rsvp) return null;
+  const occurrenceId = resolveRsvpOccurrenceId(meeting);
+  if (meeting.recurrence && !occurrenceId) {
+    return meeting.my_rsvp.scope === 'all' ? meeting.my_rsvp : null;
+  }
+  return selectApplicableRsvp(occurrenceId, [meeting.my_rsvp]);
+}
+
+/**
+ * True when the viewer's RSVP for the current/next occurrence is an acceptance.
+ * @description `my_rsvp` is not enough on its own: the BFF falls back to the newest series RSVP when
+ * none applies to the current/next date (so Pending RSVP can tell "never answered" apart), which
+ * means a series accepted only for a past date still carries `accepted` on an unanswered next date.
+ * Re-resolving `my_rsvp` with {@link getApplicableMeetingRsvp} drops the fallback,
+ * including when the recurring date is unresolved. "Maybe" and "declined" do not count.
+ */
+export function isMeetingAccepted(meeting: Meeting | null | undefined): boolean {
+  return getApplicableMeetingRsvp(meeting)?.response_type === 'accepted';
+}
+
+/**
+ * Counts individual meeting dates that have not ended and start before `endMs`.
+ * @description Recurring meetings contribute one per active occurrence in the window (cancelled
+ * occurrences excluded); one-time meetings contribute one. In-progress meetings count, matching
+ * {@link hasMeetingEnded}'s end buffer.
+ */
+export function countMeetingDatesBefore(meetings: ReadonlyArray<Meeting>, endMs: number): number {
+  let count = 0;
+  for (const meeting of meetings) {
+    if (meeting.occurrences && meeting.occurrences.length > 0) {
+      count += getActiveOccurrences(meeting.occurrences, meeting.cancelled_occurrences).filter(
+        (occurrence) => !hasMeetingEnded(meeting, occurrence) && new Date(occurrence.start_time).getTime() < endMs
+      ).length;
+    } else if (meeting.start_time && !hasMeetingEnded(meeting) && new Date(meeting.start_time).getTime() < endMs) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
  * Derives top-level AI-summary fields from indexed `zoom_config` when the query-service projection omits them.
  * Explicit top-level values win (`??`); returns the input unchanged when `zoom_config` is absent.
  */
@@ -1219,6 +1355,20 @@ export function getMeetingOrganizerDisplayName(organizer: MeetingUserInfo | null
     return '';
   }
   return organizer.name?.trim() || organizer.username?.trim() || organizer.email?.trim() || '';
+}
+
+/**
+ * Single display name for a meeting's organizer; never blank. Resolution order:
+ * `owner.name`, `created_by.name`, the local part of `owner.email`, then "Linux Foundation".
+ * Service-account and zero-valued identities are skipped (see {@link resolveMeetingOwner}), so a
+ * webhook-created meeting reads as "Linux Foundation" rather than `zoom.webhooks`.
+ */
+export function organizerDisplayName(meeting: Pick<Meeting, 'created_by' | 'owner'> | null | undefined): string {
+  const owner = resolveMeetingOwner(meeting);
+  const createdBy = resolveMeetingOrganizer({ created_by: meeting?.created_by });
+  const emailLocalPart = owner?.email?.split('@')[0]?.trim();
+
+  return owner?.name?.trim() || createdBy?.name?.trim() || emailLocalPart || 'Linux Foundation';
 }
 
 /** Maps a host registrant/participant candidate to the organizer display shape. */
@@ -1340,13 +1490,13 @@ export function buildMeetingOrganizerMailto(params: {
  * Normalizes a username for viewer-identity comparison — lowercased and stripped of any
  * auth-provider prefix (e.g. `auth0|`), so an OIDC `sub` still matches a plain LFID.
  */
-function normalizeUsername(username: string | null | undefined): string {
+export function normalizeUsername(username: string | null | undefined): string {
   return (username ?? '').trim().toLowerCase().split('|').pop() ?? '';
 }
 
 /**
  * Whether a resolved organizer IS the current viewer — the single comparison behind both the
- * chip's "you" variant and the "Organized by me" list filter, so the two can never disagree.
+ * chip's "you" variant and the My Meetings dashboard's "Organized by me" filter, so the two can never disagree.
  * An absent/empty viewer never matches (a logged-out or unresolved viewer must not match every
  * meeting).
  */
@@ -1378,6 +1528,19 @@ export function isMeetingOrganizedByViewer(
   hosts?: ReadonlyArray<MeetingHostCandidate>
 ): boolean {
   return collectMeetingOrganizers(meeting, hosts).some((organizer) => isViewerOrganizer(organizer, viewerUsername));
+}
+
+/**
+ * Whether the explicit hide-declined filter excludes this meeting.
+ * @description A decline covering every date ({@link isMeetingDeclinedForAllOccurrences}) hides the
+ * meeting only when the user requests it, except when the viewer organizes it: they still run
+ * the series and must be able to find it.
+ */
+export function isMeetingHiddenAsDeclined(
+  meeting: Pick<Meeting, 'my_rsvp' | 'created_by' | 'owner'> | null | undefined,
+  viewerUsername?: string | null
+): boolean {
+  return isMeetingDeclinedForAllOccurrences(meeting) && !isMeetingOrganizedByViewer(meeting, viewerUsername);
 }
 
 /**
@@ -1453,6 +1616,31 @@ export function compareMeetingPeopleByHostThenName<T extends { host?: boolean; f
 }
 
 /**
+ * Lowercased keys (email or username) of the meeting's listed organizers, for {@link resolveMeetingGuestRole}.
+ * @description The meeting's `organizers` list is typed as usernames on read and emails on create, so a guest
+ * is matched on either. People who organize through project permissions are not in the list.
+ */
+export function buildMeetingOrganizerKeys(organizers: readonly string[] | null | undefined): Set<string> {
+  return new Set((organizers ?? []).map((key) => key?.trim().toLowerCase()).filter(Boolean));
+}
+
+/**
+ * Which role label a guest carries: `organizer` for a listed organizer, `host` for a guest marked as a Meeting
+ * Host who is not one, otherwise `null`. An organizer counts as a host already, so a listed organizer is never
+ * reported as a host, whatever their `host` flag says.
+ */
+export function resolveMeetingGuestRole(person: MeetingHostCandidate, organizerKeys: ReadonlySet<string>): MeetingGuestRole {
+  const email = person.email?.trim().toLowerCase();
+  const username = person.username?.trim().toLowerCase();
+
+  if ((email && organizerKeys.has(email)) || (username && organizerKeys.has(username))) {
+    return 'organizer';
+  }
+
+  return person.host ? 'host' : null;
+}
+
+/**
  * Drops null/blank committee entries from a meeting payload.
  *
  * PrimeNG MultiSelect builds its trigger label with `label += getLabelByValue(...)`.
@@ -1511,6 +1699,15 @@ export function fromMeetingApiVotingStatuses(statuses: ReadonlyArray<string | nu
 /** Canonicalizes a stored status list to the deduped meeting-API vocabulary, mapping pre-migration display values. */
 export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string | null | undefined> | null | undefined): MeetingAllowedVotingStatus[] {
   return toMeetingApiVotingStatuses(fromMeetingApiVotingStatuses(statuses));
+}
+
+/** Stable roster-selection identity: group order, labels, and equivalent status spellings do not change coverage. */
+export function getMeetingCommitteeSelectionKey(committees: ReadonlyArray<MeetingCommittee | null | undefined> | null | undefined): string {
+  return JSON.stringify(
+    sanitizeMeetingCommittees(committees)
+      .map((committee) => JSON.stringify([committee.uid, normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses).sort()]))
+      .sort()
+  );
 }
 
 /**
@@ -1596,4 +1793,69 @@ export function getSelectableMeetingTypeOptions(persona: PersonaType, hydratedMe
   }
 
   return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydratedMeetingType);
+}
+
+/**
+ * Merges the responses of a batch registrant operation that was split into several requests.
+ * @description Successes and failures are concatenated in request order and the summary counts are
+ * summed, so callers see one response regardless of how many chunks the batch was sent in. An empty
+ * input yields empty arrays and zero counts.
+ */
+export function mergeBatchRegistrantResponses<T>(responses: BatchRegistrantOperationResponse<T>[]): BatchRegistrantOperationResponse<T> {
+  return responses.reduce<BatchRegistrantOperationResponse<T>>(
+    (merged, response) => ({
+      successes: [...merged.successes, ...response.successes],
+      failures: [...merged.failures, ...response.failures],
+      summary: {
+        total: merged.summary.total + response.summary.total,
+        successful: merged.summary.successful + response.summary.successful,
+        failed: merged.summary.failed + response.summary.failed,
+      },
+    }),
+    { successes: [], failures: [], summary: { total: 0, successful: 0, failed: 0 } }
+  );
+}
+
+/**
+ * Whether `value` has the shape of a batch registrant operation response.
+ * @description The BFF answers a batch whose every item failed with a 400 that still carries this body,
+ * so an HTTP error alone does not mean the request produced no per-item results.
+ */
+export function isBatchRegistrantOperationResponse<T>(value: unknown): value is BatchRegistrantOperationResponse<T> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const { successes, failures, summary } = value as Partial<Record<keyof BatchRegistrantOperationResponse<T>, unknown>>;
+  if (!Array.isArray(successes) || !Array.isArray(failures) || typeof summary !== 'object' || summary === null) {
+    return false;
+  }
+
+  const { total, successful, failed } = summary as Partial<Record<keyof BatchRegistrantOperationResponse<T>['summary'], unknown>>;
+  return typeof total === 'number' && typeof successful === 'number' && typeof failed === 'number';
+}
+
+/**
+ * Confirmation text for a user removing themselves from a meeting. A committee invitee is told the committee
+ * will not add them back, since the removal is recorded and committee syncs honor it. An organizer is told the
+ * removal only ends their invitation, not their organizer access.
+ */
+export function getMeetingSelfRemovalMessage(title: string, options: { viaCommittee?: boolean; organizer?: boolean } = {}): string {
+  return [
+    `Remove yourself from "${title}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+    ...getMeetingSelfRemovalNotes(options),
+  ].join(' ');
+}
+
+/** The question of the meetings home Remove Yourself dialog, with curly quotes; its notes are listed under it. */
+export function getMeetingSelfRemovalQuestion(title: string): string {
+  return `Remove yourself from “${title}”? You will no longer be invited to any occurrence and will lose your RSVP.`;
+}
+
+/** What stays after a self-removal: organizer access, and the committee membership that will no longer invite them. */
+export function getMeetingSelfRemovalNotes(options: { viaCommittee?: boolean; organizer?: boolean } = {}): string[] {
+  const notes: string[] = [];
+  if (options.organizer) notes.push('You will still be an organizer of this meeting.');
+  if (options.viaCommittee) notes.push("You stay in the committee, but it won't invite you to this meeting again.");
+  return notes;
 }

@@ -67,6 +67,28 @@ export interface ReasonPromptDialogResult {
 }
 
 /**
+ * Extend-vote-deadline dialog config
+ * @description `DynamicDialogConfig.data` shape for `ExtendVoteDeadlineDialogComponent` — prompts for a
+ * new close date/time/timezone later than the vote's current deadline.
+ */
+export interface ExtendVoteDeadlineDialogData {
+  voteName: string;
+  /** The vote's current end_time (RFC3339) — the new deadline must be later than this. */
+  currentEndTime: string;
+  /** The vote's current end_time_timezone — seeds the form so the organizer edits in the zone they already picked. */
+  currentEndTimeTimezone?: string;
+}
+
+/**
+ * Extend-vote-deadline dialog result
+ * @description `DynamicDialogRef.onClose` payload for `ExtendVoteDeadlineDialogComponent`
+ */
+export interface ExtendVoteDeadlineDialogResult {
+  end_time: string;
+  end_time_timezone: string;
+}
+
+/**
  * Card selector option info
  * @description Information displayed for each card option in card selector
  */
@@ -287,6 +309,8 @@ export interface ButtonProps {
   badgeSeverity?: BadgeSeverityOptions['severity'];
   /** Accessibility label */
   ariaLabel?: string;
+  /** Native description idrefs. */
+  ariaDescribedBy?: string;
 }
 
 /** Valid `aria-haspopup` tokens — https://www.w3.org/TR/wai-aria-1.2/#aria-haspopup */
@@ -294,7 +318,7 @@ export type AriaHaspopup = boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dia
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Button's root slot. */
 export interface ButtonRootPassThrough {
-  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup };
+  root: { 'aria-pressed'?: boolean; 'aria-expanded'?: boolean; 'aria-haspopup'?: AriaHaspopup; 'aria-controls'?: string; 'aria-describedby'?: string | null };
 }
 
 /** PrimeNG `pt` (passthrough) shape accepted for a Table's root `<table>` slot. */
@@ -448,6 +472,14 @@ export interface SidebarMenuItem {
   icon?: string;
   /** Router link path */
   routerLink?: string;
+  activeOnSubpaths?: boolean;
+  /** Further paths that also highlight this item, matched with the same options as `routerLink` */
+  activeAliases?: string[];
+  /**
+   * Query parameters this link copies from the current address, only while the current page is an item that carries the
+   * same parameter — e.g. the Org Lens range between People and Code Contributions. Absent ones are not added.
+   */
+  carryQueryParams?: readonly string[];
   /** External URL */
   url?: string;
   /** Target for external links */
@@ -530,7 +562,13 @@ export interface ProgressItemWithChart extends ProgressItem {
  * Pending-action row discriminator. String union (not enum) so it round-trips through JSON
  * without value-vs-key reverse-mapping footguns.
  */
-export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'BriefAction' | 'FormationItem';
+export type PendingActionType = 'RSVP' | 'Vote' | 'Survey' | 'Agenda' | 'Submitted' | 'Invitation' | 'JoinApplication' | 'BriefAction' | 'FormationItem';
+
+/**
+ * Pending-actions drawer section discriminator. String union for consistency with `PendingActionType`;
+ * derived client-side by the drawer's grouping computed — it never crosses a serialization boundary.
+ */
+export type PendingActionSection = 'meetings' | 'votes' | 'surveys' | 'invitations' | 'applications' | 'formation' | 'other';
 
 /**
  * Pending action item for task list
@@ -553,6 +591,8 @@ export interface PendingActionItem {
   buttonLink?: string;
   /** Optional date string for display (e.g., "Jan 15, 2025 at 10:00 AM") */
   date?: string;
+  /** ISO start time of the meeting occurrence (set on RSVP action types). Lets the client format the time in the viewer's timezone — `date` is formatted on the server, in the server's timezone. */
+  startTime?: string;
   /** Meeting UID (set on RSVP action types today; Agenda may populate this in a follow-up). Used by the dashboard to lazy-load the Meeting and render the RSVP button group inline without leaving the page. */
   meetingUid?: string;
   /** Occurrence ID for recurring meetings (set on RSVP action types today). Passed to RsvpButtonGroupComponent so the scope picker (single / this_and_following / all) can scope the response correctly. */
@@ -561,8 +601,26 @@ export interface PendingActionItem {
   voteUid?: string;
   /** committee_invite UID (set on Invitation action types). Used by the dashboard to call accept/decline on the invitation. */
   inviteUid?: string;
-  /** committee_uid the invitation is for (set on Invitation action types). Paired with `inviteUid` to call accept/decline. */
+  /** committee_uid for an invitation or join application; pairs with the corresponding review UID. */
   committeeUid?: string;
+  /** Join application UID; pairs with committeeUid to identify the review address. */
+  applicationUid?: string;
+  /** Applicant email, always supplied for join application actions. */
+  applicationApplicantEmail?: string;
+  /** Optional applicant display name; the email remains visible when present. */
+  applicationApplicantName?: string;
+  /** Owning project/foundation name for a join application, so the reviewer knows which project the group belongs to. */
+  applicationProjectName?: string;
+  /** Group category for a join application (e.g. "Technical Steering Committee"). */
+  applicationGroupCategory?: string;
+  /** Owning project slug for a join application — drives `?project=` on the group link. */
+  applicationProjectSlug?: string;
+  /** Whether the owning project is a foundation (join application) — picks `/foundation` vs `/project` for the group link; absent keeps the flat `/groups/:uid` fallback. */
+  applicationIsFoundation?: boolean;
+  /** Free-text message the applicant wrote. Untrusted — render as text only. */
+  applicationMessage?: string;
+  /** ISO timestamp the application was submitted. */
+  applicationSubmittedAt?: string;
   /** Committee/group display name (set on Invitation action types). Used for the "You've joined {Group}" toast and the accept/decline `aria-label`, so the copy doesn't have to be parsed back out of `text`. */
   inviteGroupName?: string;
   /** Owning project slug for the invited group (set on Invitation action types) — drives the `?project=` query param on the view link (GH-1566). */
@@ -645,6 +703,8 @@ export interface DecoratedPendingAction extends PendingActionItem, FormationPend
   voteUsesDrawer: boolean;
   /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
   isInvitation: boolean;
+  /** True for a join request that can be approved, rejected or dismissed (full address + applicant email); precomputed so templates read a flag, not a function. */
+  isReviewableApplication: boolean;
   /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
@@ -671,10 +731,24 @@ export interface DrawerActionRow extends PendingActionItem, FormationPendingActi
   meetingLoadFailed: boolean;
   /** True when the action is an Invitation (committee invite) that renders Accept/Decline controls inline. */
   isInvitation: boolean;
+  /** True for a join request that can be approved, rejected or dismissed (full address + applicant email); precomputed so templates read a flag, not a function. */
+  isReviewableApplication: boolean;
   /** Precomputed `aria-label` for the Accept control ("Accept invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
+}
+
+/** One section in the pending-actions drawer — header label plus its rows, rendered in `PENDING_ACTION_SECTION_ORDER` order; sections with no visible rows are omitted. */
+export interface DrawerActionSection {
+  /** Section key — doubles as the data-testid suffix (`pending-actions-drawer-section-{section}`). */
+  section: PendingActionSection;
+  /** Display label for the section header (from `PENDING_ACTION_SECTION_LABEL`). */
+  label: string;
+  /** Rows in this section, preserving the feed's relative order within the section. */
+  rows: DrawerActionRow[];
+  /** Rows a section-level "Dismiss all" would dismiss — empty when the section offers none (invitations, applications, formation) or its rows are still loading. */
+  dismissibleRows: DrawerActionRow[];
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */
@@ -833,3 +907,6 @@ export interface TabOption<T = string> {
   /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
   savesInline?: boolean;
 }
+
+/** Neutral Marketing OS loading shapes; never a guessed domain state. */
+export type MktgSkeletonVariant = 'run-page' | 'header' | 'card' | 'rows';

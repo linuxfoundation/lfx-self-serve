@@ -271,7 +271,7 @@ test.describe('Org Projects', () => {
     await gotoOrgProjectsPage(page, { hasAccess: false });
     await expect(page.getByTestId('org-projects-no-access-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('No organization linked to your account');
-    await expect(page.getByTestId('org-projects-no-access-contact-support')).toBeVisible();
+    await expect(page.getByTestId('org-projects-no-access-secondary')).toContainText('How affiliations and access work');
 
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await gotoOrgProjectsPage(page, { workspacesStatus: 500 });
@@ -511,13 +511,13 @@ test.describe('Org Projects', () => {
 
     const badge = page.getByTestId('org-projects-health-seapath');
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(badge).toHaveText('Healthy - Partial');
+    await expect(badge).toHaveText('Healthy*');
     await badge.focus();
     await expect(page.getByTestId('org-health-popup-headline')).toHaveText('Healthy* (52/65)');
     await expect(page.getByTestId('org-health-popup-row-security')).toContainText('—/35');
     await expect(badge).toHaveAttribute(
       'aria-label',
-      'Health: Healthy - Partial (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
+      'Health: Healthy, partial score (52/65). Maintainer Health 30/40, Security & Supply Chain -/35, Development Activity 22/25.'
     );
     // Dotted remainder for the 35 unearnable points, plus a divider and a footnote naming the category.
     await expect(page.getByTestId('org-health-popup-bar-missing')).toHaveAttribute('style', /width:\s*35%/);

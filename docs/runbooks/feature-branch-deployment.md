@@ -124,8 +124,13 @@ Deployments are removed in two ways:
 | Close or merge the PR             | Cleanup job runs automatically                         |
 
 The ArgoCD ApplicationSet removes the namespace and all associated Kubernetes
-resources. Container images tagged `ui-pr-<N>` remain in GHCR and are subject
-to the registry's retention policy.
+resources. Container images tagged `ui-pr-<N>` remain in GHCR after teardown.
+A weekly scheduled cleanup
+([`ghcr-image-cleanup.yaml`](../../.github/workflows/ghcr-image-cleanup.yaml),
+which calls the
+[shared cleanup workflow](https://github.com/linuxfoundation/lfx-public-workflows/tree/main/docs/ghcr-image-cleanup)
+in `lfx-public-workflows`) deletes `ui-pr-<N>` images older than 30 days unless
+the PR is still open and carries the `deploy-preview` label.
 
 ---
 

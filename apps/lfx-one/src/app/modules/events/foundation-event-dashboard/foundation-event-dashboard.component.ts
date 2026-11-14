@@ -5,13 +5,14 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { FOUNDATION_EVENT_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsListComponent } from './components/events-list/events-list.component';
 
 @Component({
   selector: 'lfx-foundation-event-dashboard',
-  imports: [CardComponent, DiscoverEventsButtonComponent, EventsTopBarComponent, EventsListComponent],
+  imports: [CardComponent, DiscoverEventsButtonComponent, EventsTopBarComponent, EventsListComponent, PageHeaderComponent],
   templateUrl: './foundation-event-dashboard.component.html',
   styleUrl: './foundation-event-dashboard.component.scss',
 })

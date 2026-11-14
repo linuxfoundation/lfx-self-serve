@@ -12,6 +12,7 @@ import {
   HEALTH_METRICS_STATUS_COUNT,
   HEALTH_METRICS_SUMMARY_CARDS,
 } from '@lfx-one/shared/constants';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
@@ -39,6 +40,7 @@ const DEFAULT_DATA: HealthMetricsData = {
   selector: 'lfx-health-metrics',
   standalone: true,
   imports: [
+    PageHeaderComponent,
     NgClass,
     SkeletonModule,
     MembershipChurnTierCardComponent,

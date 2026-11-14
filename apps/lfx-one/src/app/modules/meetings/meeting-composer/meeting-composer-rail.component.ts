@@ -3,7 +3,6 @@
 
 import { NgClass } from '@angular/common';
 import { afterRenderEffect, Component, computed, ElementRef, inject, input, type Signal } from '@angular/core';
-import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { MeetingComposerRailRow, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
@@ -34,7 +33,8 @@ export class MeetingComposerRailComponent {
    */
   public readonly compact = input(false);
 
-  private readonly sections: readonly MeetingComposerSection[] = MEETING_COMPOSER_SECTIONS;
+  /** Narrower for a single-occurrence edit, which drops the series-only sections. */
+  private readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
 
   /**
    * Single mode source for layout and the active marker.
@@ -48,6 +48,19 @@ export class MeetingComposerRailComponent {
   protected readonly rows: Signal<MeetingComposerRailRow[]> = this.initRows();
   // Both layouts can be in the DOM at once, so their test ids have to differ.
   protected readonly testIdPrefix: Signal<string> = computed(() => (this.compact() ? 'meeting-composer-rail-compact' : 'meeting-composer-rail'));
+  /**
+   * Layout of the rail itself.
+   * @description The create-mode stepper bleeds past its column by the rows' own side padding (`px-3.5`, the
+   * preview card's inset), so each step's marker lines up with the preview card's border and the row
+   * highlight extends beyond it on both sides. Edit rows keep their flush layout.
+   */
+  protected readonly navClass: Signal<string> = computed(() => {
+    if (this.compact()) {
+      return 'flex items-center gap-1 overflow-x-auto pb-1';
+    }
+
+    return this.isEditMode() ? 'flex flex-col gap-[2px]' : '-mx-3.5 flex flex-col gap-[2px]';
+  });
   // Edit mode has no ordering and no Next/Back, so announcing a step would describe a wizard that
   // isn't there — matching what the desktop edit rows already do.
   protected readonly activeChipAriaCurrent: Signal<'step' | 'true'> = computed(() => (this.isEditMode() ? 'true' : 'step'));
@@ -91,7 +104,7 @@ export class MeetingComposerRailComponent {
       // FormGroup validity isn't reactive on its own — the revision signal is what makes it one.
       this.formService.revision();
 
-      const sections = this.sections;
+      const sections = this.sections();
       const activeSection = this.composer.activeSection();
       const visited = this.composer.visitedSections();
       const validById = new Map<MeetingComposerSectionId, boolean>(sections.map((section) => [section.id, this.formService.isSectionValid(section.id)]));

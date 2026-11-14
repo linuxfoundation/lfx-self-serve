@@ -23,11 +23,22 @@ export class MktgArtifactService {
   /**
    * The project's latest server-persisted document from an agent's `stored`
    * endpoint. The BFF gates the read on the caller's project writer
-   * entitlement and 404s when nothing is stored — callers treat ANY error as
-   * "no server-persisted document" and fall back to the browser-stored run.
+   * entitlement and 404s when nothing is stored. This client rethrows every
+   * error as is; what a caller makes of one depends on the read:
+   *
+   * - the default read (Markdown only) is a preference, not a gate — its
+   *   callers treat ANY error as "no server-persisted document" and fall
+   *   back to the browser-stored run;
+   * - a sidecar read (`withSidecar`: the latest stored revision with its
+   *   sidecar JSON and date, `?sidecar=true`) gates a run on the answer —
+   *   its callers map only a 404 to null ("no revision") and rethrow the
+   *   rest (403, 5xx, the network) as a failed check, never an absence.
    */
-  public getStored(storedEndpoint: string, projectUid: string): Observable<MktgArtifactStoredResponse> {
-    const params = new HttpParams().set('project', projectUid);
+  public getStored(storedEndpoint: string, projectUid: string, withSidecar = false): Observable<MktgArtifactStoredResponse> {
+    let params = new HttpParams().set('project', projectUid);
+    if (withSidecar) {
+      params = params.set('sidecar', 'true');
+    }
     return this.http.get<MktgArtifactStoredResponse>(storedEndpoint, { params });
   }
 }

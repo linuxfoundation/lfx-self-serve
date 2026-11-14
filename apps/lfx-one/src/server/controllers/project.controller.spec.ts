@@ -24,16 +24,26 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
   projectSvc: {
     getProjectIdBySlug: vi.fn(),
     getProjectById: vi.fn(),
+    getPubliclyDiscoverableProject: vi.fn(),
     getProjectBySlug: vi.fn(),
     getProjectSlugs: vi.fn(),
+    getProjectSettings: vi.fn(),
     updateProjectStaff: vi.fn(),
+    updateProjectPermissions: vi.fn(),
+    getProjectDocumentMetadata: vi.fn(),
+    getProjectDocumentStream: vi.fn(),
+    deleteProjectDocument: vi.fn(),
+    uploadProjectDocument: vi.fn(),
   },
 }));
 
 vi.mock('@lfx-one/shared/utils', () => ({
+  // Minimal stand-in for ics.helper's only shared dependency, so calendar tests can render real VEVENTs.
+  addMinutesToDate: (isoDate: string, minutes: number | null | undefined) => new Date(new Date(isoDate).getTime() + (minutes ?? 0) * 60_000),
   computeIsFoundation: computeIsFoundationMock,
   isFileTypeAllowed: vi.fn(),
   isUuid: isUuidMock,
+  maskIdentifierForLogs: (identifier: string) => identifier,
 }));
 vi.mock('@lfx-one/shared/constants', async () => {
   // Deep-import the real allowlist so the drift guard below asserts the production
@@ -54,8 +64,13 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const regexConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
   );
+  // Real delete-type allowlist: the delete route's `type` validation must be exercised against it.
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
   return {
     ALLOWED_FILE_TYPES: [],
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
     LENS_REDIRECT_RESOURCES: actual.LENS_REDIRECT_RESOURCES,
     EDITABLE_STAFF_ROLES: staffConstants.EDITABLE_STAFF_ROLES,
     EMAIL_REGEX: regexConstants.EMAIL_REGEX,
@@ -64,10 +79,24 @@ vi.mock('@lfx-one/shared/constants', async () => {
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // validation.helper pulls in a heavy shared/constants + shared/enums graph; stub it
 // wholesale so only the controller's getLensRedirect path loads.
-vi.mock('../helpers/validation.helper', () => ({
-  getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
-  validateUidParameter: vi.fn(() => true),
-}));
+vi.mock('../helpers/validation.helper', async () => {
+  const { ServiceValidationError } = await import('../errors');
+  return {
+    getStringQueryParam: vi.fn((req: any, key: string) => (typeof req.query?.[key] === 'string' ? req.query[key] : undefined)),
+    validateUidParameter: vi.fn(() => true),
+    getValidatedDuplicateIdentifiers: vi.fn((duplicateIdentifiers: unknown, operation: string) => {
+      if (duplicateIdentifiers === undefined) return undefined;
+      if (
+        !Array.isArray(duplicateIdentifiers) ||
+        duplicateIdentifiers.length > 20 ||
+        duplicateIdentifiers.some((id) => typeof id !== 'string' || id.trim() === '' || id.length > 320)
+      ) {
+        throw ServiceValidationError.forField('duplicateIdentifiers', 'duplicateIdentifiers must be an array of at most 20 non-blank strings', { operation });
+      }
+      return duplicateIdentifiers;
+    }),
+  };
+});
 
 vi.mock('../services/project.service', () => ({
   ProjectService: vi.fn(function () {
@@ -98,10 +127,11 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(), getEffectiv
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 import { readFileSync } from 'node:fs';
+import { Writable } from 'node:stream';
 
 import { LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
 import { ProjectController } from './project.controller';
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 
 function buildProject(overrides: Partial<Project> = {}): Project {
@@ -195,14 +225,14 @@ describe('ProjectController.getLensRedirect', () => {
 
   it('redirects a foundation slug to /foundation/<resource>', async () => {
     projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
-    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject());
     computeIsFoundationMock.mockReturnValue(true);
     const { req, res, next } = buildReqRes();
 
     await controller.getLensRedirect(req, res, next);
 
     expect(generateM2MTokenMock).toHaveBeenCalledTimes(1);
-    expect(projectSvc.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, false);
+    expect(projectSvc.getPubliclyDiscoverableProject).toHaveBeenCalledWith(req, PROJECT_UID);
     expect(res.redirect).toHaveBeenCalledWith(302, '/foundation/votes?project=cncf');
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(next).not.toHaveBeenCalled();
@@ -210,7 +240,7 @@ describe('ProjectController.getLensRedirect', () => {
 
   it('redirects a project slug to /project/<resource>', async () => {
     projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
-    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject());
     computeIsFoundationMock.mockReturnValue(false);
     const { req, res, next } = buildReqRes();
 
@@ -222,7 +252,7 @@ describe('ProjectController.getLensRedirect', () => {
 
   it('carries the resource segment through to the lens-prefixed destination', async () => {
     projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
-    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject());
     computeIsFoundationMock.mockReturnValue(true);
     const { req, res, next } = buildReqRes(SLUG, 'meetings');
 
@@ -238,15 +268,14 @@ describe('ProjectController.getLensRedirect', () => {
 
     await controller.getLensRedirect(req, res, next);
 
-    expect(projectSvc.getProjectById).not.toHaveBeenCalled();
+    expect(projectSvc.getPubliclyDiscoverableProject).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(302, '/meetings?project=cncf');
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('falls back to the flat resource route when the project fetch throws', async () => {
-    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
-    projectSvc.getProjectById.mockRejectedValue(new Error('upstream 503'));
+  it('falls back to the flat resource route when the slug lookup throws', async () => {
+    projectSvc.getProjectIdBySlug.mockRejectedValue(new Error('upstream 503'));
     computeIsFoundationMock.mockReturnValue(true);
     const { req, res, next } = buildReqRes();
 
@@ -254,6 +283,40 @@ describe('ProjectController.getLensRedirect', () => {
 
     expect(res.redirect).toHaveBeenCalledWith(302, '/votes?project=cncf');
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the flat resource route when the discoverability lookup throws', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(new Error('upstream 503'));
+    const { req, res, next } = buildReqRes();
+
+    await controller.getLensRedirect(req, res, next);
+
+    expect(res.redirect).toHaveBeenCalledWith(302, '/votes?project=cncf');
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(computeIsFoundationMock).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // lfx-self-serve-ops#437: a hidden project must redirect exactly like an unknown slug, so the response carries
+  // no foundation-vs-project signal.
+  it('redirects a non-discoverable project to the same flat route and headers as an unknown slug', async () => {
+    computeIsFoundationMock.mockReturnValue(true);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: '', slug: SLUG, exists: false });
+    const unknown = buildReqRes(SLUG, 'votes');
+    await controller.getLensRedirect(unknown.req, unknown.res, unknown.next);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const hidden = buildReqRes(SLUG, 'votes');
+    await controller.getLensRedirect(hidden.req, hidden.res, hidden.next);
+
+    expect(hidden.res.redirect.mock.calls).toEqual(unknown.res.redirect.mock.calls);
+    expect(hidden.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+    expect(hidden.res.redirect).toHaveBeenCalledWith(302, '/votes?project=cncf');
+    expect(computeIsFoundationMock).not.toHaveBeenCalled();
+    expect(hidden.next).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid slug via next() without an M2M call', async () => {
@@ -281,7 +344,7 @@ describe('ProjectController.getLensRedirect', () => {
   it('passes hyphens and underscores through verbatim in the redirect location', async () => {
     const slug = 'my-project_1';
     projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug, exists: true });
-    projectSvc.getProjectById.mockResolvedValue(buildProject({ slug }));
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ slug }));
     computeIsFoundationMock.mockReturnValue(false);
     const { req, res, next } = buildReqRes(slug);
 
@@ -343,15 +406,15 @@ describe('ProjectController.getProjectBySlug', () => {
     return { req, res, next };
   }
 
-  it('fetches by id, forwards the meeting_coordinator/auditor query flags, and logs success', async () => {
+  it('fetches by id, forwards optional role and strict-writer flags, and logs success', async () => {
     isUuidMock.mockReturnValue(true);
     const project = buildProject();
     projectSvc.getProjectById.mockResolvedValue(project);
-    const { req, res, next } = buildSlugReqRes(PROJECT_UID, { meeting_coordinator: 'true', auditor: 'true' });
+    const { req, res, next } = buildSlugReqRes(PROJECT_UID, { meeting_coordinator: 'true', auditor: 'true', strict_writer: 'true' });
 
     await controller.getProjectBySlug(req, res, next);
 
-    expect(projectSvc.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true, true, true);
+    expect(projectSvc.getProjectById).toHaveBeenCalledWith(req, PROJECT_UID, true, true, true, true);
     expect(projectSvc.getProjectBySlug).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(project);
     expect(logger.success).toHaveBeenCalledWith(req, 'get_project_by_slug', 0, { slug: PROJECT_UID, project_uid: project.uid });
@@ -366,10 +429,22 @@ describe('ProjectController.getProjectBySlug', () => {
 
     await controller.getProjectBySlug(req, res, next);
 
-    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false);
+    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false, false);
     expect(projectSvc.getProjectById).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(project);
     expect(logger.success).toHaveBeenCalledWith(req, 'get_project_by_slug', 0, { slug: SLUG, project_uid: project.uid });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['true', 'false'])('forwards strict_writer=%s for slug lookups', async (flag) => {
+    isUuidMock.mockReturnValue(false);
+    projectSvc.getProjectBySlug.mockResolvedValue(buildProject());
+    const { req, res, next } = buildSlugReqRes(SLUG, { strict_writer: flag });
+
+    await controller.getProjectBySlug(req, res, next);
+
+    expect(projectSvc.getProjectBySlug).toHaveBeenCalledWith(req, SLUG, false, false, flag === 'true');
+    expect(res.json).toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -404,7 +479,7 @@ describe('ProjectController.getProjectCalendar', () => {
   }
 
   it('includes X-WR-CALNAME when the project name resolves', async () => {
-    projectSvc.getProjectById.mockResolvedValue(buildProject({ name: 'CNCF' }));
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ name: 'CNCF' }));
     const { req, res, next } = buildCalendarReqRes();
 
     await controller.getProjectCalendar(req, res, next);
@@ -414,16 +489,67 @@ describe('ProjectController.getProjectCalendar', () => {
     expect(ics).toContain('X-WR-CALNAME:CNCF');
   });
 
-  it('falls back to an unnamed calendar (200, no X-WR-CALNAME) when the project name lookup fails', async () => {
-    projectSvc.getProjectById.mockRejectedValue(new Error('upstream 503'));
+  it('lists PUBLIC meetings of a discoverable project', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ name: 'CNCF' }));
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: resourceType === 'v1_meeting' ? [buildMeeting({ id: 'public-1' }), buildMeeting({ id: 'private-1', visibility: 'private' as any })] : [],
+        page_token: undefined,
+      })
+    );
     const { req, res, next } = buildCalendarReqRes();
 
     await controller.getProjectCalendar(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
     const ics = res.send.mock.calls[0][0] as string;
+    expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+  });
+
+  // lfx-self-serve-ops#437: a hidden project serves the calendar a non-existent UID gets — no name and no events —
+  // with identical headers.
+  it('serves a non-discoverable project the same empty, unnamed calendar as an unknown UID', async () => {
+    meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const unknown = buildCalendarReqRes();
+    await controller.getProjectCalendar(unknown.req, unknown.res, unknown.next);
+
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
+    );
+    const hidden = buildCalendarReqRes();
+    await controller.getProjectCalendar(hidden.req, hidden.res, hidden.next);
+
+    expect(hidden.next).not.toHaveBeenCalled();
+    const ics = hidden.res.send.mock.calls[0][0] as string;
     expect(ics).not.toContain('X-WR-CALNAME');
+    expect(ics).not.toContain('BEGIN:VEVENT');
     expect(ics).toContain('BEGIN:VCALENDAR');
+    expect(ics.replace(/^DTSTAMP:.*$/gm, '')).toEqual((unknown.res.send.mock.calls[0][0] as string).replace(/^DTSTAMP:.*$/gm, ''));
+    expect(hidden.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+  });
+
+  it('gates before fetching meetings, so a hidden project does the same upstream work as an unknown UID', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = buildCalendarReqRes();
+
+    await controller.getProjectCalendar(req, res, next);
+
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledTimes(1);
+  });
+
+  // A transient lookup failure must not become a cacheable empty feed — calendar clients would sync it over
+  // subscribers' copies until their next poll. It goes to the error handler instead.
+  it('passes a transient project lookup failure to next() without serving a calendar', async () => {
+    const boom = new Error('upstream 503');
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(boom);
+    const { req, res, next } = buildCalendarReqRes();
+
+    await controller.getProjectCalendar(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.send).not.toHaveBeenCalled();
+    expect(res.setHeader).not.toHaveBeenCalled();
   });
 });
 
@@ -435,7 +561,7 @@ describe('ProjectController.getProjectMeetings', () => {
     controller = new ProjectController();
     generateM2MTokenMock.mockResolvedValue('m2m-token');
     isUuidMock.mockImplementation((value: string) => value === PROJECT_UID || value === 'committee-uid-1234');
-    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject());
     meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
     // Default: both fixture committees are publicly listed, so tests that are not about visibility
     // filtering see every association pass through.
@@ -650,19 +776,100 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
   });
 
-  it('still returns meetings with an empty project name when project metadata lookup fails', async () => {
-    projectSvc.getProjectById.mockRejectedValue(new Error('upstream 503'));
-    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
-      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
-    );
+  // lfx-self-serve-ops#437: a transient project-service failure says nothing about the project, so it reaches the
+  // error handler rather than the cacheable unknown-UID envelope.
+  it('passes a transient project lookup failure to next() without serving the envelope', async () => {
+    const boom = new Error('upstream 503');
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(boom);
     const { req, res, next } = buildMeetingsReqRes();
 
     await controller.getProjectMeetings(req, res, next);
 
+    expect(next).toHaveBeenCalledWith(boom);
+    expect(res.json).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+  });
+
+  it('answers a slug metadata outage exactly like an unknown slug, without caching the refusal', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValueOnce({ uid: '', slug: SLUG, exists: false });
+    const unknown = buildMeetingsReqRes(SLUG);
+    await controller.getProjectMeetings(unknown.req, unknown.res, unknown.next);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValueOnce({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValueOnce(new Error('upstream 503'));
+    const unavailable = buildMeetingsReqRes(SLUG);
+    await controller.getProjectMeetings(unavailable.req, unavailable.res, unavailable.next);
+
+    const [unknownError] = unknown.next.mock.calls[0];
+    const [unavailableError] = unavailable.next.mock.calls[0];
+    expect(unavailableError).toBeInstanceOf(ResourceNotFoundError);
+    expect(unavailableError.statusCode).toBe(404);
+    expect(unavailableError.toResponse()).toEqual(unknownError.toResponse());
+    expect(unavailable.res.json).not.toHaveBeenCalled();
+    expect(unavailable.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+    expect(unavailable.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  it('gates before the meeting/committee fan-out, so a hidden project does no upstream work an unknown one skips', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
+    expect(committeeSvc.getCommittees).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    const response = res.json.mock.calls[0][0];
-    expect(response.meetings).toHaveLength(1);
-    expect(response.project).toEqual({ uid: PROJECT_UID, name: '' });
+    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  it('answers a non-discoverable UID exactly like a non-existent UID', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    meetingSvc.getMeetings.mockResolvedValue({ data: [], page_token: undefined });
+    const unknown = buildMeetingsReqRes();
+    await controller.getProjectMeetings(unknown.req, unknown.res, unknown.next);
+
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting()] : [], page_token: undefined })
+    );
+    const hidden = buildMeetingsReqRes();
+    await controller.getProjectMeetings(hidden.req, hidden.res, hidden.next);
+
+    expect(hidden.res.json.mock.calls).toEqual(unknown.res.json.mock.calls);
+    expect(hidden.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+    expect(JSON.stringify(hidden.res.json.mock.calls[0][0])).not.toContain('CNCF');
+  });
+
+  it('withholds a hidden project even when filtered by one of its public committees', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = buildMeetingsReqRes(PROJECT_UID, { committee: 'committee-uid-1234' });
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
+  });
+
+  it('passes next() the same not-found error for a non-discoverable slug as for an unknown slug', async () => {
+    isUuidMock.mockReturnValue(false);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: '', slug: SLUG, exists: false });
+    const unknown = buildMeetingsReqRes(SLUG);
+    await controller.getProjectMeetings(unknown.req, unknown.res, unknown.next);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const hidden = buildMeetingsReqRes(SLUG);
+    await controller.getProjectMeetings(hidden.req, hidden.res, hidden.next);
+
+    expect(hidden.res.json).not.toHaveBeenCalled();
+    expect(hidden.res.setHeader.mock.calls).toEqual(unknown.res.setHeader.mock.calls);
+    expect(hidden.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    const [unknownError] = unknown.next.mock.calls[0];
+    const [hiddenError] = hidden.next.mock.calls[0];
+    expect(hiddenError).toBeInstanceOf(ResourceNotFoundError);
+    expect(unknownError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError.message).toBe(unknownError.message);
+    expect(hiddenError.toResponse()).toEqual(unknownError.toResponse());
   });
 
   it('filters out PRIVATE meetings from the public feed', async () => {
@@ -758,6 +965,158 @@ function buildStaffReqRes(uid: string = PROJECT_UID, body: unknown = {}) {
   return { req, res, next };
 }
 
+function buildPermissionsReqRes(uid: string, username: string, body: unknown = {}) {
+  const req = {
+    params: { uid, username },
+    body,
+    query: {},
+    headers: {},
+    bearerToken: 'user-token',
+    path: `/api/projects/${uid}/permissions/${username}`,
+  } as any;
+  const res = { json: vi.fn(), status: vi.fn().mockReturnThis(), send: vi.fn() } as any;
+  const next = vi.fn();
+  return { req, res, next };
+}
+
+describe('ProjectController permissions role validation', () => {
+  const EMAIL = 'blair.chen@vendor-corp.example';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['view', 'manage', 'meeting_coordinator'])("addUserToProjectPermissions accepts role '%s' and forwards it", async (role) => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+
+    await controller.addUserToProjectPermissions(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'add', EMAIL, role, undefined);
+  });
+
+  it.each(['view', 'manage', 'meeting_coordinator'])("updateUserPermissionRole accepts role '%s' and forwards it", async (role) => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', role, undefined, undefined);
+  });
+
+  it.each([['owner'], ['none'], [1]])('rejects role %j on add and update without calling the service', async (role) => {
+    const controller = new ProjectController();
+    const add = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+    const update = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
+
+    await controller.addUserToProjectPermissions(add.req, add.res, add.next);
+    await controller.updateUserPermissionRole(update.req, update.res, update.next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(add.next).toHaveBeenCalledTimes(1);
+    expect(update.next).toHaveBeenCalledTimes(1);
+  });
+});
+
+// GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call
+// unmodified so a collapsed dual-role row (#3218) is cleared in the same ETag-guarded
+// write as the primary identifier, instead of a second non-atomic client call (Copilot
+// #3244) that could also misresolve a stale duplicate through the NATS directory
+// (Cursor Bugbot #3244).
+describe('ProjectController permissions duplicateIdentifiers pass-through', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('updateUserPermissionRole passes duplicateIdentifiers from the body through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, [
+      'bchen@vendor-corp.example',
+    ]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('updateUserPermissionRole passes undefined when the body carries no duplicateIdentifiers', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage' });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined);
+  });
+
+  it('removeUserFromProjectPermissions passes duplicateIdentifiers from the body through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { duplicateIdentifiers: ['bchen@vendor-corp.example'] });
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, [
+      'bchen@vendor-corp.example',
+    ]);
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('removeUserFromProjectPermissions tolerates a missing body (no duplicateIdentifiers)', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', undefined);
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'remove', 'blairchen', undefined, undefined, undefined);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // dealako + Copilot (PR #3244 review): a malformed duplicateIdentifiers must be rejected
+  // with a 400 before it reaches the service's array .map()/.filter() calls, not thrown as
+  // an uncaught TypeError that surfaces as a 500.
+  it('updateUserPermissionRole rejects a non-array duplicateIdentifiers without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: 'abc' });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('updateUserPermissionRole rejects a duplicateIdentifiers array with non-string elements without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'manage', duplicateIdentifiers: [1, {}] });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('removeUserFromProjectPermissions rejects an oversized duplicateIdentifiers array without calling the service', async () => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { duplicateIdentifiers: Array.from({ length: 21 }, (_, i) => `id${i}`) });
+
+    await controller.removeUserFromProjectPermissions(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(res.status).not.toHaveBeenCalledWith(204);
+  });
+});
+
 describe('ProjectController.updateProjectStaff', () => {
   let controller: ProjectController;
 
@@ -836,5 +1195,321 @@ describe('ProjectController.updateProjectStaff', () => {
     expect(projectSvc.updateProjectStaff).toHaveBeenCalledWith(req, PROJECT_UID, 'program_manager', assignee);
     expect(res.json).toHaveBeenCalledTimes(1);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// linuxfoundation/lfx-self-serve-ops#434 — uid is interpolated directly into the upstream
+// request path, so a non-UUID value must be rejected before projectService is ever called.
+describe('ProjectController.getProjectPermissions uid validation', () => {
+  let controller: ProjectController;
+
+  function buildPermissionsReqRes(uid: string) {
+    const req = { params: { uid }, path: `/projects/${uid}/permissions` } as any;
+    const res = { json: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildPermissionsReqRes('../committees/some-committee');
+
+    await controller.getProjectPermissions(req, res, next);
+
+    expect(projectSvc.getProjectSettings).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('passes a valid UUID through to the project service', async () => {
+    const settings = { uid: PROJECT_UID };
+    projectSvc.getProjectSettings.mockResolvedValue(settings);
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID);
+
+    await controller.getProjectPermissions(req, res, next);
+
+    expect(projectSvc.getProjectSettings).toHaveBeenCalledWith(req, PROJECT_UID);
+    expect(res.json).toHaveBeenCalledWith(settings);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// linuxfoundation/lfx-self-serve-ops#434 — uid and documentId are both interpolated directly
+// into the upstream request path, so a non-UUID value for either must be rejected before
+// projectService is ever called (flagged by @dealako on PR #3511 as missing coverage).
+describe('ProjectController.downloadProjectDocument uid/documentId validation', () => {
+  let controller: ProjectController;
+
+  function buildDocumentReqRes(uid: string, documentId: string) {
+    const req = { params: { uid, documentId }, path: `/projects/${uid}/documents/${documentId}` } as any;
+    const res = { setHeader: vi.fn(), headersSent: false, writableEnded: false, end: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildDocumentReqRes('../committees/some-committee', PROJECT_UID);
+
+    await controller.downloadProjectDocument(req, res, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).not.toHaveBeenCalled();
+    expect(projectSvc.getProjectDocumentStream).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-UUID documentId without calling the project service', async () => {
+    const { req, res, next } = buildDocumentReqRes(PROJECT_UID, '../../secrets');
+
+    await controller.downloadProjectDocument(req, res, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).not.toHaveBeenCalled();
+    expect(projectSvc.getProjectDocumentStream).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Per @dealako on PR #3511: the rejection-only suites above wouldn't catch an
+  // over-strict validator that also rejected valid UUIDs.
+  it('passes a valid uid/documentId through to the project service', async () => {
+    const { req } = buildDocumentReqRes(PROJECT_UID, PROJECT_UID);
+    const next = vi.fn();
+    projectSvc.getProjectDocumentMetadata.mockResolvedValue({ contentType: 'application/pdf', fileName: 'report.pdf' });
+    projectSvc.getProjectDocumentStream.mockResolvedValue(new Response('file-bytes', { headers: { 'Content-Length': '10' } }));
+
+    // A writable stand-in for the Express response, so the controller's pipeline really streams into it
+    // (mirrors mentorship-task.controller.spec.ts's `streamRes` helper).
+    const chunks: Buffer[] = [];
+    const res = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+    }) as Writable & { headersSent: boolean; setHeader: (name: string, value: string) => void };
+    res.headersSent = false;
+    res.setHeader = vi.fn();
+
+    await controller.downloadProjectDocument(req, res as any, next);
+
+    expect(projectSvc.getProjectDocumentMetadata).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID);
+    expect(projectSvc.getProjectDocumentStream).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID);
+    expect(next).not.toHaveBeenCalled();
+    expect(Buffer.concat(chunks).toString()).toBe('file-bytes');
+  });
+});
+
+describe('ProjectController.deleteProjectDocument uid/documentId validation', () => {
+  let controller: ProjectController;
+
+  function buildDeleteDocumentReqRes(uid: string, documentId: string, type = 'folder') {
+    const req = {
+      params: { uid, documentId },
+      query: { type },
+      path: `/projects/${uid}/documents/${documentId}`,
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn(() => res), send: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('rejects a non-UUID uid without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes('../committees/some-committee', PROJECT_UID);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('rejects a non-UUID documentId without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, '../../secrets');
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+
+  // Per @dealako on PR #3511: the rejection-only suites above wouldn't catch an
+  // over-strict validator that also rejected valid UUIDs.
+  it('passes a valid uid/documentId through to the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID);
+    projectSvc.deleteProjectDocument.mockResolvedValue(undefined);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'folder');
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it.each(['file', 'link', 'folder'])('accepts type=%s', async (type) => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID, type);
+    projectSvc.deleteProjectDocument.mockResolvedValue(undefined);
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, type);
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('rejects an unknown type without calling the project service', async () => {
+    const { req, res, next } = buildDeleteDocumentReqRes(PROJECT_UID, PROJECT_UID, 'meeting');
+
+    await controller.deleteProjectDocument(req, res, next);
+
+    expect(projectSvc.deleteProjectDocument).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+  });
+});
+
+// CodeQL js/type-confusion-through-parameter-tampering flags the later fileBuffer.length reads; the
+// Buffer.isBuffer guard must reject a string, array, or object body before any of them runs.
+describe('ProjectController.uploadProjectDocument body type', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['a string', 'abcd'],
+    ['an array', [1, 2, 3, 4]],
+    ['an object with a length', { length: 4 }],
+  ])('rejects %s body as missing file data', async (_label, body) => {
+    const controller = new ProjectController();
+    const req = {
+      params: { uid: PROJECT_UID },
+      body,
+      query: { name: 'Charter', file_name: 'charter.pdf', content_type: 'application/pdf', file_size: '4' },
+      headers: {},
+      path: `/api/projects/${PROJECT_UID}/documents`,
+    } as any;
+    const next = vi.fn();
+
+    await controller.uploadProjectDocument(req, { json: vi.fn(), status: vi.fn().mockReturnThis() } as any, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'body' })] }));
+    expect(projectSvc.uploadProjectDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectController.getPublicProjectSummary', () => {
+  let controller: ProjectController;
+
+  const summaryReqRes = (identifier: string) => {
+    const req = { params: { identifier }, query: {}, headers: {}, bearerToken: undefined, path: `/public/api/projects/${identifier}/summary` } as any;
+    const res = { json: vi.fn(), setHeader: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+    computeIsFoundationMock.mockReturnValue(true);
+  });
+
+  it('returns exactly the branding fields for a public project, cacheable, using the M2M token', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(
+      buildProject({
+        name: 'Cloud Native',
+        slug: SLUG,
+        logo_url: 'https://cdn.example/cncf.svg',
+        description: 'private-ish',
+        parent_uid: 'parent-1',
+      } as Partial<Project>)
+    );
+    const { req, res, next } = summaryReqRes(PROJECT_UID);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.bearerToken).toBe('m2m-token');
+    // Exact key set: nothing else the project record carries (or the caller) can reach an anonymous response.
+    expect(res.json).toHaveBeenCalledWith({ name: 'Cloud Native', slug: SLUG, logo_url: 'https://cdn.example/cncf.svg', is_foundation: true });
+    expect(res.setHeader).toHaveBeenLastCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  it('resolves a slug and reports a missing logo as null', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ name: 'Cloud Native', slug: SLUG, logo_url: '' } as Partial<Project>));
+    computeIsFoundationMock.mockReturnValue(false);
+    const { req, res, next } = summaryReqRes(SLUG);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ name: 'Cloud Native', slug: SLUG, logo_url: null, is_foundation: false });
+  });
+
+  it('answers a non-public project with a non-cacheable 404 and no body', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const { req, res, next } = summaryReqRes(PROJECT_UID);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
+  });
+
+  it('answers an unknown slug exactly like a hidden project', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: '', slug: 'nope', exists: false });
+    const unknown = summaryReqRes('nope');
+    await controller.getPublicProjectSummary(unknown.req, unknown.res, unknown.next);
+
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: 'hidden', exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(null);
+    const hidden = summaryReqRes('hidden');
+    await controller.getPublicProjectSummary(hidden.req, hidden.res, hidden.next);
+
+    const unknownError = unknown.next.mock.calls[0][0];
+    const hiddenError = hidden.next.mock.calls[0][0];
+    expect(unknownError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError).toBeInstanceOf(ResourceNotFoundError);
+    expect(hiddenError.statusCode).toBe(unknownError.statusCode);
+    expect(unknown.res.json).not.toHaveBeenCalled();
+    expect(hidden.res.json).not.toHaveBeenCalled();
+  });
+
+  it('answers a slug whose metadata lookup fails like an unknown slug', async () => {
+    projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
+    projectSvc.getPubliclyDiscoverableProject.mockRejectedValue(new Error('upstream down'));
+    const { req, res, next } = summaryReqRes(SLUG);
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed identifier without any upstream call', async () => {
+    const { req, res, next } = summaryReqRes('bad id/..');
+
+    await controller.getPublicProjectSummary(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    expect(generateM2MTokenMock).not.toHaveBeenCalled();
   });
 });

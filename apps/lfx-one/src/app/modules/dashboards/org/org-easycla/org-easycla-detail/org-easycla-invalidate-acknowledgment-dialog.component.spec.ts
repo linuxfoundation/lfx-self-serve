@@ -73,30 +73,35 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
   });
 
   it('says what invalidating does and does not stop', async () => {
-    // The default data has no individual matches, so the sentence ends after "again" — the
-    // "remove the matching criteria below" clause only belongs where a removal control is shown.
     const fixture = await render();
     const body = byTestId(fixture, 'org-easycla-invalidate-dialog-body');
 
     expect(body?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      "This marks Ada Lovelace as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against. If Ada Lovelace still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again."
+      "This marks Ada Lovelace as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against. If Ada Lovelace still matches the approval list, they can acknowledge again themselves. Auto Acknowledge won't re-add them."
     );
     expect(Array.from(body?.querySelectorAll('strong') ?? []).map((node) => node.textContent?.trim())).toEqual([
       'Ada Lovelace',
-      "If Ada Lovelace still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again",
+      'If Ada Lovelace still matches the approval list, they can acknowledge again themselves',
     ]);
   });
 
-  it('promises the remove-criteria step only when a removal control is actually shown', async () => {
+  it('never says Auto Acknowledge will re-add the contributor', async () => {
+    for (const data of [dialogData(), dialogData(ENTRIES, true)]) {
+      const fixture = await render(data);
+      const text = byTestId(fixture, 'org-easycla-invalidate-dialog-body')?.textContent?.replace(/\s+/g, ' ') ?? '';
+
+      expect(text).toContain("Auto Acknowledge won't re-add them.");
+      expect(text).not.toContain('re-added automatically');
+    }
+  });
+
+  it('promises the remove-entries step only when a removal control is actually shown', async () => {
     const bodyText = (fixture: ComponentFixture<unknown>): string =>
       byTestId(fixture, 'org-easycla-invalidate-dialog-body')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-    // Individual matches the reader may remove: the clause points at the checkbox below.
     const withRemoval = await render(dialogData(ENTRIES, true));
-    expect(bodyText(withRemoval)).toContain("again — remove the matching criteria below if that shouldn't be possible.");
+    expect(bodyText(withRemoval)).toContain("Auto Acknowledge won't re-add them. Remove the matching entries below to prevent this.");
 
-    // No removal control renders in any of these states, so the clause must be absent and the
-    // sentence must simply end.
     const noControl: OrgClaInvalidateAcknowledgmentDialogData[] = [
       dialogData([], true), // no individual match
       dialogData(ENTRIES, false), // matches, but the reader cannot edit the list
@@ -105,8 +110,8 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     ];
     for (const data of noControl) {
       const fixture = await render(data);
-      expect(bodyText(fixture)).not.toContain('remove the matching criteria below');
-      expect(bodyText(fixture).endsWith('again.')).toBe(true);
+      expect(bodyText(fixture)).not.toContain('Remove the matching entries below');
+      expect(bodyText(fixture).endsWith("won't re-add them.")).toBe(true);
     }
   });
 

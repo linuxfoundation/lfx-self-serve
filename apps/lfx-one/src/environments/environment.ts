@@ -7,7 +7,7 @@ export const environment = {
     home: 'http://localhost:4200',
     pcc: 'https://pcc.dev.platform.linuxfoundation.org',
     changelog: 'https://changelog.lfx.dev/',
-    mentorship: 'https://people.dev.platform.linuxfoundation.org/#projects_all',
+    mentorship: 'https://mentorship.dev.lfx.dev',
     crowdfunding: 'https://crowdfunding.dev.lfx.dev/',
     enrollment: 'https://joinnow.dev.platform.linuxfoundation.org/',
     // EasyCLA Contributor Console — sign-out target for new ICLAs/ECLAs (M1 read-only links out here).
@@ -16,7 +16,7 @@ export const environment = {
     corporateConsole: 'https://lfx.dev.platform.linuxfoundation.org/',
   },
   segment: {
-    cdnUrl: 'https://lfx-segment.dev.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',
+    cdnUrl: 'https://lfx-segment.dev.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js',
     enabled: true,
   },
   plausible: {

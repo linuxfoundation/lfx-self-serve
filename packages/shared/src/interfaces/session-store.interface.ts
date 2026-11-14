@@ -9,7 +9,7 @@ export interface SessionStoreCookieMeta {
   maxAge: number;
 }
 
-/** Mirrors express-openid-connect's own (unexported) `Session` interface — the default `data` shape stored under `req.appSession`, plus whatever extra JWTs/context we add (impersonation, API-gateway, crowdfunding, profile). */
+/** Mirrors express-openid-connect's own (unexported) `Session` interface — the default `data` shape stored under `req.appSession`, plus whatever extra JWTs/context we add (impersonation, API-gateway, profile). */
 export interface AppSessionData {
   id_token: string;
   access_token: string;

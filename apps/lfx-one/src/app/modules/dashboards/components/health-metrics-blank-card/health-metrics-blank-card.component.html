@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<section
+  class="flex min-h-[440px] flex-col items-center justify-center gap-[10px] rounded-[20px] border border-gray-200 bg-white px-[24px] py-[48px] text-center"
+  [attr.aria-labelledby]="testId() + '-title'"
+  [attr.data-testid]="testId()">
+  @if (tiles().length === 1) {
+    <span
+      class="mb-[6px] inline-flex h-[56px] w-[56px] items-center justify-center rounded-[14px] border border-gray-200 bg-white shadow-sm"
+      aria-hidden="true">
+      <i class="text-gray-600" [class]="tiles()[0].icon" [style.font-size.px]="tiles()[0].iconSizePx"></i>
+    </span>
+  } @else {
+    <div class="mb-[8px] flex h-[82px] items-start justify-center gap-[10px]" aria-hidden="true">
+      @for (tile of tiles(); track tile.icon) {
+        <span
+          class="inline-flex h-[48px] w-[48px] items-center justify-center rounded-[14px] border border-gray-200 bg-white shadow-sm"
+          [style.transform]="tile.transform">
+          <i class="text-gray-600" [class]="tile.icon" [style.font-size.px]="tile.iconSizePx"></i>
+        </span>
+      }
+    </div>
+  }
+  <h2 class="m-0 text-[18px] font-semibold text-gray-900" [id]="testId() + '-title'">{{ copy().title }}</h2>
+  <p class="m-0 max-w-full text-pretty text-[14px] leading-[1.55] text-gray-500" [attr.data-testid]="testId() + '-lead'">{{ copy().lead }}</p>
+  <ul class="m-0 mt-[10px] flex w-full max-w-[460px] list-none flex-col p-0" [attr.data-testid]="testId() + '-reasons'">
+    @for (reason of copy().reasons; track $index; let first = $first) {
+      <li
+        class="text-pretty py-[10px] text-center text-[12.5px] font-medium leading-[1.5] text-gray-400"
+        [class.border-t]="!first"
+        [class.border-gray-200]="!first">
+        {{ reason }}
+      </li>
+    }
+  </ul>
+</section>

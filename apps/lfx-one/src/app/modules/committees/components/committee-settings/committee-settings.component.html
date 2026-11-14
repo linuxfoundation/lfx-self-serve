@@ -265,6 +265,12 @@
                 }
               </div>
               <p class="text-xs text-gray-600">{{ feature.description }}</p>
+              @if (feature.note) {
+                <p class="mt-1 flex items-start gap-1 text-[11.5px] text-amber-700" [attr.data-testid]="'feature-org-note-' + feature.key">
+                  <i class="fa-light fa-circle-info mt-0.5 shrink-0" aria-hidden="true"></i>
+                  {{ feature.note }}
+                </p>
+              }
             </div>
           </div>
           <lfx-toggle [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"> </lfx-toggle>

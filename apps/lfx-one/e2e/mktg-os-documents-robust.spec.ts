@@ -1,0 +1,224 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { expect, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+
+import {
+  DOCUMENT_PROJECT,
+  DOCUMENT_TYPE,
+  DOCUMENTS_URL,
+  DOCUMENT_VIEW_URL,
+  documentFixture,
+  fulfillDocumentJson,
+  openDocuments,
+  setupDocuments,
+  startedDocumentRun,
+} from './helpers/mktg-os-documents.helper';
+
+test.describe('Marketing OS Documents structure', () => {
+  test.use({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
+  test.afterEach(async ({ page }, testInfo) => {
+    await page.screenshot({ path: testInfo.outputPath('final-structure.png'), fullPage: true });
+  });
+
+  for (const width of [390, 1024]) {
+    test(`recorded progress is a labelled, keyboard-accessible section at ${width}px`, async ({ page }) => {
+      // ICP is intentionally the Markdown default but has no answers endpoint; do not invent an ICP questions turn.
+      const type = MKTG_DOCUMENT_TYPES.find(
+        (entry) =>
+          entry.kind === 'living' &&
+          entry.catalogAgentId &&
+          MKTG_AGENT_INTAKES[entry.catalogAgentId]?.endpoints.answers &&
+          MKTG_AGENTS.some((agent) => agent.id === entry.catalogAgentId && agent.status === 'active')
+      );
+      if (!type) throw new Error('Expected an answerable living intake');
+      const run = { ...startedDocumentRun('questions'), agentKey: type.agentKey };
+      await setupDocuments(page, { empty: true, runs: [run], documentType: type });
+      await page.setViewportSize({ width, height: 1000 });
+      await openDocuments(page, `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}&type=${type.agentKey}`);
+      const section = page.getByRole('region', { name: 'Started runs', exact: true });
+      await expect(section).toBeVisible();
+      await expect(section.getByRole('heading', { level: 2 })).toHaveText('Started runs');
+      const open = section.getByTestId(`mktg-documents-open-started-${run.runId}`);
+      await expect(open).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
+      await open.focus();
+      await expect(open).toBeFocused();
+      await open.press('Enter');
+      await expect(page.getByTestId('mktg-run-public-progress')).toBeVisible();
+      const live = page.getByTestId('mktg-run-progress-status');
+      // WAI-ARIA status has implicit aria-live=polite on this run-page surface.
+      await expect(live).toHaveAttribute('role', 'status');
+      await expect(live).toMatchAriaSnapshot('- status: /Waiting for your answers/');
+      await expect(live).toContainText('Waiting for your answers');
+      await expect(page.getByTestId('mktg-agent-run-form')).toHaveCount(0);
+      const refresh = page.getByTestId('mktg-document-view-refresh-progress').getByRole('button');
+      await refresh.focus();
+      await expect(refresh).toBeFocused();
+      await expect(page.getByTestId('mktg-run-public-progress').locator('h1')).toHaveCount(1);
+      await expect(page.locator('main main')).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+  }
+
+  test('progress read failures have a retry warning, not fabricated active rows or an empty-history error', async ({ page }) => {
+    await setupDocuments(page, { progressUnavailable: true });
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('Retrying');
+    const refresh = page.getByTestId('mktg-documents-refresh-progress').getByRole('button');
+    await expect(refresh).toHaveAttribute('type', 'button');
+    await refresh.focus();
+    await expect(refresh).toBeFocused();
+    await expect(page.getByTestId('mktg-documents-started-runs')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-error')).toHaveCount(0);
+  });
+
+  test('uses one layout main, labelled sections, and a real revision list', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    const root = page.getByTestId('mktg-document-view-page');
+    // Wait for rendered document content, not just the shell: otherwise the h1
+    // count can pass before the Markdown renderer has added its headings.
+    await expect(page.getByTestId('mktg-document-view-document').getByRole('heading', { level: 2 })).toHaveText('Revision 2');
+    await expect(root.locator('h1')).toHaveCount(1);
+    await expect(root.locator('main, aside')).toHaveCount(0);
+    await expect(page.locator('main main')).toHaveCount(0);
+    await expect(root.getByRole('region', { name: 'Document content' })).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(3);
+    await expect(page.getByTestId('mktg-document-view-viewed-make-current')).toHaveCount(0);
+    await page.getByTestId('mktg-document-view-run-again').click();
+    await expect(page.getByTestId('mktg-agent-run-form')).toHaveJSProperty('tagName', 'FORM');
+    await expect(page.getByTestId('mktg-agent-run-page').locator('h1')).toHaveCount(1);
+    await expect(page.getByTestId('mktg-agent-run-form-title')).toHaveJSProperty('tagName', 'H2');
+    await expect(page.getByTestId('mktg-agent-run-version-chips')).toHaveCount(0);
+  });
+
+  test('loaded revision controls remain keyboard-operable outside submission', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    const open = page.getByTestId('mktg-document-view-open-1');
+    await expect(open).not.toHaveAttribute('aria-disabled', 'true');
+    await open.focus();
+    await expect(open).toBeFocused();
+    await open.press('Enter');
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
+    const currentOpen = page.getByTestId('mktg-document-view-open-2');
+    await expect(currentOpen).not.toHaveAttribute('aria-disabled', 'true');
+    await currentOpen.focus();
+    await expect(currentOpen).toBeFocused();
+    await currentOpen.press('Enter');
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
+  });
+
+  test('loading does not claim empty counts; success produces semantic table headers', async ({ page }) => {
+    await setupDocuments(page);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      /\/api\/mktg-agents\/documents\?/,
+      async (route) => {
+        await gate;
+        await fulfillDocumentJson(route, { project: 'synthetic', groups: [] });
+      },
+      { times: 1 }
+    );
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-loading')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
+    release();
+    await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
+    await page.getByTestId('mktg-breadcrumb-link-0').click();
+    await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
+    // Enter via the fourth tab, then select the type to exercise content-ready scrolling.
+    await page.getByTestId('mktg-kit-tab-documents').click();
+    await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+    await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(4);
+    await expect(page.getByTestId('mktg-documents-page').locator('main, aside')).toHaveCount(0);
+  });
+
+  for (const width of [390, 768, 1000, 1024, 1264, 1280, 1440]) {
+    test(`revision actions and body remain visible at ${width}px`, async ({ page }) => {
+      await setupDocuments(page);
+      await page.setViewportSize({ width, height: 1000 });
+      await openDocuments(page, DOCUMENT_VIEW_URL);
+      await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-revisions')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-open-1')).toBeVisible();
+      if (width >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible();
+      const root = page.getByTestId('mktg-document-view-page');
+      const content = await root.getByRole('region', { name: 'Document content' }).boundingBox();
+      const details = await root.getByRole('region', { name: 'Revision details' }).boundingBox();
+      const label = await page.getByTestId('mktg-document-view-revision-label-3').boundingBox();
+      const open = await page.getByTestId('mktg-document-view-open-3').boundingBox();
+      if (!content || !details || !label || !open) throw new Error('Document layout must be rendered before measuring it');
+      const availableWidth = await page.getByTestId('mktg-document-view-width').evaluate((element) => element.clientWidth);
+      const viewDiagnostic = `viewport ${width}px, document-view host ${availableWidth}px`;
+      if (availableWidth >= 800) {
+        expect(details.x, viewDiagnostic).toBeGreaterThanOrEqual(content.x + content.width);
+        expect(Math.abs(details.y - content.y), viewDiagnostic).toBeLessThan(2);
+      } else {
+        expect(details.y, viewDiagnostic).toBeGreaterThanOrEqual(content.y + content.height);
+      }
+      expect(Math.abs(open.y - label.y)).toBeLessThan(2);
+      await expect(page.getByTestId('mktg-document-view-current-2')).toBeAttached();
+      const actions = await page.getByTestId('mktg-document-view-row-actions-3').boundingBox();
+      if (!actions) throw new Error('Revision actions must be rendered before measuring their column');
+      expect(actions.width).toBeGreaterThan(40);
+      expect(actions.width).toBeLessThanOrEqual(64);
+      await page.getByTestId('mktg-breadcrumb-link-0').click();
+      await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
+      // Keep the Kit URL assertion, then exercise the real tab → type-pick scroll path.
+      await page.getByTestId('mktg-kit-tab-documents').click();
+      await page.getByTestId(`mktg-documents-nav-${DOCUMENT_TYPE.agentKey}`).click();
+      await expect(page).toHaveURL(new RegExp(DOCUMENTS_URL.split('?')[0]));
+      await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
+      await expect(page.getByTestId('mktg-documents-page').locator('main')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-documents-revision-when-2').getByTestId('mktg-documents-current-2')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-documents-revision-actions-2').getByTestId('mktg-documents-current-2')).toBeAttached();
+      const documentsWidth = await page.getByTestId('mktg-documents-page').evaluate((element) => {
+        const style = getComputedStyle(element);
+        return element.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+      });
+      const navigation = await page.getByTestId('mktg-documents-nav').boundingBox();
+      const documentPanel = await page.getByRole('region', { name: 'Documents and revisions' }).boundingBox();
+      if (!navigation || !documentPanel) throw new Error('Documents navigation and content must be rendered before measuring');
+      const documentsDiagnostic = `viewport ${width}px, documents host ${documentsWidth}px`;
+      if (documentsWidth >= 800) expect(documentPanel.x, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.x + navigation.width);
+      else expect(documentPanel.y, documentsDiagnostic).toBeGreaterThanOrEqual(navigation.y + navigation.height);
+      if (width === 1280) {
+        const scroller = page.getByTestId('mktg-documents-revisions-scroll');
+        const visible = await scroller.boundingBox();
+        const actionsCell = await page.getByTestId('mktg-documents-revision-actions-3').boundingBox();
+        const open = await page.getByTestId('mktg-documents-view-3').boundingBox();
+        if (!visible || !actionsCell || !open) throw new Error('Desktop table actions must be rendered before measuring');
+        expect(await scroller.evaluate((element) => element.scrollLeft)).toBe(0);
+        expect(await scroller.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+        expect(actionsCell.x).toBeGreaterThanOrEqual(visible.x);
+        expect(actionsCell.x + actionsCell.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
+        expect(open.x + open.width).toBeLessThanOrEqual(visible.x + visible.width + 1);
+      }
+      if (width === 390) {
+        const pageWidth = await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth));
+        expect(pageWidth).toBeLessThanOrEqual(width);
+        const scroller = page.getByTestId('mktg-documents-revisions-scroll');
+        expect(await scroller.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+        await scroller.evaluate((element) => {
+          element.scrollLeft = element.scrollWidth;
+        });
+        await expect(page.getByTestId('mktg-documents-current-2')).toBeInViewport();
+        await scroller.evaluate((element) => {
+          element.scrollLeft = 0;
+        });
+      }
+    });
+  }
+});

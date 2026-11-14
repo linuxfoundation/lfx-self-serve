@@ -67,14 +67,6 @@
         <i class="fa-light fa-circle-minus mt-0.5 text-gray-400" aria-hidden="true"></i>
         <span>{{ negativeSummary() }}</span>
       </p>
-      <ul class="flex flex-col gap-1" data-testid="org-roi-projects-donut-negative-list">
-        @for (row of negatives().rows; track row.key) {
-          <li class="flex items-baseline justify-between gap-4 text-xs text-gray-600">
-            <span>{{ row.label }}</span>
-            <span class="font-medium text-gray-900">{{ row.amount }}</span>
-          </li>
-        }
-      </ul>
     }
 
     @if (showsModelledCost()) {

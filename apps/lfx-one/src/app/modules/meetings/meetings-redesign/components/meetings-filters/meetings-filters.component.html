@@ -1,0 +1,115 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Re-created per tab, so a tab switch closes an open popover. Fills the host, which the page widens at 640px and below. -->
+@for (current of [tab()]; track current) {
+  <lfx-ui-button
+    class="grow"
+    fullWidth
+    variant="tertiary"
+    icon="fa-light fa-bars-filter"
+    popoverLabel="Filters"
+    popoverPadding="none"
+    popoverAlign="end"
+    [popover]="panel"
+    [popoverWidth]="panelWidth()"
+    [ariaLabel]="buttonLabel()"
+    (click)="resetDraft()"
+    data-testid="meetings-home-filters-button">
+    Filters
+    @if (appliedCount()) {
+      <lfx-ui-badge tone="accent" variant="solid" size="sm" data-testid="meetings-home-filters-count">{{ appliedCount() }}</lfx-ui-badge>
+    }
+  </lfx-ui-button>
+}
+
+<ng-template #panel let-close="close">
+  <!-- Exact px design values: 344px panel (full width on phones), 6px body padding, 40px switch rows; rem undershoots at the 14px root. -->
+  <div class="flex max-h-[min(560px,calc(100vh-220px))] flex-col" data-testid="meetings-home-filters-panel">
+    <div class="flex min-h-0 flex-col gap-[2px] overflow-y-auto p-[6px]">
+      @if (showFoundation()) {
+        <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+          <lfx-ui-select
+            label="Foundation"
+            size="small"
+            [value]="draft().foundation ?? ''"
+            (valueChange)="setFoundation($event)"
+            data-testid="meetings-home-filters-foundation">
+            <lfx-ui-option value="" label="All foundations" />
+            @for (option of foundationOptions(); track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+      }
+      @if (showProject()) {
+        <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+          <lfx-ui-select
+            label="Foundation/Project"
+            size="small"
+            [value]="draft().project ?? ''"
+            (valueChange)="setProject($event)"
+            (openChange)="projectQuery.set('')"
+            data-testid="meetings-home-filters-project">
+            <lfx-ui-search-input lfxUiSelectHeader ariaLabel="Search projects" [(value)]="projectQuery" data-testid="meetings-home-filters-project-search" />
+            @if (!projectQuery()) {
+              <lfx-ui-option value="" label="All projects" />
+            }
+            @for (option of projectMatches(); track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            } @empty {
+              <p lfxUiSelectEmpty>No projects match “{{ projectQuery() }}”.</p>
+            }
+          </lfx-ui-select>
+        </div>
+      }
+      <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+        <lfx-ui-select
+          label="Meeting type"
+          size="small"
+          [value]="draft().meetingType ?? ''"
+          (valueChange)="setMeetingType($event)"
+          data-testid="meetings-home-filters-type">
+          <lfx-ui-option value="" label="All types" />
+          @for (option of typeOptions; track option.value) {
+            <lfx-ui-option [value]="option.value" [label]="option.label" />
+          }
+        </lfx-ui-select>
+      </div>
+      @if (tab() === 'upcoming') {
+        <div class="pb-[8px] pl-[10px] pr-[4px] pt-[6px]">
+          <lfx-ui-select label="RSVP" size="small" [value]="draft().rsvp" (valueChange)="setRsvp($event)" data-testid="meetings-home-filters-rsvp">
+            @for (option of rsvpOptions; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+        <lfx-ui-menu-separator />
+        <div class="flex min-h-[40px] items-center px-[10px]">
+          <lfx-ui-toggle
+            label="Organized by me"
+            labelPosition="start"
+            [checked]="draft().organizedByMe"
+            (checkedChange)="setOrganizedByMe($event)"
+            data-testid="meetings-home-filters-organized" />
+        </div>
+        <div class="flex min-h-[40px] items-center px-[10px]">
+          <lfx-ui-toggle
+            label="Hide declined meeting series"
+            labelPosition="start"
+            [checked]="draft().hideDeclined"
+            (checkedChange)="setHideDeclined($event)"
+            data-testid="meetings-home-filters-hide-declined" />
+        </div>
+      }
+    </div>
+    <div class="flex items-center justify-between gap-[8px] border-t border-gray-200 bg-gray-50 px-[12px] py-[10px]">
+      @if (showReset()) {
+        <lfx-ui-button variant="tertiary-accent" icon="fa-light fa-arrow-rotate-left" (click)="reset(close)" data-testid="meetings-home-filters-reset">
+          Reset Filters
+        </lfx-ui-button>
+      }
+      <lfx-ui-button class="ml-auto" [disabled]="!changed()" (click)="apply(close)" data-testid="meetings-home-filters-apply">Apply</lfx-ui-button>
+    </div>
+  </div>
+</ng-template>

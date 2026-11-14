@@ -1,0 +1,26 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<dl [class]="listClasses()" data-testid="ui-description-list">
+  <!-- Exact px gap, not rem; 14px root. -->
+  <dt class="label-14 inline-flex items-center gap-[6px] font-medium text-ui-neutral-600" data-testid="ui-description-label">
+    {{ label() }}
+    @if (help()) {
+      <i
+        class="ui-icon fa-light fa-circle-question rounded-ui-full text-[12px] text-ui-neutral-500 focus-visible:shadow-focus focus-visible:outline-none"
+        role="img"
+        tabindex="0"
+        [attr.aria-label]="help()"
+        [lfxUiTooltip]="help()"
+        data-testid="ui-description-help"></i>
+    }
+  </dt>
+  <dd
+    [class]="valueClasses()"
+    [attr.tabindex]="ellipsis() ? 0 : null"
+    [attr.aria-label]="ellipsis() ? value() : null"
+    [lfxUiTooltip]="ellipsis() ? value() : ''"
+    data-testid="ui-description-value">
+    {{ value() }}
+  </dd>
+</dl>

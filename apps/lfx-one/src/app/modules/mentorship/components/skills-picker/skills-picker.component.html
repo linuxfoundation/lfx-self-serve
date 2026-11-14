@@ -2,30 +2,35 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-1">
-  <label [id]="idPrefix() + '-skill-label'" class="text-sm font-medium text-gray-700">{{ label() }} <span class="text-red-500">*</span></label>
+  <label [id]="idPrefix() + '-skill-label'" [for]="idPrefix() + '-skill-input'" class="text-sm font-medium text-gray-700"
+    >{{ label() }} <span class="text-red-500">*</span></label
+  >
   @if (helper()) {
     <p class="text-sm text-gray-500 mb-1">{{ helper() }}</p>
   }
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
     <div class="flex-1">
-      <lfx-select
+      <lfx-autocomplete
         [form]="draftForm"
         control="skill"
-        [options]="availableSkills()"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="Skill Name"
-        [filter]="true"
+        [suggestions]="suggestions()"
+        (completeMethod)="searchSkills($event)"
+        placeholder="Type or choose a skill"
+        [dropdown]="true"
+        [delay]="0"
+        [maxLength]="skillMaxLength"
+        [showEmptyMessage]="false"
         styleClass="w-full"
-        [ariaLabelledBy]="idPrefix() + '-skill-label'"
-        [dataTest]="idPrefix() + '-skill'" />
+        inputStyleClass="w-full"
+        [inputId]="idPrefix() + '-skill-input'"
+        [dataTestId]="idPrefix() + '-skill'" />
     </div>
     <lfx-button
       label="Add Skill"
       icon="fa-light fa-plus"
       severity="primary"
       size="small"
-      [disabled]="!draftValue()"
+      [disabled]="!canAddSkill()"
       (onClick)="addSkill()"
       styleClass="whitespace-nowrap !py-2.5"
       [attr.data-testid]="idPrefix() + '-add-skill'" />

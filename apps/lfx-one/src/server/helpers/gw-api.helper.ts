@@ -5,10 +5,20 @@ import { randomUUID } from 'node:crypto';
 
 import { Request, Response } from 'express';
 
-import { GW_DRAIN_TIMEOUT_MS } from '@lfx-one/shared/constants';
+import { GW_DRAIN_TIMEOUT_MS, GW_EMBED_HOST_SESSION_MOUNT } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
+
+/**
+ * The uniform 404 every `/api/gatewaze` gate answers with: host-session mode off or incomplete, the
+ * embed flag off, or no LFX bearer token. One factory, so the bodies cannot drift apart and a prober
+ * cannot tell which gate it hit, and so the response names no feature. `operation` only reaches the
+ * server log; the client sees the same `NOT_FOUND` body whichever gate built it.
+ */
+export function gwUniformNotFound(req: Request, operation: string): MicroserviceError {
+  return new MicroserviceError('Not found', 404, 'NOT_FOUND', { operation, service: 'gw', path: req.path });
+}
 
 /**
  * Marks a request whose body has already had a drain attempted against it.
@@ -32,9 +42,9 @@ export function hasGwDrainBeenAttempted(req: Request): boolean {
  * Lets a rejected caller finish sending, by reading and discarding whatever it still has.
  *
  * Node only pulls from the socket while something is reading the request stream. Every rejection
- * on the `/api/gw/*` route decides BEFORE the body is touched — the flag/bearer 404 is the first
- * thing the controller does, the authorization 403 runs ahead of any read by design, and the
- * fail-closed 5xx fires when the access lookup throws. `apiErrorHandler` then answers without
+ * on the `/api/gatewaze` proxies decides BEFORE the body is touched — the host-session and bearer
+ * 404s run first, the authorization 403 runs ahead of any read by design, and the fail-closed 5xx
+ * fires when the access lookup throws. `apiErrorHandler` then answers without
  * touching the request stream, so a client mid-upload is left unable to complete its write and
  * the connection hangs until keep-alive expires.
  *
@@ -90,7 +100,7 @@ export function drainRequestBody(req: Request, timeoutMs: number = GW_DRAIN_TIME
 /**
  * Defers a response on this route until the request body has been drained.
  *
- * `/api/gw` is excluded from the body parsers, so nothing upstream of the proxy router consumes the
+ * `/api/gatewaze` is excluded from the body parsers, so nothing upstream of the proxy router consumes the
  * request. Any middleware in between that answers on its own — `authMiddleware` with a 401,
  * `apiRateLimiter` with a 429 — therefore leaves an in-progress upload unread, and Node will not
  * release a keep-alive connection while a request body is still unread.
@@ -166,7 +176,7 @@ export function attachGwDrainGuard(req: Request, res: Response): void {
 }
 
 /**
- * The path to test against the `/api/gw` mount, taken from the untrimmed URL.
+ * The path to test against the `/api/gatewaze` mount, taken from the untrimmed URL.
  *
  * Every caller of `isGwProxyPath` goes through this, including the three top-level handlers where
  * `req.path` would still be correct. Correct-by-construction on purpose: the `compression` filter
@@ -191,10 +201,12 @@ export function gwMountPath(req: Request): string {
 }
 
 /**
- * Whether a request path belongs to the Gatewaze proxy router mounted at `/api/gw`.
+ * Whether a request path belongs to the Gatewaze proxy router, `/api/gatewaze`, whose Supabase and
+ * API proxies stream the raw body (`gatewaze-proxy.controller.ts`). Its session routes read no
+ * body, so excluding the whole mount costs them nothing.
  *
- * Matches the mount exactly rather than by prefix. `startsWith('/api/gw')` would also swallow a
- * future `/api/gwidgets`, silently stripping its body parsing and compression — a failure that
+ * Matches the mount exactly rather than by prefix. `startsWith('/api/gatewaze')` would also swallow
+ * a future `/api/gatewazex`, silently stripping its body parsing and compression — a failure that
  * shows up as an empty `req.body` rather than an error.
  *
  * Lives here rather than in `server.ts` so it is reachable by a spec. It had no test while it
@@ -208,13 +220,13 @@ export function gwMountPath(req: Request): string {
  * a response hook — must pass `req.originalUrl` with any query string removed.
  */
 export function isGwProxyPath(path: string): boolean {
-  // Lower-cased first: `app.use('/api/gw', …)` is case-INSENSITIVE by default, so `/API/GW/x`
-  // reaches the proxy. Comparing case-sensitively here meant such a request skipped none of the
-  // exclusions — its body was consumed by express.json() and its streamed response re-compressed,
-  // and the controller then forwarded an already-ended stream as an empty body with the caller's
-  // original content-type. Silent data loss, no error.
+  // Lower-cased first: `app.use('/api/gatewaze', …)` is case-INSENSITIVE by default, so
+  // `/API/GATEWAZE/x` reaches the router. Comparing case-sensitively here meant such a request
+  // skipped none of the exclusions — its body was consumed by express.json() and its streamed
+  // response re-compressed, and the controller then forwarded an already-ended stream as an empty
+  // body with the caller's original content-type. Silent data loss, no error.
   const normalized = path.toLowerCase();
-  return normalized === '/api/gw' || normalized.startsWith('/api/gw/');
+  return normalized === GW_EMBED_HOST_SESSION_MOUNT || normalized.startsWith(`${GW_EMBED_HOST_SESSION_MOUNT}/`);
 }
 
 /**

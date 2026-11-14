@@ -1,0 +1,321 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="import-members-dialog">
+  <p class="sr-only" aria-live="polite" aria-atomic="true" data-testid="import-members-status">{{ statusMessage() }}</p>
+
+  @if (phase() === 'select' || phase() === 'preview') {
+    <section class="flex flex-col gap-3" aria-labelledby="import-members-format-title" data-testid="import-members-guidance">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div class="flex flex-col gap-1">
+          <h3 id="import-members-format-title" class="text-sm font-semibold text-gray-900">CSV format for {{ committeeName }}</h3>
+          <p class="text-sm text-gray-600">
+            One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Column names can be in any order and capitalization; columns the
+            import doesn't use are ignored. No invitations are created.
+            @if (collectOnly) {
+              Members stay pending in the form until you select Done (when creating) or Update Group (when editing).
+            } @else {
+              People are added to the group directly.
+            }
+          </p>
+        </div>
+        <lfx-button
+          label="Download template"
+          icon="fa-light fa-file-arrow-down"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          styleClass="shrink-0 whitespace-nowrap"
+          (onClick)="downloadTemplate()"
+          data-testid="import-members-template-btn">
+        </lfx-button>
+      </div>
+
+      <details class="rounded-lg border border-gray-200 px-3 py-2" data-testid="import-members-column-guide">
+        <summary class="cursor-pointer text-sm font-medium text-gray-700">Column reference</summary>
+        <ul class="mt-2 flex flex-col gap-2">
+          @for (field of fieldGuide; track field.column) {
+            <li class="flex flex-col sm:flex-row sm:gap-3 text-sm" [attr.data-testid]="'import-members-guide-' + field.column">
+              <span class="flex items-center gap-2 sm:w-64 sm:shrink-0">
+                <code class="font-mono text-gray-900">{{ field.column }}</code>
+                @if (field.required) {
+                  <span class="text-xs font-medium text-red-600">Required</span>
+                } @else {
+                  <span class="text-xs text-gray-500">Optional</span>
+                }
+              </span>
+              <span class="text-gray-600">{{ field.description }}</span>
+            </li>
+          }
+        </ul>
+      </details>
+    </section>
+
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium text-gray-700">CSV file</span>
+      <div class="flex flex-wrap items-center gap-3">
+        <lfx-file-upload
+          mode="basic"
+          accept=".csv"
+          [auto]="true"
+          [customUpload]="true"
+          [chooseLabel]="fileName() ? 'Choose a different file' : 'Choose CSV file'"
+          chooseIcon="fa-light fa-file-csv"
+          chooseStyleClass="p-button-sm"
+          [disabled]="!canChooseFile()"
+          dataTest="import-members-file-input"
+          (onSelect)="onFileSelect($event)">
+        </lfx-file-upload>
+        @if (fileName()) {
+          <span class="text-sm text-gray-600 break-all" data-testid="import-members-file-name">{{ fileName() }}</span>
+        }
+        @if (reading()) {
+          <span class="text-sm text-gray-500">Reading…</span>
+        }
+      </div>
+    </div>
+  }
+
+  @if (fileErrors().length > 0) {
+    <div role="alert" class="flex flex-col gap-1 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="import-members-file-errors">
+      <p class="text-sm font-medium text-red-700">This file can't be imported. Fix it and choose it again.</p>
+      <ul class="flex max-h-40 list-disc flex-col gap-1 overflow-y-auto pl-5 text-sm text-red-700">
+        @for (error of fileErrors(); track $index) {
+          <li>{{ error }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (phase() === 'preview' && fileNotices().length > 0) {
+    <div class="flex flex-col gap-1 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="import-members-file-notices">
+      <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-amber-800">
+        @for (notice of fileNotices(); track $index) {
+          <li>{{ notice }}</li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (rows().length > 0 || phase() !== 'select') {
+    <div #resultSummary tabindex="-1" class="flex flex-col gap-2 outline-none" data-testid="import-members-summary">
+      <lfx-filter-pills
+        [options]="statusFilterOptions()"
+        [selectedFilter]="activeStatusFilter()"
+        (filterChange)="onStatusFilterChange($event)"
+        data-testid="import-members-status-filter" />
+
+      @if (phase() === 'preview' && invalidCount() > 0) {
+        <p class="text-sm text-red-700" data-testid="import-members-invalid-help">
+          {{ invalidCount() }} invalid {{ invalidCount() === 1 ? 'row' : 'rows' }} will be skipped. Download them to fix and import them later, or remove them
+          below. In downloads, keep the lfx_import_encoding column and any lfx-text: safety prefixes; they are restored automatically on import.
+        </p>
+      } @else if (phase() === 'preview' && readyCount() === 0) {
+        <p class="text-sm text-gray-600" data-testid="import-members-nothing-help">
+          Nothing to add — every row is already in the group or repeats an earlier row.
+        </p>
+      } @else if (phase() === 'preview') {
+        <p class="text-sm text-gray-600">
+          @if (collectOnly) {
+            Review the rows below. Confirm to add them to the form, then select Done (when creating) or Update Group (when editing) to save.
+          } @else {
+            Review the rows below. Nothing is added until you confirm.
+          }
+        </p>
+      } @else if (phase() === 'importing' && paused()) {
+        <p role="status" class="text-sm text-amber-700" data-testid="import-members-paused-notice">
+          Paused to let the service catch up (pause {{ pauseCount() }} of {{ maxPauses }}). This pause lasts about {{ resumeInSeconds() }} seconds; automatic
+          resume is scheduled for {{ resumeAt() | date: 'mediumTime' }}. Select Stop import to end the import here; rows that were not sent stay Not yet
+          submitted.
+        </p>
+      } @else if (stopping()) {
+        <p class="text-sm text-gray-600" data-testid="import-members-progress">
+          Stopping after the current batch: {{ batchSettled() }} of {{ batchTotal() }} done… Rows after this batch will not be sent.
+        </p>
+      } @else if (phase() === 'importing') {
+        <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
+      }
+
+      @if (stopReason() && !stopping()) {
+        <p role="alert" class="text-sm text-red-700" data-testid="import-members-stop-reason">
+          The import stopped: {{ stopReason() }} Rows that were not sent are marked Not yet submitted and can be retried. Rows with an unconfirmed earlier
+          attempt are marked Outcome unknown; review the roster before retrying them.
+        </p>
+      }
+      @if (retryDeadlineLabel(); as deadlineLabel) {
+        <p class="text-sm text-amber-700" data-testid="import-members-retry-deadline">{{ deadlineLabel }}</p>
+      }
+      @if (phase() === 'results' && (retryableCount() > 0 || failedCount() > 0)) {
+        <p class="text-sm text-gray-600" data-testid="import-members-retry-help">
+          Retry sends rows that are Not yet submitted, unknown outcomes and failed rows that can still succeed; added and skipped rows are never sent again.
+          Rows the service rejected as invalid need a corrected file.
+        </p>
+      }
+      @if ((phase() === 'preview' || phase() === 'results') && invalidCount() > 0) {
+        <div>
+          <lfx-button
+            label="Download invalid rows"
+            icon="fa-light fa-file-arrow-down"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="downloadInvalidRows()"
+            data-testid="import-members-download-invalid-btn">
+          </lfx-button>
+        </div>
+      }
+      @if (cleanupWarningCount() > 0) {
+        <p class="text-sm text-amber-700" data-testid="import-members-cleanup-warning">
+          {{ cleanupWarningCount() }} added {{ cleanupWarningCount() === 1 ? 'member still has' : 'members still have' }} a pending invitation that could not be
+          revoked.
+        </p>
+      }
+    </div>
+
+    <lfx-table
+      [value]="filteredRowViews()"
+      [paginator]="filteredRowViews().length > tablePageSize"
+      [rows]="tablePageSize"
+      [first]="tableFirst()"
+      (onPage)="onTablePage($event)"
+      styleClass="p-datatable-sm"
+      data-testid="import-members-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-sm text-gray-500">Row</span></th>
+          <th scope="col"><span class="text-sm text-gray-500">Email</span></th>
+          <th scope="col"><span class="text-sm text-gray-500">Name</span></th>
+          <th scope="col"><span class="text-sm text-gray-500">Organization</span></th>
+          <th scope="col"><span class="text-sm text-gray-500">Role / voting</span></th>
+          <th scope="col"><span class="text-sm text-gray-500">Status</span></th>
+          @if (phase() === 'preview') {
+            <th scope="col"><span class="sr-only">Actions</span></th>
+          }
+        </tr>
+      </ng-template>
+      <ng-template #body let-view>
+        <tr [attr.data-testid]="'import-members-row-' + view.row.rowNumber">
+          <td class="align-top text-sm text-gray-500">{{ view.row.rowNumber }}</td>
+          <td class="align-top">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-900 break-all">{{ view.row.email || '—' }}</span>
+              @if (view.details.length > 1) {
+                <details class="text-xs text-gray-600" [attr.data-testid]="'import-members-row-details-' + view.row.rowNumber">
+                  <summary class="cursor-pointer">All values</summary>
+                  <dl class="mt-1 flex flex-col gap-1">
+                    @for (detail of view.details; track detail.column) {
+                      <div class="flex flex-col">
+                        <dt class="font-mono text-gray-500">{{ detail.column }}</dt>
+                        <dd class="break-all whitespace-pre-wrap text-gray-900">{{ detail.value }}</dd>
+                      </div>
+                    }
+                  </dl>
+                </details>
+              }
+            </div>
+          </td>
+          <td class="align-top text-sm text-gray-900">{{ view.name || '—' }}</td>
+          <td class="align-top text-sm text-gray-900">{{ view.organization || '—' }}</td>
+          <td class="align-top text-sm text-gray-900">{{ view.governance || '—' }}</td>
+          <td class="align-top">
+            <div class="flex flex-col items-start gap-1">
+              <lfx-tag [value]="view.statusLabel" [severity]="view.statusSeverity" [attr.data-testid]="'import-members-row-status-' + view.row.rowNumber" />
+              @if (view.row.reason) {
+                <span class="text-xs text-gray-600">{{ view.row.reason }}</span>
+              }
+              @if (view.row.cleanupWarning) {
+                <span class="text-xs text-amber-700">{{ view.row.cleanupWarning }}</span>
+              }
+              @if (view.row.issues.length > 0) {
+                <ul class="flex flex-col gap-1 text-xs text-red-700" [attr.data-testid]="'import-members-row-issues-' + view.row.rowNumber">
+                  @for (issue of view.row.issues; track $index) {
+                    <li>{{ issue.message }}</li>
+                  }
+                </ul>
+              }
+            </div>
+          </td>
+          @if (phase() === 'preview') {
+            <td class="align-top">
+              <lfx-button
+                icon="fa-light fa-trash"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                [ariaLabel]="'Remove row ' + view.row.rowNumber"
+                (onClick)="removeRow(view.row.rowNumber)"
+                [attr.data-testid]="'import-members-remove-' + view.row.rowNumber">
+              </lfx-button>
+            </td>
+          }
+        </tr>
+      </ng-template>
+    </lfx-table>
+
+    @if (phase() !== 'select') {
+      <div class="flex flex-col gap-1">
+        <lfx-checkbox
+          [form]="form"
+          control="send_notification"
+          inputId="import-members-send-notification"
+          label="Send notification emails to added members"
+          data-testid="import-members-send-notification" />
+        <p class="text-xs text-gray-500">Off by default, like Add Member.</p>
+      </div>
+    }
+  }
+
+  <div class="flex flex-col-reverse gap-2 border-t border-gray-100 pt-3 sm:flex-row sm:justify-end">
+    <lfx-button
+      [label]="closeLabel()"
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      [disabled]="busy()"
+      (onClick)="close()"
+      data-testid="import-members-close-btn">
+    </lfx-button>
+    @if (phase() === 'preview') {
+      <lfx-button
+        [label]="submitLabel()"
+        icon="fa-light fa-user-plus"
+        size="small"
+        severity="info"
+        [disabled]="!canImport()"
+        (onClick)="startImport()"
+        data-testid="import-members-submit-btn">
+      </lfx-button>
+    } @else if (phase() === 'importing' && paused()) {
+      <lfx-button
+        label="Stop import"
+        icon="fa-light fa-circle-stop"
+        size="small"
+        severity="secondary"
+        (onClick)="stopImport()"
+        data-testid="import-members-stop-btn">
+      </lfx-button>
+    } @else if (phase() === 'importing') {
+      <lfx-button
+        [label]="stopping() ? 'Stopping…' : 'Stop import'"
+        icon="fa-light fa-circle-stop"
+        size="small"
+        severity="secondary"
+        [disabled]="stopReason() !== null"
+        (onClick)="stopImport()"
+        data-testid="import-members-stop-btn">
+      </lfx-button>
+      <lfx-button label="Adding members…" size="small" severity="info" [loading]="true" [disabled]="true" data-testid="import-members-submitting-btn">
+      </lfx-button>
+    } @else if (canRetry()) {
+      <lfx-button
+        [label]="'Retry ' + retryableCount()"
+        icon="fa-light fa-rotate-right"
+        size="small"
+        severity="info"
+        [disabled]="retryNotBefore() > 0"
+        (onClick)="retryFailed()"
+        data-testid="import-members-retry-btn">
+      </lfx-button>
+    }
+  </div>
+</div>

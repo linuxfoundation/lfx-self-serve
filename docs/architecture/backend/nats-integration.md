@@ -91,6 +91,8 @@ export enum NatsSubjects {
 }
 ```
 
+The full list lives in `packages/shared/src/enums/nats.enum.ts`. One worth calling out: `EMAIL_SERVICE_SEND` (`lfx.email-service.send_email`) is the BFF's only direct email sender (`EmailService.sendEmail`, used by newsletter invites). lfx-v2-email-service does no templating — callers send pre-rendered HTML and text for one recipient, leaving `from`/`reply_to` to the service's allowlisted defaults. An empty reply (no `email_id`) means sending is disabled or a non-prod recipient filter skipped it; an `{error}` reply surfaces as 502 `EMAIL_SEND_FAILED`, with the reason kept in the server log only. Other email (committee invites, newsletters) is sent by the owning Go service.
+
 ### Request-Reply Pattern
 
 ```typescript
@@ -117,28 +119,37 @@ public async getProjectIdBySlug(slug: string): Promise<ProjectSlugToIdResponse> 
 
 ### Project Service Integration
 
+Project detail lookup (`ProjectService.getProjectBySlug`, serving `/api/projects/:slug`)
+uses the authenticated HTTP resolver `GET /projects/slug-to-uid/{slug}?v=1` through
+`MicroserviceProxyService`, then the existing UID detail/access lookup. HTTP preserves
+404 for a confirmed miss and 500/503 for lookup failures, allowing deep-link guards
+to show a retry view rather than a false "Page not found".
+
+For callers that must distinguish a writer-check outage from a confirmed denial,
+`GET /api/projects/:slug?strict_writer=true` opts into `checkSingleAccessStrict` on
+`project:{uid}#writer_guard` after the project read. It returns `writer: false` only
+for a resolved denial; upstream failures or incomplete check results propagate as
+errors. The option works with both UUIDs and slugs and leaves ordinary lookups
+unchanged. The frontend `ProjectService` passes it as `{ strictWriter: true }`,
+caches it separately from ordinary lookups, and evicts failed entries so Retry
+can issue a fresh check. The group page uses this mode for weekly-brief email
+sharing; the send endpoint's authorization and recipients are unchanged.
+
+The legacy `ProjectService.getProjectIdBySlug` NATS helper remains available to its
+other callers. Its contract is ambiguous: the upstream responder sends an empty
+reply for both missing projects and internal failures, and the helper also maps
+timeouts/no responders to `exists: false`. That result is not proof of absence.
+
 ```typescript
 export class ProjectService {
-  private natsService: NatsService;
-
-  public constructor() {
-    this.natsService = new NatsService();
-  }
-
   public async getProjectBySlug(req: Request, slug: string): Promise<Project> {
-    // Use NATS to resolve project slug to ID
-    const { uid, exists } = await this.natsService.getProjectIdBySlug(slug);
-
-    if (!exists) {
-      throw createApiError({
-        message: 'Project not found',
-        status: 404,
-        code: 'PROJECT_NOT_FOUND',
-      });
-    }
-
-    // Use resolved ID to fetch project details
-    return this.getProjectById(req, uid);
+    const { uid } = await this.microserviceProxy.proxyRequest<{ uid: string }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/slug-to-uid/${encodeURIComponent(slug)}`,
+      'GET'
+    );
+    return this.getProjectById(req, uid, true);
   }
 }
 ```
@@ -320,7 +331,7 @@ Solution: Verify target microservice deployment and health
 ## 🔗 Related Documentation
 
 - [Backend Architecture Overview](./README.md)
-- [Project Service Integration](../../CLAUDE.md#backend-stack)
+- [Project Service Integration](#project-service-integration)
 - Environment Configuration - chart values in `charts/lfx-self-serve/README.md`; deployed values in `lfx-v2-argocd` (`values/<env>/lfx-v2-ui.yaml`).
 - [Microservice Proxy Service](./README.md#microservice-integration)
 

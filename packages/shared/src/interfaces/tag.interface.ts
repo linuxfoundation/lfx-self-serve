@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TagProps } from './components.interface';
+import { TagProps, TagSeverity } from './components.interface';
 
 /**
  * Tag type configuration
@@ -12,4 +12,11 @@ export interface TagTypeConfig {
   icon?: string;
   rounded?: boolean;
   styleClass?: string;
+}
+
+/** Resolved label, severity, and icon for a membership status tag displayed in a group header. */
+export interface MembershipTagDisplay {
+  label: string;
+  severity: TagSeverity;
+  icon: string;
 }

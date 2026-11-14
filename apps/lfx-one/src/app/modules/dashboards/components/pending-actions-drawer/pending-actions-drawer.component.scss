@@ -26,6 +26,12 @@
   max-height: 8rem;
   overflow: hidden;
 
+  // Applications disappear on save without a completion fade; wrapped identity and controls must not be clipped.
+  &.is-application {
+    max-height: none;
+    overflow: visible;
+  }
+
   &.is-completing {
     opacity: 0;
     max-height: 0;

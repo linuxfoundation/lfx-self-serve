@@ -8,7 +8,10 @@ import {
   PublicProfileCertification,
   PublicProfileTechnicalContribution,
   PublicProfileTraining,
+  PublicProfileYearContribution,
 } from '@lfx-one/shared/interfaces';
+// Deep import: the `utils` barrel pulls in @angular/forms, which fails to load under plain-Node vitest.
+import { mapYearLabelToNumber } from '@lfx-one/shared/utils/public-profile.utils';
 import { Request } from 'express';
 
 import {
@@ -106,21 +109,62 @@ function projectBasic(value: unknown, username?: string): PublicProfileBasic | u
   };
 }
 
+// Upstream leaves the top-level project counts at 0 and only fills the yearly `contributions[]` rows
+// (relative `date` labels), so sum those rows per calendar year. Rows with an unrecognised label are
+// dropped rather than guessed at.
+function projectYearContributions(rows: Record<string, unknown>[], currentYear: number): PublicProfileYearContribution[] {
+  const byYear = new Map<number, PublicProfileYearContribution>();
+  for (const row of rows) {
+    const year = mapYearLabelToNumber(row['date'], currentYear);
+    if (year === undefined) {
+      continue;
+    }
+    const entry = byYear.get(year) ?? { year, commits: 0, deleted: 0, added: 0, prs: 0, issues: 0 };
+    entry.commits += pickCount(row['commits']);
+    entry.deleted += pickCount(row['deleted']);
+    entry.added += pickCount(row['added']);
+    entry.prs += pickCount(row['prs']);
+    entry.issues += pickCount(row['issues']);
+    byYear.set(year, entry);
+  }
+  return [...byYear.values()].sort((a, b) => b.year - a.year);
+}
+
 function projectTechnicalContribution(value: unknown): PublicProfileTechnicalContribution | undefined {
   const contribution = asRecord(value);
   if (!contribution) {
     return undefined;
   }
-  const projects = asRecordArray(contribution['projects']).map((project) => ({
-    LogoURL: pickString(project['LogoURL']),
-    Name: pickString(project['Name']),
-    Slug: pickString(project['Slug']),
-    commits: pickCount(project['commits']),
-    deleted: pickCount(project['deleted']),
-    added: pickCount(project['added']),
-    prs: pickCount(project['prs']),
-    issues: pickCount(project['issues']),
-  }));
+  // The artifact has no generation timestamp, so relative labels resolve against the request year;
+  // right after New Year they can be off by one until upstream regenerates it.
+  const currentYear = new Date().getUTCFullYear();
+  const projects = asRecordArray(contribution['projects']).map((project) => {
+    const years = projectYearContributions(asRecordArray(project['contributions']), currentYear);
+    // Older artifacts carry the totals at the top level; use them only when there are no yearly rows.
+    const totals =
+      years.length > 0
+        ? {
+            commits: years.reduce((sum, y) => sum + y.commits, 0),
+            deleted: years.reduce((sum, y) => sum + y.deleted, 0),
+            added: years.reduce((sum, y) => sum + y.added, 0),
+            prs: years.reduce((sum, y) => sum + y.prs, 0),
+            issues: years.reduce((sum, y) => sum + y.issues, 0),
+          }
+        : {
+            commits: pickCount(project['commits']),
+            deleted: pickCount(project['deleted']),
+            added: pickCount(project['added']),
+            prs: pickCount(project['prs']),
+            issues: pickCount(project['issues']),
+          };
+    return {
+      LogoURL: pickString(project['LogoURL']),
+      Name: pickString(project['Name']),
+      Slug: pickString(project['Slug']),
+      ...totals,
+      years,
+    };
+  });
   return { projects };
 }
 

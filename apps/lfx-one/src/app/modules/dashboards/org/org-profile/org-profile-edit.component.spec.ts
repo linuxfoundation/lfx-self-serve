@@ -39,12 +39,12 @@ describe('OrgProfileEditComponent — logo upload', () => {
   let uploadLogoMock: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.spyOn>;
 
-  function pngFile(sizeBytes = 100): File {
-    return new File([new Uint8Array(sizeBytes)], 'logo.png', { type: 'image/png' });
+  function svgFile(sizeBytes = 100): File {
+    return new File([new Uint8Array(sizeBytes)], 'logo.svg', { type: 'image/svg+xml' });
   }
 
   function selectFile(file: File): void {
-    const input = { files: [file], value: 'logo.png' } as unknown as HTMLInputElement;
+    const input = { files: [file], value: 'logo.svg' } as unknown as HTMLInputElement;
     fixture.componentInstance['onLogoFileSelected']({ target: input } as unknown as Event);
   }
 
@@ -76,16 +76,14 @@ describe('OrgProfileEditComponent — logo upload', () => {
   });
 
   it('rejects a disallowed file type without calling the service', async () => {
-    const file = new File([new Uint8Array(10)], 'logo.gif', { type: 'image/gif' });
+    const file = new File([new Uint8Array(10)], 'logo.png', { type: 'image/png' });
     selectFile(file);
     await fixture.whenStable();
 
     expect(uploadLogoMock).not.toHaveBeenCalled();
     // Summary matches the server-side wording for the same condition (415 -> 'Logo rejected'), so
     // the user sees one voice whichever side catches it.
-    expect(toastAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'error', summary: 'Logo rejected', detail: 'Please choose a PNG, JPEG, or SVG image.' })
-    );
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Logo rejected', detail: 'Please choose an SVG image.' }));
   });
 
   it('accepts an SVG file and calls the service', async () => {
@@ -97,7 +95,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   });
 
   it('rejects an oversized file without calling the service', async () => {
-    const file = pngFile(3 * 1024 * 1024);
+    const file = svgFile(3 * 1024 * 1024);
     selectFile(file);
     await fixture.whenStable();
 
@@ -107,7 +105,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   });
 
   it('clears the file input value so re-selecting the same file still fires change', () => {
-    const input = { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement;
+    const input = { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement;
     fixture.componentInstance['onLogoFileSelected']({ target: input } as unknown as Event);
 
     expect(input.value).toBe('');
@@ -120,18 +118,18 @@ describe('OrgProfileEditComponent — logo upload', () => {
    * Keeps all three mutation entry points guarded identically.
    */
   it('ignores a file selected while another mutation is already in flight', async () => {
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     expect(uploadLogoMock).toHaveBeenCalledTimes(1);
 
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     expect(uploadLogoMock).toHaveBeenCalledTimes(1);
 
     uploadLogo$.next({ ...record, logoUrl: 'https://cdn.example.com/logo.png?v=2' });
     await fixture.whenStable();
 
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     expect(uploadLogoMock).toHaveBeenCalledTimes(2);
   });
@@ -140,7 +138,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
     const emitted: OrgCanonicalRecord[] = [];
     fixture.componentInstance.logoUpdated.subscribe((updated) => emitted.push(updated));
 
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
 
     expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
@@ -163,7 +161,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
    * future restyle of the overlay can't quietly drop the announcement again.
    */
   it('announces the in-flight upload to assistive tech and swaps the button into a loading label', async () => {
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -203,7 +201,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(dropzone?.getAttribute('role')).toBe('button');
     expect(dropzone?.getAttribute('aria-disabled')).toBe('false');
 
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     fixture.detectChanges();
     expect(dropzone?.getAttribute('aria-disabled')).toBe('true');
@@ -215,7 +213,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   });
 
   it('shows a permission-denied toast on a 403 and does not update logoUrl', async () => {
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
 
     uploadLogo$.error(new HttpErrorResponse({ status: 403 }));
@@ -229,7 +227,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   });
 
   it('shows a generic upload-failed toast on any other error', async () => {
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
 
     uploadLogo$.error(new HttpErrorResponse({ status: 502 }));
@@ -238,58 +236,12 @@ describe('OrgProfileEditComponent — logo upload', () => {
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Upload failed' }));
   });
 
-  it('warns (non-blocking) when the image is smaller than the minimum dimension, but still uploads', async () => {
-    const bitmap = { width: 64, height: 64, close: vi.fn() };
-    const createImageBitmapMock = vi.fn().mockResolvedValue(bitmap);
-    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
-
-    selectFile(pngFile());
-    await fixture.whenStable();
-
-    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Small image' }));
-  });
-
-  it('warns (non-blocking) when the image is larger than the maximum dimension, but still uploads', async () => {
-    const bitmap = { width: 2048, height: 1024, close: vi.fn() };
-    const createImageBitmapMock = vi.fn().mockResolvedValue(bitmap);
-    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
-
-    selectFile(pngFile());
-    await fixture.whenStable();
-
-    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Large image' }));
-  });
-
-  it('does not warn or attempt a dimension read for an SVG file', async () => {
-    const createImageBitmapMock = vi.fn();
-    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
-
-    const file = new File([new Uint8Array(10)], 'logo.svg', { type: 'image/svg+xml' });
-    selectFile(file);
-    await fixture.whenStable();
-
-    expect(createImageBitmapMock).not.toHaveBeenCalled();
-    expect(toastAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
-  });
-
-  it('does not block the upload when the dimension read fails', async () => {
-    const createImageBitmapMock = vi.fn().mockRejectedValue(new Error('decode failed'));
-    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
-
-    selectFile(pngFile());
-    await fixture.whenStable();
-
-    expect(uploadLogoMock).toHaveBeenCalledWith(record.uid, expect.any(File));
-  });
-
   it('ignores a drop while an upload is already in flight', async () => {
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     uploadLogoMock.mockClear();
 
-    const file = pngFile();
+    const file = svgFile();
     const dataTransfer = { files: [file] } as unknown as DataTransfer;
     fixture.componentInstance['onLogoDrop']({ preventDefault: vi.fn(), dataTransfer } as unknown as DragEvent);
     await fixture.whenStable();
@@ -301,7 +253,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
     const cancelled: void[] = [];
     fixture.componentInstance.cancelled.subscribe(() => cancelled.push(undefined));
 
-    selectFile(pngFile());
+    selectFile(svgFile());
     await fixture.whenStable();
     expect(fixture.componentInstance['logoUploading']()).toBe(true);
 
@@ -329,7 +281,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
     const clickSpy = vi.spyOn(fixture.componentInstance['logoInput']()!.nativeElement, 'click');
 
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
     clickSpy.mockClear();
@@ -351,7 +303,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   ])('maps status %i to non-retryable copy', async (status, summary, detail) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
@@ -378,7 +330,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   ])('surfaces the upstream reason (%s) when the sanitizer rejects an SVG', async (_label, body) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
@@ -394,7 +346,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   it('falls back to actionable guidance when a rejection carries no usable reason', async () => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
@@ -416,7 +368,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   ])('does not label status %i as a rejected logo', async (status, serverMessage) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
@@ -430,7 +382,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   it.each([[408], [429], [0]])('keeps the retry prompt for transient status %i', async (status) => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 
@@ -445,7 +397,7 @@ describe('OrgProfileEditComponent — logo upload', () => {
   it('still prompts a retry for a server-side failure', async () => {
     fixture.detectChanges();
     fixture.componentInstance['onLogoFileSelected']({
-      target: { files: [pngFile()], value: 'logo.png' } as unknown as HTMLInputElement,
+      target: { files: [svgFile()], value: 'logo.svg' } as unknown as HTMLInputElement,
     } as unknown as Event);
     await fixture.whenStable();
 

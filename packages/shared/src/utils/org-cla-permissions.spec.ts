@@ -4,7 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { CCLA_SIGN_COPY } from '../constants/cla.constants';
-import { acsCheckAllowed, buildOrgClaAcsPermission, isOrgClaPermissionAction, orgClaPairProjectSfid, orgClaSignForbiddenToast } from './org-cla-permissions';
+import {
+  acsCheckAllowed,
+  buildOrgClaAcsPermission,
+  isOrgClaPermissionAction,
+  orgClaPairFoundationSfid,
+  orgClaPairProjectSfid,
+  orgClaSignForbiddenToast,
+} from './org-cla-permissions';
 
 const COMPANY = '0014100000Te2ovAAB';
 const PROJECT = 'a09410000182dD2AAI';
@@ -76,6 +83,28 @@ describe('orgClaPairProjectSfid', () => {
   it('yields nothing when there is no project id and no foundation id', () => {
     expect(orgClaPairProjectSfid({ projects: [] })).toBeUndefined();
     expect(orgClaPairProjectSfid({ foundationSfid: '   ', projects: [{ projectSfid: '  ', projectName: 'Blank' }] })).toBeUndefined();
+  });
+});
+
+describe('orgClaPairFoundationSfid', () => {
+  const FOUNDATION = 'a09410000182dFOUND';
+
+  it('yields the foundation id when the pair is a covered project', () => {
+    expect(orgClaPairFoundationSfid({ foundationSfid: ` ${FOUNDATION} `, projects: [{ projectSfid: PROJECT, projectName: 'Cascade' }] })).toBe(FOUNDATION);
+  });
+
+  it('yields the foundation id beside a pinned pair SFID', () => {
+    expect(orgClaPairFoundationSfid({ pairProjectSfid: PROJECT, foundationSfid: FOUNDATION, projects: [] })).toBe(FOUNDATION);
+  });
+
+  it('yields nothing when the pair already is the foundation', () => {
+    expect(orgClaPairFoundationSfid({ foundationSfid: FOUNDATION, projects: [] })).toBeUndefined();
+    expect(orgClaPairFoundationSfid({ foundationSfid: PROJECT, projects: [{ projectSfid: PROJECT, projectName: 'Cascade' }] })).toBeUndefined();
+  });
+
+  it('yields nothing without a foundation id', () => {
+    expect(orgClaPairFoundationSfid({ projects: [{ projectSfid: PROJECT, projectName: 'Cascade' }] })).toBeUndefined();
+    expect(orgClaPairFoundationSfid({ foundationSfid: '  ', projects: [{ projectSfid: PROJECT, projectName: 'Cascade' }] })).toBeUndefined();
   });
 });
 

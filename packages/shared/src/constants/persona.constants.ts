@@ -16,6 +16,21 @@ export const DETECTION_SOURCE_MAP: Readonly<Partial<Record<string, PersonaType>>
   executive_director: 'executive-director',
 } as const;
 
+/** Human-readable labels for persona-detection `source` tokens, used to explain a role assignment in the dashboard tooltip. */
+export const DETECTION_SOURCE_LABELS: Readonly<Record<string, string>> = {
+  board_member: 'Board member',
+  executive_director: 'Executive director',
+  cdp_roles: 'Project affiliation',
+  writer: 'Project write access',
+  committee_member: 'Committee member',
+  mailing_list: 'Mailing list subscriber',
+  meeting_attendance: 'Meeting invitee or attendee',
+  auditor: 'Project auditor',
+} as const;
+
+/** Fallback label for a detection source not present in {@link DETECTION_SOURCE_LABELS}. */
+export const DETECTION_SOURCE_LABEL_FALLBACK = 'Project activity';
+
 /** Sort order, highest first. */
 export const PERSONA_PRIORITY: readonly PersonaType[] = ['executive-director', 'board-member', 'maintainer', 'contributor'] as const;
 
@@ -50,6 +65,9 @@ export const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;
 export const PERSONAS_CACHE_TTL_MS = 15_000;
 
 export const ROOT_PROJECT_SLUG = 'ROOT';
+
+/** Most parents a project-ancestry climb follows (project → foundation → … → ROOT) before it gives up. */
+export const PROJECT_ANCESTRY_MAX_DEPTH = 6;
 export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
@@ -71,10 +89,10 @@ export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
 export const LF_STAFF_TEAM_ID = 'lf-staff';
 
 /**
- * LF teams holding plain `auditor` on every `b2b_org` — `lf-staff` only. ADR-0042 fixes this set; it
- * mirrors member-service `B2BOrgAuditorTeamNames` and the reconciler's `orgAuditorTeams`, which write
- * those grants. Org Lens search follows `ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`, which
- * includes this list.
+ * LF teams holding plain `auditor` on every `b2b_org`: `lf-staff` plus `global-org-auditors`, a
+ * hand-picked read-only team whose membership is managed in sso-tools. This set mirrors member-service's
+ * `B2BOrgAuditorTeamNames`, which writes those grants on every org publish. Org Lens
+ * search follows `ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`, which includes this list.
  * `lf-contractor` was added under spec 044 and rolled back (lfx-self-serve#2157): its blanket
  * `b2b_org` auditor grant is being removed, and the tenant-root auditor tuple that justified it is
  * deleted by lfx-self-serve#2814 Release 2. `lf-staff`'s own org-wide grant is unaffected.
@@ -83,7 +101,7 @@ export const LF_STAFF_TEAM_ID = 'lf-staff';
  * Never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly,
  * so an explicitly-granted contractor still reads that org — this list only drives the affordance.
  */
-export const LF_TEAM_IDS = ['lf-staff'] as const;
+export const LF_TEAM_IDS = ['lf-staff', 'global-org-auditors'] as const;
 
 /**
  * #3077 — teams that read every organization through the `global_org_admin` relation (`writer`, hence
@@ -95,7 +113,7 @@ export const LF_TEAM_IDS = ['lf-staff'] as const;
  *
  * Both lists stay plain literals so the browser bundle drops them: Org Lens search combines them
  * server-side only (`ORG_WIDE_READ_TEAM_IDS` in `OrgRoleGrantsService`). A new company-wide team
- * joins `LF_TEAM_IDS` (plain `auditor`, e.g. #2842) or this list.
+ * joins `LF_TEAM_IDS` (plain `auditor`) or this list.
  */
 export const ORG_ADMIN_TEAM_IDS = ['global_org_admin'] as const;
 

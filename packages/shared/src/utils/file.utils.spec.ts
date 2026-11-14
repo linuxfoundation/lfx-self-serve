@@ -3,7 +3,73 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { downloadFromUrl, formatFileSize, parseContentDispositionFilename } from './file.utils';
+import { ALLOWED_FILE_TYPES } from '../constants/file-upload.constants';
+import {
+  downloadFromUrl,
+  formatFileSize,
+  isFileTypeAllowed,
+  isSafeUploadFileName,
+  parseContentDispositionFilename,
+  resolveFileMimeType,
+  sanitizeFilename,
+  trimDotsAndWhitespace,
+} from './file.utils';
+
+describe('resolveFileMimeType', () => {
+  it.each([
+    ['', 'agenda.pdf', 'application/pdf'],
+    ['application/octet-stream', 'agenda.pdf', 'application/pdf'],
+    ['', 'AGENDA.PDF', 'application/pdf'],
+    ['application/octet-stream', 'Minutes.DocX', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['', 'notes.md', 'text/markdown'],
+    ['', 'notes.markdown', 'text/markdown'],
+    ['', 'budget.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['', 'deck.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('infers the MIME type for %p on %p', (mimeType, fileName, expected) => {
+    expect(resolveFileMimeType(mimeType, fileName)).toBe(expected);
+  });
+
+  it.each([
+    ['application/pdf', 'agenda.pdf'],
+    ['text/x-markdown', 'notes.md'],
+    ['application/x-pdf', 'agenda.txt'],
+    ['application/zip', 'agenda.pdf'],
+  ])('keeps the explicit MIME type %p on %p unchanged', (mimeType, fileName) => {
+    expect(resolveFileMimeType(mimeType, fileName)).toBe(mimeType);
+  });
+
+  it.each([
+    ['', 'archive.zip'],
+    ['application/octet-stream', 'archive.zip'],
+    ['', 'README'],
+    ['application/octet-stream', 'README'],
+  ])('keeps %p when %p has no known extension', (mimeType, fileName) => {
+    expect(resolveFileMimeType(mimeType, fileName)).toBe(mimeType);
+  });
+});
+
+describe('isFileTypeAllowed alongside resolveFileMimeType', () => {
+  it.each([
+    ['', 'agenda.pdf'],
+    ['application/octet-stream', 'AGENDA.PDF'],
+    ['', 'notes.md'],
+    ['application/octet-stream', 'deck.pptx'],
+    ['application/pdf', 'agenda.pdf'],
+  ])('accepts %p on %p and resolves an allowed MIME type', (mimeType, fileName) => {
+    expect(isFileTypeAllowed(mimeType, fileName, ALLOWED_FILE_TYPES)).toBe(true);
+    expect(ALLOWED_FILE_TYPES).toContain(resolveFileMimeType(mimeType, fileName));
+  });
+
+  it.each([
+    ['application/zip', 'agenda.pdf'],
+    ['', 'archive.zip'],
+    ['application/octet-stream', 'archive.zip'],
+    ['', 'README'],
+    ['application/octet-stream', 'README'],
+  ])('still rejects %p on %p', (mimeType, fileName) => {
+    expect(isFileTypeAllowed(mimeType, fileName, ALLOWED_FILE_TYPES)).toBe(false);
+  });
+});
 
 describe('parseContentDispositionFilename', () => {
   it('reads the quoted ASCII fallback form', () => {
@@ -36,6 +102,86 @@ describe('parseContentDispositionFilename', () => {
 
   it('returns null when the header has no filename', () => {
     expect(parseContentDispositionFilename('attachment')).toBeNull();
+  });
+});
+
+describe('isSafeUploadFileName', () => {
+  it('accepts ordinary file names, including spaces, unicode and single quotes', () => {
+    expect(isSafeUploadFileName('report.pdf')).toBe(true);
+    expect(isSafeUploadFileName('Q3 board deck (final).pptx')).toBe(true);
+    expect(isSafeUploadFileName('événement-notes.md')).toBe(true);
+    expect(isSafeUploadFileName("member's guide.docx")).toBe(true);
+  });
+
+  it('rejects path separators and traversal sequences', () => {
+    expect(isSafeUploadFileName('a/b.pdf')).toBe(false);
+    expect(isSafeUploadFileName('a\\b.pdf')).toBe(false);
+    expect(isSafeUploadFileName('..pdf')).toBe(false);
+  });
+
+  it('rejects CR/LF so the name cannot add header lines to the multipart part', () => {
+    expect(isSafeUploadFileName('report.pdf\r\nContent-Type: text/html')).toBe(false);
+    expect(isSafeUploadFileName('report.pdf\nX: a')).toBe(false);
+    expect(isSafeUploadFileName('report.pdf\rX: a')).toBe(false);
+  });
+
+  it('rejects double quotes so the name cannot terminate the filename parameter', () => {
+    expect(isSafeUploadFileName('report".pdf')).toBe(false);
+  });
+
+  it('rejects every C0 control character and DEL', () => {
+    for (let code = 0x00; code <= 0x1f; code++) {
+      expect(isSafeUploadFileName(`a${String.fromCharCode(code)}b.pdf`)).toBe(false);
+    }
+    expect(isSafeUploadFileName('a\x7fb.pdf')).toBe(false);
+  });
+});
+
+describe('sanitizeFilename', () => {
+  it.each([
+    ['report.pdf', 'report.pdf'],
+    ['.env', 'env'],
+    ['report..pdf', 'report.pdf'],
+    ['  report .pdf', '_report_.pdf'],
+    ['\tname\t.pdf', '_name_.pdf'],
+    ['...hidden.txt', '_hidden.txt'],
+    ['. . notes . .md', '_._notes_._.md'],
+    ['.  .  .pdf', '_._.pdf'],
+    ['CON.txt', 'CON_file.txt'],
+    ['..', 'unnamed.'],
+    ['', 'unnamed_file'],
+  ])('sanitizes %p to %p', (input, expected) => {
+    expect(sanitizeFilename(input)).toBe(expected);
+  });
+
+  it('stays fast end to end on long runs of periods or tabs in the name', () => {
+    const started = performance.now();
+    sanitizeFilename(`a${'.'.repeat(100_000)}b.pdf`, Number.MAX_SAFE_INTEGER);
+    sanitizeFilename(`a${'\t'.repeat(100_000)}b.pdf`, Number.MAX_SAFE_INTEGER);
+    sanitizeFilename(`a${'.\t'.repeat(50_000)}b.pdf`, Number.MAX_SAFE_INTEGER);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe('trimDotsAndWhitespace', () => {
+  it.each([
+    ['name', 'name'],
+    ['.name.', 'name'],
+    [' \t. name .\n ', 'name'],
+    ['\u00a0name\u3000', 'name'],
+    ['a. .b', 'a. .b'],
+    ['. . .', ''],
+    ['', ''],
+  ])('trims %p to %p', (input, expected) => {
+    expect(trimDotsAndWhitespace(input)).toBe(expected);
+  });
+
+  it('stays linear on long inner and trailing runs of periods and whitespace', () => {
+    const run = '. '.repeat(50_000);
+    const started = performance.now();
+    expect(trimDotsAndWhitespace(`a${run}b`)).toBe(`a${run}b`);
+    expect(trimDotsAndWhitespace(`a${run}`)).toBe('a');
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 });
 

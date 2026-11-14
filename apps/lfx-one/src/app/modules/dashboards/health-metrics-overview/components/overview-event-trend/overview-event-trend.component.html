@@ -1,0 +1,314 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex min-h-0 flex-auto flex-col gap-[16px]" data-testid="overview-trend">
+  @switch (status()) {
+    @case ('loading') {
+      <p-skeleton height="300px" borderRadius="8px" aria-hidden="true" data-testid="overview-trend-loading" />
+    }
+    @case ('failed') {
+      <p class="m-0 text-[13px] text-gray-500" data-testid="overview-trend-error">The registration trend could not be loaded. Close this and try again.</p>
+    }
+    @default {
+      <!-- The design's metrics row: Current, Same point last year, and Predicted with its likely range; two columns on a phone. -->
+      <div
+        class="flex flex-none flex-wrap border-y border-gray-200 max-[640px]:grid max-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[640px]:grid-rows-[auto_auto]"
+        data-testid="overview-trend-kpis">
+        @for (kpi of view().kpis; track kpi.key; let index = $index) {
+          <div class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[32px]" [class]="kpiItemClasses[index]" [attr.data-testid]="'overview-trend-kpi-' + kpi.key">
+            <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500 max-[640px]:text-[11px] max-[640px]:leading-[14px]"
+              >{{ kpi.label }}
+              @if (kpi.tip; as tip) {
+                <lfx-health-metrics-info-tip [text]="tip" [testId]="'overview-trend-kpi-' + kpi.key + '-tip'" />
+              }
+            </span>
+            <div class="flex items-center gap-[12px] max-[640px]:flex-wrap max-[640px]:gap-x-[8px] max-[640px]:gap-y-[2px]">
+              <span
+                class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900"
+                [class]="kpiValueClasses[index]"
+                [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-value'"
+                >{{ kpi.value }}</span
+              >
+              @if (kpi.range; as range) {
+                <!-- Phones drop the likely range. -->
+                <div
+                  class="flex flex-col gap-[2px] text-[12px] leading-[16px] max-[640px]:hidden"
+                  [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-range'">
+                  <span class="inline-flex items-center gap-[6px] text-gray-600"
+                    ><span class="h-[6px] w-[6px] rounded-full bg-emerald-500" aria-hidden="true"></span>High:
+                    <b class="font-medium text-gray-900">{{ range.high }}</b></span
+                  >
+                  <span class="inline-flex items-center gap-[6px] text-gray-600"
+                    ><span class="h-[6px] w-[6px] rounded-full bg-red-500" aria-hidden="true"></span>Low:
+                    <b class="font-medium text-gray-900">{{ range.low }}</b></span
+                  >
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+      @if (hasCurve()) {
+        <div class="flex min-h-0 min-w-0 flex-auto flex-col gap-[16px]">
+          <!-- The chart's height follows the window, so the dialog never scrolls; on a phone it fills what the metrics leave,
+               down to its tracks' minimum, and the y numbers' column closes. -->
+          <div
+            class="mt-[20px] grid grid-cols-[44px_1fr] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] gap-x-[6px] max-[640px]:mt-[12px] max-[640px]:min-h-min max-[640px]:flex-auto max-[640px]:grid-cols-[0_1fr] max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto] max-[640px]:gap-x-0"
+            data-testid="overview-trend-grid">
+            <div class="relative max-[640px]:invisible" aria-hidden="true" data-testid="overview-trend-y-ticks">
+              @for (tick of view().yTicks; track tick.pct) {
+                <span class="absolute right-0 -translate-y-1/2 text-[11px] text-gray-500" [style.top.%]="tick.pct">{{ tick.label }}</span>
+              }
+            </div>
+            <div class="relative">
+              <svg
+                width="100%"
+                height="100%"
+                viewBox="0 0 600 220"
+                preserveAspectRatio="none"
+                class="absolute inset-0 block overflow-visible"
+                role="img"
+                aria-label="Registrations by days to event"
+                data-testid="overview-trend-chart">
+                @for (tick of view().yTicks; track tick.pct) {
+                  <line x1="0" x2="600" vector-effect="non-scaling-stroke" [attr.y1]="tick.y" [attr.y2]="tick.y" [attr.stroke]="colors.gridline"></line>
+                }
+                <line x1="0" y1="220" x2="600" y2="220" vector-effect="non-scaling-stroke" [attr.stroke]="colors.axis"></line>
+                <line x1="0" y1="0" x2="0" y2="220" vector-effect="non-scaling-stroke" [attr.stroke]="colors.axis"></line>
+                @if (view().goalY; as goalY) {
+                  <line
+                    x1="0"
+                    x2="600"
+                    stroke-dasharray="4 4"
+                    vector-effect="non-scaling-stroke"
+                    data-testid="overview-trend-goal"
+                    [attr.stroke]="colors.goal"
+                    [attr.y1]="goalY"
+                    [attr.y2]="goalY"></line>
+                }
+                <path stroke="none" data-testid="overview-trend-ahead" [attr.fill]="colors.ahead" [attr.d]="view().aheadPath"></path>
+                <path stroke="none" data-testid="overview-trend-behind" [attr.fill]="colors.behind" [attr.d]="view().behindPath"></path>
+                <path stroke="none" data-testid="overview-trend-band" [attr.fill]="colors.band" [attr.d]="view().bandPath"></path>
+                <path
+                  fill="none"
+                  stroke-width="1"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                  data-testid="overview-trend-band-high"
+                  [attr.stroke]="colors.bandHigh"
+                  [attr.d]="view().bandHighPath"></path>
+                <path
+                  fill="none"
+                  stroke-width="1"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                  data-testid="overview-trend-band-low"
+                  [attr.stroke]="colors.bandLow"
+                  [attr.d]="view().bandLowPath"></path>
+                <path
+                  fill="none"
+                  stroke-width="2"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                  [attr.stroke]="colors.lastYear"
+                  [attr.d]="view().lastYearPath"></path>
+                <path
+                  fill="none"
+                  stroke-width="2"
+                  stroke-dasharray="5 4"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                  [attr.stroke]="colors.predicted"
+                  [attr.d]="view().predictedPath"></path>
+                <path
+                  fill="none"
+                  stroke-width="2.5"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                  [attr.stroke]="colors.thisYear"
+                  [attr.d]="view().currentPath"></path>
+                @if (view().todayX; as todayX) {
+                  <line
+                    y1="0"
+                    y2="220"
+                    stroke-dasharray="3 3"
+                    vector-effect="non-scaling-stroke"
+                    [attr.stroke]="colors.today"
+                    [attr.x1]="todayX"
+                    [attr.x2]="todayX"></line>
+                }
+              </svg>
+              @if (view().goalLabel; as goalLabel) {
+                <!-- The goal reads on its line, not in the legend; the white halo keeps it legible over the lines. -->
+                <span
+                  class="pointer-events-none absolute left-[6px] -translate-y-[calc(100%+3px)] whitespace-nowrap text-[11px] font-medium leading-[14px] text-emerald-700 [text-shadow:0_0_3px_white,0_0_3px_white]"
+                  data-testid="overview-trend-goal-label"
+                  [style.top.%]="view().goalPct"
+                  >{{ goalLabel }}</span
+                >
+              }
+              @if (view().todayPct; as todayPct) {
+                <span
+                  class="absolute top-[-2px] -translate-x-1/2 -translate-y-full rounded-[4px] bg-gray-900 px-[6px] py-[1px] text-[10px] font-medium text-white"
+                  aria-hidden="true"
+                  data-testid="overview-trend-today"
+                  [style.left.%]="todayPct"
+                  >Today</span
+                >
+              }
+            </div>
+            <div class="relative col-start-2 h-[22px]" aria-hidden="true" data-testid="overview-trend-x-ticks">
+              @for (tick of view().xTicks; track tick.pct) {
+                <span class="absolute top-[6px] -translate-x-1/2 text-[11px] text-gray-500" [style.left.%]="tick.pct">{{ tick.label }}</span>
+              }
+            </div>
+            <div class="col-start-2 pt-[4px] text-center text-[11px] font-medium text-gray-500" aria-hidden="true">Days to event</div>
+          </div>
+
+          <!-- The navigator: the whole 180 days on their own scale, with the visible span to drag or resize, also by arrow keys. -->
+          <div class="grid flex-none grid-cols-[44px_1fr] gap-x-[6px] max-[640px]:grid-cols-[0_1fr] max-[640px]:gap-x-0">
+            <div class="col-start-2 flex min-w-0 flex-col gap-[4px]">
+              <div
+                #navigator
+                class="relative h-[44px] touch-none max-[640px]:h-[28px] select-none rounded-[8px] bg-gray-50 shadow-[inset_0_0_0_1px_var(--ui-neutral-alpha-200)]"
+                data-testid="overview-trend-navigator"
+                (pointermove)="moveDrag($event)"
+                (pointerup)="endDrag()"
+                (pointercancel)="endDrag()">
+                <svg width="100%" height="100%" viewBox="0 0 600 44" preserveAspectRatio="none" aria-hidden="true" class="absolute inset-0 block">
+                  <path stroke="none" [attr.fill]="colors.navigatorArea" [attr.d]="view().navigator.currentAreaPath"></path>
+                  <path
+                    fill="none"
+                    stroke-width="1"
+                    vector-effect="non-scaling-stroke"
+                    [attr.stroke]="colors.lastYear"
+                    [attr.d]="view().navigator.lastYearPath"></path>
+                  <path
+                    fill="none"
+                    stroke-width="1.5"
+                    stroke-dasharray="3 3"
+                    vector-effect="non-scaling-stroke"
+                    [attr.stroke]="colors.predicted"
+                    [attr.d]="view().navigator.predictedPath"></path>
+                  <path
+                    fill="none"
+                    stroke-width="1.5"
+                    vector-effect="non-scaling-stroke"
+                    [attr.stroke]="colors.thisYear"
+                    [attr.d]="view().navigator.currentPath"></path>
+                </svg>
+                <span
+                  class="pointer-events-none absolute inset-y-0 left-0 rounded-l-[8px]"
+                  aria-hidden="true"
+                  [style.background]="colors.navigatorDim"
+                  [style.width.%]="view().navigator.selectionLeftPct"></span>
+                <span
+                  class="pointer-events-none absolute inset-y-0 right-0 rounded-r-[8px]"
+                  aria-hidden="true"
+                  [style.background]="colors.navigatorDim"
+                  [style.width.%]="view().navigator.dimRightPct"></span>
+                <div
+                  class="absolute inset-y-0 cursor-grab rounded-[8px] border-[1.5px] border-blue-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 active:cursor-grabbing"
+                  role="slider"
+                  tabindex="0"
+                  aria-label="Visible range"
+                  aria-valuemin="0"
+                  [attr.aria-valuemax]="windowDays - (view().window.end - view().window.start)"
+                  [attr.aria-valuenow]="view().window.start"
+                  [attr.aria-valuetext]="windowDays - view().window.start + ' to ' + (windowDays - view().window.end) + ' days before the event'"
+                  [style.background]="colors.navigatorSelection"
+                  [style.left.%]="view().navigator.selectionLeftPct"
+                  [style.width.%]="view().navigator.selectionWidthPct"
+                  data-testid="overview-trend-navigator-selection"
+                  (pointerdown)="startDrag('pan', $event, navigator)"
+                  (keydown.arrowleft)="panBy(-5, $event)"
+                  (keydown.arrowright)="panBy(5, $event)"></div>
+                <!-- The handles sit beside the span, not in it, so each is its own slider that resizes from one side. -->
+                <span
+                  class="absolute top-1/2 -ml-[6px] -mt-[13px] flex h-[26px] w-[11px] cursor-ew-resize max-[640px]:-mt-[9px] max-[640px]:h-[18px] items-center justify-center gap-[2px] rounded-[5px] bg-white shadow-[0_0_0_1.5px_theme(colors.blue.900),0_1px_3px_theme(colors.blue.900/20%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                  role="slider"
+                  tabindex="0"
+                  aria-label="Start of visible range"
+                  aria-valuemin="0"
+                  [attr.aria-valuemax]="view().window.end - minSpan"
+                  [attr.aria-valuenow]="view().window.start"
+                  [attr.aria-valuetext]="windowDays - view().window.start + ' days before the event'"
+                  [style.left.%]="view().navigator.selectionLeftPct"
+                  data-testid="overview-trend-navigator-start"
+                  (pointerdown)="startDrag('start', $event, navigator)"
+                  (keydown.arrowleft)="resizeBy('start', -5, $event)"
+                  (keydown.arrowright)="resizeBy('start', 5, $event)"
+                  ><span class="h-[10px] w-px bg-blue-900"></span><span class="h-[10px] w-px bg-blue-900"></span
+                ></span>
+                <span
+                  class="absolute top-1/2 -mr-[6px] -mt-[13px] flex h-[26px] w-[11px] cursor-ew-resize max-[640px]:-mt-[9px] max-[640px]:h-[18px] items-center justify-center gap-[2px] rounded-[5px] bg-white shadow-[0_0_0_1.5px_theme(colors.blue.900),0_1px_3px_theme(colors.blue.900/20%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+                  role="slider"
+                  tabindex="0"
+                  aria-label="End of visible range"
+                  [attr.aria-valuemin]="view().window.start + minSpan"
+                  [attr.aria-valuemax]="windowDays"
+                  [attr.aria-valuenow]="view().window.end"
+                  [attr.aria-valuetext]="windowDays - view().window.end + ' days before the event'"
+                  [style.right.%]="view().navigator.dimRightPct"
+                  data-testid="overview-trend-navigator-end"
+                  (pointerdown)="startDrag('end', $event, navigator)"
+                  (keydown.arrowleft)="resizeBy('end', -5, $event)"
+                  (keydown.arrowright)="resizeBy('end', 5, $event)"
+                  ><span class="h-[10px] w-px bg-blue-900"></span><span class="h-[10px] w-px bg-blue-900"></span
+                ></span>
+              </div>
+              <div class="relative h-[14px]" aria-hidden="true" data-testid="overview-trend-navigator-ticks">
+                @for (tick of view().navigator.ticks; track tick.pct) {
+                  <span class="absolute top-0 -translate-x-1/2 text-[10px] leading-[14px] text-gray-400" [style.left.%]="tick.pct">{{ tick.label }}</span>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- On a phone the legend runs from the left with Reset in its row, wrapping only when the line runs out. -->
+          <div
+            class="relative mt-[4px] flex flex-none flex-wrap items-center justify-center gap-x-[16px] gap-y-[10px] px-[96px] max-[640px]:flex-nowrap max-[640px]:justify-between max-[640px]:gap-[8px] max-[640px]:px-0">
+            <div
+              class="flex min-w-0 flex-wrap items-center justify-center gap-x-[16px] gap-y-[6px] max-[640px]:justify-start max-[640px]:gap-x-[8px] max-[640px]:gap-y-[4px]"
+              aria-hidden="true"
+              data-testid="overview-trend-legend">
+              <span
+                class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                ><span class="h-[3px] w-[14px] rounded-full bg-blue-500 max-[640px]:w-[8px]"></span>This year</span
+              >
+              <span
+                class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                ><span class="h-[3px] w-[14px] rounded-full bg-gray-400 max-[640px]:w-[8px]"></span>Last year</span
+              >
+              @if (!isPast()) {
+                <span
+                  class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                  ><span class="h-0 w-[14px] border-t-2 border-dashed border-blue-500 max-[640px]:w-[8px]"></span>Predicted</span
+                >
+                <span
+                  class="inline-flex items-center gap-[6px] text-[12px] text-gray-500 max-[640px]:gap-[3px] max-[640px]:whitespace-nowrap max-[640px]:text-[10px]"
+                  ><span class="h-[8px] w-[14px] rounded-[2px] bg-blue-500/20 max-[640px]:w-[8px]"></span>Predicted range</span
+                >
+              }
+            </div>
+            @if (custom()) {
+              <lfx-ui-button
+                class="absolute right-0 top-1/2 -translate-y-1/2 max-[640px]:static max-[640px]:flex-none max-[640px]:translate-y-0"
+                variant="tertiary-accent"
+                size="small"
+                icon="fa-light fa-arrow-rotate-left"
+                (click)="resetZoom()"
+                data-testid="overview-trend-reset"
+                ><span class="max-[640px]:hidden">Reset view</span><span class="hidden max-[640px]:inline">Reset</span></lfx-ui-button
+              >
+            }
+          </div>
+        </div>
+      } @else {
+        <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" data-testid="overview-trend-empty">No registration history for this event yet.</p>
+      }
+    }
+  }
+</div>

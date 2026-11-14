@@ -233,7 +233,7 @@ export interface ClaGroupOption {
   /**
    * Salesforce id of the project a corporate signature is requested against (#1983).
    *
-   * **Set only by the Organization Lens sign-options route.** The Me-lens search omits it: that
+   * **Set only by the Organization Lens sign-options and CLA Group catalogue routes.** The Me-lens search omits it: that
    * hand-off is keyed on `claGroupId` alone, and a field no template reads still ships to the
    * browser inside the transferred state.
    *
@@ -367,7 +367,7 @@ export type SignIdentityVariant = 'github' | 'gerrit' | 'github-or-gerrit';
 
 /**
  * Which route a selected CLA Group takes. Every route but one opens the sign identity step;
- * GitLab is the exception, because Self Serve holds no verifiable GitLab identity to offer.
+ * GitLab is the exception: account linking is supported, but its CLA signing handoff is not.
  */
 export type ClaSignRoute = SignIdentityVariant | 'gitlab-unsupported';
 
@@ -626,8 +626,9 @@ export interface OrgClaGroupProject {
 /**
  * One corporate CLA the organization holds — one signing entity, one CLA Group (#1978).
  *
- * Every field here is organization-grain. The upstream payload carries the CCLA managers
- * themselves; they are dropped at the mapper, so `claManagersCount` is all that survives.
+ * Every field here is organization-grain except `viewerIsClaManager`, which is per viewer. The
+ * upstream payload carries the CCLA managers themselves; they are dropped at the mapper, so
+ * `claManagersCount` and the viewer's own flag are all that survive.
  * That drop is at the mapper and not at the template on purpose: a template that declines to
  * render a field still ships it to the browser inside the transferred state.
  */
@@ -724,11 +725,21 @@ export interface OrgClaGroup {
    *
    * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
    * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
-   * the status slot and do not hide the toggle; the Overview shows it for a signed row that is
-   * not a preview, when the caller holds the grant. Absent from an upstream field maps to
+   * the status slot and do not hide the toggle. Absent from an upstream field maps to
    * `false` at the mapper, matching the producer's own default.
    */
   autoCreateEcla?: boolean;
+  /**
+   * Whether the effective viewer (the impersonated user, while impersonating) is on this
+   * agreement's CLA manager list. Per viewer, unlike the rest of this row, so the list response
+   * is never cached. Server-decided by an exact LF username match, so the browser MUST NOT work
+   * it out itself. False when there is no
+   * list or no username, so the write controls fail closed: the Approval List and Invalidate
+   * controls are hidden, and the Auto ECLA toggle renders disabled with the sentence naming CLA
+   * Manager. The Approval List and Acknowledgments controls also need the loaded list's own
+   * `canEdit`.
+   */
+  viewerIsClaManager: boolean;
 }
 
 /**
@@ -891,9 +902,9 @@ export interface OrgClaGroupPickerResult {
  * The chosen CLA Group as it travels from the picker to the pre-signing preview page (#1983).
  *
  * A superset of what the signing request needs, because the preview has to *name* the agreement
- * as well as key it. Nothing on the receiving page can look these names up: the CLA service has
- * no fetch-a-CLA-group-by-id endpoint, so a page handed only ids could render a heading for an
- * agreement it cannot describe.
+ * as well as key it. A pasted address with no selection loads the same names from the catalogue
+ * read; this state is only the picker's hand-off, and a card click or this hand-off does not
+ * call that read.
  */
 export interface OrgClaSignSelection extends OrgClaGroupPickerResult {
   /**
@@ -935,6 +946,7 @@ export interface OrgClaSignHandoffDialogData {
   projectSfid: string;
   claGroupId: string;
   attestations: OrgClaSignAttestations;
+  claGroupName?: string;
 }
 
 /**
@@ -946,8 +958,7 @@ export interface OrgClaSignHandoffDialogData {
  * After that a signature is being created, and closing would hide the result and allow a
  * second send.
  *
- * `onMailed` is how it tells the opener the POST succeeded, so Close cannot re-enable Identify
- * someone else against the same unsigned preview.
+ * `onMailed` is how it tells the opener the POST succeeded.
  */
 export interface OrgClaSendByEmailDialogData {
   orgUid: string;
@@ -1117,6 +1128,8 @@ export interface OrgClaContributorAcknowledgment {
   invalidatedAt?: string;
   /** Username of the acting CLA manager or admin who invalidated the acknowledgment. */
   invalidatedBy?: string;
+  /** Best-effort name or email for `invalidatedBy` from the user directory; absent when the lookup fails, so fall back to `invalidatedBy`. */
+  invalidatedByDisplay?: string;
   /** Reason recorded with the invalidation. Free text from the invalidator. */
   invalidationReason?: string;
   /**
@@ -1142,8 +1155,9 @@ export interface OrgClaContributorAcknowledgmentList {
   /**
    * Whether the caller may invalidate rows on this agreement.
    *
-   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
-   * producer sent no roster at all — matching the sibling approval-list posture.
+   * Server-decided from the CCLA's manager roster (LF-username match). False when the producer
+   * sent no roster at all, matching the invalidate write, which the producer does not check
+   * against the roster itself.
    */
   canEdit: boolean;
   resultCount: number;
@@ -1325,9 +1339,15 @@ export type OrgClaPermissionAction = (typeof ORG_CLA_PERMISSION_ACTIONS)[number]
 export interface OrgClaPermissionCheckRequest {
   action: OrgClaPermissionAction;
   /**
-   * Project or foundation Salesforce id for the pair check. Required for both actions.
+   * Project or foundation Salesforce id for the pair check. Required for every action.
    */
   projectSfid?: string;
+  /**
+   * The CLA Group's foundation Salesforce id, when it differs from `projectSfid`. EasyCLA grants
+   * `cla-manager` on the foundation alone when the foundation is signed at foundation level, so
+   * every action except `sign` is also asked on this pair. Ignored for `sign`.
+   */
+  foundationSfid?: string;
 }
 
 export interface OrgClaPermissionCheckResponse {
@@ -1351,6 +1371,12 @@ export interface OrgClaManager {
   name?: string;
   email?: string;
   addedOn?: string;
+  /**
+   * Present, and true, on the manager list's row for the effective viewer (the impersonated user,
+   * while impersonating). Server-decided with the same identity and the same exact comparison the
+   * roster check uses, so the browser MUST NOT work it out from its own username.
+   */
+  isViewer?: true;
 }
 
 export interface OrgClaManagerList {
@@ -1421,11 +1447,13 @@ export interface OrgClaDesigneeNominationValidation {
 
 export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
 
-/** What the viewer answered. Dismissing the dialog closes with `undefined`, which answers neither. */
-export type OrgClaManagerAnswer = 'yes' | 'no';
+/** Dismissing the question closes it with `undefined`, as does an assignment. */
+export type OrgClaManagerQuestionResult = 'no';
 
-/** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
-export type OrgClaDesigneeNextStep = 'attest' | 'mail';
+export interface OrgClaManagerQuestionDialogData {
+  /** Called once, on Yes. The opener performs the assignment and closes the dialog when it answers. */
+  onYes: () => void;
+}
 
 export type OrgClaIdentifyManagerField = keyof OrgClaDesigneeNominationValidation;
 

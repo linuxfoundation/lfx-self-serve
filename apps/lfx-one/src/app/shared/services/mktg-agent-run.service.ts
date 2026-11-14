@@ -1,47 +1,109 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS, MKTG_RUN_POLL, MKTG_RUN_STORAGE_KEY_PREFIX, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import { computed, inject, Injectable, PLATFORM_ID, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import {
+  MKTG_ARTIFACT_SHA256_REGEX,
+  MKTG_RUN_FAILURE_REASON,
+  MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
+  MKTG_RUN_POLL,
+  MKTG_RUN_STORAGE_KEY_PREFIX,
+  MKTG_RUN_STORAGE_TTL_MS,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_AGENT_INTAKES,
+  MKTG_LAST_INTAKE_API,
+  MKTG_STARTED_RUN_ID_REGEX,
+} from '@lfx-one/shared/constants';
+import {
+  MktgActiveRunConflict,
+  MktgAgentIntake,
+  MktgLastIntake,
+  MktgLastIntakeResponse,
   MktgChatRequest,
   MktgChatResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
+  MktgPendingGeneration,
+  MktgRunAnswer,
+  MktgRunAnswersBody,
+  MktgRunAnswersResponse,
   MktgRunAttempt,
   MktgRunGenerateBody,
+  MktgRunQuestionsPending,
+  MktgRunPersistReceipt,
   MktgRunResultBody,
   MktgRunResultResponse,
+  MktgObservedRunResult,
   MktgRunSessionResponse,
   MktgRunVersion,
+  MktgRunAppendResult,
   MktgSessionInfo,
   MktgStoredAgentRun,
 } from '@lfx-one/shared/interfaces';
-import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
-import { catchError, concat, EMPTY, exhaustMap, filter, map, Observable, of, switchMap, take, takeWhile, throwError, timeout, timer } from 'rxjs';
+import {
+  renderMktgIntakeMessage,
+  mktgDocumentLocationOfReceipt,
+  mktgRunResultIdentity,
+  mktgRunModeFor,
+  readMktgActiveRunConflict,
+} from '@lfx-one/shared/utils';
+import {
+  catchError,
+  concat,
+  concatMap,
+  defer,
+  EMPTY,
+  exhaustMap,
+  filter,
+  map,
+  Observable,
+  of,
+  shareReplay,
+  switchMap,
+  take,
+  takeUntil,
+  takeWhile,
+  tap,
+  throwError,
+  timer,
+  TimeoutError,
+} from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 import { UserService } from './user.service';
+import { MktgRunAttemptService } from './mktg-run-attempt.service';
+import { ProjectContextService } from './project-context.service';
 
 /**
  * Form-first agent runs for the Marketing OS marketplace. A first run submits
  * the batch intake answers to the agent's validated generate endpoint (the BFF
- * renders the batch message server-side); every follow-up — edit-inputs
- * resubmit or feedback regeneration — resubmits the full form plus the stored
- * run's prior version (and feedback, when given) down one of two paths, per
- * the intake's `regenerateViaGenerate` flag: default intakes post on the
- * run's EXISTING Guild session via the chat/session BFF, while
- * `regenerateViaGenerate` intakes (e.g. the Message Foundation) go back
- * through the validated generate endpoint on a FRESH session, replacing the
- * stored run's session while keeping its version history. Either way the
- * document comes exclusively
+ * renders the batch message server-side); a follow-up — edit-inputs
+ * resubmit or feedback regeneration — takes one of three paths, per the
+ * intake's flags: default intakes post the full form plus the stored run's
+ * prior version (and feedback, when given) on the run's EXISTING Guild
+ * session via the chat/session BFF; `regenerateViaGenerate` intakes (e.g. the
+ * ICP) send the same through the validated generate endpoint on a FRESH
+ * session, replacing the stored run's session while keeping its version
+ * history; and `freshRunPerSubmission` intakes (the Messaging Framework) send
+ * every submission as a fresh first-run generate with no prior version and no
+ * feedback, the run shell numbering the versions. An agent that researches
+ * first (the Messaging Framework, the Brand Kit) may answer the poll with
+ * `questions` instead of a document: the run stops at a questions step, and
+ * `answerQuestions` sends the answers to the SAME session and polls on. An
+ * agent may also answer with `refused` (the Brand Kit without a messaging
+ * framework): it did not run, the reply is the outcome, and nothing is
+ * stored or retried. Either way the document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
- * Each run (session + answers + versions) persists in localStorage, keyed to
- * the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
+ * Living runs (session + answers + versions) persist in localStorage. Personalized
+ * one-off versions remain live-memory only; their server-recorded Document is durable.
+ * Optional pending recovery retains minimal proof, not private one-off inputs/output.
+ * Stored runs are keyed to the EFFECTIVE user (login/impersonation swaps `user` without a reload — the
  * user-keyed invalidation precedent in user.service.ts), so one user's stored
  * session — whose ownerToken is HMAC-bound to their sub — can never be replayed
  * as another's. Persistence is time-bounded (`MKTG_RUN_STORAGE_TTL_MS`): the
@@ -54,21 +116,74 @@ import { UserService } from './user.service';
 export class MktgAgentRunService {
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
   private readonly userService = inject(UserService);
+  private readonly attempts = inject(MktgRunAttemptService);
+  private readonly projectContext = inject(ProjectContextService);
+  private readonly runScope = computed(() => JSON.stringify([this.attempts.subject(), this.projectContext.activeContextUid()]));
+  private readonly runScope$ = toObservable(this.runScope);
+  /** An ACK can arrive after its page leaves; returning intakes re-read the existing private draft. */
+  public readonly acknowledgementVersion = signal(0);
 
   /**
-   * In-memory runs, keyed exactly like localStorage. The authoritative record
-   * for THIS page session: `loadRun` prefers it, so when `setItem` fails
-   * (quota, disabled storage) the next follow-up still derives its version
-   * directive and poll gate from the run the user is looking at — persistence
-   * loss only ever costs cross-visit restore, never in-session correctness.
+   * Recovery bookkeeping, keyed exactly like localStorage; never authority for
+   * current server run/questions state. Memory preserves source/version hints
+   * and the private continuation capability when storage is disabled. Shared
+   * surfaces measure the server before using those hints or rendering state.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+
+  /** Observe an already accepted redraft. Never Generate/chat/append fake intake answers or overwrite a stored form run. */
+  public observeAccepted(intake: MktgAgentIntake, attempt: MktgRunAttempt, projectUid: string): Observable<MktgObservedRunResult> {
+    return defer(() => {
+      if (!isPlatformBrowser(this.platformId)) return EMPTY;
+      const subject = this.attempts.subject();
+      return this.pollForOutcome(intake, attempt.session, attempt.priorVersion, projectUid).pipe(
+        concatMap((event) =>
+          concat(
+            of(event),
+            event.terminal && event.result.status === 'ready'
+              ? this.persistenceResults(intake, projectUid, attempt.session, event.result).pipe(map((result) => ({ result, terminal: true })))
+              : EMPTY
+          )
+        ),
+        tap(() => this.assertSubject(subject))
+      );
+    });
+  }
+
+  /** Writer-gated history read only; callers distinguish unavailable history from absence. */
+  public lastIntake(projectUid: string, agentId: string): Observable<MktgLastIntake | null> {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === agentId && mktgRunModeFor(agentId));
+    if (!type) return of(null);
+    return this.http
+      .get<MktgLastIntakeResponse>(`${MKTG_LAST_INTAKE_API}/${encodeURIComponent(type.agentKey)}/last`, {
+        params: { project: projectUid },
+        transferCache: false,
+      })
+      .pipe(
+        map((response) => response.intake),
+        take(1),
+        catchError((error: unknown) => {
+          console.error('Failed to load Marketing OS intake history', error instanceof HttpErrorResponse ? { status: error.status } : {});
+          return throwError(() => error);
+        })
+      );
+  }
 
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
    * - `submitted` — the generate/chat POST resolved.
+   * - `activity` — for intakes with a live feed (`liveActivity`), between
+   *   `submitted` and the outcome: the whole feed so far, on every poll
+   *   that changed it, the last one included.
+   * - `questions` — INSTEAD of a document, and last: the agent asks the gaps
+   *   it could not settle from the sources. The run continues through
+   *   {@link answerQuestions} on the same session.
+   * - `refused` — INSTEAD of a document, and last: the agent did not run
+   *   (the Brand Kit with no messaging framework) and replied why; the
+   *   session is over, nothing is stored or retried.
    * - `document` — the validated document landed, with the updated stored run.
    * - `persisted` — OPTIONAL and last: the server-side copy exists. Emitted
    *   only for agents that persist their document (`persistsDocument`) whose
@@ -84,40 +199,159 @@ export class MktgAgentRunService {
    * (project switch, a new submission, leaving the page) cancels the retry
    * with it.
    */
-  public generate(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
-    const stored = this.loadRun(request.projectUid, request.agentId);
+  public generate(request: MktgGenerateRequest, discard?: string, recheck = false): Observable<MktgGenerateProgress> {
+    if (request.discard && !MKTG_STARTED_RUN_ID_REGEX.test(request.discard)) return throwError(() => new Error('Invalid active run selection.'));
+    const retryBody = discard || recheck ? this.retainedBody(request) : null;
+    if ((discard && !MKTG_STARTED_RUN_ID_REGEX.test(discard)) || ((discard || recheck) && !retryBody))
+      return throwError(() => new Error('Review the retained intake and Create explicitly; the original start cannot be replayed safely.'));
+    if (request.intake.oneOffDocument) return throwError(() => new Error('Submit this one-off through its dedicated intake first.'));
+    const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
+    if (!discard && !recheck) request.retainedStartBody = undefined;
     let attempt$: Observable<MktgRunAttempt>;
-    if (!stored) {
+    if ((discard || recheck) && retryBody) {
+      const body = { ...retryBody };
+      if (recheck) delete body.discard;
+      attempt$ = this.postStartBody(request, body, discard);
+    } else if (!stored || request.intake.freshRunPerSubmission) {
+      // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
+      // prior version or feedback: every submission is a first run on a fresh
+      // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
-    } else if (request.intake.regenerateViaGenerate) {
+    } else if (stored.sessionFailed || request.intake.regenerateViaGenerate) {
+      // Failed-session Retry must never chat on that failed session. Like an
+      // intake's Generate resubmit, it starts a new session with priorVersion.
+      // Fresh Sources preserve that history contract, but omit old feedback.
       attempt$ = this.resubmitRun(request, stored);
+    } else if (request.newRun) {
+      // appendVersion keeps the new session's v1 distinct from existing history.
+      attempt$ = this.startRun(request);
     } else {
       attempt$ = this.followUp(request, stored);
     }
 
-    return attempt$.pipe(
-      switchMap((attempt) =>
-        concat(
-          of<MktgGenerateProgress>({ type: 'submitted' }),
-          this.pollForDocument(request.intake.endpoints.result, attempt.session, attempt.priorVersion, request.projectUid).pipe(
-            switchMap((result) =>
-              concat(
-                of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result) }),
-                this.retryPersistence(request, attempt.session, result)
-              )
-            )
-          )
-        )
-      )
+    // A legacy unscoped run still observes its result once; bind cancellation to the active scope without adding it to the request.
+    const scope = JSON.stringify([this.attempts.subject(), request.projectUid || this.projectContext.activeContextUid()]);
+    const failed = (error: unknown): Observable<never> => {
+      if (scope === this.runScope()) this.track(request, { state: 'failed' });
+      return throwError(() => error);
+    };
+    // Only the POST/ACK leg is service-held. Page teardown still cancels result polling.
+    const acknowledged = defer(() => {
+      if (scope !== this.runScope()) return EMPTY;
+      this.attempts.reserve(request); // Before subscribing to the POST: even a pre-ACK 503 keeps the intake.
+      return attempt$;
+    }).pipe(
+      // toObservable may replay the previous scope until its effect flushes; inspect the current signal.
+      takeUntil(this.runScope$.pipe(filter(() => this.runScope() !== scope))),
+      takeWhile(() => scope === this.runScope()), // Check synchronously too, before a queued scope effect can run.
+      take(1),
+      tap((attempt) => {
+        this.track(request, { attempt, state: 'writing' });
+        this.acknowledgementVersion.update((version) => version + 1);
+      }),
+      catchError(failed),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    return acknowledged.pipe(
+      switchMap((attempt) => {
+        if (scope !== this.runScope()) return EMPTY;
+        return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
+      })
+    );
+  }
+
+  /** Re-send the visit's exact start body without discard; never reconstruct it or send a session follow-up. */
+  public recheckActiveConflict(request: MktgGenerateRequest): Observable<MktgGenerateProgress> {
+    return this.generate(request, undefined, true);
+  }
+
+  /** The existing attempt store, not a closure or mutable version history, owns this visit's submitted body. */
+  public canRetryActiveConflict(request: MktgGenerateRequest): boolean {
+    return !!this.retainedBody(request);
+  }
+
+  /** Validate and scope the future server conflict before any navigation or discard choice. */
+  public activeRunConflict(error: unknown, request: MktgGenerateRequest): MktgActiveRunConflict | null {
+    if (!(error instanceof HttpErrorResponse) || error.status !== 409 || !request.projectUid) return null;
+    return readMktgActiveRunConflict(error.error, request.agentId, request.documentId);
+  }
+
+  /**
+   * Answers the agent's questions on the SAME session the run started on and
+   * polls on for the document. Emits `submitted` once the answers POST
+   * resolved, then exactly what {@link generate} emits after its own
+   * `submitted` — including, should the agent ask again, another `questions`.
+   * The questions and answers are stored with the version they produce.
+   *
+   * The block just answered is passed as the poll's ignore-id: the result
+   * endpoint keeps reporting the session's latest questions block until the
+   * agent writes something newer, and that block is the one these answers
+   * are for, not a new round.
+   */
+  public answerQuestions(request: MktgGenerateRequest, pending: MktgRunQuestionsPending, answers: MktgRunAnswer[]): Observable<MktgGenerateProgress> {
+    const answersPath = request.intake.endpoints.answers;
+    if (!answersPath) {
+      return throwError(() => new Error(`The ${request.intake.documentName} agent takes no answers.`));
+    }
+    const subject = this.attempts.subject();
+    const answered = { questions: pending.questions, answers, questionsId: pending.questionsId };
+    const body: MktgRunAnswersBody = {
+      sessionId: pending.attempt.session.sessionId,
+      ownerToken: pending.attempt.session.ownerToken,
+      answers,
+      project: request.projectUid,
+      questionsId: pending.questionsId,
+    };
+    return this.http.post<MktgRunAnswersResponse>(answersPath, body).pipe(
+      take(1),
+      tap(() => {
+        this.assertSubject(subject);
+        this.track(request, { attempt: pending.attempt, answered, pendingQuestions: undefined, state: 'writing' });
+      }),
+      switchMap(() => concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, pending.attempt, answered))),
+      catchError((error: unknown) => {
+        if (subject === this.attempts.subject()) {
+          this.track(request, { state: 'failed' });
+        }
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Resume polls the SAME accepted attempt; only a fresh prepared draft can submit, never a storage restore. */
+  public resume(pending: MktgPendingGeneration): Observable<MktgGenerateProgress> {
+    if (pending.request.intake.oneOffDocument && (!pending.request.documentId || pending.attempt?.documentId !== pending.request.documentId)) {
+      return throwError(() => new Error('The accepted one-off has no matching document destination.'));
+    }
+    if (!pending.attempt) {
+      if (this.attempts.takeFreshDraft(pending)) return this.generate(pending.request);
+      return of({
+        type: 'restored',
+        pending,
+        message: pending.requiresReattachment
+          ? 'Your intake was restored. Reattach uploaded files and press Generate explicitly.'
+          : 'Your intake was restored. Press Generate explicitly when you are ready.',
+      });
+    }
+    const subject = this.attempts.subject();
+    this.track(pending.request, { state: 'writing' });
+    const answered = pending.answered ?? (pending.answeredQuestionsId ? { questions: [], answers: [], questionsId: pending.answeredQuestionsId } : undefined);
+    return this.awaitOutcome(pending.request, pending.attempt, answered).pipe(
+      catchError((error: unknown) => {
+        if (subject === this.attempts.subject()) {
+          this.track(pending.request, { state: 'failed' });
+        }
+        return throwError(() => error);
+      })
     );
   }
 
   /** Reads the stored run for a project + agent. Returns null on the server, when signed out, or when nothing is stored. */
-  public loadRun(projectUid: string, agentId: string): MktgStoredAgentRun | null {
-    if (!isPlatformBrowser(this.platformId) || !projectUid) {
+  public loadRun(projectUid: string, agentId: string, documentId?: string): MktgStoredAgentRun | null {
+    if (!isPlatformBrowser(this.platformId) || !projectUid || (MKTG_AGENT_INTAKES[agentId]?.oneOffDocument && !documentId)) {
       return null;
     }
-    const key = this.storageKey(projectUid, agentId);
+    const key = this.storageKey(projectUid, agentId, documentId);
     if (!key) {
       return null;
     }
@@ -125,6 +359,7 @@ export class MktgAgentRunService {
     if (cached) {
       return cached;
     }
+    if (documentId) return null; // One-off results and private Q&A are same-visit memory only.
     try {
       const raw = window.localStorage.getItem(key);
       if (!raw) {
@@ -151,6 +386,21 @@ export class MktgAgentRunService {
     }
   }
 
+  private retainedBody(request: MktgGenerateRequest): MktgRunGenerateBody | null {
+    const pending = this.attempts.load(request.projectUid, request.agentId, request.documentId);
+    const body = pending?.request.retainedStartBody;
+    if (
+      !request.projectUid ||
+      pending?.state !== 'failed' ||
+      pending.requiresReattachment ||
+      !body ||
+      body !== request.retainedStartBody ||
+      body.project !== request.projectUid
+    )
+      return null;
+    return body;
+  }
+
   /**
    * First run: one-shot form-mode generation through the agent's validated
    * generate endpoint. The BFF validates the answers against the agent's own
@@ -158,17 +408,16 @@ export class MktgAgentRunService {
    * has no prior draft, so the result poll's gate is 0.
    */
   private startRun(request: MktgGenerateRequest): Observable<MktgRunAttempt> {
-    const body: MktgRunGenerateBody = { answers: request.answers };
-    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
-      map((response) => ({
-        session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
-        priorVersion: 0,
-        // The BFF reports what its server-side README fetch produced for THIS
-        // submission; it travels with the attempt so the version it generates
-        // can say it was written without one.
-        readme: response.readme,
-      }))
-    );
+    const body: MktgRunGenerateBody = {
+      answers: request.answers,
+      ...(request.documents?.length && { documents: request.documents }),
+      ...(request.logoFiles?.length && { logoFiles: request.logoFiles }),
+      // Every intake sends its durable run scope; the BFF resolves writer access
+      // and the canonical storage/lookup project before starting the agent.
+      project: request.projectUid,
+      ...(request.discard && { discard: request.discard }),
+    };
+    return this.captureStartBody(request, body);
   }
 
   /**
@@ -187,27 +436,46 @@ export class MktgAgentRunService {
       // A stored run without versions has nothing to revise — plain first run.
       return this.startRun(request);
     }
-    const body: MktgRunGenerateBody = { answers: request.answers, priorVersion };
-    if (request.feedback?.trim()) {
+    const body: MktgRunGenerateBody = {
+      answers: request.answers,
+      priorVersion,
+      project: request.projectUid,
+      ...(request.discard && { discard: request.discard }),
+    };
+    if (!request.newRun && request.feedback?.trim()) {
       body.feedback = request.feedback.trim();
     }
-    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, body).pipe(
+    return this.captureStartBody(request, body);
+  }
+
+  private captureStartBody(request: MktgGenerateRequest, body: MktgRunGenerateBody): Observable<MktgRunAttempt> {
+    const retained = {
+      ...body,
+      answers: { ...body.answers },
+      ...(body.documents && { documents: body.documents.map((document) => ({ ...document })) }),
+      ...(body.logoFiles && { logoFiles: body.logoFiles.map((file) => ({ ...file })) }),
+    };
+    request.retainedStartBody = retained;
+    return this.postStartBody(request, retained);
+  }
+
+  private postStartBody(request: MktgGenerateRequest, body: MktgRunGenerateBody, discard?: string): Observable<MktgRunAttempt> {
+    return this.http.post<MktgRunSessionResponse>(request.intake.endpoints.generate, discard ? { ...body, discard } : body).pipe(
       map((response) => ({
         session: { agentId: request.agentId, sessionId: response.sessionId, ownerToken: response.ownerToken },
-        priorVersion,
-        // Every resubmit re-fetches the README, so this version's outcome is
-        // the fresh one — a corrected URL must not inherit the old verdict.
+        runId: response.runId,
+        priorVersion: body.priorVersion ?? 0,
         readme: response.readme,
       }))
     );
   }
 
   /**
-   * Follow-up on the run's existing Guild session (edit-inputs resubmit or
-   * "Request changes" regeneration): the full form — always with the
-   * prior-version directive so the agent finalizes as v+1, plus the feedback
-   * paragraph when regenerating — rendered as the agent's batch message and
-   * posted through the chat/session BFF contract.
+   * Follow-up on an existing Guild session: the full form and prior-version
+   * directive, plus optional legacy/programmatic feedback, rendered as the
+   * agent's batch message and posted through the chat/session BFF contract.
+   * The current intake UI has no Request changes form; document revision
+   * workflows own subsequent edits.
    *
    * The stored run's latest version is the single source of truth for BOTH the
    * message's "finalize as version N+1" directive and the result poll's gate —
@@ -226,12 +494,13 @@ export class MktgAgentRunService {
     const priorVersion = stored.versions.at(-1)?.version ?? 0;
     const body: MktgChatRequest = {
       agentId: request.agentId,
+      project: request.projectUid,
       message: renderMktgIntakeMessage(request.intake, request.answers, request.feedback, priorVersion || undefined),
       sessionId: stored.sessionId,
       ownerToken: stored.ownerToken,
     };
     return this.http.post<MktgChatResponse>('/api/mktg-agents/chat', body).pipe(
-      map(() => ({ session: { agentId: request.agentId, sessionId: stored.sessionId, ownerToken: stored.ownerToken }, priorVersion })),
+      map(() => ({ session: { agentId: request.agentId, sessionId: stored.sessionId, ownerToken: stored.ownerToken }, runId: stored.runId, priorVersion })),
       catchError((error: unknown) => {
         if (error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403)) {
           this.clearRun(request.projectUid, request.agentId);
@@ -243,11 +512,88 @@ export class MktgAgentRunService {
   }
 
   /**
+   * What one generate attempt (or one answers round) ends in: the agent's
+   * questions, which end the stream; its refusal reply, which ends it too
+   * (the Brand Kit without a messaging framework — the session is over and
+   * the reply is the outcome); or the document with its stored run and
+   * the bounded persistence retry behind it. `answered` is the round the
+   * attempt is continuing, when it is one: its block is ignored by the poll
+   * and stored with the version.
+   */
+  private awaitOutcome(
+    request: MktgGenerateRequest,
+    attempt: MktgRunAttempt,
+    answered?: { questions: MktgRunQuestionsPending['questions']; answers: MktgRunAnswer[]; questionsId: string }
+  ): Observable<MktgGenerateProgress> {
+    const subject = this.attempts.subject();
+    return this.pollForOutcome(request.intake, attempt.session, attempt.priorVersion, request.projectUid, answered?.questionsId).pipe(
+      concatMap(({ result, terminal }) => {
+        this.assertSubject(subject);
+        // Intakes with a live feed get the whole feed so far on every poll that changed it, the last one included.
+        const activity$ = result.activity && request.intake.liveActivity ? of<MktgGenerateProgress>({ type: 'activity', activity: result.activity }) : EMPTY;
+        if (!terminal) {
+          return activity$;
+        }
+        if (result.status === 'questions') {
+          this.track(request, { state: 'questions', pendingQuestions: { attempt, questionsId: result.questionsId ?? '', questions: result.questions ?? [] } });
+          // pollForOutcome let it through, so the block is present and new.
+          return concat(
+            activity$,
+            of<MktgGenerateProgress>({
+              type: 'questions',
+              pending: { attempt, questionsId: result.questionsId ?? '', questions: result.questions ?? [] },
+            })
+          );
+        }
+        if (result.status === 'failed') {
+          this.track(request, { state: 'failed' });
+          // Invalidate session reuse, not successful versions, answers or Q&A.
+          const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
+          if (stored) this.saveRun({ ...stored, sessionFailed: true });
+          return concat(
+            activity$,
+            of<MktgGenerateProgress>({
+              type: 'failed',
+              failureText: result.failureText ?? '',
+              failure: result.failure ?? {
+                reason: MKTG_RUN_FAILURE_REASON,
+                eventType: 'session_failed',
+              },
+            })
+          );
+        }
+        if (result.status === 'refused') {
+          this.track(request, { state: 'failed' });
+          // The agent did not run: nothing to store, nothing to retry.
+          return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
+        }
+        const { run, version } = this.appendVersion(request, attempt, result, answered);
+        this.attempts.clear(request.projectUid, request.agentId, subject, request.documentId);
+        const documentLocation = run.versions.find((entry) => entry.version === version)?.documentLocation ?? null;
+        return concat(
+          activity$,
+          of<MktgGenerateProgress>({
+            type: 'document',
+            run,
+            documentLocation,
+            attempt,
+            ...(result.profileSaved !== undefined && { profileSaved: result.profileSaved }),
+          }),
+          this.retryPersistence(request, attempt, result, version)
+        );
+      })
+    );
+  }
+
+  /**
    * Polls the agent's validated result endpoint (owner token in the POST body,
    * never the query string) until it reports a `ready` document with a version
-   * newer than the prior draft's. The endpoint surfaces only schema-validated,
-   * sha256-verified envelopes, so agent status chatter can never be mistaken
-   * for the document — anything else stays `pending`.
+   * newer than the prior draft's — or, for intakes with an answers endpoint, a
+   * `questions` block other than the one already answered — or the agent's
+   * `refused` reply, which ends the session. The endpoint
+   * surfaces only schema-validated, sha256-verified envelopes, so agent status
+   * chatter can never be mistaken for the document — anything else stays
+   * `pending`.
    *
    * A transient failure of one poll attempt (network drop, 408/429, upstream
    * 5xx — the app-wide `isTransientHttpError` policy) must never abort a
@@ -260,35 +606,96 @@ export class MktgAgentRunService {
    * a poll is still in flight is dropped instead of cancelling it. With
    * `switchMap`, result-endpoint latency consistently above the interval would
    * abort every attempt before it resolved, timing out a multi-minute
-   * generation whose document may already be ready.
+   * generation whose document may already be ready. The deadline is checked
+   * on every tick BEFORE `exhaustMap`, so a poll that never answers (a
+   * stalled request has no timeout of its own) cannot hide the deadline
+   * behind it: the tick past it errors the stream and tears the request down.
    *
    * The run's project uid rides every poll: agents that persist their output
    * partition storage by the SERVER-resolved project and require the caller's
    * writer grant on it, so the run must say which project it belongs to.
    */
-  private pollForDocument(resultPath: string, session: MktgSessionInfo, priorVersion: number, projectUid: string): Observable<MktgRunResultResponse> {
+  private pollForOutcome(
+    intake: MktgAgentIntake,
+    session: MktgSessionInfo,
+    priorVersion: number,
+    projectUid: string,
+    answeredQuestionsId?: string
+  ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
+    if (!isPlatformBrowser(this.platformId)) return EMPTY;
     const body = this.resultBody(session, projectUid);
-    return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http.post<MktgRunResultResponse>(resultPath, body).pipe(
-          catchError((error: unknown) => {
-            if (isTransientHttpError(error)) {
-              return of<MktgRunResultResponse>({ status: 'pending' });
+    // A ready result carries the document's Markdown, or — for an agent that
+    // writes a structured asset — the asset; either ends the poll.
+    const isDocument = (result: MktgRunResultResponse): boolean =>
+      result.status === 'ready' && (typeof result.documentMarkdown === 'string' || !!result.asset) && (result.version ?? 0) > priorVersion;
+    const isNewQuestions = (result: MktgRunResultResponse): boolean =>
+      !!intake.endpoints.answers &&
+      result.status === 'questions' &&
+      (result.questions?.length ?? 0) > 0 &&
+      !!result.questionsId &&
+      result.questionsId !== answeredQuestionsId;
+    const isRefused = (result: MktgRunResultResponse): boolean => result.status === 'refused' && !!result.reply;
+    const isTerminal = (result: MktgRunResultResponse): boolean =>
+      isDocument(result) || isNewQuestions(result) || isRefused(result) || result.status === 'failed';
+    return defer(() => {
+      // Each visible observation window is bounded; focus re-observes the same
+      // accepted session, never Generate/answers. Server run deadlines remain authoritative.
+      let firstWindow = true;
+      let lastActivity = '';
+      // Only a feed that changed is worth an emission; intakes without a feed emit their terminal result alone.
+      const isNewActivity = (result: MktgRunResultResponse): boolean => {
+        if (!intake.liveActivity || !result.activity) {
+          return false;
+        }
+        const key = JSON.stringify(result.activity);
+        if (key === lastActivity) {
+          return false;
+        }
+        lastActivity = key;
+        return true;
+      };
+      const observe = () => {
+        const deadline = Date.now() + MKTG_RUN_POLL.timeoutMs;
+        const delay = firstWindow ? MKTG_RUN_POLL.initialDelayMs : 0;
+        firstWindow = false;
+        return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+          tap(() => {
+            if (Date.now() > deadline) {
+              throw new TimeoutError();
             }
-            return throwError(() => error);
-          })
-        )
-      ),
-      filter((result) => result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion),
-      take(1),
-      timeout(MKTG_RUN_POLL.timeoutMs)
-    );
+          }),
+          exhaustMap(() =>
+            this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
+              catchError((error: unknown) => {
+                if (isTransientHttpError(error)) {
+                  return of<MktgRunResultResponse>({ status: 'pending' });
+                }
+                return throwError(() => error);
+              })
+            )
+          ),
+          takeWhile((result) => !isTerminal(result), true),
+          filter((result) => isTerminal(result) || isNewActivity(result)),
+          map((result) => ({ result, terminal: isTerminal(result) }))
+        );
+      };
+      return createVisibilityPoll(this.document, observe, {
+        intervalMs: MKTG_RUN_POLL.intervalMs,
+        backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+        backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+        shouldContinue: () => false,
+      }).pipe(
+        takeWhile((event) => event.kind === 'ok' && !event.value.terminal, true),
+        switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error)))
+      );
+    });
   }
 
   /**
-   * Bounded background persistence retry for agents whose result endpoint
-   * persists the validated document (`intake.persistsDocument`, today the
-   * Brand Kit's dec-brand-kit-storage-v2 write path).
+   * Bounded background persistence retry for every agent whose result
+   * endpoint persists the validated document: any intake that sets
+   * `persistsDocument`, not only the Brand Kit (the Messaging Framework's
+   * export, for one, relies on this retry too).
    *
    * A `ready` result with NO persistence receipt means the server-side write
    * did not happen — usually a transient object-store failure, which the BFF
@@ -303,38 +710,102 @@ export class MktgAgentRunService {
    * stream never errors a run that already succeeded: a failed retry poll is
    * just a spent attempt, exactly as on the standalone Brand Kit form, and the
    * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
-   * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
-   * which polling stops. That event exists because dependency resolution
-   * prefers the SERVER copy over any browser-stored run: a v2 announced while
-   * the write was still failing would leave consumers attached to the server's
-   * v1 with nothing to tell them it had been superseded. No project scope
-   * means the BFF never persists at all, so there is nothing to retry.
+   * emission is `{ type: 'persisted', run }` when a receipt finally arrives,
+   * after which polling stops. The receipt's hash is written onto the stored
+   * `version` it persisted and `run` is that stored run (null when this
+   * browser no longer holds the run). The digest never identifies approval;
+   * a retained canonical receipt key supports document navigation only.
+   * The event refreshes server-approved dependency reads, never substitutes
+   * the browser Draft for an attachment. No project scope means the BFF never persists at all,
+   * so there is nothing to retry.
    */
-  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<MktgGenerateProgress> {
-    if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
-      return EMPTY;
-    }
-    const body = this.resultBody(session, request.projectUid);
-    return timer(MKTG_RUN_POLL.intervalMs, MKTG_RUN_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http
-          .post<MktgRunResultResponse>(request.intake.endpoints.result, body)
-          // A failed retry poll spends one attempt like any other; the next
-          // interval tries again within the budget.
-          .pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
-      ),
+  private retryPersistence(
+    request: MktgGenerateRequest,
+    attempt: MktgRunAttempt,
+    result: MktgRunResultResponse,
+    version: number
+  ): Observable<MktgGenerateProgress> {
+    const subject = this.attempts.subject();
+    return this.persistenceResults(request.intake, request.projectUid, attempt.session, result).pipe(
+      map((response): MktgGenerateProgress => {
+        const run = subject === this.attempts.subject() ? this.recordReceipt(request, version, response.persistence) : null;
+        return {
+          type: 'persisted',
+          run,
+          attempt: run ? attempt : null,
+          documentLocation: run?.versions.find((entry) => entry.version === version)?.documentLocation ?? null,
+        };
+      })
+    );
+  }
+
+  /** Same receipt/version/payload budget for both ordinary intakes and accepted comments-only runs. */
+  private persistenceResults(
+    intake: MktgAgentIntake,
+    projectUid: string,
+    session: MktgSessionInfo,
+    result: MktgRunResultResponse
+  ): Observable<MktgRunResultResponse> {
+    if (!isPlatformBrowser(this.platformId) || !intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
+    const body = this.resultBody(session, projectUid);
+    const payloadDigest = mktgRunResultIdentity(result, false);
+    const matches = (response: MktgRunResultResponse): boolean =>
+      !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
+    let firstWindow = true;
+    const observe = () => {
+      const delay = firstWindow ? MKTG_RUN_POLL.intervalMs : 0;
+      firstWindow = false;
+      return timer(delay, MKTG_RUN_POLL.intervalMs).pipe(
+        exhaustMap(() =>
+          this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(catchError(() => of<MktgRunResultResponse>({ status: 'pending' })))
+        )
+      );
+    };
+    return createVisibilityPoll(this.document, observe, {
+      intervalMs: MKTG_RUN_POLL.intervalMs,
+      backoffBaseMs: MKTG_RUN_POLL.intervalMs,
+      backoffMaxMs: MKTG_RUN_POLL.intervalMs,
+      shouldContinue: () => false,
+    }).pipe(
+      switchMap((event) => (event.kind === 'ok' ? of(event.value) : throwError(() => event.error))),
       take(MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS),
       // Announce the moment the SERVER copy exists, then stop. Consumers
       // resolve dependencies from the server copy in preference to any
       // browser-stored run, so a document announced at `document` time while
       // the write was still failing would leave them on the PREVIOUS server
       // version with nothing to tell them it had been superseded.
-      // `takeWhile` is inclusive here so the receipt-bearing response is the
-      // one that emits, and the stream completes right after it.
-      takeWhile((response) => !response.persistence, true),
-      filter((response) => !!response.persistence),
-      map((): MktgGenerateProgress => ({ type: 'persisted' }))
+      // Only the original payload/version may claim its receipt: a later turn
+      // on the same session must not rewrite an earlier version's location.
+      // Inclusive takeWhile emits that matching response and then completes.
+      takeWhile((response) => !matches(response), true),
+      filter(matches)
     );
+  }
+
+  /** Keep canonical revision metadata and hashes without retaining raw storage receipt keys. */
+  private recordReceipt(request: MktgGenerateRequest, version: number, receipt: MktgRunPersistReceipt | undefined): MktgStoredAgentRun | null {
+    const contentSha256 = receipt?.content_sha256;
+    const location = receipt?.project === request.projectUid ? mktgDocumentLocationOfReceipt(receipt) : undefined;
+    const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
+    if (!stored || !contentSha256) {
+      return stored;
+    }
+    const run: MktgStoredAgentRun = {
+      ...stored,
+      versions: stored.versions.map((entry) => {
+        if (entry.version !== version) return entry;
+        const updated = {
+          ...entry,
+          contentSha256,
+          ...(location && { documentLocation: location }),
+          ...(entry.source && MKTG_ARTIFACT_SHA256_REGEX.test(contentSha256) && { source: { ...entry.source, identity: contentSha256 } }),
+        };
+        return updated;
+      }),
+      savedAt: new Date().toISOString(),
+    };
+    this.saveRun(run);
+    return run;
   }
 
   /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */
@@ -342,34 +813,80 @@ export class MktgAgentRunService {
     return { sessionId: session.sessionId, ownerToken: session.ownerToken, ...(projectUid && { project: projectUid }) };
   }
 
-  /** Appends the validated document as the next version and persists the run. */
-  private appendVersion(request: MktgGenerateRequest, attempt: MktgRunAttempt, result: MktgRunResultResponse): MktgStoredAgentRun {
-    const stored = this.loadRun(request.projectUid, request.agentId);
+  /** Appends the validated document as the next version — with the questions and answers that produced it, when any — and persists the run. */
+  private appendVersion(
+    request: MktgGenerateRequest,
+    attempt: MktgRunAttempt,
+    result: MktgRunResultResponse,
+    answered?: { questions: MktgRunQuestionsPending['questions']; answers: MktgRunAnswer[] }
+  ): MktgRunAppendResult {
+    const stored = this.loadRun(request.projectUid, request.agentId, request.documentId);
+    const payloadDigest = mktgRunResultIdentity(result, false);
+    const sha = result.persistence?.content_sha256;
+    const identity = sha && MKTG_ARTIFACT_SHA256_REGEX.test(sha) ? sha : payloadDigest;
+    const source = { sessionId: attempt.session.sessionId, version: result.version ?? 0, identity, payloadDigest };
+    const duplicate = stored?.versions.find(
+      (entry) =>
+        entry.source?.sessionId === source.sessionId &&
+        entry.source.version === source.version &&
+        (entry.source.payloadDigest === payloadDigest || (!entry.source.payloadDigest && entry.source.identity === identity))
+    );
+    if (stored && duplicate) {
+      return { run: this.recordReceipt(request, duplicate.version, result.persistence) ?? stored, version: duplicate.version };
+    }
     const lastVersion = stored?.versions.length ? stored.versions[stored.versions.length - 1].version : 0;
     const version: MktgRunVersion = {
-      // The envelope's own version is authoritative; pollForDocument guaranteed
-      // it (and the document) is present, so the fallbacks are type-narrowing only.
-      version: result.version ?? lastVersion + 1,
+      source,
+      documentLocation: result.persistence?.project === request.projectUid ? mktgDocumentLocationOfReceipt(result.persistence) : undefined,
+      // source.version retains the envelope version. Local history must remain
+      // unique across fresh sessions, including a resumed request without newRun.
+      // Dedicated fresh-run intakes always number locally; other intakes also
+      // retain a higher authoritative envelope version when one is supplied.
+      version: request.intake.freshRunPerSubmission ? lastVersion + 1 : Math.max(lastVersion + 1, result.version ?? 0),
       document: result.documentMarkdown ?? '',
-      feedback: request.feedback,
+      // Structured output stays on its stored version; the document route owns rendering and exports.
+      ...(result.asset && { asset: result.asset }),
+      feedback: request.newRun ? undefined : request.feedback,
       derivatives: result.derivatives,
       // Recorded per version: the submission that produced this document is
       // the one whose README fetch matters, and it is what the result note
       // and a restored run both read.
       readme: attempt.readme,
+      ...(answered && { questions: answered.questions, answers: answered.answers }),
+      // The Brand Kit's revision is a JSON kit: stored with the version so the kit view renders it back without a poll.
+      ...(result.brandKit && { brandKit: result.brandKit }),
+      // Preserve the existing content digest; it is not approval or revision identity.
+      ...(result.persistence?.content_sha256 && { contentSha256: result.persistence.content_sha256 }),
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,
+      ...(request.documentId && { documentId: request.documentId }),
       sessionId: attempt.session.sessionId,
       ownerToken: attempt.session.ownerToken,
+      runId: attempt.runId ?? stored?.runId,
       answers: { ...request.answers },
       versions: [...(stored?.versions ?? []), version],
       savedAt: new Date().toISOString(),
     };
     this.saveRun(run);
-    return run;
+    return { run, version: version.version };
+  }
+
+  private assertSubject(subject: string): void {
+    if (subject !== this.attempts.subject()) {
+      throw new Error('The effective user changed; this run was cancelled.');
+    }
+  }
+
+  private track(request: MktgGenerateRequest, patch: Partial<MktgPendingGeneration>): void {
+    const pending: MktgPendingGeneration = this.attempts.load(request.projectUid, request.agentId, request.documentId) ?? {
+      request,
+      state: 'draft',
+      updatedAt: new Date().toISOString(),
+    };
+    this.attempts.save({ ...pending, ...patch, request });
   }
 
   /**
@@ -381,11 +898,12 @@ export class MktgAgentRunService {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
-    const key = this.storageKey(run.projectUid, run.agentId);
+    const key = this.storageKey(run.projectUid, run.agentId, run.documentId);
     if (!key) {
       return;
     }
     this.memoryRuns.set(key, run);
+    if (run.documentId || MKTG_AGENT_INTAKES[run.agentId]?.oneOffDocument) return; // Never serialize a one-off envelope, setup, source text or private Q&A.
     try {
       window.localStorage.setItem(key, JSON.stringify(run));
     } catch {
@@ -416,11 +934,11 @@ export class MktgAgentRunService {
    * or overwrite — another user's stored run. Null when signed out: stored
    * runs simply don't exist without an authenticated user to own them.
    */
-  private storageKey(projectUid: string, agentId: string): string | null {
+  private storageKey(projectUid: string, agentId: string, documentId?: string): string | null {
     const userSub = this.userService.user()?.sub;
     if (!userSub) {
       return null;
     }
-    return `${MKTG_RUN_STORAGE_KEY_PREFIX}:${userSub}:${projectUid}:${agentId}`;
+    return `${MKTG_RUN_STORAGE_KEY_PREFIX}:${userSub}:${projectUid}:${agentId}${documentId ? `:${documentId}` : ''}`;
   }
 }

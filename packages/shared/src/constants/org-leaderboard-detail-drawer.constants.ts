@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { OrgLeaderboardDetailCategory, OrgLeaderboardDetailMethodology } from '../interfaces/org-leaderboard-detail-drawer.interface';
+import { ORG_MAINTAINER_ROLES_LABEL } from './org-maintainer-roles.constants';
 
 /**
  * Display metadata for the leaderboard-row score-breakdown drawer: which categories each dimension
@@ -16,9 +17,10 @@ import type { OrgLeaderboardDetailCategory, OrgLeaderboardDetailMethodology } fr
 
 /** Technical-influence categories — the only four that earn points. */
 export const ORG_LEADERBOARD_DETAIL_TECHNICAL_CATEGORIES: OrgLeaderboardDetailCategory[] = [
-  { key: 'maintainer', name: 'Maintainers' },
+  // The count beside it is maintainer roles (lfx-self-serve#4605); the points are the influence score's.
+  { key: 'maintainer', name: ORG_MAINTAINER_ROLES_LABEL },
   { key: 'contributors', name: 'Contributors' },
-  { key: 'commits', name: 'Commit Activities' },
+  { key: 'commits', name: 'Commits' },
   { key: 'prs', name: 'PRs Opened' },
 ];
 
@@ -81,10 +83,17 @@ export const ORG_LEADERBOARD_DETAIL_METHODOLOGY: Record<'technical' | 'ecosystem
     intro:
       'Only four categories earn technical-influence points. Each earns points independently — there are no preset weights per category. Points from all categories are added together to get the total score.',
     bullets: [
-      { label: 'Maintainers', text: '— 10 pts if the company has 1+ project maintainers, else 0.' },
       {
-        label: 'Contributors, Commit Activities, PRs Opened',
+        label: ORG_MAINTAINER_ROLES_LABEL,
+        text: "— 10 pts from the influence score when the company has maintainers on the project in the selected range; the score only covers companies with code contributions in that range. The count shown is the maintainer roles the company holds, CDP team members left out, against every company's roles on the project; it is counted separately, so a company can hold roles and still earn 0 points.",
+      },
+      {
+        label: 'Contributors, PRs Opened',
         text: '— each 0.1% share of the project total earns 0.1 pt, plus a +1 bonus for any share above 0%.',
+      },
+      {
+        label: 'Commits',
+        text: '— scored the same way, but points use all commit credit (including co-authored commits), while the count and share shown are authored commits only. A company can show 0 authored commits and still earn points.',
       },
     ],
     levelMapping: 'Total score maps to a level: 0 = Silent, 1–4 = Participating, 5–14 = Contributing, 15+ = Leading.',

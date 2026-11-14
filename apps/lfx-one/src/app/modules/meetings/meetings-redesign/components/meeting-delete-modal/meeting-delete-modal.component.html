@@ -1,0 +1,49 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<lfx-ui-modal [heading]="occurrence ? 'Cancel Occurrence' : 'Delete meeting'" data-testid="meetings-home-delete-modal">
+  <lfx-meeting-dialog-context [row]="contextRow" [origin]="origin" data-testid="meetings-home-delete-details" />
+
+  @if (!occurrence && guestCount !== null) {
+    <p class="text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-delete-guests">
+      <span class="font-medium text-gray-600">Guests:</span> {{ guestCount }} guest{{ guestCount !== 1 ? 's' : '' }}
+    </p>
+  }
+
+  @if (occurrence) {
+    <lfx-ui-textarea
+      label="Reason (optional)"
+      hint="Included in the cancellation email sent to guests."
+      [error]="reasonError()"
+      [disabled]="busy()"
+      [(value)]="reason"
+      data-testid="meetings-home-delete-reason" />
+  }
+
+  <lfx-ui-note variant="error" plain size="small" icon="fa-solid fa-circle-exclamation" data-testid="meetings-home-delete-note">
+    @if (occurrence) {
+      <span class="mb-[4px] block font-medium"
+        >You are canceling this occurrence for all registrants of the meeting, not just yourself. This is not how you unregister yourself from an
+        occurrence.</span
+      >
+      This will permanently cancel this specific occurrence. Guests will be notified of the cancellation. This action cannot be undone.
+    } @else {
+      <span class="mb-[4px] block font-medium">You are deleting this meeting for all registrants, not just yourself.</span>
+      {{ recurring ? 'This will permanently delete all meetings in this series.' : 'This will permanently delete this meeting.' }} This action cannot be undone.
+    }
+  </lfx-ui-note>
+
+  <ng-container modalActions>
+    <lfx-ui-button data-autofocus variant="secondary" [disabled]="busy()" (click)="cancel()" data-testid="meetings-home-delete-cancel">Cancel</lfx-ui-button>
+    <lfx-ui-button
+      variant="danger"
+      [icon]="occurrence ? 'fa-light fa-ban' : 'fa-light fa-trash'"
+      [loading]="busy()"
+      [disabled]="!!reasonError()"
+      (click)="confirm()"
+      data-testid="meetings-home-delete-confirm"
+      >{{ confirmLabel() }}</lfx-ui-button
+    >
+  </ng-container>
+</lfx-ui-modal>

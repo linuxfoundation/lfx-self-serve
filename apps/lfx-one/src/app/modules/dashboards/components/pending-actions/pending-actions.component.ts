@@ -1,9 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, model, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink, UrlTree } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
+import { RejectApplicationDialogComponent } from '@app/modules/committees/components/reject-application-dialog/reject-application-dialog.component';
+import { JoinRequestSummaryComponent } from '@app/modules/dashboards/components/join-request-summary/join-request-summary.component';
 import { PendingActionsDrawerComponent } from '@app/modules/dashboards/components/pending-actions-drawer/pending-actions-drawer.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
@@ -19,18 +22,27 @@ import {
   PENDING_ACTION_SKELETON_HOLD_MS,
   VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS,
 } from '@lfx-one/shared/constants';
-import { PollType } from '@lfx-one/shared/enums';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
-import { buildFormationPendingActionView, getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import {
+  buildFormationPendingActionView,
+  getEntityCommands,
+  invitationRequiresOrganization,
+  isRankedPollType,
+  isReviewableJoinApplication,
+} from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
-import { timer } from 'rxjs';
+import { Observable, take, timer } from 'rxjs';
 
 import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, PendingDecline, RsvpResponse, Vote } from '@lfx-one/shared/interfaces';
 
@@ -50,12 +62,16 @@ const INVITE_UNDO_TOAST_KEY = 'pending-actions-undo';
     RsvpButtonGroupComponent,
     VoteBallotInlineComponent,
     PendingActionsDrawerComponent,
+    JoinRequestSummaryComponent,
     SkeletonModule,
     ToastModule,
     RouterLink,
+    ConfirmDialogModule,
+    DynamicDialogModule,
   ],
   templateUrl: './pending-actions.component.html',
   styleUrl: './pending-actions.component.scss',
+  providers: [ConfirmationService, DialogService],
 })
 export class PendingActionsComponent {
   private readonly hiddenActionsService = inject(HiddenActionsService);
@@ -67,6 +83,9 @@ export class PendingActionsComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly committeeService = inject(CommitteeService);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly dialogService = inject(DialogService);
 
   protected readonly buttonIcons = PENDING_ACTION_BUTTON_ICON;
   protected readonly typeLabels = PENDING_ACTION_LABEL;
@@ -95,7 +114,18 @@ export class PendingActionsComponent {
   private readonly voteCache = signal<Record<string, Vote>>({});
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
   private readonly loadingVoteUids = signal<ReadonlySet<string>>(new Set());
-  private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
+  // A replacement feed permits one new attempt; cache/loading updates must not create a retry loop.
+  private readonly failedMeetingUids = linkedSignal<ReadonlySet<string>>(() => {
+    this.pendingActions();
+    return new Set<string>();
+  });
+  protected readonly processingApplicationKey = signal<string | null>(null);
+  protected readonly applicationConfirmKey = 'pending-actions-application-review';
+  // Suppress saved addresses only until a replacement authoritative feed arrives (same-UID reinstatement).
+  private readonly resolvedApplicationKeys = linkedSignal<ReadonlySet<string>>(() => {
+    this.pendingActions();
+    return new Set<string>();
+  });
 
   // The decline currently inside its deferred-undo window — drives the Undo affordance in the toast. Null when no decline is pending.
   protected readonly pendingDecline = signal<PendingDecline | null>(null);
@@ -122,21 +152,21 @@ export class PendingActionsComponent {
   protected readonly decoratedActions: Signal<DecoratedPendingAction[]> = this.initDecoratedActions();
 
   public constructor() {
-    // When the last action is resolved, fade the section out then remove it from the DOM.
+    // Fade an empty section only after its drawer closes, so the final review can show the empty state through refresh.
     // sectionEverShown prevents the fade from triggering on initial load with zero actions.
-    toObservable(this.totalVisible)
+    toObservable(computed(() => this.totalVisible() > 0 || this.drawerVisible()))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((count) => {
-        if (count > 0) {
+      .subscribe((hasActionsOrOpenDrawer) => {
+        if (hasActionsOrOpenDrawer) {
           this.sectionEverShown = true;
-          // Cancel any in-flight grace/fade so a repopulated section stays visible.
+          // Cancel any in-flight grace/fade when actions repopulate or the drawer opens.
           this.clearSectionFadeTimer();
           this.isSectionGracePending.set(false);
           this.isSectionHidden.set(false);
           this.isSectionFading.set(false);
         } else if (this.sectionEverShown && !this.isSectionHidden() && this.sectionFadeTimerId === null) {
           // Wait a grace period before fading: a context switch (org/project change) can briefly empty the
-          // list before new data arrives — if it repopulates within the grace, the count>0 branch cancels
+          // list before new data arrives — if it repopulates within the grace, the populated branch cancels
           // this timer and nothing fades. The sectionFadeTimerId guard also prevents overlapping timers on
           // repeated empty emissions (an orphan would survive clearSectionFadeTimer and hide a repopulated section).
           // isSectionGracePending keeps the section mounted (stable, not collapsing) during the grace.
@@ -145,8 +175,6 @@ export class PendingActionsComponent {
             // Still empty after the grace — commit to the fade.
             this.sectionFadeTimerId = null;
             this.isSectionGracePending.set(false);
-            // Close the drawer so a later repopulation can't reopen it with stale state.
-            this.drawerVisible.set(false);
             this.isSectionFading.set(true);
             this.sectionFadeTimerId = setTimeout(() => {
               this.sectionFadeTimerId = null;
@@ -186,6 +214,7 @@ export class PendingActionsComponent {
   }
 
   protected handleAgendaOrOtherClick(item: DecoratedPendingAction): void {
+    if (item.type === 'JoinApplication') return;
     if (this.isVoteInline(item) && item.voteUid) {
       this.loadVoteForRow(item);
       return;
@@ -224,6 +253,40 @@ export class PendingActionsComponent {
     if (this.expandedVoteKey() === this.getRowKey(item)) {
       this.expandedVoteKey.set(null);
     }
+  }
+
+  protected onApproveApplication(item: PendingActionItem): void {
+    if (!this.canReviewApplication(item)) return;
+    const applicant = item.applicationApplicantName ? `${item.applicationApplicantName} (${item.applicationApplicantEmail})` : item.applicationApplicantEmail;
+    let accepted = false;
+    this.confirmationService.confirm({
+      key: this.applicationConfirmKey,
+      header: 'Approve Application',
+      message: `Approve ${applicant}'s request to join ${item.badge}${item.applicationProjectName ? ` in the ${item.applicationProjectName} project` : ''}?`,
+      acceptLabel: 'Approve',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-success p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        if (accepted) return;
+        accepted = true;
+        this.saveApplicationReview(item, true);
+      },
+    });
+  }
+
+  protected onRejectApplication(item: PendingActionItem): void {
+    if (!this.canReviewApplication(item)) return;
+    const dialogRef = this.dialogService.open(RejectApplicationDialogComponent, {
+      header: 'Reject Application',
+      width: '480px',
+      modal: true,
+      closable: true,
+      data: { applicantEmail: item.applicationApplicantEmail, groupName: item.badge, projectName: item.applicationProjectName },
+    });
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((notes: string | null | undefined) => {
+      if (notes !== undefined) this.saveApplicationReview(item, false, notes?.trim() || undefined);
+    });
   }
 
   // Accept a committee invitation. Optimistically removes the row (markResolved → resolvedInviteUids filter), then commits
@@ -320,6 +383,10 @@ export class PendingActionsComponent {
   }
 
   protected handleDismiss(item: DecoratedPendingAction): void {
+    if (item.type === 'JoinApplication') {
+      this.dismissApplication(item);
+      return;
+    }
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, { withSkeleton: true, skipHide: true });
@@ -398,7 +465,7 @@ export class PendingActionsComponent {
             key: 'pending-actions-toast',
             severity: 'error',
             summary: 'Could not load vote',
-            detail: 'Please try again or open it from the My Votes page.',
+            detail: 'Please try again or open it from the Votes page.',
             life: 4000,
           });
         },
@@ -415,7 +482,7 @@ export class PendingActionsComponent {
 
   private voteUsesDrawer(vote: Vote): boolean {
     const questions = vote.poll_questions ?? [];
-    const isRanked = (vote.poll_type ?? PollType.GENERIC) !== PollType.GENERIC;
+    const isRanked = isRankedPollType(vote.poll_type);
     // Inline ballot supports exactly one single/multiple-choice question; everything else
     // (zero questions, multiple questions, ranked/unsupported types) falls back to the drawer.
     if (questions.length !== 1) return true;
@@ -428,6 +495,7 @@ export class PendingActionsComponent {
 
   // Persist the hide synchronously unless `skipHide` is set (Dismiss already wrote a permanent cookie), so an unmount within the animation window can't cancel the cookie write, then drive the fade → drop → skeleton-arrival animation through two timers.
   private startCompletion(item: PendingActionItem, options: { withSkeleton: boolean; skipHide?: boolean }): void {
+    if (item.type === 'JoinApplication') return;
     const rowKey = this.getRowKey(item);
     if (!options.skipHide) {
       this.hiddenActionsService.hideAction(item);
@@ -532,6 +600,9 @@ export class PendingActionsComponent {
 
   // Mirror HiddenActionsService.getActionIdentifier so the row key, hidden-cookie identifier, and `@for` track key all stay in sync.
   private getRowKey(item: PendingActionItem): string {
+    if (item.type === 'JoinApplication' && item.committeeUid && item.applicationUid) {
+      return `JoinApplication-${item.committeeUid}-${item.applicationUid}`;
+    }
     if (item.meetingUid) {
       return `${item.type}-${item.meetingUid}-${item.occurrenceId ?? ''}`;
     }
@@ -575,11 +646,13 @@ export class PendingActionsComponent {
       // (tracked in the shared resolvedInviteUids signal) so the row disappears across every surface. Reading the signal
       // here makes this computed re-run automatically on accept/decline/undo.
       const resolvedInvites = this.invitationService.resolvedInviteUids();
+      const resolvedApplications = this.resolvedApplicationKeys();
       const pinned = new Set<string>();
       this.completingRowKeys().forEach((k) => pinned.add(k));
       this.swappingRowKeys().forEach((k) => pinned.add(k));
       const formationEnabled = this.formationFlagEnabled();
       return this.pendingActions().filter((item) => {
+        if (item.type === 'JoinApplication') return !resolvedApplications.has(this.getRowKey(item)) && !this.hiddenActionsService.isActionHidden(item);
         if (item.type === 'FormationItem' && !formationEnabled) {
           return false;
         }
@@ -639,6 +712,7 @@ export class PendingActionsComponent {
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
           isInvitation,
+          isReviewableApplication: item.type === 'JoinApplication' && isReviewableJoinApplication(item),
           // Formation rows (#2732): link, status chip and due label — shared with the "View all" drawer.
           ...buildFormationPendingActionView(item),
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
@@ -647,6 +721,69 @@ export class PendingActionsComponent {
           inviteViewQueryParams,
         };
       });
+    });
+  }
+
+  // Dismissing only hides the request from this user's list: it stays pending for other reviewers and on the group's applications tab.
+  private dismissApplication(item: PendingActionItem): void {
+    if (!isReviewableJoinApplication(item)) return;
+    this.hiddenActionsService.dismissAction(item);
+    this.hiddenActionsVersion.update((v) => v + 1);
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Request Dismissed',
+      detail: `The request from ${item.applicationApplicantEmail} is hidden from your pending actions. It is still pending for other reviewers.`,
+    });
+  }
+
+  private canReviewApplication(item: PendingActionItem): boolean {
+    const key = this.getRowKey(item);
+    return (
+      item.type === 'JoinApplication' &&
+      isReviewableJoinApplication(item) &&
+      !this.processingApplicationKey() &&
+      !this.resolvedApplicationKeys().has(key) &&
+      this.pendingActions().some((current) => current.type === 'JoinApplication' && this.getRowKey(current) === key)
+    );
+  }
+
+  private saveApplicationReview(item: PendingActionItem, approve: boolean, notes?: string): void {
+    // Overlay callbacks can outlive the row or race with another save; validate the captured address again.
+    if (!this.canReviewApplication(item)) return;
+    const key = this.getRowKey(item);
+    this.processingApplicationKey.set(key);
+    const review: Observable<unknown> = approve
+      ? this.committeeService.approveApplication(item.committeeUid!, item.applicationUid!)
+      : this.committeeService.rejectApplication(item.committeeUid!, item.applicationUid!, notes);
+    // The review clients complete after one response. A confirmed write outlives navigation,
+    // but its completion must not update an unmounted widget or emit through a destroyed output.
+    review.subscribe({
+      next: () => {
+        if (this.destroyRef.destroyed) return;
+        this.resolvedApplicationKeys.update((keys) => new Set(keys).add(key));
+        this.processingApplicationKey.set(null);
+        this.messageService.add({
+          key: 'pending-actions-toast',
+          severity: 'success',
+          summary: approve ? 'Application Approved' : 'Application Rejected',
+          detail: approve
+            ? `${item.applicationApplicantEmail} has been added to ${item.badge}.`
+            : `The request from ${item.applicationApplicantEmail} to join ${item.badge} has been rejected.`,
+          life: 5000,
+        });
+        this.actionClick.emit(item);
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.destroyRef.destroyed) return;
+        this.processingApplicationKey.set(null);
+        this.messageService.add({
+          key: 'pending-actions-toast',
+          severity: 'error',
+          summary: approve ? 'Unable to Approve' : 'Unable to Reject',
+          detail: getHttpErrorDetail(error, 'Failed to review the application. Please try again.'),
+          life: 5000,
+        });
+      },
     });
   }
 }

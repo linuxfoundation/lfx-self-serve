@@ -1,56 +1,159 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, DOCUMENT, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, OnInit, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import type {
+  BriefMetrics,
+  BriefMetricsRow,
+  CampaignBidChange,
+  CampaignBidOutcome,
+  CampaignConfirmedBid,
+  CampaignBudgetChange,
+  CampaignBudgetOutcome,
+  CampaignBudgetPacingRead,
   CampaignIndexDoc,
   CampaignMonitorResponse,
+  CampaignNegativeKeywordsRequestState,
+  CampaignOptimizeFinding,
+  CampaignOptimizeLever,
   CampaignPlatform,
   CampaignRow,
   CampaignToggleAction,
   CampaignToggleStatus,
+  CampaignValidatorHold,
   DateRangeOption,
+  KeywordActionPlatform,
   KeywordActionType,
   KeywordMetrics,
   KeywordMetricsResponse,
+  KeywordTargetingPlatform,
   LinkedInAccount,
   LinkedInActionItem,
   LinkedInMonitorResponse,
   MetaAccountOption,
   MetaActionItem,
+  MetaAdSetPendingChange,
+  MetaAdSetToggleOutcome,
+  MetaAdSetToggleRequest,
   KeywordActionOutcome,
   MetaMonitorResponse,
+  MicrosoftKeywordActionRequest,
+  NegativeKeywordCampaignPlatform,
   RedditAccountOption,
   RedditActionItem,
+  RedditKeywordNegativeTarget,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
 import {
+  BID_WRITABLE_CAMPAIGN_PLATFORMS,
+  BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+  CAMPAIGN_BID_BLOCKED_BUSY_REASON,
+  CAMPAIGN_BID_BLOCKED_STALE_REASON,
+  CAMPAIGN_BID_CONFLICT_MESSAGE,
+  CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_BID_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_STALE_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON,
+  CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
+  CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
+  CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
+  CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_OPTIMIZE_LEVER_LABELS,
+  CAMPAIGN_PLATFORMS,
   CAMPAIGN_TOGGLE_CONFLICT_MESSAGE,
   CAMPAIGN_TOGGLE_DONE_VERBS,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
+  CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
   CAMPAIGN_TOGGLE_LABELS,
   CAMPAIGN_TOGGLE_PENDING_VERBS,
   CAMPAIGN_UNAVAILABLE_DEFAULT_REASON,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeWithheldForPlatform,
   CAMPAIGN_UNAVAILABLE_REASONS,
+  DEFAULT_CAMPAIGN_BID_TYPE,
+  KEYWORD_ACTION_OUTCOME_CLASSES,
+  KEYWORD_ACTION_OUTCOME_LABELS,
+  META_AD_SET_BLOCKED_BUSY_REASON,
+  META_AD_SET_BLOCKED_STALE_REASON,
+  META_AD_SET_UNCONFIRMED_MESSAGE,
+  META_AD_SETS_CAMPAIGN_PLATFORM,
+  META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+  KEYWORD_TARGETING_CAMPAIGN_PLATFORMS,
+  KEYWORD_TARGETING_UNAVAILABLE_UNPROVISIONED_REASON,
+  NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS,
   PLATFORM_BRAND_COLORS,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
+  campaignResumeAdoptedReason,
   campaignToggleAction,
   normalizeCampaignStatus,
 } from '@lfx-one/shared/constants';
+import {
+  campaignActionItemLever,
+  campaignBiddingSummary,
+  campaignEtagVersion,
+  campaignLabelColumns,
+  keywordActionKey,
+  keywordIdentityKey,
+  metaAdSetCampaignEligibility,
+  metaAdSetDirectionAllowed,
+} from '@lfx-one/shared/utils';
 import { AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe } from '@pipes/campaign-optimization.pipe';
+import { metaAdSetFailureOutcome, metaAdSetWriteLeftValidatorKnown } from '@shared/utils/campaign-ad-set-error.utils';
+import { campaignBidFailureOutcome } from '@shared/utils/campaign-bid-error.utils';
+import { campaignBudgetFailureOutcome } from '@shared/utils/campaign-budget-error.utils';
+import { isDailyOnlyBudgetPlatform, readCampaignBudgetPacing } from '@shared/utils/campaign-budget-pacing.utils';
+import { classifyCampaignWriteFailure, isCampaignResumeRefusal } from '@shared/utils/campaign-write-error.utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
+import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywords.service';
+import { campaignNegativeKeywordsKey } from '@shared/utils/campaign-negative-keywords.utils';
 import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
-import { skip, take, type Subscription } from 'rxjs';
+import { catchError, EMPTY, map, of, skip, switchMap, take, type Subscription } from 'rxjs';
+
+import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
+import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
+import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
+import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
+import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
+import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
+import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
+import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-keywords-table.component';
 
 @Component({
   selector: 'lfx-optimization-tab',
-  imports: [DecimalPipe, AdsCurrencyPipe, AdsPctPipe, EventLabelPipe, PacingClassPipe, PriorityClassPipe, QualityScoreClassPipe],
+  imports: [
+    DecimalPipe,
+    AdsCurrencyPipe,
+    AdsPctPipe,
+    CampaignBidFormComponent,
+    CampaignBudgetFormComponent,
+    CampaignKeywordTargetingPanelComponent,
+    CampaignLiveMetricsComponent,
+    CampaignNegativeKeywordsFormComponent,
+    CampaignSettingsDrawerComponent,
+    EventLabelPipe,
+    MetaAdSetsPanelComponent,
+    MicrosoftKeywordsTableComponent,
+    NgTemplateOutlet,
+    PacingClassPipe,
+    PriorityClassPipe,
+    QualityScoreClassPipe,
+    RedditKeywordsTableComponent,
+  ],
   templateUrl: './optimization-tab.component.html',
   styleUrl: './optimization-tab.component.scss',
 })
@@ -62,6 +165,17 @@ export class OptimizationTabComponent implements OnInit {
   // the component, so its result has to land somewhere the component's destruction cannot take
   // with it.
   private readonly messageService = inject(MessageService);
+  private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
+  // Both serve the finding levers' focus hand-off: `afterNextRender` needs an injector outside the
+  // constructor, and the editor it focuses is rendered by this template a tick after it opens.
+  private readonly injector = inject(Injector);
+  private readonly document = inject(DOCUMENT);
+  /**
+   * The zone a campaign's Created date is dated in: the viewer's own in the browser (`undefined`), and none
+   * during a server render (`null`, shown as "—"), so the server's UTC day is never rendered (#4983).
+   */
+  private readonly labelTimeZone: null | undefined = isPlatformBrowser(inject(PLATFORM_ID)) ? undefined : null;
 
   /**
    * The campaigns this brief created, or `null` when the list has not been loaded.
@@ -78,6 +192,20 @@ export class OptimizationTabComponent implements OnInit {
 
   /** True when an empty list may simply not be indexed yet, rather than genuinely empty. */
   public readonly campaignsPossiblyStale = input(false);
+
+  /**
+   * Negative keywords the brief generated from the event page, passed straight through to every
+   * negative-keyword editor this tab opens.
+   *
+   * A suggestion the editor opens pre-filled with, never a value this tab sends: nothing leaves
+   * until the operator presses that editor's own button. A Search campaign may already carry them
+   * from its create (the Implement tab sends the same list, #4991); every other platform takes
+   * negatives only here, after the campaign exists.
+   *
+   * `null` is a brief that carries none — generated before this shipped, or a generation that
+   * produced nothing — and the editors open blank, as they did before this input.
+   */
+  public readonly suggestedNegativeKeywords = input<string[] | null>(null);
 
   /**
    * True when the campaign list READ FAILED, as opposed to never having been asked for.
@@ -135,6 +263,132 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly toggleError = signal<Record<string, string>>({});
 
   /**
+   * Budget-change state, per campaign id, for the same reason the toggle's is keyed: each row
+   * changes independently, and one row's error must never render against another.
+   *
+   * The budget change is the toggle's sibling write on the same row. It sends the same validator
+   * (`toggledEtag` first, else the indexed etag), writes the fresh one back to the same map, and a
+   * 412 marks the same row conflicted — so the two controls can never disagree about whether the
+   * row's etag is still good.
+   */
+  protected readonly budgetEditorOpen = signal<Record<string, boolean>>({});
+  protected readonly budgetPending = signal<Record<string, boolean>>({});
+  /** The last non-success outcome per row; cleared when a new change is dispatched. */
+  protected readonly budgetOutcome = signal<Partial<Record<string, CampaignBudgetOutcome>>>({});
+  /**
+   * The amount and pacing this session CONFIRMED per row. The index carries no budget, so this is
+   * the only budget the row can show, and the only pacing it can pre-select on the next change.
+   */
+  protected readonly confirmedBudget = signal<Partial<Record<string, CampaignBudgetChange>>>({});
+  /**
+   * The CURRENT budget pacing of daily-only-platform rows (X), per campaign id, read from each
+   * campaign's live settings when its editor first opens. The index carries no budget, and X takes
+   * daily changes only, so a lifetime-budgeted X campaign is told so up front instead of being
+   * offered a form whose every submit is a 409.
+   */
+  protected readonly budgetPacing = signal<Partial<Record<string, CampaignBudgetPacingRead>>>({});
+
+  /**
+   * Bid-change state, per campaign id: the budget editor's sibling write on the same row, sharing
+   * its validator (`toggledEtag`), its 412 handling and its one-write-at-a-time rule.
+   */
+  protected readonly bidEditorOpen = signal<Record<string, boolean>>({});
+  protected readonly bidPending = signal<Record<string, boolean>>({});
+  /** The live-settings drawer: open or not, and the campaign it reads. A read only, so it holds no row state. */
+  protected readonly settingsDrawerVisible = signal(false);
+  protected readonly settingsCampaign = signal<CampaignIndexDoc | null>(null);
+  /** The last non-success bid outcome per row; cleared when a new change is dispatched. */
+  protected readonly bidOutcome = signal<Partial<Record<string, CampaignBidOutcome>>>({});
+  /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
+  protected readonly confirmedBid = signal<Partial<Record<string, CampaignConfirmedBid>>>({});
+
+  /** Which Google Ads, Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
+  protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
+  /** Which Reddit and X rows have their keyword-targeting panel open. */
+  protected readonly targetingPanelOpen = signal<Record<string, boolean>>({});
+  /**
+   * Which rows' keyword-targeting removal is in flight, read from the root
+   * `CampaignKeywordTargetingService` that owns it. While one runs the row's panel is held open, so
+   * its per-keyword outcome is not hidden mid-removal.
+   */
+  protected readonly targetingPending: Signal<Record<string, boolean>> = this.initTargetingPending();
+  /**
+   * Which rows' negative-keyword request is in flight. Read from the root
+   * `CampaignNegativeKeywordsService`, which owns the request, rather than reported by the editor:
+   * a campaign-list re-read or a tab switch destroys the editor mid-flight, and a flag fed by its
+   * output then stayed `true` forever, leaving Close dead and the disclosure disabled.
+   */
+  protected readonly negativesPending: Signal<Record<string, boolean>> = this.initNegativesFlag((request) => request.pending);
+  /**
+   * Rows whose last negative-keyword request has keywords not confirmed, stated on the row while
+   * the editor is closed: they may already have been added, and the sticky toast can be dismissed.
+   */
+  protected readonly negativesUnconfirmed: Signal<Record<string, boolean>> = this.initNegativesFlag(
+    (request) => !request.pending && (request.batchOutcome?.state === 'unconfirmed' || request.outcomeRows.some((row) => row.outcome === 'UNCONFIRMED'))
+  );
+
+  /**
+   * Meta ad-set state, per campaign id. The ad-set status change is the toggle's sibling write on the
+   * same row: it sends the row's freshest validator, the fresh one it returns replaces it (a pause or
+   * resume of the recorded ad set bumps the row's version), a 412 marks the row conflicted, and the
+   * row's other writes wait while it is out.
+   */
+  protected readonly adSetsPanelOpen = signal<Record<string, boolean>>({});
+  /** The ad-set change in flight (which ad set, which action), per campaign id. One per campaign at a time. */
+  protected readonly adSetPending = signal<Partial<Record<string, MetaAdSetPendingChange>>>({});
+  /** How the campaign's last ad-set change ended; replaced when a new one is dispatched. */
+  protected readonly adSetOutcome = signal<Partial<Record<string, MetaAdSetToggleOutcome>>>({});
+  /** Bumped per campaign after every ad-set change, confirmed or not, so its panel re-reads the ad sets. */
+  protected readonly adSetsReload = signal<Partial<Record<string, number>>>({});
+
+  /** Bumped by Refresh to re-read the Microsoft keyword table, which owns its own read. */
+  protected readonly microsoftKeywordsReload = signal(0);
+  /** Bumped by Refresh to re-read the Reddit keyword table, which owns its own read. */
+  protected readonly redditKeywordsReload = signal(0);
+  /** The brief's Reddit campaign names by Reddit campaign id, for the Reddit keyword table's Campaign column. */
+  protected readonly redditCampaignNames: Signal<Record<string, string>> = this.initRedditCampaignNames();
+  /**
+   * The brief's Reddit campaigns that offer negative keywords right now (the rows whose editor is
+   * available), by Reddit campaign id, for the Reddit keyword table's "Add as negative". A Reddit id
+   * held by more than one row maps to neither: the table must not choose between them.
+   */
+  protected readonly redditNegativeTargets: Signal<Record<string, RedditKeywordNegativeTarget> | null> = this.initRedditNegativeTargets();
+
+  /**
+   * The brief's metrics read, for its `action_items`: campaign-service's single-source rule
+   * engine, whose items carry a stable `rule` token and the campaign's own id. Those two are what
+   * let a finding be linked to the row control that resolves it, which the per-platform monitor
+   * items below (prose only, keyed by name) cannot do.
+   *
+   * `null` until a read lands, and on a failed read — `briefMetricsState` says which. A failure is
+   * never rendered as "no findings".
+   */
+  protected readonly briefMetrics = signal<BriefMetrics | null>(null);
+  protected readonly briefMetricsState = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  /** Bumped by Refresh (and the findings retry) to re-read the brief's metrics. */
+  private readonly briefMetricsReload = signal(0);
+  /**
+   * The brief-wide read's row per campaign id. Each campaign row's live counters render from its
+   * `ok` row here with no read of their own; the row asks campaign-service itself only on Refresh,
+   * or for a campaign this read could not measure.
+   */
+  protected readonly briefMetricsRowsById: Signal<Partial<Record<string, BriefMetricsRow>>> = this.initBriefMetricsRowsById();
+
+  /**
+   * Each monitor finding joined to the brief campaign row it is about, with its ONE lever decided.
+   *
+   * The lever comes from `campaignActionItemLever` — the shared rule→lever map gated on the same
+   * platform sets the row controls use — and is then withheld when the campaign is not in the
+   * loaded list, because there is no control to hand the operator.
+   */
+  protected readonly findings: Signal<CampaignOptimizeFinding[]> = this.initFindings();
+
+  /** What the findings panel says when the read returned no items. Never an unqualified all-clear. */
+  protected readonly findingsEmptyMessage: Signal<string> = this.initFindingsEmptyMessage();
+
+  protected readonly platformLabels: Readonly<Record<string, string>> = Object.fromEntries(CAMPAIGN_PLATFORMS.map((p) => [p.id, p.label]));
+
+  /**
    * The text of the visually-hidden `aria-live="polite"` region: which rows are CURRENTLY working.
    *
    * ONE ownership rule governs all four announcement sites, and stating it once is what stops the
@@ -164,6 +418,9 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected readonly toggleAnnouncement = computed(() => {
     const pending = this.togglePending();
+    const budgetPending = this.budgetPending();
+    const bidPending = this.bidPending();
+    const adSetPending = this.adSetPending();
     const rows = this.campaignRows();
     if (rows === null) {
       return '';
@@ -176,6 +433,15 @@ export class OptimizationTabComponent implements OnInit {
       const direction = pending[row.campaign.id];
       if (direction) {
         working.push(`${CAMPAIGN_TOGGLE_PENDING_VERBS[direction]} ${row.campaign.campaign_name}`);
+      }
+      if (budgetPending[row.campaign.id]) {
+        working.push(`Changing the budget of ${row.campaign.campaign_name}`);
+      }
+      if (bidPending[row.campaign.id]) {
+        working.push(`Changing the bid of ${row.campaign.campaign_name}`);
+      }
+      if (adSetPending[row.campaign.id]) {
+        working.push(`Changing an ad set of ${row.campaign.campaign_name}`);
       }
     }
     return working.join(', ');
@@ -230,15 +496,16 @@ export class OptimizationTabComponent implements OnInit {
    * defect as the over-broad instruction it replaced, pointed the other way.
    *
    * Derived from the rendered rows rather than a count, so it agrees with the buttons by
-   * construction: a row is offerable exactly when it is not conflicted and its action is a real
-   * direction, which is the same condition the template's `[disabled]` uses.
+   * construction: a row is offerable exactly when it is not conflicted, its action is a real
+   * direction, and it is not an adopted campaign's Resume — the rows the template renders usable
+   * (`[disabled]` covers the first two, `aria-disabled` the adopted Resume).
    */
   protected readonly hasActionableSiblings = computed(() => {
     const rows = this.campaignRows();
     if (rows === null) {
       return false;
     }
-    return rows.some((row) => !row.conflicted && row.action !== 'unavailable');
+    return rows.some((row) => !row.conflicted && !row.resumeAdopted && row.action !== 'unavailable');
   });
 
   /**
@@ -292,6 +559,28 @@ export class OptimizationTabComponent implements OnInit {
    */
   private etagsWrittenDuringRead = new Set<string>();
 
+  /**
+   * Rows whose validator is UNKNOWN after an ad-set write that may have bumped the row's version
+   * (any outcome but a confirmed one, a 412, or a pre-send refusal: see
+   * `metaAdSetWriteLeftValidatorKnown`), keyed by campaign id, with the etag the write was SENT with.
+   *
+   * Such a row is held conflicted — the existing banner offers Refresh and every write on it waits —
+   * until its etag is known again, from one of two sources:
+   * - AUTHORITATIVE: the row read from campaign-service itself (`getCampaignRecord`), asked for as
+   *   soon as the write answers and again on every Refresh. Its etag is adopted.
+   * - The INDEX, only once it delivers an etag that DIFFERS from the one the write was sent with, on
+   *   a list read that began after the hold. The index is asynchronous: an unchanged etag may just
+   *   be the index lagging a write that bumped the row, so it never releases the hold.
+   *
+   * Release adopts the etag and nothing else: `toggledStatus` (a CONFIRMED status overlay) is kept,
+   * and `clearConflictStateFor` skips held rows so the generic refresh path cannot release them early.
+   */
+  private readonly validatorHolds = new Map<string, CampaignValidatorHold>();
+  /** Mints each hold's identity, so an answer meant for an earlier hold can never touch a later one. */
+  private holdSequence = 0;
+  /** Mints each authoritative read's sequence; within one hold, only the LATEST read may release it. */
+  private recordReadSequence = 0;
+
   /** True between the parent's `null` push and the delivery that answers it. */
   private listReadInFlight = false;
 
@@ -323,14 +612,32 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly monitorData = signal<CampaignMonitorResponse | null>(null);
   protected readonly error = signal<string | null>(null);
+  /** The Google read was refused for the caller's role (a 403, #4837). Retrying repeats the refusal, so no Retry is offered. */
+  protected readonly errorRefused = signal(false);
+  /**
+   * The Google Ads monitor was refused because the customer is shared by every foundation
+   * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54): a notice in place of the action
+   * items and campaigns, with the project-scoped keyword sections still shown.
+   */
+  protected readonly googleRestricted = signal(false);
 
   protected readonly keywordsLoading = signal(false);
   protected readonly keywordsData = signal<KeywordMetricsResponse | null>(null);
   protected readonly keywordsError = signal<string | null>(null);
+  protected readonly keywordsRestricted = signal(false);
 
   protected readonly actionItems = computed(() => this.monitorData()?.actionItems ?? []);
   protected readonly campaigns = computed(() => this.monitorData()?.campaigns ?? []);
   protected readonly hasActionItems = computed(() => this.actionItems().length > 0);
+  /** True when the Google monitor's amounts are a connected account's own, unnamed currency (#4807): printed without `$`. */
+  protected readonly googleAmountsInAccountCurrency = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
+  /** The same for the Google keyword read, which campaign-service also reports unconverted. */
+  protected readonly keywordAmountsInAccountCurrency = computed(() => this.keywordsData()?.amountsInAccountCurrency === true);
+  /**
+   * Google campaigns campaign-service could not read (#4526). It raises no action items for them, so
+   * "no action items" is not an all-clear while any exists; the template says so instead.
+   */
+  protected readonly unreadCampaignCount = computed(() => this.campaigns().filter((c) => c.fetchFailed === true).length);
   protected readonly hasCampaigns = computed(() => this.campaigns().length > 0);
   protected readonly pulledAt = computed(() => this.monitorData()?.pulledAt ?? '');
 
@@ -347,11 +654,21 @@ export class OptimizationTabComponent implements OnInit {
     return all.filter((k) => k.qualityScore !== null && k.qualityScore <= 4).sort((a, b) => (a.qualityScore ?? 0) - (b.qualityScore ?? 0));
   });
 
+  /**
+   * The non-Search campaigns, lowest CTR first. On the campaign-service path (#4526) a row campaign-service
+   * could not read carries zero placeholders, so it is left out rather than ranked as a 0% CTR, and a row
+   * it could not pace shows "Unknown" with an empty bar rather than a measured 0%. The legacy read sets
+   * neither flag, so its rows are unchanged.
+   */
   protected readonly displayCampaigns = computed(() => {
     return this.campaigns()
-      .filter((c) => !c.adFormat.toLowerCase().includes('search'))
+      .filter((c) => !c.adFormat.toLowerCase().includes('search') && c.fetchFailed !== true)
       .sort((a, b) => a.ctr - b.ctr)
-      .map((c) => ({ ...c, displayPacingPct: Math.min(c.pacingPct, 100) }));
+      .map((c) => ({
+        ...c,
+        displayPacingPct: c.pacingUnknown === true ? 0 : Math.min(c.pacingPct, 100),
+        displayPacingText: c.pacingUnknown === true ? 'Unknown' : `${c.pacingPct}%`,
+      }));
   });
 
   /**
@@ -373,6 +690,11 @@ export class OptimizationTabComponent implements OnInit {
     // inside a template method instead was the frontend-checklist §4 violation this replaces.
     const toggleErrors = this.toggleError();
     const conflictedIds = this.conflictedCampaignIds();
+    const budgetPending = this.budgetPending();
+    const budgetPacing = this.budgetPacing();
+    const bidPending = this.bidPending();
+    const confirmedBids = this.confirmedBid();
+    const adSetPending = this.adSetPending();
     const deploymentDisabled = !this.statusToggleEnabled();
     return rows.map((campaign) => {
       // Normalized HERE, once, rather than inside each consumer. `status` feeds three of them —
@@ -419,14 +741,66 @@ export class OptimizationTabComponent implements OnInit {
       // are untested, not disproved, and disabling them would withdraw controls from campaigns
       // that are spending on no evidence at all.
       const conflicted = conflictedIds.has(campaign.id);
+      const budgetUnavailableReason = this.budgetUnavailableReasonFor(campaign, status, budgetPacing[campaign.id]);
+      const bidUnavailableReason = this.bidUnavailableReasonFor(campaign, status);
+      const negativeKeywordsOffered = typeof campaign.platform === 'string' && NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS.has(campaign.platform);
+      const negativeKeywordsUnavailableReason = negativeKeywordsOffered ? this.negativeKeywordsUnavailableReasonFor(campaign, status) : '';
+      const adSetsOffered = campaign.platform === META_AD_SETS_CAMPAIGN_PLATFORM;
+      const adSetsUnavailableReason = adSetsOffered ? this.adSetsUnavailableReasonFor(campaign, status) : '';
+      const adSetBusy = adSetPending[campaign.id] !== undefined;
+      const keywordTargetingOffered = typeof campaign.platform === 'string' && KEYWORD_TARGETING_CAMPAIGN_PLATFORMS.has(campaign.platform);
+      const keywordTargetingUnavailableReason = keywordTargetingOffered ? this.keywordTargetingUnavailableReasonFor(campaign, status) : '';
+      const confirmedBidAmount = this.currentConfirmedBid(campaign, confirmedBids[campaign.id]);
+      // An adopted campaign is never resumed by campaign-service (409 `campaign_adopted`), so its
+      // Resume is withheld up front. Only a literal `true`: absent (not adopted, or not recorded by
+      // this deployment) keeps today's button, and upstream stays the authority.
+      const resumeAdopted = action === 'resume' && campaign.adopted === true;
       return {
         campaign,
+        // The bidding campaign-service RECORDED (#3299) — what the create asked for and the last bid
+        // it set, not a live read of the platform. Empty when the index records neither.
+        biddingSummary: this.biddingSummaryFor(campaign, confirmedBidAmount),
+        confirmedBidAmount,
         status,
         action,
         conflicted,
-        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported) : '',
+        labels: campaignLabelColumns(campaign, this.labelTimeZone),
+        unavailableReason: action === 'unavailable' ? this.unavailableReasonFor(status, deploymentDisabled, platformUnsupported, campaign.platform) : '',
         toggleLabel: CAMPAIGN_TOGGLE_LABELS[action],
-        describedBy: this.describedByFor(campaign.id, action, toggleErrors),
+        describedBy: this.describedByFor(campaign.id, action, toggleErrors, resumeAdopted),
+        resumeAdopted,
+        resumeAdoptedReason: resumeAdopted ? campaignResumeAdoptedReason(this.platformLabels[campaign.platform] ?? 'the ad platform') : '',
+        budgetAvailable: budgetUnavailableReason === '',
+        budgetUnavailableReason,
+        budgetBlockedReason: this.budgetBlockedReasonFor(
+          conflicted,
+          pendingDirection !== undefined,
+          !!bidPending[campaign.id],
+          adSetBusy,
+          budgetPacing[campaign.id] === 'pending'
+        ),
+        budgetDailyOnly: isDailyOnlyBudgetPlatform(campaign.platform),
+        bidAvailable: bidUnavailableReason === '',
+        bidUnavailableReason,
+        bidBlockedReason: this.bidBlockedReasonFor(conflicted, pendingDirection !== undefined || !!budgetPending[campaign.id] || adSetBusy),
+        negativeKeywordsOffered,
+        negativeKeywordsAvailable: negativeKeywordsOffered && negativeKeywordsUnavailableReason === '',
+        negativeKeywordsUnavailableReason,
+        adSetsOffered,
+        adSetsAvailable: adSetsOffered && adSetsUnavailableReason === '',
+        adSetsUnavailableReason,
+        // From the row's own status, not the overlay-free index: a confirmed pause leaves it `paused`, still toggleable.
+        adSetEligibility: metaAdSetCampaignEligibility(status),
+        // Busy only while ANOTHER write is out: the panel itself shows its own pending ad set.
+        adSetsBlockedReason: this.adSetsBlockedReasonFor(
+          conflicted,
+          pendingDirection !== undefined || !!budgetPending[campaign.id] || !!bidPending[campaign.id]
+        ),
+        negativeKeywordsPlatform: negativeKeywordsOffered ? (campaign.platform as NegativeKeywordCampaignPlatform) : null,
+        keywordTargetingOffered,
+        keywordTargetingAvailable: keywordTargetingOffered && keywordTargetingUnavailableReason === '',
+        keywordTargetingUnavailableReason,
+        keywordTargetingPlatform: keywordTargetingOffered ? (campaign.platform as KeywordTargetingPlatform) : null,
       };
     });
   });
@@ -486,21 +860,22 @@ export class OptimizationTabComponent implements OnInit {
   protected readonly actionInProgress = signal<Record<string, boolean>>({});
   protected readonly actionResults = signal<Record<string, KeywordActionOutcome>>({});
   /**
+   * Keywords a confirmed REMOVE deleted on this page, by `keywordIdentityKey`. Recorded when the
+   * response lands, from the action that request carried, and never cleared by a re-read: Microsoft's
+   * keywords come from a finished saved report, which can still list a keyword after it is gone, and
+   * offering Pause/Remove on it again would act on nothing. Held by a root service scoped by the
+   * campaigns page, because this tab is destroyed on every tab switch.
+   */
+  private readonly removedKeywordsService = inject(CampaignRemovedKeywordsService);
+  protected readonly removedKeywords = this.removedKeywordsService.removed;
+  /**
    * Label and colour per outcome state, as lookup maps so the template does no work.
    *
    * The three states are not two with a variant: an UNCONFIRMED action may already have applied,
    * and a retried REMOVE is irreversible, so it must never read as "Failed".
    */
-  protected readonly OUTCOME_LABEL: Record<KeywordActionOutcome['state'], string> = {
-    done: 'Done',
-    unconfirmed: 'Unconfirmed',
-    failed: 'Failed',
-  };
-  protected readonly OUTCOME_CLASS: Record<KeywordActionOutcome['state'], string> = {
-    done: 'text-green-600',
-    unconfirmed: 'text-amber-600',
-    failed: 'text-red-600',
-  };
+  protected readonly OUTCOME_LABEL = KEYWORD_ACTION_OUTCOME_LABELS;
+  protected readonly OUTCOME_CLASS = KEYWORD_ACTION_OUTCOME_CLASSES;
 
   protected readonly activeFoundationSlug = computed(() => this.projectSlug());
 
@@ -509,6 +884,7 @@ export class OptimizationTabComponent implements OnInit {
     // lets `takeUntilDestroyed()` bind this component's `DestroyRef` without retaining the
     // subscription by hand. Deliberately not `ngOnInit` — `toObservable` would throw there.
     this.initConflictClearOnRefresh();
+    this.initBriefMetricsLoad();
 
     // skip(1) drops the emission toObservable fires immediately on subscribe — ngOnInit already
     // runs the initial load, so only later foundation switches should reach
@@ -535,7 +911,14 @@ export class OptimizationTabComponent implements OnInit {
    */
   protected toggleCampaign(row: CampaignRow): void {
     const campaign = row.campaign;
-    if (this.togglePending()[campaign.id]) {
+    // A budget change in flight on this row holds the same validator; a toggle sent alongside it
+    // would race it to the same `If-Match` and one of the two would 412.
+    if (this.togglePending()[campaign.id] || this.budgetPending()[campaign.id] || this.bidPending()[campaign.id] || this.adSetPending()[campaign.id]) {
+      return;
+    }
+    // An adopted campaign's Resume is `aria-disabled`, not `disabled`, so it stays focusable and a
+    // click still lands here. It does nothing: the reason is already stated beside the button.
+    if (row.resumeAdopted) {
       return;
     }
     // The template disables the button for these rows, so reaching here means the DOM and the
@@ -661,9 +1044,25 @@ export class OptimizationTabComponent implements OnInit {
           // Computed ABOVE the context guard because the toast below needs it. A failure the
           // operator caused is still theirs to hear about after they switch tabs — otherwise the
           // pause they think they submitted fails in silence, which is the whole defect.
-          const conflict = err instanceof HttpErrorResponse && err.status === 412;
-          const message = conflict ? CAMPAIGN_TOGGLE_CONFLICT_MESSAGE : CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
-          this.announceToggleFailure(campaignName, message);
+          //
+          // Classified by the SAME `classifyCampaignWriteFailure` the budget, bid and negative-keyword
+          // levers use, so all four agree: a 412 is a conflict, and any 4xx a definite refusal, only
+          // in the BFF's `{ error, code }` envelope; anything else (no answer, a proxy's own 4xx or
+          // 5xx, campaign-service's "unconfirmed") may have reached the platform and is never
+          // reported as "it is still running".
+          const outcome = classifyCampaignWriteFailure(err, {
+            conflict: CAMPAIGN_TOGGLE_CONFLICT_MESSAGE,
+            unconfirmed: CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES[direction],
+            failureFallback: CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction],
+          });
+          const conflict = outcome.state === 'conflict';
+          // A definite failure keeps the per-direction copy, which states which way it left the row,
+          // except a refused resume: its message already says so, and says where to resume instead.
+          let message = CAMPAIGN_TOGGLE_FAILURE_MESSAGES[direction];
+          if (outcome.state !== 'failed' || isCampaignResumeRefusal(err)) {
+            message = outcome.message;
+          }
+          this.announceToggleFailure(campaignName, message, outcome.state === 'unconfirmed' ? 'warn' : 'error');
           // Same guard as the success arm, and it matters more here: a 412 landing after a switch
           // would re-arm the conflict banner for a brief that was never conflicted, and add an id
           // that is not in the new list — so no delivery could ever clear it, because the per-row
@@ -694,6 +1093,524 @@ export class OptimizationTabComponent implements OnInit {
       });
   }
 
+  /** Opens the live-settings drift drawer for one row's campaign. */
+  protected openSettingsDrawer(row: CampaignRow): void {
+    this.settingsCampaign.set(row.campaign);
+    this.settingsDrawerVisible.set(true);
+  }
+
+  /** Opens or closes one row's budget editor. A change in flight keeps it open. */
+  protected toggleBudgetEditor(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.budgetPending()[id]) {
+      return;
+    }
+    if (this.budgetEditorOpen()[id]) {
+      this.closeBudgetEditor(id);
+      return;
+    }
+    if (!row.budgetAvailable) {
+      return;
+    }
+    this.budgetEditorOpen.update((open) => ({ ...open, [id]: true }));
+    this.readBudgetPacing(row);
+  }
+
+  protected closeBudgetEditor(campaignId: string): void {
+    if (this.budgetPending()[campaignId]) {
+      return;
+    }
+    this.budgetEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /** The editor's Cancel: closes it and returns focus to the row's disclosure button. */
+  protected cancelBudgetEditor(campaignId: string): void {
+    if (this.budgetPending()[campaignId]) {
+      return;
+    }
+    this.returnFocusToDisclosure(`campaign-budget-edit-${campaignId}`, `campaign-budget-panel-${campaignId}`);
+    this.closeBudgetEditor(campaignId);
+  }
+
+  /**
+   * Hands the operator the ONE control that resolves a monitor finding, reusing that control's
+   * own method and guards rather than a second copy of its logic.
+   *
+   * - `budget` opens the row's editor (or leaves it open) and focuses its amount. It never submits:
+   *   the change still needs the operator's own Save.
+   * - `pause_resume` runs the row toggle's own `toggleCampaign`, so the pending, conflict, platform
+   *   and deployment guards are the toggle's, unchanged — and only to PAUSE an active campaign.
+   * - `keywords` moves focus to the keyword actions of the campaign's platform (Google or Microsoft).
+   */
+  protected resolveFinding(finding: CampaignOptimizeFinding): void {
+    const row = finding.row;
+    if (row === null || finding.leverBlockedReason !== '') {
+      return;
+    }
+    switch (finding.lever) {
+      case 'budget':
+        this.openBudgetEditorFor(row);
+        return;
+      case 'pause_resume':
+        // Pause only: a finding never resumes spend, whatever the row's toggle offers right now.
+        if (row.action === 'pause') {
+          this.toggleCampaign(row);
+        }
+        return;
+      case 'keywords':
+        // The keyword table of the campaign's own platform: Microsoft keywords are their own table.
+        this.focusAfterRender(row.campaign.platform === 'microsoft-ads' ? 'optimization-microsoft-keywords' : 'optimization-wasted-keywords');
+        return;
+      case 'none':
+        return;
+    }
+  }
+
+  protected reloadFindings(): void {
+    this.briefMetricsReload.update((n) => n + 1);
+  }
+
+  /**
+   * Change one campaign's budget on its ad platform.
+   *
+   * The toggle's sibling, and deliberately built the same way: the row's freshest validator is
+   * sent as `If-Match`, the fresh one the response returns replaces it for the NEXT write on the
+   * row (budget or toggle), a 412 marks the row conflicted, and a response that outlives its
+   * (project, brief) writes nothing but the toast.
+   *
+   * The amount goes out exactly as the operator typed it, in the ad account's own currency. Every
+   * refusal upstream owns — the platform's minimum, a shared budget, a pacing mismatch, a currency
+   * or provenance problem — comes back as its own message and is shown verbatim. An outcome nobody
+   * could confirm is reported as such and never retried here: the change may already be applied,
+   * and only the operator, looking at the ad platform, can tell.
+   */
+  protected changeCampaignBudget(row: CampaignRow, change: CampaignBudgetChange): void {
+    const campaign = row.campaign;
+    const id = campaign.id;
+    if (this.budgetPending()[id] || this.togglePending()[id] || this.bidPending()[id] || this.adSetPending()[id]) {
+      return;
+    }
+    // The template withholds the editor for these rows; reaching here means the DOM and the
+    // computed disagreed, so refuse rather than send a change upstream would refuse anyway.
+    if (!row.budgetAvailable) {
+      this.budgetOutcome.update((o) => ({ ...o, [id]: { state: 'failed', message: row.budgetUnavailableReason } }));
+      return;
+    }
+    if (row.conflicted) {
+      this.budgetOutcome.update((o) => ({ ...o, [id]: { state: 'conflict', message: CAMPAIGN_BUDGET_CONFLICT_MESSAGE } }));
+      return;
+    }
+    // The FRESH etag first, for the reason `toggleCampaign` gives: an earlier write this session
+    // (a toggle or a budget change) already invalidated the one the row was read with.
+    const etag = this.toggledEtag()[id] ?? campaign.etag ?? '';
+    if (etag === '') {
+      this.budgetOutcome.update((o) => ({ ...o, [id]: { state: 'failed', message: 'This campaign cannot be changed until it is re-indexed.' } }));
+      return;
+    }
+
+    this.budgetPending.update((p) => ({ ...p, [id]: true }));
+    this.budgetOutcome.update((o) => this.omitKeys(o, [id]));
+    const dispatchedIn = this.contextGeneration;
+    const campaignName = campaign.campaign_name;
+
+    // `take(1)`, not `takeUntilDestroyed`, for the toggle's reason: a tab switch destroys this
+    // component, and aborting a budget write mid-flight would leave its outcome unknown with
+    // nothing shown. The toast carries the outcome past the component.
+    this.campaignService
+      .updateCampaignBudget({
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        campaignId: id,
+        budget: change.budget,
+        budgetType: change.budgetType,
+        etag,
+        // A wording hint for the BFF only (an X refusal explained in X's terms); never sent upstream.
+        // `budgetAvailable` already proved the platform is one of BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.
+        platform: campaign.platform as CampaignPlatform,
+      })
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.announceBudgetSuccess(campaignName, result.budget, result.budgetType);
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.budgetPending.update((p) => this.omitKeys(p, [id]));
+          this.confirmedBudget.update((c) => ({ ...c, [id]: { budget: result.budget, budgetType: result.budgetType } }));
+          this.returnFocusToDisclosure(`campaign-budget-edit-${id}`, `campaign-budget-panel-${id}`);
+          this.budgetEditorOpen.update((open) => this.omitKeys(open, [id]));
+          // The change bumped the row's version upstream. Without the fresh etag the next write on
+          // this row — another budget change, or a pause — would replay a dead validator and 412.
+          if (result.etag) {
+            this.toggledEtag.update((e) => ({ ...e, [id]: result.etag as string }));
+            if (this.listReadInFlight) {
+              this.etagsWrittenDuringRead.add(id);
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const outcome = campaignBudgetFailureOutcome(err);
+          this.announceBudgetFailure(campaignName, outcome);
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.budgetPending.update((p) => this.omitKeys(p, [id]));
+          this.budgetOutcome.update((o) => ({ ...o, [id]: outcome }));
+          // Same evidence as the toggle's 412: this view was read before a write it never saw, so
+          // the row's validator is dead for BOTH controls until a refresh proves it advanced.
+          if (outcome.state === 'conflict') {
+            this.conflictedCampaignIds.update((ids) => {
+              const next = new Set(ids);
+              next.add(id);
+              return next;
+            });
+          }
+        },
+      });
+  }
+
+  /** Opens or closes one row's bid editor. A change in flight keeps it open. */
+  protected toggleBidEditor(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.bidPending()[id]) {
+      return;
+    }
+    if (this.bidEditorOpen()[id]) {
+      this.closeBidEditor(id);
+      return;
+    }
+    if (!row.bidAvailable) {
+      return;
+    }
+    this.bidEditorOpen.update((open) => ({ ...open, [id]: true }));
+  }
+
+  protected closeBidEditor(campaignId: string): void {
+    if (this.bidPending()[campaignId]) {
+      return;
+    }
+    this.bidEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /** The editor's Cancel: closes it and returns focus to the row's disclosure button. */
+  protected cancelBidEditor(campaignId: string): void {
+    if (this.bidPending()[campaignId]) {
+      return;
+    }
+    this.returnFocusToDisclosure(`campaign-bid-edit-${campaignId}`, `campaign-bid-panel-${campaignId}`);
+    this.closeBidEditor(campaignId);
+  }
+
+  /**
+   * Opens or closes one row's negative-keyword editor (Google Ads, Microsoft Advertising, Reddit or X). A request in flight keeps it open,
+   * but does not keep a CLOSED one shut: after a remount the editor shows the request's progress.
+   */
+  protected toggleNegativesEditor(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.negativesEditorOpen()[id]) {
+      this.closeNegativesEditor(id);
+      return;
+    }
+    if (!row.negativeKeywordsAvailable) {
+      return;
+    }
+    this.negativesEditorOpen.update((open) => ({ ...open, [id]: true }));
+  }
+
+  protected closeNegativesEditor(campaignId: string): void {
+    if (this.negativesPending()[campaignId]) {
+      return;
+    }
+    this.negativesEditorOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /** Opens or closes one Reddit or X row's keyword-targeting panel. The panel itself refuses to close mid-removal. */
+  protected toggleTargetingPanel(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.targetingPanelOpen()[id]) {
+      this.closeTargetingPanel(id);
+      return;
+    }
+    if (!row.keywordTargetingAvailable) {
+      return;
+    }
+    this.targetingPanelOpen.update((open) => ({ ...open, [id]: true }));
+  }
+
+  protected closeTargetingPanel(campaignId: string): void {
+    if (this.targetingPending()[campaignId]) {
+      return;
+    }
+    this.targetingPanelOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /** The row note's Dismiss: forgets one campaign's settled negative-keyword result. */
+  protected dismissNegativesResult(campaignId: string): void {
+    this.negativeKeywordsService.dismiss(this.projectSlug(), this.briefId(), campaignId);
+  }
+
+  /** Opens or closes one Meta row's ad-set panel. A change in flight keeps it open. */
+  protected toggleAdSetsPanel(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (this.adSetsPanelOpen()[id]) {
+      this.closeAdSetsPanel(id);
+      return;
+    }
+    if (!row.adSetsAvailable) {
+      return;
+    }
+    this.adSetsPanelOpen.update((open) => ({ ...open, [id]: true }));
+  }
+
+  protected closeAdSetsPanel(campaignId: string): void {
+    if (this.adSetPending()[campaignId]) {
+      return;
+    }
+    this.adSetsPanelOpen.update((open) => this.omitKeys(open, [campaignId]));
+  }
+
+  /** The panel's Close: closes it and returns focus to the row's "Ad sets" disclosure, as the budget and bid editors do. */
+  protected cancelAdSetsPanel(campaignId: string): void {
+    if (this.adSetPending()[campaignId]) {
+      return;
+    }
+    this.returnFocusToDisclosure(`campaign-ad-sets-edit-${campaignId}`, `campaign-ad-sets-panel-${campaignId}`);
+    this.closeAdSetsPanel(campaignId);
+  }
+
+  /**
+   * Pause or resume one ad set of a Meta campaign.
+   *
+   * Built like the budget and bid changes, on the same row state: the row's freshest validator goes
+   * out as `If-Match`, the one the response returns replaces it (a change to the recorded ad set
+   * bumps the row's version), a 412 marks the row conflicted, and a response that outlives its
+   * (project, brief) writes nothing but the toast. One write per row at a time.
+   *
+   * NEVER retried. Whatever the answer, the panel re-reads the ad sets so the operator sees what
+   * Meta holds now: after a 412 (nothing was changed), after an unconfirmed outcome (it may or may
+   * not have been applied), and after a 409 that says the status WAS changed. After a PAUSE that
+   * came back unconfirmed, the panel shows campaign-service's advice to re-read
+   * `deliberately_paused`, and what the re-read shows.
+   */
+  protected changeMetaAdSetStatus(row: CampaignRow, request: MetaAdSetToggleRequest): void {
+    const campaign = row.campaign;
+    const id = campaign.id;
+    if (this.adSetPending()[id] || this.togglePending()[id] || this.budgetPending()[id] || this.bidPending()[id]) {
+      return;
+    }
+    const outcomeOf = (state: MetaAdSetToggleOutcome['state'], message: string): MetaAdSetToggleOutcome => ({
+      state,
+      message,
+      adSetId: request.adSetId,
+      adSetName: request.adSetName,
+      requestedStatus: request.status,
+    });
+    // The template disables the toggles for these rows; reaching here means the DOM and the
+    // computed disagreed, so refuse rather than send a change upstream would refuse anyway.
+    if (!row.adSetsAvailable) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', row.adSetsUnavailableReason) }));
+      return;
+    }
+    if (row.conflicted) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('conflict', META_AD_SET_BLOCKED_STALE_REASON) }));
+      return;
+    }
+    // The campaign's state refuses this direction (e.g. a resume under `created_degraded`): upstream
+    // would answer 409, so nothing is sent. The panel disables such an action; this is the backstop.
+    if (!metaAdSetDirectionAllowed(row.adSetEligibility, request.status)) {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', row.adSetEligibility.reason) }));
+      return;
+    }
+    const etag = this.toggledEtag()[id] ?? campaign.etag ?? '';
+    if (etag === '') {
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('failed', 'This campaign cannot be changed until it is re-indexed.') }));
+      return;
+    }
+
+    this.adSetPending.update((p) => ({ ...p, [id]: { adSetId: request.adSetId, kind: request.kind } }));
+    this.adSetOutcome.update((o) => this.omitKeys(o, [id]));
+    const dispatchedIn = this.contextGeneration;
+    const campaignName = campaign.campaign_name;
+    const verb = request.status === 'PAUSED' ? 'Paused' : 'Resumed';
+    const unconfirmed = (message: string): void => {
+      this.announceAdSetFailure(campaignName, request.adSetName, 'unconfirmed', message);
+      if (dispatchedIn !== this.contextGeneration) {
+        return;
+      }
+      this.adSetPending.update((p) => this.omitKeys(p, [id]));
+      this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf('unconfirmed', message) }));
+      this.bumpAdSetsReload(id);
+      this.holdUnknownValidator(id, etag);
+    };
+
+    // `take(1)`, not `takeUntilDestroyed`, for the toggle's reason: a tab switch destroys this
+    // component, and aborting a write on a live ad set would leave its outcome unknown with nothing
+    // shown. The toast carries the outcome past the component.
+    this.campaignService
+      .updateMetaAdSetStatus({
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        campaignId: id,
+        adSetId: request.adSetId,
+        status: request.status,
+        etag,
+      })
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          // A 2xx counts as applied only when it answers THIS request: the same ad set, the same
+          // status, and an outcome campaign-service defines. Anything else proves nothing about what
+          // Meta holds, so it takes the unconfirmed path: no success toast, and its etag is not
+          // adopted (it may not be this row's).
+          const answers =
+            !!result &&
+            result.ad_set_id === request.adSetId &&
+            result.requested_status === request.status &&
+            (result.outcome === 'APPLIED' || result.outcome === 'ALREADY_IN_STATE');
+          if (!answers) {
+            unconfirmed(META_AD_SET_UNCONFIRMED_MESSAGE);
+            return;
+          }
+          const already = result.outcome === 'ALREADY_IN_STATE';
+          const message = this.adSetSuccessMessage(request, already, verb);
+          this.messageService.add({ severity: 'success', summary: `Ad set changed in ${campaignName}`, detail: message, life: 5000 });
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.adSetPending.update((p) => this.omitKeys(p, [id]));
+          this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf(already ? 'already' : 'applied', message) }));
+          this.bumpAdSetsReload(id);
+          // A pause or resume of the recorded ad set bumped the row's version. Without the fresh
+          // etag the next write on this row would replay a dead validator and 412.
+          if (result.etag) {
+            this.toggledEtag.update((e) => ({ ...e, [id]: result.etag as string }));
+            if (this.listReadInFlight) {
+              this.etagsWrittenDuringRead.add(id);
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const failure = metaAdSetFailureOutcome(err);
+          if (failure.state === 'unconfirmed') {
+            unconfirmed(failure.message);
+            return;
+          }
+          this.announceAdSetFailure(campaignName, request.adSetName, failure.state, failure.message);
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.adSetPending.update((p) => this.omitKeys(p, [id]));
+          this.adSetOutcome.update((o) => ({ ...o, [id]: outcomeOf(failure.state, failure.message) }));
+          // Re-read, never retry: the operator decides from what Meta now holds.
+          this.bumpAdSetsReload(id);
+          // Same evidence as the toggle's 412: this view's validator is dead for every control on the row.
+          if (failure.state === 'conflict') {
+            this.conflictedCampaignIds.update((ids) => {
+              const next = new Set(ids);
+              next.add(id);
+              return next;
+            });
+          } else if (!metaAdSetWriteLeftValidatorKnown(err)) {
+            // A 409 that says the status WAS changed, a definite 503 that settled the record, any
+            // 5xx: each may have bumped the row's version, so its validator is unknown too.
+            this.holdUnknownValidator(id, etag);
+          }
+        },
+      });
+  }
+
+  /**
+   * Change one campaign's manual max CPC bid on its ad platform.
+   *
+   * The budget change's sibling, built the same way and on the same row state: the freshest
+   * validator goes out as `If-Match`, the fresh one the response returns replaces it for the next
+   * write on the row (bid, budget or toggle), a 412 marks the row conflicted, and a response that
+   * outlives its (project, brief) writes nothing but the toast. One write per row at a time, since
+   * every write needs the same validator.
+   *
+   * The bid goes out exactly as typed, in the ad account's own currency. Upstream's refusals are
+   * shown verbatim — including its neutral 409 when the campaign is not on a manual per-click bid.
+   * An outcome nobody could confirm is reported as possibly applied and never retried here.
+   */
+  protected changeCampaignBid(row: CampaignRow, change: CampaignBidChange): void {
+    const campaign = row.campaign;
+    const id = campaign.id;
+    if (this.bidPending()[id] || this.budgetPending()[id] || this.togglePending()[id] || this.adSetPending()[id]) {
+      return;
+    }
+    if (!row.bidAvailable) {
+      this.bidOutcome.update((o) => ({ ...o, [id]: { state: 'failed', message: row.bidUnavailableReason } }));
+      return;
+    }
+    if (row.conflicted) {
+      this.bidOutcome.update((o) => ({ ...o, [id]: { state: 'conflict', message: CAMPAIGN_BID_CONFLICT_MESSAGE } }));
+      return;
+    }
+    const etag = this.toggledEtag()[id] ?? campaign.etag ?? '';
+    if (etag === '') {
+      this.bidOutcome.update((o) => ({ ...o, [id]: { state: 'failed', message: 'This campaign cannot be changed until it is re-indexed.' } }));
+      return;
+    }
+
+    this.bidPending.update((p) => ({ ...p, [id]: true }));
+    this.bidOutcome.update((o) => this.omitKeys(o, [id]));
+    const dispatchedIn = this.contextGeneration;
+    const campaignName = campaign.campaign_name;
+
+    // `take(1)`, not `takeUntilDestroyed`, for the toggle's reason: a tab switch must not abort a
+    // write against live spend. The toast carries the outcome past the component.
+    this.campaignService
+      .updateCampaignBid({
+        projectSlug: this.projectSlug(),
+        briefId: this.briefId(),
+        campaignId: id,
+        bid: change.bid,
+        bidType: DEFAULT_CAMPAIGN_BID_TYPE,
+        etag,
+      })
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          this.announceBidSuccess(campaignName, result.bid);
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.bidPending.update((p) => this.omitKeys(p, [id]));
+          this.confirmedBid.update((c) => ({ ...c, [id]: { bid: result.bid, version: campaignEtagVersion(result.etag) } }));
+          this.returnFocusToDisclosure(`campaign-bid-edit-${id}`, `campaign-bid-panel-${id}`);
+          this.bidEditorOpen.update((open) => this.omitKeys(open, [id]));
+          // The change bumped the row's version upstream; the next write on the row needs this one.
+          if (result.etag) {
+            this.toggledEtag.update((e) => ({ ...e, [id]: result.etag as string }));
+            if (this.listReadInFlight) {
+              this.etagsWrittenDuringRead.add(id);
+            }
+          }
+        },
+        error: (err: unknown) => {
+          const outcome = campaignBidFailureOutcome(err);
+          this.announceBidFailure(campaignName, outcome);
+          if (dispatchedIn !== this.contextGeneration) {
+            return;
+          }
+          this.bidPending.update((p) => this.omitKeys(p, [id]));
+          this.bidOutcome.update((o) => ({ ...o, [id]: outcome }));
+          if (outcome.state === 'conflict') {
+            this.conflictedCampaignIds.update((ids) => {
+              const next = new Set(ids);
+              next.add(id);
+              return next;
+            });
+          }
+        },
+      });
+  }
+
+  /** A pause/remove asked for on a Microsoft keyword row: the Google path, sent with `platform: 'microsoft-ads'`. */
+  protected onMicrosoftKeywordAction(request: MicrosoftKeywordActionRequest): void {
+    this.executeKeywordAction(request.keyword, request.action, 'microsoft-ads');
+  }
+
   protected setDateRange(days: DateRangeOption): void {
     this.selectedDays.set(days);
     this.fetchData();
@@ -703,6 +1620,13 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   protected refresh(): void {
+    // A refresh re-reads the platform, so settled negative-keyword results are stale; one still in
+    // flight is kept by the service.
+    this.negativeKeywordsService.clearSettled(this.projectSlug(), this.briefId());
+    this.keywordTargetingService.clearSettled(this.projectSlug(), this.briefId());
+    this.reloadFindings();
+    this.microsoftKeywordsReload.update((n) => n + 1);
+    this.redditKeywordsReload.update((n) => n + 1);
     this.fetchData();
     this.fetchLinkedInOptimization();
     this.fetchRedditOptimization();
@@ -714,6 +1638,7 @@ export class OptimizationTabComponent implements OnInit {
     this.keywordsSub?.unsubscribe();
     this.loading.set(true);
     this.error.set(null);
+    this.googleRestricted.set(false);
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
@@ -725,19 +1650,26 @@ export class OptimizationTabComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
+          this.loading.set(false);
+          if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
+            this.googleRestricted.set(true);
+            this.monitorData.set(null);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
+          this.errorRefused.set(err instanceof HttpErrorResponse && err.status === 403);
           this.error.set(extractErrorMessage(err, 'Failed to load optimization data'));
-          this.loading.set(false);
         },
       });
 
     this.keywordsLoading.set(true);
     this.keywordsData.set(null);
     this.keywordsError.set(null);
+    this.keywordsRestricted.set(false);
     this.keywordsSub = this.campaignService
       .getKeywords(this.activeFoundationSlug(), days)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -747,6 +1679,12 @@ export class OptimizationTabComponent implements OnInit {
           this.keywordsLoading.set(false);
         },
         error: (err) => {
+          if ((err as { error?: { code?: unknown } | null } | null)?.error?.code === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE) {
+            this.keywordsData.set(null);
+            this.keywordsRestricted.set(true);
+            this.keywordsLoading.set(false);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
@@ -863,14 +1801,26 @@ export class OptimizationTabComponent implements OnInit {
       });
   }
 
-  protected executeKeywordAction(kw: KeywordMetrics, action: KeywordActionType): void {
-    const key = `${kw.adGroupId}-${kw.criterionId}`;
+  /**
+   * Pause or remove one keyword. `platform` is sent only for Microsoft Advertising: a Google
+   * request keeps the exact body it always had (the BFF defaults an absent platform to Google).
+   * The action state is keyed by `keywordActionKey`, so a Microsoft id cannot collide with a Google one.
+   */
+  protected executeKeywordAction(
+    kw: Pick<KeywordMetrics, 'campaignId' | 'adGroupId' | 'criterionId'>,
+    action: KeywordActionType,
+    platform: KeywordActionPlatform = 'google-ads'
+  ): void {
+    // The project this request is sent from: a removal is recorded only if the page is still there.
+    const sentFrom = this.projectSlug();
+    const key = keywordActionKey(platform, kw.adGroupId, kw.criterionId);
     this.actionInProgress.update((map) => ({ ...map, [key]: true }));
+    const item = { campaignId: kw.campaignId, adGroupId: kw.adGroupId, criterionId: kw.criterionId, action };
 
     this.campaignService
       .executeKeywordActions(this.activeFoundationSlug(), {
         action,
-        keywords: [{ campaignId: kw.campaignId, adGroupId: kw.adGroupId, criterionId: kw.criterionId, action }],
+        keywords: [platform === 'google-ads' ? item : { ...item, platform }],
       })
       // `take(1)`, NOT `takeUntilDestroyed` -- the same call the campaign toggle above makes, for
       // the same reason. This component lives inside `@case ('optimization')`, so switching tab
@@ -887,16 +1837,22 @@ export class OptimizationTabComponent implements OnInit {
         next: (res) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
           const result = res.results[0];
-          const outcome = this.positionalOutcome(result);
+          const outcome: KeywordActionOutcome = { ...this.positionalOutcome(result), action };
           this.actionResults.update((map) => ({
             ...map,
             [key]: outcome,
           }));
+          // `removedKeywords` derives from the outcome's own `action`, the one source of truth for
+          // what this response answered.
+          if (outcome.action === 'remove' && outcome.state === 'done') {
+            const identity = keywordIdentityKey(platform, kw.campaignId, kw.adGroupId, kw.criterionId);
+            this.removedKeywordsService.markRemoved(sentFrom, identity);
+          }
           this.announceKeywordOutcome(action, 1, outcome.state, outcome.message);
         },
         error: (err) => {
           this.actionInProgress.update((map) => ({ ...map, [key]: false }));
-          const outcome = this.toTransportOutcome(err);
+          const outcome: KeywordActionOutcome = { ...this.toTransportOutcome(err), action };
           this.actionResults.update((map) => ({
             ...map,
             [key]: outcome,
@@ -1086,7 +2042,8 @@ export class OptimizationTabComponent implements OnInit {
       return false;
     }
     const message = result.message.toLowerCase();
-    return message.includes('unconfirmed') || message.includes('confirmation did not match');
+    // "could not be confirmed" is the Microsoft wording (`MICROSOFT_KEYWORD_ACTION_OUTCOME_UNCONFIRMED`).
+    return message.includes('unconfirmed') || message.includes('confirmation did not match') || message.includes('could not be confirmed');
   }
 
   private loadForActiveFoundation(): void {
@@ -1132,6 +2089,7 @@ export class OptimizationTabComponent implements OnInit {
     // needs clearing too — otherwise action items/campaigns from the OLD foundation render under
     // the new one until the new fetch resolves (or indefinitely if it fails).
     this.monitorData.set(null);
+    this.googleRestricted.set(false);
 
     this.fetchData();
 
@@ -1197,6 +2155,191 @@ export class OptimizationTabComponent implements OnInit {
           this.metaError.set(extractErrorMessage(httpErr, 'Failed to load Meta accounts'));
         },
       });
+  }
+
+  private initBriefMetricsRowsById(): Signal<Partial<Record<string, BriefMetricsRow>>> {
+    return computed(() => {
+      const byId: Partial<Record<string, BriefMetricsRow>> = {};
+      for (const row of this.briefMetrics()?.rows ?? []) {
+        byId[row.campaign_id] = row;
+      }
+      return byId;
+    });
+  }
+
+  /**
+   * Reads the brief's metrics for its action items, once per (project, brief) and on Refresh.
+   *
+   * `switchMap`, so a read for an abandoned brief is cancelled rather than landing over the new
+   * one. Errors are caught INSIDE the switch so one failed read does not end the stream and leave
+   * every later context unread.
+   */
+  private initBriefMetricsLoad(): void {
+    toObservable(computed(() => ({ projectSlug: this.projectSlug(), briefId: this.briefId(), reload: this.briefMetricsReload() })))
+      .pipe(
+        switchMap(({ projectSlug, briefId }) => {
+          this.briefMetrics.set(null);
+          // Both are preconditions of the route; the BFF refuses either empty with a 400.
+          if (projectSlug === '' || briefId === '') {
+            this.briefMetricsState.set('idle');
+            return EMPTY;
+          }
+          this.briefMetricsState.set('loading');
+          return this.campaignService.getBriefMetrics(projectSlug, briefId).pipe(
+            map((metrics): BriefMetrics | null => metrics),
+            catchError((error: unknown) => {
+              console.error('Failed to load brief metrics for the Optimize tab findings:', error);
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((metrics) => {
+        this.briefMetrics.set(metrics);
+        this.briefMetricsState.set(metrics === null ? 'error' : 'loaded');
+      });
+  }
+
+  /**
+   * Per campaign id of THIS (project, brief), whether its negative-keyword request matches `test`.
+   * The root service holds every scope's requests; only this tab's are read back.
+   */
+  private initNegativesFlag(test: (request: CampaignNegativeKeywordsRequestState) => boolean): Signal<Record<string, boolean>> {
+    return computed(() => {
+      const prefix = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), '');
+      const flags: Record<string, boolean> = {};
+      for (const [key, request] of Object.entries(this.negativeKeywordsService.requests())) {
+        if (key.startsWith(prefix) && test(request)) {
+          flags[key.slice(prefix.length)] = true;
+        }
+      }
+      return flags;
+    });
+  }
+
+  /** Per campaign id of THIS (project, brief), whether its keyword-targeting removal is in flight. */
+  private initTargetingPending(): Signal<Record<string, boolean>> {
+    return computed(() => {
+      const prefix = campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), '');
+      const flags: Record<string, boolean> = {};
+      for (const [key, removal] of Object.entries(this.keywordTargetingService.removals())) {
+        if (key.startsWith(prefix) && removal.pending) {
+          flags[key.slice(prefix.length)] = true;
+        }
+      }
+      return flags;
+    });
+  }
+
+  private initRedditCampaignNames(): Signal<Record<string, string>> {
+    return computed(() => {
+      const names: Record<string, string> = {};
+      for (const campaign of this.briefCampaigns() ?? []) {
+        if (campaign.platform === 'reddit-ads' && typeof campaign.platform_campaign_id === 'string' && campaign.platform_campaign_id !== '') {
+          names[campaign.platform_campaign_id] = campaign.campaign_name;
+        }
+      }
+      return names;
+    });
+  }
+
+  private initRedditNegativeTargets(): Signal<Record<string, RedditKeywordNegativeTarget> | null> {
+    return computed(() => {
+      // `null` while the campaign list is (re)loading: unknown, not empty. The keyword table waits it out
+      // rather than reading an in-flight reload as every campaign leaving the negative-keyword lever.
+      // A FAILED read is not loading, and nothing will end the wait, so it offers no campaign: a waiting
+      // add then says "Not sent" and releases its campaign instead of holding it until a retry.
+      const rows = this.campaignRows();
+      if (rows === null) {
+        return this.campaignsUnavailable() ? {} : null;
+      }
+      const targets: Record<string, RedditKeywordNegativeTarget> = {};
+      const ambiguous = new Set<string>();
+      for (const row of rows) {
+        const redditId = row.campaign.platform_campaign_id;
+        if (row.negativeKeywordsPlatform !== 'reddit-ads' || !row.negativeKeywordsAvailable || typeof redditId !== 'string' || redditId === '') {
+          continue;
+        }
+        if (Object.hasOwn(targets, redditId) || ambiguous.has(redditId)) {
+          ambiguous.add(redditId);
+          delete targets[redditId];
+          continue;
+        }
+        targets[redditId] = { campaignId: row.campaign.id, campaignName: row.campaign.campaign_name };
+      }
+      return targets;
+    });
+  }
+
+  private initFindings(): Signal<CampaignOptimizeFinding[]> {
+    return computed(() => {
+      const items = this.briefMetrics()?.action_items ?? [];
+      const rowsById = new Map((this.campaignRows() ?? []).map((row) => [row.campaign.id, row]));
+      const budgetPending = this.budgetPending();
+      const togglePending = this.togglePending();
+      const bidPending = this.bidPending();
+      return items.map((item) => {
+        const row = rowsById.get(item.campaign_id) ?? null;
+        // The row's platform when the row is known: it is what the control itself is gated on.
+        const lever: CampaignOptimizeLever = row === null ? 'none' : campaignActionItemLever(item.rule, row.campaign.platform);
+        const campaignName = row?.campaign.campaign_name ?? 'A campaign not in the list below';
+        let leverLabel = '';
+        let leverBlockedReason = '';
+        if (row !== null && lever === 'budget') {
+          leverLabel = CAMPAIGN_OPTIMIZE_LEVER_LABELS.budget;
+          leverBlockedReason = row.budgetAvailable ? '' : row.budgetUnavailableReason;
+          if (leverBlockedReason === '' && budgetPending[row.campaign.id]) {
+            leverBlockedReason = 'A budget change for this campaign is in progress.';
+          }
+        } else if (row !== null && lever === 'pause_resume' && row.action === 'resume') {
+          // A `zero_delivery` finding only ever offers PAUSE. Offering the row's current toggle
+          // label meant that once the finding had paused the campaign it offered "Resume", and one
+          // more click restarted spend on a campaign flagged for delivering nothing. The lever
+          // stays `pause_resume` (NOT `none`, which renders "No control for this in LFX One" over a
+          // row that has one): still labelled Pause, disabled with the already-paused reason, and
+          // `resolveFinding` refuses a blocked finding and only ever toggles a row offering Pause.
+          leverLabel = CAMPAIGN_TOGGLE_LABELS.pause;
+          leverBlockedReason = CAMPAIGN_FINDING_ALREADY_PAUSED_REASON;
+        } else if (row !== null && lever === 'pause_resume') {
+          // `pause`, or `unavailable` (shown disabled with the row's reason): the label is always
+          // Pause, never the row's toggle word.
+          leverLabel = CAMPAIGN_TOGGLE_LABELS.pause;
+          leverBlockedReason = this.toggleBlockedReasonFor(
+            row,
+            !!togglePending[row.campaign.id] || !!budgetPending[row.campaign.id] || !!bidPending[row.campaign.id]
+          );
+        } else if (lever === 'keywords') {
+          leverLabel = CAMPAIGN_OPTIMIZE_LEVER_LABELS.keywords;
+        }
+        return {
+          key: `${item.campaign_id}-${item.rule}`,
+          item,
+          row,
+          campaignName,
+          platformLabel: this.platformLabels[item.platform] ?? item.platform,
+          lever,
+          leverLabel,
+          leverAriaLabel: leverLabel === '' ? '' : `${leverLabel} ${campaignName}`,
+          leverBlockedReason,
+        };
+      });
+    });
+  }
+
+  private initFindingsEmptyMessage(): Signal<string> {
+    return computed(() => {
+      const metrics = this.briefMetrics();
+      if (metrics === null) {
+        return '';
+      }
+      const total = metrics.rows.length;
+      // Unreadable rows raise no items, so an empty list only covers the rows that were measured.
+      if (metrics.ok_count < total) {
+        return `Monitor flagged nothing on the ${metrics.ok_count} of ${total} campaigns it could measure. The others raise no findings until they can be read.`;
+      }
+      return "Monitor flagged nothing on this brief's campaigns.";
+    });
   }
 
   /**
@@ -1267,6 +2410,25 @@ export class OptimizationTabComponent implements OnInit {
         // for rows still on screen; here those rows are gone, and keeping it would overlay one
         // brief's confirmed statuses onto another brief's ids if they ever collide.
         this.toggledStatus.set({});
+        // The budget state belongs to the abandoned rows for the same reasons.
+        this.budgetEditorOpen.set({});
+        this.budgetPending.set({});
+        this.budgetOutcome.set({});
+        this.confirmedBudget.set({});
+        this.budgetPacing.set({});
+        this.bidEditorOpen.set({});
+        this.bidPending.set({});
+        this.bidOutcome.set({});
+        this.confirmedBid.set({});
+        // Negative-keyword requests are keyed by (project, brief, campaign) in the root service, and
+        // the campaigns page (which stays mounted across tabs) scopes them; see `setScope`.
+        this.negativesEditorOpen.set({});
+        this.adSetsPanelOpen.set({});
+        this.adSetPending.set({});
+        this.adSetOutcome.set({});
+        this.adSetsReload.set({});
+        this.validatorHolds.clear();
+        this.targetingPanelOpen.set({});
         this.lastDeliveredEtags = {};
         this.hasDeliveredList = false;
         this.etagsWrittenDuringRead.clear();
@@ -1280,10 +2442,26 @@ export class OptimizationTabComponent implements OnInit {
           // The parent has begun a read. Everything written from here until rows land is
           // concurrent with it.
           this.listReadInFlight = true;
+          // A read that begins after a hold may answer it (if its etag moved), and a Refresh is also
+          // the operator's cue to ask campaign-service again for the authoritative row.
+          for (const [id, hold] of this.validatorHolds) {
+            hold.readStarted = true;
+            this.confirmValidator(id);
+          }
           return;
         }
         const readWasInFlight = this.listReadInFlight;
         this.listReadInFlight = false;
+        // The index releases a hold only when its etag is PAST the one the write was sent with, on a
+        // read that began after THIS hold was created (`readStarted` is per hold, so a read begun for
+        // an earlier, released hold never answers a newer one). An unchanged — or older — etag may be
+        // the index lagging the write.
+        for (const row of rows) {
+          const hold = this.validatorHolds.get(row.id);
+          if (hold?.readStarted && this.indexedEtagIsPast(row.etag, hold.preWriteEtag)) {
+            this.releaseValidatorHold(row.id, hold.id, null);
+          }
+        }
 
         const delivered: Record<string, string | undefined> = {};
         for (const row of rows) {
@@ -1302,7 +2480,16 @@ export class OptimizationTabComponent implements OnInit {
         // Only rows whose indexed etag actually changed. An unchanged etag means the index has not
         // caught up with the write that caused the 412, so this row's cached validator is still
         // the best one available and its conflict is still live.
-        const advanced = rows.filter((row) => row.etag !== undefined && row.etag !== this.lastDeliveredEtags[row.id]).map((row) => row.id);
+        //
+        // And only when the index is not BEHIND a validator this session confirmed. A confirmed
+        // write (a pause, a budget or bid change) leaves its etag in `toggledEtag` and its status in
+        // `toggledStatus`; an index that moved since the last delivery but is still older than that
+        // etag has not caught up with it, and clearing on it would replace a confirmed "paused"
+        // with the index's older "active" and offer Pause on a paused campaign.
+        const cachedEtags = this.toggledEtag();
+        const advanced = rows
+          .filter((row) => row.etag !== undefined && row.etag !== this.lastDeliveredEtags[row.id] && !this.indexedEtagIsBehind(row.etag, cachedEtags[row.id]))
+          .map((row) => row.id);
         // MERGED over the previous baseline rather than replacing it, so a row this delivery
         // OMITTED keeps the etag it was last seen at.
         //
@@ -1367,6 +2554,12 @@ export class OptimizationTabComponent implements OnInit {
             // it on every delivery.
             return stillListed.size === ids.size ? ids : stillListed;
           });
+          // A held row that a complete list no longer carries is gone: nothing is left to hold.
+          for (const id of [...this.validatorHolds.keys()]) {
+            if (!(id in delivered)) {
+              this.validatorHolds.delete(id);
+            }
+          }
         }
       });
   }
@@ -1425,11 +2618,11 @@ export class OptimizationTabComponent implements OnInit {
    * that is still spending money. A message that disappears on its own is the wrong affordance
    * for that — the operator has to dismiss it, which is the acknowledgement the failure warrants.
    */
-  private announceToggleFailure(campaignName: string, message: string): void {
+  private announceToggleFailure(campaignName: string, message: string, severity: 'warn' | 'error' = 'error'): void {
     // Same single-surface rule. The row's inline failure text is now a plain `aria-describedby`
     // target rather than a `role="alert"`, so this failure is announced exactly once — by the
     // toast — and the inline copy remains readable on demand as the button's description.
-    this.messageService.add({ severity: 'error', summary: campaignName, detail: message, sticky: true });
+    this.messageService.add({ severity, summary: campaignName, detail: message, sticky: true });
   }
 
   /**
@@ -1475,7 +2668,9 @@ export class OptimizationTabComponent implements OnInit {
    * interleaving it would catch is either empty or already covered.
    */
   private clearConflictStateFor(campaignIds: string[]): void {
-    const clearable = campaignIds;
+    // A row held on an unknown validator is released only by `releaseValidatorHold`, never by a
+    // refresh that merely saw its indexed etag move against the previous delivery.
+    const clearable = campaignIds.filter((id) => !this.validatorHolds.has(id));
     if (clearable.length === 0) {
       return;
     }
@@ -1502,6 +2697,73 @@ export class OptimizationTabComponent implements OnInit {
     // and clearing the validator while keeping the status it was minted with is what let the row
     // render a stale `paused` over a newer authoritative row.
     this.toggledStatus.update((statuses) => this.omitKeys(statuses, clearable));
+    // A budget 412's message goes with the conflict it reported. Any OTHER outcome stays: an
+    // unconfirmed change is not resolved by the index moving, which may only reflect it, and the
+    // operator still has to verify it in the ad platform.
+    const conflictOutcomes = clearable.filter((id) => this.budgetOutcome()[id]?.state === 'conflict');
+    this.budgetOutcome.update((outcomes) => this.omitKeys(outcomes, conflictOutcomes));
+    const bidConflictOutcomes = clearable.filter((id) => this.bidOutcome()[id]?.state === 'conflict');
+    this.bidOutcome.update((outcomes) => this.omitKeys(outcomes, bidConflictOutcomes));
+    const adSetConflictOutcomes = clearable.filter((id) => this.adSetOutcome()[id]?.state === 'conflict');
+    this.adSetOutcome.update((outcomes) => this.omitKeys(outcomes, adSetConflictOutcomes));
+  }
+
+  /** Opens one row's budget editor for a finding (leaving it open if it already is) and focuses it. */
+  private openBudgetEditorFor(row: CampaignRow): void {
+    const id = row.campaign.id;
+    if (!row.budgetAvailable) {
+      return;
+    }
+    if (!this.budgetEditorOpen()[id]) {
+      this.budgetEditorOpen.update((open) => ({ ...open, [id]: true }));
+    }
+    this.readBudgetPacing(row);
+    this.focusAfterRender(`campaign-budget-amount-${id}`);
+  }
+
+  /**
+   * Focuses an element by id once the pending render has drawn it.
+   *
+   * `getElementById` rather than a `#id` selector: campaign ids are UUIDs, which may begin with a
+   * digit and are then not valid CSS id selectors. `afterNextRender` never runs on the server.
+   */
+  private focusAfterRender(elementId: string): void {
+    afterNextRender(
+      () => {
+        this.document.getElementById(elementId)?.focus();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * Returns focus to a row's editor disclosure once its panel closes, so a keyboard user is not
+   * dropped to the top of the page. Only when focus is still in the panel (or was lost to the body):
+   * a save that lands after the operator moved on must not pull focus back.
+   */
+  private returnFocusToDisclosure(disclosureId: string, panelId: string): void {
+    const active = this.document.activeElement;
+    if (active && active !== this.document.body && !this.document.getElementById(panelId)?.contains(active)) {
+      return;
+    }
+    this.focusAfterRender(disclosureId);
+  }
+
+  /**
+   * Why the row's toggle cannot be used right now, or `''` — the same conditions its own button is
+   * disabled on, so the finding's lever and the row control can never disagree.
+   */
+  private toggleBlockedReasonFor(row: CampaignRow, busy: boolean): string {
+    if (row.action === 'unavailable') {
+      return row.unavailableReason;
+    }
+    if (row.conflicted) {
+      return CAMPAIGN_TOGGLE_CONFLICT_MESSAGE;
+    }
+    if (busy) {
+      return 'A change to this campaign is in progress.';
+    }
+    return '';
   }
 
   /** A copy of `source` without the given keys. Returns `source` itself when nothing is dropped. */
@@ -1517,6 +2779,37 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
+   * The bid this session confirmed for the row, while it is still the newest thing known about the
+   * row's bid. The index is asynchronous, so right after a change it still holds the old bid — the
+   * confirmed one wins only while the indexed version is STRICTLY OLDER than the version the write
+   * returned. At that version the index has caught up with this write; past it, someone may have
+   * changed the bid since. Either way the indexed value wins. Either version unparseable: the confirmed bid stands, as it did before versions
+   * were compared. `confirmedBid` itself is cleared only when the project or brief changes.
+   */
+  private currentConfirmedBid(campaign: CampaignIndexDoc, confirmed: CampaignConfirmedBid | undefined): number | null {
+    if (confirmed === undefined) {
+      return null;
+    }
+    const indexed = campaignEtagVersion(campaign.etag);
+    if (confirmed.version !== null && indexed !== null && indexed >= confirmed.version) {
+      return null;
+    }
+    return confirmed.bid;
+  }
+
+  /**
+   * The row's recorded-bidding line. A current confirmed bid (see `currentConfirmedBid`) wins and
+   * reads as manual — the bid lever succeeds only on a manual per-click strategy. Otherwise the
+   * indexed `bidding_strategy` / `max_cpc_bid`.
+   */
+  private biddingSummaryFor(campaign: CampaignIndexDoc, confirmedBidAmount: number | null): string {
+    if (confirmedBidAmount !== null) {
+      return campaignBiddingSummary(campaign.platform, 'manual', confirmedBidAmount);
+    }
+    return campaignBiddingSummary(campaign.platform, campaign.bidding_strategy, campaign.max_cpc_bid);
+  }
+
+  /**
    * Why a row's toggle is disabled, in the order the reasons OVERRIDE one another.
    *
    * Deployment first, then platform, then status — strongest refusal wins, because a row can be
@@ -1527,16 +2820,383 @@ export class OptimizationTabComponent implements OnInit {
    * Ordered `if`s rather than a chained ternary: the repo forbids nested ternaries, and the
    * precedence is the whole point of this function rather than an incidental shape.
    */
-  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean): string {
+  private unavailableReasonFor(status: string, deploymentDisabled: boolean, platformUnsupported: boolean, platform: string): string {
     if (deploymentDisabled) {
       return CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON;
     }
     if (platformUnsupported) {
       return CAMPAIGN_UNAVAILABLE_PLATFORM_REASON;
     }
+    if (campaignResumeWithheldForPlatform(status, platform)) {
+      return CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON;
+    }
     // `status` arrives normalized from `campaignRows`; no `.toLowerCase()` here, which is
     // exactly the call that threw on a non-string wire value.
     return CAMPAIGN_UNAVAILABLE_REASONS[status] ?? CAMPAIGN_UNAVAILABLE_DEFAULT_REASON;
+  }
+
+  /**
+   * Why a row cannot offer the budget editor at all, or `''` when it can.
+   *
+   * Platform first: a platform without budget-write support upstream is refused whatever the
+   * campaign's state. Then provisioning: with no `platform_campaign_id` there is no budget on the
+   * platform to change, which upstream refuses with 409. A removed campaign has nothing to change.
+   * NOT gated on the toggle's deployment flag or its status sets — the budget route has neither,
+   * and a paused campaign's budget is still changeable.
+   */
+  private budgetUnavailableReasonFor(campaign: CampaignIndexDoc, status: string, pacing: CampaignBudgetPacingRead | undefined): string {
+    if (typeof campaign.platform !== 'string' || !BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(campaign.platform)) {
+      return CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON;
+    }
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    // A daily-only platform (X) reporting a lifetime budget: every change upstream accepts is daily,
+    // so each submit would be a 409. `pacing` is only ever set for daily-only platforms.
+    if (pacing === 'lifetime') {
+      return CAMPAIGN_BUDGET_X_LIFETIME_REASON;
+    }
+    return '';
+  }
+
+  /** Why an available budget editor cannot submit right now, or `''`. Stale validator first. */
+  private budgetBlockedReasonFor(conflicted: boolean, togglePending: boolean, bidPending: boolean, adSetPending: boolean, pacingPending: boolean): string {
+    if (conflicted) {
+      return CAMPAIGN_BUDGET_BLOCKED_STALE_REASON;
+    }
+    if (togglePending) {
+      return CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON;
+    }
+    if (bidPending) {
+      return CAMPAIGN_BUDGET_BLOCKED_BID_REASON;
+    }
+    if (adSetPending) {
+      return CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON;
+    }
+    if (pacingPending) {
+      return CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON;
+    }
+    return '';
+  }
+
+  /**
+   * Reads a daily-only-platform row's CURRENT budget pacing from its live settings, once per
+   * session: X takes daily budget changes only, and the index carries no budget, so without this a
+   * lifetime-budgeted X campaign would be offered a form whose every submit is a 409.
+   *
+   * A pure read of the settings readback (never persisted, no mutating call). While it is out the
+   * form cannot submit. `lifetime` withholds the editor with its reason; `daily` lets it submit. A
+   * failed read or an unreported pacing is `unknown` and does NOT block: upstream still refuses a
+   * campaign it cannot write, and its refusal is shown in full. `unknown` is re-read on the next
+   * opening, since a failure may have been transient.
+   *
+   * Bound to the tab's `DestroyRef`, unlike the mutations: it changes nothing upstream, so leaving
+   * the tab cancels the read rather than letting it write `budgetPacing` after teardown.
+   */
+  private readBudgetPacing(row: CampaignRow): void {
+    const campaign = row.campaign;
+    const id = campaign.id;
+    if (!isDailyOnlyBudgetPlatform(campaign.platform)) {
+      return;
+    }
+    const known = this.budgetPacing()[id];
+    if (known === 'pending' || known === 'daily' || known === 'lifetime') {
+      return;
+    }
+    this.budgetPacing.update((p) => ({ ...p, [id]: 'pending' }));
+    const askedIn = this.contextGeneration;
+    readCampaignBudgetPacing(this.campaignService.getCampaignSettings(this.projectSlug(), this.briefId(), id))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((pacing) => {
+        if (askedIn === this.contextGeneration) {
+          this.budgetPacing.update((p) => ({ ...p, [id]: pacing }));
+        }
+      });
+  }
+
+  /** Why a Meta row's ad-set panel cannot be opened, or `''`. Only asked for offered rows. */
+  private adSetsUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    return '';
+  }
+
+  /** Why an open ad-set panel cannot change an ad set right now, or `''`. Stale validator first. */
+  private adSetsBlockedReasonFor(conflicted: boolean, otherWritePending: boolean): string {
+    if (conflicted) {
+      return META_AD_SET_BLOCKED_STALE_REASON;
+    }
+    if (otherWritePending) {
+      return META_AD_SET_BLOCKED_BUSY_REASON;
+    }
+    return '';
+  }
+
+  /**
+   * Why a row cannot offer the bid editor at all, or `''` when it can. Platform first (Microsoft,
+   * Reddit, Meta and X only), then provisioning, then a removed campaign. Whether the campaign's bid
+   * STRATEGY takes a manual bid cannot be known here; upstream answers that with a 409.
+   */
+  private bidUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+    if (typeof campaign.platform !== 'string' || !BID_WRITABLE_CAMPAIGN_PLATFORMS.has(campaign.platform)) {
+      return CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON;
+    }
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    return '';
+  }
+
+  /** Why an available bid editor cannot submit right now, or `''`. Stale validator first. */
+  private bidBlockedReasonFor(conflicted: boolean, otherWritePending: boolean): string {
+    if (conflicted) {
+      return CAMPAIGN_BID_BLOCKED_STALE_REASON;
+    }
+    if (otherWritePending) {
+      return CAMPAIGN_BID_BLOCKED_BUSY_REASON;
+    }
+    return '';
+  }
+
+  /** Why a Reddit or X row's keyword-targeting panel is disabled, or `''`. Only asked for offered rows. */
+  private keywordTargetingUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return KEYWORD_TARGETING_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    return '';
+  }
+
+  /** Why a row's negative-keyword editor is disabled, or `''`. Only asked for offered rows. */
+  private negativeKeywordsUnavailableReasonFor(campaign: CampaignIndexDoc, status: string): string {
+    if (typeof campaign.platform_campaign_id !== 'string' || campaign.platform_campaign_id.trim() === '') {
+      return CAMPAIGN_NEGATIVE_KEYWORDS_UNAVAILABLE_UNPROVISIONED_REASON;
+    }
+    if (status === 'deleted') {
+      return CAMPAIGN_UNAVAILABLE_REASONS['deleted'];
+    }
+    return '';
+  }
+
+  /**
+   * Narrates a confirmed budget change to the toast, which survives a tab switch.
+   *
+   * States the amount as the platform accepted it, in the account's own currency and without a
+   * currency symbol: this app does not know the account's currency, and printing `$` would be a
+   * claim it cannot back.
+   */
+  private announceBudgetSuccess(campaignName: string, budget: number, budgetType: CampaignBudgetChange['budgetType']): void {
+    this.messageService.add({
+      severity: 'success',
+      summary: `Budget changed for ${campaignName}`,
+      detail: `New ${budgetType} budget: ${budget} in the ad account's currency.`,
+      life: 5000,
+    });
+  }
+
+  /**
+   * Narrates a budget change that did not succeed. Sticky in every case: a refusal leaves a
+   * campaign spending at the old amount, and an unconfirmed change needs checking in the platform.
+   *
+   * UNCONFIRMED is a warning, not an error, and its summary says the change may already be applied
+   * — the distinction the operator has to act on before trying again.
+   */
+  private announceBudgetFailure(campaignName: string, outcome: CampaignBudgetOutcome): void {
+    if (outcome.state === 'unconfirmed') {
+      this.messageService.add({
+        severity: 'warn',
+        summary: `Budget change not confirmed for ${campaignName}`,
+        detail: `It may already be applied. ${outcome.message}`,
+        sticky: true,
+      });
+      return;
+    }
+    this.messageService.add({ severity: 'error', summary: `Budget not changed for ${campaignName}`, detail: outcome.message, sticky: true });
+  }
+
+  /**
+   * Narrates a confirmed bid change to the toast. No currency symbol: the bid is in the ad
+   * account's own currency, which this app does not know.
+   */
+  private announceBidSuccess(campaignName: string, bid: number): void {
+    this.messageService.add({
+      severity: 'success',
+      summary: `Bid changed for ${campaignName}`,
+      detail: `New max cost-per-click bid: ${bid} in the ad account's currency.`,
+      life: 5000,
+    });
+  }
+
+  /** Narrates a bid change that did not succeed. Sticky; UNCONFIRMED is a warning that says it may have applied. */
+  private announceBidFailure(campaignName: string, outcome: CampaignBidOutcome): void {
+    if (outcome.state === 'unconfirmed') {
+      this.messageService.add({
+        severity: 'warn',
+        summary: `Bid change not confirmed for ${campaignName}`,
+        detail: `It may have applied. ${outcome.message}`,
+        sticky: true,
+      });
+      return;
+    }
+    this.messageService.add({ severity: 'error', summary: `Bid not changed for ${campaignName}`, detail: outcome.message, sticky: true });
+  }
+
+  /**
+   * Narrates an ad-set change that did not succeed, sticky, with a title that never claims more than
+   * the answer proves:
+   * - `unconfirmed`: "not confirmed" — it may have applied.
+   * - `conflict` (412): "not changed" — a stale validator is refused before anything is sent.
+   * - `failed`: NEUTRAL. It covers definite refusals but also campaign-service's 409s saying the
+   *   status WAS changed on Meta while the campaign row moved, so "not changed" could be false. The
+   *   detail (campaign-service's own sentence) says which.
+   */
+  private announceAdSetFailure(campaignName: string, adSetName: string, state: MetaAdSetToggleOutcome['state'], message: string): void {
+    if (state === 'unconfirmed') {
+      this.messageService.add({ severity: 'warn', summary: `Ad set change not confirmed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+      return;
+    }
+    if (state === 'conflict') {
+      this.messageService.add({ severity: 'error', summary: `Ad set not changed: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+      return;
+    }
+    this.messageService.add({ severity: 'error', summary: `Ad set change needs attention: ${adSetName} (${campaignName})`, detail: message, sticky: true });
+  }
+
+  /** What a confirmed ad-set change says. A record re-send changed nothing on Meta; say what it did instead. */
+  private adSetSuccessMessage(request: MetaAdSetToggleRequest, already: boolean, verb: string): string {
+    if (request.kind === 'record' && already) {
+      return request.status === 'PAUSED'
+        ? `Recorded ${request.adSetName}'s deliberate pause; nothing was sent to Meta.`
+        : `Cleared ${request.adSetName}'s deliberate-pause record; nothing was sent to Meta.`;
+    }
+    if (already) {
+      return `${request.adSetName} was already ${request.status === 'PAUSED' ? 'paused' : 'active'}; nothing was sent to Meta.`;
+    }
+    return `${verb} ${request.adSetName}.`;
+  }
+
+  /**
+   * Hold a row whose validator is unknown after an ad-set write (see `validatorHolds`): conflicted,
+   * so the banner offers Refresh and its writes wait, and ask campaign-service for the row at once.
+   * `preWriteEtag` is the etag the write was sent with: the index releases the hold only past it.
+   */
+  private holdUnknownValidator(campaignId: string, preWriteEtag: string): void {
+    this.validatorHolds.set(campaignId, { id: ++this.holdSequence, preWriteEtag, readStarted: false, latestRead: 0 });
+    this.conflictedCampaignIds.update((ids) => {
+      const next = new Set(ids);
+      next.add(campaignId);
+      return next;
+    });
+    this.confirmValidator(campaignId);
+  }
+
+  /**
+   * Read the held row from campaign-service itself and adopt its etag. A read, not a retry of the
+   * write. A failure, or an answer for another campaign or without an etag, keeps the hold: the
+   * index (past the pre-write etag) and the operator's Refresh still release it.
+   */
+  private confirmValidator(campaignId: string): void {
+    const hold = this.validatorHolds.get(campaignId);
+    if (hold === undefined) {
+      return;
+    }
+    // Captured at START: which hold this read is for, and its place among that hold's reads.
+    const askedIn = this.contextGeneration;
+    const holdId = hold.id;
+    const readId = ++this.recordReadSequence;
+    hold.latestRead = readId;
+    this.campaignService
+      .getCampaignRecord(this.projectSlug(), this.briefId(), campaignId)
+      .pipe(take(1))
+      .subscribe({
+        next: (result) => {
+          const etag = result?.campaign?.etag;
+          const current = this.validatorHolds.get(campaignId);
+          // Ignored unless it answers the hold it was started for, and is that hold's LATEST read: an
+          // older or overlapping read may carry an older etag, and a hold released and replaced since
+          // is a different hold with a different pre-write etag.
+          if (askedIn !== this.contextGeneration || current?.id !== holdId || current.latestRead !== readId || result?.campaign?.id !== campaignId) {
+            return;
+          }
+          if (typeof etag === 'string' && etag !== '') {
+            const status = typeof result.campaign.status === 'string' && result.campaign.status !== '' ? result.campaign.status : null;
+            this.releaseValidatorHold(campaignId, holdId, { etag, status });
+          }
+        },
+        error: () => {
+          // Kept held; the Refresh banner remains the way out.
+        },
+      });
+  }
+
+  /**
+   * Release hold `holdId` (and only that hold). `authoritative` is campaign-service's own row: its
+   * etag becomes the row's validator and its status supersedes the confirmed status overlay. `null`
+   * means the index delivered an etag past the pre-write one, so the cached validator is dropped in
+   * its favour and the overlay is left to the refresh path, which drops it only once the index has
+   * caught up with it.
+   */
+  private releaseValidatorHold(campaignId: string, holdId: number, authoritative: { etag: string; status: string | null } | null): void {
+    if (this.validatorHolds.get(campaignId)?.id !== holdId) {
+      return;
+    }
+    this.validatorHolds.delete(campaignId);
+    if (authoritative !== null) {
+      this.toggledEtag.update((etags) => ({ ...etags, [campaignId]: authoritative.etag }));
+      const status = authoritative.status;
+      if (status !== null) {
+        this.toggledStatus.update((statuses) => ({ ...statuses, [campaignId]: status }));
+      }
+      if (this.listReadInFlight) {
+        this.etagsWrittenDuringRead.add(campaignId);
+      }
+    } else {
+      this.toggledEtag.update((etags) => this.omitKeys(etags, [campaignId]));
+    }
+    this.conflictedCampaignIds.update((ids) => {
+      if (!ids.has(campaignId)) {
+        return ids;
+      }
+      const next = new Set(ids);
+      next.delete(campaignId);
+      return next;
+    });
+  }
+
+  /**
+   * Whether an indexed etag is PAST `reference`: newer by version when both are campaign-service
+   * `"<version>"` etags, else merely different (the opaque fallback, as before versions were read).
+   */
+  private indexedEtagIsPast(indexed: string | undefined, reference: string): boolean {
+    if (typeof indexed !== 'string' || indexed === '' || indexed === reference) {
+      return false;
+    }
+    const indexedVersion = campaignEtagVersion(indexed);
+    const referenceVersion = campaignEtagVersion(reference);
+    return indexedVersion === null || referenceVersion === null ? true : indexedVersion > referenceVersion;
+  }
+
+  /** Whether an indexed etag is provably OLDER than a validator this session confirmed. Unorderable is not behind. */
+  private indexedEtagIsBehind(indexed: string | undefined, confirmed: string | undefined): boolean {
+    const indexedVersion = campaignEtagVersion(indexed);
+    const confirmedVersion = campaignEtagVersion(confirmed);
+    return indexedVersion !== null && confirmedVersion !== null && indexedVersion < confirmedVersion;
+  }
+
+  private bumpAdSetsReload(campaignId: string): void {
+    this.adSetsReload.update((tokens) => ({ ...tokens, [campaignId]: (tokens[campaignId] ?? 0) + 1 }));
   }
 
   /**
@@ -1547,22 +3207,26 @@ export class OptimizationTabComponent implements OnInit {
    * in bindings, and as a template method this also re-ran for every row on every change
    * detection pass while reading `toggleError()` internally.
    *
-   * A helper rather than an inline expression because the choice is three-way, which inline would
-   * mean a nested ternary in a template — the construct this repo forbids. Both ids may be present
-   * at once (a disabled row can still hold an error from a click that raced the status), and
-   * `aria-describedby` takes a LIST, so both are named rather than one silently shadowing the
-   * other. A dangling reference to an element that renders conditionally is worse than none, so
-   * each id is included only when its element is actually drawn.
+   * A helper rather than an inline expression because up to three ids combine (the row's error, its
+   * unavailable reason, an adopted campaign's Resume reason), which inline would mean nested
+   * ternaries in a template — the construct this repo forbids. Several may be present at once (a
+   * disabled row can still hold an error from a click that raced the status), and
+   * `aria-describedby` takes a LIST, so each is named rather than one silently shadowing another.
+   * A dangling reference to an element that renders conditionally is worse than none, so each id
+   * is included only when its element is actually drawn.
    *
    * `static` in spirit — it reads no signals, so the computed above owns the reactivity.
    */
-  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>): string | null {
+  private describedByFor(campaignId: string, action: CampaignToggleAction, toggleErrors: Record<string, string>, resumeAdopted: boolean): string | null {
     const ids: string[] = [];
     if (toggleErrors[campaignId]) {
       ids.push(`campaign-error-${campaignId}`);
     }
     if (action === 'unavailable') {
       ids.push(`campaign-unavailable-${campaignId}`);
+    }
+    if (resumeAdopted) {
+      ids.push(`campaign-resume-adopted-${campaignId}`);
     }
     return ids.length > 0 ? ids.join(' ') : null;
   }

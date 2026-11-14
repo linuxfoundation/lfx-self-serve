@@ -4,20 +4,18 @@
 /**
  * Shared setup for the LFX Insights API tokens e2e specs (IN-1233): synthetic fixtures, BFF route
  * stubs, and the `insights-public-api` flag override. Stubbing keeps the suites independent of the
- * PAT service, the member-service tier endpoint, and the test user's Key Contact status.
+ * PAT service and of the test user's `insights-public-api-token-access` targeting.
  */
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, INSIGHTS_PUBLIC_API_FLAG } from '@lfx-one/shared/constants';
 import { CreateInsightsTokenResponse, InsightsToken, InsightsTokenEligibility } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 
-import { SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
-
 export const DATA_LOAD_TIMEOUT = 30_000;
 
-export const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [{ uid: 'org-1', name: SYNTHETIC_ORG_NAME }], checkFailed: false };
-export const NOT_KEY_CONTACT: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: false };
-export const CHECK_FAILED: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: true };
+export const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, checkFailed: false };
+export const NOT_ENABLED: InsightsTokenEligibility = { canCreate: false, checkFailed: false };
+export const CHECK_FAILED: InsightsTokenEligibility = { canCreate: false, checkFailed: true };
 
 export const EXISTING_TOKENS: InsightsToken[] = [
   {
@@ -26,12 +24,38 @@ export const EXISTING_TOKENS: InsightsToken[] = [
     lookupId: 'Qw7pR4sT8uVx',
     createdAt: '2026-09-01T00:00:00Z',
     lastUsedAt: '2026-09-20T00:00:00Z',
+    // Far enough ahead that the fixture never expires under a real clock.
+    expiresAt: '2099-09-01T00:00:00Z',
   },
-  { uid: '5f0c6f3e-3333-4a1a-9a1a-333333333333', name: 'dashboard-sync', lookupId: 'Mn5bV2cX6zLk', createdAt: '2026-08-15T00:00:00Z', lastUsedAt: null },
+  {
+    uid: '5f0c6f3e-3333-4a1a-9a1a-333333333333',
+    name: 'dashboard-sync',
+    lookupId: 'Mn5bV2cX6zLk',
+    createdAt: '2026-08-15T00:00:00Z',
+    lastUsedAt: null,
+    expiresAt: null,
+  },
 ];
 
+export const EXPIRED_TOKEN: InsightsToken = {
+  uid: '5f0c6f3e-4444-4a1a-9a1a-444444444444',
+  name: 'community-export',
+  lookupId: 'Tz9kW3eR7yHq',
+  createdAt: '2026-03-02T00:00:00Z',
+  lastUsedAt: '2026-03-30T00:00:00Z',
+  // Midday UTC, so the rendered date is 1 Apr in every timezone the suite runs in.
+  expiresAt: '2026-04-01T12:00:00Z',
+};
+
 export const CREATED: CreateInsightsTokenResponse = {
-  token: { uid: '5f0c6f3e-1111-4a1a-9a1a-111111111111', name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-23T00:00:00Z', lastUsedAt: null },
+  token: {
+    uid: '5f0c6f3e-1111-4a1a-9a1a-111111111111',
+    name: 'ci-pipeline',
+    lookupId: 'Ab3kZ9QmT2xL',
+    createdAt: '2026-09-23T00:00:00Z',
+    lastUsedAt: null,
+    expiresAt: '2099-12-22T00:00:00Z',
+  },
   secret: 'lfi_Ab3kZ9QmT2xLe2eFakeSecretValueForTestsOnly',
 };
 

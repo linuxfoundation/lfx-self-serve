@@ -4,7 +4,7 @@
 import { Component, computed, inject, input, SecurityContext } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { escapeHtml, isValidUrl } from '@lfx-one/shared/utils';
-import { Marked, marked, RendererObject } from 'marked';
+import { Marked, marked, RendererObject, Token } from 'marked';
 
 @Component({
   selector: 'lfx-markdown-renderer',
@@ -19,13 +19,23 @@ export class MarkdownRendererComponent {
   public readonly breaks = input<boolean>(false);
   /** Attacker-controlled content: drops images, escapes raw HTML, and gates links behind the external-URL policy. */
   public readonly restricted = input<boolean>(false);
+  /** Nest Markdown headings beneath the host page's title; leaves source bytes unchanged. */
+  public readonly headingLevelOffset = input<number>(0);
 
   private restrictedMarked?: Marked;
 
   protected readonly renderedHtml = computed(() => {
     const raw = this.content();
     if (!raw) return '';
-    const options = { breaks: this.breaks(), gfm: true };
+    const requestedOffset = this.headingLevelOffset();
+    const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.min(5, Math.floor(requestedOffset))) : 0;
+    const options = {
+      breaks: this.breaks(),
+      gfm: true,
+      walkTokens: (token: Token): void => {
+        if (token.type === 'heading') token.depth = Math.min(6, token.depth + offset);
+      },
+    };
     const html = (this.restricted() ? this.getRestrictedMarked().parse(raw, options) : marked.parse(raw, options)) as string;
     return this.sanitizer.sanitize(SecurityContext.HTML, html) ?? '';
   });

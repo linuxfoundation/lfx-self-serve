@@ -1,16 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
-import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import {
+  afterNextRender,
+  Component,
+  ContentChild,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  output,
+  PLATFORM_ID,
+  signal,
+  TemplateRef,
+  viewChild,
+} from '@angular/core';
 import { getAcceptedFileTypesDisplay } from '@lfx-one/shared/utils';
-import { FileUploadModule } from 'primeng/fileupload';
+import { FileUpload, FileUploadModule } from 'primeng/fileupload';
+import { ButtonComponent } from '../button/button.component';
 
 @Component({
   selector: 'lfx-file-upload',
-  imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule],
+  imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule, ButtonComponent],
   templateUrl: './file-upload.component.html',
   styleUrl: './file-upload.component.scss',
+  // The server placeholder and browser uploader intentionally have different DOM trees.
+  host: { ngSkipHydration: 'true' },
 })
 export class FileUploadComponent {
   // Template references for content projection (follow PrimeNG slot names)
@@ -23,6 +40,14 @@ export class FileUploadComponent {
   @ContentChild('uploadicon', { static: false, descendants: false }) public uploadIconTemplate?: TemplateRef<any>;
   @ContentChild('cancelicon', { static: false, descendants: false }) public cancelIconTemplate?: TemplateRef<any>;
   @ContentChild('empty', { static: false, descendants: false }) public emptyTemplate?: TemplateRef<any>;
+
+  private readonly upload = viewChild(FileUpload);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly platform = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly browser = signal(isPlatformBrowser(this.platform));
 
   // Core behavior
   public readonly mode = input<'advanced' | 'basic'>('advanced');
@@ -69,6 +94,13 @@ export class FileUploadComponent {
   public readonly onRemove = output<any>();
   public readonly onProgress = output<any>();
   public readonly onCustomUpload = output<any>();
+
+  /** Clear a custom-upload queue without replacing the chooser; optionally restore keyboard focus. */
+  public clear(focus = false): void {
+    if (!isPlatformBrowser(this.platform) || this.destroyRef.destroyed) return;
+    this.upload()?.clear();
+    if (focus) afterNextRender(() => this.host.nativeElement.querySelector<HTMLButtonElement>('button')?.focus(), { injector: this.injector });
+  }
 
   // Helper methods for template
   public getFileTypeHint(): string {

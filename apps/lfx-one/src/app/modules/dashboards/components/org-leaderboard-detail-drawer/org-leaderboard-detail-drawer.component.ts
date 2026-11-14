@@ -16,6 +16,7 @@ import type {
   OrgLeaderboardDetailCategoryRow,
   OrgLensLeaderboardTimeRange,
   OrgLensProjectBand,
+  OrgScopeFilter,
 } from '@lfx-one/shared/interfaces';
 import { orgLeaderboardDetailCategoryRows } from '@lfx-one/shared/utils';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
@@ -51,6 +52,8 @@ export class OrgLeaderboardDetailDrawerComponent {
   /** The viewing organization, which the server uses to decide what it may serve. */
   public readonly orgUid = input.required<string>();
   public readonly range = input.required<OrgLensLeaderboardTimeRange>();
+  /** The page's organization scope: which leaderboard row counts as the viewing organization's (lfx-self-serve-ops#1219). */
+  public readonly orgScope = input.required<OrgScopeFilter>();
 
   // === Model signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -92,16 +95,17 @@ export class OrgLeaderboardDetailDrawerComponent {
       toObservable(this.dimension),
       toObservable(this.organizationId),
       toObservable(this.range),
+      toObservable(this.orgScope),
     ]).pipe(
       // Only fetch while open: a range change with the drawer closed should not spend a request, and
       // one made while open re-fetches so the drawer can never show figures from another range.
       // Closing discards the payload rather than merely pausing, so reopening on a different row
       // cannot render the previous organization's figures under the new row's name.
-      switchMap(([visible, orgUid, projectSlug, dimension, organizationId, range]) => {
+      switchMap(([visible, orgUid, projectSlug, dimension, organizationId, range, orgScope]) => {
         if (!visible || !orgUid || !projectSlug || !organizationId) {
           return of<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'loading', data: null });
         }
-        return this.detailService.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range).pipe(
+        return this.detailService.getLeaderboardBreakdown(orgUid, projectSlug, dimension, organizationId, range, orgScope).pipe(
           map((breakdown): BlockState<OrgLeaderboardDetailBreakdown> => ({ status: breakdown === null ? 'empty' : 'ready', data: breakdown })),
           catchError(() => of<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'error', data: null })),
           startWith<BlockState<OrgLeaderboardDetailBreakdown>>({ status: 'loading', data: null })

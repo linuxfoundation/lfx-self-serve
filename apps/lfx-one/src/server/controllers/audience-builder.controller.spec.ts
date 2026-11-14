@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceValidationError } from '../errors';
+import { MicroserviceError } from '../errors/microservice.error';
 
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -26,7 +28,11 @@ const proxyMethods = {
   getExistingMasterLists: vi.fn(),
   previewCount: vi.fn(),
   composeMaster: vi.fn(),
+  attachExisting: vi.fn(),
   runQa: vi.fn(),
+  interpretCustom: vi.fn(),
+  previewCustom: vi.fn(),
+  createCustom: vi.fn(),
 };
 
 // One mock stands in for all nine upstream calls, because the controller no longer holds any
@@ -206,7 +212,7 @@ describe('getCapabilities', () => {
     proxyMethods.composeMaster.mockResolvedValue(composed);
     const res = buildRes();
 
-    await controller.composeMaster(buildReq({ listIds: ['1'], eventName: 'Synthetic Summit' }), res, next);
+    await controller.composeMaster(buildReq({ listIds: ['1'], eventName: 'Synthetic Summit', excludeListIds: ['201'] }), res, next);
 
     expect(res.status, 'a create answered 200; the documented status is 201').toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(composed);
@@ -341,13 +347,34 @@ describe('searchLists', () => {
 
 describe('getSuppressionLists', () => {
   it('accepts an empty brand and event, since the standard lists are portfolio-wide', async () => {
-    proxyMethods.getSuppressionLists.mockResolvedValue([]);
+    proxyMethods.getSuppressionLists.mockResolvedValue({ lists: [] });
     const res = buildRes();
 
     await controller.getSuppressionLists(buildReq({}, {}), res, next);
 
-    expect(proxyMethods.getSuppressionLists).toHaveBeenCalledWith(expect.anything(), 'tlf', '', '');
-    expect(res.json).toHaveBeenCalledWith([]);
+    expect(proxyMethods.getSuppressionLists).toHaveBeenCalledWith(expect.anything(), 'tlf', '', '', '');
+    expect(res.json).toHaveBeenCalledWith({ lists: [] });
+  });
+
+  it("returns the project's standing standard list beside the rows", async () => {
+    const standardList = { listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300' };
+    proxyMethods.getSuppressionLists.mockResolvedValue({ lists: [], standardList });
+    const res = buildRes();
+
+    await controller.getSuppressionLists(buildReq({}, {}), res, next);
+
+    expect(res.json).toHaveBeenCalledWith({ lists: [], standardList });
+  });
+
+  it('passes the registrants edition through, and drops one over the limit rather than truncating it', async () => {
+    proxyMethods.getSuppressionLists.mockResolvedValue({ lists: [] });
+
+    await controller.getSuppressionLists(buildReq({}, { registrantsEvent: ' Synthetic Summit 2026 ' }), buildRes(), next);
+    expect(proxyMethods.getSuppressionLists).toHaveBeenLastCalledWith(expect.anything(), 'tlf', '', '', 'Synthetic Summit 2026');
+
+    // A truncated edition would look up a list attach can never create, so no row is asked for.
+    await controller.getSuppressionLists(buildReq({}, { registrantsEvent: 'x'.repeat(201) }), buildRes(), next);
+    expect(proxyMethods.getSuppressionLists).toHaveBeenLastCalledWith(expect.anything(), 'tlf', '', '', '');
   });
 });
 
@@ -448,6 +475,21 @@ describe('composeMaster', () => {
     expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'excludeListIds' }]);
   });
 
+  // compose shares the array helper with attach, so the bound is pinned at BOTH callers -- a cap
+  // on one leaves the other as the way in, and compose is the one that CREATES a HubSpot list.
+  it.each([
+    ['too many ids', { listIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'listIds'],
+    ['too many exclusions', { listIds: ['10'], excludeListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'excludeListIds'],
+    ['an over-long exclusion id', { listIds: ['10'], excludeListIds: ['5'.repeat(65)] }, 'excludeListIds'],
+    // `?? []` replaced an explicit null before validation, so it composed with no exclusions.
+    ['a null exclusion list', { listIds: ['10'], excludeListIds: null }, 'excludeListIds'],
+  ])('refuses %s', async (_label, body, field) => {
+    await controller.composeMaster(buildReq({ eventName: 'Synthetic Summit', ...body }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster, 'an unbounded payload reached a non-idempotent create').not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
   it('forwards the naming inputs alongside the cleaned selections', async () => {
     proxyMethods.composeMaster.mockResolvedValue({ master: created, sourceListIds: ['10'] });
 
@@ -470,6 +512,45 @@ describe('composeMaster', () => {
     );
   });
 
+  it('refuses a mistyped briefId without composing anything', async () => {
+    // The guard that matters most on this handler. A dropped `briefId` composes two real HubSpot
+    // lists and leaves them attached to NOTHING while the operator reads a success banner — and
+    // compose is not idempotent, so correcting it costs a second master list.
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: { id: 'b1' } }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'briefId' }]);
+  });
+
+  it('forwards a briefId but never a blank one', async () => {
+    // A blank string passes the type guard and would be sent as an attach naming no brief, which
+    // upstream answers with a 404 after refusing to create anything — worse than the exploratory
+    // compose the caller plainly meant.
+    proxyMethods.composeMaster.mockResolvedValue({ master: created, sourceListIds: ['10'], recorded: false });
+
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: '', excludeListIds: ['201'] }), buildRes(), next);
+    expect(proxyMethods.composeMaster.mock.calls[0]?.[2]).not.toHaveProperty('briefId');
+
+    proxyMethods.composeMaster.mockClear();
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1', excludeListIds: ['201'] }), buildRes(), next);
+    expect(proxyMethods.composeMaster.mock.calls[0]?.[2]).toMatchObject({ briefId: 'brief-1' });
+  });
+
+  it('carries the confirmed master through the 502 so a loose list can be reconciled', async () => {
+    // The fifth partial shape: both lists exist, only the attach failed. It is the one partial
+    // whose master is usable as it stands, so dropping it here would leave a real list in HubSpot
+    // that no screen in the app can name.
+    const master = { listId: '100', name: '26Q3 - CNCF - KubeCon NA - Master', size: 0, hubspotUrl: 'https://app.hubspot.com/x/100' };
+    proxyMethods.composeMaster.mockRejectedValue(new AudienceComposePartialError('Lists created but not attached.', undefined, undefined, undefined, master));
+    const res = buildRes();
+
+    await controller.composeMaster(buildReq({ listIds: ['10'], briefId: 'brief-1', excludeListIds: ['201'] }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ master, error: 'Lists created but not attached.' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('surfaces the orphaned suppression list as a 502 partial rather than a bare error', async () => {
     const suppression = { listId: '99', name: '26Q3 - KubeCon NA - Combined Suppression', size: 0, hubspotUrl: 'https://app.hubspot.com/x/99' };
     proxyMethods.composeMaster.mockRejectedValue(new AudienceComposePartialError('Master list create failed', suppression));
@@ -482,6 +563,27 @@ describe('composeMaster', () => {
     expect(res.status).toHaveBeenCalledWith(502);
     expect(res.json).toHaveBeenCalledWith({ suppression, error: 'Master list create failed' });
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a 409 squatted-name conflict on compose and attach through with its message', async () => {
+    // Not a partial: upstream refuses before creating the master, and its message names the list
+    // squatting the standing or current-registrants name, so it must reach the tab unchanged.
+    const message = 'a HubSpot list "LFX Standard Suppressions - tlf" (id 4242) already uses this name; rename or remove it in HubSpot';
+    const conflict = MicroserviceError.fromMicroserviceResponse(409, 'Conflict', { code: '409', message }, 'LFX_V2_CAMPAIGN_SERVICE', '/x', 'compose');
+    proxyMethods.composeMaster.mockRejectedValue(conflict);
+    const res = buildRes();
+
+    await controller.composeMaster(buildReq({ listIds: ['10'], excludeListIds: ['201'] }), res, next);
+
+    expect(res.status, 'a 409 was rewritten as a compose partial').not.toHaveBeenCalled();
+    const forwarded = vi.mocked(next).mock.calls[0]?.[0] as unknown as MicroserviceError;
+    expect(forwarded.statusCode).toBe(409);
+    expect(forwarded.toResponse()['error']).toBe(message);
+
+    proxyMethods.attachExisting.mockRejectedValue(conflict);
+    vi.mocked(next).mockClear();
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'] }), buildRes(), next);
+    expect((vi.mocked(next).mock.calls[0]?.[0] as unknown as MicroserviceError).statusCode).toBe(409);
   });
 
   it('sends any other failure to the error middleware', async () => {
@@ -521,7 +623,7 @@ describe('composeMaster payload', () => {
     // named picks meant it never reached the wire.
     proxyMethods.composeMaster.mockResolvedValue({ master: { listId: '1', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] });
 
-    const req = buildReq({ listIds: ['101'], eventName: 'KubeCon NA', injected: 'should not survive' }, { project: 'tlf' });
+    const req = buildReq({ listIds: ['101'], eventName: 'KubeCon NA', excludeListIds: ['201'], injected: 'should not survive' }, { project: 'tlf' });
     await controller.composeMaster(req, buildRes(), vi.fn());
 
     const sent = proxyMethods.composeMaster.mock.calls.at(-1)?.[2];
@@ -539,5 +641,402 @@ describe('composeMaster payload', () => {
 
     expect(proxyMethods.composeMaster, 'a mistyped name was dropped and the create proceeded').not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
+  });
+
+  // Refused, not dropped: dropping it would compose without the registrants exclusion the operator ticked.
+  it.each([
+    ['a non-string', { nested: 'Synthetic Summit 2026' }],
+    ['an over-long edition', 'x'.repeat(201)],
+  ])('refuses %s currentRegistrantsEvent', async (_label, value) => {
+    const next = vi.fn();
+    await controller.composeMaster(buildReq({ listIds: ['101'], excludeListIds: ['201'], currentRegistrantsEvent: value }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'currentRegistrantsEvent' }]);
+  });
+
+  it('forwards a trimmed registrants edition, and leaves a blank one out', async () => {
+    proxyMethods.composeMaster.mockResolvedValue({ master: { listId: '1', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] });
+
+    await controller.composeMaster(
+      buildReq({ listIds: ['101'], excludeListIds: ['201'], currentRegistrantsEvent: ' Synthetic Summit 2026 ' }),
+      buildRes(),
+      vi.fn()
+    );
+    expect(proxyMethods.composeMaster.mock.calls.at(-1)?.[2]).toMatchObject({ currentRegistrantsEvent: 'Synthetic Summit 2026' });
+
+    await controller.composeMaster(buildReq({ listIds: ['101'], excludeListIds: ['201'], currentRegistrantsEvent: '   ' }), buildRes(), vi.fn());
+    expect(proxyMethods.composeMaster.mock.calls.at(-1)?.[2]).not.toHaveProperty('currentRegistrantsEvent');
+  });
+});
+
+describe('attachExisting', () => {
+  const attached = {
+    master: { listId: '501', name: 'Prospects', hubspotUrl: 'u' },
+    suppressionListIds: ['201'],
+    audience: { id: 'aud-2', briefId: 'brief-1', platform: 'hubspot', platformMasterListId: '501', status: 'built', version: 1 },
+  };
+
+  it('requires a brief and a master list id', async () => {
+    await controller.attachExisting(buildReq({ masterListId: '501' }), buildRes(), next);
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'briefId' }]);
+
+    const next2 = vi.fn();
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '  ' }), buildRes(), next2);
+    expect(nextError(next2).toResponse()['errors']).toMatchObject([{ field: 'masterListId' }]);
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a non-string', 42],
+    ['an over-long edition', 'x'.repeat(201)],
+  ])('refuses %s currentRegistrantsEvent', async (_label, value) => {
+    await controller.attachExisting(
+      buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'], currentRegistrantsEvent: value }),
+      buildRes(),
+      next
+    );
+
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'currentRegistrantsEvent' }]);
+  });
+
+  it('forwards a trimmed registrants edition on attach, and leaves a blank one out', async () => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+
+    await controller.attachExisting(
+      buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'], currentRegistrantsEvent: ' Synthetic Summit 2026 ' }),
+      buildRes(),
+      vi.fn()
+    );
+    expect(proxyMethods.attachExisting.mock.calls.at(-1)?.[2]).toMatchObject({ currentRegistrantsEvent: 'Synthetic Summit 2026' });
+
+    await controller.attachExisting(
+      buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'], currentRegistrantsEvent: '' }),
+      buildRes(),
+      vi.fn()
+    );
+    expect(proxyMethods.attachExisting.mock.calls.at(-1)?.[2]).not.toHaveProperty('currentRegistrantsEvent');
+  });
+
+  it('refuses a blank suppression id rather than attaching with less suppression', async () => {
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201', ' '] }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'suppressionListIds' }]);
+  });
+
+  // Every id here is forwarded upstream and a 201 audience row is created, so an unbounded array
+  // is an unbounded upstream payload reachable by any campaign manager. REFUSED, not truncated:
+  // dropping ids past a cap would record a send with less suppression than was asked for.
+  it.each([
+    ['too many suppression ids', { suppressionListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'suppressionListIds'],
+    ['an over-long suppression id', { suppressionListIds: ['2'.repeat(65)] }, 'suppressionListIds'],
+    ['an over-long master list id', { masterListId: '5'.repeat(65) }, 'masterListId'],
+    ['an over-long inclusion summary', { suppressionListIds: ['201'], inclusionSummary: 'x'.repeat(2_001) }, 'inclusionSummary'],
+    // `?? []` replaced an explicit null before validation, so it attached with no suppression.
+    ['a null suppression list', { suppressionListIds: null }, 'suppressionListIds'],
+  ])('refuses %s', async (_label, overrides, field) => {
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', ...overrides }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting, 'an unbounded payload reached upstream').not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
+  it.each([
+    ['the largest allowed selection', Array.from({ length: 50 }, (_unused, i) => `${i}`)],
+    ['the longest allowed id', ['2'.repeat(64)]],
+  ])('still accepts %s', async (_label, suppressionListIds) => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting, 'a legitimate selection was refused').toHaveBeenCalledWith(
+      expect.anything(),
+      'tlf',
+      expect.objectContaining({ suppressionListIds })
+    );
+  });
+
+  it.each([
+    ['attach', 'suppressionListIds'],
+    ['compose', 'excludeListIds'],
+  ])('refuses an OMITTED or empty exclusion field on %s: every send keeps a suppression list', async (kind, field) => {
+    // The Audience tab's mandatory-suppression gate is enforced at the server boundary too, so a
+    // direct API call cannot compose or attach an unsuppressed audience.
+    for (const extra of [{}, { [field]: [] }]) {
+      vi.mocked(next).mockClear();
+      if (kind === 'attach') {
+        await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '501', ...extra }), buildRes(), next);
+      } else {
+        await controller.composeMaster(buildReq({ listIds: ['10'], eventName: 'Synthetic Summit', ...extra }), buildRes(), next);
+      }
+      expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+      expect(JSON.stringify(nextError(next).toResponse())).toContain('at least one suppression list');
+    }
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(proxyMethods.composeMaster).not.toHaveBeenCalled();
+  });
+
+  it('forwards the trimmed request and answers 201', async () => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+    const res = buildRes();
+
+    await controller.attachExisting(
+      buildReq({ briefId: ' brief-1 ', masterListId: ' 501 ', suppressionListIds: ['201'], inclusionSummary: 'Same lists as X' }),
+      res,
+      next
+    );
+
+    expect(proxyMethods.attachExisting).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      briefId: 'brief-1',
+      masterListId: '501',
+      suppressionListIds: ['201'],
+      inclusionSummary: 'Same lists as X',
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(attached);
+  });
+
+  // Several existing lists used as they are, with no master list: upstream sends to all of them.
+  it('forwards several include lists in place of a master', async () => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', includeListIds: [' 101 ', '102'], suppressionListIds: ['201'] }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      briefId: 'brief-1',
+      includeListIds: ['101', '102'],
+      suppressionListIds: ['201'],
+    });
+  });
+
+  it.each([
+    ['both a master and include lists', { masterListId: '501', includeListIds: ['101'] }, 'includeListIds'],
+    ['neither a master nor include lists', {}, 'masterListId'],
+    ['an empty include list', { includeListIds: [] }, 'includeListIds'],
+    ['a blank include id', { includeListIds: ['101', ' '] }, 'includeListIds'],
+    ['too many include ids', { includeListIds: Array.from({ length: 51 }, (_unused, i) => `${i}`) }, 'includeListIds'],
+  ])('refuses %s', async (_label, overrides, field) => {
+    await controller.attachExisting(buildReq({ briefId: 'brief-1', ...overrides }), buildRes(), next);
+
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+});
+
+describe('runQa event name', () => {
+  it('forwards a trimmed event name so the current-registrants check can run', async () => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', eventName: '  KubeCon Japan 2026 ' }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      listRef: '10',
+      targetsEu: false,
+      targetsCa: false,
+      eventName: 'KubeCon Japan 2026',
+    });
+  });
+
+  it('omits a blank event name rather than sending one', async () => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', eventName: '   ' }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', { listRef: '10', targetsEu: false, targetsCa: false });
+  });
+});
+
+// lfx-v2-campaign-service#244: the stage lets campaign-service set the current-registrants check
+// aside for a Post-Event send, whose intended audience IS this edition's attendees.
+describe('runQa stage', () => {
+  it.each(['Post-Event', 'Registration Push'] as const)('forwards stage %s', async (stage) => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', eventName: 'KubeCon Japan 2026', stage }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      listRef: '10',
+      targetsEu: false,
+      targetsCa: false,
+      eventName: 'KubeCon Japan 2026',
+      stage,
+    });
+  });
+
+  it.each([
+    ['absent', {}],
+    ['empty', { stage: '' }],
+  ])('omits the stage when it is %s', async (_label, extra) => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', ...extra }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', { listRef: '10', targetsEu: false, targetsCa: false });
+  });
+
+  it.each([
+    ['a misspelt stage', 'Post Event'],
+    ['a non-string stage', 7],
+  ])('refuses %s rather than auditing the send as a registration push', async (_label, stage) => {
+    await controller.runQa(buildReq({ listRef: '10', stage }), buildRes(), next);
+
+    expect(proxyMethods.runQa).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'stage' }]);
+  });
+});
+
+describe('custom audiences', () => {
+  const criteria = { cities: [' Seoul '], countries: [], contactLocation: true, gateListId: '26716', propertyFilters: [] };
+
+  it('interprets a request with its answers', async () => {
+    proxyMethods.interpretCustom.mockResolvedValue({ criteria: {}, questions: [], notes: [] });
+
+    await controller.interpretCustom(buildReq({ request: ' Seoul contacts ', answers: [{ questionId: 'mailability', answer: 'Stricter' }] }), buildRes(), next);
+
+    expect(proxyMethods.interpretCustom).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      request: 'Seoul contacts',
+      answers: [{ questionId: 'mailability', answer: 'Stricter' }],
+    });
+  });
+
+  it.each([
+    ['an empty request', { request: '  ' }, 'request'],
+    ['an over-long request', { request: 'x'.repeat(2001) }, 'request'],
+    ['answers that are not an array', { request: 'x', answers: 'yes' }, 'answers'],
+    ['a non-string answer', { request: 'x', answers: [{ answer: 1 }] }, 'answers'],
+    ['a blank answer', { request: 'x', answers: [{ answer: '   ' }] }, 'answers'],
+    ['an over-long question id (refused, never cut)', { request: 'x', answers: [{ answer: 'a', questionId: 'q'.repeat(65) }] }, 'answers'],
+    ['an over-long question', { request: 'x', answers: [{ answer: 'a', question: 'q'.repeat(501) }] }, 'answers'],
+    ['more than 12 answers', { request: 'x', answers: Array.from({ length: 13 }, () => ({ answer: 'a' })) }, 'answers'],
+  ])('refuses %s before calling the model', async (_label, body, field) => {
+    await controller.interpretCustom(buildReq(body), buildRes(), next);
+
+    expect(proxyMethods.interpretCustom).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
+  it('forwards an event URL for an event audience after the SSRF pre-check', async () => {
+    proxyMethods.interpretCustom.mockResolvedValue({ criteria: {}, questions: [], notes: [], similar: [] });
+
+    await controller.interpretCustom(buildReq({ request: 'Plan it', eventUrl: ' https://events.example.org/x ' }), buildRes(), next);
+
+    expect(validateScrapeUrl).toHaveBeenCalledWith('https://events.example.org/x');
+    expect(proxyMethods.interpretCustom.mock.calls[0][2]).toMatchObject({ eventUrl: 'https://events.example.org/x' });
+  });
+
+  it('refuses an event URL the SSRF guard rejects, before calling the model', async () => {
+    scrapeUrl.mockRejectedValueOnce(new Error('private address'));
+
+    await controller.interpretCustom(buildReq({ request: 'Plan it', eventUrl: 'http://10.0.0.1/' }), buildRes(), next);
+
+    expect(proxyMethods.interpretCustom).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'eventUrl' }]);
+  });
+
+  it('accepts every operator and speaker scope the UI offers', async () => {
+    proxyMethods.previewCustom.mockResolvedValue({ name: 'n', criteria, branchCount: 1, warnings: [] });
+    const propertyFilters = AUDIENCE_CUSTOM_OPERATORS.map((o) => ({ property: 'jobtitle', operator: o.value, values: [] }));
+
+    for (const scope of AUDIENCE_SPEAKER_SCOPES) {
+      await controller.previewCustom(
+        buildReq({ criteria: { ...criteria, propertyFilters, speakers: { scope: scope.key, eventNames: [] } } }),
+        buildRes(),
+        next
+      );
+    }
+
+    expect(proxyMethods.previewCustom).toHaveBeenCalledTimes(AUDIENCE_SPEAKER_SCOPES.length);
+  });
+
+  it('rebuilds previewed criteria from checked fields only', async () => {
+    proxyMethods.previewCustom.mockResolvedValue({ name: 'n', criteria, branchCount: 2, warnings: [] });
+
+    await controller.previewCustom(buildReq({ criteria: { ...criteria, injected: 'filterBranch' } }), buildRes(), next);
+
+    const sent = proxyMethods.previewCustom.mock.calls[0][2];
+    expect(sent.criteria).not.toHaveProperty('injected');
+    expect(sent.criteria.cities).toEqual(['Seoul']);
+    expect(sent.criteria.eventRegistered, 'an omitted flag is false, never undefined').toBe(false);
+  });
+
+  it.each([
+    ['a non-object criteria', { criteria: [] }, 'criteria'],
+    ['a string flag', { criteria: { ...criteria, contactLocation: 'true' } }, 'contactLocation'],
+    [
+      'a property name with spaces',
+      { criteria: { ...criteria, propertyFilters: [{ property: 'job title', operator: 'contains', values: ['x'] }] } },
+      'propertyFilters',
+    ],
+    ['an unknown operator', { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'like', values: [] }] } }, 'propertyFilters'],
+    ['an unknown speaker scope', { criteria: { ...criteria, speakers: { scope: 'future', eventNames: [] } } }, 'speakers'],
+    ['too many cities', { criteria: { ...criteria, cities: Array.from({ length: 26 }, (_u, i) => `c${i}`) } }, 'cities'],
+    ['a non-string name', { criteria, name: 5 }, 'name'],
+    // 200 is HubSpot's list-search limit; upstream refuses a longer explicit name rather than cut it.
+    ['an over-long name', { criteria, name: 'n'.repeat(201) }, 'name'],
+    [
+      'more than 10 filters',
+      { criteria: { ...criteria, propertyFilters: Array.from({ length: 11 }, () => ({ property: 'jobtitle', operator: 'is_known', values: [] })) } },
+      'propertyFilters',
+    ],
+    [
+      'more than 25 filter values',
+      { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'is_any_of', values: Array.from({ length: 26 }, (_u, i) => `v${i}`) }] } },
+      'propertyFilters',
+    ],
+    [
+      'more than 10 page URLs (upstream caps them at 10)',
+      { criteria: { ...criteria, pageViewUrls: Array.from({ length: 11 }, (_u, i) => `https://e.org/p${i}`) } },
+      'pageViewUrls',
+    ],
+    ['an over-long label (refused, never silently cut)', { criteria: { ...criteria, label: 'l'.repeat(201) } }, 'label'],
+    ['an over-long gate list id', { criteria: { ...criteria, gateListId: '1'.repeat(65) } }, 'gateListId'],
+    ['an over-long speakers list id', { criteria: { ...criteria, speakers: { scope: 'current', eventNames: [], listId: '1'.repeat(65) } } }, 'speakers'],
+  ])('refuses %s without reaching the create', async (_label, body, field) => {
+    await controller.createCustom(buildReq(body), buildRes(), next);
+
+    expect(proxyMethods.createCustom).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
+  it('answers a created list with 201', async () => {
+    const created = { listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' };
+    proxyMethods.createCustom.mockResolvedValue(created);
+    const res = buildRes();
+
+    await controller.createCustom(buildReq({ criteria, name: ' Seoul ' }), res, next);
+
+    expect(proxyMethods.createCustom.mock.calls[0][2].name).toBe('Seoul');
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(created);
+  });
+
+  it('answers an unconfirmed create with 502 and the name to search for, never a retryable error', async () => {
+    proxyMethods.createCustom.mockRejectedValue(new AudienceComposePartialError('unconfirmed', undefined, undefined, 'Seoul test'));
+    const res = buildRes();
+
+    await controller.createCustom(buildReq({ criteria }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith({ masterName: 'Seoul test', error: 'unconfirmed' });
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('runQa send-time suppression', () => {
+  it('forwards the send-time suppression lists', async () => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '31594', sendSuppressionListIds: ['201', ' 202 '] }), buildRes(), next);
+
+    expect(proxyMethods.runQa.mock.calls.at(-1)?.[2]).toMatchObject({ sendSuppressionListIds: ['201', '202'] });
+  });
+
+  it('refuses a malformed list of send-time suppressions', async () => {
+    await controller.runQa(buildReq({ listRef: '31594', sendSuppressionListIds: '201' }), buildRes(), next);
+
+    expect(proxyMethods.runQa).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'sendSuppressionListIds' }]);
   });
 });

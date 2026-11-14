@@ -8,8 +8,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
-import { COMMITTEE_LABEL, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
-import { GroupsIOServiceType, MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
+import { COMMITTEE_LABEL, MAILING_LIST_NAME_PATTERN, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { GroupsIOServiceType, MailingListAudienceAccess, MailingListSyncMode, MailingListType } from '@lfx-one/shared/enums';
 import {
   CommitteeReference,
   CreateGroupsIOServiceRequest,
@@ -18,7 +18,7 @@ import {
   GroupsIOMailingList,
   GroupsIOService,
 } from '@lfx-one/shared/interfaces';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { markFormControlsAsTouched, normalizeServicePrefix } from '@lfx-one/shared/utils';
 import { announcementVisibilityValidator, htmlMaxLengthValidator, htmlMinLengthValidator, htmlRequiredValidator } from '@lfx-one/shared/validators';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -192,6 +192,11 @@ export class MailingListManageComponent {
         error: (error: unknown) => {
           const httpStatus = error instanceof HttpErrorResponse ? error.status : undefined;
           const isDuplicateName = !this.isEditMode() && httpStatus === 409 && (!isCreatingService || serviceWasCreated);
+          // The upstream rejects names Groups.io considers invalid with a 400 whose message names the
+          // `group_name` field (e.g. "invalid group_name"); anything else on a 400 keeps the generic toast.
+          const upstreamMessage = error instanceof HttpErrorResponse ? error.error?.error : undefined;
+          const isInvalidName =
+            httpStatus === 400 && typeof upstreamMessage === 'string' && /group_?name/i.test(upstreamMessage) && (!isCreatingService || serviceWasCreated);
 
           if (isDuplicateName) {
             const groupNameControl = this.form().get('group_name');
@@ -203,6 +208,15 @@ export class MailingListManageComponent {
               severity: 'error',
               summary: 'Error',
               detail: 'A mailing list with this name already exists',
+            });
+          } else if (isInvalidName) {
+            // The form already enforces the name rules, so a rejection here means the address we generated
+            // from the project prefix was refused, not that the user typed something wrong. Say so, and
+            // don't flag the field or send them back to fix a name that was valid.
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Unable to create mailing list',
+              detail: `We couldn't ${this.isEditMode() ? 'update' : 'create'} this list because its generated address was rejected. Please try again, and contact support if it keeps happening.`,
             });
           } else {
             const isServiceError = isCreatingService && !serviceWasCreated;
@@ -232,7 +246,7 @@ export class MailingListManageComponent {
           Validators.required,
           Validators.minLength(3),
           Validators.maxLength(34),
-          Validators.pattern(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/),
+          Validators.pattern(MAILING_LIST_NAME_PATTERN),
         ]),
         description: new FormControl('', [htmlRequiredValidator(), htmlMinLengthValidator(11), htmlMaxLengthValidator(500)]),
 
@@ -381,7 +395,7 @@ export class MailingListManageComponent {
         return project ? `${this.cleanSlug(project.slug)}` : '';
       }
 
-      return this.selectedService()?.prefix || '';
+      return normalizeServicePrefix(this.selectedService()?.prefix);
     });
   }
 
@@ -456,7 +470,7 @@ export class MailingListManageComponent {
     // Strip prefix from group_name in edit mode to prevent double-prefixing on submit
     // The prefix is added back in prepareMailingListData when submitting
     let groupName = mailingList.group_name;
-    const servicePrefix = mailingList.service?.prefix;
+    const servicePrefix = normalizeServicePrefix(mailingList.service?.prefix);
 
     if (servicePrefix && mailingList.service?.type !== GroupsIOServiceType.PRIMARY) {
       const prefixWithSeparator = `${servicePrefix}-`;
@@ -471,7 +485,9 @@ export class MailingListManageComponent {
       audience_access: mailingList.audience_access || MailingListAudienceAccess.PUBLIC,
       type: mailingList.type || MailingListType.DISCUSSION_OPEN,
       public: mailingList.public ?? true,
-      committees: mailingList.committees || [],
+      // Single-select: patch with the first committee object (or null) so the control
+      // shape matches what CommitteeSelectorComponent writes on user interaction.
+      committees: mailingList.committees?.[0] ?? null,
     });
 
     // The name is immutable after creation — clear its validators so existing names
@@ -525,6 +541,29 @@ export class MailingListManageComponent {
     const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
     const groupName = service.type === GroupsIOServiceType.PRIMARY ? formValue.group_name : `${prefix}-${formValue.group_name}`;
 
+    // The upstream API associates a group via `committee_uid` (singular UID string).
+    // The `committees` control holds different shapes depending on the code path:
+    //   - Edit-mode initial patch writes the backend array (CommitteeReference[]).
+    //   - After the user picks in single-select mode, CommitteeSelectorComponent writes
+    //     a single CommitteeReference object (not an array).
+    // Normalize both shapes before reading the UID so either path produces the correct value.
+    const raw = formValue.committees as CommitteeReference | CommitteeReference[] | null | undefined;
+    const selected = Array.isArray(raw) ? raw[0] : raw;
+    const committeeUid = selected?.uid ?? null;
+
+    // This form has no sync direction control (#4024) — preserve the existing value in edit mode
+    // only when the committee is unchanged, so saving unrelated fields here doesn't silently reset
+    // it to manual. Picking a DIFFERENT committee in step 3 must reset sync to manual instead, or
+    // auto-sync would silently start against a committee nobody configured it for (#4880 review).
+    const previousCommitteeUid = this.mailingList()?.committees?.[0]?.uid ?? null;
+    const sameCommittee = !!committeeUid && committeeUid === previousCommitteeUid;
+    let syncMode: MailingListSyncMode | undefined;
+    if (sameCommittee) {
+      syncMode = this.mailingList()?.sync_mode;
+    } else if (committeeUid) {
+      syncMode = MailingListSyncMode.MANUAL;
+    }
+
     return {
       name: groupName,
       public: formValue.public,
@@ -532,8 +571,9 @@ export class MailingListManageComponent {
       audience_access: formValue.audience_access,
       description: formValue.description || '',
       service_id: service.uid,
-      committees: formValue.committees?.length > 0 ? formValue.committees : undefined,
+      committee_uid: committeeUid,
       title: formValue.group_name,
+      sync_mode: syncMode,
     };
   }
 

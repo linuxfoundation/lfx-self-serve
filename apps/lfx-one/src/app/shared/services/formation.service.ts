@@ -10,10 +10,11 @@ import type {
   FormationItemWriteResult,
   FormationPeopleResponse,
   FormationSubStage,
+  FormationPipelineResponse,
   FormationsQueueResponse,
   MyFormationWorkResponse,
 } from '@lfx-one/shared/interfaces';
-import { createUnavailableFormationPeopleResponse } from '@lfx-one/shared/constants';
+import { createUnavailableFormationPeopleResponse, FORMATION_PIPELINE_API_PATH } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, Observable, of, shareReplay, switchMap, take, tap } from 'rxjs';
 
 /** Builds the `/api/formations/:projectUid/items/:itemKey` base path shared by every item route (GH-2267 Phase 2). */
@@ -158,6 +159,17 @@ export class FormationService {
     patch: { status?: FormationItemStatus; reason?: string; sub_items?: unknown }
   ): Observable<FormationItemWriteResult> {
     return this.writeItem(`${itemPath(projectUid, itemKey)}/status`, 'POST', ifMatch, patch);
+  }
+
+  /**
+   * #5475 — the project pipeline: the formation team's full view, or LF staff's read-only view without Draft and Confidential. `stage` is deliberately not sent: the response carries every
+   * non-Active stage so the page filters by stage client-side and the stat strip and pills keep their counts.
+   */
+  public getFormationPipeline(foundationUid?: string | null, search?: string): Observable<FormationPipelineResponse> {
+    let params = new HttpParams();
+    if (foundationUid) params = params.set('foundation_uid', foundationUid);
+    if (search) params = params.set('q', search);
+    return this.http.get<FormationPipelineResponse>(FORMATION_PIPELINE_API_PATH, { params });
   }
 
   public getFormationsQueue(subStage?: FormationSubStage, search?: string, foundationUid?: string): Observable<FormationsQueueResponse> {

@@ -1065,72 +1065,6 @@ export interface FoundationHealthScoreDistributionResponse {
 }
 
 /**
- * Foundation health metrics daily row from Snowflake
- * Raw response from FOUNDATION_HEALTH_METRICS_DAILY table
- */
-export interface FoundationHealthMetricsDailyRow {
-  /**
-   * Foundation ID
-   */
-  FOUNDATION_ID: string;
-
-  /**
-   * Foundation URL slug
-   */
-  FOUNDATION_SLUG: string;
-
-  /**
-   * Metric date (YYYY-MM-DD format)
-   */
-  METRIC_DATE: string;
-
-  /**
-   * Average health score across all projects
-   */
-  AVG_HEALTH_SCORE: number;
-
-  /**
-   * Minimum health score among projects
-   */
-  MIN_HEALTH_SCORE: number;
-
-  /**
-   * Maximum health score among projects
-   */
-  MAX_HEALTH_SCORE: number;
-
-  /**
-   * Count of projects with health score data
-   */
-  PROJECTS_WITH_HEALTH_SCORE_COUNT: number;
-
-  /**
-   * Total software value in dollars
-   */
-  TOTAL_SOFTWARE_VALUE: number;
-
-  /**
-   * Average software value per project
-   */
-  AVG_SOFTWARE_VALUE: number;
-
-  /**
-   * Count of projects with software value data
-   */
-  PROJECTS_WITH_SOFTWARE_VALUE_COUNT: number;
-
-  /**
-   * Total projects count (for foundation level)
-   */
-  TOTAL_PROJECTS_COUNT?: number;
-
-  /**
-   * Total sub-projects count (for project level)
-   */
-  TOTAL_SUB_PROJECTS_COUNT?: number;
-}
-
-/**
  * Project health metrics daily row from Snowflake
  * Raw response from PROJECT_HEALTH_METRICS_DAILY table
  */
@@ -2285,6 +2219,8 @@ export interface FoundationProjectsDetailGroup {
 export interface FoundationProjectsDetailGroupedResponse {
   groups: FoundationProjectsDetailGroup[];
   totalCount: number;
+  /** False when a sub-foundation branch was dropped (a failed read or a traversal cap), so the list may miss projects. */
+  complete: boolean;
 }
 
 // ============================================

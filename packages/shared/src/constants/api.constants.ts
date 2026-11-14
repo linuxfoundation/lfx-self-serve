@@ -23,6 +23,16 @@ export const DEFAULT_QUERY_PARAMS: Record<string, string> = {
 export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
 
 /**
+ * Request header naming the UI surface that triggered a self-removal from a meeting.
+ * @description Telemetry only: the BFF logs it so removals can be broken down by where they came from.
+ * Never used for authorization. Lowercase to match Express's normalized req.headers keys.
+ */
+export const MEETING_REMOVAL_SOURCE_HEADER = 'x-lfx-removal-source';
+
+/** Request header that, sent as `'false'`, makes LF v1 services skip their Redis read cache for that request. */
+export const LFX_CACHE_BYPASS_HEADER = 'X-LFX-CACHE';
+
+/**
  * Maximum number of `filters_or` clauses per query-service request.
  * @description URL-length guard for batched lookups on `/query/resources`. When the caller has
  * more than this many IDs/values to OR together, split into chunks of this size to keep each
@@ -39,6 +49,15 @@ export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 export const QUERY_SERVICE_MAX_PAGE_SIZE = 1000;
 
 /**
+ * Maximum number of query-service `/query/resources` pages one drain follows.
+ * @description Bounds `fetchAllQueryResources` and `resolveCreatedByForMeetings` so a runaway
+ * `page_token` chain cannot accumulate rows until the SSR server exhausts its heap (#4964). A drain
+ * that is still handed a token after this many pages stops: strict callers throw, others keep the
+ * rows fetched so far and log a `max_pages` warning.
+ */
+export const QUERY_SERVICE_MAX_PAGES = 100;
+
+/**
  * Maximum number of access-check tuples per POST request to the access-check service.
  * @description Bounds OpenFGA payload size and latency. When the caller has more than this many
  * tuples to check, split into chunks of this size and fan out with Promise.allSettled.
@@ -53,6 +72,12 @@ export const ACCESS_CHECK_BATCH_SIZE = 100;
  * CDP/Clearbit) leaves the spinner rotating indefinitely with no recovery.
  */
 export const ORG_SEARCH_TIMEOUT_MS = 10000;
+
+/**
+ * How long the propose-a-project form waits for the submitter's current employer before leaving the
+ * organization blank (#5251). Short on purpose: the prefill is a convenience and must never hold the form.
+ */
+export const CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS = 2000;
 
 /**
  * Ceiling (ms) for a single CDP organization lookup (by name or by domain) inside
@@ -95,6 +120,13 @@ export const NATS_CONFIG = {
   REQUEST_TIMEOUT: 5000,
 
   /**
+   * Wall-clock budget, in milliseconds, for the best-effort stored-name lookup done on every
+   * authenticated SSR render. It covers the connection attempt as well as the request, so an
+   * unreachable NATS can never hold up a page for CONNECTION_TIMEOUT.
+   */
+  SSR_DISPLAY_NAME_TIMEOUT: 750,
+
+  /**
    * Request timeout for the meeting-service `preferred_email.set` RPC, in milliseconds.
    *
    * Deliberately longer than REQUEST_TIMEOUT: the responder gives its downstream SET call a
@@ -121,6 +153,30 @@ export const NATS_CONFIG = {
    */
   LOOKUP_BATCH_BUDGET_MS: 15000,
 } as const;
+
+/** Email service replies whose contract guarantees rejection before any SMTP attempt. */
+export const EMAIL_SERVICE_PRE_SEND_REJECTIONS: readonly string[] = [
+  'invalid request payload',
+  'to, subject, html, and text are required',
+  'to address too long',
+  'from address too long',
+  'reply_to address too long',
+  'subject too long',
+  'from_display_name too long',
+  'invalid from address',
+  'from address domain not allowed',
+  'invalid reply_to address',
+  'reply_to address domain not allowed',
+  'invalid group_id',
+  'group is full',
+  'internal error',
+];
+
+/** Fixed SMTP-attempt error reply; safe to log, but it does not prove that nothing was sent. */
+export const EMAIL_SERVICE_DELIVERY_FAILED_REASON = 'email delivery failed';
+
+/** An email-service error reply after SMTP may have started; not proof of non-delivery. */
+export const EMAIL_SEND_UNCONFIRMED = 'EMAIL_SEND_UNCONFIRMED';
 
 /**
  * Changelog (lfx-changelog) configuration constants

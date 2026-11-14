@@ -19,7 +19,7 @@ High-level map of LFX One's architecture. For any given topic, follow the link b
 - **Pino** structured JSON logging routed through the singleton `logger.service.ts` (never call `serverLogger` directly).
 - **OpenTelemetry** tracing bootstrapped by `otel.mjs` (exporter activates when `OTEL_EXPORTER_OTLP_ENDPOINT` is set).
 - **PM2** process management for production (`apps/lfx-one/ecosystem.config.js`).
-- **NATS**, **Snowflake**, **LiteLLM → Claude Sonnet 4**, **Supabase** for inter-service messaging, analytics, AI features, and profile email management.
+- **NATS**, **Snowflake**, **LiteLLM → Claude** (the model `AI_MODEL` names), **Supabase** for inter-service messaging, analytics, AI features, and profile email management.
 
 **Shared (`packages/shared`):**
 
@@ -41,7 +41,7 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 | [Drawer Pattern](architecture/frontend/drawer-pattern.md)                              | Drawer components, lazy data, chart integration                         |
 | [Lazy Loading & Preloading](architecture/frontend/lazy-loading-preloading-strategy.md) | Route splitting + custom preloading strategy                            |
 | [Feature Flags](architecture/frontend/feature-flags.md)                                | OpenFeature + LaunchDarkly wiring, signal-reactive flag reads           |
-| [Gatewaze Embed Host](architecture/frontend/gw-embed.md)                               | React embed mount, dual-router sync, style containment, sign-in         |
+| [Gatewaze Embed Host](architecture/frontend/gw-embed.md)                               | React embed mount, dual-router sync, style containment, session         |
 | [Performance](architecture/frontend/performance.md)                                    | Bundle management, SSR, runtime patterns                                |
 
 ### Backend
@@ -62,7 +62,6 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 | [NATS Integration](architecture/backend/nats-integration.md)           | Request/reply pattern, lazy connections                           |
 | [Snowflake Integration](architecture/backend/snowflake-integration.md) | Singleton pool, query deduplication, read-only validation         |
 | [Public Meetings](architecture/backend/public-meetings.md)             | Unauthenticated meeting access, M2M tokens                        |
-| [Gatewaze Embed Proxy](architecture/backend/gw-proxy.md)               | Wildcard BFF proxy, authorization, header policy, body limits     |
 
 ### Shared & Testing
 

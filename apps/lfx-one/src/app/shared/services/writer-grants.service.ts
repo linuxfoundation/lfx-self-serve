@@ -8,7 +8,7 @@ import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { finalize, map } from 'rxjs';
+import { finalize, map, Observable, shareReplay } from 'rxjs';
 
 /**
  * Whether the user holds a `writer` grant on a foundation-level and/or non-foundation project —
@@ -63,6 +63,26 @@ export class WriterGrantsService {
   /** True once a writer-held non-foundation project is known — fast path first, deferred sweep may widen later. */
   public readonly hasWriterProject: Signal<boolean> = this.hasWriterProjectInternal.asReadonly();
 
+  private readonly summaryResolvedInternal: WritableSignal<boolean> = signal(false);
+
+  /**
+   * True once the fast path has settled (granted, denied or failed closed), or there is no session to
+   * ask about. The deferred sweep can still widen afterwards (inherited access), but it is idle-deferred
+   * and slow, so a consumer that must decide "no access" waits for this rather than for the sweep.
+   */
+  public readonly summaryResolved: Signal<boolean> = this.summaryResolvedInternal.asReadonly();
+
+  private readonly lookupFailedInternal: WritableSignal<boolean> = signal(false);
+  /** The writer-summary retry in flight, shared by every caller until it settles. */
+  private retrySummary$: Observable<void> | null = null;
+
+  /**
+   * True when the latest fast-path lookup failed (error or timeout) instead of answering. The grants
+   * stay as they were, but a consumer that would read "no writer grant" as "no access" should offer a
+   * retry ({@link retrySummary}) instead. Cleared by the next answer.
+   */
+  public readonly lookupFailed: Signal<boolean> = this.lookupFailedInternal.asReadonly();
+
   public constructor() {
     // Runs browser-only, once the first render is committed — see the class doc for why both
     // calls live here rather than at construction.
@@ -70,6 +90,7 @@ export class WriterGrantsService {
       // Anonymous/public routes have no session — both signals' default `false` is already the
       // correct answer, so skip the calls rather than let them 401 (LFXV2-3266).
       if (!this.userService.authenticated()) {
+        this.summaryResolvedInternal.set(true);
         return;
       }
 
@@ -80,11 +101,35 @@ export class WriterGrantsService {
           // torn down early by destroy. Scheduling it eagerly in this same tick would instead race
           // the HTTP round trip, so runDeferredSweep's "skip if both already true" check would
           // almost never see a `true`. runWhenIdle itself no-ops the destroy case (see below).
-          finalize(() => this.runWhenIdle(() => this.runDeferredSweep())),
+          finalize(() => {
+            this.summaryResolvedInternal.set(true);
+            this.runWhenIdle(() => this.runDeferredSweep());
+          }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe((summary) => this.widen(summary));
+        .subscribe((summary) => this.applySummary(summary));
     });
+  }
+
+  /**
+   * Re-runs the fast-path lookup after it failed, recording whether it answered. Emits once settled,
+   * so a caller can hold its pending state until then.
+   */
+  public retrySummary(): Observable<void> {
+    // Concurrent callers (retries for different menu scopes) share one in-flight request.
+    this.retrySummary$ ??= this.projectService.getWriterSummary().pipe(
+      map((summary) => this.applySummary(summary)),
+      finalize(() => (this.retrySummary$ = null)),
+      takeUntilDestroyed(this.destroyRef),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    return this.retrySummary$;
+  }
+
+  /** Records a fast-path outcome: `null` is a failed lookup, anything else an answer to widen with. */
+  private applySummary(summary: WriterSummary | null): void {
+    this.lookupFailedInternal.set(summary === null);
+    if (summary) this.widen(summary);
   }
 
   /** OR-merge — only ever widens, never narrows, so the fast path and deferred sweep can land in any order. */

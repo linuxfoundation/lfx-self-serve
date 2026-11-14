@@ -5,16 +5,19 @@ import type { ProjectFunding } from '@lfx-one/shared/enums';
 import type { Project, QueryServiceResponse, ResolvedPeriodRange } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MicroserviceError } from '../errors';
+
 // Mirrors meeting.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub. `ProjectService`'s
 // constructor also builds `NatsService`/`SnowflakeService`/`ETagService`; the Snowflake-backed
 // suites below use only the `execute` mock, while the others stay trivial.
 const {
   proxyRequest,
-  addAccessToResources,
-  addAccessToResource,
+  addProjectWriterToResources,
+  addProjectWriterToResource,
   checkAccess,
   checkSingleAccessStrict,
+  checkSingleAccess,
   execute,
   warning,
   startOperation,
@@ -22,13 +25,15 @@ const {
   success,
   fetchWithETag,
   updateWithETag,
+  deleteWithETag,
   natsRequest,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  addAccessToResources: vi.fn(),
-  addAccessToResource: vi.fn(),
+  addProjectWriterToResources: vi.fn(),
+  addProjectWriterToResource: vi.fn(),
   checkAccess: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
+  checkSingleAccess: vi.fn(),
   execute: vi.fn(),
   warning: vi.fn(),
   // Typed rather than a bare `vi.fn(() => 0)` so the metadata-masking suite below can index
@@ -40,6 +45,7 @@ const {
   success: vi.fn(),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
+  deleteWithETag: vi.fn(),
   natsRequest: vi.fn(),
 }));
 
@@ -51,23 +57,33 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
     '../../../../../packages/shared/src/constants/project-staff.constants'
   );
-  // Real value, not a hardcoded copy that can drift: getFoundationProfileSummary returns this
-  // exact object on the empty-rows/missing-table paths, and the tests assert equality against it.
-  // dashboard-metrics.constants.ts has no Angular-dependent imports, so importing it directly is safe.
-  const dashboardMetricsConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/dashboard-metrics.constants')>(
-    '../../../../../packages/shared/src/constants/dashboard-metrics.constants'
+  const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
+    '../../../../../packages/shared/src/constants/api.constants'
   );
-  // Real value, not a hardcoded copy: getHealthOverviewKpis iterates this set, so a stale copy
-  // would keep passing after a real area is added/removed. Importing it directly is safe (no Angular deps).
-  const healthMetricsOverviewConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/health-metrics-overview.constants')>(
-    '../../../../../packages/shared/src/constants/health-metrics-overview.constants'
+  // Real values for the formation-record guard/validation constants (#5134), not hand copies.
+  const formationRecordConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-formation.constants')>(
+    '../../../../../packages/shared/src/constants/project-formation.constants'
   );
-  const healthMetricsEngagementConstants = await vi.importActual<
-    typeof import('../../../../../packages/shared/src/constants/health-metrics-engagement.constants')
-  >('../../../../../packages/shared/src/constants/health-metrics-engagement.constants');
-
+  // Real values for the document delete types/paths/message, not hand copies.
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
+  // Real value for the add-user conflict code: the add-refusal test asserts the wire value, and the
+  // user form reads the same constant. `project-permissions.constants.ts` has only a type-only import.
+  const permissionConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-permissions.constants')>(
+    '../../../../../packages/shared/src/constants/project-permissions.constants'
+  );
   return {
+    ...formationRecordConstants,
+    PROJECT_USER_ALREADY_ON_PROJECT_CODE: permissionConstants.PROJECT_USER_ALREADY_ON_PROJECT_CODE,
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+    DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE: documentConstants.DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+    FORMATION_TEAM_NAME: 'formation',
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
+    ACCESS_CHECK_BATCH_SIZE: apiConstants.ACCESS_CHECK_BATCH_SIZE,
+    // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
+    QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
     // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
     // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
     CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
@@ -99,17 +115,6 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // Real value (100, matching the shared constant): getFoundationProjectUids compares its resolved
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
-    HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-    HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
-    HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
-    // Real values (3 / 0.5): the Engagement tile read binds both, and the tests assert the binds.
-    HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-    HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
-    // Real function, not a stub: both getHealthOverview* queries generate their period-suffixed
-    // column list from this, so a stub would emit SQL that diverges from production.
-    buildHealthMetricsOverviewPeriods: healthMetricsOverviewConstants.buildHealthMetricsOverviewPeriods,
-    HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
-    HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
@@ -175,13 +180,14 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const emailUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/email.utils')>(
     '../../../../../packages/shared/src/utils/email.utils'
   );
-  // The real formatCurrency/formatNumber, not stubs: number.utils has no imports of its own, so
-  // deep-importing it directly is safe, and the getHealthOverviewKpis tests assert actual formatted strings.
-  const numberUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/number.utils')>(
-    '../../../../../packages/shared/src/utils/number.utils'
+  // The real isPubliclyDiscoverableProject, not a stub: getPubliclyDiscoverableProject's tests assert the
+  // public/Confidential gate itself. project-stage.utils only imports the enum file, so deep-importing is safe.
+  const projectStageUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/project-stage.utils')>(
+    '../../../../../packages/shared/src/utils/project-stage.utils'
   );
   return {
     computeIsFoundation: actual.computeIsFoundation,
+    isPubliclyDiscoverableProject: projectStageUtils.isPubliclyDiscoverableProject,
     summarizeWriterGrants: actual.summarizeWriterGrants,
     maskEmailForLogs: emailUtils.maskEmailForLogs,
     maskIdentifierForLogs: emailUtils.maskIdentifierForLogs,
@@ -190,16 +196,6 @@ vi.mock('@lfx-one/shared/utils', async () => {
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: objectUtils.nullifyEmptyStrings,
     resolvePeriodRange: vi.fn(),
-    formatCurrency: numberUtils.formatCurrency,
-    formatNumber: numberUtils.formatNumber,
-    // Deep-importing health-metrics-overview.utils.ts here would pull in date-time.utils -> '../enums',
-    // colliding with the incomplete @lfx-one/shared/enums mock above. The classification map itself
-    // is exhaustively unit-tested in health-metrics-overview.utils.spec.ts, so re-implement it inline.
-    resolveHealthMetricsOverviewKpiClassification: (status: string | null | undefined) => {
-      const map: Record<string, string> = { healthy: 'ok', needs_attention: 'watch', needs_action: 'act' };
-      const normalized = status?.trim().toLowerCase();
-      return (normalized && map[normalized]) || 'none';
-    },
   };
 });
 vi.mock('./microservice-proxy.service', () => ({
@@ -209,10 +205,11 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
-    public addAccessToResources = addAccessToResources;
-    public addAccessToResource = addAccessToResource;
+    public addProjectWriterToResources = addProjectWriterToResources;
+    public addProjectWriterToResource = addProjectWriterToResource;
     public checkAccess = checkAccess;
     public checkSingleAccessStrict = checkSingleAccessStrict;
+    public checkSingleAccess = checkSingleAccess;
   },
 }));
 vi.mock('./nats.service', () => ({
@@ -227,6 +224,7 @@ vi.mock('./etag.service', () => ({
   ETagService: class {
     public fetchWithETag = fetchWithETag;
     public updateWithETag = updateWithETag;
+    public deleteWithETag = deleteWithETag;
   },
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }), isMissingObjectError: vi.fn(() => false) } }));
@@ -236,16 +234,10 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import {
-  buildHealthMetricsOverviewPeriods,
-  HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
-  HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
-  PROJECT_SETTINGS_NOT_FOUND_CODE,
-} from '@lfx-one/shared/constants';
+import { PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
 
 import { ResourceNotFoundError } from '../errors';
 import { ProjectService } from './project.service';
-import { SnowflakeService } from './snowflake.service';
 
 const req = {} as unknown as Request;
 
@@ -263,7 +255,7 @@ describe('ProjectService — create picker methods', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    addAccessToResources.mockReset();
+    addProjectWriterToResources.mockReset();
     checkAccess.mockReset();
     service = new ProjectService();
   });
@@ -284,7 +276,7 @@ describe('ProjectService — create picker methods', () => {
       // page_size 100, not the query service's default 50: this read is on the My Formations
       // render path now, and pagination is sequential (PR #2799 review).
       expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_size: 100 });
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
       expect(checkAccess).not.toHaveBeenCalled();
     });
 
@@ -332,7 +324,7 @@ describe('ProjectService — create picker methods', () => {
           { uid: 'b', slug: 'b' },
         ])
       );
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
 
@@ -345,12 +337,14 @@ describe('ProjectService — create picker methods', () => {
 
     it('excludes the ROOT pseudo-project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getDirectGrantProjects(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('OR-includes meeting_coordinator when requested, without re-checking existing writers', async () => {
@@ -360,7 +354,7 @@ describe('ProjectService — create picker methods', () => {
           { uid: 'b', slug: 'b' },
         ])
       );
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'a' })))
       );
       checkAccess.mockResolvedValueOnce(new Map([['b#meeting_coordinator', true]]));
@@ -386,7 +380,9 @@ describe('ProjectService — create picker methods', () => {
   describe('getWriterSummary', () => {
     it('returns {true, false} when the only direct-writer project is a foundation', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -395,7 +391,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {false, true} when the only direct-writer project is non-foundation', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([nonFoundation('proj')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -404,7 +402,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {true, true} when direct-writer grants span both a foundation and a non-foundation project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('fdn'), nonFoundation('proj')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -413,7 +413,9 @@ describe('ProjectService — create picker methods', () => {
 
     it('returns {false, false} when the caller holds no direct writer grants', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([foundation('visible-only')]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: false })))
+      );
 
       const result = await service.getWriterSummary(req);
 
@@ -430,7 +432,7 @@ describe('ProjectService — create picker methods', () => {
   describe('getProjects', () => {
     it('requests QUERY_SERVICE_PAGE_SIZE, overriding any caller-supplied page_size', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       await service.getProjects(req, { page_size: 10 });
 
@@ -440,7 +442,7 @@ describe('ProjectService — create picker methods', () => {
     it('follows page_token across pages and returns the accumulated projects', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next-token'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       const result = await service.getProjects(req);
 
@@ -451,12 +453,12 @@ describe('ProjectService — create picker methods', () => {
 
     it('excludes the ROOT pseudo-project before the access check', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
       const result = await service.getProjects(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).toHaveBeenCalledWith(req, [], 'project');
+      expect(addProjectWriterToResources).toHaveBeenCalledWith(req, []);
     });
   });
 
@@ -474,13 +476,13 @@ describe('ProjectService — create picker methods', () => {
       expect(result.sort()).toEqual(['a', 'b']);
     });
 
-    it('excludes the ROOT pseudo-project without calling addAccessToResources', async () => {
+    it('excludes the ROOT pseudo-project without calling addProjectWriterToResources', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'root', slug: 'root' }]));
 
       const result = await service.getProjectSlugs(req);
 
       expect(result).toEqual([]);
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('follows page_token across pages and returns accumulated slugs', async () => {
@@ -495,12 +497,12 @@ describe('ProjectService — create picker methods', () => {
       expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', page_size: 500, page_token: 'next-token' });
     });
 
-    it('does not call addAccessToResources for a standard non-root project', async () => {
+    it('does not call addProjectWriterToResources for a standard non-root project', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'x', slug: 'x' }]));
 
       await service.getProjectSlugs(req);
 
-      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(addProjectWriterToResources).not.toHaveBeenCalled();
     });
 
     it('throws when a subsequent page fails (failOnPartial: true — partial slug set drops affiliations)', async () => {
@@ -516,7 +518,9 @@ describe('ProjectService — create picker methods', () => {
   describe('getChildProjects', () => {
     it('queries parent=project:<uid> and filters to writer-permitted children', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'child-1', slug: 'child-1' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.getChildProjects(req, 'parent-uid');
 
@@ -555,7 +559,9 @@ describe('ProjectService — create picker methods', () => {
   describe('searchCreatableProjects', () => {
     it('queries name=<term> with a small page size and filters to writer-permitted matches', async () => {
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-1', slug: 'match-1' }]));
-      addAccessToResources.mockImplementationOnce((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: true }))));
+      addProjectWriterToResources.mockImplementationOnce((_req: Request, projects: Project[]) =>
+        Promise.resolve(projects.map((p) => ({ ...p, writer: true })))
+      );
 
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
@@ -568,7 +574,7 @@ describe('ProjectService — create picker methods', () => {
       // silently fell back to the default name_asc would reorder results mid-scan (GH-2030).
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'match-2', slug: 'match-2' }]));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'match-2' })))
       );
 
@@ -582,7 +588,7 @@ describe('ProjectService — create picker methods', () => {
       // A single-page search would return [] here even though a real target exists.
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'visible-only', slug: 'visible-only' }], 'token-2'));
       proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'inherited-writer', slug: 'inherited-writer' }]));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) =>
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) =>
         Promise.resolve(projects.map((p) => ({ ...p, writer: p.uid === 'inherited-writer' })))
       );
 
@@ -595,7 +601,7 @@ describe('ProjectService — create picker methods', () => {
 
     it('stops paging once the page cap is reached, even if pages remain', async () => {
       proxyRequest.mockResolvedValue(pageOf([{ uid: 'no-match', slug: 'no-match' }], 'more'));
-      addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
+      addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects.map((p) => ({ ...p, writer: false }))));
 
       const result = await service.searchCreatableProjects(req, 'kubernetes');
 
@@ -606,7 +612,7 @@ describe('ProjectService — create picker methods', () => {
 
   it('never issues a type=project query-service call without filter_grants, parent, or name', async () => {
     proxyRequest.mockResolvedValue(pageOf([]));
-    addAccessToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects));
+    addProjectWriterToResources.mockImplementation((_req: Request, projects: Project[]) => Promise.resolve(projects));
 
     await service.getDirectGrantProjects(req);
     await service.getChildProjects(req, 'uid-1');
@@ -1173,7 +1179,7 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
 // IN-1252: getHealthMetricsDaily's v1→v2 column flip is covered above (in the daily-health-metrics
 // describe block); these three cover the other call sites the same fix touched — each used to read
-// (or remap through mapV1BandToV2) a v1 Snowflake column/shim and now reads HEALTH_SCORE_CATEGORY_V2
+// (or remap through a v1 band shim) a v1 Snowflake column and now reads HEALTH_SCORE_CATEGORY_V2
 // directly.
 describe('ProjectService — Health Score v2 categories', () => {
   let service: ProjectService;
@@ -1189,7 +1195,7 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationHealthScoreDistribution('cncf');
 
-      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through mapV1BandToV2, so a
+      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through a v1 band shim, so a
       // genuine v2 'fair' category would have fallen through to `unscored` instead of `fair`.
       expect(result.fair).toBe(4);
       expect(result.unscored).toBe(0);
@@ -1249,8 +1255,8 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationProjectsDetail('cncf');
 
-      // fails before fix: normalizeHealthScoreCategory ran the v1 mapV1BandToV2 shim over this
-      // column, so a genuine v2 'fair' category could be coerced instead of passing through as-is.
+      // fails before fix: normalizeHealthScoreCategory ran a v1 band shim over this column, so a
+      // genuine v2 'fair' category could be coerced instead of passing through as-is.
       expect(result.projects[0].healthScoreCategory).toBe('fair');
       expect(execute.mock.calls[0][0]).toContain('d.HEALTH_SCORE_CATEGORY_V2');
     });
@@ -1268,7 +1274,7 @@ describe('ProjectService — Health Score v2 categories', () => {
       const result = await service.getMultiFoundationSummary(req, ['cncf']);
 
       // fails before fix: the local HealthScoreRow type read HEALTH_SCORE_CATEGORY and remapped it
-      // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
+      // through a v1 band shim, so a v2 'fair' category wouldn't have passed straight through.
       expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
       expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
     });
@@ -1545,6 +1551,7 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
       expect.objectContaining({ foundationSlug: 'neonephos', foundationName: 'NeoNephos', projects: [expect.objectContaining({ projectSlug: 'nephio' })] }),
     ]);
     expect(result.totalCount).toBe(2);
+    expect(result.complete).toBe(true);
   });
 
   it('omits a sub-foundation whose detail fetch fails instead of failing the whole request', async () => {
@@ -1559,6 +1566,8 @@ describe('ProjectService — getFoundationProjectsDetailGrouped', () => {
 
     expect(result.groups).toEqual([expect.objectContaining({ foundationSlug: 'lfeurope' })]);
     expect(result.totalCount).toBe(1);
+    // A dropped branch marks the list partial so callers don't treat a missing project as unknown.
+    expect(result.complete).toBe(false);
   });
 
   it('excludes a discovered sub-foundation from its parent group instead of double-rendering it as a leaf row', async () => {
@@ -1703,8 +1712,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const n2 = foundation('n2-uid', 'n2-slug', 'N2');
     mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2] });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(false);
     expect(result).toEqual([
       { uid: 'n1-uid', slug: 'n1-slug', name: 'N1', visible: true, groupSlug: 'n1-slug', groupName: 'N1' },
       { uid: 'n2-uid', slug: 'n2-slug', name: 'N2', visible: true, groupSlug: 'n2-slug', groupName: 'N2' },
@@ -1718,8 +1729,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const n4 = foundation('n4-uid', 'n4-slug', 'N4');
     mockChildrenByParent({ 'root-uid': [n1], 'n1-uid': [n2], 'n2-uid': [n3], 'n3-uid': [n4] });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(true);
     // n4 is never discovered: reaching it would require fetching n3's children at depth 3,
     // which FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH (3) blocks.
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug', 'n3-slug']);
@@ -1730,8 +1743,10 @@ describe('ProjectService — discoverSubFoundations', () => {
     const children = Array.from({ length: 41 }, (_, i) => foundation(`c${i + 1}-uid`, `c${i + 1}-slug`, `C${i + 1}`));
     mockChildrenByParent({ 'root-uid': children });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
+    expect(budget.incomplete).toBe(true);
     // FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES (40) caps the total regardless of the 41st sibling existing.
     expect(result).toHaveLength(40);
     expect(result[39].slug).toBe('c40-slug');
@@ -1789,9 +1804,11 @@ describe('ProjectService — discoverSubFoundations', () => {
       return Promise.resolve(pageOf([]));
     });
 
-    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root');
+    const budget = { remaining: 40, incomplete: false };
+    const result = await (service as any).discoverSubFoundations(req, 'root-uid', 'root-slug', 'Root', 0, budget);
 
     expect(result.map((r: { slug: string }) => r.slug)).toEqual(['n1-slug', 'n2-slug']);
+    expect(budget.incomplete).toBe(true);
   });
 });
 
@@ -1960,6 +1977,16 @@ describe('ProjectService — getProjectsByIds', () => {
     });
   });
 
+  it('passes request options (e.g. a deadline) to every upstream project query', async () => {
+    proxyRequest.mockResolvedValue(pageOf([{ uid: 'one', slug: 'one' }]));
+    const options = { deadlineAt: Date.now() + 5000 };
+
+    await service.getProjectsByIds(req, ['one'], options);
+
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest.mock.calls[0][7]).toBe(options);
+  });
+
   it('does not warn when every requested UID resolves', async () => {
     proxyRequest.mockResolvedValueOnce(
       pageOf([
@@ -2031,15 +2058,68 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    addAccessToResource.mockReset();
+    addProjectWriterToResource.mockReset();
     checkSingleAccessStrict.mockReset();
     warning.mockReset();
     service = new ProjectService();
   });
 
+  it.each([true, false])('returns a verified writer=%s when strict writer checking is requested', async (writer) => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
+    checkSingleAccessStrict.mockResolvedValueOnce(writer);
+
+    const result = await service.getProjectById(req, 'p1', true, false, false, true);
+
+    expect(result.writer).toBe(writer);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'p1', access: 'writer_guard' });
+    expect(addProjectWriterToResource).not.toHaveBeenCalled();
+  });
+
+  it('propagates an actual access-check outage and allows a later strict lookup to recover (#4688)', async () => {
+    // Exercise the real project -> access-check boundary, not a mock that assumes false is authoritative.
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    const outage = new MicroserviceError('access check unavailable', 503, 'SERVICE_UNAVAILABLE');
+    proxyRequest
+      .mockResolvedValueOnce({ uid: 'p1', slug: 'p1' })
+      .mockRejectedValueOnce(outage)
+      .mockResolvedValueOnce({ uid: 'p1', slug: 'p1' })
+      .mockResolvedValueOnce({ results: ['project:p1#writer_guard@user:synthetic-writer\ttrue'] });
+
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).rejects.toBe(outage);
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).resolves.toMatchObject({ writer: true });
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+    expect(addProjectWriterToResource).not.toHaveBeenCalled();
+  });
+
+  it('does not turn an incomplete strict access-check response into a denial', async () => {
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' }).mockResolvedValueOnce({ results: [] });
+
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).rejects.toMatchObject({ code: 'ACCESS_CHECK_INCOMPLETE' });
+  });
+
+  it('preserves the ordinary non-strict lookup fallback for existing callers', async () => {
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' }).mockRejectedValueOnce(new Error('fga unavailable'));
+
+    await expect(service.getProjectById(req, 'p1')).resolves.toMatchObject({ writer: false });
+  });
+
+  it('forwards opt-in strict writer checking through slug resolution', async () => {
+    const detail = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', writer: true } as Project);
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+
+    await service.getProjectBySlug(req, 'test-project', false, false, true);
+
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, false, false, true);
+  });
+
   it('does not run the meeting_coordinator/auditor checks and returns neither field for a writer', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
-    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
+    addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
 
     const result = await service.getProjectById(req, 'p1', true, true, true);
 
@@ -2050,11 +2130,12 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('leaves auditor undefined and warns when the strict FGA check rejects, rather than reporting false', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
-    addAccessToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
+    addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: false });
     checkSingleAccessStrict.mockRejectedValueOnce(new Error('fga unavailable'));
 
     const result = await service.getProjectById(req, 'p1', true, false, true);
 
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'p1', access: 'auditor_guard' });
     expect(result.auditor).toBeUndefined();
     expect(warning).toHaveBeenCalledWith(req, 'get_project_by_id', 'auditor check failed, skipping field', {
       project_uid: 'p1',
@@ -2064,11 +2145,52 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
   it('forwards includeAuditor from getProjectBySlug through to getProjectById', async () => {
     const spy = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', slug: 'p1' } as Project);
-    vi.spyOn(service, 'getProjectIdBySlug').mockResolvedValueOnce({ exists: true, uid: 'p1', slug: 'p1' });
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
 
     await service.getProjectBySlug(req, 'p1', false, true);
 
-    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true);
+    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true, false);
+  });
+
+  it('resolves the encoded slug via HTTP and retains the detail access and role checks', async () => {
+    const project = { uid: 'p1', slug: 'test-project' } as Project;
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+    const detail = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce(project);
+    const legacyLookup = vi.spyOn(service, 'getProjectIdBySlug');
+
+    await expect(service.getProjectBySlug(req, 'test project', true, true)).resolves.toBe(project);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/slug-to-uid/test%20project', 'GET');
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true, false);
+    expect(legacyLookup).not.toHaveBeenCalled();
+  });
+
+  it.each([404, 403, 500, 503])('preserves a resolver HTTP %s without fetching project details', async (status) => {
+    const error = new MicroserviceError('lookup failed', status, 'LOOKUP_FAILED');
+    proxyRequest.mockRejectedValueOnce(error);
+    const detail = vi.spyOn(service, 'getProjectById');
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
+
+    expect(detail).not.toHaveBeenCalled();
+  });
+
+  it('preserves resolver transport failures rather than reporting a missing project', async () => {
+    const error = new MicroserviceError('lookup unavailable', 503, 'SERVICE_UNAVAILABLE', { transportFailure: true });
+    proxyRequest.mockRejectedValueOnce(error);
+    const detail = vi.spyOn(service, 'getProjectById');
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
+
+    expect(detail).not.toHaveBeenCalled();
+  });
+
+  it('preserves authorization failures from the resolved project detail lookup', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+    const error = new MicroserviceError('forbidden', 403, 'FORBIDDEN');
+    vi.spyOn(service, 'getProjectById').mockRejectedValueOnce(error);
+
+    await expect(service.getProjectBySlug(req, 'test-project')).rejects.toBe(error);
   });
 });
 
@@ -2104,549 +2226,6 @@ describe('ProjectService — getHealthMetricsDaily', () => {
 
     expect(result.currentAvgHealthScore).toBe(80);
     expect(execute.mock.calls[0][0]).toContain('AVG(HEALTH_SCORE_V2)');
-  });
-});
-
-// Both HEALTH_OVERVIEW_* queries now read every period at once and alias each period-suffixed column
-// `<COLUMN>__<RANGE>`. These builders expand a single period's fixture slice onto one range's keys and
-// pass the period-invariant columns through untouched, leaving the other ranges NULL.
-// Real list, not a copy: the query and the projection both key off it, so a stale copy here would
-// keep asserting on aliases production no longer emits.
-const PERIOD_SUFFIXED_KPI_COLUMNS = new Set<string>(HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS);
-
-const buildKpiWideRow = (slice: Record<string, number | string | null>, range = 'YTD'): Record<string, number | string | null> =>
-  Object.fromEntries(Object.entries(slice).map(([column, value]) => [PERIOD_SUFFIXED_KPI_COLUMNS.has(column) ? `${column}__${range}` : column, value]));
-
-const buildRevenueWideRow = (slice: Record<string, number | string | null>, range = 'YTD'): Record<string, number | string | null> =>
-  Object.fromEntries(Object.entries(slice).map(([column, value]) => [column === 'REVENUE_DOMAIN' ? column : `${column}__${range}`, value]));
-
-describe('ProjectService — getHealthOverviewRevenue', () => {
-  let service: ProjectService;
-
-  beforeEach(() => {
-    execute.mockReset();
-    service = new ProjectService();
-  });
-
-  it('marks the response as available and orders streams by domain when rows are returned', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
-      ],
-    });
-
-    const result = await service.getHealthOverviewRevenue('cncf');
-
-    expect(result['YTD']).toEqual({
-      dataAvailable: true,
-      total: 1_000_000,
-      streams: [
-        { key: 'memberships', value: 600_000 },
-        { key: 'events', value: 400_000 },
-      ],
-    });
-    expect(execute.mock.calls[0][0]).toContain('ORDER BY revenue_domain');
-  });
-
-  it('reports dataAvailable false for every range with a zeroed summary when no rows are returned, instead of a fake $0', async () => {
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    const result = await service.getHealthOverviewRevenue('cncf');
-
-    expect(Object.values(result)).toEqual(
-      Array.from({ length: buildHealthMetricsOverviewPeriods().length }, () => ({
-        dataAvailable: false,
-        total: 0,
-        streams: [],
-      }))
-    );
-  });
-
-  it('reports dataAvailable false for the ranges whose total is null while keeping the populated range available', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        {
-          REVENUE_DOMAIN: 'memberships',
-          REVENUE_USD__YTD: 600_000,
-          FOUNDATION_TOTAL_REVENUE_USD__YTD: 600_000,
-          REVENUE_USD__COMPLETED_YEAR: null,
-          FOUNDATION_TOTAL_REVENUE_USD__COMPLETED_YEAR: null,
-        },
-      ],
-    });
-
-    const result = await service.getHealthOverviewRevenue('cncf');
-
-    expect(result['YTD']).toEqual({ dataAvailable: true, total: 600_000, streams: [{ key: 'memberships', value: 600_000 }] });
-    expect(result['COMPLETED_YEAR']).toEqual({ dataAvailable: false, total: 0, streams: [] });
-  });
-
-  it('keeps a null stream value as null rather than reporting it as $0', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 600_000 }),
-        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: 600_000 }),
-      ],
-    });
-
-    const result = await service.getHealthOverviewRevenue('cncf');
-
-    expect(result['YTD']?.streams).toEqual([
-      { key: 'memberships', value: 600_000 },
-      { key: 'events', value: null },
-    ]);
-  });
-
-  it('keeps a period available when the driver returns its high-precision totals as strings', async () => {
-    // Snowflake can serialize a high-precision NUMBER as a string; rejecting it instead of coercing
-    // would report a funded foundation as having no revenue data for the period.
-    execute.mockResolvedValueOnce({
-      rows: [{ REVENUE_DOMAIN: 'memberships', REVENUE_USD__YTD: '600000.00', FOUNDATION_TOTAL_REVENUE_USD__YTD: '1000000.00' }],
-    });
-
-    const result = await service.getHealthOverviewRevenue('cncf');
-
-    expect(result['YTD']).toEqual({ dataAvailable: true, total: 1_000_000, streams: [{ key: 'memberships', value: 600_000 }] });
-  });
-
-  it('reads every selectable period in a single one-bind query and never emits the 4th-year-back suffix this table lacks', async () => {
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    await service.getHealthOverviewRevenue('cncf');
-
-    const [query, binds] = execute.mock.calls[0];
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(binds).toEqual(['cncf']);
-    expect((query as string).match(/\?/g)).toHaveLength(1);
-    // Pinned independently of the constant: the loop below derives its expectations from the same
-    // list the service generates from, so only this assertion catches a column silently dropped there.
-    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'FOUNDATION_TOTAL_REVENUE_USD']);
-    for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
-      for (const column of HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS) {
-        expect(query).toContain(`${column.toLowerCase()}${suffix}`);
-      }
-    }
-    expect(query).not.toContain('_4th_last_completed_year');
-  });
-});
-
-describe('ProjectService — getHealthOverviewKpis', () => {
-  let service: ProjectService;
-  const isEngagementQuery = (sql: unknown): boolean => String(sql).includes('ENGAGEMENT_GROUP_ATTENDANCE');
-
-  beforeEach(() => {
-    execute.mockReset();
-    warning.mockReset();
-    // The KPI read is issued first, so a mockResolvedValueOnce answers it; the engagement read falls
-    // through to this empty default and its area is left out.
-    execute.mockImplementation(async () => ({ rows: [] }));
-    service = new ProjectService();
-  });
-
-  it('maps a fetched row to the five covered area states, pinning to a single row', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildKpiWideRow({
-          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
-          EVENTS_STATUS: 'healthy',
-          // >1,000 so formatNumber's compact notation is actually exercised, not just its identity
-          // behavior on small integers (which the pre-formatNumber `String()` code also produced).
-          CERTIFICATIONS_EARNED_COUNT: 1240,
-          TRAINING_STATUS: 'needs_attention',
-          // Deliberately distinct from the frontend's still-fixture-backed `code` stat value (184)
-          // so this test can't pass by accident against stale fixture data.
-          CONTRIBUTORS_COUNT: 2540,
-          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
-          MEMBERS_STATUS: 'needs_action',
-          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
-          NON_MEMBERS_STATUS: 'healthy',
-        }),
-      ],
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result).toEqual([
-      expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok', showStatus: true }),
-      expect.objectContaining({ area: 'trn', statValue: '1.2K', statLabel: 'certifications earned', classification: 'watch' }),
-      expect.objectContaining({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' }),
-      expect.objectContaining({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'ok' }),
-      expect.objectContaining({ area: 'code', statValue: '2.5K', statLabel: 'active contributors', classification: 'none' }),
-    ]);
-    expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
-  });
-
-  it('renders a blank stat with an alternate label for each NULL column instead of a fabricated 0, and hides the status chip when there is no registration goal', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildKpiWideRow({
-          EVENTS_PCT_OF_REGISTRATION_GOAL: null,
-          EVENTS_STATUS: null,
-          CERTIFICATIONS_EARNED_COUNT: null,
-          TRAINING_STATUS: null,
-          CONTRIBUTORS_COUNT: null,
-          MEMBERS_RENEWING_90D_VALUE_USD: null,
-          MEMBERS_STATUS: null,
-          NON_MEMBERS_PIPELINE_VALUE_USD: null,
-          NON_MEMBERS_STATUS: null,
-        }),
-      ],
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result).toEqual([
-      expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none', showStatus: false }),
-      expect.objectContaining({ area: 'trn', statValue: '—', statLabel: 'certifications earned', classification: 'none' }),
-      expect.objectContaining({ area: 'mem', statValue: '—', statLabel: 'renewing in next 90 days', classification: 'none' }),
-      expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'none' }),
-      expect.objectContaining({ area: 'code', statValue: '—', statLabel: 'active contributors', classification: 'none' }),
-    ]);
-  });
-
-  it('renders a genuine zero contributor count as "0", not the neutral placeholder', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildKpiWideRow({
-          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
-          EVENTS_STATUS: 'healthy',
-          CERTIFICATIONS_EARNED_COUNT: 42,
-          TRAINING_STATUS: 'needs_attention',
-          CONTRIBUTORS_COUNT: 0,
-          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
-          MEMBERS_STATUS: 'needs_action',
-          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
-          NON_MEMBERS_STATUS: 'healthy',
-        }),
-      ],
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '0', statLabel: 'active contributors' })]));
-  });
-
-  it('renders a NULL stat value alongside a real status for a mixed row, instead of only ever testing the all-NULL/all-populated extremes', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildKpiWideRow({
-          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
-          EVENTS_STATUS: 'healthy',
-          CERTIFICATIONS_EARNED_COUNT: 42,
-          TRAINING_STATUS: 'needs_attention',
-          CONTRIBUTORS_COUNT: 2540,
-          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
-          MEMBERS_STATUS: 'needs_action',
-          NON_MEMBERS_PIPELINE_VALUE_USD: null,
-          NON_MEMBERS_STATUS: 'healthy',
-        }),
-      ],
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result).toEqual(
-      expect.arrayContaining([expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'ok' })])
-    );
-  });
-
-  it('shows the events status chip with a real classification when the goal is unset but EVENTS_STATUS is populated', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildKpiWideRow({
-          EVENTS_PCT_OF_REGISTRATION_GOAL: null,
-          EVENTS_STATUS: 'healthy',
-          CERTIFICATIONS_EARNED_COUNT: 42,
-          TRAINING_STATUS: 'needs_attention',
-          CONTRIBUTORS_COUNT: 2540,
-          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
-          MEMBERS_STATUS: 'needs_action',
-          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
-          NON_MEMBERS_STATUS: 'healthy',
-        }),
-      ],
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'ok', showStatus: true }),
-      ])
-    );
-  });
-
-  it('shows an "Awaiting data" events status chip when the goal is set but EVENTS_STATUS is unpopulated, matching how trn/mem/non treat a null status', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        buildKpiWideRow({
-          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
-          EVENTS_STATUS: null,
-          CERTIFICATIONS_EARNED_COUNT: 42,
-          TRAINING_STATUS: 'needs_attention',
-          CONTRIBUTORS_COUNT: 2540,
-          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
-          MEMBERS_STATUS: 'needs_action',
-          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
-          NON_MEMBERS_STATUS: 'healthy',
-        }),
-      ],
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'none', showStatus: true }),
-      ])
-    );
-  });
-
-  it('adds the Engagement state from ENGAGEMENT_GROUP_ATTENDANCE, with no status chip', async () => {
-    execute.mockImplementation(async (sql: string) =>
-      isEngagementQuery(sql)
-        ? {
-            rows: [
-              {
-                MEASURED_GROUPS__YTD: 40,
-                ACTIVE_GROUPS__YTD: 31,
-                LOW_ATTENDANCE_GROUPS__YTD: 8,
-                MEASURED_GROUPS__COMPLETED_YEAR: 5,
-                ACTIVE_GROUPS__COMPLETED_YEAR: 0,
-                LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: 0,
-              },
-            ],
-          }
-        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
-    );
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(result['YTD']?.[0]).toEqual({
-      area: 'eng',
-      statValue: '8 of 31',
-      statLabel: 'groups below 50% attendance',
-      statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
-      classification: 'none',
-      evaluatedAt: '',
-      showStatus: false,
-    });
-    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no active groups this period' }));
-    expect(result['YTD']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '2.5K' })]));
-  });
-
-  it('reads a null Engagement count as no data rather than zero', async () => {
-    execute.mockImplementation(async (sql: string) =>
-      isEngagementQuery(sql)
-        ? {
-            rows: [
-              {
-                MEASURED_GROUPS__YTD: 12,
-                ACTIVE_GROUPS__YTD: null,
-                LOW_ATTENDANCE_GROUPS__YTD: null,
-                MEASURED_GROUPS__COMPLETED_YEAR: 12,
-                ACTIVE_GROUPS__COMPLETED_YEAR: 12,
-                LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: null,
-              },
-            ],
-          }
-        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
-    );
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(result['YTD']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
-    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
-  });
-
-  // COUNT_IF over zero rows is 0, not NULL — a foundation with no measured groups is unmeasured.
-  it('reads a period with no measured groups as no data, not "no active groups"', async () => {
-    execute.mockImplementation(async (sql: string) =>
-      isEngagementQuery(sql)
-        ? {
-            rows: [
-              {
-                MEASURED_GROUPS__YTD: 0,
-                ACTIVE_GROUPS__YTD: 0,
-                LOW_ATTENDANCE_GROUPS__YTD: 0,
-                MEASURED_GROUPS__COMPLETED_YEAR: 3,
-                ACTIVE_GROUPS__COMPLETED_YEAR: 0,
-                LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: 0,
-              },
-            ],
-          }
-        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
-    );
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(result['YTD']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
-    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no active groups this period' }));
-  });
-
-  it('counts only rated, non-dormant groups with an attendance rate per period, binding the thresholds and the foundation', async () => {
-    await service.getHealthOverviewKpis('cncf');
-
-    const [query, binds] = execute.mock.calls.find(([sql]) => isEngagementQuery(sql)) ?? [];
-    const ranges = buildHealthMetricsOverviewPeriods().map((period) => period.range);
-    expect(query).toContain(
-      'COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND meetings_count_ytd >= ? AND attendance_pct_ytd IS NOT NULL) AS ACTIVE_GROUPS__YTD'
-    );
-    expect(query).toContain('COUNT(meetings_count_ytd) AS MEASURED_GROUPS__YTD');
-    expect(query).toContain('attendance_pct_3rd_last_completed_year < ?');
-    expect(query).not.toContain('_4th_last_completed_year');
-    expect(binds).toEqual([...ranges.flatMap(() => [3, 3, 0.5]), 'cncf']);
-    expect((query as string).match(/\?/g)).toHaveLength((binds as unknown[]).length);
-  });
-
-  it('keeps the Engagement state when the foundation has no KPI row', async () => {
-    execute.mockImplementation(async (sql: string) =>
-      isEngagementQuery(sql) ? { rows: [{ MEASURED_GROUPS__YTD: 4, ACTIVE_GROUPS__YTD: 4, LOW_ATTENDANCE_GROUPS__YTD: 1 }] } : { rows: [] }
-    );
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', statValue: '1 of 4' })]);
-  });
-
-  it('leaves Engagement out and still returns the other areas when its read fails', async () => {
-    execute.mockImplementation(async (sql: string) => {
-      if (isEngagementQuery(sql)) {
-        throw new Error('warehouse unavailable');
-      }
-      return { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] };
-    });
-
-    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
-
-    expect(result?.map((state) => state.area)).toEqual(['evt', 'trn', 'mem', 'non', 'code']);
-    expect(warning).toHaveBeenCalledWith(undefined, 'get_health_overview_engagement_counts', 'Engagement tile counts unavailable', {
-      foundation_slug: 'cncf',
-      err: expect.objectContaining({ message: 'warehouse unavailable' }),
-    });
-  });
-
-  it('keeps the Engagement state and logs the error when the KPI read fails', async () => {
-    const failure = new Error('kpi table missing');
-    execute.mockImplementation(async (sql: string) => {
-      if (isEngagementQuery(sql)) {
-        return { rows: [{ MEASURED_GROUPS__YTD: 4, ACTIVE_GROUPS__YTD: 4, LOW_ATTENDANCE_GROUPS__YTD: 1 }] };
-      }
-      throw failure;
-    });
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', statValue: '1 of 4' })]);
-    expect(warning).toHaveBeenCalledWith(undefined, 'get_health_overview_kpis', 'Health overview KPIs unavailable', { foundation_slug: 'cncf', err: failure });
-    expect(warning).not.toHaveBeenCalledWith(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', expect.anything());
-  });
-
-  it('returns an empty array for every range when no row is returned for the foundation', async () => {
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(Object.keys(result)).toEqual(buildHealthMetricsOverviewPeriods().map((period) => period.range));
-    expect(Object.values(result)).toEqual(buildHealthMetricsOverviewPeriods().map(() => []));
-  });
-
-  it('projects each range independently from the one wide row, so a populated YTD does not leak into an empty prior year', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [
-        {
-          ...buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540, MEMBERS_RENEWING_90D_VALUE_USD: 250_000 }),
-          ...buildKpiWideRow({ CONTRIBUTORS_COUNT: null }, 'COMPLETED_YEAR'),
-        },
-      ],
-    });
-
-    const result = await service.getHealthOverviewKpis('cncf');
-
-    expect(result['YTD']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '2.5K' })]));
-    expect(result['COMPLETED_YEAR']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '—' })]));
-    // Period-invariant columns are selected once, so they repeat across every range's projected row.
-    expect(result['COMPLETED_YEAR']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'mem', statValue: '$250K' })]));
-  });
-
-  it('reads every selectable period in a single one-bind query, selects the invariant columns once, and never emits the 4th-year-back suffix', async () => {
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    await service.getHealthOverviewKpis('cncf');
-
-    const kpiCalls = execute.mock.calls.filter(([sql]) => !isEngagementQuery(sql));
-    const [query, binds] = kpiCalls[0];
-    expect(kpiCalls).toHaveLength(1);
-    expect(binds).toEqual(['cncf']);
-    expect((query as string).match(/\?/g)).toHaveLength(1);
-    for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
-      expect(query).toContain(`events_pct_of_registration_goal${suffix}`);
-      expect(query).toContain(`contributors_count${suffix}`);
-      // The members/non-members columns carry no suffix — they must never be generated per range.
-      expect(query).not.toContain(`members_renewing_90d_value_usd${suffix}`);
-    }
-    expect((query as string).match(/members_renewing_90d_value_usd/g)).toHaveLength(1);
-    expect((query as string).match(/non_members_pipeline_value_usd/g)).toHaveLength(1);
-    expect(query).not.toContain('_4th_last_completed_year');
-  });
-});
-
-describe('ProjectService — getFoundationProfileSummary', () => {
-  let service: ProjectService;
-
-  beforeEach(() => {
-    execute.mockReset();
-    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(false);
-    service = new ProjectService();
-  });
-
-  it('formats a fetched row into display strings, pinning to a single row', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 14, MEMBERSHIP_TIER_COUNT: 4, BOARD_SEAT_COUNT: 12, RENEWALS_NEXT_90D_COUNT: 5 }],
-    });
-
-    const result = await service.getFoundationProfileSummary('cncf');
-
-    expect(result).toEqual({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-    expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
-  });
-
-  it('singularizes tier and seat labels when the count is exactly 1', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 1, MEMBERSHIP_TIER_COUNT: 1, BOARD_SEAT_COUNT: 1, RENEWALS_NEXT_90D_COUNT: 0 }],
-    });
-
-    const result = await service.getFoundationProfileSummary('cncf');
-
-    expect(result).toEqual({ dataAvailable: true, projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
-  });
-
-  it('renders a null column as an em dash rather than a zero count', async () => {
-    execute.mockResolvedValueOnce({
-      rows: [{ PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
-    });
-
-    const result = await service.getFoundationProfileSummary('cncf');
-
-    expect(result).toEqual({ dataAvailable: true, projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
-  });
-
-  it('returns the unavailable default when no row is returned for the foundation', async () => {
-    execute.mockResolvedValueOnce({ rows: [] });
-
-    const result = await service.getFoundationProfileSummary('cncf');
-
-    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
-  });
-
-  it('returns the unavailable default instead of a 5xx when the table is not deployed yet', async () => {
-    vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(true);
-    execute.mockRejectedValueOnce(new Error('Object does not exist'));
-
-    const result = await service.getFoundationProfileSummary('cncf');
-
-    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 });
 
@@ -2692,27 +2271,43 @@ describe('ProjectService — enrichWithProjectData', () => {
     await service.enrichWithProjectData(req, [{ project_uid: 'a' }, { project_uid: 'a' }, { project_uid: 'b' }]);
 
     expect(getProjectsByIds).toHaveBeenCalledTimes(1);
-    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b']);
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b'], undefined);
+  });
+
+  it('forwards request options (e.g. a deadline) to the batched lookup', async () => {
+    const getProjectsByIds = vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+    const options = { deadlineAt: Date.now() + 5000 };
+
+    await service.enrichWithProjectData(req, [{ project_uid: 'a' }], options);
+
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a'], options);
   });
 
   it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
     vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(
       new Map([
-        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn' })],
+        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn', logo_url: 'https://logos.example/fdn.svg' })],
         ['child', childProject('child', 'fdn', { name: 'Fresh Child', slug: 'fresh-child' })],
       ])
     );
 
     const result = await service.enrichWithProjectData(req, [
-      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '' },
+      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '', project_logo_url: 'stale' },
       { project_uid: 'child', project_name: 'stale', project_slug: 'stale', is_foundation: true, parent_project_uid: 'stale-parent' },
     ]);
 
     // Fresh fields win on every mapped column — including is_foundation flipping both ways
     // (stale false -> computed true for the foundation; stale true -> computed false for the child).
     expect(result).toEqual([
-      { project_uid: 'fdn', project_name: 'Fresh Foundation', project_slug: 'fresh-fdn', is_foundation: true, parent_project_uid: '' },
-      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn' },
+      {
+        project_uid: 'fdn',
+        project_name: 'Fresh Foundation',
+        project_slug: 'fresh-fdn',
+        is_foundation: true,
+        parent_project_uid: '',
+        project_logo_url: 'https://logos.example/fdn.svg',
+      },
+      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn', project_logo_url: '' },
     ]);
   });
 
@@ -2720,7 +2315,13 @@ describe('ProjectService — enrichWithProjectData', () => {
     vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
 
     const result = await service.enrichWithProjectData(req, [
-      { project_uid: 'gone', project_name: 'Payload Name', project_slug: 'payload-slug', parent_project_uid: 'payload-parent' },
+      {
+        project_uid: 'gone',
+        project_name: 'Payload Name',
+        project_slug: 'payload-slug',
+        parent_project_uid: 'payload-parent',
+        project_logo_url: 'payload-logo',
+      },
       { project_uid: 'gone2', project_name: 'Tiered', project_slug: 'tiered', is_foundation: true, parent_project_uid: 'p' },
     ]);
 
@@ -2730,6 +2331,7 @@ describe('ProjectService — enrichWithProjectData', () => {
       project_slug: 'payload-slug',
       parent_project_uid: 'payload-parent',
       is_foundation: undefined,
+      project_logo_url: 'payload-logo',
     });
     // The fail-soft contract: consumers treat undefined as "tier unknown" and fall back safely;
     // a coerced false would mislabel a foundation-owned entity as project-owned.
@@ -2795,7 +2397,7 @@ describe('ProjectService.updateProjectPermissions', () => {
       code: 'AUTHORIZATION_REQUIRED',
     });
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     // Nothing may run before the gate: the directory lookup answers "is this address known?"
     // with a distinguishable 404, so reaching it would leak directory membership to a reader.
     expect(natsRequest).not.toHaveBeenCalled();
@@ -2843,6 +2445,138 @@ describe('ProjectService.updateProjectPermissions', () => {
 
     expect(result.writers).toEqual([]);
     expect(result.auditors).toEqual([member]);
+  });
+
+  describe('meeting coordinator role', () => {
+    const kim = { name: 'Kim Park', email: 'kim.park@partner-corp.example' };
+
+    it('adds a user as a meeting coordinator only', async () => {
+      mockFetch({ writers: [], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'add', kim.email, 'meeting_coordinator', kim);
+
+      expect(result.meeting_coordinators).toEqual([kim]);
+      expect(result.writers).toEqual([]);
+      expect(result.auditors).toEqual([]);
+    });
+
+    it('moves a writer to meeting coordinator, leaving no writer entry', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'meeting_coordinator');
+
+      expect(result.writers).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
+    it('moves a meeting coordinator to view, leaving no coordinator entry', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
+
+      expect(result.auditors).toEqual([member]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('normalizes a user held in several lists to the one chosen role', async () => {
+      mockFetch({ writers: [member], auditors: [member], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'manage');
+
+      expect(result.writers).toEqual([member]);
+      expect(result.auditors).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('re-files a coordinator held only by a duplicate (email-only) entry under the surviving username entry', async () => {
+      const emailOnlyCoordinator = { name: 'Sam Chen', email: 'sam.chen.dup@cascade-data.example' };
+      mockFetch({ writers: [], auditors: [member], meeting_coordinators: [emailOnlyCoordinator] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'meeting_coordinator', undefined, [
+        'sam.chen.dup@cascade-data.example',
+      ]);
+
+      expect(result.auditors).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
+    it('removes the coordinator entry along with any writer and auditor entries', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen');
+
+      expect(result.writers).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('refuses to re-add a coordinator already on the project', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+
+      await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'sam.chen', 'view')).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
+  // GH-3276: a collapsed dual-role row (#3218) is removed/role-changed in one ETag-guarded
+  // write that also clears its other backend entries, instead of a second client-issued
+  // call racing the first (Copilot #3244) or resolving a duplicate email through the NATS
+  // directory, which could misresolve a stale identifier onto an unrelated, just-written
+  // real-username entry (Cursor Bugbot #3244).
+  describe('duplicateIdentifiers', () => {
+    const duplicateByUsername = { name: 'Sam Chen', email: 'sam.chen.alt@cascade-data.example', username: 'schen-dup' };
+    const duplicateByEmailOnly = { name: 'Sam Chen', email: 'sam.chen.dup@cascade-data.example' };
+
+    it('removes a duplicate matched by username alongside the primary identifier, in one write', async () => {
+      mockFetch({ writers: [member, duplicateByUsername], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, ['schen-dup']);
+
+      expect(result.writers).toEqual([]);
+      expect(updateWithETag).toHaveBeenCalledTimes(1);
+      // No directory lookup for the duplicate identifier — it is matched directly against
+      // the settings already fetched, never resolved through NATS.
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('removes a duplicate matched by email only (no-username entry) case-insensitively', async () => {
+      mockFetch({ writers: [member], auditors: [duplicateByEmailOnly] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, [
+        'SAM.CHEN.DUP@cascade-data.example',
+      ]);
+
+      expect(result.auditors).toEqual([]);
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not remove an entry whose username merely differs in case from the duplicate identifier', async () => {
+      const differentCasing = { name: 'Someone Else', email: 'someone.else@cascade-data.example', username: 'SChen-Dup' };
+      mockFetch({ writers: [member, differentCasing], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, ['schen-dup']);
+
+      // 'schen-dup' !== 'SChen-Dup' under case-sensitive username matching — the unrelated
+      // entry must survive (this is exactly the data-loss scenario GH-3276 guards against).
+      expect(result.writers).toEqual([differentCasing]);
+    });
+
+    it('clears duplicates alongside a role change in the same write', async () => {
+      mockFetch({ writers: [member, duplicateByUsername], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view', undefined, ['schen-dup']);
+
+      expect(result.writers).toEqual([]);
+      expect(result.auditors).toEqual([member]);
+      expect(updateWithETag).toHaveBeenCalledTimes(1);
+    });
+
+    it('supports clearing 3+ duplicate entries in a single request (dealako #3244 review)', async () => {
+      const dup2 = { name: 'Sam Chen', email: 'sam.chen.dup2@cascade-data.example', username: 'schen-dup2' };
+      mockFetch({ writers: [member, duplicateByUsername, dup2], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen', undefined, undefined, ['schen-dup', 'schen-dup2']);
+
+      expect(result.writers).toEqual([]);
+    });
   });
 });
 
@@ -2972,7 +2706,7 @@ describe('ProjectService.updateProjectStaff', () => {
       code: 'AUTHORIZATION_REQUIRED',
     });
 
-    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
     // Nothing may run before the gate. The directory lookup in particular distinguishes a
     // known email (reaches the write) from an unknown one (404), so letting an unauthorized
     // caller reach it would leak directory membership; the settings read is skipped too.
@@ -3135,5 +2869,440 @@ describe('ProjectService — directory lookup failure classification', () => {
       code: 'SERVICE_UNAVAILABLE',
       transportFailure: true,
     });
+  });
+});
+
+describe('ProjectService — getPubliclyDiscoverableProject', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    warning.mockReset();
+    debug.mockReset();
+    service = new ProjectService();
+  });
+
+  it('returns the project when it is public and Active', async () => {
+    const project = { uid: 'p1', slug: 'p1', name: 'Visible', public: true, stage: 'Active' } as Project;
+    proxyRequest.mockResolvedValueOnce(project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toEqual(project);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/p1', 'GET');
+  });
+
+  it('returns null for a non-public project', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', name: 'Hidden', public: false, stage: 'Active' } as Project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  it('returns null for a Formation - Confidential project even when public', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', name: 'Secret', public: true, stage: 'Formation - Confidential' } as Project);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  // Upstream rejected the identifier itself — a definitive "not found / not visible" answer, so null, logged at
+  // DEBUG because the identifier is caller-controlled on these anonymous routes.
+  it.each([400, 403, 404])('returns null and logs at DEBUG (not WARN) when upstream answers %i', async (status) => {
+    proxyRequest.mockRejectedValueOnce(new MicroserviceError('rejected', status, 'UPSTREAM'));
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+    expect(debug).toHaveBeenCalledWith(req, 'get_publicly_discoverable_project', expect.any(String), { project_uid: 'p1', status_code: status });
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('returns null when upstream returns an empty body (getProjectById throws ResourceNotFoundError)', async () => {
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toBeNull();
+  });
+
+  // A transient failure says nothing about the project — rethrow so callers surface an error rather than a
+  // cacheable empty response (an empty ICS feed would be synced over subscribers' calendars).
+  it.each([
+    ['a 503', new MicroserviceError('unavailable', 503, 'SERVICE_UNAVAILABLE')],
+    ['a timeout', new MicroserviceError('timeout', 408, 'TIMEOUT')],
+    ['a non-API error', new Error('socket hang up')],
+  ])('rethrows %s instead of treating the project as hidden', async (_label, err) => {
+    proxyRequest.mockRejectedValueOnce(err);
+
+    await expect(service.getPubliclyDiscoverableProject(req, 'p1')).rejects.toBe(err);
+  });
+});
+
+describe('ProjectService — getProjectIdBySlug', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a uid reply', async () => {
+    natsRequest.mockResolvedValue({ data: ' 00000000-0000-4000-8000-000000000001 ' });
+
+    await expect(service.getProjectIdBySlug(req, 'synthetic-project')).resolves.toEqual({
+      uid: '00000000-0000-4000-8000-000000000001',
+      slug: 'synthetic-project',
+      exists: true,
+    });
+  });
+
+  // The responder answers an unknown or hidden slug with a JSON error body; taking it for a uid sent
+  // callers on to an access check against a garbage project id.
+  it('treats the responder not_found error body as a missing project, never as a uid', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectIdBySlug(req, 'hidden-project')).resolves.toEqual({ uid: '', slug: 'hidden-project', exists: false });
+  });
+
+  it('rethrows any other error body instead of reporting the project as missing', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'internal', message: 'boom' }) });
+
+    await expect(service.getProjectIdBySlug(req, 'synthetic-project')).rejects.toThrow('Project slug lookup failed: internal');
+  });
+});
+
+// #4507: uid -> slug over the metadata subject, so a campaign_manager without `viewer` can name a project by uid.
+describe('ProjectService — getProjectSlugByUid', () => {
+  let service: ProjectService;
+  const uid = '00000000-0000-4000-8000-000000000001';
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a slug reply on the get_slug subject', async () => {
+    natsRequest.mockResolvedValue({ data: ' synthetic-project ' });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBe('synthetic-project');
+    expect(natsRequest).toHaveBeenCalledWith('lfx.projects-api.get_slug', expect.anything(), expect.anything());
+  });
+
+  it('answers null for the not_found error body, never a slug', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBeNull();
+  });
+
+  // An unusable answer is the service's malfunction, not a miss: 502, so a caller never authorizes on it.
+  it.each([
+    ['another error body', JSON.stringify({ error: 'internal', message: 'boom' })],
+    ['an empty reply', ''],
+  ])('answers %s with a 502 MicroserviceError instead of reporting the project as missing', async (_label, data) => {
+    natsRequest.mockResolvedValue({ data });
+
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 502, code: 'BAD_GATEWAY', operation: 'get_project_slug_by_uid' });
+  });
+
+  // A lost answer is an outage, not a miss: 503 with the transport marker.
+  it.each([
+    ['a timeout', new Error('TIMEOUT')],
+    ['no responder', new Error('503 no responders')],
+    ['a closed connection', new Error('CONNECTION_CLOSED')],
+  ])('answers %s with a 503 transport MicroserviceError', async (_label, failure) => {
+    natsRequest.mockRejectedValue(failure);
+
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', transportFailure: true, originalError: failure });
+  });
+});
+
+describe('ProjectService.updateFormationRecord', () => {
+  let service: ProjectService;
+  const req = { path: '/api/projects/project-1/formation-record' } as Request;
+
+  // Synthetic stored project with fields the formation card never edits — they must survive the PUT.
+  const stored = {
+    uid: 'project-1',
+    slug: 'cascade-data',
+    name: 'Cascade Data',
+    description: 'Synthetic project',
+    parent_uid: 'parent-1',
+    public: true,
+    is_foundation: false,
+    stage: 'Formation - Engaged',
+    category: 'Data',
+    funding_model: ['Membership'],
+    charter_url: 'https://cascade-data.example/charter',
+    legal_entity_name: 'Cascade Data LLC',
+    legal_entity_type: 'Series LLC',
+    autojoin_enabled: true,
+    logo_url: 'https://cascade-data.example/logo.png',
+    website_url: 'https://cascade-data.example',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-02-01T00:00:00Z',
+  };
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    checkSingleAccessStrict.mockReset();
+    checkSingleAccess.mockReset();
+    checkSingleAccessStrict.mockResolvedValue(true);
+    checkSingleAccess.mockResolvedValue(true);
+    fetchWithETag.mockResolvedValue({ data: { ...stored }, etag: '7' });
+    updateWithETag.mockImplementation(async (_req: unknown, _svc: unknown, _path: unknown, _etag: unknown, body: unknown) => body);
+    service = new ProjectService();
+  });
+
+  it('writes the full stored object back with only the edited keys changed', async () => {
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1', 'update_formation_record');
+    const [, , path, etag, body] = updateWithETag.mock.calls[0];
+    expect(path).toBe('/projects/project-1');
+    expect(etag).toBe('7');
+    const expectedBase: Record<string, unknown> = { ...stored };
+    for (const key of ['uid', 'created_at', 'updated_at']) delete expectedBase[key];
+    expect(body).toEqual({ ...expectedBase, stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('restores an omitted description before the PUT (GET-to-PUT)', async () => {
+    const noDescription: Record<string, unknown> = { ...stored };
+    delete noDescription['description'];
+    fetchWithETag.mockResolvedValue({ data: noDescription, etag: '4' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ description: '', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('clears a field sent as null', async () => {
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: null });
+
+    expect(updateWithETag.mock.calls[0][4]).not.toHaveProperty('legal_entity_name');
+  });
+
+  it('drops a cleared field and defaults a missing parent_uid to empty', async () => {
+    const rootProject: Record<string, unknown> = { ...stored };
+    delete rootProject['parent_uid'];
+    fetchWithETag.mockResolvedValue({ data: rootProject, etag: '3' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: '' });
+
+    const body = updateWithETag.mock.calls[0][4] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('legal_entity_name');
+    expect(body['parent_uid']).toBe('');
+  });
+
+  it('rejects a non-writer with NOT_PROJECT_WRITER before any upstream read', async () => {
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects a writer outside the formation team with FORMATION_TEAM_REQUIRED before any upstream read', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FORMATION_TEAM_REQUIRED',
+    });
+
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'formation', access: 'member' });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the writer check cannot be resolved', async () => {
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toThrow('fga unavailable');
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Prospect stage', { stage: 'Prospect' }],
+    ['Confidential stage', { stage: 'Formation - Confidential' }],
+    ['unknown key', { slug: 'renamed' }],
+    ['Archived with an explicitly cleared dissolution date', { stage: 'Archived', entity_dissolution_date: '' }],
+    ['bad legal entity type', { legal_entity_type: 'Cooperative' }],
+    ['bad date', { formation_date: '04/11/2026' }],
+    ['non-http URL', { entity_formation_document_url: 'javascript:alert(1)' }],
+    ['empty body', {}],
+  ])('rejects %s with 400 before the guard or any upstream call', async (_label, body) => {
+    await expect(service.updateFormationRecord(req, 'project-1', body)).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects clearing the dissolution date of an already-Archived project before the PUT', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, stage: 'Archived', entity_dissolution_date: '2026-10-31' }, etag: '9' });
+
+    await expect(service.updateFormationRecord(req, 'project-1', { entity_dissolution_date: '' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects Archived on the merged record when no dissolution date is stored, after the read and before the PUT', async () => {
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Archived' })).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(fetchWithETag).toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('archives without resending a dissolution date that is already stored', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, entity_dissolution_date: '2026-09-30' }, etag: '5' });
+
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-09-30' });
+  });
+
+  it('accepts Archived with a dissolution date', async () => {
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+  });
+
+  it('maps an upstream 409 on the write to the FORMATION_RECORD_CONFLICT code', async () => {
+    updateWithETag.mockRejectedValue(new MicroserviceError('conflict', 409, 'CONFLICT'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FORMATION_RECORD_CONFLICT',
+      clientMessage: 'Someone else changed this project. Reload to see the latest, then try again.',
+    });
+  });
+
+  it('maps a missing project to 404', async () => {
+    fetchWithETag.mockRejectedValue(new MicroserviceError('missing', 404, 'NOT_FOUND'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({ statusCode: 404 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('passes unrelated upstream failures through unchanged', async () => {
+    const outage = new MicroserviceError('down', 503, 'SERVICE_UNAVAILABLE');
+    updateWithETag.mockRejectedValue(outage);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toBe(outage);
+  });
+});
+
+describe('ProjectService.deleteProjectDocument', () => {
+  let service: ProjectService;
+
+  /** Answers the two query-service lookups the folder-empty check makes, keyed by resource type. */
+  function mockChildren(children: { links?: unknown[]; files?: unknown[]; failOn?: string }): void {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === children.failOn) {
+        return Promise.reject(new Error('query service down'));
+      }
+      const rows = params?.type === 'project_link' ? (children.links ?? []) : (children.files ?? []);
+      return Promise.resolve({ resources: rows.map((data, i) => ({ id: `${params?.type}:${i}`, data })) });
+    });
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    deleteWithETag.mockReset();
+    fetchWithETag.mockResolvedValue({ data: {}, etag: 'etag-1' });
+    deleteWithETag.mockResolvedValue(undefined);
+    service = new ProjectService();
+  });
+
+  it.each([
+    ['link', '/projects/project-1/links/doc-1'],
+    ['file', '/projects/project-1/documents/doc-1'],
+  ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
+    await service.deleteProjectDocument(req, 'project-1', 'doc-1', type);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_project_document');
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_project_document');
+    // Only folders are checked for children.
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('deletes an empty folder', async () => {
+    mockChildren({ links: [{ uid: 'link-1', folder_uid: 'other-folder' }], files: [{ uid: 'file-1' }] });
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1/folders/folder-1', 'etag-1', 'delete_project_document');
+  });
+
+  it.each([
+    ['link', { links: [{ uid: 'link-1', folder_uid: 'folder-1' }] }],
+    ['file', { files: [{ uid: 'file-1', folder_uid: 'folder-1' }] }],
+  ])('rejects a folder that still holds a %s with a 409 and deletes nothing', async (_kind, children) => {
+    mockChildren(children);
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FOLDER_NOT_EMPTY',
+    });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a children lookup fails instead of treating the folder as empty', async () => {
+    mockChildren({ failOn: 'project_document' });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toThrow('query service down');
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it("looks links and files up by the folder's own folder_uid tag, not by listing every link and file of the project", async () => {
+    mockChildren({});
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    const queries = proxyRequest.mock.calls.map((call) => call[4]);
+    expect(queries).toHaveLength(2);
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        { type: 'project_link', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+        { type: 'project_document', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+      ])
+    );
+  });
+
+  // The query service checks access after it paginates, so a page can have no visible rows while more remain.
+  it('follows the page token past a page with no visible rows and refuses when a later page holds a file', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string; page_token?: string }) => {
+      if (params?.type === 'project_document' && !params.page_token) {
+        return Promise.resolve({ resources: [], page_token: 'page-2' });
+      }
+      if (params?.type === 'project_document') {
+        return Promise.resolve({ resources: [{ id: 'project_document:f', data: { uid: 'file-1', folder_uid: 'folder-1' } }] });
+      }
+      return Promise.resolve({ resources: [] });
+    });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409, code: 'FOLDER_NOT_EMPTY' });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('stops at the first match instead of paging on', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      Promise.resolve(
+        params?.type === 'project_link'
+          ? { resources: [{ id: 'project_link:l', data: { uid: 'link-1', folder_uid: 'folder-1' } }], page_token: 'more' }
+          : { resources: [] }
+      )
+    );
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409 });
+
+    const linkPages = proxyRequest.mock.calls.filter((call) => call[4]?.type === 'project_link');
+    expect(linkPages).toHaveLength(1);
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.deleteProjectDocument(req, 'project-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
   });
 });

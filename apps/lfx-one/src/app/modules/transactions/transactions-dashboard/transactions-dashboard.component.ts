@@ -23,6 +23,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TransactionTypeStylePipe } from '@pipes/transaction-type-style.pipe';
 import { TransactionService } from '@services/transaction.service';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 const PAGE_SUBTITLE = 'View your Linux Foundation purchase history. Recent purchases may take up to 48 hours to appear.';
 
@@ -47,7 +48,7 @@ const TAB_TYPE_MAP: Record<string, string> = {
 
 @Component({
   selector: 'lfx-transactions-dashboard',
-  imports: [CardComponent, FilterPillsComponent, TableComponent, TagComponent, CurrencyPipe, DatePipe, TransactionTypeStylePipe],
+  imports: [CardComponent, FilterPillsComponent, TableComponent, TagComponent, CurrencyPipe, DatePipe, TransactionTypeStylePipe, PageHeaderComponent],
   templateUrl: './transactions-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

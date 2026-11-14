@@ -7,11 +7,9 @@ import { catchError, Observable, of } from 'rxjs';
 
 import type {
   OrgFoundationCoverageResponse,
-  OrgInvolvementCertifiedEmployeesMonthlyResponse,
   OrgInvolvementContributorsMonthlyResponse,
   OrgInvolvementEventAttendanceMonthlyResponse,
   OrgInvolvementMaintainersMonthlyResponse,
-  OrgTrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
 
 @Injectable({
@@ -33,18 +31,9 @@ export class OrgInvolvementAnalyticsService {
   }
 
   public getMaintainersMonthly(accountId: string): Observable<OrgInvolvementMaintainersMonthlyResponse> {
-    return this.http.get<OrgInvolvementMaintainersMonthlyResponse>('/api/analytics/org-involvement-maintainers-monthly', { params: { accountId } }).pipe(
-      catchError(() =>
-        of({
-          accountId,
-          accountName: '',
-          totalMaintainersYearly: 0,
-          totalProjectsYearly: 0,
-          monthlyData: [],
-          monthlyLabels: [],
-        })
-      )
-    );
+    return this.http
+      .get<OrgInvolvementMaintainersMonthlyResponse>('/api/analytics/org-involvement-maintainers-monthly', { params: { accountId } })
+      .pipe(catchError(() => of({ accountId, maintainerRoles: null, monthlyData: [], monthlyLabels: [] })));
   }
 
   public getEventAttendanceMonthly(accountId: string): Observable<OrgInvolvementEventAttendanceMonthlyResponse> {
@@ -63,17 +52,5 @@ export class OrgInvolvementAnalyticsService {
           })
         )
       );
-  }
-
-  public getCertifiedEmployeesMonthly(accountId: string): Observable<OrgInvolvementCertifiedEmployeesMonthlyResponse> {
-    return this.http
-      .get<OrgInvolvementCertifiedEmployeesMonthlyResponse>('/api/analytics/org-involvement-certified-employees-monthly', { params: { accountId } })
-      .pipe(catchError(() => of({ accountId, totalCertifications: 0, totalCertifiedEmployees: 0, monthlyData: [], monthlyLabels: [] })));
-  }
-
-  public getTrainingEnrollments(accountId: string): Observable<OrgTrainingEnrollmentsResponse> {
-    return this.http
-      .get<OrgTrainingEnrollmentsResponse>('/api/analytics/org-involvement-training-enrollments', { params: { accountId } })
-      .pipe(catchError(() => of({ accountId, totalEnrollments: 0, dailyData: [] })));
   }
 }

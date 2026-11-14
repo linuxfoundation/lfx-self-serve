@@ -16,6 +16,34 @@ export interface StatCardDelta {
   inverted?: boolean;
 }
 
+/** A visible button rendered under a stat card's text; a click emits the grid's `actionClick` with `action`. */
+export interface StatCardCta {
+  label: string;
+  /** Key emitted through `actionClick` when the button is clicked. */
+  action: string;
+  /** Optional Font Awesome class string rendered before the label. */
+  icon?: string;
+  /** Renders the button in PrimeNG's text (borderless) style instead of outlined. */
+  text?: boolean;
+  ariaLabel?: string;
+  disabled?: boolean;
+}
+
+/** One slice of a stat card's progress bar. */
+export interface StatCardProgressSegment {
+  /** Share of the full bar, 0-100. */
+  percentage: number;
+  /** Tailwind background class for the segment (e.g., "bg-blue-500"). */
+  className: string;
+}
+
+/** Optional segmented progress bar rendered below a stat card's label. */
+export interface StatCardProgress {
+  segments: StatCardProgressSegment[];
+  /** Accessible description of the bar, which is exposed as a single image. */
+  ariaLabel: string;
+}
+
 /**
  * A single cell in an `lfx-stat-card-grid`.
  * @description Shared shape used by dashboards that surface a row of summary
@@ -34,4 +62,14 @@ export interface StatCardItem {
   iconContainerClass: string;
   /** Optional period-over-period delta (e.g., "+8% vs. prior period"). */
   delta?: StatCardDelta;
+  /** Optional keyed action; absent cells remain display-only. */
+  action?: string;
+  selected?: boolean;
+  disabled?: boolean;
+  /** Optional visible buttons under the text; a cell with ctas never renders as a whole-cell button. */
+  ctas?: StatCardCta[];
+  /** Optional segmented progress bar under the label. */
+  progress?: StatCardProgress;
+  /** Optional Tailwind class string replacing the default caption color classes of `subLine`. */
+  subLineClass?: string;
 }

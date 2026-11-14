@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
 // this app's vitest config, so runtime collaborators are mocked. This file's own imports from
@@ -35,22 +35,47 @@ vi.mock('./microservice-proxy.service', () => ({
 // logger would print two warnings per run for the paths that deliberately exercise them.
 vi.mock('./logger.service', () => ({ logger }));
 
-import { JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE,
+  CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+} from '@lfx-one/shared/constants';
 import { readFileSync } from 'node:fs';
 
 import type { Request } from 'express';
 
-import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
+import type { CampaignBriefOutput, CampaignType } from '@lfx-one/shared/interfaces';
 
 import { MicroserviceError } from '../errors/microservice.error';
+import { ServiceValidationError } from '../errors/service-validation.error';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
+import {
+  adaptJobPollResponse,
+  asResumeRefusal,
+  CampaignServiceClient,
+  deriveEventSlug,
+  briefDispatchEventName,
+  fromBriefResponse,
+  isCampaignServiceJobId,
+  multiCampaignPlatforms,
+  readBriefValidator,
+} from './campaign-service.service';
 
 const req = {} as unknown as Request;
 
 function briefWithSlug(slug: string): CampaignBriefOutput {
   return {
     eventDetails: {
+      sourceText: '',
       name: 'KubeCon EU 2026',
       dates: '2026-03-23 to 2026-03-26',
       city: 'Amsterdam',
@@ -61,6 +86,15 @@ function briefWithSlug(slug: string): CampaignBriefOutput {
       speakers: [],
       slug,
       formatNotes: '',
+      // The five event-link/description fields are required on `CampaignEventDetails` and are
+      // blank here deliberately: this fixture exists to exercise SLUG derivation, and a blank
+      // string is what `coerceCampaignEventDetails` yields for a brief whose upstream payload
+      // omits them -- so it is the realistic shape, not a placeholder.
+      description: '',
+      agendaUrl: '',
+      cfpUrl: '',
+      venueUrl: '',
+      sponsorshipUrl: '',
     },
     structuredCopy: { headline: 'Register now' },
     keywords: [{ term: 'kubecon', matchType: 'Exact', intentLevel: 'High', notes: '' }],
@@ -120,6 +154,54 @@ describe('adaptJobPollResponse', () => {
       platformResults: [{ platform: 'google-ads', ok: true, campaignId: '123', error: undefined }],
       error: undefined,
     });
+  });
+
+  it('passes the HubSpot draft link through to the platform result', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', hubspot_url: 'https://app.hubspot.com/email/1/edit/c1/settings' }],
+    });
+
+    expect(adapted.platformResults?.[0].hubspotUrl).toBe('https://app.hubspot.com/email/1/edit/c1/settings');
+  });
+
+  it('passes the platform warnings through, dropping blank and non-string entries', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [
+        { platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['The hero image could not be added.', '  ', 42 as never] },
+        { platform: 'google-ads', ok: true, campaign_id: 'g1' },
+      ],
+    });
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['The hero image could not be added.']);
+    expect(adapted.platformResults?.[1].warnings).toBeUndefined();
+  });
+
+  it('collapses duplicate warnings, which the UI keys by their text', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['Same.', ' Same. ', 'Other.'] }],
+    } as never);
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['Same.', 'Other.']);
+  });
+
+  it('bounds the warnings an upstream response can carry', () => {
+    const many = Array.from({ length: 25 }, (_, i) => `warning ${i}`);
+    const long = 'x'.repeat(2000);
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: [long, ...many] }],
+    });
+
+    const warnings = adapted.platformResults?.[0].warnings ?? [];
+    expect(warnings).toHaveLength(10);
+    expect(warnings[0]).toHaveLength(500);
   });
 
   // A partial job created real campaigns. Reporting the JOB as failed would hide them; each
@@ -275,7 +357,13 @@ describe('deriveEventSlug', () => {
 
 describe('CampaignServiceClient.saveBrief', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     proxyRequestWithResponse.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   // The documented first-time case: `design/brief.go:302` calls a find-brief 404 "the ordinary
@@ -644,8 +732,10 @@ describe('CampaignServiceClient.saveBrief', () => {
         return Promise.resolve(apiResponse({ id: 'b-1', version: 4, ...envelope.brief }, { etag: '"4"' }));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
-  }, 20000);
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
+  });
 
   it('keeps reading when the first recovery read still shows the pre-PUT payload', async () => {
     // Where create and replace differ. A create has no row until it commits, so any 200 answers
@@ -665,10 +755,12 @@ describe('CampaignServiceClient.saveBrief', () => {
       })
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 6 }, { etag: '"6"' }));
 
-    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"');
+    const save = new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"');
+    await vi.runAllTimersAsync();
+    const result = await save;
     expect(result.briefId).toBe('b-1');
     expect(result.conflict).toBeUndefined();
-  }, 20000);
+  });
 
   it("does not claim a replace that landed on someone else's payload", async () => {
     // The row moved, but to content this request did not write. Adopting it would report another
@@ -681,7 +773,9 @@ describe('CampaignServiceClient.saveBrief', () => {
         return Promise.resolve(apiResponse({ id: 'b-1', version: 5, ...envelope.brief, copy: { structured: { headline: 'not ours' } } }, { etag: '"5"' }));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('does not reconcile a replace the server REFUSED', async () => {
@@ -722,15 +816,19 @@ describe('CampaignServiceClient.saveBrief', () => {
     // version means the row carries edits this POST never made, so adopting it would hand the
     // caller ownership of someone else's work and let the next save replace it.
     //
-    // This is the load-bearing guard on THIS branch: `CampaignServiceBrief` here declares only
-    // the columns the write path reads, so the payload comparison can check program and slug but
-    // not url or platforms. LFXV2-3108 widens the type and strengthens that half.
+    // It is one of the two conditions `reconcileLostCreate` ANDs together, and the only one that
+    // speaks to the row's HISTORY rather than its current contents: a row can hold exactly the
+    // payload this POST sent and still have been written more than once. The sibling test below
+    // covers the other condition — `storedBriefMatches` comparing the whole brief, url and
+    // platforms included.
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
       .mockResolvedValueOnce(apiResponse({ id: 'other', version: 4, program_type: 'events', event_slug: 'e' }, { etag: '"4"' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it("does not adopt another writer's row that differs only in payload", async () => {
@@ -755,7 +853,9 @@ describe('CampaignServiceClient.saveBrief', () => {
         )
       );
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('recovers a create that commits AFTER the reconciliation first looks', async () => {
@@ -773,7 +873,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       })
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
 
-    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    const save = new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    await vi.runAllTimersAsync();
+    const result = await save;
     expect(result.briefId).toBe('b-1');
     expect(result.created).toBe(true);
   });
@@ -794,9 +896,13 @@ describe('CampaignServiceClient.saveBrief', () => {
         return new Promise((_resolve, reject) => setTimeout(() => reject(NOT_FOUND), 4500));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    const startedAt = Date.now();
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
     expect(reads).toBe(1);
-  }, 20000);
+    expect(Date.now() - startedAt).toBe(5500);
+  });
 
   it('stops re-reading once a slow read has spent the budget', async () => {
     // `proxyRequestWithResponse` takes no timeout parameter, so every read here carries the
@@ -816,9 +922,13 @@ describe('CampaignServiceClient.saveBrief', () => {
         return new Promise((_resolve, reject) => setTimeout(() => reject(NOT_FOUND), 5100));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    const startedAt = Date.now();
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
     expect(reconcileReads).toBe(1);
-  }, 20000);
+    expect(Date.now() - startedAt).toBe(5100);
+  });
 
   // The recovery read has to name the SAME brief the lost write targeted, which under 000030 means
   // all four parts of the key. Sending only `event_slug` let campaign-service apply its defaults
@@ -846,7 +956,7 @@ describe('CampaignServiceClient.saveBrief', () => {
     const gets = proxyRequestWithResponse.mock.calls.filter((c) => c[3] === 'GET') as unknown as [unknown, unknown, unknown, string, Record<string, string>][];
     expect(gets.length, 'no reconciliation GET was issued').toBeGreaterThan(0);
     expect(gets.at(-1)?.[4]).toMatchObject({ event_slug: 'e', delivery_type: 'email', stage: 'Final Countdown' });
-  }, 20000);
+  });
 
   // A SIBLING STAGE must not be accepted as this request's committed write. Two sends in one
   // event's series carry identical base payloads before either is edited, so a content-only
@@ -866,8 +976,10 @@ describe('CampaignServiceClient.saveBrief', () => {
         return Promise.resolve(apiResponse({ id: 'brief-sibling', version: 1, ...envelope.brief, stage: 'CFP Launch' }, { etag: '"1"' }));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf')).rejects.toThrow('timeout');
-  }, 20000);
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
+  });
 
   it('gives up rather than guessing when the create never resolves', async () => {
     // Bounded: the request has already spent part of its own budget on the failed POST, so the
@@ -878,7 +990,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
       .mockRejectedValue(NOT_FOUND);
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it("does not adopt another writer's row that differs only in the generated copy", async () => {
@@ -896,7 +1010,9 @@ describe('CampaignServiceClient.saveBrief', () => {
         );
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('adopts a row whose blobs differ only in key order', async () => {
@@ -924,7 +1040,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
       .mockResolvedValueOnce(apiResponse({ id: 'other', version: 1, program_type: 'education', event_slug: 'e' }, { etag: '"1"' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('does not reconcile a create the server REFUSED', async () => {
@@ -1052,12 +1170,24 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
-  // A response that reaches us without the header — a proxy that strips it, say. The version
-  // number is not a substitute: the design says the ETag "mirrors" the version, which fixes the
-  // correspondence but not the serialisation, so a synthesised value either 428s or matches the
-  // wrong revision.
-  it('refuses to replace a brief whose response carried no ETag header instead of synthesising one', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 }));
+  // A response that reaches us without the header — a proxy that strips it, say. The version IS
+  // a substitute, and not a synthesised one: upstream renders the header from that same value
+  // as `"` + the decimal + `"` in one literal, so quoting it reproduces the header's own string
+  // rather than guessing at a second serialisation. See `readBriefValidator`.
+  it('replaces a brief whose response carried no ETag header, using the version the header is rendered from', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 })).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"8"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toMatchObject({ briefId: 'b-1' });
+    // The PUT carries the recovered validator, so the precondition is a real check rather than
+    // the `etag_fallback` read that always matches itself.
+    expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"7"' });
+  });
+
+  // The throw is still reachable, and must stay so: a body with no usable version leaves nothing
+  // to recover, and a PUT with no `If-Match` is the unconditional overwrite this guard exists to
+  // prevent.
+  it('refuses to replace a brief whose response carried neither an ETag header nor a usable version', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1' }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toThrow(/no ETag/);
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
@@ -1099,6 +1229,24 @@ function storedBrief(overrides: Record<string, unknown> = {}): any {
   };
 }
 
+describe('briefDispatchEventName', () => {
+  it.each([
+    ['eventName before name', { event_details: { name: 'UI name', eventName: ' Stored ' } }, 'Stored'],
+    ['name when eventName is blank', { event_details: { eventName: ' ', name: ' UI name ' } }, 'UI name'],
+    ['event_details before copy', { event_details: { name: 'Details' }, copy: { eventName: 'Copy' } }, 'Details'],
+    ['copy when event_details has none', { event_details: { city: 'Paris' }, copy: { eventName: 'Copy' } }, 'Copy'],
+    ['a key in other capitals, the later one winning', { event_details: { eventName: 'First', EVENTNAME: 'Second' } }, 'Second'],
+    ['nothing from a blob Go cannot decode', { event_details: { name: 'Details', hsToken: 7 }, copy: { name: 'Copy' } }, 'Copy'],
+    ['nothing from a blob that is not an object', { event_details: ['Details'], copy: { name: 'Copy' } }, 'Copy'],
+    // Go's quirk: the raw whitespace name blocks copy's eventName, then copy's absent name replaces it.
+    ["a whitespace name, which keeps copy's eventName out", { event_details: { name: '  ' }, copy: { eventName: 'Copy' } }, ''],
+    ['a whitespace name raw when nothing follows', { event_details: { name: '  ' } }, '  '],
+    ['a whitespace name raw past a copy Go cannot decode', { event_details: { name: '  ' }, copy: ['Copy'] }, '  '],
+  ])('reads %s', (_label, found, expected) => {
+    expect(briefDispatchEventName(found)).toBe(expected);
+  });
+});
+
 describe('fromBriefResponse', () => {
   // The one property that matters most: what a save writes, a load must give back. Anything
   // this drops is work the user did in the Planning tab and would have to redo, without ever
@@ -1106,7 +1254,17 @@ describe('fromBriefResponse', () => {
   it('round-trips a brief written by the save path', async () => {
     proxyRequestWithResponse.mockReset();
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
-    const original = briefWithSlug('kubecon-eu-2026');
+    // The two Google extension lists are set HERE rather than on `briefWithSlug`, which a few
+    // dozen other cases compare request payloads against exactly. Without them this round-trip
+    // asserts nothing about either field: both would be absent from the fixture, absent from what
+    // `toBriefInput` writes, and absent from what `fromBriefResponse` reads back, so a write or
+    // read path that dropped them entirely would still match. They are the newest fields on this
+    // contract and the ones a drop would cost the operator most — the lists they edited by hand.
+    const original: CampaignBriefOutput = {
+      ...briefWithSlug('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing', 'Co-located events'],
+      googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/register/' }],
+    };
 
     await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
     const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
@@ -1182,6 +1340,227 @@ describe('fromBriefResponse', () => {
     const keywords = [{ term: '  ' }, 'kubecon', { term: 'cloud native', matchType: 'Fuzzy', intentLevel: 'Urgent' }];
 
     expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([{ term: 'cloud native', matchType: 'Broad', intentLevel: 'Medium', notes: '' }]);
+  });
+
+  // The Implementation tab seeds both extension editors on `!== undefined`, so this is the one
+  // field pair where absent and empty must NOT collapse: returning `[]` for a brief written before
+  // extension generation shipped would clear an editor the operator had typed into rather than
+  // leave it alone. `toBriefInput` writes `null` for a brief that carries no list, which is what
+  // lands here.
+  it.each([
+    ['an absent googleCallouts', undefined],
+    ['a null googleCallouts', null],
+    ['a non-array googleCallouts', 'Free Admission'],
+  ])('restores %s as absent, not as an empty list', (_label, googleCallouts) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toBeUndefined();
+  });
+
+  // The other side of the same distinction: a list the generator shaped away to nothing WAS
+  // recorded, and comes back as the empty list rather than as absent.
+  it('restores a stored empty callout list as an empty list', () => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts: [] } }))?.googleCallouts).toEqual([]);
+  });
+
+  // Bounded by the same rules the editor applies on an add, so a row written by an older build or
+  // another client cannot open the editor holding entries it would refuse the operator for typing.
+  it('bounds, trims and de-duplicates a stored callout list the way the editor would', () => {
+    const googleCallouts = ['  Free To Attend  ', 'free to attend', 42, '', 'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 5)];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toEqual([
+      'Free To Attend',
+      'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES),
+    ]);
+  });
+
+  // The cap is the editor's own: it refuses an add past the maximum rather than growing, so a
+  // longer stored list is filled to the cap and the overflow left out.
+  it('fills a stored callout list to the cap and drops the overflow', () => {
+    const googleCallouts = Array.from({ length: GOOGLE_ADS_MAX_CALLOUTS + 5 }, (_unused, i) => `Callout ${i}`);
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  it.each([
+    ['an absent googleSitelinks', undefined],
+    ['a null googleSitelinks', null],
+    ['a non-array googleSitelinks', 'View the Agenda'],
+  ])('restores %s as absent, not as an empty list', (_label, googleSitelinks) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toBeUndefined();
+  });
+
+  // `finalUrl` lands in an href the operator clicks and in an ad's destination, and `copy` is an
+  // opaque blob upstream never validated — so the scheme is re-checked here rather than trusted
+  // because this app only ever writes URLs `verifyPageLink` confirmed.
+  it.each([
+    ['a javascript: destination', 'javascript:alert(1)'],
+    ['a data: destination', 'data:text/html,<p>x</p>'],
+    ['a relative destination', '/agenda'],
+    ['an unparseable destination', 'not a url'],
+    ['a missing destination', undefined],
+    // The four this path accepted while it was a scheme check of its own rather than the shared
+    // predicate. Every one parses fine under `new URL()` and is refused by the controller's
+    // `googleSitelinkUrlRefusal` at create, so seeding one opened the editor holding a chip the
+    // operator could not have typed and could not submit — and the only refusal they would ever
+    // see named a row they never added.
+    ['embedded credentials', 'https://user:pw@example.test/agenda'],
+    ['no // after the scheme', 'https:example.test/agenda'],
+    ['a `;` separating query parameters, which Go refuses', 'https://example.test/agenda?track=platform;day=2'],
+    ['a stray `%` that is not an escape', 'https://example.test/agenda?q=100%'],
+  ])('drops a sitelink with %s', (_label, finalUrl) => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The byte cap is the editor's add-guard and the controller's dispatch check; without it here a
+  // stored row would open the editor holding a chip the operator could not have typed and could not
+  // submit. Bytes of the encoded URL, so the boundary is asserted on both sides of the cap.
+  it('drops a stored sitelink whose finalUrl is over the byte cap and keeps one exactly at it', () => {
+    const prefix = 'https://example.test/';
+    const atCap = prefix + 'a'.repeat(GOOGLE_ADS_MAX_FINAL_URL_BYTES - prefix.length);
+    const overCap = `${atCap}a`;
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: overCap },
+      { text: 'Venue & Travel', finalUrl: atCap },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([{ text: 'Venue & Travel', finalUrl: atCap }]);
+  });
+
+  /**
+   * Trimmed with Go's space set, not JS's. `googleAdsTrimSpace` follows Go's `unicode.IsSpace`,
+   * which includes U+0085 (NEL) — a character JS `trim` leaves exactly where it is. The editor's
+   * `addGoogleSitelink` trims the destination that way, so a stored row carrying one is a row the
+   * editor itself would accept; trimmed the JS way the leftover U+0085 makes `new URL()` throw and
+   * the row is dropped on restore, which the operator reads as the app losing their sitelink.
+   */
+  it('trims a stored finalUrl with Go\u2019s space set, not JS\u2019s', () => {
+    // A stored destination that arrived with a NEL around it. Pinned with an assertion first, so
+    // this case cannot quietly stop testing anything: JS `trim` really does leave U+0085 in place,
+    // which is the whole reason the restore path cannot use it here.
+    const stored = '\u0085 https://example.test/agenda \u0085';
+    expect(stored.trim()).not.toBe('https://example.test/agenda');
+    const googleSitelinks = [{ text: 'View the Agenda', finalUrl: stored }];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  // De-duplicated on the LABEL, which is the editor's guard and upstream's rule: Google Ads
+  // refuses duplicate sitelink text and is indifferent to two labels sharing one URL.
+  it('de-duplicates stored sitelinks on their label, not their destination', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'view the agenda', finalUrl: 'https://example.test/schedule' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  /**
+   * The entry SHAPE, which the callout cases cover for their own list and this one did not.
+   *
+   * `copy` is an opaque blob campaign-service stores without inspecting, so an entry here can be
+   * any JSON value. A string or a `null` in the array reaches `asRecord` first: without that guard
+   * the next line indexes `null` and the whole restore throws, losing the brief rather than one
+   * sitelink. An entry shaped right but with no usable label is the quieter half — upstream refuses
+   * a sitelink with empty text, so carrying one opens the editor on a chip that cannot dispatch.
+   */
+  it('drops stored sitelinks that are not objects, and objects with no usable label', () => {
+    const googleSitelinks = [
+      'View the Agenda',
+      null,
+      42,
+      { finalUrl: 'https://example.test/agenda' },
+      { text: '   ', finalUrl: 'https://example.test/schedule' },
+      { text: 42, finalUrl: 'https://example.test/speakers' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The sitelink cap, which is the callout cap's sibling and upstream's own `maxSitelinks`: the
+  // editor refuses an add past it, so a longer stored list is filled to the cap rather than
+  // opening the editor holding entries the operator can neither have typed nor submit.
+  it('fills a stored sitelink list to the cap and drops the overflow', () => {
+    const googleSitelinks = Array.from({ length: GOOGLE_ADS_MAX_SITELINKS + 3 }, (_unused, i) => ({
+      text: `Sitelink ${i}`,
+      finalUrl: `https://example.test/s${i}`,
+    }));
+
+    const restored = fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks;
+
+    // Length AND the first entry: a cap that kept the TAIL is a different behaviour, and one the
+    // operator would read as the app reordering their sitelinks.
+    expect(restored).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+    expect(restored?.[0]).toEqual({ text: 'Sitelink 0', finalUrl: 'https://example.test/s0' });
+  });
+
+  // The description pair is all-or-nothing upstream (`googleads/assets.go`), so a lone line is
+  // dropped rather than carried — otherwise the editor opens on a sitelink that cannot dispatch.
+  it('keeps a complete description pair and drops a lone description line', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue', description1: 'Hotel block open' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The negative-keyword suggestion list. Absent and empty both leave the Optimize tab's editor
+  // blank, unlike the two extension lists above where `[]` clears an editor — but the reader still
+  // has to tell a stored list from a missing one, since `undefined` is what the field means for
+  // every brief written before this shipped.
+  it.each([
+    ['an absent negativeKeywords', undefined],
+    ['a null negativeKeywords', null],
+    ['a non-array negativeKeywords', 'free kubecon'],
+  ])('restores %s as absent', (_label, negativeKeywords) => {
+    expect(fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords).toBeUndefined();
+  });
+
+  // Re-validated through the editor's own parser, so a row written by an older build or another
+  // client can never open the editor holding a line it would refuse the operator for typing:
+  // whitespace collapsed, a case-insensitive repeat dropped, a line over Google Ads' cap dropped,
+  // a line with characters the pattern refuses dropped, and a non-string entry ignored.
+  it('bounds and de-duplicates a stored negative-keyword list the way the editor would', () => {
+    const negativeKeywords = [
+      '  free   kubecon  ',
+      'FREE KUBECON',
+      42,
+      'kubecon [exact]',
+      'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1),
+      'kubecon jobs',
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords).toEqual(['free kubecon', 'kubecon jobs']);
+  });
+
+  // The count cap is what one `add-negative-keywords` request may carry, so a longer stored list is
+  // filled to it and the overflow left out — head kept, as the callout and sitelink readers do.
+  it('fills a stored negative-keyword list to the per-request cap and drops the overflow', () => {
+    const negativeKeywords = Array.from({ length: MAX_NEGATIVE_KEYWORDS_PER_REQUEST + 5 }, (_unused, i) => `negative ${i}`);
+
+    const restored = fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords;
+
+    expect(restored).toHaveLength(MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+    expect(restored?.[0]).toBe('negative 0');
   });
 
   // An unknown platform id reaches a template that indexes icon and label maps by it and
@@ -1503,6 +1882,7 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'email')).resolves.toMatchObject({
       status: 'loaded',
       briefId: 'b-1',
+      storedEventName: 'KubeCon EU 2026',
     });
   });
 
@@ -1534,11 +1914,19 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: 'W/"7"' });
   });
 
-  // A read that produced no validator still yields a restorable brief. `null` here is an ABSENT
-  // validator, not permission to overwrite — what an absent one licenses is decided by the
+  // A stripped header is not a lost validator: the body's `version` is the value that header is
+  // rendered from, so the read still hands back something a save can send as `If-Match`.
+  it('recovers the validator from the body version when the response carried no ETag header', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: 7 }), {}));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: '"7"' });
+  });
+
+  // A read that produced no validator at all still yields a restorable brief. `null` here is an
+  // ABSENT validator, not permission to overwrite — what an absent one licenses is decided by the
   // `absence` the caller records alongside it, never by the null itself.
-  it('reports a null ETag rather than inventing one when the response carried none', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), {}));
+  it('reports a null ETag rather than inventing one when neither the header nor a usable version arrived', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: undefined }), {}));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: null });
   });
@@ -1625,6 +2013,269 @@ describe('CampaignServiceClient.loadBrief', () => {
 });
 
 /**
+ * The id read, which `loadBrief` cannot stand in for.
+ *
+ * `loadBrief` resolves `(project, event_slug, delivery_type, stage)` to whichever row that key
+ * names today; this reads the row a request is actually about. The two normally answer with the
+ * same brief and are not guaranteed to — and the caller that needs the difference is the create
+ * path's pre-dispatch guard, where "a different brief" means a create refused over contents the
+ * request never mentioned.
+ */
+describe('CampaignServiceClient.loadBriefById', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  it('reads the brief by id, through get-brief rather than the slug collection', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    const result = await new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1');
+
+    expect(result.status).toBe('loaded');
+    expect(result.briefId).toBe('b-1');
+    expect(result.etag).toBe('"3"');
+    expect(result.storedEventName).toBe('KubeCon EU 2026');
+    // No query at all: an id is exact identity upstream, so there is nothing to disambiguate.
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'GET');
+  });
+
+  // The whole point of the method: no delivery-type or stage check. `loadBrief` has one only
+  // because a key lookup can answer with a sibling row; an id cannot, so applying the same test
+  // here would report a real, correctly-addressed brief as absent.
+  it('returns an email brief asked for by id, with no delivery-type test to fail', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ status: 'loaded', briefId: 'b-1' });
+  });
+
+  it('reports a stored draft as not approved, exactly as the slug read does', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' }), { etag: '"3"' }));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ approved: false });
+  });
+
+  it("reads from the caller's foundation rather than a fixed slug", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), { etag: '"3"' }));
+
+    await new CampaignServiceClient().loadBriefById(req, 'cncf', 'b-1');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs/b-1');
+  });
+
+  it("reports none on campaign-service's own typed 404", async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toEqual({
+      status: 'none',
+      briefId: null,
+      brief: null,
+      etag: null,
+      approved: false,
+    });
+  });
+
+  // A gateway 404 means "this deployment could not route the call", which is not evidence the
+  // brief is absent. Read as `none` it would let the create guard draw a conclusion from an
+  // outage — the same hazard `loadBrief` and `findBrief` already gate on the typed body for.
+  it.each([
+    ['a plain-text gateway 404 (null body)', null],
+    ['an untyped JSON 404', { error: 'not found' }],
+  ])('rethrows %s rather than reporting none', async (_label, errorBody) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody }));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  // The read this method feeds — the restore — is the one whose null validator used to send
+  // `approveStoredBrief` down a blind re-read, and now refuses outright. Recovering the
+  // validator from the body is what keeps that refusal rare rather than routine.
+  it('recovers the validator from the body version when the ETag header does not survive the hop', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: 7 })));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ status: 'loaded', etag: '"7"' });
+  });
+});
+
+/**
+ * The validator every brief READ returns.
+ *
+ * Briefs are the one resource whose `etag` attribute is header-mapped upstream, so Goa keeps it
+ * out of the response body — `readEtag(response) ?? response.data.etag`, the idiom the audience
+ * and campaign reads use, recovers nothing here. What the body does carry is the `version` the
+ * header is rendered from, so quoting it reconstructs the header's own string.
+ */
+describe('readBriefValidator', () => {
+  it('prefers the header when it is present, rather than re-deriving it', () => {
+    // Deliberately disagreeing values: the header is the authority, and a derived validator must
+    // never silently replace one the server actually sent.
+    expect(readBriefValidator({ data: storedBrief({ version: 7 }), status: 200, statusText: 'OK', headers: { etag: '"9"' } } as never)).toBe('"9"');
+  });
+
+  it('quotes the body version when no header arrives, matching what the server would have sent', () => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version: 7 })) as never)).toBe('"7"');
+  });
+
+  // Version 0 is a real version, and `0` is falsy — the one value a truthiness test would drop.
+  it('keeps version zero rather than reading it as absent', () => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version: 0 })) as never)).toBe('"0"');
+  });
+
+  // An int64 past 2^53 is already mangled by `JSON.parse` before this ever sees it, so quoting it
+  // would mint an `If-Match` that cannot match anything. No validator is the safer answer: it is
+  // refused, with a message, instead of silently failing a precondition the user cannot act on.
+  it.each([
+    ['a version past the safe-integer range', Number.MAX_SAFE_INTEGER + 2],
+    ['a non-numeric version', 'seven'],
+    ['an absent version', undefined],
+  ])('returns null for %s rather than minting an If-Match that cannot match', (_label, version) => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version })) as never)).toBeNull();
+  });
+});
+
+/**
+ * Approving a brief that is ALREADY STORED, which is the only route out of `draft` that writes
+ * no content.
+ *
+ * The restore path suppresses its save on purpose — a PUT would overwrite the stored
+ * `event_details`, `copy`, `keywords` and `targeting` with `fromBriefResponse`'s lossy
+ * reconstruction — so these tests exist to pin that this method sends exactly one POST and never
+ * a write of the brief itself, and that each upstream refusal lands on the conflict the UI can
+ * say something true about.
+ */
+describe('CampaignServiceClient.approveStoredBrief', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    logger.warning.mockClear();
+  });
+
+  it('approves with the validator the caller already holds, without re-reading the row', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved', version: 2 }), { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"');
+
+    expect(result).toEqual({ enabled: true, briefId: 'b-1', etag: '"2"', approved: true });
+    // One call, and it is the approve. A second call here would mean a read the caller's own
+    // validator made unnecessary; a PUT would mean the restore's content loss.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/approve', 'POST', undefined, undefined, {
+      'If-Match': '"1"',
+    });
+  });
+
+  // `approve-brief` does `version = version + 1` and the ETag mirrors the version, so returning
+  // the validator we approved WITH would have the caller's next save refused by its own approval.
+  it('returns the new validator the approval minted, not the one it approved with', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"7"' }));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"6"')).resolves.toMatchObject({ etag: '"7"' });
+  });
+
+  it('reports no validator rather than inventing one when the approval response carries no ETag', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' })));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: true,
+    });
+  });
+
+  // The regression this method used to have: it re-read the row and approved with whatever
+  // validator came back. The restore approves automatically one round trip after its own read,
+  // and campaign creation builds from the approved row — so a writer who replaced the brief in
+  // between had THEIR content approved and built on while the user looked at the restore's.
+  // Refusing is the fix, and the refusal has to be classified so the UI can name the remedy.
+  it('refuses to approve when the caller holds no validator, rather than reading one itself', async () => {
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+      conflict: 'unverified-validator',
+    });
+    // Zero calls. A GET here is the re-read coming back; a POST is the blind approval itself.
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  // The whole point of the refusal above: a brief replaced between the restore's read and this
+  // approve must not be approved silently. With a validator in hand the 412 does that job; the
+  // user is told the row moved instead of being told the approval succeeded.
+  it('surfaces a brief replaced since the restore as stale-brief, never as a silent approval', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
+
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"3"');
+
+    expect(result).toMatchObject({ approved: false, conflict: 'stale-brief' });
+    expect(proxyRequestWithResponse.mock.calls[0]?.[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  it('reports a stale validator as stale-brief, so the UI can say the row moved', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+      conflict: 'stale-brief',
+    });
+  });
+
+  it("reports campaign-service's own typed 404 on the approve as brief-not-found", async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toMatchObject({
+      approved: false,
+      conflict: 'brief-not-found',
+    });
+  });
+
+  // The second case is the sibling's classification, not an oversight: `approveBrief` also keeps
+  // an untyped 404 in its "definitely rejected" arm, where only 412 and 408 are carved out. Only
+  // campaign-service's OWN typed 404 means the row is gone; anything else that a 4xx-speaking hop
+  // declined is a refusal, and the two methods must not disagree about which is which.
+  it.each([
+    ['a refusal the service actually made', new MicroserviceError('bad request', 400, 'BAD_REQUEST')],
+    ['an untyped 404, exactly as the save-path approval classifies it', new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: null })],
+  ])('reports %s as rejected', async (_label, error) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toMatchObject({
+      approved: false,
+      conflict: 'rejected',
+    });
+  });
+
+  // Neither of these is evidence the approval was refused: a 5xx may have committed and lost its
+  // reply, and `ApiClientService` turns our OWN local abort into `MicroserviceError(408)`. Both
+  // must come back without a conflict, so the UI reports "could not be confirmed" rather than
+  // naming a conflict that never happened.
+  it.each([
+    ['an upstream 5xx', new MicroserviceError('boom', 503, 'SERVICE_UNAVAILABLE')],
+    ['our own client-side timeout', new MicroserviceError('timeout', 408, 'TIMEOUT')],
+    ['a non-HTTP failure', new Error('socket hang up')],
+  ])('reports %s as indeterminate, with no conflict named', async (_label, error) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+    });
+  });
+
+  it("addresses the caller's own foundation and escapes the brief id", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"2"' }));
+
+    await new CampaignServiceClient().approveStoredBrief(req, 'cncf', 'b 1/2', '"1"');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs/b%201%2F2/approve');
+  });
+});
+
+/**
  * The create path's CONTRACT with campaign-service, which nothing else in this repo checks.
  *
  * Both defects these tests pin shipped in a branch whose build, lint and full server suite were
@@ -1642,6 +2293,17 @@ describe('CampaignServiceClient.createCampaigns', () => {
    * `googleAdsConfig.channel`.
    */
   const demandGenUnsupported = () => isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceDemandGen);
+
+  /**
+   * The same state one release later: cutover flags ON, but the deployed campaign-service
+   * predates the three newer channels and does not understand `performance-max`, `video` or `display`.
+   *
+   * A SEPARATE helper from `demandGenUnsupported` rather than a parameter, because the two flags
+   * are independent in production: a deployment that has had Demand Gen since LFXV2-3257 is not
+   * thereby ready for the three newer channels.
+   */
+  const googleChannelsUnsupported = () =>
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceGoogleChannels);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1681,6 +2343,17 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res).toEqual({ enabled: false, jobId: null, error: null });
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('marks a 202 with no job id as indeterminate, not as a refusal', async () => {
+    // Accepted upstream, so the dispatch may still create the campaign; a retry could duplicate it.
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: {} });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBe(true);
   });
 
   it('sends the envelope as the request BODY, not as query parameters', async () => {
@@ -1740,7 +2413,74 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res.jobId).toBeNull();
     expect(res.error).toContain('nothing was created');
+    expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
     expect(res.error).toContain('try again');
+  });
+
+  /**
+   * campaign-service's own bidding refusal (#3299) names the field and the reason, and carries no
+   * caller value but the amount — so it is the one upstream 400 worth showing. Matched on its exact
+   * wording, so any other 400 keeps the generic text.
+   */
+  it('names an invalid bid that campaign-service refused', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero', 400, 'campaign_service')
+    );
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBeUndefined();
+    expect(res.error).toBe(
+      'Campaign creation was rejected and nothing was created: invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'
+    );
+  });
+
+  it.each([
+    ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
+    ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
+    ['a bidding message on a 409', 409, 'invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
+  });
+
+  /**
+   * The brief moved since this page read it (#4983): another tab edited and saved it, which resets it
+   * to `draft` and bumps its version. campaign-service refuses the create with one of two messages,
+   * and retrying from this tab is refused identically, so the user is told to refresh, not to retry.
+   */
+  it.each([
+    ['the 409 stale approval', 409, 'brief is no longer approved at the expected version; refresh and re-approve, then retry'],
+    ['the 400 unapproved brief', 400, 'brief must be approved before creating campaigns'],
+  ])('tells the user to refresh after %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
+    expect(res.error).toBe(CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE);
+    expect(res.error).toContain('Refresh the page');
+    expect(res.error).not.toContain('Please try again');
+  });
+
+  it.each([
+    ['a 409 that is not a stale approval', 409, 'another write to this campaign is already in progress; retry shortly'],
+    ['the stale wording on a 412', 412, 'brief is no longer approved at the expected version; refresh and re-approve, then retry'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
   });
 
   it('does NOT tell the user to retry after an indeterminate failure', async () => {
@@ -1891,6 +2631,8 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(res.error).toContain('could not be confirmed');
     expect(res.error).not.toContain('nothing was created');
+    // Structured, so the caller holds the stage without parsing the copy.
+    expect(res.indeterminate, 'an unconfirmed create was not marked indeterminate').toBe(true);
   });
 
   /**
@@ -1964,6 +2706,20 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000f');
+    expect(res.error).toBeNull();
+  });
+
+  /** The X sibling of the Microsoft pair: nothing else executes the `'twitter-ads': 'twitterConfig'` entry. */
+  it('dispatches an X campaign once twitterConfig is present', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-0000000000aa' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {
+      twitterConfig: { budgetAmount: 75, startDate: '2099-08-01', endDate: '2099-08-31', tweetText: 'Join us' },
+    });
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-0000000000aa');
     expect(res.error).toBeNull();
   });
 
@@ -2129,6 +2885,172 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000010');
   });
 
+  /**
+   * The three newer channels, pinned the same way Demand Gen's are — the hazard is identical and
+   * the guard is a copy, so the tests have to be a copy too or the next edit can break one half
+   * while every sibling stays green.
+   */
+  it.each([
+    ['performance-max', 'Performance Max', 'a3f1c2d4-0000-4000-8000-000000000021'],
+    ['display', 'Display', 'a3f1c2d4-0000-4000-8000-000000000023'],
+  ])('dispatches a %s-only create when the deployment reports the capability', async (channel, _label, jobId) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: jobId } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel } },
+      { campaignTypes: [channel as CampaignType] }
+    );
+
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(res.jobId).toBe(jobId);
+    expect(res.error).toBeNull();
+  });
+
+  /**
+   * Video is NOT in the table above and must never be put back into it.
+   *
+   * The other two channels are gated on a deployment capability; Video is gated on the Google Ads
+   * API, which has no mutate that creates a Video campaign at all. `CreateVideoCampaign` returns
+   * `ErrVideoCreateUnsupported` as its first statement, so there is no deployment — present or
+   * future, flag on or off — that turns a `video` create into a job worth tracking.
+   *
+   * Pinned with the flag ON deliberately: with it off the capability guard below would refuse this
+   * anyway and the test would stay green with the unconditional guard deleted. The flag-on case is
+   * the only one that distinguishes the two, which is why it is the one asserted.
+   */
+  it('refuses a video create even when the deployment reports every channel capability', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'video' } },
+      { campaignTypes: ['video'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    // The message names the API limit, not a capability the administrator could switch on —
+    // "ask an administrator" would send the operator somewhere that cannot help them.
+    //
+    // Pinned to the SHARED constant, not to a phrase: the legacy road, this road and the disabled
+    // tick-box must give one answer to one permanent limitation, and an exact match is what stops
+    // the three drifting into three wordings. `campaign.controller.spec.ts` pins the same value.
+    expect(res.error).toBe(GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON);
+    expect(res.error).not.toContain('administrator');
+    expect(res.error).not.toContain('cutover');
+  });
+
+  it.each([
+    ['performance-max', 'Performance Max'],
+    ['display', 'Display'],
+  ])('refuses a %s create when the deployed service cannot understand the channel', async (channel, label) => {
+    googleChannelsUnsupported();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel } },
+      { campaignTypes: [channel as CampaignType] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain(label);
+  });
+
+  /**
+   * The scoping half, and the one a careless widening breaks: the new flag must gate ONLY the
+   * three channels it names. Demand Gen has carried its own flag since LFXV2-3257, and a
+   * deployment that enabled it then must keep serving it when this newer flag is off.
+   */
+  it('still allows a demand-gen create when only the newer channels are unsupported', async () => {
+    googleChannelsUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000024' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600, channel: 'demand-gen' } },
+      { campaignTypes: ['demand-gen'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000024');
+    expect(res.error).toBeNull();
+  });
+
+  it('does not refuse a non-google create that happens to carry a flagged channel', async () => {
+    // Same retained-state path as the demand-gen case above: `campaignTypes` is a Google concept
+    // the Implementation tab sends unconditionally, so a LinkedIn-only create can arrive carrying
+    // `video` with no Google campaign in it at all.
+    googleChannelsUnsupported();
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000025' } });
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['linkedin-ads'],
+      { linkedInConfig: { budgetUsd: 100 } },
+      { campaignTypes: ['video'] }
+    );
+
+    expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-000000000025');
+  });
+
+  /**
+   * The one-config envelope refuses ANY pair, not just Search + Demand Gen — and names the
+   * channels the user actually ticked rather than a fixed pair, which is the whole reason the
+   * message is built from the selection.
+   */
+  it('refuses a search + video pair and names both channels', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search', 'video'] }
+    );
+
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Search and Video');
+  });
+
+  /**
+   * Three channels, because the two-element case hides the list-joining bug: `join(' and ')`
+   * renders two correctly and three as "A and B and C".
+   */
+  it('lists three selected channels with commas and a trailing "and"', async () => {
+    bothFlagsOn();
+
+    const res = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 600 } },
+      { campaignTypes: ['search', 'performance-max', 'video'] }
+    );
+
+    expect(res.jobId).toBeNull();
+    expect(res.error).toContain('Search, Performance Max and Video');
+  });
+
   it('still creates a search-only google campaign', async () => {
     // The contrast: without it the test above would pass on a client that refused every Google
     // create outright.
@@ -2147,12 +3069,13 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.jobId).toBe('a3f1c2d4-0000-4000-8000-00000000000b');
   });
 
-  it('refuses a platform it has no config mapping for', async () => {
+  it('refuses a platform whose config the envelope does not carry', async () => {
     // An earlier revision waved unmapped platforms through, reasoning this should not police the
     // list. Wrong for the same reason the LinkedIn-strategy guard was: `twitter-ads` is
     // `disabled: true` in the UI constants, but that is a CLIENT guarantee, and the upstream
-    // contract accepts twitter/microsoft/hubspot. This service builds no config for any of them,
-    // so waving them through queued a job whose dispatcher reads an absent key as a zero value.
+    // contract accepts it regardless. X is mapped now (`buildTwitterConfig`), so this is the
+    // missing-config half: waving it through would queue a job whose dispatcher reads an absent
+    // `twitterConfig` as a zero value.
     bothFlagsOn();
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['twitter-ads'], {});
@@ -2247,7 +3170,7 @@ describe('CampaignServiceClient brief country mapping', () => {
   });
 });
 
-describe('CampaignServiceClient.buildAudience', () => {
+describe('CampaignServiceClient.listAudiences', () => {
   const audience = {
     id: 'aud-1',
     project_id: 'p-1',
@@ -2268,39 +3191,112 @@ describe('CampaignServiceClient.buildAudience', () => {
   it('answers enabled:false without calling upstream when the flag is off', async () => {
     isServerFeatureEnabled.mockReturnValue(false);
 
-    await expect(new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
+    await expect(new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1')).resolves.toEqual({ enabled: false });
     // The flag being dark is an ordinary deployment state, so it must not spend an upstream call.
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  it('takes the etag off the ETag HEADER, not the body', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(audience, { etag: '"7"' }));
+  it('refuses a dot-segment identifier instead of letting it climb the path', async () => {
+    // `encodeURIComponent` passes `..` through unchanged, and percent-decoding happens BEFORE
+    // path normalization -- so `/projects/../briefs/b-1/audiences` resolves upstream to
+    // `/briefs/b-1/audiences`, dropping the project scope entirely. `encodePathSegment` refuses
+    // it as a 400 rather than sending it on to be resolved. Every other path in this client
+    // already uses that guard; this one is the only call site that has to be held to it.
+    await expect(new CampaignServiceClient().listAudiences(req, '..', 'b-1')).rejects.toThrow(/path_segment/i);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+  it('refuses an identifier the encoder cannot represent', async () => {
+    // `JSON.parse` accepts a lone UTF-16 surrogate, `encodeURIComponent` throws `URIError` on
+    // one. Unguarded that surfaces as a 500 for what is a malformed request.
+    await expect(new CampaignServiceClient().listAudiences(req, 'tlf', '\uD800')).rejects.toThrow(/path_segment/i);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
 
-    // `design/audience.go` maps it as `Header("etag:ETag")` on the 202, so a body read would be
-    // `undefined` forever -- the same trap the brief wire-type comment records.
-    expect(result.audience?.etag).toBe('"7"');
-    expect(result.audience?.status).toBe('built');
+  it('reads the rows from the `audiences` wrapper upstream returns', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [audience] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    // Goa's `ListAudiencesResponseBody` wraps the list. Reading the body as a bare array would
+    // report "no saved audience" forever, and a reload would push the operator into a duplicate.
+    expect(result.enabled).toBe(true);
+    expect(result.audiences).toHaveLength(1);
+    expect(result.audiences?.[0]).toMatchObject({ id: 'aud-1', briefId: 'b-1', platformMasterListId: 'list-9', status: 'built' });
+    expect(result.audiences?.[0].etag).toBeUndefined();
+  });
+
+  it('reports a response with no audiences array as an error, not as empty', async () => {
+    // `design/audience.go` declares `Required("audiences")` and the implementation returns `[]`
+    // for a brief with no rows -- so the ordinary first-visit state arrives as an EXPLICIT empty
+    // array, and a missing field means the response is not the one the contract promises.
+    //
+    // Coercing it to `[]` reported an unreadable response as a successful empty read, which
+    // cleared the restore failure guard and re-permitted a non-idempotent HubSpot compose: the
+    // exact duplicate-master path that guard exists to close.
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({}));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result.audiences, 'a malformed response was reported as a verified empty read').toBeUndefined();
+    expect(result.error).toBeTruthy();
+  });
+
+  it('treats an EXPLICIT empty array as the ordinary first-visit state', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [] }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result).toEqual({ enabled: true, audiences: [] });
+  });
+
+  // A row that is not a row is malformed, like a missing array. Filtering these down to `[]`
+  // reported a response that DID carry an audience as a verified absence, which re-opened compose.
+  it.each([
+    ['a null row', [null]],
+    ['a row with no id', [{ ...audience, id: '' }]],
+    ['a readable row beside an unreadable one', [{ ...audience, id: '' }, audience]],
+    // An id alone is not a row: `{ id: 'a' }` mapped to an audience with no platform, so the
+    // restore found no HubSpot row and read the response as a verified absence.
+    ['a row with only an id', [{ id: 'a' }]],
+    ['a row with no platform', [{ ...audience, platform: '' }]],
+    ['a row with no brief id', [{ ...audience, brief_id: undefined }]],
+    ['a row with no project id', [{ ...audience, project_id: '' }]],
+    ['a row with no status', [{ ...audience, status: undefined }]],
+    ['a row whose version is not a number', [{ ...audience, version: '1' }]],
+  ])('reports %s as an unreadable read, not as an empty or partial one', async (_label, audiences) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences }));
+
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
+
+    expect(result.audiences, 'an unreadable row was read as a verified result').toBeUndefined();
+    expect(result.error).toBeTruthy();
   });
 
   it('does not let an unrecognised status masquerade as usable', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'queued' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ audiences: [{ ...audience, status: 'queued' }] }));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
     // `canStageEmail` admits only `built`, so an unknown wire value must not pass through as one.
-    // `failed` is the honest landing spot -- it is the arm that offers the operator a rebuild.
-    expect(result.audience?.status).toBe('failed');
+    expect(result.audiences?.[0].status).toBe('failed');
   });
 
-  it('passes through the statuses upstream actually declares', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, status: 'building' }));
+  it('reports an error result rather than throwing when upstream fails', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
 
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
+    const result = await new CampaignServiceClient().listAudiences(req, 'tlf', 'b-1');
 
-    // Narrowing must not collapse the legitimate in-flight state into a failure.
-    expect(result.audience?.status).toBe('building');
+    expect(result.enabled).toBe(true);
+    expect(result.error).toBeTruthy();
+    expect(result.audiences).toBeUndefined();
+  });
+});
+
+describe('CampaignServiceClient.generateEmailCopy upstream messages', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
   });
 
   it('keeps a controlled upstream message instead of saying "try again"', async () => {
@@ -2342,26 +3338,6 @@ describe('CampaignServiceClient.buildAudience', () => {
     // read, and "try again" is honest advice for it.
     expect(result.error).not.toContain('panic');
     expect(result.error).toContain('Try again');
-  });
-
-  it('reports an error result rather than throwing when upstream fails', async () => {
-    proxyRequestWithResponse.mockRejectedValueOnce(new Error('boom'));
-
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
-
-    // A graceful degradation: the caller renders the message instead of the panel exploding.
-    expect(result.enabled).toBe(true);
-    expect(result.error).toBeTruthy();
-    expect(result.audience).toBeUndefined();
-  });
-
-  it('rejects a response with no audience id', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...audience, id: '' }));
-
-    const result = await new CampaignServiceClient().buildAudience(req, 'tlf', 'b-1');
-
-    expect(result.error).toBeTruthy();
-    expect(result.audience).toBeUndefined();
   });
 });
 
@@ -2406,6 +3382,34 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/x"');
     expect(result.copy?.body).not.toContain('second.example');
+  });
+
+  /**
+   * #3306. This first pass has only the brief id, so it cannot tell an event page's own link from an
+   * invented one. It keeps any link on an LF-owned domain (and the button's host), because a stripped
+   * href cannot be restored by the narrower passes after it, and strips every other host.
+   */
+  it('keeps an LF-owned secondary link even with no button, and strips an off-host one', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        sections: [
+          {
+            type: 'rich_text',
+            html: '<p style="color: #0f172a; position: absolute"><a href="https://events.linuxfoundation.org/kubecon/cfp">CFP</a> <a href="https://evil.example/cfp">fake</a></p>',
+          },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/kubecon/cfp"');
+    expect(result.copy?.body).not.toContain('evil.example');
+    expect(result.copy?.body).toContain('fake');
+    // The safe inline style survives this pass too; the unsafe declaration does not.
+    expect(result.copy?.body).toContain('style="color:#0f172a"');
   });
 
   it('does not refill an empty sections field from a leftover flat field', async () => {
@@ -3075,6 +4079,608 @@ describe('CampaignServiceClient.toggleCampaignStatus etag propagation', () => {
 });
 
 /**
+ * The budget write is the toggle's sibling, so these pin the same wire facts (path, argument
+ * positions, If-Match, header ETag) plus the one thing the toggle does not have: which failures
+ * keep upstream's message and which are rewritten as unconfirmed.
+ */
+describe('CampaignServiceClient.updateCampaignBudget', () => {
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', budget: 2500.5, budgetType: 'daily' as const, etag: '"3"' };
+
+  /** A campaign-service answer: its own Goa envelope, whose `code` is the status as a string. */
+  function upstreamError(status: number, message: string): MicroserviceError {
+    return new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+  }
+
+  async function failureFor(error: unknown): Promise<MicroserviceError> {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+    const caught = await new CampaignServiceClient().updateCampaignBudget(req, args).catch((e: unknown) => e);
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    return caught as MicroserviceError;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PATCHes the nested budget path with the amount and pacing as the BODY', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'active', version: 4 }, { etag: '"4"' }));
+
+    await new CampaignServiceClient().updateCampaignBudget(req, args);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[1]).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/budget');
+    expect(call[3]).toBe('PATCH');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ budget: 2500.5, budget_type: 'daily' });
+    expect(call[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  // The amount is in the ad account's own currency, so any rounding or conversion here would
+  // write a different figure than the operator typed.
+  it('sends the amount exactly as given, without rounding', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1' }));
+
+    await new CampaignServiceClient().updateCampaignBudget(req, { ...args, budget: 0.000001, budgetType: 'lifetime' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({ budget: 0.000001, budget_type: 'lifetime' });
+  });
+
+  it('encodes every path segment so an id cannot escape its position', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'x' }));
+
+    await new CampaignServiceClient().updateCampaignBudget(req, { ...args, projectSlug: 'a/b', briefId: 'c d', campaignId: 'e?f' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][2]).toBe('/projects/a%2Fb/briefs/c%20d/campaigns/e%3Ff/budget');
+  });
+
+  it('returns the row with the ETag header as its fresh validator', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ id: 'c-1', platform: 'google-ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
+    );
+
+    const result = await new CampaignServiceClient().updateCampaignBudget(req, args);
+
+    expect(result).toEqual({ id: 'c-1', platform: 'google-ads', status: 'active', version: 4, etag: '"4"' });
+  });
+
+  it('passes a 400 through with the platform reason upstream gave', async () => {
+    const message = 'LinkedIn requires a daily budget of at least 10.00';
+    const error = await failureFor(upstreamError(400, message));
+
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  it('passes a 409 refusal through unchanged', async () => {
+    const message = "the campaign's budget is shared with other campaigns; change it in the ad platform";
+    const error = await failureFor(upstreamError(409, message));
+
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  it.each([
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+  ])('passes a %s precondition failure through unchanged', async (status, message) => {
+    const error = await failureFor(upstreamError(status, message));
+
+    expect(error.statusCode).toBe(status);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  // campaign-service answers 503 for both outcomes and says which in the message, so an answered
+  // 503 must reach the caller in upstream's own words in either case.
+  it.each([
+    ['unconfirmed', 'the budget change is unconfirmed: it may have been applied. Verify the campaign in Google Ads before retrying'],
+    ['definite', 'the budget change could not be applied: Google Ads is unavailable. Nothing was changed'],
+  ])("passes campaign-service's own %s 503 message through untouched", async (_kind, message) => {
+    const error = await failureFor(upstreamError(503, message));
+
+    expect(error.statusCode).toBe(503);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  // Nobody answered, so the write may already be on the platform. "Please try again" alone would
+  // hide that.
+  it('reports a BFF transport failure as unconfirmed, keeping its status and transport marker', async () => {
+    const transport = new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
+      originalError: new Error('socket hang up'),
+      transportFailure: true,
+    });
+
+    const error = await failureFor(transport);
+
+    expect(error.statusCode).toBe(503);
+    expect(error.toResponse()).toEqual(expect.objectContaining({ error: CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED, code: 'NETWORK_ERROR', transport: true }));
+  });
+
+  it('reports a gateway 504 with no campaign-service envelope as unconfirmed', async () => {
+    const error = await failureFor(new MicroserviceError('Gateway Timeout', 504, 'GATEWAY_TIMEOUT', { errorBody: { message: 'Gateway Timeout' } }));
+
+    expect(error.statusCode).toBe(504);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  // Each row is built in the exact shape `api-client.service.ts` `executeRequest` throws, so the
+  // classification is pinned against what really arrives rather than a hand-simplified error.
+  it.each([
+    [
+      'a BFF timeout',
+      new MicroserviceError('Request timeout after 30000ms', 408, 'TIMEOUT', {
+        originalError: Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+        transportFailure: true,
+        operation: 'api_client_timeout',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+      }),
+      408,
+    ],
+    [
+      'a gateway 503 whose JSON body has a message and no campaign-service code',
+      new MicroserviceError('Service Unavailable', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { message: 'Service Unavailable' },
+      }),
+      503,
+    ],
+    [
+      'a 502 carrying an envelope for a different status',
+      new MicroserviceError('the budget change could not be applied', 502, 'BAD_GATEWAY', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { code: '503', message: 'the budget change could not be applied' },
+      }),
+      502,
+    ],
+  ])('reports %s as unconfirmed, keeping its status', async (_label, thrown, status) => {
+    const error = await failureFor(thrown);
+
+    expect(error.statusCode).toBe(status);
+    expect(error.code).toBe(thrown.code);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [
+      'an answered 500 in the campaign-service envelope',
+      new MicroserviceError('internal error', 500, 'INTERNAL_ERROR', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        errorBody: { code: '500', message: 'internal error' },
+      }),
+    ],
+    [
+      'a 4xx whose error body could not be read',
+      new MicroserviceError('Conflict', 409, 'CONFLICT', {
+        operation: 'api_client_request',
+        service: 'api_client_service',
+        path: '/projects/tlf/briefs/b-1/campaigns/c-1/budget',
+        originalError: new Error('terminated'),
+      }),
+    ],
+  ])('passes %s through unchanged, as a definite failure', async (_label, thrown) => {
+    const error = await failureFor(thrown);
+
+    expect(error).toBe(thrown);
+    expect(error.toResponse()['error']).not.toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+    expect(error.toResponse()['transport']).toBeUndefined();
+  });
+
+  it('leaves a gateway 4xx refusal alone, since it never dispatched', async () => {
+    const error = await failureFor(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe('Forbidden');
+  });
+});
+
+/**
+ * The bid write is the budget write's sibling: the same wire facts, the same split between
+ * upstream's own answers (passed through) and unanswered failures (rewritten as unconfirmed),
+ * and its OWN unconfirmed message, so an operator is told to verify the bid, not the budget.
+ */
+describe('CampaignServiceClient.updateCampaignBid', () => {
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', bid: 2.75, bidType: 'cpc' as const, etag: '"3"' };
+
+  async function failureFor(error: unknown): Promise<MicroserviceError> {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+    const caught = await new CampaignServiceClient().updateCampaignBid(req, args).catch((e: unknown) => e);
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    return caught as MicroserviceError;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PATCHes the nested bid path with the bid and its unit as the BODY and the etag as If-Match', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', status: 'active', version: 4 }, { etag: '"4"' }));
+
+    await new CampaignServiceClient().updateCampaignBid(req, args);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[1]).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/bid');
+    expect(call[3]).toBe('PATCH');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({ bid: 2.75, bid_type: 'cpc' });
+    expect(call[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  it('encodes every path segment', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'x' }));
+
+    await new CampaignServiceClient().updateCampaignBid(req, { ...args, projectSlug: 'a/b', briefId: 'c d', campaignId: 'e?f' });
+
+    expect(proxyRequestWithResponse.mock.calls[0][2]).toBe('/projects/a%2Fb/briefs/c%20d/campaigns/e%3Ff/bid');
+  });
+
+  it('returns the row with the ETag header as its fresh validator', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ id: 'c-1', platform: 'microsoft-ads', status: 'active', version: 4, etag: 'stale' }, { etag: '"4"' })
+    );
+
+    const result = await new CampaignServiceClient().updateCampaignBid(req, args);
+
+    expect(result).toEqual({ id: 'c-1', platform: 'microsoft-ads', status: 'active', version: 4, etag: '"4"' });
+  });
+
+  it.each([
+    [400, 'Microsoft Advertising refused the bid: below the minimum of 0.01'],
+    [409, 'the campaign bids under an automated strategy; a manual bid would be ignored'],
+    [412, 'ETag mismatch'],
+    [428, 'If-Match header required'],
+    [503, 'the bid change is unconfirmed: verify the bid in the platform before retrying'],
+    [503, 'the bid change could not be applied: Microsoft Advertising is unavailable. Nothing was changed'],
+  ])("passes campaign-service's own %s through untouched", async (status, message) => {
+    const error = await failureFor(new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } }));
+
+    expect(error.statusCode).toBe(status);
+    expect(error.toResponse()['error']).toBe(message);
+  });
+
+  it.each([
+    [
+      'a BFF transport failure',
+      new MicroserviceError('The request could not be completed. Please try again.', 503, 'NETWORK_ERROR', {
+        originalError: new Error('socket hang up'),
+        transportFailure: true,
+      }),
+    ],
+    [
+      'a BFF timeout',
+      new MicroserviceError('Request timeout after 30000ms', 408, 'TIMEOUT', {
+        originalError: Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }),
+        transportFailure: true,
+      }),
+    ],
+    [
+      'a gateway 504 with no campaign-service envelope',
+      new MicroserviceError('Gateway Timeout', 504, 'GATEWAY_TIMEOUT', { errorBody: { message: 'Gateway Timeout' } }),
+    ],
+  ])('reports %s as an unconfirmed BID change, keeping its status and code', async (_label, thrown) => {
+    const error = await failureFor(thrown);
+
+    expect(error.statusCode).toBe(thrown.statusCode);
+    expect(error.code).toBe(thrown.code);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_BID_OUTCOME_UNCONFIRMED);
+    expect(error.toResponse()['error']).not.toBe(CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED);
+  });
+
+  it('leaves a gateway 4xx refusal alone, since it never dispatched', async () => {
+    const error = await failureFor(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()['error']).toBe('Forbidden');
+  });
+});
+
+/**
+ * Negative keywords are NOT atomic and the response is POSITIONAL: results[i] answers
+ * negative_keywords[i]. These pin the wire (path, body position, no If-Match) and that the mapped
+ * results keep upstream's order exactly, with nothing filtered, sorted or shifted.
+ */
+describe('CampaignServiceClient.addNegativeKeywords', () => {
+  const sent = [
+    { text: 'free download', matchType: 'Phrase' as const },
+    { text: 'crack', matchType: 'Exact' as const },
+    { text: 'torrent', matchType: 'Phrase' as const },
+    { text: 'cheap', matchType: 'Exact' as const },
+  ];
+  const args = { projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-1', negativeKeywords: sent };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('POSTs the batch as the BODY in request order, with no query and no If-Match', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: sent.map((k) => ({ text: k.text, match_type: k.matchType, outcome: 'APPLIED' })),
+      applied_count: 4,
+    });
+
+    await new CampaignServiceClient().addNegativeKeywords(req, args);
+
+    const call = proxyRequest.mock.calls[0];
+    expect(call[1]).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(call[2]).toBe('/projects/tlf/briefs/b-1/campaigns/c-1/negative-keywords');
+    expect(call[3]).toBe('POST');
+    expect(call[4]).toBeUndefined();
+    expect(call[5]).toEqual({
+      negative_keywords: [
+        { text: 'free download', match_type: 'Phrase' },
+        { text: 'crack', match_type: 'Exact' },
+        { text: 'torrent', match_type: 'Phrase' },
+        { text: 'cheap', match_type: 'Exact' },
+      ],
+    });
+    // No headers argument at all: this lever persists nothing and takes no If-Match.
+    expect(call).toHaveLength(6);
+    // Microsoft Advertising and X refuse a PRESENT revision, even an empty one.
+    expect(call[5]).not.toHaveProperty('revision');
+  });
+
+  it("sends Reddit's revision in the body, exactly as given, when the caller passes one", async () => {
+    const revision = 'sha256:5e1b7f0c2a9d4e3b8c6a1f0e9d8c7b6a';
+    const broad = [{ text: 'free download', matchType: 'Broad' as const }];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free download', match_type: 'Broad', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: broad, revision });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ negative_keywords: [{ text: 'free download', match_type: 'Broad' }], revision });
+  });
+
+  // Reddit: the new keywords share one PATCH's outcome, and ALREADY_PRESENT ones keep theirs. A
+  // mixed batch is answered per item, so the ALREADY_PRESENT entries must survive the mapping.
+  it('keeps the ALREADY_PRESENT entries of a mixed Reddit batch at their own positions', async () => {
+    const reddit = [
+      { text: 'free', matchType: 'Broad' as const },
+      { text: 'torrent', matchType: 'Broad' as const },
+      { text: 'crack', matchType: 'Broad' as const },
+    ];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+        { text: 'torrent', match_type: 'Broad', outcome: 'ALREADY_PRESENT' },
+        { text: 'crack', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+      ],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: reddit, revision: 'sha256:abc' });
+
+    expect(result.results.map((r) => r.outcome)).toEqual(['UNCONFIRMED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+    expect(result.appliedCount).toBe(1);
+  });
+
+  it.each([
+    ['NOT_SENT', 'NOT_SENT'],
+    ['REJECTED', 'REJECTED'],
+  ])('relays the %s error code of a FAILED X or Reddit keyword', async (_label, code) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free', match_type: 'Exact', outcome: 'FAILED', error_code: code }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [{ text: 'free', matchType: 'Exact' }] });
+
+    expect(result.results[0]).toEqual({ text: 'free', matchType: 'Exact', outcome: 'FAILED', errorCode: code });
+  });
+
+  /**
+   * THE POSITIONAL REGRESSION. Mixed outcomes with the successes and failures interleaved, so a
+   * filter (dropping FAILED), a sort (grouping by outcome) or a de-duplication would each move at
+   * least one entry onto a different keyword, and a negative that was never added would be shown
+   * as added.
+   */
+  it('maps every result at its own index, never filtering or reordering', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED', negative_keyword_id: '81' },
+        { text: 'crack', match_type: 'Exact', outcome: 'FAILED', error_code: 'CampaignServiceNegativeKeywordMatchesKeyword' },
+        { text: 'torrent', match_type: 'Phrase', outcome: 'ALREADY_PRESENT' },
+        { text: 'cheap', match_type: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+      applied_count: 2,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, args);
+
+    expect(result).toEqual({
+      campaignId: 'c-1',
+      results: [
+        { text: 'free download', matchType: 'Phrase', outcome: 'APPLIED', negativeKeywordId: '81' },
+        { text: 'crack', matchType: 'Exact', outcome: 'FAILED', errorCode: 'CampaignServiceNegativeKeywordMatchesKeyword' },
+        { text: 'torrent', matchType: 'Phrase', outcome: 'ALREADY_PRESENT' },
+        { text: 'cheap', matchType: 'Exact', outcome: 'UNCONFIRMED' },
+      ],
+      appliedCount: 2,
+    });
+    expect(result.results.map((r) => r.outcome)).toEqual(['APPLIED', 'FAILED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+  });
+
+  // Upstream echoes the text it sent the platform, trimmed and whitespace-collapsed. A difference
+  // in whitespace alone is the same keyword; the result reports the SENT keyword, normalised the
+  // same way, rather than adopting the echo.
+  it('accepts an echo that differs only in whitespace, and reports the keyword it sent', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, {
+      ...args,
+      negativeKeywords: [{ text: '  free   download ', matchType: 'Phrase' }],
+    });
+
+    expect(result.results).toEqual([{ text: 'free download', matchType: 'Phrase', outcome: 'APPLIED' }]);
+  });
+
+  // error_code is untrusted wire data the UI renders: only an identifier-shaped code is relayed.
+  it.each([
+    ['markup', '<img src=x onerror=alert(1)>'],
+    ['a sentence', 'the keyword matches an existing keyword'],
+    ['an over-long code', 'X'.repeat(101)],
+    ['a non-string', 42],
+  ])('omits an error_code that is %s', async (_label, errorCode) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'crack', match_type: 'Exact', outcome: 'FAILED', error_code: errorCode }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [sent[1]] });
+
+    expect(result.results).toEqual([{ text: 'crack', matchType: 'Exact', outcome: 'FAILED' }]);
+  });
+
+  // An entry that cannot say what happened to its keyword stays AT ITS POSITION as UNCONFIRMED,
+  // named by the keyword sent there. Dropping it would shift every later result.
+  it('reports an unreadable entry as UNCONFIRMED in place, and recounts appliedCount', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' },
+        null,
+        { text: 'torrent', match_type: 'Phrase', outcome: 'SOMETHING_NEW' },
+        { text: 'cheap', match_type: 'Exact', outcome: 'APPLIED' },
+      ],
+      applied_count: 4,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, args);
+
+    expect(result.results.map((r) => [r.text, r.outcome])).toEqual([
+      ['free download', 'APPLIED'],
+      ['crack', 'UNCONFIRMED'],
+      ['torrent', 'UNCONFIRMED'],
+      ['cheap', 'APPLIED'],
+    ]);
+    expect(result.appliedCount).toBe(2);
+  });
+
+  it.each([
+    ['fewer results than keywords sent', { campaign_id: 'c-1', results: [{ text: 'crack', match_type: 'Exact', outcome: 'APPLIED' }], applied_count: 1 }],
+    ['no results array', { campaign_id: 'c-1', applied_count: 0 }],
+    [
+      'another campaign’s id',
+      { campaign_id: 'c-9', results: sent.map((k) => ({ text: k.text, match_type: k.matchType, outcome: 'APPLIED' })), applied_count: 4 },
+    ],
+    // Right count, wrong order: a count-only check would show 'crack' (FAILED upstream) as APPLIED.
+    [
+      'two results swapped in place',
+      {
+        campaign_id: 'c-1',
+        results: [
+          { text: 'crack', match_type: 'Exact', outcome: 'FAILED' },
+          { text: 'free download', match_type: 'Phrase', outcome: 'APPLIED' },
+          { text: 'torrent', match_type: 'Phrase', outcome: 'APPLIED' },
+          { text: 'cheap', match_type: 'Exact', outcome: 'APPLIED' },
+        ],
+        applied_count: 3,
+      },
+    ],
+    [
+      'an entry whose match_type differs from the one sent',
+      {
+        campaign_id: 'c-1',
+        results: sent.map((k, i) => ({ text: k.text, match_type: i === 2 ? 'Exact' : k.matchType, outcome: 'APPLIED' })),
+        applied_count: 4,
+      },
+    ],
+    [
+      'an entry with no text',
+      {
+        campaign_id: 'c-1',
+        results: sent.map((k, i) =>
+          i === 3 ? { match_type: k.matchType, outcome: 'APPLIED' } : { text: k.text, match_type: k.matchType, outcome: 'APPLIED' }
+        ),
+        applied_count: 4,
+      },
+    ],
+  ])('refuses a 2xx with %s as unconfirmed rather than mapping it', async (_label, body) => {
+    proxyRequest.mockResolvedValueOnce(body);
+
+    const caught = await new CampaignServiceClient().addNegativeKeywords(req, args).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(MicroserviceError);
+    const error = caught as MicroserviceError;
+    expect(error.statusCode).toBe(502);
+    expect(error.toResponse()['error']).toBe(CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED);
+  });
+
+  it.each([
+    [400, 'negative keyword 2 contains consecutive punctuation'],
+    [409, 'the campaign was created under a different ad account'],
+    [503, 'the negative keywords are unconfirmed: verify before retrying'],
+  ])("passes campaign-service's own %s through untouched", async (status, message) => {
+    const upstream = new MicroserviceError(message, status, 'UPSTREAM', { errorBody: { code: String(status), message } });
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().addNegativeKeywords(req, args)).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.getMicrosoftAdsKeywords', () => {
+  const result = {
+    window: 'last_30_days',
+    rows: [],
+    row_count: 0,
+    truncated: false,
+    metrics_pending: true,
+    conversions_complete: true,
+    data_incomplete: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('GETs the project-scoped Microsoft keyword read with the window as a QUERY parameter', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await new CampaignServiceClient().getMicrosoftAdsKeywords(req, 'cncf', 'this_month');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/microsoft-ads/keywords', 'GET', { window: 'this_month' });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  it('sends no window when the caller specifies none, so upstream applies its own default', async () => {
+    proxyRequest.mockResolvedValueOnce(result);
+
+    await new CampaignServiceClient().getMicrosoftAdsKeywords(req, 'a b/c');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%20b%2Fc/microsoft-ads/keywords', 'GET', undefined);
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getMicrosoftAdsKeywords(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors).toEqual([
+      { field: 'project', message: 'A keyword read requires the project it is scoped to.', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * The list read is the only place a campaign becomes addressable after its creating session ends,
  * so what it returns decides whether a later pause or metrics call can name anything at all. The
  * assertions below are about the two ways it could lie: scoping past the brief, and reporting a
@@ -3127,6 +4733,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     );
   });
 
+  // lfx-v2-campaign-service#366: the index carries `adopted: true` on an adopted campaign, absent
+  // otherwise. Carried through as a literal `true` only; anything else is dropped, never `false`.
+  it('carries adopted: true through and drops any other adopted value', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        { data: doc({ adopted: true }) },
+        { data: doc({ id: 'c-2' }) },
+        { data: doc({ id: 'c-3', adopted: 'true' }) },
+        { data: doc({ id: 'c-4', adopted: false }) },
+      ],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns[0].adopted).toBe(true);
+    for (const campaign of result.campaigns.slice(1)) {
+      expect('adopted' in campaign).toBe(false);
+    }
+  });
+
   /**
    * The all-foreign case, which the mixed test above does not reach: `possiblyStale` is derived
    * from `campaigns.length`, NOT `docs.length`, and only a read where every row is dropped tells
@@ -3160,7 +4786,36 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
 
     const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
+    expect(result).toEqual({
+      campaigns: [],
+      possiblyStale: true,
+      statusToggleEnabled: false,
+      demandGenEnabled: true,
+      googleChannelsEnabled: false,
+      googleCreativeEnabled: false,
+      // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
+      // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
+      redditCreativeEnabled: true,
+      redditAssetUploadEnabled: false,
+      // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
+      redditConversionPixelEnabled: false,
+      googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      linkedInTargetingEditEnabled: false,
+      microsoftAssetUploadEnabled: false,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
+      // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
+      microsoftScheduleEnabled: false,
+      // OFF with every flag off: X create needs the create cutover AND its own flag.
+      twitterCreateEnabled: false,
+      metaInstagramDsaEnabled: false,
+      googleAudienceSegmentsEnabled: false,
+      googleGeoSearchEnabled: false,
+      multiCampaignPlatforms: [],
+    });
   });
 
   // The index stores `version`; a write needs `If-Match`. campaign-service's ETag is exactly
@@ -3245,6 +4900,423 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The INVERSE rule, and the reason this is a second signal rather than a widened one.
+   *
+   * Performance Max, Video and Display exist only on the campaign-service create path. While the
+   * cutover is dark the LEGACY creator owns creation, and it does not know them: its
+   * `executeGoogleCampaignCreation` branches on `search` alone and sends EVERY other type to
+   * `createDemandGenCampaign`, without rejecting the unknown one. So reporting these as available
+   * during the staged rollout offers a control whose only outcome is a Demand Gen campaign nobody
+   * asked for.
+   *
+   * Every row below is the exact opposite of the demand-gen row above it — which is the assertion
+   * that stops a later "simplification" from collapsing the two capabilities into one value.
+   */
+  it.each([
+    // cutover fully on + capability on  -> the only state that can serve these three
+    [{ create: true, briefs: true, jobs: true, googleChannels: true }, true],
+    // cutover fully on + capability off -> the deployed service predates the three newer channels
+    [{ create: true, briefs: true, jobs: true, googleChannels: false }, false],
+    // staged CREATE-off rollout: legacy owns creation and does NOT know these channels
+    [{ create: false, briefs: true, jobs: true, googleChannels: true }, false],
+    // a PARTIAL flag set is "cutover off" in createCampaigns and must read the same here
+    [{ create: true, briefs: false, jobs: true, googleChannels: true }, false],
+    [{ create: true, briefs: true, jobs: false, googleChannels: true }, false],
+  ])('reports the google-channels capability only when the cutover owns the create (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleChannels) return flags.googleChannels;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.googleChannelsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Bidding capability (#3299) needs the create cutover AND its own flag: the legacy creator
+   * never reads `bidding`, and a campaign-service without #332 drops it — either would create the
+   * campaign automatic while the operator asked for a manual bid.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, bidding: true }, true],
+    [{ create: true, briefs: true, jobs: true, bidding: false }, false],
+    [{ create: false, briefs: true, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: false, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: true, jobs: false, bidding: true }, false],
+  ])('reports the bidding capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.biddingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Meta Instagram/DSA capability needs the create cutover AND its own flag: the legacy creator
+   * never reads the three keys, and the flag says campaign-service enforces the EU disclosure rule.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, metaDsa: true }, true],
+    [{ create: true, briefs: true, jobs: true, metaDsa: false }, false],
+    [{ create: false, briefs: true, jobs: true, metaDsa: true }, false],
+    [{ create: true, briefs: false, jobs: true, metaDsa: true }, false],
+    [{ create: true, briefs: true, jobs: false, metaDsa: true }, false],
+  ])('reports the meta instagram/dsa capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMetaInstagramDsa) return flags.metaDsa;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaInstagramDsaEnabled).toBe(expected);
+      // Its own key, not the Microsoft schedule one: that flag is off in every row.
+      expect(result.microsoftScheduleEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Microsoft flight-date capability needs the create cutover AND its own flag: the legacy
+   * creator never reads the dates, and a campaign-service without #409 drops them — either would
+   * create the campaign with no flight while the operator set one.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, schedule: true }, true],
+    [{ create: true, briefs: true, jobs: true, schedule: false }, false],
+    [{ create: false, briefs: true, jobs: true, schedule: true }, false],
+    [{ create: true, briefs: false, jobs: true, schedule: true }, false],
+    [{ create: true, briefs: true, jobs: false, schedule: true }, false],
+  ])('reports the microsoft schedule capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMicrosoftSchedule) return flags.schedule;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.microsoftScheduleEnabled).toBe(expected);
+      // Its own key, not the bidding one: the bidding flag is off in every row.
+      expect(result.biddingEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  it.each([
+    [{ create: true, briefs: true, jobs: true, geo: true }, true],
+    [{ create: true, briefs: true, jobs: true, geo: false }, false],
+    [{ create: false, briefs: true, jobs: true, geo: true }, false],
+    [{ create: true, briefs: false, jobs: true, geo: true }, false],
+    [{ create: true, briefs: true, jobs: false, geo: true }, false],
+  ])('reports the google geo search capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleGeoSearch) return flags.geo;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.googleGeoSearchEnabled).toBe(expected);
+      // Its own key, not the schedule one: the schedule flag is off in every row.
+      expect(result.microsoftScheduleEnabled).toBe(false);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The X create capability needs the create cutover AND its own flag: the legacy creator has no X
+   * path, and the flag is the product decision to open X creation at all.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, twitter: true }, true],
+    [{ create: true, briefs: true, jobs: true, twitter: false }, false],
+    [{ create: false, briefs: true, jobs: true, twitter: true }, false],
+    [{ create: true, briefs: false, jobs: true, twitter: true }, false],
+    [{ create: true, briefs: true, jobs: false, twitter: true }, false],
+  ])('reports the X create capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceTwitterCreate) return flags.twitter;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+      expect(result.twitterCreateEnabled).toBe(expected);
+      // Reported on the refused-scope answer too, read the same way.
+      const refused = await new CampaignServiceClient().listBriefCampaigns(req, '', 'b-1');
+      expect(refused.twitterCreateEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Reddit image-upload capability (decision D3) needs the create cutover AND its own flag:
+   * the legacy creator never reads `imageAssetId`, and a campaign-service without URL signing
+   * refuses it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, assets: true }, true],
+    [{ create: true, briefs: true, jobs: true, assets: false }, false],
+    [{ create: false, briefs: true, jobs: true, assets: true }, false],
+    [{ create: true, briefs: false, jobs: true, assets: true }, false],
+    [{ create: true, briefs: true, jobs: false, assets: true }, false],
+  ])('reports the Reddit image-upload capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.assets;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.redditAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Reddit conversion pixel override (#3484) needs exactly the create cutover: campaign-service
+   * prefers it over the connection's pixel, and the legacy creator never reads it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true }, true],
+    [{ create: false, briefs: true, jobs: true }, false],
+    [{ create: true, briefs: false, jobs: true }, false],
+    [{ create: true, briefs: true, jobs: false }, false],
+  ])('reports the Reddit conversion pixel capability only when the cutover owns the create (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.redditConversionPixelEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Google capability is gated the same way and on the same three cutover flags, but on its
+   * OWN sibling flag — the two are independent, and the last row is what says so: Reddit's flag on
+   * and Google's off must not report Google as enabled. Unlike Reddit's, this flag claims nothing
+   * about URL signing: Google Ads takes the image bytes on `assets:mutate`, so a signed-URL
+   * deployment is not a precondition here.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, google: true, reddit: false }, true],
+    [{ create: true, briefs: true, jobs: true, google: false, reddit: true }, false],
+    [{ create: false, briefs: true, jobs: true, google: true, reddit: false }, false],
+    [{ create: true, briefs: false, jobs: true, google: true, reddit: false }, false],
+    [{ create: true, briefs: true, jobs: false, google: true, reddit: false }, false],
+  ])('reports the Google image-upload capability only when the cutover owns the create and its own flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleAssets) return flags.google;
+      if (flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.reddit;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.googleAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Meta image capabilities: the image itself is the cutover gate alone (the legacy creator
+   * reads no Meta image), the upload additionally its own flag — and not Reddit's or Google's.
+   */
+  it.each([
+    [
+      { create: true, briefs: true, jobs: true, meta: true, others: false },
+      { creative: true, upload: true },
+    ],
+    [
+      { create: true, briefs: true, jobs: true, meta: false, others: true },
+      { creative: true, upload: false },
+    ],
+    [
+      { create: false, briefs: true, jobs: true, meta: true, others: false },
+      { creative: false, upload: false },
+    ],
+    [
+      { create: true, briefs: false, jobs: true, meta: true, others: false },
+      { creative: false, upload: false },
+    ],
+  ])('reports the Meta image capabilities from the cutover and the Meta-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMetaAssets) return flags.meta;
+      if (flag === ServerFeatureFlag.CampaignServiceGoogleAssets || flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.metaCreativeEnabled).toBe(expected.creative);
+      expect(result.metaAssetUploadEnabled).toBe(expected.upload);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The LinkedIn upload capability: the cutover AND its own flag, and not any sibling's. There is no
+   * LinkedIn image-URL capability to pair it with, since LinkedIn takes no image URL.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, linkedIn: true, others: false }, true],
+    [{ create: true, briefs: true, jobs: true, linkedIn: false, others: true }, false],
+    [{ create: false, briefs: true, jobs: true, linkedIn: true, others: false }, false],
+    [{ create: true, briefs: false, jobs: true, linkedIn: true, others: false }, false],
+  ])('reports the LinkedIn upload capability from the cutover and the LinkedIn-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceLinkedInAssets) return flags.linkedIn;
+      if (
+        flag === ServerFeatureFlag.CampaignServiceGoogleAssets ||
+        flag === ServerFeatureFlag.CampaignServiceRedditAssets ||
+        flag === ServerFeatureFlag.CampaignServiceMetaAssets
+      )
+        return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The LinkedIn targeting-edit capability (#5546): the cutover alone. The legacy creator reads the
+   * ConfigMap and never the edit, and no asset flag has anything to do with it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, others: false }, true],
+    [{ create: false, briefs: true, jobs: true, others: true }, false],
+    [{ create: true, briefs: false, jobs: true, others: true }, false],
+    [{ create: true, briefs: true, jobs: false, others: true }, false],
+  ])('reports the LinkedIn targeting-edit capability from the cutover alone (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      return flags.others;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.linkedInTargetingEditEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** The Microsoft upload capability: the cutover AND its own flag, and not any sibling's. */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, microsoft: true, others: false }, true],
+    [{ create: true, briefs: true, jobs: true, microsoft: false, others: true }, false],
+    [{ create: false, briefs: true, jobs: true, microsoft: true, others: false }, false],
+    [{ create: true, briefs: false, jobs: true, microsoft: true, others: false }, false],
+  ])('reports the Microsoft upload capability from the cutover and the Microsoft-assets flag (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceMicrosoftAssets) return flags.microsoft;
+      if (
+        flag === ServerFeatureFlag.CampaignServiceGoogleAssets ||
+        flag === ServerFeatureFlag.CampaignServiceRedditAssets ||
+        flag === ServerFeatureFlag.CampaignServiceMetaAssets
+      )
+        return flags.others;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.microsoftAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -3267,7 +5339,36 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
     // possiblyStale TRUE on a refusal: nothing was queried, so the empty list must not assert
     // that the brief has no campaigns.
-    expect(result).toEqual({ campaigns: [], possiblyStale: true, statusToggleEnabled: false, demandGenEnabled: true });
+    expect(result).toEqual({
+      campaigns: [],
+      possiblyStale: true,
+      statusToggleEnabled: false,
+      demandGenEnabled: true,
+      googleChannelsEnabled: false,
+      googleCreativeEnabled: false,
+      // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
+      // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
+      redditCreativeEnabled: true,
+      redditAssetUploadEnabled: false,
+      // OFF with every flag off: only campaign-service reads a per-campaign pixel (#3484).
+      redditConversionPixelEnabled: false,
+      googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      linkedInTargetingEditEnabled: false,
+      microsoftAssetUploadEnabled: false,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
+      // OFF with every flag off, on the same terms: Microsoft dates need the cutover AND their flag (#409).
+      microsoftScheduleEnabled: false,
+      // OFF with every flag off: X create needs the create cutover AND its own flag.
+      twitterCreateEnabled: false,
+      metaInstagramDsaEnabled: false,
+      googleAudienceSegmentsEnabled: false,
+      googleGeoSearchEnabled: false,
+      multiCampaignPlatforms: [],
+    });
   });
 });
 
@@ -3416,7 +5517,9 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     expect(declarations).toContain('conversions?: number;');
     // The fifth rule. campaign-service can return it, so an exhaustive consumer that has never
     // heard of it would drop or mishandle a real action item.
-    expect(declarations).toMatch(/rule: .*'no_conversions'/);
+    // Declared through the `BriefMetricsActionRule` union, which `BriefMetricsActionItem.rule` uses.
+    expect(declarations).toMatch(/type BriefMetricsActionRule = .*'no_conversions'/);
+    expect(declarations).toContain('rule: BriefMetricsActionRule;');
   });
 
   /**
@@ -3458,6 +5561,85 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     // covers only 1 of the 2 campaigns.
     expect(result.ok_count).toBe(1);
     expect(result.rows).toHaveLength(2);
+  });
+});
+
+describe('CampaignServiceClient.getCampaignMetrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const METRICS = {
+    campaign_id: 'c-1',
+    platform_campaign_id: 'p-1',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+
+  /** Fifth argument, which is `query`, with the body position left empty — as `getBriefMetrics` pins. */
+  it('sends the window as a query parameter, not a body', async () => {
+    proxyRequest.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1', 'last_7_days');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', {
+      window: 'last_7_days',
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  /**
+   * Omitted, not defaulted: upstream gives X Ads `last_7_days` when no window is named, and an
+   * explicit `last_30_days` would turn that read into a 400 on the single-campaign endpoint.
+   */
+  it('sends no window at all when the caller specifies none', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', undefined);
+  });
+
+  it('encodes every path segment', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'a b', 'b/1', 'c?1');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/campaigns/c%3F1/metrics');
+  });
+
+  it.each([
+    ['no project', '', 'b-1', 'c-1'],
+    ['no brief id', 'cncf', '', 'c-1'],
+    ['no campaign id', 'cncf', 'b-1', ''],
+  ])('refuses a request with %s without calling the proxy', async (_label, slug, brief, campaign) => {
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, slug, brief, campaign)).rejects.toBeInstanceOf(ServiceValidationError);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /** Returned verbatim: an absent `conversions` stays absent rather than becoming a measured 0. */
+  it('returns the measurement unchanged, leaving an unreported conversions count absent', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    const result = await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(result).toEqual(METRICS);
+    expect(result.conversions).toBeUndefined();
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable) is thrown for the error middleware, not mapped to data. */
+  it('lets an upstream refusal propagate', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    proxyRequest.mockRejectedValue(refusal);
+
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1')).rejects.toBe(refusal);
   });
 });
 
@@ -3690,6 +5872,33 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
     });
   });
 
+  describe('resolveMicrosoftAdsCampaign', () => {
+    it('sends the id on the MICROSOFT campaign-ref path, with the caller budget', async () => {
+      proxyRequest.mockResolvedValue({ platform_campaign_id: '413296582', matches: [], match_count: 0 });
+
+      await new CampaignServiceClient().resolveMicrosoftAdsCampaign(req, 'cncf', '413296582', 1234);
+
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        '/projects/cncf/microsoft-ads/campaign-ref',
+        'GET',
+        { platform_campaign_id: '413296582' },
+        undefined,
+        undefined,
+        { timeoutMs: 1234 }
+      );
+    });
+
+    it('refuses a lookup with no platform campaign id without calling the proxy', async () => {
+      await expect(new CampaignServiceClient().resolveMicrosoftAdsCampaign(req, 'cncf', '')).rejects.toThrow(
+        /requires both the project and the platform campaign id/
+      );
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe('applyKeywordActions', () => {
     const actions = [{ ad_group_id: '176216228', criterion_id: '305729261', action: 'PAUSE' as const }];
     const applied = { campaign_id: 'c-1', results: [], applied_count: 1 };
@@ -3790,5 +5999,963 @@ describe('fromBriefResponse — scraped hero and sponsors survive a reload', () 
     );
 
     expect(restored?.eventDetails?.sponsors).toEqual([]);
+  });
+});
+
+describe('CampaignServiceClient account monitors', () => {
+  const monitor = { account_id: 'x', days: 30, campaigns: [], action_items: [], totals: { spend: 0, impressions: 0, clicks: 0, campaign_count: 0 } };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    ['getGoogleAdsAccountMonitor', 'google-ads', '8666746580'],
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
+    ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
+    ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
+    ['getMicrosoftAdsAccountMonitor', 'microsoft-ads', '187654321'],
+    ['getTwitterAdsAccountMonitor', 'twitter-ads', '18ce54d4x5t'],
+  ] as const)('%s GETs connection-%s/account-monitor with account_id and days as QUERY parameters', async (method, provider, accountId) => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    const result = await new CampaignServiceClient()[method](req, 'cncf', accountId, 14);
+
+    expect(result).toBe(monitor);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}/account-monitor`, 'GET', {
+      account_id: accountId,
+      days: 14,
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  it('omits account_id for a Google Ads monitor read with no account, so campaign-service picks it (#5622)', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getGoogleAdsAccountMonitor(req, 'tlf', undefined, 30);
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/connection-google-ads/account-monitor', 'GET', { days: 30 });
+  });
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getRedditAdsAccountMonitor(req, 'a b/c', 't2_abc123', 30);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b%2Fc/connection-reddit-ads/account-monitor');
+  });
+
+  it('encodes the project for the LinkedIn monitor and refuses an empty account', async () => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'lf/ai', '512345678', 7);
+    const caught = await new CampaignServiceClient().getLinkedInAdsAccountMonitor(req, 'tlf', '', 7).catch((e: unknown) => e);
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-linkedin-ads/account-monitor');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses a path-climbing project without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getMetaAdsAccountMonitor(req, '..', 'act_1', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['', 't2_abc123', 'project'],
+    ['cncf', '', 'accountKey'],
+  ])('refuses project=%j account=%j without calling the proxy', async (project, accountId, field) => {
+    const caught = await new CampaignServiceClient().getRedditAdsAccountMonitor(req, project, accountId, 30).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('GETs the project-scoped HubSpot monitor with only days, and no account', async () => {
+    const hubspot = {
+      days: 7,
+      emails: [],
+      action_items: [],
+      totals: {},
+      emails_checked: 0,
+      emails_not_sent_in_window: 0,
+      emails_unattributable: 0,
+      emails_truncated: false,
+    };
+    proxyRequest.mockResolvedValueOnce(hubspot);
+
+    const result = await new CampaignServiceClient().getHubSpotAccountMonitor(req, 'a b', 7);
+
+    expect(result).toBe(hubspot);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/a%20b/connection-hubspot/account-monitor', 'GET', { days: 7 });
+  });
+
+  it('refuses an empty project for the HubSpot monitor without calling the proxy', async () => {
+    await expect(new CampaignServiceClient().getHubSpotAccountMonitor(req, '', 30)).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.getConnection', () => {
+  const connection = { id: 'c1', project_id: 'cncf', account_id: '187654321', has_credentials: true, status: 'active' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['linkedin-ads', 'meta-ads', 'reddit-ads', 'microsoft-ads', 'twitter-ads'] as const)(
+    "GETs the project's own connection-%s with no query or body",
+    async (provider) => {
+      proxyRequest.mockResolvedValueOnce(connection);
+
+      const result = await new CampaignServiceClient().getConnection(req, 'cncf', provider);
+
+      expect(result).toBe(connection);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}`, 'GET');
+    }
+  );
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(connection);
+
+    await new CampaignServiceClient().getConnection(req, 'lf/ai', 'meta-ads');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-meta-ads');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getConnection(req, '', 'reddit-ads').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure for the caller to classify', async () => {
+    const upstream = new Error('404');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().getConnection(req, 'cncf', 'linkedin-ads')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Google Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '1000000001', label: 'CNCF Search' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-google-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAccounts(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsConversionActions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's conversion-action read with no query or body", async () => {
+    const actions = { account_id: '1234567890', conversion_actions: [], conversion_action_count: 0 };
+    proxyRequest.mockResolvedValueOnce(actions);
+
+    const result = await new CampaignServiceClient().listGoogleAdsConversionActions(req, 'lf/ai');
+
+    expect(result).toBe(actions);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/conversion-actions', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsConversionActions(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsConversionActions(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsUserLists', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's user-list read with no query or body", async () => {
+    const lists = { account_id: '1234567890', user_lists: [], user_list_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(lists);
+
+    const result = await new CampaignServiceClient().listGoogleAdsUserLists(req, 'lf/ai');
+
+    expect(result).toBe(lists);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/user-lists', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsUserLists(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsUserLists(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.listGoogleAdsAudiences', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's Audience resources, type=audience, with the project encoded", async () => {
+    const audiences = { account_id: '1234567890', type: 'audience', audiences: [], audience_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(audiences);
+
+    const result = await new CampaignServiceClient().listGoogleAdsAudiences(req, 'lf/ai');
+
+    expect(result).toBe(audiences);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/audiences', 'GET', { type: 'audience' });
+  });
+
+  it('GETs another type with q when given (#5262)', async () => {
+    proxyRequest.mockResolvedValueOnce({ account_id: '1', type: 'user_interest', audiences: [], audience_count: 0, truncated: false });
+
+    await new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf', 'user_interest', 'cloud');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/google-ads/audiences', 'GET', {
+      type: 'user_interest',
+      q: 'cloud',
+    });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listGoogleAdsAudiences(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().listGoogleAdsAudiences(req, 'cncf')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.suggestGoogleAdsGeoTargets', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's geo target suggest with only the query when nothing else narrows it", async () => {
+    const suggestions = { suggestions: [], suggestion_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(suggestions);
+
+    const result = await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'lf/ai', { q: 'Austin' });
+
+    expect(result).toBe(suggestions);
+    // No `limit` key at all: upstream applies its own default of 20, and `limit=0` would be refused.
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/google-ads/geo-targets', 'GET', { q: 'Austin' });
+  });
+
+  it('passes the country, the location types as an array and the limit under their wire names', async () => {
+    proxyRequest.mockResolvedValueOnce({ suggestions: [], suggestion_count: 0, truncated: false });
+
+    await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'tlf', { q: '78701', country_code: 'US', target_types: ['Postal Code'], limit: 20 });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/google-ads/geo-targets', 'GET', {
+      q: '78701',
+      country_code: 'US',
+      target_types: ['Postal Code'],
+      limit: 20,
+    });
+  });
+
+  it('leaves an empty location type list off the wire', async () => {
+    proxyRequest.mockResolvedValueOnce({ suggestions: [], suggestion_count: 0, truncated: false });
+
+    await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'tlf', { q: 'Austin', target_types: [] });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/google-ads/geo-targets', 'GET', { q: 'Austin' });
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, '', { q: 'Austin' }).catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure untouched', async () => {
+    const upstream = new Error('503');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().suggestGoogleAdsGeoTargets(req, 'cncf', { q: 'Austin' })).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.uploadCreativeAsset', () => {
+  const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  const stored = {
+    id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+    project_id: 'tlf',
+    brief_id: BRIEF,
+    mime_type: 'image/png',
+    byte_size: PNG.byteLength,
+    checksum: 'ab'.repeat(32),
+  };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  // The wire is JSON with base64 `bytes`, sent as a Buffer so the API client declares its
+  // Content-Length — campaign-service's upload admission charges an undeclared body the whole
+  // upload budget and sheds concurrent ones with a 503.
+  it('posts the image base64-encoded in a JSON Buffer body to the brief and maps a 201 to created', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ ...apiResponse({ ...stored, created: 'true' }), status: 201 });
+
+    const result = await new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG);
+
+    expect(result).toEqual({ id: stored.id, mimeType: 'image/png', byteSize: PNG.byteLength, checksum: stored.checksum, created: true });
+    const [, service, path, method, query, body, headers] = proxyRequestWithResponse.mock.calls[0];
+    expect(service).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(path).toBe(`/projects/tlf/briefs/${BRIEF}/creative-assets`);
+    expect(method).toBe('POST');
+    expect(query).toBeUndefined();
+    expect(Buffer.isBuffer(body)).toBe(true);
+    expect(JSON.parse((body as Buffer).toString('utf8'))).toEqual({ content_type: 'image/png', bytes: PNG.toString('base64') });
+    expect(headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
+  it('reports an identical image already stored (200) as not created, with the same usable id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...stored, created: 'false' }));
+
+    const result = await new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG);
+
+    expect(result.id).toBe(stored.id);
+    expect(result.created).toBe(false);
+  });
+
+  it.each([
+    ['another brief', { ...stored, brief_id: '00000000-0000-0000-0000-000000000000' }],
+    ['no id', { ...stored, id: '' }],
+    ['a type outside the allowlist', { ...stored, mime_type: 'image/gif' }],
+  ])('refuses an answer naming %s with a 502 rather than handing back an id the create cannot use', async (_label, data) => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ ...apiResponse(data), status: 201 });
+
+    await expect(new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG)).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('lets an upstream refusal through with its own status', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('the image is not a decodable image', 400, 'BAD_REQUEST'));
+
+    await expect(new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG)).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'the image is not a decodable image',
+    });
+  });
+});
+
+describe('asResumeRefusal', () => {
+  const answered = (body: Record<string, unknown>) => new MicroserviceError('upstream text', 409, 'CONFLICT', { errorBody: { code: '409', ...body } });
+  const clientText = (error: unknown) => (error as MicroserviceError).toResponse()['error'] as string;
+
+  it("names the platform and keeps campaign-service's sentence", () => {
+    const error = asResumeRefusal(answered({ message: 'not fully provisioned' }), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('resume it in Reddit Ads itself.');
+    expect(clientText(error)).toContain('Otherwise, the reason given was: not fully provisioned');
+  });
+
+  // lfx-v2-campaign-service#366: `reason: "campaign_adopted"` gets its own code and the unhedged message.
+  it('re-codes a 409 with reason campaign_adopted as CAMPAIGN_RESUME_REFUSED_ADOPTED with the precise message', () => {
+    const error = asResumeRefusal(answered({ message: 'campaign was adopted', reason: 'campaign_adopted' }), 'microsoft-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED_ADOPTED');
+    expect(clientText(error)).toBe(
+      'Could not resume this campaign; it is still paused. This campaign was adopted from Microsoft Ads, so LFX One can pause it but not resume it — resume it in Microsoft Ads itself.'
+    );
+    expect(clientText(error)).not.toContain('If it was adopted');
+    expect(error.statusCode).toBe(409);
+  });
+
+  it.each([
+    ['no reason', { message: 'not fully provisioned' }],
+    ['another reason', { message: 'not fully provisioned', reason: 'stale_approval' }],
+    // Branched on the field, never the text: a message that mentions adoption changes nothing.
+    ['adoption named only in the message', { message: 'campaign_adopted' }],
+  ])("keeps #3741's hedged message for a 409 with %s", (_label, body) => {
+    const error = asResumeRefusal(answered(body), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('If it was adopted from Reddit Ads');
+  });
+
+  it('falls back to a generic platform name for an unknown platform id', () => {
+    expect(clientText(asResumeRefusal(answered({ message: 'x' }), 'unknown-ads', 'op'))).toContain('resume it in the ad platform itself.');
+  });
+
+  it.each([
+    ['no message', {}],
+    ['a whitespace-only message', { message: '   ' }],
+    ['a non-string message', { message: 42 }],
+  ])('omits the reason sentence for %s', (_label, body) => {
+    const text = clientText(asResumeRefusal(answered(body), 'google-ads', 'op'));
+
+    expect(text).toContain('resume it in Google Ads itself.');
+    expect(text).not.toContain('Otherwise');
+  });
+
+  it('passes a non-MicroserviceError through unchanged', () => {
+    const error = new Error('boom');
+    expect(asResumeRefusal(error, 'google-ads', 'op')).toBe(error);
+  });
+});
+
+describe('CampaignServiceClient creative-asset library reads', () => {
+  const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const upstreamAsset = {
+    id: ASSET_ID,
+    project_id: 'tlf',
+    brief_id: BRIEF,
+    mime_type: 'image/png',
+    byte_size: 12,
+    checksum: 'ab'.repeat(32),
+  };
+  const mappedAsset = { id: ASSET_ID, projectId: 'tlf', briefId: BRIEF, mimeType: 'image/png', byteSize: 12, checksum: 'ab'.repeat(32) };
+  const upstreamList = { assets: [upstreamAsset], count: 1, count_limit: 100, bytes_used: 12, bytes_limit: 536870912 };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+  });
+
+  describe('listCreativeAssets', () => {
+    // The limits travel with the list, not only in the 409 an upload returns, so a caller planning a
+    // multi-file upload knows before it starts how many assets and bytes the brief may still take.
+    it('GETs the brief library and carries the quota back in camelCase', async () => {
+      proxyRequest.mockResolvedValueOnce(upstreamList);
+
+      const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
+
+      expect(result).toEqual({ assets: [mappedAsset], count: 1, countLimit: 100, bytesUsed: 12, bytesLimit: 536870912 });
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets`, 'GET');
+    });
+
+    // `width`/`height` are OPTIONAL upstream and absent means UNKNOWN, not 0 — the service began
+    // recording them in migration 000047, so an older asset has none. A fabricated 0 would read to a
+    // slot matcher as "fails every minimum", which is a different and wrong answer.
+    it.each([
+      ['a recorded pair', { width: 1200, height: 628 }, { width: 1200, height: 628 }],
+      ['no dimensions at all', {}, {}],
+      ['a zero, which Minimum(1) says this service never recorded', { width: 0, height: 0 }, {}],
+      // `Infinity >= 1` is true, so the minimum alone does not close this; `JSON.parse` cannot
+      // produce it, but the guard costs nothing and matches how this file checks every other
+      // number.
+      ['a non-finite pair', { width: Number.POSITIVE_INFINITY, height: Number.POSITIVE_INFINITY }, {}],
+    ])('carries %s through without inventing one', async (_label, dimensions, expected) => {
+      proxyRequest.mockResolvedValueOnce({ ...upstreamList, assets: [{ ...upstreamAsset, ...dimensions }] });
+
+      const result = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF);
+
+      expect(result.assets[0]).toEqual({ ...mappedAsset, ...expected });
+    });
+
+    // One unusable entry refuses the WHOLE read: a partly decoded library would show an operator an
+    // image they could then try to attach, and the failure would land later, on the ad platform.
+    it.each([
+      ['an asset with no id', { ...upstreamList, assets: [{ ...upstreamAsset, id: '' }] }],
+      ['an asset belonging to another brief', { ...upstreamList, assets: [{ ...upstreamAsset, brief_id: '00000000-0000-0000-0000-000000000000' }] }],
+      ['an asset typed outside the allowlist', { ...upstreamList, assets: [{ ...upstreamAsset, mime_type: 'image/gif' }] }],
+      ['no assets array', { count: 0, count_limit: 100, bytes_used: 0, bytes_limit: 1 }],
+      ['no quota numbers', { assets: [] }],
+      ['an asset sized by a non-finite number', { ...upstreamList, assets: [{ ...upstreamAsset, byte_size: Number.POSITIVE_INFINITY }] }],
+      ['a non-finite quota number', { ...upstreamList, bytes_limit: Number.NaN }],
+    ])('refuses a library naming %s with a 502 and a message an operator can act on', async (_label, body) => {
+      proxyRequest.mockResolvedValueOnce(body);
+
+      const caught = await new CampaignServiceClient().listCreativeAssets(req, 'tlf', BRIEF).catch((e: unknown) => e);
+
+      expect((caught as MicroserviceError).statusCode).toBe(502);
+      expect((caught as MicroserviceError).toResponse()['error']).toBe('The stored images could not be read. Please try again.');
+    });
+
+    it.each([
+      ['project', '', BRIEF],
+      ['brief_id', 'tlf', ''],
+    ])('refuses an empty %s without calling the proxy', async (field, project, brief) => {
+      const caught = await new CampaignServiceClient().listCreativeAssets(req, project, brief).catch((e: unknown) => e);
+
+      expect(caught).toBeInstanceOf(ServiceValidationError);
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCreativeAsset', () => {
+    it('GETs one asset by id', async () => {
+      proxyRequest.mockResolvedValueOnce(upstreamAsset);
+
+      const result = await new CampaignServiceClient().getCreativeAsset(req, 'tlf', BRIEF, ASSET_ID);
+
+      expect(result).toEqual(mappedAsset);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets/${ASSET_ID}`, 'GET');
+    });
+
+    // A 200 echoing another brief's asset would otherwise be handed back as this brief's.
+    it('refuses a 200 carrying another brief’s asset with a 502', async () => {
+      proxyRequest.mockResolvedValueOnce({ ...upstreamAsset, brief_id: '00000000-0000-0000-0000-000000000000' });
+
+      await expect(new CampaignServiceClient().getCreativeAsset(req, 'tlf', BRIEF, ASSET_ID)).rejects.toMatchObject({ statusCode: 502 });
+    });
+
+    it('lets an upstream 404 through with its own status, so a missing asset stays a 404', async () => {
+      proxyRequest.mockRejectedValueOnce(new MicroserviceError('creative asset not found', 404, 'NOT_FOUND'));
+
+      await expect(new CampaignServiceClient().getCreativeAsset(req, 'tlf', BRIEF, ASSET_ID)).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    // Same table as the delete sibling, for the same reason: the field named in the refusal is the
+    // field the caller has to fix, so an empty brief reports `brief_id`, not `asset_id`.
+    it.each([
+      ['project', '', BRIEF, ASSET_ID, 'project'],
+      ['brief', 'tlf', '', ASSET_ID, 'brief_id'],
+      ['asset id', 'tlf', BRIEF, '', 'asset_id'],
+    ])('refuses an empty %s without calling the proxy', async (_label, project, brief, asset, field) => {
+      const caught = await new CampaignServiceClient().getCreativeAsset(req, project, brief, asset).catch((e: unknown) => e);
+
+      expect(caught).toBeInstanceOf(ServiceValidationError);
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCreativeAssetPlan', () => {
+    const upstreamPlan = {
+      platforms: ['google-ads'],
+      assignments: [
+        {
+          slot_key: 'google-ads:demand-gen:landscape',
+          platform: 'google-ads',
+          slot: 'landscape',
+          label: 'Landscape marketing image',
+          requirement: 'required',
+          asset_ids: [ASSET_ID],
+          min_count: 1,
+          max_count: 20,
+        },
+      ],
+      gaps: [{ platform: 'google-ads', label: 'Square marketing image', need: 1, reason: 'no stored image matches 1:1' }],
+      unclassified: [],
+      unused: [],
+    };
+
+    /**
+     * `platforms` is a REPEATABLE query parameter upstream (`?platforms=a&platforms=b`), which is
+     * what the API client produces for an ARRAY value. A comma-joined string would be read as one
+     * platform named "a,b" and silently match nothing, so the array shape is pinned here.
+     */
+    it('passes several platforms as an array, not a comma-joined string', async () => {
+      proxyRequest.mockResolvedValueOnce(upstreamPlan);
+
+      await new CampaignServiceClient().getCreativeAssetPlan(req, 'tlf', BRIEF, ['google-ads', 'reddit']);
+
+      expect(proxyRequest.mock.calls[0][4]).toEqual({ platforms: ['google-ads', 'reddit'] });
+    });
+
+    // Absent means every platform the service publishes slot rules for, which is the answer an
+    // operator asking "is my library ready" wants — so an empty array must append NO parameter.
+    it.each([
+      ['an empty array', [] as string[]],
+      ['no argument at all', undefined],
+    ])('appends no platforms parameter for %s', async (_label, platforms) => {
+      proxyRequest.mockResolvedValueOnce(upstreamPlan);
+
+      await new CampaignServiceClient().getCreativeAssetPlan(req, 'tlf', BRIEF, platforms);
+
+      expect(proxyRequest.mock.calls[0][4]).toBeUndefined();
+    });
+
+    it('maps assignments and gaps to camelCase', async () => {
+      proxyRequest.mockResolvedValueOnce(upstreamPlan);
+
+      const result = await new CampaignServiceClient().getCreativeAssetPlan(req, 'tlf', BRIEF);
+
+      expect(result.assignments[0]).toEqual({
+        slotKey: 'google-ads:demand-gen:landscape',
+        platform: 'google-ads',
+        slot: 'landscape',
+        label: 'Landscape marketing image',
+        requirement: 'required',
+        assetIds: [ASSET_ID],
+        minCount: 1,
+        maxCount: 20,
+      });
+      expect(result.gaps[0]).toEqual({ platform: 'google-ads', label: 'Square marketing image', need: 1, reason: 'no stored image matches 1:1' });
+    });
+
+    /**
+     * `channel` is OPTIONAL on both shapes, and `slot_key` is optional on a gap for a real reason:
+     * a requirement can span several slots with none required on its own, and there is then no
+     * single slot to name. An empty string in either place would render as a channel named "" in a
+     * grid that groups rows by it.
+     */
+    it('leaves an absent channel and an absent gap slot_key absent rather than blank', async () => {
+      proxyRequest.mockResolvedValueOnce(upstreamPlan);
+
+      const result = await new CampaignServiceClient().getCreativeAssetPlan(req, 'tlf', BRIEF);
+
+      expect('channel' in result.assignments[0]).toBe(false);
+      expect('channel' in result.gaps[0]).toBe(false);
+      expect('slotKey' in result.gaps[0]).toBe(false);
+    });
+
+    it('carries a channel through when upstream sent one', async () => {
+      proxyRequest.mockResolvedValueOnce({
+        ...upstreamPlan,
+        assignments: [{ ...upstreamPlan.assignments[0], channel: 'demand-gen' }],
+      });
+
+      const result = await new CampaignServiceClient().getCreativeAssetPlan(req, 'tlf', BRIEF);
+
+      expect(result.assignments[0].channel).toBe('demand-gen');
+    });
+
+    it.each([
+      ['an assignment with no slot_key', { ...upstreamPlan, assignments: [{ ...upstreamPlan.assignments[0], slot_key: '' }] }],
+      ['an assignment with non-string asset ids', { ...upstreamPlan, assignments: [{ ...upstreamPlan.assignments[0], asset_ids: [1] }] }],
+      ['a gap with no numeric need', { ...upstreamPlan, gaps: [{ ...upstreamPlan.gaps[0], need: 'one' }] }],
+      ['a gap with a non-finite need', { ...upstreamPlan, gaps: [{ ...upstreamPlan.gaps[0], need: Number.POSITIVE_INFINITY }] }],
+      ['an assignment with a non-finite max_count', { ...upstreamPlan, assignments: [{ ...upstreamPlan.assignments[0], max_count: Number.NaN }] }],
+      ['no unclassified array', { ...upstreamPlan, unclassified: undefined }],
+    ])('refuses a plan naming %s with a 502 and a message an operator can act on', async (_label, body) => {
+      proxyRequest.mockResolvedValueOnce(body);
+
+      const caught = await new CampaignServiceClient().getCreativeAssetPlan(req, 'tlf', BRIEF).catch((e: unknown) => e);
+
+      expect((caught as MicroserviceError).statusCode).toBe(502);
+      expect((caught as MicroserviceError).toResponse()['error']).toBe('The image slot coverage could not be read. Please try again.');
+    });
+
+    it.each([
+      ['project', '', BRIEF, 'project'],
+      ['brief', 'tlf', '', 'brief_id'],
+    ])('refuses an empty %s without calling the proxy', async (_label, project, brief, field) => {
+      const caught = await new CampaignServiceClient().getCreativeAssetPlan(req, project, brief).catch((e: unknown) => e);
+
+      expect(caught).toBeInstanceOf(ServiceValidationError);
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteCreativeAsset', () => {
+    // The 204 needs no special handling: the API client parses an empty body as `null` rather than
+    // attempting JSON on it, so there is nothing to validate and nothing to return.
+    it('DELETEs the asset and resolves on an empty body', async () => {
+      proxyRequest.mockResolvedValueOnce(null);
+
+      await expect(new CampaignServiceClient().deleteCreativeAsset(req, 'tlf', BRIEF, ASSET_ID)).resolves.toBeUndefined();
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/tlf/briefs/${BRIEF}/creative-assets/${ASSET_ID}`, 'DELETE');
+    });
+
+    // The in-use refusal carries its own remedy text, so it is left to pass through untouched.
+    it('passes the 409 in-use refusal through with its reason and its own message', async () => {
+      const message = 'this image is still referenced by a campaign that has not finished launching';
+      proxyRequest.mockRejectedValueOnce(
+        new MicroserviceError(message, 409, 'CONFLICT', { errorBody: { code: '409', message, reason: 'creative_asset_in_use' } })
+      );
+
+      const caught = await new CampaignServiceClient().deleteCreativeAsset(req, 'tlf', BRIEF, ASSET_ID).catch((e: unknown) => e);
+
+      expect((caught as MicroserviceError).statusCode).toBe(409);
+      expect((caught as MicroserviceError).toResponse()['error']).toBe(message);
+    });
+
+    // Each field reports ITSELF: a caller who omitted the brief must not be sent to check the
+    // asset id, which is the one thing they got right.
+    it.each([
+      ['project', '', BRIEF, ASSET_ID, 'project'],
+      ['brief', 'tlf', '', ASSET_ID, 'brief_id'],
+      ['asset id', 'tlf', BRIEF, '', 'asset_id'],
+    ])('refuses an empty %s without calling the proxy', async (_label, project, brief, asset, field) => {
+      const caught = await new CampaignServiceClient().deleteCreativeAsset(req, project, brief, asset).catch((e: unknown) => e);
+
+      expect(caught).toBeInstanceOf(ServiceValidationError);
+      expect((caught as ServiceValidationError).validationErrors[0].field).toBe(field);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+});
+
+/**
+ * The Survey & Report surface: a stored survey brief must come back AS a survey brief, under its
+ * own stage, or the planner's restore and the series' own lookups address a row that never matches.
+ */
+describe('CampaignServiceClient survey briefs', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it('opens a stored survey brief for a survey caller asking for its stage', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'survey', stage: 'Survey Closing' }), { etag: '"4"' }));
+
+    const result = await new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'survey', 'Survey Closing');
+
+    expect(result.status).toBe('loaded');
+    expect(result.brief?.deliveryType).toBe('survey');
+    expect(result.brief?.emailStage).toBe('Survey Closing');
+  });
+
+  it('does not hand a survey brief to a paid caller', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ delivery_type: 'survey', stage: 'Survey Promo' }), { etag: '"4"' }));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'kubecon-eu-2026', 'tlf', 'paid-marketing')).resolves.toMatchObject({ status: 'none' });
+  });
+});
+
+describe('CampaignServiceClient.createSendWorkflow', () => {
+  const wire = {
+    flow_id: '1841',
+    name: 'Cloud Survey - Workflow',
+    edit_url: 'https://app.hubspot.com/workflows/8112310/platform/flow/1841/edit',
+    source_flow_id: '1700',
+    source_flow_name: 'Survey sequence',
+    is_enabled: false,
+    send_email_steps: 3,
+    dated_steps: 3,
+    enrollment_list_ids: ['31027', '31028'],
+    suppression_list_ids: ['201', '202'],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('posts the request wrapped in `input`, omitting an unnamed source workflow and absent dates', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', { sourceWorkflowUrl: '  ', name: 'Cloud Survey - Workflow', briefIds: ['a', 'b'] });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/send-workflows', 'POST', undefined, {
+      input: { name: 'Cloud Survey - Workflow', brief_ids: ['a', 'b'] },
+    });
+  });
+
+  it('sends the dates and a named source workflow when given', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await new CampaignServiceClient().createSendWorkflow(req, 'tlf', {
+      sourceWorkflowUrl: ' 1700 ',
+      name: 'w',
+      briefIds: ['a', 'b'],
+      sendDates: ['2026-11-02', '2026-11-09'],
+    });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({
+      input: { source_workflow_url: '1700', name: 'w', brief_ids: ['a', 'b'], send_dates: ['2026-11-02', '2026-11-09'] },
+    });
+  });
+
+  it('maps the snake_case result, list ids included', async () => {
+    proxyRequest.mockResolvedValueOnce(wire);
+
+    await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).resolves.toEqual({
+      flowId: '1841',
+      name: 'Cloud Survey - Workflow',
+      editUrl: wire.edit_url,
+      sourceFlowId: '1700',
+      sourceFlowName: 'Survey sequence',
+      isEnabled: false,
+      sendEmailSteps: 3,
+      datedSteps: 3,
+      enrollmentListIds: ['31027', '31028'],
+      suppressionListIds: ['201', '202'],
+    });
+  });
+
+  it('treats a create with no workflow link as a failure, not a success', async () => {
+    proxyRequest.mockResolvedValueOnce({ ...wire, edit_url: '' });
+
+    await expect(new CampaignServiceClient().createSendWorkflow(req, 'tlf', { name: 'w', briefIds: ['a', 'b'] })).rejects.toThrow(/no usable workflow link/);
+  });
+});
+
+describe('CampaignServiceClient.listTwitterAdsAccounts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's X Ads account discovery with no query or body", async () => {
+    const accounts = { accounts: [{ id: '18ce54d4x5t', label: 'Linux Foundation' }] };
+    proxyRequest.mockResolvedValueOnce(accounts);
+
+    const result = await new CampaignServiceClient().listTwitterAdsAccounts(req, 'lf/ai');
+
+    expect(result).toBe(accounts);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/connection-twitter-ads/accounts', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listTwitterAdsAccounts(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4983 ("ss-3"): a deliberate second campaign on a platform that already has one, offered only on the
+ * platforms the deployment lists AND campaign-service supports, and refused by the BFF when it cannot
+ * be served as asked.
+ */
+describe('CampaignServiceClient — create another campaign', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', ' microsoft-ads, google-ads , hubspot');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    isServerFeatureEnabled.mockReset();
+  });
+
+  it('offers it only on listed platforms campaign-service supports, and nowhere while the create cutover is dark', () => {
+    // The email channel is listed but campaign-service accepts no labels or new_version for it.
+    expect(multiCampaignPlatforms()).toEqual(['microsoft-ads', 'google-ads']);
+
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', '');
+    expect(multiCampaignPlatforms()).toEqual([]);
+
+    vi.stubEnv('LFX_CUTOVER_CAMPAIGN_SERVICE_MULTI_CAMPAIGN_PLATFORMS', 'microsoft-ads');
+    isServerFeatureEnabled.mockReturnValue(false);
+    expect(multiCampaignPlatforms()).toEqual([]);
+  });
+
+  it('sends new_version with the expected slot versions, stage and tactic only for a confirmed create', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: { job_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6' } });
+
+    await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['google-ads'],
+      { googleAdsConfig: { budget: 100 } },
+      {
+        another: { funnelStage: 'mid', tactic: 'retargeting', expectedSlotVersions: { 'google-ads': 2 } },
+      }
+    );
+    expect(proxyRequestWithResponse.mock.calls[0][5]).toEqual({
+      input: {
+        platforms: ['google-ads'],
+        config: { googleAdsConfig: { budget: 100 } },
+        new_version: true,
+        expected_slot_versions: { 'google-ads': 2 },
+        funnel_stage: 'mid',
+        tactic: 'retargeting',
+      },
+    });
+
+    // A plain create carries none of it, so a repeat stays a retry upstream.
+    await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['google-ads'], { googleAdsConfig: { budget: 100 } });
+    expect(proxyRequestWithResponse.mock.calls[1][5]).toEqual({ input: { platforms: ['google-ads'], config: { googleAdsConfig: { budget: 100 } } } });
+  });
+
+  it.each([
+    ['a platform the deployment does not list', ['meta-ads'], { funnelStage: 'top', expectedSlotVersions: { 'meta-ads': 1 } }, "can't be created on meta-ads"],
+    ['a stage outside the list', ['microsoft-ads'], { funnelStage: 'awareness', expectedSlotVersions: { 'microsoft-ads': 1 } }, 'funnel stage'],
+    ['a free-text tactic', ['microsoft-ads'], { funnelStage: 'top', tactic: 'my | tactic', expectedSlotVersions: { 'microsoft-ads': 1 } }, 'tactic'],
+    ['an expectation missing for a platform', ['microsoft-ads', 'google-ads'], { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 1 } }, 'Reload'],
+    ['a non-integer expectation', ['microsoft-ads'], { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 0.5 } }, 'Reload'],
+  ])('refuses %s before anything is sent', async (_label, platforms, another, message) => {
+    const result = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', platforms, Object.fromEntries(platforms.map((p) => [p, {}])), {
+      another: another as never,
+    });
+
+    expect(result.jobId).toBeNull();
+    expect(result.error).toContain(message);
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('accepts 0, campaign-service\'s "saw none in the slot", as an expectation', async () => {
+    proxyRequestWithResponse.mockResolvedValue({ data: { job_id: '3fa85f64-5717-4562-b3fc-2c963f66afa6' } });
+
+    const result = await new CampaignServiceClient().createCampaigns(
+      req,
+      'b-1',
+      'tlf',
+      ['microsoft-ads'],
+      { microsoftConfig: {} },
+      {
+        another: { funnelStage: 'top', expectedSlotVersions: { 'microsoft-ads': 0 } },
+      }
+    );
+
+    expect(result.error).toBeNull();
+    expect((proxyRequestWithResponse.mock.calls[0][5] as { input: { expected_slot_versions: unknown } }).input.expected_slot_versions).toEqual({
+      'microsoft-ads': 0,
+    });
+  });
+
+  it('maps the reuse, slot and labels a job result reports', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j',
+      status: 'succeeded',
+      result: [
+        {
+          platform: 'google-ads',
+          ok: true,
+          campaign_id: '9',
+          reused: true,
+          slot_version: 2,
+          variant: 'demand-gen',
+          funnel_stage: 'mid',
+          tactic: 'retargeting',
+        },
+      ],
+    });
+
+    expect(adapted.status === 'done' && adapted.platformResults?.[0]).toEqual(
+      expect.objectContaining({ reused: true, slotVersion: 2, variant: 'demand-gen', funnelStage: 'mid', tactic: 'retargeting' })
+    );
   });
 });

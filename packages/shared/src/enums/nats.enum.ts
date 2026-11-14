@@ -7,6 +7,7 @@
 export enum NatsSubjects {
   PROJECT_SLUG_TO_UID = 'lfx.projects-api.slug_to_uid',
   PROJECT_GET_NAME = 'lfx.projects-api.get_name',
+  PROJECT_GET_SLUG = 'lfx.projects-api.get_slug',
   USER_METADATA_UPDATE = 'lfx.auth-service.user_metadata.update',
   USER_METADATA_READ = 'lfx.auth-service.user_metadata.read',
   EMAIL_TO_USERNAME = 'lfx.auth-service.email_to_username',
@@ -24,6 +25,9 @@ export enum NatsSubjects {
   LOOKUP_V1_MAPPING = 'lfx.lookup_v1_mapping',
   PERSONAS_GET = 'lfx.personas-api.get',
   IMPERSONATION_TOKEN_EXCHANGE = 'lfx.auth-service.impersonation.token_exchange',
+  // Auth0 user search (auth-service) — request carries the admin's own access token as `subject_token`, which the
+  // service verifies (can_impersonate) before searching; used by the impersonation picker.
+  USER_SEARCH = 'lfx.auth-service.user.search',
   // Preferred meeting-invitation email (meeting-service) — request carries the user's v1
   // API-gateway token in the `token` field (forwarded to v1 /v1/me), not the auth-service
   // { user: { auth_token } } wrapper used by the subjects above.
@@ -36,4 +40,6 @@ export enum NatsSubjects {
   FORWARDS_CHECK_ALIAS = 'lfx.forwards-service.check_alias',
   FORWARDS_SET_TARGET = 'lfx.forwards-service.set_target',
   FORWARDS_GET_FORWARD = 'lfx.forwards-service.get_forward',
+  // Transactional email (lfx-v2-email-service) — pre-rendered HTML + text, one recipient per request
+  EMAIL_SERVICE_SEND = 'lfx.email-service.send_email',
 }

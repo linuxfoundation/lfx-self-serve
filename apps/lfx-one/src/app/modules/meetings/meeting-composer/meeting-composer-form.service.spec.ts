@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { MEETING_ATTACHMENT_WRITE_CONCURRENCY, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
@@ -12,18 +13,24 @@ import type {
   Meeting,
   MeetingComposerSection,
   MeetingComposerSectionId,
+  MeetingOccurrence,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  PendingAttachment,
+  PresignAttachmentResponse,
 } from '@lfx-one/shared/interfaces';
+import { detectBrowserTimezoneOption } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingComposerFormService } from './meeting-composer-form.service';
 import { MeetingComposerService } from './meeting-composer.service';
+import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 
 /**
  * Covers the submit pipeline's generation guard — the composer host outlives every open, so a save
@@ -366,6 +373,140 @@ describe('MeetingComposerFormService — attachment deletion queue', () => {
     // Same id, different open: dropping it here would silently un-queue a removal the organizer
     // just asked for on a meeting the finished pass knows nothing about.
     expect(service.pendingAttachmentDeletions()).toEqual(['doc-1']);
+  });
+});
+
+/**
+ * Covers the path a picked document takes to the meeting: queued by the Agenda & resources section,
+ * held on the form, then uploaded only once the create has returned a meeting id. A file that never
+ * reaches `uploadMeetingFile` simply isn't on the saved meeting.
+ */
+describe('MeetingComposerFormService — selected file uploads', () => {
+  let service: MeetingComposerFormService;
+  let section: ComposerAgendaResourcesComponent;
+  let createMeeting: ReturnType<typeof vi.fn>;
+  let createMeetingAttachment: ReturnType<typeof vi.fn>;
+  let uploadMeetingFile: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let uploads: Map<string, Subject<PresignAttachmentResponse>>;
+
+  const pdf = (name: string, type = 'application/pdf'): File => new File(['%PDF-1.4'], name, { type });
+  const queued = (): PendingAttachment[] => service.form().get('attachments')?.value as PendingAttachment[];
+  const finishUpload = (fileName: string): void => {
+    uploads.get(fileName)?.next({ uid: `uid-${fileName}`, file_url: 'https://storage.example.test/signed' } as PresignAttachmentResponse);
+    uploads.get(fileName)?.complete();
+  };
+
+  beforeEach(async () => {
+    uploads = new Map();
+    createMeeting = vi.fn();
+    createMeetingAttachment = vi.fn();
+    uploadMeetingFile = vi.fn((_meetingId: string, file: File) => {
+      const upload = new Subject<PresignAttachmentResponse>();
+      uploads.set(file.name, upload);
+      return upload;
+    });
+    messageAdd = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createMeeting,
+            updateMeeting: vi.fn(),
+            addMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            updateMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            deleteMeetingRegistrants: vi.fn().mockReturnValue(of({ summary: { successful: 0, failed: 0 } })),
+            createMeetingAttachment,
+            deleteMeetingAttachment: vi.fn(),
+            uploadMeetingFile,
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(ComposerAgendaResourcesComponent, { set: { template: '', imports: [] } });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().patchValue({ title: 'Composer meeting', meeting_type: 'Technical' });
+
+    const fixture = TestBed.createComponent(ComposerAgendaResourcesComponent);
+    fixture.componentRef.setInput('form', service.form());
+    section = fixture.componentInstance;
+    await fixture.whenStable();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uploads the selected files only after the meeting exists, and emits once they finish', () => {
+    const charter = pdf('charter.pdf');
+    const minutes = pdf('minutes.md', '');
+    section['onFileSelect']({ files: [charter, minutes] });
+    const created = new Subject<Meeting>();
+    createMeeting.mockReturnValue(created);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(uploadMeetingFile).not.toHaveBeenCalled();
+
+    created.next({ id: 'meeting-1' } as Meeting);
+    created.complete();
+
+    // The original File goes up as the body; the queued metadata — including the MIME type resolved for
+    // the blank-typed Markdown file — rides along for the presign.
+    expect(uploadMeetingFile).toHaveBeenCalledTimes(2);
+    expect(uploadMeetingFile).toHaveBeenCalledWith('meeting-1', charter, { name: 'charter.pdf', file_size: charter.size, file_type: 'application/pdf' });
+    expect(uploadMeetingFile).toHaveBeenCalledWith('meeting-1', minutes, { name: 'minutes.md', file_size: minutes.size, file_type: 'text/markdown' });
+    expect(emissions).toEqual([]);
+
+    finishUpload('charter.pdf');
+    expect(emissions).toEqual([]);
+
+    finishUpload('minutes.md');
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    // The presigned PUT is the whole upload: nothing else is written for a file.
+    expect(createMeetingAttachment).not.toHaveBeenCalled();
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
+  it('does not upload a file that was removed before saving', () => {
+    section['onFileSelect']({ files: [pdf('removed.pdf'), pdf('kept.pdf')] });
+    section['onRemoveAttachment'](queued()[0].id);
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    service.submit().subscribe();
+
+    expect(uploadMeetingFile).toHaveBeenCalledTimes(1);
+    expect(uploadMeetingFile).toHaveBeenCalledWith('meeting-1', expect.objectContaining({ name: 'kept.pdf' }), expect.objectContaining({ name: 'kept.pdf' }));
+  });
+
+  it('still emits the created meeting and warns about the one file that failed', () => {
+    section['onFileSelect']({ files: [pdf('good.pdf'), pdf('bad.pdf')] });
+    createMeeting.mockReturnValue(of({ id: 'meeting-1' } as Meeting));
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    finishUpload('good.pdf');
+    uploads.get('bad.pdf')?.error(new HttpErrorResponse({ status: 502 }));
+
+    expect(emissions).toEqual([{ id: 'meeting-1' }]);
+    expect(messageAdd).toHaveBeenCalledTimes(1);
+    expect(messageAdd).toHaveBeenCalledWith({
+      severity: 'warn',
+      summary: 'Meeting Created',
+      detail: '1 resource(s) could not be saved. You can manage them later.',
+    });
   });
 });
 
@@ -869,16 +1010,35 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('restricted')?.value).toBe(true);
   });
 
-  it('hands the access settings back when the type moves off Board', () => {
+  it('defaults a new meeting to private and restricted before any type is chosen', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
+  });
+
+  it('stays private and restricted when the type moves off Board', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
 
     service.form().get('meeting_type')?.setValue(MeetingType.TECHNICAL);
 
-    // Otherwise one mis-click on Board leaves a technical meeting silently invite-only.
-    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
-    expect(service.form().get('restricted')?.value).toBe(false);
+    // Private/restricted is the form's own baseline default now, not something unique to Board.
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
     expect(service.form().get('show_meeting_attendees')?.enabled).toBe(true);
+  });
+
+  it('resets manually-loosened access back to private and restricted on leaving Board', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+    // The organizer explicitly loosens access while still on Board.
+    service.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
+
+    service.form().get('meeting_type')?.setValue(MeetingType.TECHNICAL);
+
+    expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
+    expect(service.form().get('restricted')?.value).toBe(true);
   });
 
   it('leaves the saved access settings alone in edit mode', () => {
@@ -893,14 +1053,14 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('restricted')?.value).toBe(false);
   });
 
-  it('locks attendee visibility when the meeting is restricted', () => {
+  it('leaves attendee visibility to the organizer when the meeting is restricted (composer v2 rule)', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.form().get('show_meeting_attendees')?.setValue(true);
 
     service.form().get('restricted')?.setValue(true);
 
-    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
-    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
   it('locks attendee visibility when switching to Board in edit mode without flipping restricted', () => {
@@ -1491,6 +1651,15 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
 
   // Upstream types the field as a free-form string, so a stored value this build has no card for is
   // possible. Blanking it would silently rewrite the organizer's meeting on the next save.
+  // Existing restricted meetings are untouched by composer v2: a stored `true` saved before the composer
+  // allowed sharing opens as off, so a save can't re-assert it.
+  it('opens an existing restricted meeting with attendee sharing off, whatever it stored', () => {
+    const service = openEdit({ restricted: true, show_meeting_attendees: true }, of([]));
+
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);
+  });
+
   it('keeps a stored type the composer does not recognize', () => {
     const service = openEdit({ meeting_type: 'Retrospective' }, of([]));
 
@@ -1910,8 +2079,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
         show_meeting_attendees: true,
         auto_email_reminder_enabled: true,
         auto_email_reminder_time: 150,
-      }),
-      'single'
+      })
     );
   });
 });
@@ -2162,6 +2330,57 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
     expect(service.hasUnreconciledGroupSelection()).toBe(false);
   });
 
+  it('invalidates a changed voting filter until successful roster reconciliation, including a return to the original filter', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    const control = service.form().get('committees')!;
+    control.setValue([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    service.setResolvedCommitteeUids(['group-a']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    control.setValue([{ uid: 'group-a', allowed_voting_statuses: ['observer'] }]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.validateForSubmit()).toBe(false);
+    control.setValue([{ uid: 'group-a', allowed_voting_statuses: ['voting_rep'] }]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    service.setResolvedCommitteeUids(null);
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    service.syncCommitteeMembers([]);
+    service.setResolvedCommitteeUids(['group-a']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
+  it('keeps pending or failed roster coverage blocked across unrelated edits and a section unmount', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service
+      .form()
+      .get('committees')!
+      .setValue([{ uid: 'group-a' }]);
+    service.setResolvedCommitteeUids(['group-a']);
+    service.setResolvedCommitteeUids(null);
+    service.form().get('title')!.setValue('Unrelated edit');
+    expect(service.hasUnreconciledGroupSelection()).toBe(true);
+    expect(service.isSectionValid('guests')).toBe(false);
+    service.setResolvedCommitteeUids(['group-a']);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
+  it('preserves an unchanged saved group/filter selection without opening Guests', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    (service as any).populateFormWithMeetingData({
+      id: 'meeting-1',
+      title: 'Example meeting',
+      start_time: '2030-01-01T17:00:00Z',
+      timezone: 'UTC',
+      committees: [{ uid: 'group-a', allowed_voting_statuses: ['voting_rep', 'observer'] }],
+    } as Meeting);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+    service.form().get('title')!.setValue('Updated title');
+    service
+      .form()
+      .get('committees')!
+      .setValue([{ uid: 'group-a', name: 'Updated label', allowed_voting_statuses: ['Observer', 'Voting Rep'] }]);
+    expect(service.hasUnreconciledGroupSelection()).toBe(false);
+  });
+
   it('leaves a create that picked no group unblocked', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
 
@@ -2170,5 +2389,506 @@ describe('MeetingComposerFormService \u2014 group context and member resolution 
     expect(service.selectedCommitteeUids()).toEqual([]);
     expect(service.hasUnreconciledGroupSelection()).toBe(false);
     expect(service.isSectionValid('guests')).toBe(true);
+  });
+});
+
+describe('MeetingComposerFormService — single-occurrence edit', () => {
+  const FIRST = { occurrence_id: '1893456000', start_time: '2030-01-01T17:00:00.000Z', duration: 30 };
+  const SECOND = { occurrence_id: '1894060800', start_time: '2030-01-08T17:00:00.000Z', duration: 30, title: 'Kickoff', description: 'Week two agenda' };
+  const SERIES: Partial<Meeting> = {
+    id: 'meeting-1',
+    title: 'Weekly sync',
+    description: 'Series agenda',
+    organizer: true,
+    project_uid: 'project-1',
+    timezone: 'UTC',
+    start_time: FIRST.start_time,
+    duration: 60,
+    // A legacy type the series form rejects — hidden in this mode, so it must not hold Save hostage.
+    meeting_type: MeetingType.NONE,
+    recurrence: { type: 2, repeat_interval: 1 } as Meeting['recurrence'],
+    occurrences: [FIRST, SECOND],
+  };
+
+  let updateOccurrence: ReturnType<typeof vi.fn>;
+  let getMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let addMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let deleteMeetingAttachment: ReturnType<typeof vi.fn>;
+  let createMeetingAttachment: ReturnType<typeof vi.fn>;
+  let uploadMeetingFile: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let composerClose: ReturnType<typeof vi.fn>;
+
+  function openOccurrence(occurrenceId: string, meeting: Partial<Meeting> = SERIES): MeetingComposerFormService {
+    updateOccurrence = vi.fn().mockReturnValue(of(undefined));
+    getMeetingRegistrants = vi.fn().mockReturnValue(of([]));
+    addMeetingRegistrants = vi.fn().mockReturnValue(of({ summary: { successful: 1, failed: 0 } }));
+    deleteMeetingAttachment = vi.fn().mockReturnValue(of(undefined));
+    createMeetingAttachment = vi.fn().mockReturnValue(of(undefined));
+    uploadMeetingFile = vi.fn().mockReturnValue(of(undefined));
+    messageAdd = vi.fn();
+    composerClose = vi.fn();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        { provide: MeetingComposerService, useValue: { context: () => null, close: composerClose } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of(meeting as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants,
+            addMeetingRegistrants,
+            // Like the real shared mapper, this drops `occurrence_id` — the composer adds it itself.
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+            updateMeeting: vi.fn(),
+            updateOccurrence,
+            deleteMeetingAttachment,
+            createMeetingAttachment,
+            uploadMeetingFile,
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1', occurrenceId });
+
+    return service;
+  }
+
+  it('opens on the picked occurrence, not the series values', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+
+    expect(service.isOccurrenceEdit()).toBe(true);
+    expect(service.occurrence()?.occurrence_id).toBe(SECOND.occurrence_id);
+    expect(service.form().get('title')?.value).toBe('Kickoff');
+    expect(service.form().get('description')?.value).toBe('Week two agenda');
+    expect(service.form().get('startTime')?.value).toBe('05:00 PM');
+    expect(service.effectiveDuration()).toBe(30);
+  });
+
+  it('falls back to the series title and agenda when the occurrence has no override', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    expect(service.form().get('title')?.value).toBe('Weekly sync');
+    expect(service.form().get('description')?.value).toBe('Series agenda');
+  });
+
+  it('shows only the sections an occurrence can change, and loads the guests', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    expect(service.visibleSections().map((section) => section.id)).toEqual(['details-access', 'date-schedule', 'guests', 'agenda-resources']);
+    expect(getMeetingRegistrants).toHaveBeenCalled();
+  });
+
+  it('keeps Save closed until something changes, then ignores the hidden series controls', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    // The legacy `None` type left the whole form invalid, which only a series save cares about.
+    expect(service.form().valid).toBe(false);
+    expect(service.isSavable()).toBe(false);
+
+    service.form().get('title')?.setValue('Planning special');
+
+    expect(service.isSavable()).toBe(true);
+  });
+
+  it('saves through the occurrence endpoint with only the fields that changed', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    service.setDuration(45);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(updateOccurrence).toHaveBeenCalledWith('meeting-1', SECOND.occurrence_id, { start_time: SECOND.start_time, duration: 45 });
+    expect(emissions).toEqual([null]);
+    expect(service.submitting()).toBe(false);
+  });
+
+  it('refuses to clear an agenda the occurrence already has', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+
+    service.form().get('description')?.setValue('   ');
+
+    expect(service.isSectionValid('agenda-resources')).toBe(false);
+  });
+
+  it('closes with a warning when the occurrence is gone by the time the meeting loads', () => {
+    const service = openOccurrence('1999999999');
+
+    expect(composerClose).toHaveBeenCalled();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Occurrence changed' }));
+    expect(service.isHydrated()).toBe(false);
+  });
+
+  it('ignores an occurrence id on a create', () => {
+    const service = openOccurrence(FIRST.occurrence_id);
+
+    service.initialize({ mode: 'create', projectUid: 'project-1', occurrenceId: FIRST.occurrence_id });
+
+    expect(service.isOccurrenceEdit()).toBe(false);
+    expect(service.visibleSections()).toBe(MEETING_COMPOSER_SECTIONS);
+  });
+
+  it("rejects an occurrence start inside the series timezone's spring-forward gap", () => {
+    const service = openOccurrence(FIRST.occurrence_id, { ...SERIES, timezone: 'America/New_York' });
+
+    // 2:30 AM on 10 Mar 2030 does not exist in New York — clocks jump from 2:00 to 3:00.
+    service.form().patchValue({ startDate: new Date(2030, 2, 10), startTime: '02:30 AM' });
+
+    expect(service.form().hasError('nonexistentWallTime')).toBe(true);
+    expect(service.isSectionValid('date-schedule')).toBe(false);
+
+    service.form().patchValue({ startTime: '03:30 AM' });
+
+    expect(service.form().hasError('nonexistentWallTime')).toBe(false);
+  });
+
+  it('opens an occurrence with no duration of its own on the series duration, without reading as changed', () => {
+    const inherits = { occurrence_id: FIRST.occurrence_id, start_time: FIRST.start_time } as MeetingOccurrence;
+    const service = openOccurrence(FIRST.occurrence_id, { ...SERIES, meeting_type: MeetingType.TECHNICAL, occurrences: [inherits, SECOND] });
+
+    expect(service.effectiveDuration()).toBe(60);
+    expect(service.occurrenceHasChanges()).toBe(false);
+    expect(service.isSavable()).toBe(false);
+  });
+
+  it('invites a guest added here to this occurrence alone', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+
+    expect(service.newGuestDefaults().occurrence_id).toBe(SECOND.occurrence_id);
+  });
+
+  it('saves a guests-only change without writing an occurrence override', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    service.setGuests([{ ...service.newGuestDefaults(), email: 'guest@example.com' }]);
+
+    expect(service.occurrenceHasChanges()).toBe(false);
+    expect(service.isSavable()).toBe(true);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(updateOccurrence).not.toHaveBeenCalled();
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [
+      expect.objectContaining({ email: 'guest@example.com', occurrence_id: SECOND.occurrence_id }),
+    ]);
+    expect(emissions).toEqual([null]);
+  });
+
+  it('never saves documents or links, so nothing reaches the series', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    service.deleteAttachment('attachment-1');
+
+    // A queued attachment change is not occurrence work: it neither opens Save nor runs on submit.
+    expect(service.isSavable()).toBe(false);
+
+    service.form().get('title')?.setValue('Planning special');
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(updateOccurrence).toHaveBeenCalled();
+    expect(deleteMeetingAttachment).not.toHaveBeenCalled();
+    expect(createMeetingAttachment).not.toHaveBeenCalled();
+    expect(uploadMeetingFile).not.toHaveBeenCalled();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+    expect(emissions).toEqual([null]);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+
+  it("reads a listed guest's `occurrence` scope into `occurrence_id`", () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    const listed = { uid: 'reg-1', email: 'scoped@example.com', occurrence: SECOND.occurrence_id } as unknown as MeetingRegistrant;
+    getMeetingRegistrants.mockReturnValue(of([listed]));
+
+    service.retryLoadGuests();
+
+    expect(service.guests()[0].occurrence_id).toBe(SECOND.occurrence_id);
+  });
+
+  it('stays open with an error when every guest change in a guests-only save fails', () => {
+    const service = openOccurrence(SECOND.occurrence_id);
+    addMeetingRegistrants.mockReturnValue(throwError(() => new Error('conflict')));
+    service.setGuests([{ ...service.newGuestDefaults(), email: 'guest@example.com' }]);
+
+    const emissions: (Meeting | null)[] = [];
+    service.submit().subscribe((meeting) => emissions.push(meeting));
+
+    expect(emissions).toEqual([]);
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+  });
+});
+
+describe('MeetingComposerFormService — series edit save gate', () => {
+  const SAVED: Partial<Meeting> = {
+    id: 'meeting-1',
+    title: 'Weekly sync',
+    description: 'Agenda',
+    organizer: true,
+    project_uid: 'project-1',
+    meeting_type: MeetingType.TECHNICAL,
+    timezone: 'UTC',
+    start_time: '2030-01-08T15:00:00.000Z',
+    duration: 60,
+  };
+
+  function openEdit(): MeetingComposerFormService {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of(SAVED as Meeting)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => ({ meeting_id: meetingUid, email: guest.email }),
+            getChangedFields: (guest: MeetingRegistrantWithState) => ({ email: guest.email }),
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    return service;
+  }
+
+  it('keeps Save closed on an untouched meeting', () => {
+    const service = openEdit();
+
+    expect(service.form().valid).toBe(true);
+    expect(service.hasSeriesChanges()).toBe(false);
+    expect(service.isSavable()).toBe(false);
+  });
+
+  it('opens Save once a field changes, and closes it again when the change is undone', () => {
+    const service = openEdit();
+
+    service.form().get('title')?.setValue('Weekly sync — renamed');
+    expect(service.isSavable()).toBe(true);
+
+    service.form().get('title')?.setValue('Weekly sync');
+    expect(service.isSavable()).toBe(false);
+  });
+
+  it('counts a pending guest change as a change', () => {
+    const service = openEdit();
+
+    service.setGuests([{ ...service.newGuestDefaults(), email: 'new@example.com', state: 'new' } as MeetingRegistrantWithState]);
+
+    expect(service.isSavable()).toBe(true);
+  });
+
+  it('leaves a create gated on validity alone', () => {
+    const service = openEdit();
+
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.hasSeriesChanges()).toBe(false);
+  });
+});
+
+describe('MeetingComposerFormService — timezone preselect', () => {
+  const setup = (platformId: 'browser' | 'server'): MeetingComposerFormService => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: PLATFORM_ID, useValue: platformId },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(throwError(() => new Error('not found'))),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([] as MeetingRegistrant[])),
+          },
+        },
+      ],
+    });
+
+    return TestBed.inject(MeetingComposerFormService);
+  };
+
+  it("preselects the browser's own zone on create, leaving the control pristine", () => {
+    const service = setup('browser');
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    const timezone = service.form().get('timezone');
+    // Whatever the runner's zone resolves to — the same matcher the service calls, or empty if none matches.
+    expect(timezone?.value).toBe(detectBrowserTimezoneOption() ?? '');
+    expect(timezone?.pristine).toBe(true);
+  });
+
+  it('does not preselect on edit — the saved meeting owns the zone', () => {
+    const service = setup('browser');
+    // The load fails here, so nothing hydrates: whatever the field holds came from initialize() alone.
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+
+    expect(service.form().get('timezone')?.value).toBe('');
+  });
+
+  it('leaves the zone empty during SSR, where Intl reports the server', () => {
+    const service = setup('server');
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.form().get('timezone')?.value).toBe('');
+  });
+});
+
+/**
+ * Covers the save-payload safety half of GH-4944's fix: Start date now hydrates from the next
+ * upcoming occurrence (not the series origin) for an entire-series edit, but an organizer who
+ * never touches Start date/time must still have the save resend the true, unmodified start_time
+ * -- not the displayed next-occurrence stand-in. Resending the next-occurrence value unconditionally
+ * would move the series anchor on every untouched save, and could be misread upstream as a
+ * deliberate time change (re-emailing every registrant) when that date came from an individually
+ * rescheduled occurrence rather than the recurrence pattern's own next slot.
+ */
+describe('MeetingComposerFormService — save payload on an untouched Start date (GH-4944)', () => {
+  const mountEditing = (meeting: Partial<Meeting>): MeetingComposerFormService => {
+    const getMeeting = vi.fn().mockReturnValue(
+      of({
+        id: 'meeting-1',
+        organizer: true,
+        timezone: 'America/New_York',
+        duration: 30,
+        ...meeting,
+      } as Meeting)
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting,
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+
+    const service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+    return service;
+  };
+
+  it('resends the untouched series origin, not the displayed next-occurrence default', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // Edit something unrelated; Start date/time are left exactly as hydrated.
+    service.form().get('title')?.setValue('Renamed');
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2025-05-27T16:45:00Z').toISOString());
+  });
+
+  it('sends the organizer-chosen date when Start date is deliberately changed', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    service
+      .form()
+      .get('startDate')
+      ?.setValue(new Date(2026, 11, 2)); // a deliberate, different date
+    const payload = (service as any).prepareMeetingData();
+
+    const saved = new Date(payload.start_time);
+    expect(saved.getUTCFullYear()).toBe(2026);
+    expect(saved.getUTCMonth()).toBe(11); // December
+    expect(saved.getUTCDate()).toBe(2);
+  });
+
+  it('falls back to resending the series origin once no future occurrence remains', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: undefined,
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '2' },
+    });
+
+    service.form().get('title')?.setValue('Renamed');
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2025-05-27T16:45:00Z').toISOString());
+  });
+
+  it('sends a deliberate one-minute Start time edit, not the stale origin', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      timezone: 'America/New_York',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // The displayed time is 3:00 PM ET (20:00 UTC); move it one minute later, the time picker's
+    // smallest increment.
+    service.form().get('startTime')?.setValue('03:01 PM');
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:01:00Z').toISOString());
+  });
+
+  it('sends the displayed date, not the stale series origin, when recurrence is turned off', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z',
+      timezone: 'America/New_York',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // Start date/time are left exactly as hydrated (the next occurrence); only recurrence changes.
+    service.form().get('isRecurring')?.setValue(false);
+    const payload = (service as any).prepareMeetingData();
+
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:00:00Z').toISOString());
+  });
+
+  it('sends the displayed date under the new timezone when only the timezone is changed', () => {
+    const service = mountEditing({
+      title: 'Weekly sync',
+      start_time: '2025-05-27T16:45:00Z',
+      next_occurrence_start_time: '2026-11-11T20:00:00Z', // 3:00 PM America/New_York
+      timezone: 'America/New_York',
+      recurrence: { type: 2, repeat_interval: 1, weekly_days: '4' },
+    });
+
+    // Lima shares New York's November offset (both UTC-5), so the UTC instant for the same
+    // displayed wall time coincidentally matches -- the case the timezone guard exists for.
+    service.form().get('timezone')?.setValue('America/Lima');
+    const payload = (service as any).prepareMeetingData();
+
+    // Must reflect 3:00 PM in the NEW zone (America/Lima, UTC-5 year-round), not the stale 2025
+    // origin reinterpreted under it.
+    expect(new Date(payload.start_time).toISOString()).toBe(new Date('2026-11-11T20:00:00Z').toISOString());
   });
 });

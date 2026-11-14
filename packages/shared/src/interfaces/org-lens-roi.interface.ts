@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  ORG_LENS_ROI_ANNUAL_SERIES_MODES,
   ORG_LENS_ROI_CONTRIBUTION_TYPES,
   ORG_LENS_ROI_COVERAGE_REASONS,
   ORG_LENS_ROI_METHODS,
@@ -82,7 +83,6 @@ export interface OrgLensRoiProjectRow {
   /** Null — never zero — when the project has no investment to divide by. */
   roi: number | null;
   bcr: number | null;
-  breakevenMarkup: number | null;
   /** Sums to `totalExpenditure` by construction; never rescale client-side. */
   categories: OrgLensRoiCategoryRow[];
 }
@@ -157,6 +157,13 @@ export interface OrgLensRoiProjectSlice {
 }
 
 export type OrgLensRoiProjectView = (typeof ORG_LENS_ROI_PROJECT_VIEWS)[number];
+
+/**
+ * Whether the annual trend reads each year on its own or as a running total. Deliberately not a
+ * "view" like `OrgLensRoiProjectView`, where a view swaps the whole chart type: here the chart is
+ * the same line chart throughout and only the series arithmetic changes.
+ */
+export type OrgLensRoiAnnualSeriesMode = (typeof ORG_LENS_ROI_ANNUAL_SERIES_MODES)[number];
 
 export type OrgLensRoiProjectSankeyMeasure = (typeof ORG_LENS_ROI_PROJECT_SANKEY_MEASURES)[number];
 
@@ -250,11 +257,41 @@ export interface OrgLensRoiProjectTableRow {
   profit: number;
   roi: number | null;
   bcr: number | null;
-  breakevenMarkup: number | null;
   investmentLabel: string;
   returnLabel: string;
   profitLabel: string;
   roiLabel: string;
   bcrLabel: string;
-  breakevenMarkupLabel: string;
+}
+
+/** One value driver category's signed deviation from the typical organization-project pair, in percent. */
+export interface OrgLensRoiValueDriverRow {
+  category: string;
+  /** Positive: the portfolio earns more return than the typical pair from this category. Negative: less. */
+  pctDeviation: number;
+}
+
+export interface OrgLensRoiValueDrivers {
+  method: OrgLensRoiMethod;
+  /** Projects the decomposition covers. 0 when there are no rows. */
+  nProjects: number;
+  /** Empty when the organization has no decomposition (too few projects or not estimated). */
+  rows: OrgLensRoiValueDriverRow[];
+}
+
+/** The chart's view of a row: ordered and annotated, never serialized. */
+export interface OrgLensRoiValueDriverBar extends OrgLensRoiValueDriverRow {
+  subtitle: string;
+  color: string;
+  label: string;
+}
+
+/** A bar placed on the chart: its length as a percentage of the whole plot width, zero line at the centre. */
+export interface OrgLensRoiValueDriverPositionedBar extends OrgLensRoiValueDriverBar {
+  widthPct: number;
+  /** True when the bar is too long to leave room for its label beyond the end. */
+  labelInside: boolean;
+  /** Which edge of the plot row the label is anchored to, and its CSS offset from that edge. */
+  labelSide: 'left' | 'right';
+  labelOffset: string;
 }
