@@ -62,6 +62,7 @@ import {
   buildOrgCacheKey,
   buildPerUserOrgKey,
   ValkeyService,
+  withFoundationParticipatingOrgsCache,
 } from './valkey.service';
 
 import { logger } from './logger.service';
@@ -369,6 +370,43 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     const payload = warningPayload();
     expect(payload['cache_subresource']).toBeNull();
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
+  });
+
+  it('stores the foundation participating-companies roster past the 1 MiB default, under its own namespace cap', async () => {
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(null);
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      'roster',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    expect(setMock).toHaveBeenCalledTimes(1);
+    expect(setMock.mock.calls[0][0]).toContain(`${VALKEY_CACHE.FOUNDATION_PARTICIPATING_ORGS_NAMESPACE}:synthetic-foundation:roster:`);
+  });
+
+  it('reads a stored foundation roster between 1 and 4 MiB back as a hit, so the warehouse is not re-queried', async () => {
+    const roster = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES + 1024) };
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValueOnce(null);
+    await withFoundationParticipatingOrgsCache(
+      'synthetic-foundation',
+      'roster',
+      ['12mo'],
+      async () => roster,
+      () => true
+    );
+
+    getMock.mockResolvedValueOnce(setMock.mock.calls[0][1]);
+    const fetcher = vi.fn(async () => ({ padding: 'fresh' }));
+    const hit = await withFoundationParticipatingOrgsCache('synthetic-foundation', 'roster', ['12mo'], fetcher, () => true);
+
+    expect(hit).toEqual(roster);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   const cappedNamespaces = Object.keys(VALKEY_CACHE.MAX_VALUE_BYTES_BY_NAMESPACE);

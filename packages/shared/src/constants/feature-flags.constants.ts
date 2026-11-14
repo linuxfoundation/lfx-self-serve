@@ -265,3 +265,12 @@ export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-
  * (fail closed) and the SDK keeps connecting in the background.
  */
 export const LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS = 3;
+
+/**
+ * Dark-launch gate for the Foundation Lens Participating Companies page (#5697): the route
+ * (`foundation/participating-orgs`) and its nav item. The page reads the lf-dbt participating-orgs
+ * table (#5707); the flag stays off until it is rolled out.
+ * Paired with the server flag `LFX_FOUNDATION_PARTICIPATING_ORGS_ENABLED`, which is the real kill
+ * switch for the BFF; the Web SDK never runs server-side.
+ */
+export const FOUNDATION_PARTICIPATING_ORGS_ENABLED_FLAG = 'foundation-participating-orgs-enabled';
