@@ -63,6 +63,15 @@ describe('NewsletterPreviewComponent', () => {
   it('renders an authored fragment through the sanitized chrome, not the iframe', async () => {
     expect(await render({ bodyHtml: '<p>Hi</p>' })).toBeNull();
   });
+
+  it('strips class and stray targets from an authored fragment, which renders in the app page (#5295)', async () => {
+    await render({ bodyHtml: '<p class="fixed inset-0 z-50">Cover</p><a href="https://example.com" target="_top">Link</a>' });
+    const body = fixture.nativeElement.querySelector('.newsletter-preview__body') as HTMLElement;
+
+    expect(body.innerHTML).toContain('Cover');
+    expect(body.innerHTML).not.toContain('fixed inset-0');
+    expect(body.innerHTML).not.toContain('_top');
+  });
 });
 
 describe('withBlankLinkTarget', () => {

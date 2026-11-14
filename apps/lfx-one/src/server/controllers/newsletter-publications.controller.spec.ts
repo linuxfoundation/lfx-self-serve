@@ -159,6 +159,7 @@ describe('NewsletterPublicationsController (#4349)', () => {
     ['missing subject', { subject: undefined }],
     ['layout with no blocks array', { body_layout: { template_key: 'set-a' } }],
     ['layout over the byte cap', { body_layout: { blocks: [{ text: 'x'.repeat(800_001) }] } }],
+    ['layout nested deeper than the editor supports', { body_layout: { blocks: [{ blocks: [{ blocks: [{ block_type: 'text' }] }] }] } }],
     ['html body over the cap', { body_html: 'x'.repeat(100_001) }],
     ['non-string html body', { body_html: 42 }],
     ['bad reply email', { ed_reply_email: 'not-an-email' }],

@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormArray, FormGroup } from '@angular/forms';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NewsletterComposerBlock, NewsletterFieldEntry, NewsletterFieldSchema } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -38,6 +39,7 @@ describe('NewsletterBlockFieldsComponent', () => {
       removeItem(k: string, i: number): void;
       trackByFormKey(i: number, e: NewsletterFieldEntry): string;
       fieldRows(): NewsletterFieldEntry[];
+      urlErrors(): Record<string, string>;
     };
   const setInputs = (schema: NewsletterFieldSchema | null, b: NewsletterComposerBlock | null): void => {
     fixture.componentRef.setInput('schema', schema);
@@ -135,5 +137,99 @@ describe('NewsletterBlockFieldsComponent', () => {
 
     setInputs(null, null);
     expect(priv().form()).toBeNull();
+  });
+
+  it('flags a link or image field whose value the newsletter would leave out (#5296)', () => {
+    fixture.componentRef.setInput(
+      'urlFields',
+      new Map([
+        ['url', 'href'],
+        ['image', 'src'],
+        ['items.link', 'href'],
+        ['cta', 'href'],
+      ])
+    );
+    setInputs(
+      {
+        url: { type: 'text' },
+        image: { type: 'image' },
+        cta: { type: 'text' },
+        link: { type: 'text' },
+        items: { type: 'array', fields: { link: { type: 'text' } } },
+      },
+      block('b1', {
+        url: 'javascript:alert(1)',
+        image: 'https://example.com/a.png',
+        // An empty link field is fine, and a plain text field named like an item's link isn't a link.
+        cta: '',
+        link: 'see below',
+        items: [{ link: 'mailto:team@example.com' }, { link: 'data:text/html,x' }],
+      })
+    );
+
+    expect(Object.keys(priv().urlErrors()).sort()).toEqual(['items.1.link', 'url']);
+
+    priv().form()?.get('url')?.setValue('https://example.com');
+    expect(priv().urlErrors()['url']).toBeUndefined();
+    priv().form()?.get('image')?.setValue('mailto:team@example.com');
+    expect(priv().urlErrors()['image']).toContain('left out of the newsletter');
+  });
+});
+
+/**
+ * The URL error wiring lives in the template, so these tests render the real template. The LFX form wrappers
+ * are left unresolved (NO_ERRORS_SCHEMA), which keeps their bindings as plain element properties to assert on.
+ */
+describe('NewsletterBlockFieldsComponent URL error wiring (#5296)', () => {
+  let fixture: ComponentFixture<NewsletterBlockFieldsComponent>;
+
+  const render = (content: Record<string, unknown>): HTMLElement => {
+    fixture.componentRef.setInput(
+      'urlFields',
+      new Map([
+        ['url', 'href'],
+        ['items.link', 'href'],
+      ])
+    );
+    fixture.componentRef.setInput('schema', { url: { type: 'text' }, items: { type: 'array', fields: { link: { type: 'text' } } } } as NewsletterFieldSchema);
+    fixture.componentRef.setInput('block', { id: 'b1', block_type: 'text', label: 'b1', isContainer: false, content } as NewsletterComposerBlock);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  };
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [NewsletterBlockFieldsComponent] });
+    TestBed.overrideComponent(NewsletterBlockFieldsComponent, { set: { imports: [ReactiveFormsModule], schemas: [NO_ERRORS_SCHEMA] } });
+    fixture = TestBed.createComponent(NewsletterBlockFieldsComponent);
+  });
+
+  it('links each URL error to its input and announces it', () => {
+    const el = render({ url: 'javascript:alert(1)', items: [{ link: 'data:text/html,x' }] });
+
+    const error = el.querySelector('#nlfld-error-url') as HTMLElement;
+    expect(error.getAttribute('aria-live')).toBe('polite');
+    expect(error.textContent).toContain('left out of the newsletter');
+    const input = el.querySelector('[data-testid="newsletter-composer-field-url"] lfx-input-text') as unknown as { describedBy: string; invalid: boolean };
+    expect(input.describedBy).toBe('nlfld-error-url');
+    expect(input.invalid).toBe(true);
+
+    const itemError = el.querySelector('#nlfld-error-items-0-link') as HTMLElement;
+    expect(itemError.getAttribute('aria-live')).toBe('polite');
+    expect(itemError.textContent).toContain('left out of the newsletter');
+    const itemInput = el.querySelector('[data-testid="newsletter-composer-field-array-items-item-0"] lfx-input-text') as unknown as {
+      describedBy: string;
+      invalid: boolean;
+    };
+    expect(itemInput.describedBy).toBe('nlfld-error-items-0-link');
+    expect(itemInput.invalid).toBe(true);
+  });
+
+  it('keeps the live region rendered and empty while the link is fine', () => {
+    const el = render({ url: 'https://example.com', items: [] });
+
+    const error = el.querySelector('#nlfld-error-url') as HTMLElement;
+    expect(error).not.toBeNull();
+    expect(error.textContent?.trim()).toBe('');
+    expect((el.querySelector('[data-testid="newsletter-composer-field-url"] lfx-input-text') as unknown as { invalid: boolean }).invalid).toBe(false);
   });
 });

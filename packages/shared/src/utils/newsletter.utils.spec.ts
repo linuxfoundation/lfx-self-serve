@@ -14,6 +14,9 @@ import {
   withNewsletterPreviewDate,
   getNewsletterPublicationErrorMessage,
   isNewsletterReplyToAddress,
+  newsletterLayoutDepth,
+  newsletterLayoutDepthError,
+  stripRichtextAttributes,
 } from './newsletter.utils';
 
 describe('newsletterIssuePath', () => {
@@ -169,5 +172,54 @@ describe('isNewsletterReplyToAddress (#4349)', () => {
     ['an address over 254 characters', `editor@${'d'.repeat(250)}.com`],
   ])('rejects %s', (_label, address) => {
     expect(isNewsletterReplyToAddress(address)).toBe(false);
+  });
+});
+
+describe('newsletterLayoutDepth', () => {
+  const leaf = { block_type: 'text' };
+
+  it('counts top-level blocks as one level and container children as two', () => {
+    expect(newsletterLayoutDepth([])).toBe(0);
+    expect(newsletterLayoutDepth([leaf])).toBe(1);
+    expect(newsletterLayoutDepth([leaf, { block_type: 'card', blocks: [leaf] }])).toBe(2);
+    expect(newsletterLayoutDepth([{ block_type: 'card', blocks: [{ block_type: 'card', blocks: [leaf] }] }])).toBe(3);
+  });
+
+  it('measures a very deep layout without overflowing the stack, and stops past the limit', () => {
+    let deep: { block_type: string; blocks?: unknown[] } = leaf;
+    for (let i = 0; i < 50_000; i++) deep = { block_type: 'card', blocks: [deep] };
+    expect(newsletterLayoutDepth([deep], 2)).toBe(3);
+    expect(newsletterLayoutDepth([deep])).toBe(50_001);
+  });
+
+  it('reports a layout nested past the editor limit', () => {
+    expect(newsletterLayoutDepthError([{ block_type: 'card', blocks: [leaf] }])).toBeNull();
+    expect(newsletterLayoutDepthError([{ block_type: 'card', blocks: [{ block_type: 'card', blocks: [leaf] }] }])).toBe(
+      'Blocks can be nested at most 2 levels deep'
+    );
+  });
+});
+
+describe('stripRichtextAttributes', () => {
+  it('removes class and any target but _blank, and leaves everything else', () => {
+    expect(stripRichtextAttributes('<p class="fixed inset-0">Hi</p><a href="https://example.com" target="_top" title="t">x</a>')).toBe(
+      '<p>Hi</p><a href="https://example.com" title="t">x</a>'
+    );
+    // The rich text editor writes target="_blank" on every link, so stripping it would change saved content.
+    expect(stripRichtextAttributes('<a href="https://example.com" target="_blank" rel="noopener">x</a>')).toBe(
+      '<a href="https://example.com" target="_blank" rel="noopener">x</a>'
+    );
+  });
+
+  it('stays fast on a long run of unclosed tag starts', () => {
+    const input = '<a'.repeat(50_000);
+    const start = Date.now();
+    expect(stripRichtextAttributes(input)).toBe(input);
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
+  it('leaves text that only looks like an attribute alone', () => {
+    // Sanitized output encodes quotes in text, so this never matches a tag.
+    expect(stripRichtextAttributes('<p>class=&#34;x&#34;</p>')).toBe('<p>class=&#34;x&#34;</p>');
   });
 });

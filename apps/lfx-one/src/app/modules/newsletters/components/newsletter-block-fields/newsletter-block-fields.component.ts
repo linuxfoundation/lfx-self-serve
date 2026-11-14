@@ -12,8 +12,10 @@ import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { NEWSLETTER_SPACING_DEFAULT, NEWSLETTER_SPACING_MARGIN_KEY, NEWSLETTER_SPACING_PADDING_KEY } from '@lfx-one/shared/constants';
-import { NewsletterComposerBlock, NewsletterFieldDefinition, NewsletterFieldEntry, NewsletterFieldSchema } from '@lfx-one/shared/interfaces';
+import { NewsletterComposerBlock, NewsletterFieldDefinition, NewsletterFieldEntry, NewsletterFieldSchema, NewsletterUrlAttr } from '@lfx-one/shared/interfaces';
 import { humanizeFieldKey } from '@lfx-one/shared/utils';
+
+import { isSafeUrlForAttr } from '../../services/newsletter-renderer.service';
 
 /**
  * Fields panel for the newsletter block-composer (LFXV2-2382).
@@ -61,6 +63,8 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   public readonly showSpacing = input<boolean>(true);
   /** The selected block's manifest field schema (null when unknown). */
   public readonly schema = input<NewsletterFieldSchema | null>(null);
+  /** The fields the block's template uses as a link or image URL, with the attribute (#5296). */
+  public readonly urlFields = input<Map<string, NewsletterUrlAttr>>(new Map());
 
   // === Outputs ===
   /** Emits the block's assembled content object whenever a field changes. */
@@ -71,6 +75,8 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
   protected readonly form = signal<FormGroup | null>(null);
   /** Bumped on every form rebuild so the field rows remount. lfx-rich-editor binds to its first control only. */
   protected readonly formVersion = signal(0);
+  // The form's current value, so the URL errors below recompute as the author types.
+  private readonly formValue = signal<Record<string, unknown>>({});
   // A new array on every rebuild. @for only re-reads its track keys when the
   // collection changes, and two blocks of one type share the same field entries.
   protected readonly fieldRows = computed(() => {
@@ -98,6 +104,10 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     }
     return map;
   });
+
+  // An error for each link or image field whose value the canvas and the sent email would drop, keyed by the
+  // control path: `key` for a block field, `key.index.itemKey` for a field inside an array item.
+  protected readonly urlErrors: Signal<Record<string, string>> = this.initUrlErrors();
 
   // Reserved keys for the universal Spacing controls, surfaced to the template.
   protected readonly paddingKey = NEWSLETTER_SPACING_PADDING_KEY;
@@ -274,8 +284,10 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     this.builtForFieldsKey = this.fieldsKey(entries);
     this.syncedContent = block.content;
     this.form.set(group);
+    this.formValue.set(group.getRawValue());
 
     this.valueSub = group.valueChanges.subscribe(() => {
+      this.formValue.set(group.getRawValue());
       if (this.suppressEmit) return;
       const content = this.collect(group, entries);
       // Record the emitted reference so the echo back through `block` doesn't
@@ -336,6 +348,37 @@ export class NewsletterBlockFieldsComponent implements OnDestroy {
     if (type === 'number') return null;
     if (type === 'boolean') return false;
     return '';
+  }
+
+  private initUrlErrors(): Signal<Record<string, string>> {
+    return computed(() => {
+      const urlFields = this.urlFields();
+      const value = this.formValue();
+      const errors: Record<string, string> = {};
+      if (urlFields.size === 0) return errors;
+      const check = (path: string, attr: NewsletterUrlAttr | undefined, raw: unknown): void => {
+        if (!attr || typeof raw !== 'string' || raw.trim() === '') return;
+        if (!isSafeUrlForAttr(attr, raw.trim())) {
+          errors[path] =
+            attr === 'href'
+              ? 'This link would be left out of the newsletter. Use a full web address, e.g. https://example.com, or a mailto: link.'
+              : 'This image would be left out of the newsletter. Use a full web address, e.g. https://example.com/image.png.';
+        }
+      };
+      for (const entry of this.fieldEntries()) {
+        const raw = value[entry.key];
+        if (entry.type === 'array' && Array.isArray(raw)) {
+          raw.forEach((item, index) => {
+            for (const nested of Object.keys(entry.fields ?? {})) {
+              check(`${entry.key}.${index}.${nested}`, urlFields.get(`${entry.key}.${nested}`), (item as Record<string, unknown> | null)?.[nested]);
+            }
+          });
+        } else {
+          check(entry.key, urlFields.get(entry.key), raw);
+        }
+      }
+      return errors;
+    });
   }
 
   private teardownForm(): void {

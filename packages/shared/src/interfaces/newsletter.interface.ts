@@ -957,6 +957,9 @@ export interface NewsletterChartData {
 // Block-composer editor: structured layout + template manifest (spec 004 §8)
 // ---------------------------------------------------------------------------
 
+/** A template attribute that carries a URL from a block field: a link (`href`) or an image (`src`). */
+export type NewsletterUrlAttr = 'href' | 'src';
+
 /**
  * The editable field types the block-composer fields panel knows how to render.
  * Mirrors the `type` discriminator in each block's parsed SCHEMA comment.

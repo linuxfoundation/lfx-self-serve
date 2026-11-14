@@ -4,8 +4,8 @@
 import { isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, PLATFORM_ID, SecurityContext } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
-import { NewsletterBlock } from '@lfx-one/shared/interfaces';
-import { humanizeFieldKey, isValidUrl } from '@lfx-one/shared/utils';
+import { NewsletterBlock, NewsletterUrlAttr } from '@lfx-one/shared/interfaces';
+import { humanizeFieldKey, isValidUrl, stripRichtextAttributes } from '@lfx-one/shared/utils';
 
 /**
  * Client-side declarative renderer for the newsletter block-composer preview.
@@ -194,6 +194,34 @@ export class NewsletterRendererService {
     return fields;
   }
 
+  /**
+   * The field keys a block's template uses as a whole link (`href`) or image (`src`) URL, with the attribute.
+   * The fields panel uses it to flag a value the canvas and the sent email would drop. Only an attribute that is
+   * exactly one `{{field}}` binding counts. A binding inside `each="items"` is keyed `items.<key>`, so it is never
+   * confused with a block field of the same name. Returns an empty map on the server or without a template.
+   */
+  public collectUrlFields(template: string | undefined): Map<string, NewsletterUrlAttr> {
+    const fields = new Map<string, NewsletterUrlAttr>();
+    if (!isPlatformBrowser(this.platformId) || !template) {
+      return fields;
+    }
+    const walk = (nodes: TemplateNode[], prefix: string): void => {
+      for (const node of nodes) {
+        if (node.kind !== 'element') continue;
+        // An each= element repeats per item, and the item replaces the binding context (see itemContext), so its
+        // own attributes and its children bind the item's keys.
+        const scope = node.attrs['each'] !== undefined ? [prefix, node.attrs['each']].filter(Boolean).join('.') : prefix;
+        for (const attr of URL_ATTRS) {
+          const key = WHOLE_BINDING_RE.exec(node.attrs[attr] ?? '')?.[1];
+          if (key) fields.set([scope, key].filter(Boolean).join('.'), attr);
+        }
+        walk(node.children, scope);
+      }
+    };
+    walk(parseTemplate(template), '');
+    return fields;
+  }
+
   // === Private rendering ===
 
   /** Walk one parsed node into an HTML string within the given context. */
@@ -291,7 +319,9 @@ export class NewsletterRendererService {
       // is bypassSecurityTrustHtml'd in the canvas). Angular's HTML sanitizer
       // strips scripts, event handlers, and javascript: URLs while keeping the
       // inert formatting a richtext field legitimately carries.
-      const html = value == null ? '' : (this.sanitizer.sanitize(SecurityContext.HTML, String(value)) ?? '');
+      // class and target are stripped as well. The canvas is part of the app page, not a sandboxed frame, so a
+      // stored class could otherwise restyle the app around it, e.g. a full-screen overlay over Save (#5295).
+      const html = value == null ? '' : stripRichtextAttributes(this.sanitizer.sanitize(SecurityContext.HTML, String(value)) ?? '');
       const placeholder = field && ctx.editMode && isBlank(value) ? humanizeFieldKey(field) : undefined;
       const editable = field ? editableAttrs(markerFor(ctx, field), true, placeholder) : '';
       const open = openTag('div', mergedStyle(attrs), classList(attrs), editable);
@@ -685,7 +715,9 @@ function classList(attrs: Record<string, string>, extra?: string): string {
 }
 
 /** Attributes carrying a URL — their resolved value must pass the safe-URL gate. */
-const URL_ATTRS = new Set(['href', 'src']);
+const URL_ATTRS = new Set<NewsletterUrlAttr>(['href', 'src']);
+/** An attribute value that is exactly one `{{field}}` binding. */
+const WHOLE_BINDING_RE = /^\s*\{\{\s*([\w.]+)\s*\}\}\s*$/;
 
 /**
  * Attribute-specific URL gate. `href` additionally accepts `mailto:` — the
@@ -695,7 +727,7 @@ const URL_ATTRS = new Set(['href', 'src']);
  * can never be a mailto). The `mailto:` scheme is non-executable, so allowing it
  * here does not reopen the `javascript:` / `data:` hole `isValidUrl` closes.
  */
-function isSafeUrlForAttr(attr: string, value: string): boolean {
+export function isSafeUrlForAttr(attr: string, value: string): boolean {
   if (attr === 'href' && /^\s*mailto:/i.test(value)) return true;
   return isValidUrl(value);
 }
@@ -714,7 +746,7 @@ function passthrough(_tag: string, attrs: Record<string, string>, content: Recor
   for (const a of PASSTHROUGH_ATTRS) {
     if (attrs[a] === undefined) continue;
     const resolved = resolveAttr(attrs[a], content);
-    if (URL_ATTRS.has(a) && !isSafeUrlForAttr(a, resolved)) continue;
+    if (URL_ATTRS.has(a as NewsletterUrlAttr) && !isSafeUrlForAttr(a, resolved)) continue;
     out.push(`${a}="${escapeAttr(resolved)}"`);
   }
   return out.join(' ');

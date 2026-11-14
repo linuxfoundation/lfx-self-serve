@@ -83,6 +83,32 @@ tab. Unlike `EmailBodyPreviewComponent` it sets no `default-src 'none'` policy, 
 loads remote images. The document is the body the service renders and sends, not model output.
 `newsletter-preview.component.spec.ts` pins the sandbox value on both routes into the iframe.
 
+### Newsletter content in the app page
+
+Two newsletter surfaces are not framed:
+
+- The block editor's canvas. `NewsletterRendererService` renders a draft's blocks to HTML that the
+  composer marks trusted with `bypassSecurityTrustHtml` and places in the app page, because the
+  author edits it in place. Other editors of the same draft see the same stored content.
+- An authored fragment (a simple editor body, which isn't a complete document) in
+  `NewsletterPreviewComponent`. It is shown in the reader, the preview drawer and the guest reader.
+
+The controls are on the content itself:
+
+- Rich text goes through Angular's HTML sanitizer, which removes scripts, event handlers and
+  `javascript:` URLs. `stripRichtextAttributes` then removes `class`, and any `target` other than
+  `_blank`, which the sanitizer keeps. Without that, a stored class could use the app's own styles
+  to draw over the page, e.g. a full-screen overlay over Save and Send. Pasted and dropped content
+  takes the same path before it reaches the page. The canvas doesn't count the stripped attributes
+  as an edit, so opening a field doesn't change what is saved.
+- Link and image attributes bound from block fields must pass `isSafeUrlForAttr` (http(s), plus
+  `mailto:` for links) or are left out. The fields panel shows an error for a value that would be
+  left out.
+- `.nl-preview` and `.newsletter-preview__body` have `contain: paint`, so anything the content draws
+  stays inside its box.
+- The BFF refuses a layout nested deeper than `NEWSLETTER_LAYOUT_MAX_DEPTH`. If one comes in through
+  the API anyway, the editor shows a notice instead of loading it and never saves over it.
+
 ## The second of two controls — except where it is the only one
 
 For **generated** copy, server-side sanitization happens first and is unchanged. The campaign
