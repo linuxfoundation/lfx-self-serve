@@ -6620,7 +6620,7 @@ describe('ImplementationTabComponent demand gen video ad', () => {
         .options()
         .slice(1)
         .map((o) => o.value)
-    ).toEqual(['SIGN_UP', 'LEARN_MORE', 'BOOK_NOW', 'VISIT_SITE', 'WATCH_NOW']);
+    ).toEqual(['SIGN_UP', 'LEARN_MORE', 'BOOK_NOW', 'VISIT_SITE', 'WATCH_NOW', 'APPLY_NOW', 'CONTACT_US', 'DOWNLOAD', 'GET_QUOTE', 'SUBSCRIBE', 'SHOP_NOW']);
     expect(select.control()).toBe('callToAction');
     expect(select.form()).toBe(c['campaignForm'].controls.demandGenVideoCreative);
   });
