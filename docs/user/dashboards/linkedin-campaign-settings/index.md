@@ -1,10 +1,27 @@
 ---
 title: LinkedIn targeting and ad variants
-description: See and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+description: See and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, name each ad and give it a description and call to action, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, linkedin ads, sponsored content, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
-last_updated: 2026-11-13
+tags:
+  [
+    campaigns,
+    paid marketing,
+    linkedin ads,
+    sponsored content,
+    targeting,
+    member groups,
+    skills,
+    ad variants,
+    intro text,
+    headline,
+    ad name,
+    description,
+    call to action,
+    images,
+    implement,
+  ]
+last_updated: 2026-11-14
 intercom_collection: Dashboards
 ---
 
@@ -28,6 +45,18 @@ Each variant has an **Intro text** box (the body of the post) and a **Headline**
 Spaces at the start and end are not counted. An em dash (—) or en dash (–) is sent as a comma and a space, and counted that way, so the count can differ from what you typed. A dash at the very start or end is dropped.
 
 Both fields are required. If a field is empty, holds only spaces or a single dash, or is over its limit, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." Shorten or fill in the text to continue. Longer text is not cut for you.
+
+## Name an ad, and add a description and call to action
+
+When they are available on your deployment, each variant also has these optional fields:
+
+- **Ad name**: the name of the variant's ad in LinkedIn Campaign Manager and in reports. It is not shown to people who see the ad. Up to 255 characters; runs of spaces count as one. Left blank, the ad is named after the event, such as "KubeCon EU 2026 | variant-2".
+- **Call to action**: the button on the ad, which links to the registration page. Choose one from the list, such as Register, Sign up or Learn more, or leave it on **None** for no button. This field is offered only where LinkedIn calls to action have been turned on.
+- **Description**: the line of text under the link card's headline. Up to 300 characters, counted like the intro text.
+
+Each ad in a campaign needs its own name. If two variants have the same name, or a name matches another variant's default name, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." The same happens when a name or description is over its limit.
+
+If a saved brief holds a name, description or call to action that is no longer available on your deployment, the field stays visible with a message asking you to clear it, or to choose **None** for the call to action, and **Create** stays disabled until you do.
 
 ## Add or remove variants
 

@@ -765,6 +765,28 @@ export function canEditLinkedInTargeting(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may carry `linkedInConfig.variants[].name` and `description` (#5764).
+ *
+ * Needs the campaign-service create path to serve the create AND the LinkedIn variant-fields flag.
+ * Either alone is not enough, and both failures are silent: the legacy creator never reads the keys,
+ * and a campaign-service older than linuxfoundation/lfx-v2-campaign-service#588/#589 drops them.
+ */
+export function canSetLinkedInVariantFields(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInVariantFields);
+}
+
+/**
+ * Whether a LinkedIn create may carry `linkedInConfig.variants[].callToAction` (#5764).
+ *
+ * Everything {@link canSetLinkedInVariantFields} needs AND the LinkedIn call-to-action flag, which
+ * stands for campaign-service's own `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`: with that off,
+ * campaign-service refuses any call to action with a 400.
+ */
+export function canSetLinkedInCallToAction(): boolean {
+  return canSetLinkedInVariantFields() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInCallToAction);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -988,6 +1010,8 @@ export class CampaignServiceClient {
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+        linkedInVariantFieldsEnabled: canSetLinkedInVariantFields(),
+        linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1060,6 +1084,8 @@ export class CampaignServiceClient {
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
+      linkedInVariantFieldsEnabled: canSetLinkedInVariantFields(),
+      linkedInCallToActionEnabled: canSetLinkedInCallToAction(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

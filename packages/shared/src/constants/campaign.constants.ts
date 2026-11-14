@@ -771,7 +771,43 @@ export const LINKEDIN_API_VERSION = '202602';
 export const LINKEDIN_CHAR_LIMITS = {
   introText: 600,
   headline: 200,
+  /**
+   * A variant's creative name (`linkedInConfig.variants[].name`, linuxfoundation/lfx-v2-campaign-service#589):
+   * LinkedIn's 255, which campaign-service cuts to after collapsing whitespace (`normalizeCreativeName`,
+   * `internal/platform/linkedin/variants.go`).
+   */
+  name: 255,
+  /**
+   * A variant's article description (`linkedInConfig.variants[].description`, #588): LinkedIn's
+   * single-image ad maximum, which campaign-service cuts the normalized copy to (`normalizeDescription`).
+   */
+  description: 300,
 } as const;
+
+/**
+ * The calls to action a LinkedIn variant may carry (`linkedInConfig.variants[].callToAction`,
+ * linuxfoundation/lfx-v2-campaign-service#588): campaign-service's `CallToActionLabels`
+ * (`internal/platform/linkedin/variants.go`), the Posts API `ContentCallToActionLabel` values at
+ * LinkedIn-Version 202602. campaign-service matches exactly, so the picker sends the upper-case
+ * `value`, never the label. Offered only while `CampaignListResult.linkedInCallToActionEnabled` is
+ * an explicit yes: campaign-service refuses any call to action while its
+ * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED` is off.
+ */
+export const LINKEDIN_CALLS_TO_ACTION = [
+  { value: 'APPLY', label: 'Apply' },
+  { value: 'DOWNLOAD', label: 'Download' },
+  { value: 'VIEW_QUOTE', label: 'View quote' },
+  { value: 'LEARN_MORE', label: 'Learn more' },
+  { value: 'SIGN_UP', label: 'Sign up' },
+  { value: 'SUBSCRIBE', label: 'Subscribe' },
+  { value: 'REGISTER', label: 'Register' },
+  { value: 'JOIN', label: 'Join' },
+  { value: 'ATTEND', label: 'Attend' },
+  { value: 'REQUEST_DEMO', label: 'Request demo' },
+  { value: 'SEE_MORE', label: 'See more' },
+  { value: 'BUY_NOW', label: 'Buy now' },
+  { value: 'SHOP_NOW', label: 'Shop now' },
+] as const;
 
 /**
  * The fewest ad variants a LinkedIn create takes: campaign-service refuses an empty set before

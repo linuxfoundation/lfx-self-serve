@@ -1877,6 +1877,21 @@ export interface LinkedInCreativeVariant {
    * (`resolveLinkedInImages`, `internal/dispatch/linkedin_creative.go`).
    */
   imageAssetId?: string;
+  /**
+   * The variant's creative name in Campaign Manager and reporting (linuxfoundation/lfx-v2-campaign-service#589),
+   * at most `LINKEDIN_CHAR_LIMITS.name`. Absent keeps campaign-service's `"<event> | variant-N"`.
+   * campaign-service refuses two variants whose names match once whitespace is collapsed. Never
+   * sent as `""`: the key is omitted instead.
+   */
+  name?: string;
+  /**
+   * The button on the dark post, one of `LINKEDIN_CALLS_TO_ACTION`'s values exactly (#588). Sent
+   * only while `CampaignListResult.linkedInCallToActionEnabled` is an explicit yes; absent sends no
+   * button.
+   */
+  callToAction?: string;
+  /** The article description (#588), at most `LINKEDIN_CHAR_LIMITS.description`. Absent sends none. */
+  description?: string;
 }
 
 /**
@@ -1896,6 +1911,15 @@ export interface LinkedInVariantDraft {
   imageAssetName: string;
   /** The brief the upload was made for. */
   imageAssetBriefId: string;
+  /**
+   * The creative name as typed (#5764), or absent. Optional, like `callToAction` and
+   * `description`, so a draft saved before the fields existed restores as blank.
+   */
+  name?: string;
+  /** A `LINKEDIN_CALLS_TO_ACTION` value, or absent / `''` for none. */
+  callToAction?: string;
+  /** The article description as typed, or absent. */
+  description?: string;
 }
 
 export interface LinkedInTargetingStrategy {
@@ -6831,6 +6855,28 @@ export interface CampaignListResult {
    */
   linkedInTargetingEditEnabled: boolean;
   /**
+   * Whether the LinkedIn variant editor may offer a creative name and an article description per
+   * variant, sent as `linkedInConfig.variants[].name` / `description` (#5764).
+   *
+   * True only when the campaign-service create path serves the create AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_VARIANT_FIELDS` flag says the deployed campaign-service
+   * reads the two keys (linuxfoundation/lfx-v2-campaign-service#588/#589). An older service drops
+   * them, and the legacy creator never reads them, so either would create default-named creatives
+   * with no description while the request set them. Optional, so a BFF that predates it reads as
+   * unanswered (`null` on the client), which hides the inputs and sends neither key.
+   */
+  linkedInVariantFieldsEnabled?: boolean;
+  /**
+   * Whether the LinkedIn variant editor may offer a call to action per variant, sent as
+   * `linkedInConfig.variants[].callToAction` (#5764).
+   *
+   * Needs everything {@link linkedInVariantFieldsEnabled} needs AND the
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_CALL_TO_ACTION` flag, which mirrors campaign-service's own
+   * `LINKEDIN_ADS_CALL_TO_ACTION_ENABLED`: while that is off campaign-service answers any call to
+   * action with a 400. Optional and modelled on the client like the field above.
+   */
+  linkedInCallToActionEnabled?: boolean;
+  /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
    *
@@ -7286,6 +7332,21 @@ export interface LinkedInVariantView {
   headlineLength: number;
   introTextError: string;
   headlineError: string;
+  /** The creative name as typed, `''` for none (#5764). */
+  name: string;
+  /** Its length as campaign-service measures it once whitespace is collapsed. */
+  nameLength: number;
+  /** Why the name cannot be sent: too long, a repeat of another variant's creative name, or the field unavailable. */
+  nameError: string;
+  /** The chosen call to action's value, `''` for none. */
+  callToAction: string;
+  /** Why the call to action cannot be sent (unavailable on this deployment, or not a LinkedIn label), or `''`. */
+  callToActionError: string;
+  /** The article description as typed, `''` for none. */
+  description: string;
+  descriptionLength: number;
+  /** Why the description cannot be sent: too long, or the field unavailable. */
+  descriptionError: string;
   /** "Uploading image…", "Uploaded: <name>", or `''`. */
   imageStatusMessage: string;
   imageUploading: boolean;
