@@ -58,7 +58,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_PAGE_GUEST_FORM_STATE } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
 import {
   applyAttachmentScopeOverrides,
   applyMeetingAttachmentChanges,
@@ -240,8 +240,7 @@ export class MeetingJoinComponent implements OnInit {
   /** True when `zoom_redirect=false` is on the URL — suppresses automatic Zoom open. */
   private readonly zoomRedirectDisabled: Signal<boolean>;
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
-  // Opened at once when the redesigned page hands over its "Click here" to join with another email address.
-  public showGuestForm: WritableSignal<boolean> = signal<boolean>(!!this.router.getCurrentNavigation()?.extras.state?.[MEETING_PAGE_GUEST_FORM_STATE]);
+  public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
   // Wall clock for the time-gated UI: the join window (canJoinMeeting) and "has ended" (isPastMeeting). Nothing else makes
   // those re-run as time passes, so a page left open across T-10 kept a disabled Join until reload. Deliberately NOT read by
   // currentOccurrence: the shown occurrence never rolls over in place, because that would refetch the RSVP and roster.

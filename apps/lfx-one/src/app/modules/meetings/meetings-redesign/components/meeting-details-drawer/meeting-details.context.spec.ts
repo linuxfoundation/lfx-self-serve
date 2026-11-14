@@ -93,6 +93,15 @@ describe('MeetingDetailsContext', () => {
     expect(context.canViewGuests()).toBe(false);
   });
 
+  it("takes a passcode guest's join window from the host, as the copy has no start", () => {
+    sourceExtras = { fullAccess: false, canJoin: signal(false) };
+    expect(create({ ...buildRow(MEETING), startTime: '' }).state()).toBe('far');
+
+    TestBed.resetTestingModule();
+    sourceExtras = { fullAccess: false, canJoin: signal(true) };
+    expect(create({ ...buildRow(MEETING), startTime: '' }).state()).toBe('soon');
+  });
+
   it.each([
     ['a signed-out visitor', () => authenticated.set(false)],
     ['a viewer without full access', () => (sourceExtras = { fullAccess: false })],
