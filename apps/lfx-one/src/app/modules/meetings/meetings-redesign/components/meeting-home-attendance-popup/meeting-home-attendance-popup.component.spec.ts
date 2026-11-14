@@ -128,6 +128,73 @@ describe('MeetingHomeAttendancePopupComponent', () => {
     expect(popup()).toBeNull();
   });
 
+  it('reaches View all from the trigger with Tab, and hands focus back to the trigger for the drawer to restore', async () => {
+    const row = buildRow({});
+    const fixture = await render(row);
+    trigger(fixture).focus();
+    registrants$.next(Array.from({ length: 19 }, (_, i) => ({ ...REGISTRANTS[1], uid: `r-${i}` })));
+    await fixture.whenStable();
+
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true });
+    trigger(fixture).dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(popup()?.contains(document.activeElement)).toBe(true);
+
+    const viewAll = popup()?.querySelector<HTMLButtonElement>('[data-testid="meeting-attendee-grid-view-all"] button');
+    openDetails.mockImplementation(() => expect(document.activeElement).toBe(trigger(fixture)));
+    viewAll?.click();
+    await fixture.whenStable();
+    expect(openDetails).toHaveBeenCalledWith(row, 'attendance', { tab: 'guests' });
+    expect(document.activeElement).toBe(trigger(fixture));
+    expect(popup()).toBeNull();
+  });
+
+  it('returns focus to the trigger on Escape or Tab past the last item, closing the popup', async () => {
+    const fixture = await render(buildRow({}));
+    trigger(fixture).focus();
+    registrants$.next(REGISTRANTS);
+    await fixture.whenStable();
+    const items = (): HTMLElement[] => Array.from(popup()?.querySelectorAll<HTMLElement>('[tabindex="0"]') ?? []);
+
+    items()[0].focus();
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await fixture.whenStable();
+    expect(popup()).toBeNull();
+    expect(document.activeElement).toBe(trigger(fixture));
+
+    trigger(fixture).click();
+    await fixture.whenStable();
+    const last = items()[items().length - 1];
+    last.focus();
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true });
+    last.dispatchEvent(tab);
+    await fixture.whenStable();
+    expect(tab.defaultPrevented).toBe(true);
+    expect(popup()).toBeNull();
+    expect(document.activeElement).toBe(trigger(fixture));
+  });
+
+  it('stays open once Tab moves into a popup opened by a click, and Shift+Tab goes back to the trigger', async () => {
+    const fixture = await render(buildRow({}));
+    trigger(fixture).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, buttons: 1, detail: 1 }));
+    trigger(fixture).focus();
+    trigger(fixture).click();
+    registrants$.next(REGISTRANTS);
+    await fixture.whenStable();
+    trigger(fixture).dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true }));
+    await hover(fixture, 'pointerleave');
+    await wait(150);
+    await fixture.whenStable();
+    expect(popup()?.contains(document.activeElement)).toBe(true);
+
+    const back = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true, bubbles: true });
+    document.activeElement?.dispatchEvent(back);
+    await fixture.whenStable();
+    expect(back.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(trigger(fixture));
+    expect(popup()).not.toBeNull();
+  });
+
   it('closes after the pointer leaves and reuses the loaded people on the next open', async () => {
     const fixture = await render(buildRow({}));
     await hover(fixture, 'pointerenter');
