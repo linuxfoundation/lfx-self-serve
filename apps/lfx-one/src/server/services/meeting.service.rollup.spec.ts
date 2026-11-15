@@ -185,6 +185,24 @@ describe('MeetingService roll-up scope', () => {
       expect(countCall()).toEqual({ filters_or: ['project_uid:child-uid'], type: 'v1_meeting' });
     });
 
+    it('falls back to the root project when the tree is larger than one OR batch', async () => {
+      proxyRequest.mockResolvedValue({ count: 3 });
+      getFoundationProjectUids.mockResolvedValue([ROOT, ...Array.from({ length: 150 }, (_, i) => `child-${i}`)]);
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT }, 'v1_meeting');
+
+      expect(countCall()).toEqual({ filters_or: [`project_uid:${ROOT}`], type: 'v1_meeting' });
+    });
+
+    it('keeps a selection of up to one OR batch inside a large tree', async () => {
+      proxyRequest.mockResolvedValue({ count: 3 });
+      getFoundationProjectUids.mockResolvedValue([ROOT, ...Array.from({ length: 150 }, (_, i) => `child-${i}`)]);
+
+      await service.getMeetingsCount(req, { root_project_uid: ROOT, project_uids: 'child-1,child-2' }, 'v1_meeting');
+
+      expect(countCall()).toEqual({ filters_or: ['project_uid:child-1', 'project_uid:child-2'], type: 'v1_meeting' });
+    });
+
     it('answers empty without querying when no selected project is in the tree', async () => {
       const count = await service.getMeetingsCount(req, { root_project_uid: ROOT, project_uids: 'outside' }, 'v1_meeting');
       const list = await service.getMeetings(req, { root_project_uid: ROOT, project_uids: 'outside' }, 'v1_meeting', false);

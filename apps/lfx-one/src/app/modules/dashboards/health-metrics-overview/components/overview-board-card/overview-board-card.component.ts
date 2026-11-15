@@ -7,6 +7,7 @@ import { buildHealthMetricsOverviewAddPastMeetingUrl, buildHealthMetricsOverview
 import { environment } from '@environments/environment';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
@@ -19,7 +20,7 @@ import type { HealthMetricsOverviewBoardRowView, HealthMetricsOverviewBoardSort,
 /** The board's meetings and average attendance, then every invited member, lowest attendance first. */
 @Component({
   selector: 'lfx-overview-board-card',
-  imports: [OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent],
+  imports: [OverviewCardComponent, OverviewExploreLinkComponent, OverviewKpiStripComponent, UiAvatarComponent],
   templateUrl: './overview-board-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })

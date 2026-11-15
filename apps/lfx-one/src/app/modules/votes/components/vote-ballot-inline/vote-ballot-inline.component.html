@@ -70,6 +70,9 @@
         }
       </div>
     }
+    @if (finalNotice(); as notice) {
+      <p class="text-xs font-medium text-amber-700 sm:text-right" role="note" data-testid="dashboard-pending-actions-vote-final-notice">{{ notice }}</p>
+    }
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-1" data-testid="dashboard-pending-actions-vote-footer">
       @if (allowAbstain()) {
         <label

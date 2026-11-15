@@ -113,6 +113,8 @@ export interface HealthMetricsChartTipRowView {
   color: string | null;
   /** A rule above the row. */
   separated: boolean;
+  /** "Label: value" on one line with a semibold value, in place of the label and value at either end. */
+  inline?: boolean;
 }
 
 /** The shared chart popup: a title over label–value rows. */

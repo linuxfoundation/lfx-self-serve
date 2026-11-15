@@ -27,6 +27,7 @@ import {
   switchMap,
   take,
   tap,
+  timeout,
 } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -40,6 +41,9 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
   providedIn: 'root',
 })
 export class OrgNavigationService {
+  /** Hang-up for the one CLA-only request per reload: the same 10s ceiling as `ORG_SEARCH_TIMEOUT_MS`. A hang reads as a failed lookup. */
+  private static readonly claOnlyFetchTimeoutMs = 10_000;
+
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
@@ -101,6 +105,12 @@ export class OrgNavigationService {
   public readonly upstreamFailed: Signal<boolean> = computed(() => this.state.upstreamFailed() || this.claOnlyFailed());
   /** M3 — the CLA-only rows are still on their way, so the list is not yet complete. */
   public readonly claOnlyPending: Signal<boolean> = computed(() => this.claOnlyStatus() === 'pending');
+  /**
+   * M3 — a non-staff grant holder's selection is not decided yet: no first page has landed, or the
+   * bootstrap page is still waiting to record it. Their CLA-only companies arrive only in the deferred
+   * rows, so until then a selection they do not hold may still be one of them.
+   */
+  public readonly selectionUndecided: Signal<boolean> = computed(() => this.holdsLensGrant() && (!this.state.loaded() || this.state.pendingDefaultSelection()));
   /** First-page fetch generation: bumped by every search, reset and refresh; a superseded fetch cannot clear `loading`. */
   public readonly generation: Signal<number> = this.state.generation.asReadonly();
   /**
@@ -116,6 +126,7 @@ export class OrgNavigationService {
         switchMap((claOnlyGeneration) =>
           this.http.get<OrgItemsResponse>('/api/nav/org-items', { params: new HttpParams().set('cla_only', '1') }).pipe(
             map((response): OrgItemsResponse | null => response),
+            timeout({ first: OrgNavigationService.claOnlyFetchTimeoutMs, with: () => of(null) }),
             catchError(() => of(null)),
             map((response) => ({ claOnlyGeneration, response }))
           )
@@ -363,6 +374,15 @@ export class OrgNavigationService {
       term,
       claOnlyDeferred: response.cla_only_deferred === true,
     };
+  }
+
+  /** The caller is the one the BFF defers CLA-only rows for: not staff, and holding an Org Lens grant. */
+  private holdsLensGrant(): boolean {
+    const grants = this.orgRoleGrantsService;
+    return (
+      !grants.isStaff() &&
+      (grants.writerSet().size > 0 || grants.auditorSet().size > 0 || grants.inheritedWriterSet().size > 0 || grants.inheritedAuditorSet().size > 0)
+    );
   }
 
   private resetClaOnlyRows(): void {

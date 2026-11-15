@@ -72,6 +72,7 @@ function setup(): Harness {
           generation: signal(0),
           firstPageLandedGeneration: signal(0),
           upstreamFailed: listFailed,
+          selectionUndecided: signal(false),
           refreshList,
         },
       },

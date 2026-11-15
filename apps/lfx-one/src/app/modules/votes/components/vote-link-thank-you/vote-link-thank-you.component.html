@@ -32,7 +32,12 @@
 
   @if (endTime(); as end) {
     <p class="text-sm text-slate-600" data-testid="vote-link-thank-you-deadline">
-      Voting closes {{ end | date: 'MMM d, y, h:mm a (z)' }}. You can change your vote until then from the same link.
+      Voting closes {{ end | date: 'MMM d, y, h:mm a (z)' }}.
+      @if (canChange()) {
+        You can change your vote until then from the same link.
+      } @else {
+        Your vote is final.
+      }
     </p>
   }
 

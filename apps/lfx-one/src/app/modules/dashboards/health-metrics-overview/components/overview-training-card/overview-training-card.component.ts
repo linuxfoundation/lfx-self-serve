@@ -10,6 +10,8 @@ import {
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsOverviewTrainingView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { injectOverviewCardRead } from '../../overview-card-read';
@@ -21,7 +23,7 @@ import type { HealthMetricsOverviewTrainingMetric, HealthMetricsOverviewTraining
 /** Enrollments or revenue against the year's goal on a 270° arc, and each program's share beside it. */
 @Component({
   selector: 'lfx-overview-training-card',
-  imports: [OverviewCardComponent, OverviewExploreLinkComponent],
+  imports: [OverviewCardComponent, OverviewExploreLinkComponent, UiSwitchComponent, UiSwitchOptionComponent],
   templateUrl: './overview-training-card.component.html',
   host: { class: 'flex min-w-0 flex-col' },
 })
@@ -43,4 +45,9 @@ export class OverviewTrainingCardComponent {
     const enrollment = this.read.data();
     return enrollment ? buildHealthMetricsOverviewTrainingView(enrollment, this.chrome.selectedRange(), this.metric()) : null;
   });
+
+  protected onMetricChange(value: string | null): void {
+    const option = this.metrics.find((metric) => metric.id === value);
+    if (option) this.metric.set(option.id);
+  }
 }

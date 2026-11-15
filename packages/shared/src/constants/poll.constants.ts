@@ -257,6 +257,16 @@ export const VOTE_ALLOW_ABSTAIN_OPTIONS = [
 ] as const;
 
 /**
+ * Allow vote change options for vote creation (#4723)
+ * @description Defines whether voters can change a submitted ballot until the vote ends
+ * Maps to the allow_vote_change field in the Vote interface; defaults to 'Yes' (true)
+ */
+export const VOTE_ALLOW_VOTE_CHANGE_OPTIONS = [
+  { label: 'Yes', value: true, description: 'Voters can change their vote until the vote ends' },
+  { label: 'No', value: false, description: 'Submitted votes are final' },
+] as const;
+
+/**
  * Vote response type options
  * @description Defines how participants can respond to the vote question
  */

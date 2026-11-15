@@ -740,11 +740,13 @@ describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
 describe('MeetingService project-lens meeting fetchers (#4964)', () => {
   let service: MeetingService;
   let get: ReturnType<typeof vi.fn>;
+  let put: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     get = vi.fn();
+    put = vi.fn();
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, put } }] });
     service = TestBed.inject(MeetingService);
   });
 
@@ -815,6 +817,37 @@ describe('MeetingService project-lens meeting fetchers (#4964)', () => {
       expect(rollup.keys()).toEqual(['root_project_uid']);
       expect(single.keys()).toEqual(['tags']);
       expect(single.get('tags')).toBe('project_uid:project-1');
+    });
+
+    it('sends the root as the only project for the default root-only view', async () => {
+      get.mockReturnValue(of({ data: [], page_token: undefined }));
+
+      await firstValueFrom(
+        service.getMeetingsByProjectPaginated('root', undefined, undefined, undefined, undefined, { includeSubProjects: true, rootOnly: true })
+      );
+
+      expect(params().get('project_uids')).toBe('root');
+    });
+
+    it('reads the saved project selection for a root, and treats a failed read as nothing saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      get.mockReturnValueOnce(of({ project_uids: ['a'] }));
+      get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      await expect(firstValueFrom(service.getRollupProjectsPreference('root'))).resolves.toEqual(['a']);
+      await expect(firstValueFrom(service.getRollupProjectsPreference('root'))).resolves.toBeNull();
+      expect(get.mock.calls[0][0]).toBe('/api/meetings/rollup-projects');
+      expect(params().get('root_project_uid')).toBe('root');
+    });
+
+    it('saves the project selection for a root, and reports a failed save without throwing', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      put.mockReturnValueOnce(of({ project_uids: [] }));
+      put.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+
+      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', []))).resolves.toBe(true);
+      await expect(firstValueFrom(service.saveRollupProjectsPreference('root', ['a']))).resolves.toBe(false);
+      expect(put).toHaveBeenNthCalledWith(1, '/api/meetings/rollup-projects', { root_project_uid: 'root', project_uids: [] });
     });
 
     it('fetches the filter options for a root, and offers none when that fails', async () => {

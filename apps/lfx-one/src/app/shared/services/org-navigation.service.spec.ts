@@ -45,6 +45,7 @@ describe('OrgNavigationService default selection', () => {
   let pinSelection: ReturnType<typeof vi.fn>;
   // #2961 — set per test; an LF contractor's empty list is explained by the page, not the toast.
   const isContractor = signal(false);
+  const isStaff = signal(false);
   let clearAccount: ReturnType<typeof vi.fn>;
   let writerSet: WritableSignal<Set<string>>;
   let auditorSet: WritableSignal<Set<string>>;
@@ -69,6 +70,7 @@ describe('OrgNavigationService default selection', () => {
     pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     isContractor.set(false);
+    isStaff.set(false);
     writerSet = signal(new Set<string>());
     auditorSet = signal(new Set<string>());
     inheritedWriterSet = signal(new Set<string>());
@@ -91,7 +93,7 @@ describe('OrgNavigationService default selection', () => {
         {
           provide: OrgRoleGrantsService,
           useValue: {
-            isStaff: signal(false),
+            isStaff,
             isContractor,
             degraded: signal(false),
             writerSet,
@@ -744,6 +746,69 @@ describe('OrgNavigationService default selection', () => {
 
       expect(add).not.toHaveBeenCalled();
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_C }));
+    });
+
+    describe("a grant holder's undecided selection (#5744)", () => {
+      beforeEach(() => {
+        writerSet.set(new Set([UID_A]));
+        selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
+      });
+
+      it('is undecided before any page is requested, and while the first page is in flight', () => {
+        expect(service.selectionUndecided()).toBe(true);
+
+        service.resetAndReload();
+        expect(service.selectionUndecided()).toBe(true);
+
+        http.expectOne(isMainRequest).flush(hinted([item(UID_A, 'Acme')]));
+        expect(service.selectionUndecided()).toBe(true);
+        flushClaOnly([]);
+      });
+
+      it('stays undecided after the CLA-only rows land, until the selection is recorded from them', () => {
+        bootstrapHinted([item(UID_A, 'Acme')]);
+        http.expectOne(isClaOnlyRequest).flush({ items: [claOnlyRow(UID_C, 'Gamma')], next_page_token: null, upstream_failed: false, total: 1 });
+
+        expect(service.claOnlyPending()).toBe(false);
+        expect(service.selectionUndecided()).toBe(true);
+
+        TestBed.tick();
+
+        expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_C)).toBe(true);
+        expect(service.selectionUndecided()).toBe(false);
+      });
+
+      it('is never undecided for staff or for a caller who holds no grant', () => {
+        isStaff.set(true);
+        expect(service.selectionUndecided()).toBe(false);
+
+        isStaff.set(false);
+        writerSet.set(new Set());
+        expect(service.selectionUndecided()).toBe(false);
+      });
+
+      it('treats a CLA-only request that never answers as failed: it decides the selection and reports the list incomplete', async () => {
+        vi.useFakeTimers();
+        try {
+          bootstrapHinted([item(UID_A, 'Acme')]);
+          const hung = http.expectOne(isClaOnlyRequest);
+
+          await vi.advanceTimersByTimeAsync(9_999);
+          expect(service.claOnlyPending()).toBe(true);
+          expect(service.selectionUndecided()).toBe(true);
+
+          await vi.advanceTimersByTimeAsync(1);
+          TestBed.tick();
+
+          expect(hung.cancelled).toBe(true);
+          expect(service.claOnlyPending()).toBe(false);
+          expect(service.upstreamFailed()).toBe(true);
+          expect(service.selectionUndecided()).toBe(false);
+          expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+        } finally {
+          vi.useRealTimers();
+        }
+      });
     });
   });
 
