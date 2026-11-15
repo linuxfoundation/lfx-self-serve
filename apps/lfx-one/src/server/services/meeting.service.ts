@@ -2611,9 +2611,20 @@ export class MeetingService {
     const filters = readRollupFilters(query, operation);
 
     const scope = await this.resolveRollupScope(req, rootUid);
-    const scopeUids = narrowRollupScope(scope.uids, filters.projectUids);
+    let scopeUids = narrowRollupScope(scope.uids, filters.projectUids);
     if (scopeUids.length === 0) {
       return null;
+    }
+    // One query takes at most one OR batch of projects; past it query-service fails the request. A larger
+    // scope (a foundation such as TLF or CNCF with hundreds of projects) falls back to the root's own
+    // meetings, as before the roll-up, until the scope is paged across batches.
+    if (scopeUids.length > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      logger.warning(req, operation, 'Roll-up scope exceeds the OR batch size; showing the root project only', {
+        root_project_uid: rootUid,
+        project_count: scopeUids.length,
+        batch_size: QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+      });
+      scopeUids = [rootUid];
     }
 
     const committeeUids = await this.resolveRollupCommitteeUids(req, rootUid, scope, scopeUids, filters);
