@@ -70,7 +70,6 @@ interface NavbarView {
   onOrgSelected(): void;
   railVisible: Signal<boolean>;
   showSidebarToggle: Signal<boolean>;
-  showRailMenuItems: Signal<boolean>;
   toggleLabel: Signal<string>;
   headTooltipPlacement: Signal<string>;
   onToggleClick(event: MouseEvent): void;
@@ -1008,18 +1007,26 @@ describe('NavbarComponent', () => {
 
     it('repeats the footer actions in the account menu on the rail only, not over a peek or the open panel', async () => {
       stubViewport(false);
-      const fixture = await createNavbarFixture([]);
-      const navbar = fixture.componentInstance as unknown as NavbarView;
+      // The account menu's gated rows as navbar.component.html renders them, behind railVisible().
+      const menuTemplate = `
+        <nav #panel>
+          @if (railVisible()) {
+            <button type="button" data-testid="lens-docs-menu-item">Documentation</button>
+            <button type="button" data-testid="lens-changelog-menu-item">What's New</button>
+          }
+        </nav>`;
+      const fixture = await createNavbarFixture([], [], {}, { template: menuTemplate });
       const collapse = TestBed.inject(NavbarCollapseService);
-      expect(navbar.showRailMenuItems()).toBe(false);
+      const rows = (): number => fixture.nativeElement.querySelectorAll('[data-testid="lens-docs-menu-item"], [data-testid="lens-changelog-menu-item"]').length;
+      expect(rows()).toBe(0);
 
       collapse.setCollapsed(true);
       await fixture.whenStable();
-      expect(navbar.showRailMenuItems()).toBe(true);
+      expect(rows()).toBe(2);
 
       collapse.openPeek();
       await fixture.whenStable();
-      expect(navbar.showRailMenuItems()).toBe(false);
+      expect(rows()).toBe(0);
     });
 
     it('moves keyboard focus to the brand when a narrow-viewport peek hides the toggle, keeping it there once Escape returns the rail', async () => {

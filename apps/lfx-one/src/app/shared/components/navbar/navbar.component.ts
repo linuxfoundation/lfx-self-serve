@@ -302,11 +302,6 @@ export class NavbarComponent extends NavMenuBase {
    * nothing to keep open. That peek closes as the pointer leaves, on an outside click, or on Escape.
    */
   protected readonly showSidebarToggle: Signal<boolean> = computed(() => !this.mobile() && (!this.collapse.narrow() || this.railVisible()));
-  /**
-   * The account menu repeats the footer's Documentation, What's New and Impersonate only on the rail, where the footer
-   * actions are out of reach. A peek or the docked-open panel shows the footer, so the menu leaves them out.
-   */
-  protected readonly showRailMenuItems: Signal<boolean> = computed(() => this.railVisible());
   /** Rail tooltips open beside the trigger; the open panel's below it. */
   protected readonly headTooltipPlacement: Signal<NavTooltipPlacement> = computed(() => (this.railVisible() ? 'right' : 'bottom'));
   /** The rail's toggle shows the sidebar over the page; from a peek it docks open; otherwise it closes the sidebar. */
