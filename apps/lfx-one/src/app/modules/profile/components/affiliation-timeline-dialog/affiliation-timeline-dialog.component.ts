@@ -9,7 +9,11 @@ import {
   AffiliationEditOrg,
   AffiliationEditPeriod,
   AffiliationPeriodErrors,
+  AffiliationRole,
+  AffiliationRoleSource,
   AffiliationSegment,
+  AffiliationSourceLabel,
+  AffiliationSourceType,
   AffiliationWorkWindow,
   DisabledOrgSuggestion,
   TimelineProjectData,
@@ -143,17 +147,19 @@ export class AffiliationTimelineDialogComponent {
           endDate = `${period.endMonth} ${period.endYear}`;
         }
 
+        const meta = this.resolveSegmentMetadata(org, period, startDate, endDate);
+
         segments.push({
           id: period.id,
-          role: 'Contributor',
-          roleSource: 'user-confirmed',
+          role: meta.role,
+          roleSource: meta.roleSource,
           organization: org.organization,
           organizationLogo: org.organizationLogo,
           startDate,
           endDate,
-          sourceLabel: 'Confirmed by user',
-          sourceType: 'user-confirmed',
-          needsConfirmation: false,
+          sourceLabel: meta.sourceLabel,
+          sourceType: meta.sourceType,
+          needsConfirmation: meta.needsConfirmation,
         });
       }
     }
@@ -168,6 +174,58 @@ export class AffiliationTimelineDialogComponent {
 
   public cancel(): void {
     this.ref.close(null);
+  }
+
+  private resolveSegmentMetadata(
+    org: AffiliationEditOrg,
+    period: AffiliationEditPeriod,
+    startDate: string,
+    endDate?: string
+  ): {
+    role: AffiliationRole;
+    roleSource: AffiliationRoleSource;
+    sourceType: AffiliationSourceType;
+    sourceLabel: AffiliationSourceLabel;
+    needsConfirmation: boolean;
+  } {
+    const existingSegments = this.project().segments ?? [];
+
+    // 1. Match by exact segment ID (period seeded from an existing segment)
+    let match = existingSegments.find((s) => s.id === period.id);
+
+    // 2. Match by organization and exact dates
+    if (!match) {
+      match = existingSegments.find(
+        (s) => s.organization === org.organization && s.startDate === startDate && (s.endDate ?? '') === (endDate ?? '')
+      );
+    }
+
+    // 3. Match by organization only if there is exactly ONE existing segment for that organization
+    if (!match) {
+      const orgSegments = existingSegments.filter((s) => s.organization === org.organization);
+      if (orgSegments.length === 1) {
+        match = orgSegments[0];
+      }
+    }
+
+    if (match) {
+      return {
+        role: match.role,
+        roleSource: match.roleSource,
+        sourceType: match.sourceType,
+        sourceLabel: match.sourceLabel,
+        needsConfirmation: match.needsConfirmation,
+      };
+    }
+
+    // 4. Safe fallback for newly added / unassociated periods
+    return {
+      role: 'Contributor',
+      roleSource: 'user-confirmed',
+      sourceType: 'user-confirmed',
+      sourceLabel: 'Confirmed by user',
+      needsConfirmation: false,
+    };
   }
 
   // Every period has a start (month + year) and either is "Present" or has a complete end.

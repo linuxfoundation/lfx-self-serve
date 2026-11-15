@@ -32,6 +32,10 @@
     &[data-role='Maintainer'] {
       @apply bg-blue-500;
     }
+
+    &[data-role='LF Staff'] {
+      @apply bg-cyan-600;
+    }
   }
 }
 
@@ -72,8 +76,13 @@
     @apply border-blue-200 bg-blue-50 text-blue-700;
   }
 
+  &[data-role='LF Staff'] {
+    @apply border-cyan-200 bg-cyan-50 text-cyan-700;
+  }
+
   &[data-role='Contributor'],
-  &[data-role='Member'] {
+  &[data-role='Member'],
+  &[data-role='Group Member'] {
     @apply border-gray-200 bg-gray-50 text-gray-600;
   }
 }

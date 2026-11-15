@@ -464,9 +464,10 @@ export class ProfileAffiliationsComponent {
     return cdpAffiliations
       .filter((project) => project.projectSlug && (!lfxSlugs || lfxSlugs.has(project.projectSlug)))
       .map((project) => {
-        const firstRole = project.roles.length > 0 ? project.roles[0] : undefined;
-        const role: 'Maintainer' | 'Contributor' = firstRole?.role === 'Maintainer' ? 'Maintainer' : 'Contributor';
-        const roleSource: 'repo-file' | 'cdp-detected' = firstRole?.repoFileUrl ? 'repo-file' : 'cdp-detected';
+        const maintainerRole = project.roles.find((r) => r.role?.toLowerCase() === 'maintainer');
+        const role: 'Maintainer' | 'Contributor' = maintainerRole ? 'Maintainer' : 'Contributor';
+        const matchedRole = maintainerRole ?? project.roles[0];
+        const roleSource: 'repo-file' | 'cdp-detected' = matchedRole?.repoFileUrl ? 'repo-file' : 'cdp-detected';
 
         const projectAffiliations = project.affiliations.filter(
           (aff) => aff.type === 'project' && (aff.verifiedBy === lfid || verifiedOrgIds.has(aff.organizationId))
