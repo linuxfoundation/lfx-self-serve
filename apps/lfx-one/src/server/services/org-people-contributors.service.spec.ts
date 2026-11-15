@@ -78,7 +78,6 @@ const CONTRIBUTOR_ROWS = [
     CDP_MEMBER_ID: 'cdp-1',
     DISPLAY_NAME: 'Ada Lovelace',
     TITLE: 'Engineer',
-    GITHUB_USERNAME: '@example-gh-user',
     PROJECT_NAME: 'Kubernetes',
     PROJECT_SLUG: 'k8s',
     FOUNDATION_ID: 'foundation-one',
@@ -97,7 +96,6 @@ const CONTRIBUTOR_ROWS = [
     CDP_MEMBER_ID: 'cdp-1',
     DISPLAY_NAME: 'Ada Lovelace',
     TITLE: 'Engineer',
-    GITHUB_USERNAME: null,
     PROJECT_NAME: null,
     PROJECT_SLUG: null,
     FOUNDATION_ID: null,
@@ -116,7 +114,6 @@ const CONTRIBUTOR_ROWS = [
     CDP_MEMBER_ID: 'cdp-2',
     DISPLAY_NAME: null,
     TITLE: null,
-    GITHUB_USERNAME: 'https://github.com/example-gh-two',
     PROJECT_NAME: 'Kubernetes',
     PROJECT_SLUG: 'k8s',
     FOUNDATION_ID: 'foundation-one',
@@ -151,7 +148,7 @@ function mockWarehouse(rows: object[] = CONTRIBUTOR_ROWS, roles: OrgContributorM
   });
 }
 
-const ROWS_KEY = (suffix: string, orgScope = 'all'): string => buildOrgCacheKey(ACCOUNT, `people-contributors:v6:${suffix}:${orgScope}`)!;
+const ROWS_KEY = (suffix: string, orgScope = 'all'): string => buildOrgCacheKey(ACCOUNT, `people-contributors:v5:${suffix}:${orgScope}`)!;
 
 const isTeamMembersRead = (call: unknown[]): boolean => isTeamMembersSql(String(call[0]));
 
@@ -316,35 +313,6 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
-  it("reads each row's GitHub username and serves it unchanged from the cache (lfx-self-serve#5687)", async () => {
-    const fromMiss = await service.readPersonProjectRows(ACCOUNT, 'all', 'all', 'all');
-    const warehouseReads = execute.mock.calls.length;
-
-    const fromHit = await service.readPersonProjectRows(ACCOUNT, 'all', 'all', 'all');
-
-    expect(readsOf('ORG_PEOPLE_CONTRIBUTORS_DAILY').at(-1)![0]).toContain('MAX(github_username) AS github_username');
-    expect(execute).toHaveBeenCalledTimes(warehouseReads);
-    expect(fromHit).toStrictEqual(fromMiss);
-    expect(fromHit.map((row) => row.GITHUB_USERNAME)).toEqual(['@example-gh-user', null, 'https://github.com/example-gh-two']);
-  });
-
-  it.each([
-    ['absent', '\u0000'],
-    ['a number', 42],
-  ])('treats a stored entry whose GITHUB_USERNAME cell is %s as a miss', async (_label, corrupt) => {
-    await service.readPersonProjectRows(ACCOUNT, 'all', 'all', 'all');
-    const key = ROWS_KEY('all:all');
-    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
-    const index = stored.rows.k.indexOf('GITHUB_USERNAME');
-    stored.rows.r = stored.rows.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
-    cacheValues.set(key, JSON.stringify(stored));
-    const warehouseReads = execute.mock.calls.length;
-
-    await service.readPersonProjectRows(ACCOUNT, 'all', 'all', 'all');
-
-    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
-  });
-
   it('caches a row whose CDP_MEMBER_ID aggregate came back null instead of missing forever', async () => {
     // `MIN(cdp_member_id)` over an all-NULL group returns NULL, and the uncached path passes it
     // straight through. A guard stricter than that would turn this org into a permanent miss.
@@ -371,7 +339,6 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
         CDP_MEMBER_ID: null,
         DISPLAY_NAME: null,
         TITLE: null,
-        GITHUB_USERNAME: null,
         PROJECT_NAME: null,
         PROJECT_SLUG: null,
         FOUNDATION_ID: null,
@@ -418,7 +385,6 @@ describe('OrgPeopleContributorsService commit filters (lfx-self-serve#4164)', ()
       CDP_MEMBER_ID: 'cdp-1',
       DISPLAY_NAME: 'Ada Lovelace',
       TITLE: null,
-      GITHUB_USERNAME: null,
       PROJECT_NAME: projectId,
       PROJECT_SLUG: null,
       FOUNDATION_ID: null,

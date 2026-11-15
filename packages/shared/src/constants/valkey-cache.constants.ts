@@ -50,7 +50,7 @@ export const VALKEY_CACHE = {
    * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
    * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
    * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
-   * `org-people-dir:v8`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * `org-people-dir:v9`. `v2`: merge-only fields are stripped before the write and the validator asserts
    * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
    * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
    * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
@@ -301,9 +301,7 @@ export const VALKEY_CACHE = {
     // `v5` (lfx-self-serve#4482) drops the two declared-maintainer flags from each row, so it is no larger than the
     // `v4` measured here; the cap carries over. Maintainer roles are a separate entry (`people-contributors-roles:v2`,
     // per Team members pick; four short ids per role, a few thousand roles at most for the largest org) under the 1 MiB default.
-    // `v6` (lfx-self-serve#5687) adds a `GITHUB_USERNAME` cell per row: ≈14 bytes for a handle (≈33 for a URL value, 5 for
-    // null) on a ≈190-byte compact row, ≈7–17%, so ≈7.8–8.5 MiB for the largest org (estimate, 2026-11-13) — the cap holds.
-    'org-lens-sf:v1:people-contributors:v6': 10 * 1_048_576,
+    'org-lens-sf:v1:people-contributors:v5': 10 * 1_048_576,
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
     // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
     // event) grain is irreducible — the tab's stat cards and filters recompute client-side over

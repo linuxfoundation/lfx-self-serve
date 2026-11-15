@@ -1828,9 +1828,9 @@ describe('OrgLensPeopleService person-key company emails', () => {
           'people-all:v8:30d:all',
           'people-all:v8:all:all',
           'people-all:v8:all:lf',
-          'people-contributors:v6:30d:all:all',
-          'people-contributors:v6:all:all:all',
-          'people-contributors:v6:all:lf:all',
+          'people-contributors:v5:30d:all:all',
+          'people-contributors:v5:all:all:all',
+          'people-contributors:v5:all:lf:all',
           'people-github-identities:v1',
           'people-former:v4:30d:all',
           'people-former:v4:all:all',
@@ -2356,7 +2356,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(response.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-other-org', 8]]);
       expect(queries().some((query) => /INSIGHTS|insights_daily/.test(query))).toBe(false);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-all:v8:365d:all')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v6:365d:all:all')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(true);
     });
 
     it('leaves the unranged roster unscoped, without resolving the scope', async () => {
@@ -2400,8 +2400,8 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(queries().filter((query) => query.includes('AND insights_daily_code_activities > 0'))).toHaveLength(1);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-former:v4:365d:all')!)).toBe(true);
       expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-unclassified:v2:365d:all')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v6:365d:all:insights')!)).toBe(true);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v6:365d:all:all')!)).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:insights')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-contributors:v5:365d:all:all')!)).toBe(false);
     });
 
     it("counts the Code tab's Insights-scoped code under insights, and today's code under all", async () => {
@@ -2655,7 +2655,6 @@ function liveCodeRow(personKey: string, foundationId: string, commits: number, m
     CDP_MEMBER_ID: `member-${personKey}`,
     DISPLAY_NAME: null,
     TITLE: null,
-    GITHUB_USERNAME: null,
     PROJECT_NAME: null,
     PROJECT_SLUG: null,
     FOUNDATION_ID: foundationId,
