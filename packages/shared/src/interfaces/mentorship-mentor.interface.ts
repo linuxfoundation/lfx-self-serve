@@ -461,6 +461,11 @@ export interface MentorshipUpstreamUser {
   updated_on: string;
 }
 
+/** A claim on one login's mentorship user refresh (`PUT /mentorship/v1/me`); `complete` records the refresh as done for the rest of the login. */
+export interface MentorshipSyncClaim {
+  complete(): Promise<void>;
+}
+
 /** One non-deleted term of a program on `GET /mentorship/v1/mentors/{id}`. Dates are RFC 3339 instants. */
 export interface MentorshipUpstreamMentorProgramTerm {
   id: string;
