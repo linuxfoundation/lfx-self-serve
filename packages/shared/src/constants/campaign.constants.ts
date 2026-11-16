@@ -5553,9 +5553,11 @@ export const GOOGLE_CREATIVE_FIELD_SPECS = {
 
 /**
  * The calls to action a Demand Gen video ad accepts: campaign-service's `demandGenVideoCallToActions`
- * (`internal/platform/googleads/demandgen_video_creative.go`), each a Google `CallToActionType` a
- * validateOnly probe accepted. Deliberately short rather than Google's whole enum — the same probe
- * refused `REGISTER` and `GET_STARTED` — so anything else is refused before the budget.
+ * (`internal/platform/googleads/demandgen_video_creative.go`), in the same order, each a Google
+ * `CallToActionType` a validateOnly probe accepted (the last six by the 14 Nov 2026 probe,
+ * campaign-service #604 / #606). Deliberately short rather than Google's whole enum — an earlier
+ * probe refused `REGISTER` and `GET_STARTED` — so anything else is refused before the budget. The
+ * upper-case value is what is sent; campaign-service refuses the label spelling.
  */
 export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
   { value: 'SIGN_UP', label: 'Sign up' },
@@ -5563,6 +5565,12 @@ export const GOOGLE_DEMAND_GEN_VIDEO_CALLS_TO_ACTION = [
   { value: 'BOOK_NOW', label: 'Book now' },
   { value: 'VISIT_SITE', label: 'Visit site' },
   { value: 'WATCH_NOW', label: 'Watch now' },
+  { value: 'APPLY_NOW', label: 'Apply now' },
+  { value: 'CONTACT_US', label: 'Contact us' },
+  { value: 'DOWNLOAD', label: 'Download' },
+  { value: 'GET_QUOTE', label: 'Get quote' },
+  { value: 'SUBSCRIBE', label: 'Subscribe' },
+  { value: 'SHOP_NOW', label: 'Shop now' },
 ] as const;
 
 /**
