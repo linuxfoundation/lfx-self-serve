@@ -583,6 +583,12 @@ export class CommitteeSettingsTabComponent {
   // membership, so the same refresh/committeeUpdated behavior applies regardless of which entry point
   // opened the dialog.
   public onSyncApplied(result: MailingListSyncPreviewDialogResult): void {
+    // Same stale-committee guard as onSyncSettingsUpdated() above — the Sync Now dialog can likewise
+    // resolve after the user has switched committee context in the drawer, and without this check its
+    // refresh/committeeUpdated would land against the wrong committee (cursor Bugbot #5790 review).
+    if (this.autoSyncDrawerCommitteeUid !== undefined && this.committee()?.uid !== this.autoSyncDrawerCommitteeUid) {
+      return;
+    }
     this.refreshMl$.next();
     if (result.committeeChanged) {
       this.committeeUpdated.emit();
@@ -1022,7 +1028,17 @@ export class CommitteeSettingsTabComponent {
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
-      if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
+      // A list moving off a non-manual mode it currently holds on this committee frees up a slot for
+      // siblings — not just when it's moving to MANUAL, but also when it's switching directly to the
+      // *other* auto mode (e.g. ML→C to C→ML still releases the ML→C slot). That release must still
+      // run in the first phase so any newly-unblocked sibling's activation can't race it, even though
+      // this update's own payload already carries its new non-manual mode (greptile/lfx-one #5790).
+      const releasesCurrentAutoMode =
+        currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL && explicitSyncMode !== currentSyncMode;
+
+      if (releasesCurrentAutoMode) {
+        releaseUpdates.push({ uid, result$, releasesAutoSyncSlot: true });
+      } else if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });
       } else {
         const releasesAutoSyncSlot = currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL;

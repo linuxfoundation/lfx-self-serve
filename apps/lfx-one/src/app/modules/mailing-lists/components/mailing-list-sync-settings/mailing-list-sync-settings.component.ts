@@ -12,6 +12,7 @@ import { ToggleComponent } from '@components/toggle/toggle.component';
 import { COMMITTEE_LABEL, MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { MailingListSyncMode } from '@lfx-one/shared/enums';
 import { CreateMailingListRequest, GroupsIOMailingList, MailingListSyncPreviewDialogResult } from '@lfx-one/shared/interfaces';
+import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
 import { MailingListSyncPreviewDialogComponent } from '@modules/committees/components/mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -244,13 +245,23 @@ export class MailingListSyncSettingsComponent {
     const ml = this.mailingList();
     const committeeUid = this.committee()?.uid;
     if (!committeeUid) return;
+    // sync_mode lives per-committee-entry inside ml.committees[] on the read model, not as a
+    // top-level field — ml.sync_mode silently resolves to undefined here, so the preview dialog
+    // must resolve it the same way getMailingListCommitteeSync's callers do elsewhere (greptile /
+    // copilot / lfx-one #5790 review).
+    const { syncMode } = getMailingListCommitteeSync(ml, committeeUid);
     const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',
       modal: true,
       closable: true,
       draggable: false,
-      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid, syncMode: ml.sync_mode },
+      // This card can live inside the Auto Sync drawer, a CDK overlay fixed at z-index 10000
+      // (styles.scss) — PrimeNG's own layering starts new dialogs around 1100, which would render
+      // this one behind the still-open drawer. Push it above the drawer explicitly (copilot #5790
+      // review).
+      baseZIndex: 10001,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid, syncMode },
     });
     if (!ref) return;
     ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MailingListSyncPreviewDialogResult | null) => {

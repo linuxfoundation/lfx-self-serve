@@ -83,6 +83,7 @@
           icon="fa-light fa-arrows-rotate"
           severity="secondary"
           [outlined]="true"
+          [disabled]="saving()"
           (onClick)="onSyncNow()"
           data-testid="sync-now-button"></lfx-button>
       </div>
