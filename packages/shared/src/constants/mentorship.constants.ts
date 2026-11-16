@@ -463,7 +463,10 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
 /** Helper text under the Mentors tab invite search. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
 
-/** Shown when a full-email search finds no one: that address has no LF account. */
+/**
+ * The invite search panel's starting empty text, and the toast for an upstream 422 with no known reason (an LF username
+ * with no account). A full-email search that finds no one shows `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE`.
+ */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
   'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
 

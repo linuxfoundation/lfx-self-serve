@@ -270,7 +270,7 @@ describe('MentorsTabComponent', () => {
       expect(fixture.componentInstance['emailInvitee']()).toBeNull();
     });
 
-    it('drops the email offer once the field value changes: a pick, the clear button, or leaving with unmatched text', () => {
+    it('drops the email offer once the field value changes: a keystroke, a pick or the clear button', () => {
       const invitee = fixture.componentInstance['form'].controls.invitee;
       getMentorCandidates.mockReturnValue(of({ data: [] }));
       search('new.mentor@example.org');
@@ -476,6 +476,19 @@ describe('MentorsTabComponent', () => {
 
       expect(dialogOpen).not.toHaveBeenCalled();
       expect(inviteProgramMentor).not.toHaveBeenCalled();
+    });
+
+    it('opens the dialog from the panel row only while the field still shows the offered address', () => {
+      const invitee = fixture.componentInstance['form'].controls.invitee;
+      offerEmail();
+      // A late answer for earlier text: the offer is set, but the field has moved on.
+      invitee.setValue('new.mentor@example.o', { emitEvent: false });
+      fixture.componentInstance['onInviteRowClick']();
+      expect(dialogOpen).not.toHaveBeenCalled();
+
+      invitee.setValue(' new.mentor@example.org ', { emitEvent: false });
+      fixture.componentInstance['onInviteRowClick']();
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
     });
 
     it('opens the dialog on Enter only while the field still shows the offered address', () => {

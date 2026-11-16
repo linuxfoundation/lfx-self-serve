@@ -146,8 +146,8 @@ export class MentorsTabComponent {
   protected readonly loadFailed = signal(false);
   /**
    * The full email address the last search found no LF account for, which can be invited by email instead; null after
-   * any other answer, and once the field's value changes (a pick, the clear (×) button, or leaving the field, which
-   * clears typed text it could not match). The search panel offers it.
+   * any other answer, and whenever the field's value changes (each keystroke, a pick, or the clear (×) button) until the
+   * next search answers. The search panel offers it.
    */
   protected readonly emailInvitee = signal<string | null>(null);
   private readonly mentors = signal<MentorshipProgramMentor[]>([]);
@@ -230,11 +230,15 @@ export class MentorsTabComponent {
    * Enter first (it closes its panel) and lets the key reach here; with no email on offer Enter does nothing more.
    */
   protected onInviteeEnter(event: Event): void {
-    const email = this.emailInvitee();
-    // The offer can outlive an edit too short to search again, so Enter acts only while the field still shows the address.
-    const typed = ((event.target as HTMLInputElement | null)?.value ?? '').trim();
-    if (!email || typed !== email) return;
+    if (!this.offersEmail((event.target as HTMLInputElement | null)?.value)) return;
     event.preventDefault();
+    this.onInviteByEmail();
+  }
+
+  /** The panel's Invite row; like Enter, it acts only while the field still shows the offered address. */
+  protected onInviteRowClick(): void {
+    const value = this.form.controls.invitee.value;
+    if (!this.offersEmail(typeof value === 'string' ? value : undefined)) return;
     this.onInviteByEmail();
   }
 
@@ -494,8 +498,9 @@ export class MentorsTabComponent {
   }
 
   /**
-   * Drops the email offer whenever the field's value changes. With `forceSelection` typing leaves the value alone (a new
-   * search sets the offer again), so a change is a pick, the clear (×) button, or leaving the field with unmatched text.
+   * Drops the email offer whenever the field's value changes. The autocomplete has no `forceSelection`, so the value is
+   * the typed text: each keystroke drops the offer, the next search answer sets it again, and leaving the field keeps
+   * both. A pick or the clear (×) button drops it too.
    */
   private initEmailInviteeReset(): void {
     this.form.controls.invitee.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.emailInvitee.set(null));
@@ -514,6 +519,15 @@ export class MentorsTabComponent {
       return status === 503 ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE;
     }
     return this.isInvitableEmail(search) ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE;
+  }
+
+  /**
+   * Whether the field text still is the offered address. A search answer for earlier text can land after an edit, so
+   * Enter and the panel row check the text rather than trust the offer alone.
+   */
+  private offersEmail(text: string | undefined): boolean {
+    const email = this.emailInvitee();
+    return !!email && (text ?? '').trim() === email;
   }
 
   /** A full email address short enough for the BFF to forward on an invite. */

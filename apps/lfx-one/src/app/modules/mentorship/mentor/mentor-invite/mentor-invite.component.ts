@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,7 +13,7 @@ import { MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE } from '@lfx-one/shared/c
 import { MentorshipMentorInviteDecision, MentorshipMentorInviteState } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken } from '@lfx-one/shared/utils';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
-import { distinctUntilChanged, map, tap } from 'rxjs';
+import { distinctUntilChanged, map, of, tap } from 'rxjs';
 
 /**
  * Landing page for the link in the mentor invite email: `/mentorship/mentor/invites?token=<token>`.
@@ -31,6 +32,7 @@ import { distinctUntilChanged, map, tap } from 'rxjs';
 export class MentorInviteComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly mentorService = inject(MentorshipMentorService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   protected readonly programsRoute = ['/mentorship/mentor/programs'];
   protected readonly profileRoute = ['/mentorship/mentor'];
@@ -40,7 +42,10 @@ export class MentorInviteComponent {
   private readonly decision = signal<MentorshipMentorInviteDecision | null>(null);
 
   private readonly token: Signal<string> = this.initToken();
-  /** False once the read says the signed-in user has no mentor profile; true until then, and when the read fails. */
+  /**
+   * False once the browser's read says the signed-in user has no mentor profile, or the read fails (the service reads a
+   * failure as no profile); true until then, and on the server, whose read goes out without the session cookie.
+   */
   protected readonly hasProfile: Signal<boolean> = this.initHasProfile();
   protected readonly state = computed<MentorshipMentorInviteState>(
     () => this.submission() ?? (isMentorshipMentorInviteToken(this.token()) ? 'confirm' : 'invalid-link')
@@ -79,6 +84,7 @@ export class MentorInviteComponent {
   }
 
   private initHasProfile(): Signal<boolean> {
+    if (!isPlatformBrowser(this.platformId)) return toSignal(of(true), { initialValue: true });
     return toSignal(this.mentorService.hasMentorProfile().pipe(map((response) => response.hasProfile)), { initialValue: true });
   }
 

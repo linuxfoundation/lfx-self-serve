@@ -7,22 +7,22 @@ The mentor pages under `/mentorship/mentor/*` read their data from the LFX One B
 
 ## Routes
 
-| Method | Path                                                       | Controller method         | Page                                                                        |
-| ------ | ---------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------- |
-| GET    | `/api/mentorship/mentor/programs`                          | `getMentorPrograms`       | My Programs (`/mentorship/mentor/programs`)                                 |
-| GET    | `/api/mentorship/mentor/programs/:programId`               | `getMentorProgram`        | Program detail (`/mentorship/mentor/programs/:programId`)                   |
-| GET    | `/api/mentorship/mentor/profile`                           | `getMentorProfile`        | Profile and Mentoring History (`/mentorship/mentor/profile`)                |
-| GET    | `/api/mentorship/mentor/has-profile`                       | `hasMentorProfile`        | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`)             |
-| POST   | `/api/mentorship/mentor/profile`                           | `registerMentorProfile`   | Become a Mentor (`/mentorship/mentor`)                                      |
-| PATCH  | `/api/mentorship/mentor/profile`                           | `updateMentorProfile`     | Save in the profile edit drawer                                             |
-| GET    | `/api/mentorship/mentor/open-programs`                     | `getOpenPrograms`         | Program picker on Become a Mentor and the profile edit drawer               |
-| GET    | `/api/mentorship/mentor/requests`                          | `getMentorRequests`       | Request list in the profile edit drawer                                     |
-| POST   | `/api/mentorship/mentor/requests`                          | `requestToMentor`         | Become a Mentor (after the save) and the profile edit drawer                |
-| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw`      | `withdrawMentorRequest`   | Withdraw on a pending row in the profile edit drawer                        |
-| POST   | `/api/mentorship/mentor/invitations/:invitationId/accept`  | `acceptMentorInvitation`  | Accept on an invitation row in the profile edit drawer                      |
-| POST   | `/api/mentorship/mentor/invitations/:invitationId/decline` | `declineMentorInvitation` | Decline on an invitation row in the profile edit drawer                     |
-| PUT    | `/api/mentorship/mentor/applications/:applicationId/note`  | `updateApplicationNote`   | Save in the note dialog on the program detail's Mentees and Applicants tabs |
-| PATCH  | `/api/mentorship/mentor/tasks/:taskId/review`              | `reviewMenteeTask`        | Approve and Request Changes on the program detail's Tasks tab               |
+| Method | Path                                                       | Controller method         | Page                                                                                                           |
+| ------ | ---------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/mentorship/mentor/programs`                          | `getMentorPrograms`       | My Programs (`/mentorship/mentor/programs`)                                                                    |
+| GET    | `/api/mentorship/mentor/programs/:programId`               | `getMentorProgram`        | Program detail (`/mentorship/mentor/programs/:programId`)                                                      |
+| GET    | `/api/mentorship/mentor/profile`                           | `getMentorProfile`        | Profile and Mentoring History (`/mentorship/mentor/profile`)                                                   |
+| GET    | `/api/mentorship/mentor/has-profile`                       | `hasMentorProfile`        | `mentorRegisterGuard` on Become a Mentor (`/mentorship/mentor`); the invite page's profile hint (browser only) |
+| POST   | `/api/mentorship/mentor/profile`                           | `registerMentorProfile`   | Become a Mentor (`/mentorship/mentor`)                                                                         |
+| PATCH  | `/api/mentorship/mentor/profile`                           | `updateMentorProfile`     | Save in the profile edit drawer                                                                                |
+| GET    | `/api/mentorship/mentor/open-programs`                     | `getOpenPrograms`         | Program picker on Become a Mentor and the profile edit drawer                                                  |
+| GET    | `/api/mentorship/mentor/requests`                          | `getMentorRequests`       | Request list in the profile edit drawer                                                                        |
+| POST   | `/api/mentorship/mentor/requests`                          | `requestToMentor`         | Become a Mentor (after the save) and the profile edit drawer                                                   |
+| POST   | `/api/mentorship/mentor/requests/:requestId/withdraw`      | `withdrawMentorRequest`   | Withdraw on a pending row in the profile edit drawer                                                           |
+| POST   | `/api/mentorship/mentor/invitations/:invitationId/accept`  | `acceptMentorInvitation`  | Accept on an invitation row in the profile edit drawer                                                         |
+| POST   | `/api/mentorship/mentor/invitations/:invitationId/decline` | `declineMentorInvitation` | Decline on an invitation row in the profile edit drawer                                                        |
+| PUT    | `/api/mentorship/mentor/applications/:applicationId/note`  | `updateApplicationNote`   | Save in the note dialog on the program detail's Mentees and Applicants tabs                                    |
+| PATCH  | `/api/mentorship/mentor/tasks/:taskId/review`              | `reviewMenteeTask`        | Approve and Request Changes on the program detail's Tasks tab                                                  |
 
 ## Flow
 
