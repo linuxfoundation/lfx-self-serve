@@ -25,7 +25,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
 import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
-import { catchError, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, debounce, distinctUntilChanged, map, of, skip, switchMap, tap, timer } from 'rxjs';
 
 import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -76,11 +76,11 @@ export class EngagementRepresentativesComponent {
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  // Debounced, as the cut runs over the whole loaded scope; `skip(1)` drops the empty start the signal already holds,
-  // so the debounce never runs on a value nobody typed.
-  protected readonly search = toSignal(toObservable(this.searchText).pipe(skip(1), debounceTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS)), {
-    initialValue: '',
-  });
+  // Typing is debounced, as the cut runs over the whole loaded scope; a cleared search applies at once, so a reset never lags.
+  protected readonly search = toSignal(
+    toObservable(this.searchText).pipe(debounce((term) => (term ? timer(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS) : of(0)))),
+    { initialValue: '' }
+  );
 
   protected readonly query: Signal<HealthMetricsEngagementRepQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementRepresentatives> = this.initResponse();

@@ -147,7 +147,8 @@ describe('EngagementOrgParticipationComponent', () => {
 
     const cells = (query('engagement-org-participation-row-a-2') as HTMLElement).querySelectorAll('td');
     expect(cells[1].textContent?.trim()).toBe('Non-member');
-    expect(cells[1].className).toContain('text-gray-500');
+    // On the text itself: the table's td rule would override a colour on the cell.
+    expect(cells[1].querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-500');
     expect(cells[1].querySelector('[data-testid="health-metrics-cell-tier"]')).toBeNull();
     expect(cells[2].textContent?.trim()).toBe('—');
     expect(cells[2].querySelector('[data-testid="health-metrics-progress-fill"]')).toBeNull();
@@ -296,6 +297,10 @@ describe('EngagementOrgParticipationComponent', () => {
     (empty.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
     expect(fixture.componentInstance.filter()).toBe('all');
     expect(fixture.componentInstance['searchText']()).toBe('');
+    // A cleared search skips the debounce, so the rows come back at once.
+    TestBed.tick();
+    fixture.detectChanges();
+    expect(query('engagement-org-participation-row-a-1')).not.toBeNull();
   });
 
   // A failed read renders no rows, and "no organizations" would state that absence as measured fact.

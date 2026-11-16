@@ -59,8 +59,8 @@
               <lfx-health-metrics-cell [text]="view.name" [lead]="{ kind: 'company', name: view.name, logoUrl: view.logoUrl }" />
             </td>
             <!-- A non-member reads in neutral-500; a tier reads in the row's ink, after its icon. -->
-            <td [class.text-gray-500]="!view.isMember">
-              <lfx-health-metrics-cell [text]="view.membership" [tier]="view.tier" />
+            <td>
+              <lfx-health-metrics-cell [textClass]="view.isMember ? '' : 'text-gray-500'" [text]="view.membership" [tier]="view.tier" />
             </td>
             <td>
               @if (view.attendedPct === null) {

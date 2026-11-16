@@ -54,9 +54,10 @@
 
         <ng-template #body let-view>
           <tr [attr.data-testid]="'engagement-representatives-row-' + view.key">
-            <!-- An unresolved identity reads in italic neutral-500 behind a "?" avatar. -->
-            <td [class.italic]="view.unresolved" [class.text-gray-500]="view.unresolved">
+            <!-- An unresolved identity's name reads in italic neutral-500 behind a "?" avatar. -->
+            <td>
               <lfx-health-metrics-cell
+                [textClass]="view.unresolved ? 'italic text-gray-500' : ''"
                 [text]="view.displayName"
                 [lead]="{ kind: 'person', name: view.unresolved ? '?' : view.displayName, photoUrl: '' }"
                 [description]="view.description" />

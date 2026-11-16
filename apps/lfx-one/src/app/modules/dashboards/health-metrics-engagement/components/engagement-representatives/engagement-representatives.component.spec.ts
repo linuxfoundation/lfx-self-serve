@@ -147,7 +147,7 @@ describe('EngagementRepresentativesComponent', () => {
     expect(cells[1].textContent?.trim()).toBe('Technical Steering Committee');
     expect(cells[2].textContent?.trim()).toBe('2 / 6');
     expect(cells[3].textContent?.trim()).toBe('Aug 14, 2026');
-    expect(cells[0].className).not.toContain('italic');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-text"]')?.className).not.toContain('italic');
   });
 
   // A never-attended rep shows a danger badge and no date; lapsed and active reps read as plain text.
@@ -185,8 +185,11 @@ describe('EngagementRepresentativesComponent', () => {
     const cell = (query('engagement-representatives-row-r-1') as HTMLElement).querySelector('td') as HTMLElement;
     expect(cell.textContent).toContain('Unresolved identity');
     expect(cell.textContent).not.toContain('Dana Fields');
-    expect(cell.className).toContain('italic');
-    expect(cell.className).toContain('text-gray-500');
+    // On the name alone: the table's td rule would override a colour on the cell, and the company and avatar stay upright.
+    const name = cell.querySelector('[data-testid="health-metrics-cell-text"]') as HTMLElement;
+    expect(name.className).toContain('italic');
+    expect(name.className).toContain('text-gray-500');
+    expect(cell.querySelector('[data-testid="health-metrics-cell-description"]')?.className).not.toContain('italic');
     expect(cell.querySelector('[data-testid="health-metrics-cell-person"]')?.textContent?.trim()).toBe('?');
     expect(cell.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Acme Motors');
   });
@@ -408,6 +411,10 @@ describe('EngagementRepresentativesComponent', () => {
     (empty?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
     expect(fixture.componentInstance.filter()).toBe('all');
     expect(fixture.componentInstance['searchText']()).toBe('');
+    // A cleared search skips the debounce, so the rows come back at once.
+    TestBed.tick();
+    fixture.detectChanges();
+    expect(query('engagement-representatives-row-r-1')).not.toBeNull();
   });
 
   // Two foundations can hold the same number of reps, so the row count cannot stand in for identity.
