@@ -3,7 +3,24 @@ title: LinkedIn budget, targeting and ad variants
 description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, linkedin ads, sponsored content, budget, daily cap, lifetime budget, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
+tags:
+  [
+    campaigns,
+    paid marketing,
+    linkedin ads,
+    sponsored content,
+    budget,
+    daily cap,
+    lifetime budget,
+    targeting,
+    member groups,
+    skills,
+    ad variants,
+    intro text,
+    headline,
+    images,
+    implement,
+  ]
 last_updated: 2026-11-16
 intercom_collection: Dashboards
 ---
