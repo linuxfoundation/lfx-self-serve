@@ -1102,13 +1102,14 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
               row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
               row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
               row('p-greek', 'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', { firstName: 'ΝΙΚΟΣ', lastName: 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', commitsCount: 1 }),
+              row('p-greek-mixed', 'ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ', { commitsCount: 1 }),
               // Ignore legacy GitHub metadata from an older server; only the person's existing searchable fields match.
               Object.assign(row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', commitsCount: 0, eventsCount: 1 }), {
                 githubUsernames: ['example-gh-user'],
               }),
               row('p-other', 'Alan Turing', { commitsCount: 1 }),
             ],
-            6
+            7
           )
         );
         snowflake$.complete();
@@ -1137,6 +1138,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΠΑΠΑΣ ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣΝΙΚΟΣΝΙΚΟΛΑΟΣ']) {
           expect(await search(query)).toEqual(['org-people-all-employees-row-p-greek']);
         }
+      });
+
+      it('finds an exact Greek display name with mixed separators and no stored name parts', async () => {
+        expect(await search('ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ')).toEqual(['org-people-all-employees-row-p-greek-mixed']);
       });
 
       it('does not search GitHub usernames even when a legacy response includes them', async () => {

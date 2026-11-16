@@ -84,6 +84,17 @@ describe('nameSearchKeys', () => {
     }
   });
 
+  it.each([
+    'ΝΙΚΟΣ\u200BΝΙΚΟΛΑΟΣ ΠΑΠΑΣ',
+    'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ\u200BΠΑΠΑΣ',
+    'ΝΙΚΟΣ\u200DΝΙΚΟΛΑΟΣ ΠΑΠΑΣ',
+    'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ\u200DΠΑΠΑΣ',
+    'ΝΙΚΟΣ\u00ADΝΙΚΟΛΑΟΣ ΠΑΠΑΣ',
+    'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ\u00ADΠΑΠΑΣ',
+  ])('preserves an exact Greek display name with mixed separators: %s', (name) => {
+    expect(nameSearchKeys(name, null, null)).toContain(foldForSearch(name));
+  });
+
   it('preserves spaced and compact Greek name orders when only the stored parts provide the full name', () => {
     const keys = nameSearchKeys('ΝΙΚΟΣ', ' ΝΙΚΟΣ ', 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ');
     for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣΠΑΠΑΣΝΙΚΟΣ']) {
