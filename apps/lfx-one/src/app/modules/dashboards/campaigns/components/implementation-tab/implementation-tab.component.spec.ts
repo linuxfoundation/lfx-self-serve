@@ -38,7 +38,6 @@ import {
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
-  GOOGLE_CHANNELS_WITHOUT_TARGET_CPA,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_AUDIENCE_PICKER_EMPTY,
   GOOGLE_AUDIENCE_PICKER_LOADING,
@@ -48,7 +47,6 @@ import {
   GOOGLE_CREATIVE_FIELD_SPECS,
   GOOGLE_CREATIVE_REQUEST_KEYS,
   GOOGLE_CREATIVE_REQUIRED_NOTICE,
-  GOOGLE_TARGET_CPA_WITHHELD_MESSAGE,
   GOOGLE_TYPED_IMAGE_PROBE_TIMEOUT_MS,
   GOOGLE_CREATIVE_SECTION_TITLES,
   GOOGLE_SEARCH_ASSETS_NOTICE,
@@ -13189,6 +13187,7 @@ describe('ImplementationTabComponent google bidding', () => {
     ['includeSearch', 'search'],
     ['includeDemandGen', 'demand-gen'],
     ['includePerformanceMax', 'performance-max'],
+    ['includeDisplay', 'display'],
   ])('offers exactly the strategies %s accepts', (control, channel) => {
     const c = seedChannel(fixture, { [control]: true });
     const accepted = GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL[channel as keyof typeof GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL];
@@ -13226,6 +13225,67 @@ describe('ImplementationTabComponent google bidding', () => {
   });
 
   /**
+   * Display takes a target CPA again (#5737): campaign-service #593 (v1.0.36) sends it as the
+   * standalone `targetCpa`, which Google accepts on Display, where #5554 had to withhold the folded
+   * form v1.0.35 sent (#5536). The field, the Target CPA strategy and the value are all offered and sent.
+   */
+  describe('display target CPA (#5737)', () => {
+    const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    it('offers every strategy in the display catalogue, target CPA included', () => {
+      const c = seedChannel(fixture, { includeDisplay: true });
+      const offered = c['googleBiddingOptions']().map((o: { value: string }) => o.value);
+
+      expect(offered).toEqual([...GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display]);
+      expect(offered).toContain('target-cpa');
+    });
+
+    // Every channel that bids to a conversion takes a target CPA under both strategies. One table
+    // for all four, so a future per-channel exception (as #5554 was) fails here, not only Display.
+    it.each([
+      ['search', 'maximize-conversions', { includeSearch: true }],
+      ['search', 'target-cpa', { includeSearch: true }],
+      ['performance max', 'maximize-conversions', { includePerformanceMax: true }],
+      ['performance max', 'target-cpa', { includePerformanceMax: true }],
+      ['demand gen', 'maximize-conversions', { includeDemandGen: true }],
+      ['demand gen', 'target-cpa', { includeDemandGen: true }],
+      ['display', 'maximize-conversions', { includeDisplay: true }],
+      ['display', 'target-cpa', { includeDisplay: true }],
+    ])('shows the field and sends a target CPA on %s under %s', (_label, strategy, patch) => {
+      const c = seedChannel(fixture, { ...patch, googleBiddingStrategy: strategy, googleTargetCpa: '25' });
+      fixture.detectChanges();
+
+      expect(c['googleTakesTargetCpa']()).toBe(true);
+      expect(query('implementation-google-target-cpa')).not.toBeNull();
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: strategy, targetCpa: 25 });
+      expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toContain('target-cpa');
+      expect(query('implementation-google-target-cpa-withheld')).toBeNull();
+    });
+
+    it('keeps a target CPA pick and its value on a switch from search to display', () => {
+      const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' });
+
+      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
+      fixture.detectChanges();
+
+      expect(c['googleBiddingChannel']()).toBe('display');
+      expect(c['googleBiddingStrategy']()).toBe('target-cpa');
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
+    });
+
+    it('restores a target CPA draft on display as it was saved', () => {
+      const c = seedChannel(fixture, { includeDisplay: true });
+      c['restoreGoogleBidding']({ googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' } as CampaignImplementationDraft);
+      // The restore writes without emitting; the full draft restore emits once at the end, as here.
+      c['campaignForm'].updateValueAndValidity();
+
+      expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('target-cpa');
+      expect(c['googleBiddingStrategy']()).toBe('target-cpa');
+      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
+    });
+  });
+
+  /**
    * Reachable by ordinary use, not by tampering: pick Target ROAS on Display, switch the campaign
    * to Demand Gen, and the control still holds a value Demand Gen refuses. Resolving it away is
    * what keeps the dependent fields — and the payload — honest about what will be sent.
@@ -13244,7 +13304,7 @@ describe('ImplementationTabComponent google bidding', () => {
   });
 
   it('sends a picked strategy the channel accepts', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
     c['campaignForm'].controls.googleTargetCpa.setValue('25');
 
@@ -13256,7 +13316,7 @@ describe('ImplementationTabComponent google bidding', () => {
    * REFUSES a target on a strategy that cannot carry it rather than dropping it.
    */
   it('shows the target CPA field only under a CPA strategy', () => {
-    const c = seedChannel(fixture, { includeSearch: true });
+    const c = seedChannel(fixture, { includeDisplay: true });
     c['campaignForm'].controls.googleBiddingStrategy.setValue('maximize-clicks');
     expect(c['googleTakesTargetCpa']()).toBe(false);
 
@@ -13301,102 +13361,6 @@ describe('ImplementationTabComponent google bidding', () => {
     c['campaignForm'].controls.googleBiddingStrategy.setValue('target-cpa');
     c['campaignForm'].controls.googleTargetCpa.setValue('25');
     expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
-  });
-
-  /**
-   * Display takes no target CPA from LFX One until linuxfoundation/lfx-v2-campaign-service#578
-   * ships (#5536): v1.0.35 folds it into `maximizeConversions.targetCpaMicros`, which Google refuses
-   * on Display after the budget is created. The field, the Target CPA strategy and the value all go,
-   * and Maximize Conversions stays, without its target.
-   */
-  describe('display target CPA (#5536)', () => {
-    const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
-
-    it('keeps display in the withheld list', () => {
-      expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_CPA]).toEqual(['display']);
-    });
-
-    it('does not offer the target CPA strategy on display, but keeps maximize conversions', () => {
-      const c = seedChannel(fixture, { includeDisplay: true });
-      const offered = c['googleBiddingOptions']().map((o: { value: string }) => o.value);
-
-      expect(offered).toEqual(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display.filter((s) => s !== 'target-cpa'));
-      expect(offered).toContain('maximize-conversions');
-      expect(offered).not.toContain('target-cpa');
-    });
-
-    it('hides the field, withholds a held value and says why under maximize conversions', () => {
-      const c = seedChannel(fixture, { includeDisplay: true, googleBiddingStrategy: 'maximize-conversions', googleTargetCpa: '25' });
-      fixture.detectChanges();
-
-      expect(c['googleTakesTargetCpa']()).toBe(false);
-      expect(query('implementation-google-target-cpa')).toBeNull();
-      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'maximize-conversions' });
-      expect(c['googleBiddingError']()).toBeNull();
-      expect(c['googleTargetCpaWithheldMessage']()).toBe(GOOGLE_TARGET_CPA_WITHHELD_MESSAGE);
-      expect(query('implementation-google-target-cpa-withheld')?.textContent?.trim()).toBe(GOOGLE_TARGET_CPA_WITHHELD_MESSAGE);
-    });
-
-    it('says nothing on display under a strategy that never carries a target CPA', () => {
-      const c = seedChannel(fixture, { includeDisplay: true, googleBiddingStrategy: 'maximize-clicks' });
-      fixture.detectChanges();
-
-      expect(c['googleTargetCpaWithheldMessage']()).toBeNull();
-      expect(query('implementation-google-target-cpa-withheld')).toBeNull();
-    });
-
-    /**
-     * The same route a Target ROAS pick takes on a switch to Demand Gen (see "resolves an out-of-set
-     * pick to the default"): the unoffered strategy resolves to the channel default and is left out
-     * of the request, and its target goes with it — and the "needs a target CPA" refusal goes too.
-     */
-    it('falls a target CPA pick back to the display default on a switch to display', () => {
-      const c = seedChannel(fixture, { includeSearch: true, googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' });
-      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
-
-      c['campaignForm'].patchValue({ includeSearch: false, includeDisplay: true });
-      fixture.detectChanges();
-
-      expect(c['googleBiddingChannel']()).toBe('display');
-      expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.display);
-      expect(c['googleBiddingPayload']()).toEqual({});
-      expect(c['googleBiddingError']()).toBeNull();
-      expect(query('implementation-google-target-cpa')).toBeNull();
-      expect(c['googleTargetCpaWithheldMessage']()).toBe(GOOGLE_TARGET_CPA_WITHHELD_MESSAGE);
-
-      c['campaignForm'].patchValue({ includeDisplay: false, includeSearch: true });
-      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: 'target-cpa', targetCpa: 25 });
-      expect(c['googleTargetCpaWithheldMessage']()).toBeNull();
-    });
-
-    it('falls a restored target CPA draft back the same way on display', () => {
-      const c = seedChannel(fixture, { includeDisplay: true });
-      c['restoreGoogleBidding']({ googleBiddingStrategy: 'target-cpa', googleTargetCpa: '25' } as CampaignImplementationDraft);
-
-      expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('target-cpa');
-      expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.display);
-      expect(c['googleBiddingPayload']()).toEqual({});
-      expect(c['googleBiddingError']()).toBeNull();
-    });
-
-    it.each([
-      ['search', 'maximize-conversions', { includeSearch: true }],
-      ['search', 'target-cpa', { includeSearch: true }],
-      ['performance max', 'maximize-conversions', { includePerformanceMax: true }],
-      ['performance max', 'target-cpa', { includePerformanceMax: true }],
-      ['demand gen', 'maximize-conversions', { includeDemandGen: true }],
-      ['demand gen', 'target-cpa', { includeDemandGen: true }],
-    ])('still sends a target CPA on %s under %s', (_label, strategy, patch) => {
-      const c = seedChannel(fixture, { ...patch, googleBiddingStrategy: strategy, googleTargetCpa: '25' });
-      fixture.detectChanges();
-
-      expect(c['googleTakesTargetCpa']()).toBe(true);
-      expect(query('implementation-google-target-cpa')).not.toBeNull();
-      expect(c['googleBiddingPayload']()).toEqual({ biddingStrategy: strategy, targetCpa: 25 });
-      expect(c['googleTargetCpaWithheldMessage']()).toBeNull();
-      expect(query('implementation-google-target-cpa-withheld')).toBeNull();
-      expect(c['googleBiddingOptions']().map((o: { value: string }) => o.value)).toContain('target-cpa');
-    });
   });
 
   /** The CPC bid is manual CPC's alone, and manual CPC is Search's alone. */
