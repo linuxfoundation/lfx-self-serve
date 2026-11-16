@@ -40,6 +40,11 @@ describe('buildHealthMetricsLineChart', () => {
 
   it('fills under the first filled series down to the base', () => {
     expect(buildHealthMetricsLineChart(input()).area).toEqual({ d: 'M0.0 120.0 L300.0 100.0 L600.0 160.0 L600.0 200 L0.0 200 Z', color: '#009AFF' });
+    // A gap closes each run to the base on its own, so the fill never bridges the missing value.
+    const gapped = buildHealthMetricsLineChart(
+      input({ xLabels: ['a', 'b', 'c', 'd', 'e'], series: [{ key: 'a', label: 'A', color: '#009AFF', values: [40, 50, null, 20, 30], fill: true }] })
+    );
+    expect(gapped.area?.d).toBe('M0.0 120.0 L150.0 100.0 L150.0 200 L0.0 200 Z M450.0 160.0 L600.0 140.0 L600.0 200 L450.0 200 Z');
     expect(buildHealthMetricsLineChart(input({ series: [{ key: 'a', label: 'A', color: '#000', values: [1, 2, 3] }] })).area).toBeNull();
   });
 

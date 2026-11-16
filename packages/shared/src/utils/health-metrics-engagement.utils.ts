@@ -554,7 +554,8 @@ export function buildHealthMetricsEngagementNewsletterChart(
     audience ? formatHealthMetricsEngagementCount(value === null ? null : Math.round(value)) : formatNewsletterPct(value);
   const max = audience
     ? healthMetricsLineChartCountCeiling(Math.max(0, ...points.flatMap((point) => [point.recipients ?? 0, point.uniqueOpens ?? 0])))
-    : Math.min(100, Math.max(10, Math.ceil(Math.max(0, ...points.map((point) => point.openPct ?? 0)) / 10) * 10));
+    : // Rounded first, so float noise such as 30.000000000000004 never lifts an exact ten up a band.
+      Math.min(100, Math.max(10, Math.ceil(Math.round(Math.max(0, ...points.map((point) => point.openPct ?? 0)) * 1000) / 10_000) * 10));
 
   return {
     chart: buildHealthMetricsLineChart({

@@ -78,8 +78,8 @@
             [style.width.%]="column.widthPct"
             [attr.aria-label]="column.ariaLabel"
             [attr.data-testid]="testId() + '-column-' + index"
-            (mouseenter)="onEnter(index)"
-            (focus)="onEnter(index)"
+            (mouseenter)="onEnter(index, $event)"
+            (focus)="onEnter(index, $event)"
             (mouseleave)="onLeave(index)"
             (blur)="onLeave(index)">
             <span

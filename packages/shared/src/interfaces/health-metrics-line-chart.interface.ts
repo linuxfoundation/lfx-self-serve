@@ -85,3 +85,9 @@ export interface HealthMetricsLineChartView {
   monthTicks: HealthMetricsLineChartTickView[];
   ariaLabel: string;
 }
+
+/** Where an open popup sits across its column: one side set as a CSS length, the other `null`. */
+export interface HealthMetricsLineChartTipPlacement {
+  left: string | null;
+  right: string | null;
+}

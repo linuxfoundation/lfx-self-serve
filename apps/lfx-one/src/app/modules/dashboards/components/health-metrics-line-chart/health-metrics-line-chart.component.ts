@@ -5,12 +5,18 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { HEALTH_METRICS_LINE_CHART_LABEL_MIN_PX, HEALTH_METRICS_LINE_CHART_VIEW_WIDTH } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_LINE_CHART_LABEL_MIN_PX,
+  HEALTH_METRICS_LINE_CHART_VIEW_WIDTH,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX,
+} from '@lfx-one/shared/constants';
 import { distinctUntilChanged, EMPTY, Observable, switchMap } from 'rxjs';
 
 import { HealthMetricsChartTipComponent } from '../health-metrics-chart-tip/health-metrics-chart-tip.component';
 
-import type { HealthMetricsLineChartTickView, HealthMetricsLineChartView } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsLineChartTickView, HealthMetricsLineChartTipPlacement, HealthMetricsLineChartView } from '@lfx-one/shared/interfaces';
 
 /**
  * The design's line chart: y labels beside light quarter rules, straight lines with a soft fill under the first filled
@@ -20,8 +26,8 @@ import type { HealthMetricsLineChartTickView, HealthMetricsLineChartView } from 
   selector: 'lfx-health-metrics-line-chart',
   imports: [HealthMetricsChartTipComponent],
   templateUrl: './health-metrics-line-chart.component.html',
-  // Escape closes the popup however it opened, since hovering a column does not focus it.
-  host: { class: 'block', '(document:keydown.escape)': 'activeIndex.set(null)' },
+  // Escape closes the popup however it opened, since hovering a column does not focus it; a resize re-places an open one.
+  host: { class: 'block', '(document:keydown.escape)': 'activeIndex.set(null)', '(window:resize)': 'replaceTip()' },
 })
 export class HealthMetricsLineChartComponent {
   private readonly platformId = inject(PLATFORM_ID);
@@ -34,26 +40,30 @@ export class HealthMetricsLineChartComponent {
   protected readonly gradientId = inject(_IdGenerator).getId('health-metrics-line-chart-area-');
   protected readonly gradientFill = `url(#${this.gradientId})`;
   protected readonly activeIndex = signal<number | null>(null);
-  /** The popup opens 12px right of its point, or left of it in the chart's right half, so it stays over the plot. */
-  protected readonly tipPlacement = computed(() => {
-    const index = this.activeIndex();
-    const column = index === null ? undefined : this.chart().columns[index];
-    if (index === null || !column) return null;
-    if (index >= this.chart().columns.length / 2) return { left: null, right: `calc(${100 - column.pointOffsetPct}% + 12px)` };
-    return { left: `calc(${column.pointOffsetPct}% + 12px)`, right: null };
-  });
+  protected readonly tipPlacement = signal<HealthMetricsLineChartTipPlacement | null>(null);
+  /** The open column, kept so a resize can place its popup again. */
+  private activeColumn: HTMLElement | null = null;
 
   private readonly plot = viewChild<ElementRef<HTMLElement>>('plot');
   /** `null` until measured, so the first paint keeps to the month labels, which crowd least. */
   private readonly plotWidthPx: Signal<number | null> = this.initPlotWidth();
   protected readonly ticks: Signal<HealthMetricsLineChartTickView[]> = this.initTicks();
 
-  protected onEnter(index: number): void {
+  protected onEnter(index: number, event: Event): void {
+    this.activeColumn = event.currentTarget as HTMLElement;
     this.activeIndex.set(index);
+    this.tipPlacement.set(this.placeTip(index, this.activeColumn));
   }
 
   protected onLeave(index: number): void {
-    if (this.activeIndex() === index) this.activeIndex.set(null);
+    if (this.activeIndex() !== index) return;
+    this.activeIndex.set(null);
+    this.activeColumn = null;
+  }
+
+  protected replaceTip(): void {
+    const index = this.activeIndex();
+    if (index !== null && this.activeColumn) this.tipPlacement.set(this.placeTip(index, this.activeColumn));
   }
 
   /** Watches the plot's width while it is on the page; the server never measures it. */
@@ -84,6 +94,25 @@ export class HealthMetricsLineChartComponent {
       }
       return kept;
     });
+  }
+
+  /**
+   * The design's placement: 12px right of the point, or left of it when only the left has room in the viewport. A
+   * screen with room on neither side shifts it to stay inside, as the Overview's newsletter popup does.
+   */
+  private placeTip(index: number, element: HTMLElement): HealthMetricsLineChartTipPlacement {
+    const offset = this.chart().columns[index]?.pointOffsetPct ?? 50;
+    const column = element.getBoundingClientRect();
+    const point = column.left + (column.width * offset) / 100;
+    const viewport = document.documentElement.clientWidth;
+    if (viewport - point >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: `calc(${offset}% + 12px)`, right: null };
+    if (point >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: null, right: `calc(${100 - offset}% + 12px)` };
+
+    const left = Math.max(
+      HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+      viewport - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
+    );
+    return { left: `calc(${offset}% + ${Math.round(left - point)}px)`, right: null };
   }
 }
 

@@ -1013,6 +1013,8 @@ describe('buildHealthMetricsEngagementNewsletterChart', () => {
   it('keeps the rate axis between 10% and 100%', () => {
     expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 2, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('10%');
     expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 100, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('100%');
+    // 0.3 * 100 is 30.000000000000004 in JavaScript; the axis still tops out at 30%.
+    expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 0.3 * 100, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('30%');
   });
 
   it('plots the audience to a round ceiling over its peak, with counts in the popup', () => {

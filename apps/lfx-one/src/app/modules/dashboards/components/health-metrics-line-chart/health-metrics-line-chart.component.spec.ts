@@ -65,9 +65,17 @@ describe('HealthMetricsLineChartComponent', () => {
     expect(query('chart-column-0')?.getAttribute('tabindex')).toBe('0');
   });
 
-  it('opens the popup on hover or focus, right of a left-half column and left of a right-half one, and closes it on leave', () => {
+  /** A viewport `width` px wide, with the column spanning `left` to `left + span` px. */
+  function lay(testId: string, width: number, left: number, span: number): void {
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, value: width });
+    vi.spyOn(query(testId) as HTMLElement, 'getBoundingClientRect').mockReturnValue({ left, width: span } as DOMRect);
+  }
+
+  it('opens the popup right of its point while the viewport has room, and closes it on leave', () => {
+    lay('chart-column-0', 1200, 0, 100);
     query('chart-column-0')?.dispatchEvent(new Event('mouseenter'));
     fixture.detectChanges();
+
     expect(query('chart-tip')?.textContent).toContain('One');
     // The first column is cut off at the plot's left edge, so its point sits at the column's own left.
     expect(query('chart-column-0')?.style.left).toBe('0%');
@@ -75,14 +83,27 @@ describe('HealthMetricsLineChartComponent', () => {
     expect(query('chart-tip')?.style.left).toBe('calc(0% + 12px)');
 
     query('chart-column-0')?.dispatchEvent(new Event('mouseleave'));
-    query('chart-column-3')?.dispatchEvent(new Event('focus'));
-    fixture.detectChanges();
-    expect(query('chart-tip')?.textContent).toContain('Four');
-    expect(query('chart-tip')?.style.right).toBe('calc(0% + 12px)');
-
-    query('chart-column-3')?.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
     expect(query('chart-tip')).toBeNull();
+  });
+
+  it('flips the popup left of its point when only the left has room, as on focus at the right edge', () => {
+    lay('chart-column-3', 1200, 1000, 100);
+    query('chart-column-3')?.dispatchEvent(new Event('focus'));
+    fixture.detectChanges();
+
+    expect(query('chart-tip')?.textContent).toContain('Four');
+    expect(query('chart-tip')?.style.right).toBe('calc(0% + 12px)');
+  });
+
+  // A middle point on a phone has room on neither side, so the popup keeps 8px off the screen's edges.
+  it('shifts the popup inside a narrow viewport with room on neither side', () => {
+    lay('chart-column-1', 300, 50, 200);
+    query('chart-column-1')?.dispatchEvent(new Event('mouseenter'));
+    fixture.detectChanges();
+
+    // The point sits at the middle of its column, 150px in; the popup's left edge lands at 12px.
+    expect(query('chart-tip')?.style.left).toBe('calc(50% - 138px)');
   });
 
   describe('once the plot is measured', () => {

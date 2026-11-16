@@ -47,8 +47,14 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
   }));
   const filled = input.series.find((series) => series.fill);
   const filledIndexes = filled ? filled.values.flatMap((value, index) => (value === null ? [] : [index])) : [];
-  const first = filledIndexes[0];
-  const last = filledIndexes[filledIndexes.length - 1];
+  // One closed shape per unbroken run, each down to the base, so a gap in the data leaves a gap in the fill.
+  const areaPath = (values: readonly (number | null)[]): string =>
+    lineChartRuns(values)
+      .map((run) => {
+        const top = run.map((index) => `${x(index).toFixed(1)} ${y(values[index] as number).toFixed(1)}`).join(' L');
+        return `M${top} L${x(run[run.length - 1]).toFixed(1)} ${height} L${x(run[0]).toFixed(1)} ${height} Z`;
+      })
+      .join(' ');
 
   return {
     heightPx: height,
@@ -56,10 +62,7 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
     yTicks: [1, 0.75, 0.5, 0.25, 0].map((share) => input.formatTick(max * share)),
     gridYs: [0, 0.25, 0.5, 0.75].map((share) => share * height),
     baseY: height,
-    area:
-      filled && first !== undefined && last !== undefined
-        ? { d: `${path(filled.values)} L${x(last).toFixed(1)} ${height} L${x(first).toFixed(1)} ${height} Z`, color: filled.color }
-        : null,
+    area: filled && filledIndexes.length ? { d: areaPath(filled.values), color: filled.color } : null,
     paths: input.series.map((series) => ({ key: series.key, d: path(series.values), color: series.color, dashed: !!series.dashed })),
     // The design leaves a dashed series without dots, so it reads as derived from the solid ones.
     dots: input.series
@@ -103,6 +106,22 @@ export function healthMetricsLineChartCountCeiling(peak: number): number {
   const magnitude = 10 ** Math.floor(Math.log10(quarter));
   const step = HEALTH_METRICS_LINE_CHART_QUARTER_STEPS.find((candidate) => candidate * magnitude >= quarter) ?? 10;
   return step * magnitude * 4;
+}
+
+/** The indexes of each unbroken run of values, in order. */
+function lineChartRuns(values: readonly (number | null)[]): number[][] {
+  const runs: number[][] = [];
+  let current: number[] = [];
+  values.forEach((value, index) => {
+    if (value === null) {
+      if (current.length) runs.push(current);
+      current = [];
+      return;
+    }
+    current.push(index);
+  });
+  if (current.length) runs.push(current);
+  return runs;
 }
 
 /** A spread row's alignment: the first label starts at the left edge, the last ends at the right, the rest centre on their point. */
