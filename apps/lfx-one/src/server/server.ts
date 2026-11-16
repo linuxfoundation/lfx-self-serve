@@ -104,6 +104,7 @@ import {
   refreshExpiredSsrAccessToken,
 } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
+import { checkBrowserBundleReady } from './utils/readiness';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
@@ -220,9 +221,12 @@ app.get('/livez', (_req: Request, res: Response) => {
 });
 
 // Readiness endpoint for Kubernetes (LFXV2-1640).
-// Signals that this pod can accept HTTP traffic: Express is listening and the
-// Angular SSR engine loaded successfully (constructed at module load above —
-// a load failure crashes the process before reaching this point).
+// Signals that this pod can serve the app: Express is listening, the Angular
+// SSR engine loaded successfully (constructed at module load above — a load
+// failure crashes the process before reaching this point), and the browser
+// dist has the HTML shell plus the entry script and stylesheet (hashed or not).
+// checkBrowserBundleReady caches its first success, so a ready pod does no
+// filesystem work per probe.
 // Intentionally does NOT probe NATS / Snowflake / microservice-proxy: those
 // clients are lazy-initialized and report not-connected at startup even
 // though many SSR pages render fine without them. Per-feature dependency
@@ -233,6 +237,13 @@ app.get('/readyz', (_req: Request, res: Response) => {
     res.status(503).json({ status: 'shutting_down' });
     return;
   }
+
+  const bundle = checkBrowserBundleReady(browserDistFolder);
+  if (!bundle.ready) {
+    res.status(503).json({ status: 'not_ready', reason: bundle.reason });
+    return;
+  }
+
   res.status(200).json({ status: 'ready' });
 });
 

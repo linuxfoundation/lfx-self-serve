@@ -35,6 +35,9 @@ export * from './session-store.interface';
 // Object store (S3 or file-backed) interfaces
 export * from './object-store.interface';
 
+// Browser dist readiness (/readyz) interfaces
+export * from './browser-assets.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
