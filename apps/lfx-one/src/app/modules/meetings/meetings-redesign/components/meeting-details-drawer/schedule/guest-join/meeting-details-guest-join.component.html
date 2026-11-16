@@ -1,0 +1,38 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<div class="flex items-center gap-[12px] text-[11px] font-semibold tracking-[.08em] text-gray-500" role="separator" aria-label="or">
+  <span class="h-px flex-1 bg-gray-200" aria-hidden="true"></span>OR<span class="h-px flex-1 bg-gray-200" aria-hidden="true"></span>
+</div>
+<form class="flex flex-col gap-[12px]" [formGroup]="form" (submit)="$event.preventDefault()">
+  <span class="text-[13px] font-semibold leading-[18px] text-gray-900">Join as a guest</span>
+  <lfx-ui-input label="Full name" placeholder="John Doe" autocomplete="name" required formControlName="name" data-testid="meeting-details-guest-name" />
+  <lfx-ui-input
+    label="Email"
+    type="email"
+    placeholder="john.doe@example.com"
+    autocomplete="email"
+    required
+    formControlName="email"
+    data-testid="meeting-details-guest-email" />
+  <lfx-ui-input
+    label="Organization"
+    placeholder="Your Company"
+    autocomplete="organization"
+    formControlName="organization"
+    data-testid="meeting-details-guest-organization" />
+  @if (link().url; as url) {
+    <!-- Masked in Session Replay: the link carries the guest's name. -->
+    <lfx-ui-button data-dd-privacy="mask" size="large" icon="fa-light fa-video" fullWidth [href]="url" data-testid="meeting-details-guest-join-button"
+      >Join Meeting</lfx-ui-button
+    >
+  } @else {
+    <lfx-ui-button size="large" icon="fa-light fa-video" fullWidth disabled data-testid="meeting-details-guest-join-button">Join Meeting</lfx-ui-button>
+  }
+  @if (link().error; as error) {
+    <lfx-ui-note variant="error" size="small" data-testid="meeting-details-guest-join-error"
+      >{{ error }}. Please contact the meeting organizer or support team if you believe this is an error.</lfx-ui-note
+    >
+  }
+</form>
