@@ -74,7 +74,10 @@ export class MeetingPageDetailsComponent {
           takeUntilDestroyed()
         )
         .subscribe(
-          (occurrence) => void this.router.navigateByUrl(meetingPageUrl({ ...row, occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time }))
+          (occurrence) =>
+            void this.router.navigateByUrl(
+              meetingPageUrl({ ...row, occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time }, this.pageData.urlPassword())
+            )
         );
     }
     // The composer opens over this page only from its own Edit, so a save is an edit of this meeting.
@@ -122,11 +125,12 @@ function provideMeetingPageSource(): Provider {
         now: computed(() => new Date(pageData.clock())),
         upcomingRows: initAnsweredRows(row),
         hostRef: null,
-        open: (row) => void router.navigateByUrl(meetingPageUrl(row)),
+        open: (row) => void router.navigateByUrl(meetingPageUrl(row, pageData.urlPassword())),
         applySummaryChange: () => undefined,
         subscribeToCalendar: (meeting) => openProjectCalendar(dialogService, meeting),
         occurrenceCancelled: (meeting, occurrence) => showOccurrence(router, route, pageData, meeting.id, nextOccurrenceStart(meeting, occurrence)),
         claimJoinOnLoad: () => pageData.claimJoinOnLoad(),
+        fullAccess: pageData.loadedViaPastMeetingId() ? pageData.pastMeetingFullAccess() : pageData.liveMeetingFullAccess(),
         // The legacy page holds the guest form that joins with another email address.
         joinWithOtherEmail: () =>
           void router.navigateByUrl(router.url, {
@@ -178,13 +182,19 @@ function showOccurrence(router: Router, route: ActivatedRoute, pageData: Meeting
   void router.navigate(['/meetings', meetingId], { queryParams: { occurrence }, queryParamsHandling: 'merge', replaceUrl: true });
 }
 
-/** A past row opens its `{id}-{ms}` record; an upcoming date opens the series at `?occurrence=` (its start ms). */
-function meetingPageUrl(row: MeetingHomeRow): string {
+/**
+ * A past row opens its `{id}-{ms}` record; an upcoming date opens the series at `?occurrence=` (its start ms), keeping a
+ * `?password=` already in the address bar (MD-163), since a passcode guest needs it there too.
+ */
+function meetingPageUrl(row: MeetingHomeRow, password: string | null = null): string {
   if (isPastMeetingCalendarRow(row.meeting)) {
     return `/meetings/${encodeURIComponent(getPastMeetingResourceId(row.meeting))}`;
   }
-  const path = `/meetings/${encodeURIComponent(row.meeting.id)}`;
-  return row.occurrenceId ? `${path}?occurrence=${Date.parse(row.startTime)}` : path;
+  const params = new URLSearchParams();
+  if (row.occurrenceId) params.set('occurrence', String(Date.parse(row.startTime)));
+  if (password) params.set('password', password);
+  const query = params.toString();
+  return `/meetings/${encodeURIComponent(row.meeting.id)}${query ? `?${query}` : ''}`;
 }
 
 /** The project's calendar feed in the dialog the legacy page and the meetings dashboard use. */
