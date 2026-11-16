@@ -5,36 +5,35 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
-  HEALTH_METRICS_OVERVIEW_PROGRESS_TINT,
-  HEALTH_METRICS_OVERVIEW_STROKES,
-  lfxColors,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementNewsletterView } from '@lfx-one/shared/utils';
+import { buildHealthMetricsEngagementNewsletterChart, buildHealthMetricsEngagementNewsletterView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsLineChartComponent } from '../../../components/health-metrics-line-chart/health-metrics-line-chart.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { ChartData, ChartOptions } from 'chart.js';
-import type { TablePageEvent } from 'primeng/table';
-
 import type {
-  FilterPillOption,
+  HealthMetricsEngagementNewsletterChartView,
   HealthMetricsEngagementNewsletterMode,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPointView,
   HealthMetricsEngagementNewsletterQuery,
+  HealthMetricsEngagementNewsletterRowView,
   HealthMetricsEngagementNewsletterView,
 } from '@lfx-one/shared/interfaces';
 
@@ -44,7 +43,17 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-newsletter-performance',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsLineChartComponent,
+    HealthMetricsMetricsRowComponent,
+    Skeleton,
+    TableComponent,
+    UiPaginationComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
+  ],
   templateUrl: './engagement-newsletter-performance.component.html',
 })
 export class EngagementNewsletterPerformanceComponent {
@@ -60,17 +69,12 @@ export class EngagementNewsletterPerformanceComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
-  protected readonly modeOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES.map((mode) => ({ id: mode.key, label: mode.label }));
-  protected readonly colors = {
-    open: HEALTH_METRICS_OVERVIEW_STROKES.progress,
-    click: HEALTH_METRICS_OVERVIEW_STROKES.thisYear,
-    clickToOpen: HEALTH_METRICS_OVERVIEW_STROKES.high,
-  };
+  protected readonly modes = HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES;
+  protected readonly size = HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE;
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
   protected readonly mode = signal<HealthMetricsEngagementNewsletterMode>(this.toMode(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.nlMode)));
-  protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE);
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation that sent nothing, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
@@ -86,30 +90,19 @@ export class EngagementNewsletterPerformanceComponent {
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.view().isEmpty);
 
   /** A new foundation or period is a different list, so paging restarts. */
-  protected readonly first = linkedSignal<string, number>({
+  protected readonly page = linkedSignal<string, number>({
     source: computed(() => `${this.query().foundationSlug}|${this.chrome.selectedRange()}`),
     computation: () => 0,
   });
 
-  protected readonly audienceMode = computed(() => this.mode() === 'audience');
   protected readonly points = computed<HealthMetricsEngagementNewsletterPointView[]>(() =>
-    this.audienceMode() ? this.view().audiencePoints : this.view().ratePoints
+    this.mode() === 'audience' ? this.view().audiencePoints : this.view().ratePoints
   );
-  protected readonly chartData: Signal<ChartData<'line'>> = computed(() => this.buildChart(this.points()));
-  protected readonly chartOptions: Signal<ChartOptions<'line'>> = computed(() => this.buildChartOptions(this.points()));
-  /** The chart's values as text, one row per newsletter, for the screen-reader table beside it. */
-  protected readonly chartRows = computed(() => {
-    const datasets = this.chartData().datasets;
-    const format = (value: unknown): string => {
-      if (typeof value !== 'number') return '—';
-      return this.audienceMode() ? value.toLocaleString('en-US') : `${Math.round(value)}%`;
-    };
-    return this.points().map((point, index) => ({ key: point.key, title: point.title, cells: datasets.map((dataset) => format(dataset.data[index])) }));
-  });
-  protected readonly chartLabel = computed(() =>
-    this.audienceMode()
-      ? 'Recipients and unique opens by newsletter, oldest first. The following table lists the same values.'
-      : 'Open, click and click-to-open rate by newsletter, oldest first. The following table lists the same values.'
+  protected readonly chart: Signal<HealthMetricsEngagementNewsletterChartView> = computed(() =>
+    buildHealthMetricsEngagementNewsletterChart(this.points(), this.mode())
+  );
+  protected readonly pageRows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() =>
+    this.view().rows.slice(this.page() * this.size, (this.page() + 1) * this.size)
   );
 
   public constructor() {
@@ -121,7 +114,7 @@ export class EngagementNewsletterPerformanceComponent {
     }
   }
 
-  protected onModeChange(key: string): void {
+  protected onModeChange(key: string | null): void {
     const mode = this.toMode(key);
     this.mode.set(mode);
     void this.router.navigate([], {
@@ -131,11 +124,6 @@ export class EngagementNewsletterPerformanceComponent {
       preserveFragment: true,
       replaceUrl: true,
     });
-  }
-
-  protected onTablePage(event: TablePageEvent): void {
-    this.size.set(event.rows ?? this.size());
-    this.first.set(event.first ?? 0);
   }
 
   private initResponse(): Signal<HealthMetricsEngagementNewsletterPerformance> {
@@ -187,95 +175,5 @@ export class EngagementNewsletterPerformanceComponent {
 
   private toMode(key: string | null): HealthMetricsEngagementNewsletterMode {
     return HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES.find((mode) => mode.key === key)?.key ?? 'rates';
-  }
-
-  /** The design's lines: open rate filled in blue, click rate in purple and click-to-open dashed green; or recipients over unique opens. */
-  private buildChart(points: HealthMetricsEngagementNewsletterPointView[]): ChartData<'line'> {
-    const line = (label: string, data: (number | null)[], color: string, extra: object = {}): ChartData<'line'>['datasets'][number] => ({
-      label,
-      data,
-      borderColor: color,
-      borderWidth: 2,
-      pointBorderColor: color,
-      pointBackgroundColor: lfxColors.white,
-      pointBorderWidth: 2,
-      pointRadius: 3.5,
-      spanGaps: false,
-      ...extra,
-    });
-    const filled = { fill: 'origin', backgroundColor: HEALTH_METRICS_OVERVIEW_PROGRESS_TINT };
-
-    return {
-      labels: points.map((point) => point.tick),
-      datasets: this.audienceMode()
-        ? [
-            line(
-              'Recipients',
-              points.map((point) => point.recipients),
-              this.colors.open,
-              filled
-            ),
-            line(
-              'Unique opens',
-              points.map((point) => point.uniqueOpens),
-              this.colors.click
-            ),
-          ]
-        : [
-            line(
-              'Open rate',
-              points.map((point) => point.openPct),
-              this.colors.open,
-              filled
-            ),
-            line(
-              'Click rate',
-              points.map((point) => point.clickPct),
-              this.colors.click
-            ),
-            line(
-              'Click-to-open rate',
-              points.map((point) => point.clickToOpenPct),
-              this.colors.clickToOpen,
-              { borderDash: [5, 4] }
-            ),
-          ],
-    };
-  }
-
-  /** Rates top out at the highest one, rounded up to the next 10%; counts start at zero and scale themselves. */
-  private buildChartOptions(points: HealthMetricsEngagementNewsletterPointView[]): ChartOptions<'line'> {
-    const audience = this.audienceMode();
-    const peak = Math.max(0, ...points.flatMap((point) => [point.openPct ?? 0, point.clickPct ?? 0, point.clickToOpenPct ?? 0]));
-    // Float noise is trimmed first, so 0.7 × 100 tops out at 70% rather than 80%, without dropping a real 50.04%.
-    const top = Math.min(100, Math.max(10, Math.ceil(Math.round(peak * 1000) / 10_000) * 10));
-    const tick = { color: lfxColors.gray[500], font: { size: 10 } };
-
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          enabled: true,
-          callbacks: {
-            title: (items) => points[items[0]?.dataIndex ?? -1]?.title ?? '',
-            label: (item) =>
-              item.parsed.y === null ? '' : `${item.dataset.label} ${audience ? item.parsed.y.toLocaleString('en-US') : `${Math.round(item.parsed.y)}%`}`,
-          },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: tick },
-        y: audience
-          ? {
-              beginAtZero: true,
-              grid: { color: lfxColors.gray[200] },
-              border: { display: false },
-              ticks: { ...tick, callback: (value) => Number(value).toLocaleString('en-US') },
-            }
-          : { min: 0, max: top, grid: { color: lfxColors.gray[200] }, border: { display: false }, ticks: { ...tick, callback: (value) => `${value}%` } },
-      },
-    };
   }
 }

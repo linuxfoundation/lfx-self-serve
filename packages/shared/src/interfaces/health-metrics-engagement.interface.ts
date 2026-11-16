@@ -11,7 +11,8 @@ import type {
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
-import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
+import type { HealthMetricsLineChartView } from './health-metrics-line-chart.interface';
 import type { HealthMetricsBarFillRule } from './health-metrics-table.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -537,15 +538,6 @@ export interface HealthMetricsEngagementNewsletterPerformance {
   newsletters: HealthMetricsEngagementNewsletter[];
 }
 
-/** One of the section's KPIs: a label over its value, with a delta only on Subscribers. */
-export interface HealthMetricsEngagementNewsletterKpiView {
-  key: string;
-  label: string;
-  value: string;
-  delta: string | null;
-  deltaDirection: 'up' | 'down' | 'neutral';
-}
-
 /** One table row, with every cell already labelled; "—" stands in where the newsletter has no engagement data. */
 export interface HealthMetricsEngagementNewsletterRowView {
   key: string;
@@ -556,8 +548,8 @@ export interface HealthMetricsEngagementNewsletterRowView {
   uniqueOpensLabel: string;
   totalOpensLabel: string;
   openRateLabel: string;
-  /** The open-rate bar's fill, 0–100. */
-  openRateWidthPct: number;
+  /** The open-rate bar's fill, 0–100; `null` draws no bar. */
+  openRatePct: number | null;
   uniqueClicksLabel: string;
   totalClicksLabel: string;
   clickRateLabel: string;
@@ -581,13 +573,26 @@ export interface HealthMetricsEngagementNewsletterPointView {
 /** Newsletter performance for the selected period. */
 export interface HealthMetricsEngagementNewsletterView {
   isEmpty: boolean;
-  headline: HealthMetricsEngagementNewsletterKpiView;
-  side: HealthMetricsEngagementNewsletterKpiView[];
+  /** Subscribers, newsletters sent, and the average open and click rates, with their context underneath. */
+  metrics: HealthMetricsMetricItem[];
   /** Latest first, as the view ranks them. */
   rows: HealthMetricsEngagementNewsletterRowView[];
   /** Oldest first: every newsletter for the audience chart, only those with engagement data for the rates chart. */
   audiencePoints: HealthMetricsEngagementNewsletterPointView[];
   ratePoints: HealthMetricsEngagementNewsletterPointView[];
+}
+
+/** One entry of the newsletter chart's legend: a line swatch in the series colour. */
+export interface HealthMetricsEngagementNewsletterLegendItem {
+  key: string;
+  label: string;
+  color: string;
+}
+
+/** The newsletter chart for the selected mode, and its legend. */
+export interface HealthMetricsEngagementNewsletterChartView {
+  chart: HealthMetricsLineChartView;
+  legend: HealthMetricsEngagementNewsletterLegendItem[];
 }
 
 /** The recipient table's cut: everyone, or one engagement segment. */
@@ -635,14 +640,19 @@ export interface HealthMetricsEngagementNewsletterRecipients {
 export interface HealthMetricsEngagementRecipientRowView {
   rank: number;
   nameLabel: string;
-  organizationLabel: string;
+  /** The recipient's company, under the name; empty without one. */
+  description: string;
   deliveryLabel: string;
-  deliveryClass: string;
-  /** Empty for a failed delivery, which shows "—" instead of a tag. */
+  deliveryTone: HealthMetricsEngagementRecipientTone;
+  /** Empty for a failed delivery, which shows "—" instead of a badge. */
   engagementLabel: string;
-  engagementClass: string;
+  engagementTone: HealthMetricsEngagementRecipientTone;
   opensLabel: string;
-  lastOpenedLabel: string;
+  /** "Last opened 3d", or empty without a time or for a failed delivery. */
+  opensDescription: string;
   clicksLabel: string;
-  lastClickedLabel: string;
+  clicksDescription: string;
 }
+
+/** A recipient badge's colour role. */
+export type HealthMetricsEngagementRecipientTone = 'success' | 'danger' | 'neutral' | 'accent';

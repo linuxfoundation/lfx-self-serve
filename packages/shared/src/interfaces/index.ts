@@ -210,6 +210,9 @@ export * from './health-metrics-events.interface';
 // Health Metrics Level 2 tab shell interfaces
 export * from './health-metrics-l2.interface';
 
+// Health Metrics shared line chart
+export * from './health-metrics-line-chart.interface';
+
 // Health Metrics Members page interfaces
 export * from './health-metrics-members.interface';
 
