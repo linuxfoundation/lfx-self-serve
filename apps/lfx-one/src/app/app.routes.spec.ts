@@ -326,7 +326,7 @@ describe('Org Lens roll-up routes', () => {
     }
   );
 
-  describe('bare /org', () => {
+  describe('bare /company', () => {
     const legacyHome = org.children!.find((route) => route.path === '')!;
     const overviewGate = gates(org.children!).find((gate) => gate.path === 'overview')!;
     const sentinel = (page: string): Route[] => [{ path: '**', component: RouteSentinelComponent, data: { page } }];
@@ -338,7 +338,7 @@ describe('Org Lens roll-up routes', () => {
           { provide: AccountContextService, useValue: { isRollUp: signal(isRollUp) } },
           provideRouter([
             {
-              path: 'org',
+              path: ORG_LENS_URL_ROOT,
               children: [
                 home,
                 { ...overviewGate, children: sentinel('Roll-up unavailable') },
@@ -350,25 +350,25 @@ describe('Org Lens roll-up routes', () => {
         ],
       });
       const harness = await RouterTestingHarness.create();
-      await harness.navigateByUrl('/org');
+      await harness.navigateByUrl('/company');
       return harness.routeNativeElement?.textContent?.trim();
     }
 
     it("sends a cookie-restored roll-up to the roll-up's Memberships page", async () => {
       expect(await visitBareOrg(true)).toBe('Memberships');
-      expect(TestBed.inject(Router).url).toBe('/org/memberships');
+      expect(TestBed.inject(Router).url).toBe('/company/memberships');
     });
 
     it('sends an organization to its overview', async () => {
       expect(await visitBareOrg(false)).toBe('Overview');
-      expect(TestBed.inject(Router).url).toBe('/org/overview');
+      expect(TestBed.inject(Router).url).toBe('/company/overview');
     });
 
-    // Belt and braces: were bare `/org` ever redirected to the overview on a roll-up, the gate still catches it,
-    // although the URL being recognized is `/org`.
+    // Belt and braces: were bare `/company` ever redirected to the overview on a roll-up, the gate still catches it,
+    // although the URL being recognized is `/company`.
     it('still gates the overview when a bare-address redirect lands there on a roll-up', async () => {
       expect(await visitBareOrg(true, { path: '', pathMatch: 'full', redirectTo: 'overview' })).toBe('Roll-up unavailable');
-      expect(TestBed.inject(Router).url).toBe('/org/overview');
+      expect(TestBed.inject(Router).url).toBe('/company/overview');
     });
   });
 });
