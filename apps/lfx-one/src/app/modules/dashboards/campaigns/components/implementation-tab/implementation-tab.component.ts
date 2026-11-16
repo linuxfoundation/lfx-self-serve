@@ -3484,7 +3484,9 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInDailyCapError: Signal<string | null> = this.initLinkedInDailyCapError();
   /** The hint, plus the error while there is one, so the reason is read when the field is focused. */
   protected readonly linkedInDailyCapDescribedBy = computed(() =>
-    this.linkedInDailyCapError() === null ? 'implementation-linkedin-daily-cap-hint' : 'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
+    this.linkedInDailyCapError() === null
+      ? 'implementation-linkedin-daily-cap-hint'
+      : 'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
   );
   /** Whether any variant's intro text or headline is one campaign-service would refuse or cut. */
   protected readonly linkedInVariantTextInvalid = computed(() =>

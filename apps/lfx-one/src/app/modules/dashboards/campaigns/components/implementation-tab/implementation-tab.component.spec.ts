@@ -4334,7 +4334,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   });
 
   it.each([
-    ['under LinkedIn\'s $10 daily minimum', '9.99', 'at least $10'],
+    ["under LinkedIn's $10 daily minimum", '9.99', 'at least $10'],
     ['above the lifetime budget', '1500', "can't be more than the lifetime budget"],
   ])('blocks Create, with the reason under the field, for a daily cap %s', async (_name, value, message) => {
     const { fixture } = await mount(null);

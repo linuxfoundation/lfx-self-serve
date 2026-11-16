@@ -4040,9 +4040,13 @@
                   >Most LinkedIn spends in one day. At least $10 and no more than the lifetime budget. Leave it empty for no cap.</span
                 >
                 @if (linkedInDailyCapError(); as error) {
-                  <span id="implementation-linkedin-daily-cap-error" class="text-xs text-red-600" role="alert" data-testid="implementation-linkedin-daily-cap-error">{{
-                    error
-                  }}</span>
+                  <span
+                    id="implementation-linkedin-daily-cap-error"
+                    class="text-xs text-red-600"
+                    role="alert"
+                    data-testid="implementation-linkedin-daily-cap-error"
+                    >{{ error }}</span
+                  >
                 }
               </div>
             </div>
