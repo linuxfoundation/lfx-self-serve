@@ -36,6 +36,8 @@ docs/user/**/index.md
 
 The pipeline is **idempotent (R17)**: `generatedAt` derives from the maximum source `mtime`, never `Date.now()`. CI re-runs `docs:build` twice and SHA-256-compares the artifacts (`docs:check-idempotence`).
 
+The app's [Turbo package configuration](../../../apps/lfx-one/turbo.json) adds `$TURBO_ROOT$/docs/user/**` to the cached `build`, `build:development`, `build:production`, `build:staging`, `test`, and `check-types` inputs. It preserves default package inputs, environment-file globs, and inherited task dependencies and outputs. A documentation-only edit therefore invalidates the app tasks that generate the manifest, search index, and sitemap without invalidating the shared package's tasks. `start` and `watch` remain uncached.
+
 ### CI gates
 
 `docs:check` chains every gate; CI invokes the same script:

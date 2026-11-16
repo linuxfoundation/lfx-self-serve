@@ -1070,7 +1070,7 @@ export class OrgProjectsComponent {
   private buildEmployeeOptions(): { label: string; value: string }[] {
     const byId = new Map<string, string>();
     for (const project of this.response()?.projects ?? []) {
-      for (const person of [...project.maintainers, ...project.contributors, ...project.participants]) {
+      for (const person of [...project.maintainers, ...project.contributors]) {
         byId.set(person.id, person.name);
       }
     }
@@ -1085,12 +1085,14 @@ export class OrgProjectsComponent {
   private buildFilteredProjects(): OrgLensProject[] {
     const all = this.response()?.projects ?? [];
     const foundation = this.formValue().foundation ?? ORG_PROJECTS_ALL_FOUNDATIONS_FILTER;
+    // The Employees filter matches code activity only (maintainers + contributors). Participants include
+    // event attendance attributed to every project in a foundation, which would match nearly every row.
     // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
     // predicate and match nothing, so a selection never widens the list or the CSV export.
     const employees = this.formValue().employees ?? [];
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
-      .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors, ...p.participants].some((person) => employees.includes(person.id)));
+      .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors].some((person) => employees.includes(person.id)));
   }
 
   private buildSortedProjects(): OrgLensProject[] {
