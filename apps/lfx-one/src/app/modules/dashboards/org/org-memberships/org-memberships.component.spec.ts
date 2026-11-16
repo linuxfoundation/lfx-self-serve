@@ -527,6 +527,8 @@ describe('OrgMembershipsComponent', () => {
       expect(requests).toHaveLength(2);
 
       (fixture.nativeElement.querySelector('[data-testid="memberships-tab-active"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
       selectedAccount.set({ accountId: 'acc-2', accountName: 'Other Co', membershipTier: '', uid: 'org-uid-2', slug: 'other' });
       await settleActiveFetch(fixture);
       selectedAccount.set(rollUpAccount);
