@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
+import { MENTORSHIP_SESSION_SYNCED_KEY } from './constants';
 import { ProfileController } from './controllers/profile.controller';
 import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
@@ -305,6 +306,9 @@ const authConfig: ConfigParams = {
   routes: {
     login: false,
   },
+  // A login keeps a same-user session's custom keys, so this clears the mentorship refresh flag: the next mentorship request
+  // refreshes the user's mentorship record from their current identity (see proxyMentorshipRequest).
+  afterCallback: (_req, _res, session) => ({ ...session, [MENTORSHIP_SESSION_SYNCED_KEY]: false }),
   ...(sessionStoreEnabled && {
     session: {
       store: sessionStoreService,

@@ -218,6 +218,8 @@ Every mentor route calls the mentorship service: My Programs, the program detail
 
 A wired route calls the mentorship service through `proxyMentorshipRequest` in `helpers/mentorship-api.helper.ts`, with the user's own bearer token, as the mentee BFF does. `listAllMentorshipPages` in the same helper reads an upstream list to the end, at the largest page size unless the caller passes a smaller one. The mentor service uses it for the published programs, the caller's mentor memberships, and each program's applications (at 50) and submitted tasks; the mentee service uses it for the caller's applications and an application's tasks.
 
+Before the first mentorship request of each login session, `proxyMentorshipRequest` calls upstream `PUT /mentorship/v1/me`, which creates the caller's mentorship record or refreshes its email, name and avatar from the caller's current identity. Once that call succeeds it sets `mentorshipUserSynced` on `req.appSession`, and the login callback (`afterCallback` in `server.ts`) sets it back to `false`, so every login refreshes the record once. Parallel requests from one user share a single call. The refresh is skipped while impersonating, and a failed refresh is logged and retried on the next mentorship request without failing the current one. If a request still meets the not-provisioned 401, the helper provisions the caller and retries once, as before.
+
 ## Related documentation
 
 - [Mentorship Mentee Registration](./mentorship-mentee-registration.md)

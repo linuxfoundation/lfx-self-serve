@@ -141,6 +141,74 @@ describe('proxyMentorshipRequest', () => {
   });
 });
 
+describe('proxyMentorshipRequest per-session refresh', () => {
+  let proxyRequest: ReturnType<typeof vi.fn>;
+  let proxy: Proxy;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    proxyRequest = vi.fn();
+    proxy = { proxyRequest } as unknown as Proxy;
+  });
+
+  function sessionReq(session: Record<string, unknown>, extra: Record<string, unknown> = {}): Request {
+    return { ...req, appSession: session, oidc: { user: { sub: 'auth0|alice' } }, ...extra } as unknown as Request;
+  }
+
+  it('refreshes the mentorship user with PUT /me before the first request of a session, then marks the session', async () => {
+    const session: Record<string, unknown> = { mentorshipUserSynced: false };
+    proxyRequest.mockResolvedValueOnce({}).mockResolvedValueOnce({ data: [] });
+
+    await expect(proxyMentorshipRequest(proxy, sessionReq(session), path)).resolves.toEqual({ data: [] });
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', path, 'GET', undefined, undefined);
+    expect(session['mentorshipUserSynced']).toBe(true);
+  });
+
+  it('does not refresh again once the session is marked', async () => {
+    proxyRequest.mockResolvedValueOnce({ data: [] });
+
+    await proxyMentorshipRequest(proxy, sessionReq({ mentorshipUserSynced: true }), path);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', path, 'GET', undefined, undefined);
+  });
+
+  it('does not refresh while impersonating', async () => {
+    const session: Record<string, unknown> = {};
+    proxyRequest.mockResolvedValueOnce({ data: [] });
+
+    await proxyMentorshipRequest(proxy, sessionReq(session, { impersonationActive: true }), path);
+
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(session['mentorshipUserSynced']).toBeUndefined();
+  });
+
+  it('still sends the request when the refresh fails, and leaves the session unmarked so the next request retries', async () => {
+    const session: Record<string, unknown> = {};
+    const refreshError = MicroserviceError.fromMicroserviceResponse(503, 'Service Unavailable', {}, 'LFX_V2_SERVICE', '/mentorship/v1/me');
+    proxyRequest.mockRejectedValueOnce(refreshError).mockResolvedValueOnce({ data: [] });
+
+    await expect(proxyMentorshipRequest(proxy, sessionReq(session), path)).resolves.toEqual({ data: [] });
+
+    expect(session['mentorshipUserSynced']).toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_session_sync', expect.any(String), { err: refreshError });
+  });
+
+  it('shares one PUT /me between parallel requests of the same user', async () => {
+    const sessionA: Record<string, unknown> = {};
+    const sessionB: Record<string, unknown> = {};
+    proxyRequest.mockImplementation((_req: Request, _service: string, calledPath: string) => Promise.resolve(calledPath === path ? { data: [] } : {}));
+
+    await Promise.all([proxyMentorshipRequest(proxy, sessionReq(sessionA), path), proxyMentorshipRequest(proxy, sessionReq(sessionB), path)]);
+
+    expect(proxyRequest.mock.calls.filter((call) => call[3] === 'PUT')).toHaveLength(1);
+    expect(sessionA['mentorshipUserSynced']).toBe(true);
+    expect(sessionB['mentorshipUserSynced']).toBe(true);
+  });
+});
+
 describe('listAllMentorshipPages', () => {
   let proxyRequest: ReturnType<typeof vi.fn>;
   let proxy: Proxy;

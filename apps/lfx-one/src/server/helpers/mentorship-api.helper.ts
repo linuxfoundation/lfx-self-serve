@@ -5,7 +5,13 @@ import { ApiRequestOptions, MentorshipUpstreamListResponse, MentorshipUpstreamUs
 import { isUuid } from '@lfx-one/shared/utils/string.utils';
 import { Request } from 'express';
 
-import { MENTORSHIP_BOOTSTRAP_PATH, MENTORSHIP_LIST_MAX_PAGES, MENTORSHIP_LIST_PAGE_SIZE, MENTORSHIP_NOT_PROVISIONED_ERROR } from '../constants';
+import {
+  MENTORSHIP_BOOTSTRAP_PATH,
+  MENTORSHIP_LIST_MAX_PAGES,
+  MENTORSHIP_LIST_PAGE_SIZE,
+  MENTORSHIP_NOT_PROVISIONED_ERROR,
+  MENTORSHIP_SESSION_SYNCED_KEY,
+} from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
@@ -34,11 +40,48 @@ export function isMentorshipNotProvisionedError(error: unknown): boolean {
   return error instanceof MicroserviceError && error.statusCode === 401 && error.errorBody?.error === MENTORSHIP_NOT_PROVISIONED_ERROR;
 }
 
+/** In-flight session syncs by user `sub`, so the parallel mentorship requests of one page load share a single `PUT /me`. */
+const sessionSyncs = new Map<string, Promise<unknown>>();
+
 /**
- * Calls the mentorship service with the caller's own token. A first-time user has no local
- * mentorship record, so upstream answers every authenticated route with a 401 until
- * `PUT /mentorship/v1/me` has run for them. On that one 401 this provisions the user and
- * retries the original request once; any other error, or a second failure, propagates.
+ * Refreshes the caller's mentorship record with `PUT /mentorship/v1/me` once per login session: upstream then stores the
+ * caller's current email, name and avatar. Login resets the session flag (`afterCallback` in `server.ts`). Runs only for a
+ * signed-in session and never while impersonating, which is read-only. A failure is logged and leaves the flag unset, so the
+ * next mentorship request tries again; it never fails the request it runs for.
+ */
+async function syncMentorshipUserOncePerSession(proxy: MicroserviceProxyService, req: Request): Promise<void> {
+  const session = req.appSession;
+  if (!session || session[MENTORSHIP_SESSION_SYNCED_KEY] === true || isImpersonating(req)) return;
+
+  const sub: unknown = req.oidc?.user?.['sub'];
+  const key = typeof sub === 'string' && sub ? sub : undefined;
+  let sync = key ? sessionSyncs.get(key) : undefined;
+  if (!sync) {
+    // Upstream decodes a JSON body and rejects an empty one; it fills every field from the token.
+    sync = proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
+    if (key) {
+      sessionSyncs.set(key, sync);
+      void sync.then(
+        () => sessionSyncs.delete(key),
+        () => sessionSyncs.delete(key)
+      );
+    }
+  }
+
+  try {
+    await sync;
+    session[MENTORSHIP_SESSION_SYNCED_KEY] = true;
+  } catch (error) {
+    logger.warning(req, 'mentorship_session_sync', 'Mentorship user refresh failed; retrying on the next mentorship request', { err: error });
+  }
+}
+
+/**
+ * Calls the mentorship service with the caller's own token. Once per login session it first refreshes the caller's record
+ * (`syncMentorshipUserOncePerSession`), which also provisions a first-time user. Without a local record, upstream answers
+ * every authenticated route with a 401, so if that refresh did not run (no session, or it failed) or the record was removed
+ * since, this provisions the user on that one 401 and retries the original request once; any other error, or a second
+ * failure, propagates.
  *
  * Retrying a write is safe: upstream rejects an unprovisioned caller in middleware, before
  * the handler runs, so the first attempt changed nothing. `PUT /me` is an upsert, so two
@@ -67,6 +110,8 @@ export async function proxyMentorshipRequest<T>(
     if (customHeaders) return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data, customHeaders);
     return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
   };
+
+  await syncMentorshipUserOncePerSession(proxy, req);
 
   try {
     return await send();
