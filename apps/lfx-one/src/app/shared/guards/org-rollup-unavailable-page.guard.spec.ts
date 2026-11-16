@@ -34,12 +34,13 @@ describe('orgRollUpUnavailablePageGuard', () => {
     return TestBed.runInInjectionContext(() => orgRollUpUnavailablePageGuard({}, []) as boolean);
   };
 
-  it.each([['/company/family-0014100000RootAAAA/people'], ['/company/family-0014100000RootAAAA/roi/projects/k8s'], ['/company/FAMILY-0014100000RootAAAA/events']])(
-    'matches a roll-up address before the selection has adopted it (%s)',
-    (url) => {
-      expect(run(url)).toBe(true);
-    }
-  );
+  it.each([
+    ['/company/family-0014100000RootAAAA/people'],
+    ['/company/family-0014100000RootAAAA/roi/projects/k8s'],
+    ['/company/FAMILY-0014100000RootAAAA/events'],
+  ])('matches a roll-up address before the selection has adopted it (%s)', (url) => {
+    expect(run(url)).toBe(true);
+  });
 
   // A cookie may still hold a roll-up while the address names one organization: the address wins.
   it('lets an addressed organization through, whatever the selection', () => {
