@@ -353,6 +353,36 @@ describe('OrgMembershipsComponent', () => {
       ]);
     });
 
+    it('marks an expired row with an info icon naming the organizations still active at that foundation', async () => {
+      const lapsed = (organization: { accountId: string; name: string }, activeSiblings: { accountId: string; name: string }[]): OrgExpiredMembership => ({
+        foundationId: 'lfn',
+        foundationName: 'LF Networking',
+        foundationSlug: 'lfn',
+        foundationLogo: null,
+        membershipTier: 'Silver Membership',
+        tierStartDate: '2024-01-01',
+        tierEndDate: '2025-01-01',
+        expirationDate: '2025-01-01',
+        actionType: 'renew',
+        organization,
+        activeSiblings,
+      });
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [lapsed(PARENT_ORG, [SUBSIDIARY_ORG]), lapsed(SUBSIDIARY_ORG, [])],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const icons = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="memberships-expired-active-sibling-info-"]') as NodeListOf<HTMLElement>);
+      expect(icons.map((icon) => icon.getAttribute('data-testid'))).toEqual([`memberships-expired-active-sibling-info-lfn-${PARENT_ORG.accountId}`]);
+      expect(icons[0].getAttribute('aria-label')).toBe("Parent Co's membership in LF Networking has expired. Still active through Subsidiary Co.");
+    });
+
     it('offers no Discover tab', async () => {
       const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
 

@@ -67,6 +67,8 @@ export interface OrgExpiredMembership {
   expirationDate: string | null;
   actionType: 'renew' | 'contact';
   organization?: OrgLensRowOrganization;
+  /** Roll-up only: the other organizations in the family that hold an active membership at this foundation. */
+  activeSiblings?: OrgLensRowOrganization[];
 }
 
 export interface OrgExpiredMembershipsResponse {
@@ -443,6 +445,7 @@ export interface ExpiredMembershipRow extends OrgExpiredMembership {
   tierStartFormatted: string;
   tierEndFormatted: string;
   renewUrl: string;
+  activeSiblingsLabel: string | null;
 }
 
 export interface DiscoverOpportunityRow extends OrgDiscoverOpportunity {

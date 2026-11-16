@@ -342,12 +342,12 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       const response = await new OrgLensMembershipsService().getFamilyExpiredMemberships(scope());
 
-      const [sql, binds] = execute.mock.calls[0];
+      const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_LENS_EXPIRED_MEMBERSHIPS'))!;
       expect(sql).toContain('WHERE FAMILY_ACCOUNT_ID = ?');
       expect(sql).not.toContain('IS_FAMILY_ROLLUP_ROW');
       expect(sql).toContain('ORDER BY FOUNDATION_NAME ASC, ACCOUNT_ID ASC');
       expect(binds).toEqual([PARENT]);
-      expect(cacheKeys).toEqual(['memberships-expired-family:v3']);
+      expect(cacheKeys).toEqual(['memberships-expired-family:v3', 'memberships-active-family:v3']);
       expect(response.memberships.map((m) => [m.foundationId, m.expirationDate, m.organization, m.actionType])).toEqual([
         ['lfn', '2028-12-31', PARENT_ORG, 'renew'],
         ['lfn', '2029-03-31', SUBSIDIARY_ORG, 'renew'],
@@ -373,6 +373,22 @@ describe('OrgLensMembershipsService — family roll-up', () => {
 
       const searched = await service.getFamilyExpiredMemberships(scope(), 'oi', PARENT);
       expect(searched.memberships.map((m) => m.foundationId)).toEqual(['oif']);
+    });
+
+    it('names the other readable organizations still active at the foundation, whatever the Company filter', async () => {
+      tables.expired = [expired(PARENT, 'lfn', '2028-12-31'), expired(SUBSIDIARY, 'lfn', '2029-03-31'), expired(PARENT, 'oif', '2027-01-31')];
+      tables.active = [active(SUBSIDIARY, 'lfn'), active(PARENT, 'lfn'), active(UNREADABLE, 'oif')];
+      const service = new OrgLensMembershipsService();
+
+      const family = await service.getFamilyExpiredMemberships(scope());
+      expect(family.memberships.map((m) => [m.foundationId, m.organization?.accountId, m.activeSiblings])).toEqual([
+        ['lfn', PARENT, [SUBSIDIARY_ORG]],
+        ['lfn', SUBSIDIARY, [PARENT_ORG]],
+        ['oif', PARENT, []],
+      ]);
+
+      const parent = await service.getFamilyExpiredMemberships(scope(), undefined, PARENT);
+      expect(parent.memberships.find((m) => m.foundationId === 'lfn')?.activeSiblings).toEqual([SUBSIDIARY_ORG]);
     });
   });
 });

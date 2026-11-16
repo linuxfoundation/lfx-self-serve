@@ -113,17 +113,23 @@ export class OrgLensMembershipsService {
   public async getFamilyExpiredMemberships(scope: OrgLensRollUpScope, search?: string, company?: string): Promise<OrgExpiredMembershipsResponse> {
     const organizations = OrgLensMembershipsService.rowOrganizations(scope);
     const nameOf = new Map(organizations.map((organization) => [organization.accountId, organization]));
-    const rows = await withOrgCache(
-      scope.rollUpKey,
-      'memberships-expired-family:v3',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchFamilyExpiredMembershipRows(scope.rootUid),
-      OrgLensMembershipsService.isRawRowArray
-    );
+    const [rows, activeRows] = await Promise.all([
+      withOrgCache(
+        scope.rollUpKey,
+        'memberships-expired-family:v3',
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        () => this.fetchFamilyExpiredMembershipRows(scope.rootUid),
+        OrgLensMembershipsService.isRawRowArray
+      ),
+      this.getFamilyActiveMembershipRows(scope),
+    ]);
+    const activeAt = OrgLensMembershipsService.activeOrganizationsByFoundation(activeRows, nameOf);
 
     let memberships: OrgExpiredMembership[] = rows.flatMap((raw) => {
       const organization = raw.ACCOUNT_ID ? nameOf.get(raw.ACCOUNT_ID) : undefined;
-      return organization && (!company || organization.accountId === company) ? [{ ...this.shapeExpiredRow(raw), organization }] : [];
+      if (!organization || (company && organization.accountId !== company)) return [];
+      const activeSiblings = (activeAt.get(raw.FOUNDATION_ID) ?? []).filter((sibling) => sibling.accountId !== organization.accountId);
+      return [{ ...this.shapeExpiredRow(raw), organization, activeSiblings }];
     });
     if (search) {
       const term = search.toLowerCase();
@@ -287,6 +293,21 @@ export class OrgLensMembershipsService {
       renewingWithin90Days: rows.filter((row) => row.IS_RENEWING_WITHIN_90_DAYS).length,
       governanceRoles: new Set(rows.flatMap((row) => (Array.isArray(row.GOVERNANCE_SEAT_KEYS) ? row.GOVERNANCE_SEAT_KEYS : []))).size,
     };
+  }
+
+  private static activeOrganizationsByFoundation(
+    rows: readonly OrgLensMembershipSummaryRow[],
+    nameOf: ReadonlyMap<string, OrgLensRowOrganization>
+  ): Map<string, OrgLensRowOrganization[]> {
+    const byFoundation = new Map<string, Map<string, OrgLensRowOrganization>>();
+    for (const row of rows) {
+      const organization = nameOf.get(row.ACCOUNT_ID);
+      if (!organization) continue;
+      const holders = byFoundation.get(row.FOUNDATION_ID) ?? new Map<string, OrgLensRowOrganization>();
+      holders.set(organization.accountId, organization);
+      byFoundation.set(row.FOUNDATION_ID, holders);
+    }
+    return new Map([...byFoundation].map(([foundationId, holders]) => [foundationId, [...holders.values()]]));
   }
 
   private static rowOrganizations(scope: OrgLensRollUpScope): OrgLensRowOrganization[] {

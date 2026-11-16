@@ -27,6 +27,7 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import type {
   OrgActiveMembershipsResponse,
   OrgDiscoverOpportunitiesResponse,
+  OrgExpiredMembership,
   OrgExpiredMembershipsResponse,
   OrgMembershipsPageState,
   OrgMembershipTab,
@@ -323,7 +324,14 @@ export class OrgMembershipsComponent {
       tierStartFormatted: this.formatDateFull(m.tierStartDate),
       tierEndFormatted: this.formatDateFull(m.tierEndDate),
       renewUrl: this.buildEnrollmentUrl(m.foundationSlug),
+      activeSiblingsLabel: this.activeSiblingsLabel(m),
     }));
+  }
+
+  private activeSiblingsLabel(membership: OrgExpiredMembership): string | null {
+    if (!membership.organization || !membership.activeSiblings?.length) return null;
+    const names = membership.activeSiblings.map((sibling) => sibling.name).join(', ');
+    return `${membership.organization.name}'s membership in ${membership.foundationName} has expired. Still active through ${names}.`;
   }
 
   private initExpiredState(): OrgMembershipsPageState {
