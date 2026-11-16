@@ -68,7 +68,12 @@ export class EngagementNonMemberParticipationComponent {
     const range = this.chrome.selectedRange();
     return filterHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) => buildHealthMetricsEngagementNonMemberRowView(row, range));
   });
-  protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.size, (this.page() + 1) * this.size));
+  // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
+  protected readonly pageRows = computed(() => {
+    const rows = this.rowViews();
+    const page = Math.min(this.page(), Math.max(0, Math.ceil(rows.length / this.size) - 1));
+    return rows.slice(page * this.size, (page + 1) * this.size);
+  });
   protected readonly totalRecords = computed(() => this.rowViews().length);
   /** No non-member for the foundation, or none measured in the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response(), this.chrome.selectedRange()));

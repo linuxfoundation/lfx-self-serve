@@ -94,7 +94,12 @@ export class EngagementRepresentativesComponent {
   private readonly lastAttendedByRow: Signal<Map<HealthMetricsEngagementRepRow, string>> = this.initLastAttendedByRow();
   private readonly rowViewsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> = this.initRowViewsByRow();
   protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
-  protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.size, (this.page() + 1) * this.size));
+  // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
+  protected readonly pageRows = computed(() => {
+    const rows = this.rowViews();
+    const page = Math.min(this.page(), Math.max(0, Math.ceil(rows.length / this.size) - 1));
+    return rows.slice(page * this.size, (page + 1) * this.size);
+  });
   protected readonly totalRecords = computed(() => this.rowViews().length);
   /** The whole foundation's scope is empty when the read carried no rows at all — a filtered cut
    * with zero matches over a non-empty scope is a real measured zero. */

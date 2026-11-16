@@ -155,6 +155,17 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(cells[3].textContent?.trim()).toBe('—');
   });
 
+  // A page picked against the previous read must not leave a shorter one blank.
+  it('shows the last page that has rows when the page is past the end of the loaded rows', async () => {
+    const rows = Array.from({ length: 13 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Company ${index}` }));
+    await render(response({ rows, counts: { orgs: 13, lapsedOrgs: 0 } }));
+
+    fixture.componentInstance['page'].set(5);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-org-participation-row-"]')).toHaveLength(3);
+  });
+
   it('pages ten companies at a time with the numbered pager', async () => {
     const rows = Array.from({ length: 23 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Company ${index}` }));
     await render(response({ rows, counts: { orgs: 23, lapsedOrgs: 0 } }));
