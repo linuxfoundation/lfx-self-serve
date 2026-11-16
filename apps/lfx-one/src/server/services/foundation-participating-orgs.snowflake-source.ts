@@ -34,9 +34,9 @@ import { withFoundationParticipatingOrgsCache } from './valkey.service';
  * Cost: every read filters on `foundation_slug` and `time_range` and binds them. A foundation costs two queries per range
  * (companies, projects), shared-cached for an hour; a project scope or a company breakdown is one more.
  *
- * One figure is defined here because the table does not carry it: the picker's per-range commits, which only order the project
- * picker. It belongs in lf-dbt as a modeled column; until then it is an exception to the checklist's no-business-logic-in-SQL
- * rule that needs a maintainer's sign-off and an lf-dbt issue. The page shows no per-company project count for the same reason.
+ * One figure is computed here because the table does not carry it: the picker's per-range commits, which only order the project
+ * picker and are never shown. It belongs in lf-dbt as a modeled column; until it exists this is a deliberate departure from the
+ * checklist's no-business-logic-in-SQL rule. The page shows no per-company project count for the same reason.
  */
 export class FoundationParticipatingOrgsSnowflakeSource implements FoundationParticipatingOrgsDataSource {
   private readonly snowflakeService = SnowflakeService.getInstance();

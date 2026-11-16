@@ -88,7 +88,7 @@ export const FOUNDATION_PARTICIPATING_ORGS_UNAVAILABLE_MESSAGE = 'Unable to veri
 
 /** Member Commit Share tooltip. */
 export const FOUNDATION_PARTICIPATING_ORGS_COMMIT_SHARE_TOOLTIP =
-  "Share of the selected period's company commits made by member companies, as the warehouse defines it for the project page. Commits are counted per company across the foundation; a contributor active in several projects is counted once.";
+  'Share of the commits from the listed companies, in the selected period and after any search or tier filter, that came from member companies.';
 
 export const EMPTY_FOUNDATION_PARTICIPATING_ORGS_PAGE: FoundationParticipatingOrgsPage = { rows: [], totalRecords: 0 };
 

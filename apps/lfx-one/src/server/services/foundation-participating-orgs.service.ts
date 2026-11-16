@@ -159,7 +159,7 @@ export class FoundationParticipatingOrgsService {
     let remaining = maxRows;
     const readKeys = new Set(companyKeys);
     for (const row of rows) {
-      // The roster can be older than the live read (cached up to an hour), so the budget may have stopped short of this company.
+      // Past the companies admitted to the read (at most the cap plus one), so the file cannot hold this one.
       if (!readKeys.has(row.participantKey)) return { items, truncated: true };
       const company = companies.get(row.participantKey);
       const lines = company ? toProjectLines(foundation, company, byCompany.get(row.participantKey) ?? []) : [];

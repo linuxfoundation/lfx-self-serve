@@ -126,7 +126,7 @@ export class FoundationParticipatingOrgsComponent {
   private readonly pageLoadingState = signal(true);
   private readonly pageErrorStatus = signal<number | null>(null);
   // Also true while a foundation switch has no answer yet, so the stat cards show a skeleton, never zeros, for the new foundation.
-  protected readonly summaryLoading = computed(() => this.summaryLoadingState() || this.switching());
+  protected readonly summaryLoading = computed(() => this.summaryLoadingState() || !this.summarySettled());
   protected readonly pageLoading = this.pageLoadingState.asReadonly();
 
   private readonly foundation = computed(() => this.projectContextService.selectedFoundation());
@@ -177,11 +177,11 @@ export class FoundationParticipatingOrgsComponent {
 
   protected readonly viewState: Signal<FoundationParticipatingOrgsViewState> = computed(() => this.initViewState());
   protected readonly rows: Signal<FoundationParticipatingOrgRowVm[]> = computed(() => this.page().rows.map(decorateFoundationOrgRow));
-  /** True from a foundation change until both reads for the new foundation have answered, so nothing of the last foundation (empty, error, tiers) stands in for it. */
-  protected readonly switching = computed(() => {
-    const slug = this.slug();
-    return slug.length > 0 && (this.summaryState().slug !== slug || this.pageState().slug !== slug);
-  });
+  /** Each read counts as answered once its state belongs to the current foundation; until then nothing of the last foundation (error, empty, tiers) stands in for it. */
+  private readonly summarySettled = computed(() => this.slug().length === 0 || this.summaryState().slug === this.slug());
+  private readonly pageSettled = computed(() => this.slug().length === 0 || this.pageState().slug === this.slug());
+  /** True from a foundation change until both reads for the new foundation have answered. */
+  protected readonly switching = computed(() => !this.summarySettled() || !this.pageSettled());
   protected readonly showSkeleton = computed(() => (this.pageLoading() || this.switching()) && this.page().rows.length === 0);
   protected readonly refreshing = computed(() => this.pageLoading() && this.page().rows.length > 0);
   protected readonly totalRecords = computed(() => this.page().totalRecords);
@@ -193,7 +193,6 @@ export class FoundationParticipatingOrgsComponent {
   protected readonly foundationName = computed(() => this.summary()?.foundationName ?? this.foundation()?.name ?? 'this foundation');
   protected readonly dataLine = computed(() => this.initDataLine());
   protected readonly subtitle = computed(() => this.initSubtitle());
-  /** Tier classes the foundation holds, from its roster; the last known list stays while a new summary loads. */
   // The list is kept only for the same foundation: another foundation's tiers must never be offered (or stay selected) for this one.
   private readonly tierOptionsState = linkedSignal<
     { slug: string; summary: FoundationParticipatingOrgsSummary | null },
@@ -205,6 +204,7 @@ export class FoundationParticipatingOrgsComponent {
       return { slug, options: previous?.value.slug === slug ? previous.value.options : [] };
     },
   });
+  /** Tier classes the foundation holds, from its roster; the last known list stays while a new summary loads for the same foundation. */
   protected readonly tierOptions = computed(() => this.tierOptionsState().options);
   protected readonly tiles: Signal<StatCardItem[]> = computed(() => this.initTiles());
   protected readonly tabs: Signal<FilterPillOption[]> = computed(() => this.initTabs());
@@ -502,9 +502,9 @@ export class FoundationParticipatingOrgsComponent {
 
   /** A 403 on either read is the viewer lacking access to the foundation; any other failure (503 included) is retryable. */
   private initViewState(): FoundationParticipatingOrgsViewState {
-    // A foundation just switched to has answered nothing yet; the last one's error or empty result is not its state.
-    if (this.switching()) return 'ready';
-    const statuses = [this.summaryErrorStatus(), this.pageErrorStatus()];
+    // A read that has not answered for this foundation yet carries the last foundation's status, which is not this one's. The first
+    // answer that does arrive (a 403 included) decides the view without waiting for the other read.
+    const statuses = [this.summarySettled() ? this.summaryErrorStatus() : null, this.pageSettled() ? this.pageErrorStatus() : null];
     if (statuses.includes(403)) return 'forbidden';
     if (statuses.some((status) => status !== null)) return 'error';
     if (!this.summaryLoading() && this.summary() === null) return 'empty';

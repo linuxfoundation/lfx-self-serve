@@ -227,6 +227,40 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(fixture.componentInstance['filterForm'].controls.tier.value).toBeNull();
   });
 
+  it('shows nothing of the last foundation while the new one has not answered: no stale error, empty state or tiers', async () => {
+    getPage.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+    await render();
+    expect(fixture.componentInstance['viewState']()).toBe('error');
+    expect(fixture.componentInstance['tierOptions']().length).toBeGreaterThan(0);
+
+    getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
+    getPage.mockReturnValue(new Subject<FoundationParticipatingOrgsPage>());
+    selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    await settle();
+    expect(fixture.componentInstance['viewState']()).toBe('ready');
+    expect(fixture.componentInstance['showSkeleton']()).toBe(true);
+    expect(fixture.componentInstance['summaryLoading']()).toBe(true);
+    expect(fixture.componentInstance['tierOptions']()).toEqual([]);
+  });
+
+  it('lets the new foundation’s first answer decide the view, a 403 included, without waiting for the other read', async () => {
+    await render();
+    getSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    getPage.mockReturnValue(new Subject<FoundationParticipatingOrgsPage>());
+    selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    await settle();
+    expect(fixture.componentInstance['viewState']()).toBe('forbidden');
+  });
+
+  it('keeps the tier list through a reload of the same foundation', async () => {
+    await render();
+    const before = fixture.componentInstance['tierOptions']().map((option) => option.value);
+    getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
+    fixture.componentInstance['filterForm'].controls.range.setValue('90d');
+    await settle();
+    expect(fixture.componentInstance['tierOptions']().map((option) => option.value)).toEqual(before);
+  });
+
   it('never sends a request that mixes the new foundation with the old foundation’s project or tier', async () => {
     await render();
     fixture.componentInstance['filterForm'].controls.project.setValue('project-1');
