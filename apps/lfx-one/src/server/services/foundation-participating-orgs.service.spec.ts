@@ -251,9 +251,26 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(getProjectLines.mock.calls[0][3].limit).toBeGreaterThan(0);
     });
 
-    it('reuses the cached project lines under a project scope, so the file matches the table and costs no extra query', async () => {
-      await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 2);
-      for (const call of getProjectLines.mock.calls) expect(call[3]).toEqual({ projectSlug: 'busy' });
+    it('writes the very lines the table read under a project scope, in one read', async () => {
+      const { items, truncated } = await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 2);
+      expect(getProjectLines).toHaveBeenCalledTimes(1);
+      expect(getProjectLines.mock.calls[0][3]).toEqual({ projectSlug: 'busy' });
+      expect(items.map((item) => item.row.name)).toEqual(['Alpha Inc', 'Beta LLC']);
+      expect(items.every((item) => item.lines.every((entry) => entry.projectSlug === 'busy'))).toBe(true);
+      expect(truncated).toBe(false);
+    });
+
+    it('does not call a project-scoped file cut because the project has more lines than the filtered companies use', async () => {
+      // The project holds 2 companies' lines; the search keeps one, so the file holds 1 line against a cap of 1: not cut.
+      const { items, truncated } = await service.getExportRows(req, { ...base, projectSlug: 'busy', search: 'beta' }, 'by-project', 1);
+      expect(items.map((item) => item.row.name)).toEqual(['Beta LLC']);
+      expect(truncated).toBe(false);
+    });
+
+    it('says a project-scoped file is cut when the matching companies lines exceed the cap', async () => {
+      const { items, truncated } = await service.getExportRows(req, { ...base, projectSlug: 'busy' }, 'by-project', 1);
+      expect(items).toHaveLength(1);
+      expect(truncated).toBe(true);
     });
 
     it('does not query the warehouse when no company matches the filters', async () => {

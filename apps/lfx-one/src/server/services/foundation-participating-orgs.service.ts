@@ -53,7 +53,7 @@ export class FoundationParticipatingOrgsService {
       return null;
     }
     const project = this.resolveProject(foundation, projectSlug);
-    const base = await this.rows(req, foundation, range, projectSlug);
+    const { rows: base } = await this.rows(req, foundation, range, projectSlug);
     // No activity at all in scope is the empty state; a search or tier that matches nothing still gets its zeros.
     if (base.length === 0) return null;
 
@@ -128,15 +128,17 @@ export class FoundationParticipatingOrgsService {
     maxRows: number = FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS
   ): Promise<{ items: FoundationCompanyActivity[]; truncated: boolean }> {
     logger.debug(req, 'export_foundation_participating_orgs', 'Reading export rows', { slug: filters.foundationSlug, kind });
-    const { foundation, rows } = await this.filtered(req, filters);
+    const { foundation, rows, projectLines } = await this.filtered(req, filters);
     if (kind === 'summary') {
       return { items: rows.slice(0, maxRows).map((row) => ({ row, lines: [] })), truncated: rows.length > maxRows };
     }
 
     // No company passes the filters (or no foundation): nothing to read, so no warehouse query.
     if (!foundation || rows.length === 0) return { items: [], truncated: false };
-    // Only the matching companies' lines are read, as many companies as the cap can hold: the filters and the order apply first,
-    // so unrelated companies never take the row budget. One past the cap says the warehouse had more than the file can hold.
+    // Foundation scope: only the matching companies' lines are read live, as many companies as the cap can hold (the filters and
+    // the order apply first, so unrelated companies never take the row budget); one past the cap says the warehouse had more than
+    // the file can hold. Project scope: the project's lines were already read for the table and are reused as they are, one per
+    // company, with the loop below keeping only the matching companies.
     const companyKeys: string[] = [];
     let budget = 0;
     for (const row of rows) {
@@ -145,10 +147,8 @@ export class FoundationParticipatingOrgsService {
       budget += filters.projectSlug ? 1 : Math.max(1, row.projectsInvolved);
       if (budget > maxRows) break;
     }
-    // Under a project scope the table already reads that project's lines from the shared cache, one per company, so the file
-    // reuses that read and always matches the table; the foundation scope reads its named companies live, bounded by the cap.
     const read = filters.projectSlug
-      ? await this.dataSource().getProjectLines(req, filters.foundationSlug, filters.range, { projectSlug: filters.projectSlug })
+      ? projectLines
       : await this.dataSource().getProjectLines(req, filters.foundationSlug, filters.range, { companyKeys, limit: maxRows + 1 });
     const byCompany = new Map<string, FoundationParticipatingOrgsSourceProjectLine[]>();
     for (const line of read) byCompany.set(line.companyKey, [...(byCompany.get(line.companyKey) ?? []), line]);
@@ -179,14 +179,19 @@ export class FoundationParticipatingOrgsService {
   private async filtered(
     req: Request,
     filters: FoundationParticipatingOrgsExportFilters
-  ): Promise<{ foundation: FoundationParticipatingOrgsSourceFoundation | null; rows: FoundationParticipatingOrg[] }> {
+  ): Promise<{
+    foundation: FoundationParticipatingOrgsSourceFoundation | null;
+    rows: FoundationParticipatingOrg[];
+    projectLines: FoundationParticipatingOrgsSourceProjectLine[];
+  }> {
     const foundation = await this.dataSource().getFoundation(req, filters.foundationSlug, filters.range);
     if (!foundation) {
       if (filters.projectSlug) throw new ResourceNotFoundError('Project', filters.projectSlug, { operation: 'resolve_foundation_participating_orgs_project' });
-      return { foundation: null, rows: [] };
+      return { foundation: null, rows: [], projectLines: [] };
     }
     this.resolveProject(foundation, filters.projectSlug);
-    const rows = (await this.rows(req, foundation, filters.range, filters.projectSlug)).filter((row) => {
+    const { rows: scoped, lines: projectLines } = await this.rows(req, foundation, filters.range, filters.projectSlug);
+    const rows = scoped.filter((row) => {
       if (filters.segment === 'members' && !row.isMember) return false;
       if (filters.segment === 'non_members' && row.isMember) return false;
       return matches(row, filters);
@@ -200,7 +205,7 @@ export class FoundationParticipatingOrgsService {
       // Name, then the company key, so two companies that share a name and a value never swap between page reads.
       return (missingA ? 0 : compare(a, b, filters.sort) * direction) || a.name.localeCompare(b.name) || a.participantKey.localeCompare(b.participantKey);
     });
-    return { foundation, rows: sorted };
+    return { foundation, rows: sorted, projectLines };
   }
 
   private resolveProject(foundation: FoundationParticipatingOrgsSourceFoundation, projectSlug?: string): { slug: string; name: string } | null {
@@ -219,15 +224,17 @@ export class FoundationParticipatingOrgsService {
     foundation: FoundationParticipatingOrgsSourceFoundation,
     range: FoundationParticipatingOrgsRange,
     projectSlug?: string
-  ): Promise<FoundationParticipatingOrg[]> {
-    if (!projectSlug) return foundation.companies.filter(isActive).map((company) => toRow(company, company));
+  ): Promise<{ rows: FoundationParticipatingOrg[]; lines: FoundationParticipatingOrgsSourceProjectLine[] }> {
+    if (!projectSlug) return { rows: foundation.companies.filter(isActive).map((company) => toRow(company, company)), lines: [] };
 
     const companies = new Map(foundation.companies.map((company) => [company.key, company]));
     const lines = await this.dataSource().getProjectLines(req, foundation.slug, range, { projectSlug });
-    return lines.flatMap((line) => {
+    const rows = lines.flatMap((line) => {
       const company = companies.get(line.companyKey);
       return company ? [toRow(company, line)] : [];
     });
+    // The lines come back too, so a project-scoped export writes the very read the table shows.
+    return { rows, lines };
   }
 }
 

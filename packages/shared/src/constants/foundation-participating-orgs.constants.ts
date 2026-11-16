@@ -25,8 +25,9 @@ export const FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS: readonly { label: stri
   PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS;
 
 /** Label used in card sublines and chips, per range. */
+// Built from every range, so a range missing from the options falls back to its own value instead of an undefined label.
 export const FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS = Object.fromEntries(
-  PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS.map((option) => [option.value, option.label])
+  PROJECT_PARTICIPATING_ORGS_RANGES.map((range) => [range, PROJECT_PARTICIPATING_ORGS_RANGE_OPTIONS.find((option) => option.value === range)?.label ?? range])
 ) as Record<FoundationParticipatingOrgsRange, string>;
 
 /** Group label for projects with no maturity stage in the project picker. */

@@ -186,6 +186,15 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
       ]);
     });
 
+    it.each([
+      ['a limit on a project', { projectSlug: 'busy', limit: 51 }],
+      ['no filter at all', {}],
+    ])('never caches a read with %s, since the key carries neither', async (_label, filter) => {
+      execute.mockResolvedValueOnce({ rows: [lineRow()] });
+      await source.getProjectLines(req, 'synthetic-foundation', '12mo', filter);
+      expect(withFoundationCache).not.toHaveBeenCalled();
+    });
+
     it('reads the named companies lines for the export in one bounded, uncached query', async () => {
       execute.mockResolvedValueOnce({ rows: [lineRow(), lineRow({ PARTICIPANT_KEY: null })] });
       const lines = await source.getProjectLines(req, 'synthetic-foundation', '12mo', { companyKeys: ['001SYNTHALPHA'], limit: 51 });
