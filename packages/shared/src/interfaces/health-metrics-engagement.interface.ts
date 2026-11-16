@@ -13,6 +13,7 @@ import type {
 import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem, HealthMetricsMetricItem } from './health-metrics-l2.interface';
 import type { HealthMetricsLineChartView } from './health-metrics-line-chart.interface';
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
 import type { HealthMetricsBarFillRule } from './health-metrics-table.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -318,20 +319,29 @@ export interface HealthMetricsEngagementOrgRow {
   daysSinceLastEngaged: number | null;
   /** The view's `IS_LAPSED_180D`, so no date comparison happens client-side. */
   lapsed: boolean;
+  /** The account's logo from the account mapping; empty shows the name's first letter. */
+  logoUrl: string;
   periods: HealthMetricsEngagementOrgPeriod[];
 }
 
-/** One org table row with its selected-period numbers and date label already resolved. */
+/** One Company participation row, ready to render for the selected period. */
 export interface HealthMetricsEngagementOrgRowView {
-  row: HealthMetricsEngagementOrgRow;
-  period: HealthMetricsEngagementOrgPeriod | null;
+  key: string;
+  name: string;
+  logoUrl: string;
+  /** The tier name, "Non-member", or "—" for a member with no tier. */
+  membership: string;
+  isMember: boolean;
+  /** Draws the tier icon before a Diamond, Platinum, Gold or Silver membership. */
+  tier: HealthMetricsMembersReservedTier | null;
+  /** `12 of 27 (44%)` for the selected period; "—" when no meeting concerned the company. */
+  attendedLabel: string;
+  /** The bar's rounded share; `null` draws no bar. */
+  attendedPct: number | null;
+  attendedFillClass: string;
+  avgRepsLabel: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastEngagedLabel: string;
-  avgRepsLabel: string;
-  /** `12 / 27` — attended over total for the selected period; "—" when either side is unmeasured. */
-  attendedLabel: string;
-  /** Blue for the top tiers, grey for every other tier. */
-  tierPillClass: string;
 }
 
 /** `#orgs` scope counts; the lapsed count feeds its sub-nav note. Both are period-agnostic, denormalized onto every row. */
@@ -373,18 +383,21 @@ export interface HealthMetricsEngagementNonMemberPeriod {
 export interface HealthMetricsEngagementNonMemberRow {
   accountId: string;
   accountName: string;
-  /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
-  membershipStatus: string;
+  /** The account's logo from the account mapping; empty shows the name's first letter. */
+  logoUrl: string;
   periods: HealthMetricsEngagementNonMemberPeriod[];
 }
 
-/** One non-member row with its selected-period numbers already resolved. */
+/** One Non-member participation row, ready to render for the selected period. */
 export interface HealthMetricsEngagementNonMemberRowView {
-  row: HealthMetricsEngagementNonMemberRow;
-  period: HealthMetricsEngagementNonMemberPeriod | null;
+  key: string;
+  name: string;
+  logoUrl: string;
+  meetings: string;
+  people: string;
 }
 
-/** The `#nonmem` caption for one period: organizations that attended a meeting in it. */
+/** The `#nonmem` scope count for one period: companies that attended a meeting in it. */
 export interface HealthMetricsEngagementNonMemberPeriodCounts {
   range: HealthMetricsRange;
   orgs: number;
@@ -433,34 +446,34 @@ export interface HealthMetricsEngagementRepRow {
   personName: string;
   /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
   identityUnresolved: boolean;
-  /** The row's organization, shown under the name with its tier; not a second identity. */
+  /** The row's company, shown under the name with the job title; not a second identity. */
   accountName: string;
-  membershipTier: string | null;
+  jobTitle: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
   periods: HealthMetricsEngagementRepPeriod[];
 }
 
-/** One representatives row with its selected-period numbers and labels already resolved. */
+/** One Representatives row, ready to render for the selected period. */
 export interface HealthMetricsEngagementRepRowView {
-  row: HealthMetricsEngagementRepRow;
-  period: HealthMetricsEngagementRepPeriod | null;
-  /** `2 / 6` — attended over invited for the selected period. */
-  attendedLabel: string;
-  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
-  lastAttendedLabel: string;
+  key: string;
   /** Name, or the unresolved-identity placeholder. */
   displayName: string;
-  /** `org · tier`, just the org when the tier is unknown, or "—" when neither is. */
-  orgLabel: string;
+  unresolved: boolean;
+  /** `{Company}・{Job title}`, the company alone without a title (always so for an unresolved identity), or empty. */
+  description: string;
+  committeeName: string;
+  /** `2 / 6` — attended over invited for the selected period. */
+  attendedLabel: string;
+  /** Invited in the period and never attended, which shows the count as a danger badge. */
+  neverAttended: boolean;
+  /** Pre-rendered so the template stays free of `DatePipe`; "—" for a rep who never attended. */
+  lastAttendedLabel: string;
 }
 
-/** The all-time labels of a representatives row, built once per response rather than per period. */
-export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
-
-/** Scope counts for one period. Unlike the org caption, this view's scope counts are
- * period-suffixed, so the caption and the sub-nav note follow the pill. */
+/** Scope counts for one period. Unlike the org counts, this view's are period-suffixed, so the
+ * sub-nav note follows the period. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;
@@ -478,7 +491,7 @@ export interface HealthMetricsEngagementRepresentatives {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
-  /** Absent or `null` reads the all-projects rows and deduped captions. The client no longer sends
+  /** Absent or `null` reads the all-projects rows and deduped counts. The client no longer sends
    * it; the server keeps the optional filter. */
   projectSlug?: string | null;
 }

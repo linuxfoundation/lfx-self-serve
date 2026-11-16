@@ -11,28 +11,37 @@ import { SettingsCardComponent } from '@components/settings-card/settings-card.c
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { COMMITTEE_LABEL, MAILING_LIST_COMMITTEE_SYNC_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { MailingListSyncMode } from '@lfx-one/shared/enums';
-import { CreateMailingListRequest, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { CreateMailingListRequest, GroupsIOMailingList, MailingListSyncPreviewDialogResult } from '@lfx-one/shared/interfaces';
+import { getMailingListCommitteeSync } from '@lfx-one/shared/utils';
+import { MailingListSyncPreviewDialogComponent } from '@modules/committees/components/mailing-list-sync-preview-dialog/mailing-list-sync-preview-dialog.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { MessageService } from 'primeng/api';
 import { catchError, finalize, map, of, switchMap, take } from 'rxjs';
 
 /**
  * Sync Settings section for the mailing list view page (#4024) — the ON/OFF toggle and direction
  * selector that control `sync_mode` on the mailing list's linked committee. Mirrors PCC's Manage
- * Members page "Sync Settings" section. Only one mailing list per committee may have automatic sync
- * configured at a time (enforced here in the UI by disabling the toggle/selector, and ultimately by
- * ITX), so `activeSync` resolves whichever *other* linked mailing list already has a direction set.
+ * Members page "Sync Settings" section. A committee can only have one sync *direction* active at a
+ * time, and only one "Mailing List → Committee" list, but any number of "Committee → Mailing List"
+ * lists (verified against itx-service-groupsio's `CheckSyncModeConflict`, #5786) — so
+ * `blockingMlToCSibling`/`blockingCToMlSibling` resolve a conflicting sibling asymmetrically for
+ * those two cases, never for two lists both syncing Committee → Mailing List. Also owns the "Sync
+ * Now" preview/apply dialog entry point (#5786) — independent of the auto-sync toggle, since a
+ * writable, linked list can be manually synced regardless of whether auto-sync is on.
  */
 @Component({
   selector: 'lfx-mailing-list-sync-settings',
   imports: [ReactiveFormsModule, SettingsCardComponent, ToggleComponent, SelectButtonComponent, ButtonComponent, LowerCasePipe],
   templateUrl: './mailing-list-sync-settings.component.html',
+  providers: [DialogService],
 })
 export class MailingListSyncSettingsComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private destroyed = false;
 
@@ -60,14 +69,14 @@ export class MailingListSyncSettingsComponent {
   // every open instance's `(updated)` binding on close) know a save is in flight, so it can block
   // closing until it settles instead of silently dropping the result (#4899 review).
   public readonly savingChange = output<boolean>();
+  // Emitted after the Sync Now preview/apply dialog closes with a result — lets each host decide how
+  // to react (the standalone mailing-list page refetches itself; the Auto Sync drawer mirrors its own
+  // committee-settings-tab's openSyncPreviewDialog onClose: refresh the list always, and only notify
+  // the committee of a change when `committeeChanged` is true) (#5786).
+  public readonly syncApplied = output<MailingListSyncPreviewDialogResult>();
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly MailingListSyncMode = MailingListSyncMode;
-
-  protected readonly directionOptions = [
-    { label: `${COMMITTEE_LABEL.singular} → Mailing List`, value: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST },
-    { label: `Mailing List → ${COMMITTEE_LABEL.singular}`, value: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE },
-  ];
 
   // Construction-safe default — NOT this.initDirection(): a required input can't be read during
   // field initialization (part of the constructor), only once Angular has bound it, so doing so
@@ -129,10 +138,22 @@ export class MailingListSyncSettingsComponent {
   // Bumped by retrySiblingLookup() to force a re-fetch of the same committee uid (#4880 review).
   private readonly siblingLookupRetryNonce = signal(0);
 
-  // Other mailing lists linked to the same committee, used to resolve whether a sync direction is
-  // already active elsewhere (only one direction is allowed per committee at a time).
+  // Other mailing lists linked to the same committee, used to resolve the real sync-direction
+  // constraint (itx-service-groupsio's CheckSyncModeConflict, verified for #5786): a committee can
+  // only have one sync *direction* active, and only one Mailing List → Committee list, but any
+  // number of Committee → Mailing List lists.
   private readonly siblingLists: Signal<GroupsIOMailingList[]> = this.initSiblingLists();
-  protected readonly activeSync: Signal<GroupsIOMailingList | null> = this.initActiveSync();
+  // The sibling (if any) already syncing Mailing List → this committee. Its mere existence blocks
+  // *both* directions for every other list on the committee — mixed-direction for Committee → Mailing
+  // List, and the "only one List → Committee rule" for Mailing List → Committee itself — so this is
+  // also the single signal that should disable the whole section (toggle + selector), unlike a
+  // Committee → Mailing List sibling, which only narrows the direction choice.
+  protected readonly blockingMlToCSibling: Signal<GroupsIOMailingList | null> = this.initSiblingSync(MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE);
+  // A sibling already syncing this committee → Mailing List. Multiple of these are allowed per
+  // committee, so this never blocks the toggle itself — it only disables the Mailing List → Committee
+  // option (mixed direction) while leaving Committee → Mailing List open for this list too.
+  protected readonly blockingCToMlSibling: Signal<GroupsIOMailingList | null> = this.initSiblingSync(MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST);
+  protected readonly directionOptions: Signal<{ label: string; value: MailingListSyncMode; disabled: boolean }[]> = this.initDirectionOptions();
 
   public constructor() {
     this.destroyRef.onDestroy(() => (this.destroyed = true));
@@ -184,14 +205,16 @@ export class MailingListSyncSettingsComponent {
     });
     this.form.controls.direction.valueChanges.pipe(takeUntilDestroyed()).subscribe((direction) => this.save(direction));
 
-    // Only one direction is allowed per committee at a time — lock the selector whenever another
-    // linked mailing list already has one configured, while a save is in flight (so a second
-    // direction change can't fire an overlapping PUT that races the first), whenever the sibling
-    // lookup itself failed (we can't verify the "only one direction" invariant without it, so err
-    // toward blocking writes rather than risking a second auto-sync direction, #4880 review), or
-    // whenever a sibling card elsewhere in the same drawer is mid-save (#4899 review).
+    // Lock the whole selector while a save is in flight (so a second direction change can't fire an
+    // overlapping PUT that races the first), whenever the sibling lookup itself failed (we can't
+    // verify the sync-direction constraint without it, so err toward blocking writes rather than
+    // risking an invalid combination, #4880 review), whenever a sibling card elsewhere in the same
+    // drawer is mid-save (#4899 review), or whenever a sibling already syncs Mailing List →
+    // Committee — that's the one case that blocks *both* directions (see blockingMlToCSibling doc
+    // comment). A Committee → Mailing List-only sibling leaves the selector enabled; its per-option
+    // `disabled` (directionOptions) narrows the choice instead (#5786).
     effect(() => {
-      if (this.saving() || this.activeSync() || this.lockedBySibling() || this.siblingLookupFailed() || this.siblingLookupLoading()) {
+      if (this.saving() || this.blockingMlToCSibling() || this.lockedBySibling() || this.siblingLookupFailed() || this.siblingLookupLoading()) {
         this.form.controls.direction.disable({ emitEvent: false });
       } else {
         this.form.controls.direction.enable({ emitEvent: false });
@@ -213,17 +236,38 @@ export class MailingListSyncSettingsComponent {
       this.save(MailingListSyncMode.MANUAL);
       return;
     }
-    // The toggle is disabled whenever activeSync() is set, so checked=true only ever fires when
-    // activeSync() is null — always fall back to the selector's current value (#4880 review).
+    // The toggle is disabled whenever blockingMlToCSibling() is set, so checked=true only ever fires
+    // when it's null — always fall back to the selector's current value (#4880 review).
     this.save(this.form.controls.direction.value);
   }
 
   protected onSyncNow(): void {
-    // Preview/apply flow is Feature 6 (#4027) — this is a stub entry point per #4024's scope.
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Coming soon',
-      detail: 'Sync preview is not available yet.',
+    const ml = this.mailingList();
+    const committeeUid = this.committee()?.uid;
+    if (!committeeUid) return;
+    // sync_mode lives per-committee-entry inside ml.committees[] on the read model, not as a
+    // top-level field, so a fresh load must resolve it via getMailingListCommitteeSync. But save()
+    // above emits only a top-level sync_mode patch and never updates the matching committees[]
+    // entry, so right after a save that nested lookup still reads the pre-save mode — prefer the
+    // just-saved top-level value when present, falling back to the nested lookup otherwise
+    // (cursor/greptile/copilot/lfx-one #5790 round 2 review).
+    const syncMode = ml.sync_mode ?? getMailingListCommitteeSync(ml, committeeUid).syncMode;
+    const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
+      header: `Sync Now — ${ml.group_name}`,
+      width: '800px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      // This card can live inside the Auto Sync drawer, a CDK overlay fixed at z-index 10000
+      // (styles.scss) — PrimeNG's own layering starts new dialogs around 1100, which would render
+      // this one behind the still-open drawer. Push it above the drawer explicitly (copilot #5790
+      // review).
+      baseZIndex: 10001,
+      data: { mailingListUid: ml.uid, mailingListName: ml.group_name, committeeUid, syncMode },
+    });
+    if (!ref) return;
+    ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MailingListSyncPreviewDialogResult | null) => {
+      if (result) this.syncApplied.emit(result);
     });
   }
 
@@ -378,10 +422,28 @@ export class MailingListSyncSettingsComponent {
     );
   }
 
-  private initActiveSync(): Signal<GroupsIOMailingList | null> {
+  private initSiblingSync(mode: MailingListSyncMode): Signal<GroupsIOMailingList | null> {
     return computed(() => {
       const selfUid = this.mailingList().uid;
-      return this.siblingLists().find((ml) => ml.uid !== selfUid && !!ml.sync_mode && ml.sync_mode !== MailingListSyncMode.MANUAL) ?? null;
+      return this.siblingLists().find((ml) => ml.uid !== selfUid && ml.sync_mode === mode) ?? null;
     });
+  }
+
+  private initDirectionOptions(): Signal<{ label: string; value: MailingListSyncMode; disabled: boolean }[]> {
+    return computed(() => [
+      {
+        label: `${COMMITTEE_LABEL.singular} → Mailing List`,
+        value: MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST,
+        // Mixed-direction conflict: a sibling already syncs Mailing List → this committee.
+        disabled: !!this.blockingMlToCSibling(),
+      },
+      {
+        label: `Mailing List → ${COMMITTEE_LABEL.singular}`,
+        value: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
+        // Blocked by mixed direction (a sibling syncs Committee → Mailing List) or by the
+        // "only one List → Committee rule" (a sibling already syncs Mailing List → Committee).
+        disabled: !!this.blockingCToMlSibling() || !!this.blockingMlToCSibling(),
+      },
+    ]);
   }
 }

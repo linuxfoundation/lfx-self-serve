@@ -14,7 +14,7 @@
         <lfx-toggle
           [checked]="syncOn()"
           (checkedChange)="onToggleChange($event)"
-          [disabled]="saving() || !!activeSync() || lockedBySibling() || siblingLookupFailed() || siblingLookupLoading()"
+          [disabled]="saving() || !!blockingMlToCSibling() || lockedBySibling() || siblingLookupFailed() || siblingLookupLoading()"
           label="Automatic membership sync"
           [tooltip]="'When on, members are kept in sync in one direction between the ' + (committeeLabel.singular | lowercase) + ' and this mailing list.'"
           [id]="'sync-settings-toggle-' + mailingList().uid"
@@ -37,20 +37,23 @@
         </div>
       }
 
-      @if (activeSync(); as active) {
+      @if (blockingMlToCSibling(); as blocking) {
         <div
           class="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800"
           data-testid="active-committee-sync-notice">
           <i class="fa-light fa-circle-check mt-0.5 text-green-600"></i>
           <span>
-            Active {{ committeeLabel.singular | lowercase }} sync: <strong>{{ active.title }}</strong> already syncs with
-            {{ committeeRef.name || committeeLabel.singular }} in the
-            <strong>{{
-              active.sync_mode === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST
-                ? committeeLabel.singular + ' → Mailing List'
-                : 'Mailing List → ' + committeeLabel.singular
-            }}</strong>
-            direction. Only one mailing list per {{ committeeLabel.singular | lowercase }} can have automatic sync configured at a time.
+            Active {{ committeeLabel.singular | lowercase }} sync: <strong>{{ blocking.title }}</strong> already syncs with
+            {{ committeeRef.name || committeeLabel.singular }} in the <strong>Mailing List → {{ committeeLabel.singular }}</strong> direction. Only one mailing
+            list per {{ committeeLabel.singular | lowercase }} can sync in that direction at a time, and no other mailing list can sync while it's active.
+          </span>
+        </div>
+      } @else if (blockingCToMlSibling(); as blocking) {
+        <div class="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800" data-testid="committee-to-ml-sibling-notice">
+          <i class="fa-light fa-circle-info mt-0.5 text-blue-600"></i>
+          <span>
+            <strong>{{ blocking.title }}</strong> already syncs {{ committeeRef.name || committeeLabel.singular }} → Mailing List. This list can still sync in
+            the same direction, but <strong>Mailing List → {{ committeeLabel.singular }}</strong> is unavailable while that sync is active.
           </span>
         </div>
       }
@@ -66,22 +69,24 @@
           <lfx-select-button
             [form]="form"
             control="direction"
-            [options]="directionOptions"
+            [options]="directionOptions()"
             optionLabel="label"
             optionValue="value"
+            optionDisabled="disabled"
             data-testid="sync-settings-direction"></lfx-select-button>
         </div>
-
-        <div>
-          <lfx-button
-            label="Sync Now"
-            icon="fa-light fa-arrows-rotate"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="onSyncNow()"
-            data-testid="sync-now-button"></lfx-button>
-        </div>
       }
+
+      <div>
+        <lfx-button
+          label="Sync Now"
+          icon="fa-light fa-arrows-rotate"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="saving()"
+          (onClick)="onSyncNow()"
+          data-testid="sync-now-button"></lfx-button>
+      </div>
     </div>
   </lfx-settings-card>
 }

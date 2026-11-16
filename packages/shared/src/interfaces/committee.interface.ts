@@ -1269,6 +1269,20 @@ export interface MailingListPickerDialogResult {
   committeeRoleFilters: Map<string, string[]>;
 }
 
+/**
+ * Per-mailing-list sync-direction conflict state within MailingListPickerDialogComponent (#5786),
+ * matching the backend's asymmetric CheckSyncModeConflict rule: a sibling running Mailing List →
+ * Committee locks a list out of both auto directions, while a sibling running Committee → Mailing
+ * List only locks out Mailing List → Committee (multiple Committee → Mailing List lists are
+ * allowed per committee).
+ */
+export interface MailingListDirectionConflict {
+  /** uid of the sibling list currently running Mailing List → Committee, if any. */
+  mlToCUid: string | null;
+  /** uid of a sibling list currently running Committee → Mailing List, if any. */
+  cToMlUid: string | null;
+}
+
 export interface MailingListSyncPreviewDialogData {
   mailingListUid: string;
   mailingListName: string;
