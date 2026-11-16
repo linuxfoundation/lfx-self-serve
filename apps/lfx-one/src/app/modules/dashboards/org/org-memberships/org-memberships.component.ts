@@ -176,6 +176,7 @@ export class OrgMembershipsComponent {
   private readonly expiredLoading = signal(false);
   private readonly expiredError = signal(false);
   private readonly expiredData = signal<OrgExpiredMembershipsResponse | null>(null);
+  private expiredRequestId = 0;
 
   protected readonly expiredMemberships: Signal<ExpiredMembershipRow[]> = computed(() => this.initExpiredMemberships());
   protected readonly expiredCompanyOptions: Signal<OrgDropdownOption[]> = computed(() => this.initCompanyOptions(this.expiredData()?.organizations));
@@ -294,7 +295,7 @@ export class OrgMembershipsComponent {
   private initMemberships(): ActiveMembershipRow[] {
     const memberships = this.activeData()?.memberships ?? [];
     const ordered = this.isRollUp()
-      ? [...memberships].sort((a, b) => a.foundationName.localeCompare(b.foundationName) || a.foundationId.localeCompare(b.foundationId))
+      ? [...memberships].sort((a, b) => a.foundationName.localeCompare(b.foundationName, 'en-US') || a.foundationId.localeCompare(b.foundationId, 'en-US'))
       : memberships;
     return ordered.map((m, index) => ({
       ...m,
@@ -392,7 +393,9 @@ export class OrgMembershipsComponent {
     this.expiredLoading.set(true);
     this.expiredError.set(false);
     const company = this.expiredCompanyFilter();
-    const superseded = (): boolean => this.accountContext.selectedAccount()?.uid !== orgUid || this.expiredCompanyFilter() !== company;
+    // A request id, not the filter value: after A → B → A the first A request would match the value again.
+    const requestId = ++this.expiredRequestId;
+    const superseded = (): boolean => requestId !== this.expiredRequestId || this.accountContext.selectedAccount()?.uid !== orgUid;
     this.membershipsService
       .getExpiredMemberships(orgUid, undefined, company)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))

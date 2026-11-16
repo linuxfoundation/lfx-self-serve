@@ -21,7 +21,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgMembershipsComponent } from './org-memberships.component';
@@ -450,6 +450,63 @@ describe('OrgMembershipsComponent', () => {
       fixture.detectChanges();
 
       expect(getFoundationProjects).toHaveBeenCalledWith(SUBSIDIARY_ORG.accountId, 'cncf');
+    });
+
+    it('links each project in the Org Projects panel to the row’s own organization, not the roll-up', async () => {
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse() } });
+      await settleActiveFetch(fixture);
+
+      const triggers = fixture.nativeElement.querySelectorAll('[data-testid="memberships-org-projects-cncf"]');
+      (triggers[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(document.querySelector('[data-testid="membership-project-k8s"] a')?.getAttribute('href')).toBe(`/org/${SUBSIDIARY_ORG.accountId}/projects/k8s`);
+    });
+
+    it('keeps the loaded expired table when an older request for the same company fails after company A → B → A', async () => {
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [
+          {
+            foundationId: 'lfn',
+            foundationName: 'LF Networking',
+            foundationSlug: 'lfn',
+            foundationLogo: null,
+            membershipTier: 'Silver Membership',
+            tierStartDate: '2024-01-01',
+            tierEndDate: '2025-01-01',
+            expirationDate: '2025-01-01',
+            actionType: 'renew',
+            organization: PARENT_ORG,
+          },
+        ],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture, getExpiredMemberships } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+      const requests: Subject<OrgExpiredMembershipsResponse>[] = [];
+      getExpiredMemberships.mockImplementation(() => {
+        const request = new Subject<OrgExpiredMembershipsResponse>();
+        requests.push(request);
+        return request;
+      });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      requests[0].next(expired);
+      const companyControl = (fixture.componentInstance as unknown as { companyFilterForm: FormGroup }).companyFilterForm.controls['expiredCompany'];
+      companyControl.setValue(PARENT_ORG.accountId);
+      companyControl.setValue(SUBSIDIARY_ORG.accountId);
+      companyControl.setValue(PARENT_ORG.accountId);
+      requests[3].next(expired);
+      requests[1].error(new Error('stale request failed'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(requests).toHaveLength(4);
+      expect(has(fixture, 'memberships-expired-error-state')).toBe(false);
+      expect(has(fixture, 'memberships-expired-table')).toBe(true);
     });
 
     it('shows no Company column or filter, and the single-organization card labels, for a single organization', async () => {
