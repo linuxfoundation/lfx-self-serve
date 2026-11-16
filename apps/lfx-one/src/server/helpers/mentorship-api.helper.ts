@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApiRequestOptions, MentorshipUpstreamListResponse, MentorshipUpstreamUser } from '@lfx-one/shared/interfaces';
+import { VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { ApiRequestOptions, MentorshipSyncClaim, MentorshipUpstreamListResponse, MentorshipUpstreamUser } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils/string.utils';
 import { randomUUID } from 'crypto';
 import { Request } from 'express';
@@ -48,13 +49,11 @@ export function isMentorshipNotProvisionedError(error: unknown): boolean {
 /** In-flight refreshes on this replica by login id, so the parallel mentorship requests of one page load share one `PUT /me`. */
 const inFlightSyncs = new Map<string, Promise<void>>();
 
-/** This replica's refresh markers by login id, used only while Valkey is unavailable: when each stops blocking a refresh (epoch ms). */
+/**
+ * This replica's refresh markers by login id: when each stops blocking a refresh (epoch ms). Checked before Valkey and written on
+ * every outcome, so a login this replica has claimed, refreshed or found claimed costs no Valkey call until its marker expires.
+ */
 const replicaSyncMarkers = new Map<string, number>();
-
-/** A claim on a login's refresh; `complete` records it as done for the rest of the login. */
-interface MentorshipSyncClaim {
-  complete(): Promise<void>;
-}
 
 /**
  * Starts a new login for the mentorship refresh: `afterCallback` in `server.ts` returns the session with a fresh login id, so the
@@ -67,8 +66,8 @@ export function withMentorshipLoginId<T extends object>(session: T): T & Record<
 
 /**
  * Refreshes the caller's mentorship record with `PUT /mentorship/v1/me` once per login: upstream then stores the caller's
- * current email, name and avatar. The marker is kept in Valkey, keyed by the login id, so every replica sees it and no session
- * write can erase it. Runs only for a session with a login id (one signed in before this change gets one at its next login),
+ * current email, name and avatar. The marker is kept in Valkey and on this replica, keyed by the login id, so every replica
+ * sees it and no session write can erase it. Runs only for a session with a login id (one signed in before this change gets one at its next login),
  * and never while impersonating, which is read-only. A failure is logged and never fails the request it runs for; the claim
  * then expires after `MENTORSHIP_USER_SYNC_RETRY_MS`, so a later request tries again without retrying on every request.
  */
@@ -101,29 +100,28 @@ async function refreshMentorshipUser(proxy: MicroserviceProxyService, req: Reque
 }
 
 /**
- * Claims the login's refresh across replicas with an atomic `SET NX` that lasts `MENTORSHIP_USER_SYNC_RETRY_MS`, or returns
- * null when the login is already refreshed, being refreshed, or backing off after a failure. While Valkey is unavailable the
- * claim falls back to this replica's markers.
+ * Claims the login's refresh, or returns null when it is already refreshed, being refreshed, or backing off after a failure.
+ * This replica's marker is checked first. Otherwise the claim is an atomic `SET NX` in Valkey lasting
+ * `MENTORSHIP_USER_SYNC_RETRY_MS`, shared by every replica; while Valkey is unavailable this replica's marker alone decides.
+ * Whatever Valkey answers, this replica does not ask again for that long, so a slow or unreachable Valkey costs a login at
+ * most one lock timeout per window, and a refresh done during an outage is not repeated once Valkey recovers.
  */
 async function claimMentorshipSync(loginId: string): Promise<MentorshipSyncClaim | null> {
-  const key = buildMentorshipUserSyncKey(loginId);
-  if (key) {
-    const lock = await valkeyService.acquireLock(key, MENTORSHIP_USER_SYNC_RETRY_MS);
-    if (lock.status === 'contended') return null;
-    if (lock.status === 'acquired') {
-      return {
-        complete: async () => {
-          await valkeyService.setJson(key, true, MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS);
-        },
-      };
-    }
-  }
-
   const blockedUntil = replicaSyncMarkers.get(loginId);
   if (blockedUntil !== undefined && blockedUntil > Date.now()) return null;
   rememberReplicaSync(loginId, Date.now() + MENTORSHIP_USER_SYNC_RETRY_MS);
+
+  const key = buildMentorshipUserSyncKey(loginId);
+  const lock = key ? await valkeyService.acquireLock(key, MENTORSHIP_USER_SYNC_RETRY_MS) : null;
+  if (lock?.status === 'contended') return null;
   return {
-    complete: async () => rememberReplicaSync(loginId, Date.now() + MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS * 1000),
+    complete: async () => {
+      // Kept on this replica too, so a lost Valkey write cannot repeat the refresh here.
+      rememberReplicaSync(loginId, Date.now() + MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS * 1000);
+      if (key && lock?.status === 'acquired') {
+        await valkeyService.setJson(key, true, MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS, VALKEY_CACHE.LOCK_OP_TIMEOUT_MS);
+      }
+    },
   };
 }
 

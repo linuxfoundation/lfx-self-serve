@@ -4,10 +4,10 @@
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// A Valkey shared by every replica: entries with an expiry, and a switch to make it unavailable.
+// A Valkey shared by every replica: entries with an expiry, switches for an outage and a lost write, and a count of lock calls.
 const sharedValkey = vi.hoisted(() => {
   const entries = new Map<string, { value: unknown; expiresAt: number }>();
-  const state = { available: true };
+  const state = { available: true, writesFail: false, lockCalls: 0 };
   const live = (key: string) => {
     const entry = entries.get(key);
     return entry && entry.expiresAt > Date.now() ? entry : undefined;
@@ -19,13 +19,14 @@ vi.mock('../services/valkey.service', () => ({
   buildMentorshipUserSyncKey: (loginId: string) => `test:mentorship-user-sync:${loginId}`,
   valkeyService: {
     acquireLock: async (key: string, ttlMs: number) => {
+      sharedValkey.state.lockCalls++;
       if (!sharedValkey.state.available) return { status: 'unavailable' };
       if (sharedValkey.live(key)) return { status: 'contended' };
       sharedValkey.entries.set(key, { value: 'lock-token', expiresAt: Date.now() + ttlMs });
       return { status: 'acquired', token: 'lock-token' };
     },
     setJson: async (key: string, value: unknown, ttlSeconds: number) => {
-      if (!sharedValkey.state.available) return false;
+      if (!sharedValkey.state.available || sharedValkey.state.writesFail) return false;
       sharedValkey.entries.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
       return true;
     },
@@ -193,7 +194,7 @@ describe('proxyMentorshipRequest per-login refresh', () => {
     vi.clearAllMocks();
     vi.useFakeTimers({ toFake: ['Date'] });
     sharedValkey.entries.clear();
-    sharedValkey.state.available = true;
+    Object.assign(sharedValkey.state, { available: true, writesFail: false, lockCalls: 0 });
     proxyRequest = vi.fn((_req: Request, _service: string, calledPath: string) => Promise.resolve(calledPath === path ? { data: [] } : {}));
     proxy = { proxyRequest } as unknown as Proxy;
   });
@@ -293,6 +294,65 @@ describe('proxyMentorshipRequest per-login refresh', () => {
     await proxyMentorshipRequest(proxy, requestFor(loginId), path);
     await proxyMentorshipRequest(proxy, requestFor(loginId), path);
     expect(refreshes()).toBe(2);
+  });
+
+  it('asks Valkey nothing for a later request on this replica once the login is refreshed', async () => {
+    const loginId = newLogin();
+
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    vi.setSystemTime(Date.now() + retryMs + 1);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    expect(refreshes()).toBe(1);
+    expect(sharedValkey.state.lockCalls).toBe(1);
+  });
+
+  it('asks an unreachable Valkey once per backoff window, not on every request', async () => {
+    sharedValkey.state.available = false;
+    const loginId = newLogin();
+    proxyRequest.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(503, 'Service Unavailable', {}, 'LFX_V2_SERVICE', '/mentorship/v1/me'));
+
+    for (let i = 0; i < 3; i++) await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    expect(sharedValkey.state.lockCalls).toBe(1);
+  });
+
+  it('does not refresh again when Valkey recovers after a refresh done during the outage', async () => {
+    sharedValkey.state.available = false;
+    const loginId = newLogin();
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    sharedValkey.state.available = true;
+    vi.setSystemTime(Date.now() + retryMs + 1);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    expect(refreshes()).toBe(1);
+  });
+
+  it('keeps the backoff of a refresh that failed during the outage when Valkey recovers', async () => {
+    sharedValkey.state.available = false;
+    const loginId = newLogin();
+    proxyRequest.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(503, 'Service Unavailable', {}, 'LFX_V2_SERVICE', '/mentorship/v1/me'));
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    sharedValkey.state.available = true;
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    expect(refreshes()).toBe(1);
+
+    vi.setSystemTime(Date.now() + retryMs + 1);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    expect(refreshes()).toBe(2);
+  });
+
+  it('does not repeat the refresh on this replica when the done marker is not written to Valkey', async () => {
+    sharedValkey.state.writesFail = true;
+    const loginId = newLogin();
+
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    vi.setSystemTime(Date.now() + retryMs + 1);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    expect(refreshes()).toBe(1);
   });
 
   it('does not refresh while impersonating, or for a session without a login id', async () => {
