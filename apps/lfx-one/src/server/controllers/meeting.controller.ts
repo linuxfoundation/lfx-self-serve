@@ -706,7 +706,7 @@ export class MeetingController {
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
    * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on
-   * and the meeting is neither Board nor restricted.
+   * and the meeting is not Board (`isMeetingAttendeeListShared`; restricted meetings share once opted in).
    * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {

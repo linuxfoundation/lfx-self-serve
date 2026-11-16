@@ -1482,6 +1482,18 @@ describe('MeetingService.canViewMeetingRoster', () => {
     expect(byEmail).not.toHaveBeenCalled();
   });
 
+  // #5438: an invite-only meeting shares its guests once its organizer opts in, and not before.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('lets an invitee of a restricted meeting see the guests only when shared (shared: %s)', async (shared, expected) => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, restricted: true, show_meeting_attendees: shared } as unknown as Meeting);
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(expected);
+  });
+
   it('matches an invitee by username when they have no email, the rule the invited flag uses', async () => {
     vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
     vi.mocked(getUsernameFromAuth).mockResolvedValue('ada');

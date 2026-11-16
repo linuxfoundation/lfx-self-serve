@@ -708,7 +708,9 @@ export class MeetingService {
     // to opt a board meeting into sharing its guest list. A restricted (invite-only) meeting is
     // read and written under the same composer rule (#5438): an explicit choice is forwarded, and a
     // body that omits the flag leaves the organizer's stored choice alone. The pre-v2 wizard locks
-    // the control off for restricted meetings, so it always sends an explicit `false`.
+    // the control for restricted meetings: it omits the flag when editing a meeting that stays
+    // restricted, so a composer opt-in survives, and sends `false` when the edit makes the meeting
+    // Board or turns `restricted` on.
     if (isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK)) {
       updatePayload.show_meeting_attendees = false;
     } else if (

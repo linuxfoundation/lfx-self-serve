@@ -73,14 +73,17 @@ export function getShowMeetingAttendeesLockedNote(
  * A missing field reads as `false`, not as "no decision": the upstream serializer omits the flag
  * when it is false, so absence is how a stored-off meeting arrives.
  *
- * A locked meeting has no decision to report either way. Its saved value was forced off on write,
- * or predates the rule and still says `true` while hydration shows the toggle off — neither is
- * something the organizer chose, and honouring the `true` when they later switch the meeting to an
- * unlocked type would share a guest list they were last shown as private.
+ * A meeting locked under the lock in `options` has no decision to report. A Board meeting's saved
+ * value was forced off on write, or predates the rule and still says `true` while hydration shows
+ * the toggle off — neither is something the organizer chose, and honouring the `true` when they
+ * later switch the meeting to an unlocked type would share a guest list they were last shown as
+ * private.
  *
  * `options` picks the lock to read through. The meeting v2 composer passes `COMPOSER_ATTENDEE_LOCK`,
- * so a restricted meeting reports the organizer's stored choice and only Board reads as undecided;
- * the pre-v2 wizard keeps the default lock, under which restricted meetings stay undecided too.
+ * so a restricted meeting reports the organizer's stored choice and only Board reads as undecided.
+ * The pre-v2 wizard keeps the default lock, under which a restricted meeting reads as undecided even
+ * when it holds a real opt-in made in the composer; that wizard leaves the stored value alone on
+ * save (`shouldPreserveStoredAttendeeVisibility`).
  */
 export function getSavedAttendeeVisibility(
   meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined,
