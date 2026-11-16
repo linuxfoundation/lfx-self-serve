@@ -770,12 +770,25 @@ app.get('/livez', (_req: Request, res: Response) => {
   res.send('OK');
 });
 app.get('/readyz', (_req: Request, res: Response) => {
+  if (isShuttingDown()) {
+    res.status(503).json({ status: 'shutting_down' });
+    return;
+  }
+
+  const bundle = checkBrowserBundleReady(browserDistFolder);
+  if (!bundle.ready) {
+    res.status(503).json({ status: 'not_ready', reason: bundle.reason });
+    return;
+  }
+
   res.status(200).json({ status: 'ready' });
 });
 
 // HTTP logger middleware (added after probe endpoints)
 app.use(httpLogger);
 ```
+
+`/readyz` reports not ready while the browser dist lacks the HTML shell, `main.js` or `styles.css` (the filenames carry a content hash in builds with `outputHashing`, and the check accepts either form). `checkBrowserBundleReady` caches its first success, so a ready pod does no filesystem work per probe, and it logs `readiness_check_failed` once per distinct reason rather than once per probe.
 
 URLs excluded from logging:
 

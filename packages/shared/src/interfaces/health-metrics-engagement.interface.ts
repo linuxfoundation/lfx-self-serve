@@ -5,7 +5,6 @@ import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
-  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
@@ -13,6 +12,8 @@ import type {
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from './health-metrics-members.interface';
+import type { HealthMetricsBarFillRule } from './health-metrics-table.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -75,8 +76,8 @@ export interface HealthMetricsEngagementGroupPeriod {
   dormant: boolean;
 }
 
-/** A row of the Group attendance table. `periods` is ordered oldest → current and doubles as the
- * sparkline series. */
+/** A row of the Group attendance table. `periods` is ordered oldest → current and carries every period, so a
+ * period change re-renders without a second read. */
 export interface HealthMetricsEngagementGroupRow {
   committeeId: string;
   committeeName: string;
@@ -84,25 +85,32 @@ export interface HealthMetricsEngagementGroupRow {
   projectSlug: string | null;
   projectName: string | null;
   groupTypeLabel: string | null;
+  /** The view's `MEETING_TYPE_GROUP`, which tells a board apart from the other governance groups. */
+  meetingTypeGroup: string | null;
   /** ISO date of the group's last meeting, or `null` if it has never met. */
   lastMetDate: string | null;
   periods: HealthMetricsEngagementGroupPeriod[];
 }
 
-/** One bar of the group trend sparkline; `heightPx` is `null` for an unrated period's empty slot. */
-export interface HealthMetricsEngagementSparkBar {
-  heightPx: number | null;
-  /** The current period, drawn in the strong colour. */
-  last: boolean;
+/** The kind of group a row is, shown under its name with an icon. */
+export interface HealthMetricsEngagementGroupKind {
+  label: string;
+  icon: string;
 }
 
-/** One table row with its selected-period numbers and sparkline series already resolved. */
+/** One Group attendance row, ready to render for the selected period. */
 export interface HealthMetricsEngagementGroupRowView {
-  row: HealthMetricsEngagementGroupRow;
-  period: HealthMetricsEngagementGroupPeriod | null;
-  trend: (number | null)[];
+  key: string;
+  name: string;
+  kind: HealthMetricsEngagementGroupKind;
+  /** The period's meeting count, or "—" when the group held none. */
+  meetings: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastMetLabel: string;
+  dormant: boolean;
+  /** The rounded attendance, e.g. `42%`; the bar reads "—" when `attendancePct` is `null`. */
+  attendanceLabel: string;
+  attendancePct: number | null;
 }
 
 /** `#committees` scope counts, aggregated over the whole project scope, not the page or the selected
@@ -145,9 +153,6 @@ export interface HealthMetricsEngagementGroupQuery {
   page: number;
   size: number;
 }
-
-/** Which measure the participation segment shows: the attendance share or the raw meeting volume. */
-export type HealthMetricsEngagementParticipationMode = (typeof HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES)[number]['key'];
 
 /**
  * A participation row's level in the view's own hierarchy. `all` is the foundation-wide roll-up the
@@ -262,11 +267,21 @@ export interface HealthMetricsEngagementAttendanceTrendSummaryView {
   lowConfidenceNote: string;
 }
 
-/** One participation table row with its selected-period numbers resolved. */
+/** One Meeting participation row, ready to render for the selected period. */
 export interface HealthMetricsEngagementParticipationRowView {
-  row: HealthMetricsEngagementParticipationRow;
-  period: HealthMetricsEngagementParticipationPeriod | null;
-  attendanceRule: HealthMetricsEngagementAttendanceRule;
+  key: string;
+  /** The meeting type's short name, e.g. `Board`. */
+  name: string;
+  icon: string;
+  /** The governance row's pointer to Members; empty on every other row. */
+  description: string;
+  /** Rows whose detail is on the Members tab; the others scroll to Group attendance. */
+  governance: boolean;
+  meetings: string;
+  /** The rounded attendance, e.g. `42%`; the bar reads "—" when `attendancePct` is `null`. */
+  attendanceLabel: string;
+  attendancePct: number | null;
+  fillRule: HealthMetricsBarFillRule;
 }
 
 /** Which cut of the org table is showing: everyone, or only orgs lapsed past the dormancy window. */
@@ -303,20 +318,29 @@ export interface HealthMetricsEngagementOrgRow {
   daysSinceLastEngaged: number | null;
   /** The view's `IS_LAPSED_180D`, so no date comparison happens client-side. */
   lapsed: boolean;
+  /** The account's logo from the account mapping; empty shows the name's first letter. */
+  logoUrl: string;
   periods: HealthMetricsEngagementOrgPeriod[];
 }
 
-/** One org table row with its selected-period numbers and date label already resolved. */
+/** One Company participation row, ready to render for the selected period. */
 export interface HealthMetricsEngagementOrgRowView {
-  row: HealthMetricsEngagementOrgRow;
-  period: HealthMetricsEngagementOrgPeriod | null;
+  key: string;
+  name: string;
+  logoUrl: string;
+  /** The tier name, "Non-member", or "—" for a member with no tier. */
+  membership: string;
+  isMember: boolean;
+  /** Draws the tier icon before a Diamond, Platinum, Gold or Silver membership. */
+  tier: HealthMetricsMembersReservedTier | null;
+  /** `12 of 27 (44%)` for the selected period; "—" when no meeting concerned the company. */
+  attendedLabel: string;
+  /** The bar's rounded share; `null` draws no bar. */
+  attendedPct: number | null;
+  attendedFillClass: string;
+  avgRepsLabel: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastEngagedLabel: string;
-  avgRepsLabel: string;
-  /** `12 / 27` — attended over total for the selected period; "—" when either side is unmeasured. */
-  attendedLabel: string;
-  /** Blue for the top tiers, grey for every other tier. */
-  tierPillClass: string;
 }
 
 /** `#orgs` scope counts; the lapsed count feeds its sub-nav note. Both are period-agnostic, denormalized onto every row. */
@@ -358,18 +382,21 @@ export interface HealthMetricsEngagementNonMemberPeriod {
 export interface HealthMetricsEngagementNonMemberRow {
   accountId: string;
   accountName: string;
-  /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
-  membershipStatus: string;
+  /** The account's logo from the account mapping; empty shows the name's first letter. */
+  logoUrl: string;
   periods: HealthMetricsEngagementNonMemberPeriod[];
 }
 
-/** One non-member row with its selected-period numbers already resolved. */
+/** One Non-member participation row, ready to render for the selected period. */
 export interface HealthMetricsEngagementNonMemberRowView {
-  row: HealthMetricsEngagementNonMemberRow;
-  period: HealthMetricsEngagementNonMemberPeriod | null;
+  key: string;
+  name: string;
+  logoUrl: string;
+  meetings: string;
+  people: string;
 }
 
-/** The `#nonmem` caption for one period: organizations that attended a meeting in it. */
+/** The `#nonmem` scope count for one period: companies that attended a meeting in it. */
 export interface HealthMetricsEngagementNonMemberPeriodCounts {
   range: HealthMetricsRange;
   orgs: number;
@@ -418,34 +445,34 @@ export interface HealthMetricsEngagementRepRow {
   personName: string;
   /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
   identityUnresolved: boolean;
-  /** The row's organization, shown under the name with its tier; not a second identity. */
+  /** The row's company, shown under the name with the job title; not a second identity. */
   accountName: string;
-  membershipTier: string | null;
+  jobTitle: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
   periods: HealthMetricsEngagementRepPeriod[];
 }
 
-/** One representatives row with its selected-period numbers and labels already resolved. */
+/** One Representatives row, ready to render for the selected period. */
 export interface HealthMetricsEngagementRepRowView {
-  row: HealthMetricsEngagementRepRow;
-  period: HealthMetricsEngagementRepPeriod | null;
-  /** `2 / 6` — attended over invited for the selected period. */
-  attendedLabel: string;
-  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
-  lastAttendedLabel: string;
+  key: string;
   /** Name, or the unresolved-identity placeholder. */
   displayName: string;
-  /** `org · tier`, just the org when the tier is unknown, or "—" when neither is. */
-  orgLabel: string;
+  unresolved: boolean;
+  /** `{Company}・{Job title}`, the company alone without a title (always so for an unresolved identity), or empty. */
+  description: string;
+  committeeName: string;
+  /** `2 / 6` — attended over invited for the selected period. */
+  attendedLabel: string;
+  /** Invited in the period and never attended, which shows the count as a danger badge. */
+  neverAttended: boolean;
+  /** Pre-rendered so the template stays free of `DatePipe`; "—" for a rep who never attended. */
+  lastAttendedLabel: string;
 }
 
-/** The all-time labels of a representatives row, built once per response rather than per period. */
-export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
-
-/** Scope counts for one period. Unlike the org caption, this view's scope counts are
- * period-suffixed, so the caption and the sub-nav note follow the pill. */
+/** Scope counts for one period. Unlike the org counts, this view's are period-suffixed, so the
+ * sub-nav note follows the period. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;
@@ -463,7 +490,7 @@ export interface HealthMetricsEngagementRepresentatives {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
-  /** Absent or `null` reads the all-projects rows and deduped captions. The client no longer sends
+  /** Absent or `null` reads the all-projects rows and deduped counts. The client no longer sends
    * it; the server keeps the optional filter. */
   projectSlug?: string | null;
 }
@@ -473,7 +500,6 @@ export interface HealthMetricsEngagementQueryParams {
   groupType?: HealthMetricsEngagementGroupTypeFilter | null;
   groupPage?: number | null;
   orgFilter?: HealthMetricsEngagementOrgFilter | null;
-  partMode?: HealthMetricsEngagementParticipationMode | null;
   repFilter?: HealthMetricsEngagementRepFilter | null;
   nlMode?: HealthMetricsEngagementNewsletterMode | null;
   nlFilter?: HealthMetricsEngagementRecipientFilter | null;

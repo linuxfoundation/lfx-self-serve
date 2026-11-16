@@ -120,6 +120,12 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(description.querySelector('.text-emerald-600')?.textContent).toBe('+4%');
   });
 
+  it('greys a flat lead', async () => {
+    await render([metric('a', { description: 'vs previous period', descriptionLead: '+0.0pp', descriptionLeadTone: 'flat' })]);
+
+    expect((el('row-a-description') as HTMLElement).querySelector('.text-gray-400')?.textContent).toBe('+0.0pp');
+  });
+
   it('draws the mini bar at its width with its caption', async () => {
     await render([metric('a', { bar: { pct: 40, fillClass: 'bg-blue-500', label: '{N} of {M}' } })]);
     const bar = el('row-a-bar') as HTMLElement;

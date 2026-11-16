@@ -29,7 +29,7 @@
   @if (dotClass()) {
     <span class="h-[8px] w-[8px] flex-none rounded-full" [class]="dotClass()" aria-hidden="true" data-testid="health-metrics-cell-dot"></span>
   }
-  <span class="min-w-0 truncate" [class.text-gray-400]="isDash()" data-testid="health-metrics-cell-text">{{ text() }}</span>
+  <span class="min-w-0 truncate" [class]="textClass()" [class.text-gray-400]="isDash()" data-testid="health-metrics-cell-text">{{ text() }}</span>
   <ng-content />
 </span>
 @if (description()) {

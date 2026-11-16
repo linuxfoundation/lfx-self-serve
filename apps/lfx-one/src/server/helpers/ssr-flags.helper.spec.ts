@@ -39,8 +39,16 @@ describe('resolveSsrFlags', () => {
     expect(await resolveSsrFlags(request('/meetings/not-found'), user)).toEqual({ meetingsRedesign: true });
   });
 
-  it('skips anonymous visitors', async () => {
-    expect(await resolveSsrFlags(request('/meetings/123'), null)).toEqual({});
+  it('evaluates signed-out visitors as one anonymous context', async () => {
+    isFlagEnabled.mockResolvedValue(false);
+    const req = request('/meetings/123?password=secret');
+
+    expect(await resolveSsrFlags(req, null)).toEqual({ meetingsRedesign: false });
+    expect(isFlagEnabled).toHaveBeenCalledWith(req, MEETINGS_REDESIGN_FLAG, false, { key: 'anonymous-meeting-visitor', anonymous: true });
+  });
+
+  it('skips other pages for signed-out visitors', async () => {
+    expect(await resolveSsrFlags(request('/groups/123'), null)).toEqual({});
     expect(isFlagEnabled).not.toHaveBeenCalled();
   });
 

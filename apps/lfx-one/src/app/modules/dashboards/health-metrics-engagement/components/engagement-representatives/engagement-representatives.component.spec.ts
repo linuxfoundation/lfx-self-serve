@@ -23,7 +23,7 @@ function repRow(overrides: Partial<HealthMetricsEngagementRepRow> = {}): HealthM
     personName: 'Dana Fields',
     identityUnresolved: false,
     accountName: 'Acme Motors',
-    membershipTier: 'Gold',
+    jobTitle: 'Head of OSPO',
     committeeName: 'Technical Steering Committee',
     lastAttendedDate: '2026-08-14',
     periods: [
@@ -74,12 +74,14 @@ describe('EngagementRepresentativesComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementRepresentatives } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        // The component reads its initial segment off the URL, writes it back, and follows later changes.
+        // The component writes its cut back to the URL, and follows later changes to it.
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) }, queryParamMap } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementRepresentativesComponent);
+    // The page parses the cut off the URL and binds it in, before the first read.
+    if (queryParams['repFilter']) fixture.componentRef.setInput('filter', queryParams['repFilter']);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
     fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
@@ -102,10 +104,21 @@ describe('EngagementRepresentativesComponent', () => {
     vi.useRealTimers();
   });
 
+  function query(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  function setFilter(filter: string): void {
+    fixture.componentRef.setInput('filter', filter);
+    fixture.detectChanges();
+  }
+
   /** The search box is debounced, so a keystroke only reaches the filter once the pause elapses. */
   function typeSearch(term: string): void {
     vi.useFakeTimers();
-    fixture.componentInstance['searchForm'].controls.search.setValue(term);
+    fixture.componentInstance['searchText'].set(term);
+    // The search reaches its debounce through `toObservable`, which emits as effects flush.
+    TestBed.tick();
     vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS);
     fixture.detectChanges();
   }
@@ -122,31 +135,23 @@ describe('EngagementRepresentativesComponent', () => {
     expect(verdicts).toEqual([false]);
   });
 
-  // The design has no Organization column: the org and tier ride under the name, and the role, title
-  // and day count are gone.
-  it('shows the organization under the name in place of an Organization column', async () => {
+  it('shows the person with their avatar, and the company and job title under the name', async () => {
     await render();
 
     const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-representatives-table"] th')) as HTMLElement[];
     expect(headers.map((th) => th.textContent?.trim())).toEqual(['Representative', 'Group', 'Attended', 'Last attended']);
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
-    expect(row.querySelectorAll('td')).toHaveLength(4);
-    const org = row.querySelector('[data-testid="engagement-representatives-row-r-1-org"]');
-    expect(org.textContent.trim()).toBe('Acme Motors · Gold');
-    expect(org.className).toContain('text-gray-400');
-    expect(row.textContent).not.toContain('Voting Rep');
-    expect(row.textContent).not.toContain('Engineer');
-    expect(row.textContent).not.toContain('days ago');
+    const cells = (query('engagement-representatives-row-r-1') as HTMLElement).querySelectorAll('td');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-text"]')?.textContent).toBe('Dana Fields');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-person"]')).not.toBeNull();
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Acme Motors・Head of OSPO');
+    expect(cells[1].textContent?.trim()).toBe('Technical Steering Committee');
+    expect(cells[2].textContent?.trim()).toBe('2 / 6');
+    expect(cells[3].textContent?.trim()).toBe('Aug 14, 2026');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-text"]')?.className).not.toContain('italic');
   });
 
-  it('hides the organization sub-line when neither the organization nor the tier is known', async () => {
-    await render(response({ rows: [repRow({ accountName: '', membershipTier: null })] }));
-
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1-org"]')).toBeNull();
-  });
-
-  // Red marks a seat never filled, amber a seat that has lapsed; everything else reads as plain text.
-  it('colours never-attended rows red and lapsed rows amber', async () => {
+  // A never-attended rep shows a danger badge and no date; lapsed and active reps read as plain text.
+  it('badges a never-attended count in danger and dashes its date, leaving lapsed reps plain', async () => {
     const periodsWith = (flags: { neverAttended: boolean; lapsed: boolean }) =>
       repRow().periods.map((period) => (period.range === 'YTD' ? { ...period, ...flags, meetingsAttended: flags.neverAttended ? 0 : 1 } : period));
     await render(
@@ -154,42 +159,55 @@ describe('EngagementRepresentativesComponent', () => {
         rows: [
           repRow({ key: 'r-never', periods: periodsWith({ neverAttended: true, lapsed: false }) }),
           repRow({ key: 'r-lapsed', periods: periodsWith({ neverAttended: false, lapsed: true }) }),
-          repRow({ key: 'r-ok', periods: periodsWith({ neverAttended: false, lapsed: false }) }),
         ],
-        counts: counts(3, 1),
+        counts: counts(2, 1),
       })
     );
 
-    const cell = (key: string, part: string) =>
-      fixture.nativeElement.querySelector(`[data-testid="engagement-representatives-row-${key}-${part}"]`) as HTMLElement;
-    for (const part of ['attended', 'last-attended']) {
-      expect(cell('r-never', part).className).toContain('text-red-600');
-      expect(cell('r-never', part).className).toContain('font-medium');
-    }
-    expect(cell('r-lapsed', 'attended').className).toContain('text-gray-900');
-    expect(cell('r-lapsed', 'last-attended').className).toContain('text-amber-600');
-    expect(cell('r-lapsed', 'last-attended').className).not.toContain('text-red-600');
-    expect(cell('r-ok', 'attended').className).toContain('text-gray-900');
-    expect(cell('r-ok', 'last-attended').className).toContain('text-gray-900');
-    expect(cell('r-ok', 'last-attended').className).not.toContain('text-amber-600');
+    const badge = query('engagement-representatives-row-r-never-never') as HTMLElement;
+    expect(badge.tagName).toBe('LFX-UI-BADGE');
+    expect(badge.textContent?.trim()).toBe('0 / 6 — never attended');
+    expect(badge.querySelector('.sr-only')?.textContent).toBe(' — never attended');
+    const never = (query('engagement-representatives-row-r-never') as HTMLElement).querySelectorAll('td');
+    expect(never[3].querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-400');
+    expect(never[3].textContent?.trim()).toBe('—');
+    const lapsed = (query('engagement-representatives-row-r-lapsed') as HTMLElement).querySelectorAll('td');
+    expect(query('engagement-representatives-row-r-lapsed-never')).toBeNull();
+    expect(lapsed[2].textContent?.trim()).toBe('1 / 6');
+    expect(lapsed[3].textContent?.trim()).toBe('Aug 14, 2026');
+    expect(lapsed[3].querySelector('.text-amber-600, .text-red-600')).toBeNull();
   });
 
   // Two unresolved rows must not read as one person listed twice.
-  it('renders an unresolved identity as unresolved', async () => {
+  it('renders an unresolved identity in italic neutral-500 behind a "?" avatar, with the company alone', async () => {
     await render(response({ rows: [repRow({ identityUnresolved: true, personName: 'Dana Fields' })] }));
 
-    const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
-    expect(row.textContent).toContain('Unresolved identity');
-    expect(row.textContent).not.toContain('Dana Fields');
+    const cell = (query('engagement-representatives-row-r-1') as HTMLElement).querySelector('td') as HTMLElement;
+    expect(cell.textContent).toContain('Unresolved identity');
+    expect(cell.textContent).not.toContain('Dana Fields');
+    // On the name alone: the table's td rule would override a colour on the cell, and the company and avatar stay upright.
+    const name = cell.querySelector('[data-testid="health-metrics-cell-text"]') as HTMLElement;
+    expect(name.className).toContain('italic');
+    expect(name.className).toContain('text-gray-500');
+    expect(cell.querySelector('[data-testid="health-metrics-cell-description"]')?.className).not.toContain('italic');
+    expect(cell.querySelector('[data-testid="health-metrics-cell-person"]')?.textContent?.trim()).toBe('?');
+    expect(cell.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Acme Motors');
   });
 
-  // The placeholder and the icon give the box no accessible name, so the label has to.
-  it('names the search box for assistive tech', async () => {
+  it('searches with the small search field named for its person or company search', async () => {
     await render();
 
-    const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-representatives-search"]');
-    expect(label?.textContent?.trim()).toBe('Search person or company');
-    expect(fixture.nativeElement.querySelector('input#engagement-representatives-search')).not.toBeNull();
+    const search = query('engagement-representatives-search') as HTMLElement;
+    expect(search.tagName).toBe('LFX-UI-SEARCH-INPUT');
+    expect(search.querySelector('input')?.getAttribute('placeholder')).toBe('Search person or company...');
+  });
+
+  it('pages ten representatives at a time with the numbered pager', async () => {
+    const rows = Array.from({ length: 23 }, (_, index) => repRow({ key: `r-${index}`, personName: `Person ${index}` }));
+    await render(response({ rows, counts: counts(23, 0) }));
+
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-representatives-row-"]:not([data-testid$="-never"])')).toHaveLength(10);
+    expect(query('ui-pagination-info')?.textContent?.trim()).toBe('Showing 1 to 10 of 23');
   });
 
   // The period pill projects the loaded rows, so switching it must not cost another request.
@@ -204,36 +222,28 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]').textContent).toContain('3 / 6');
   });
 
-  // Unlike the org and non-member captions, this view counts its scope per period, so the note and
-  // the caption both have to follow the pill off the already-loaded response.
+  // This view counts its scope per period, so the note has to follow the period off the loaded response.
   it('re-reports the note counts for the newly selected period, off the loaded response', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: counts(48, 12) }), (value) => emitted.push(value));
     getEngagementRepresentatives.mockClear();
 
     expect(emitted).toEqual([null, { range: 'YTD', reps: 48, neverAttendedReps: 12 }]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe(
-      '48 representatives · 12 never attended'
-    );
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
 
     expect(getEngagementRepresentatives).not.toHaveBeenCalled();
     expect(emitted.at(-1)).toEqual({ range: 'COMPLETED_YEAR', reps: 49, neverAttendedReps: 12 });
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe(
-      '49 representatives · 12 never attended'
-    );
     // The period re-settles too, since whether it has any representative moves the section's height.
     expect(verdicts).toEqual([false, false]);
   });
 
-  // A view that reports no scope count has not measured zero representatives, and the table says so.
-  it('captions an unmeasured scope with an em dash rather than a confident zero, keeping its rows', async () => {
+  // A view that reports no scope count has not measured zero representatives.
+  it('reports no note counts for an unmeasured scope, keeping its rows', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: null }), (value) => emitted.push(value));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe('—');
     expect(emitted).toEqual([null, null]);
     // Unmeasured counts only caption the rows; the table still has them, so the section is not empty.
     expect(verdicts).toEqual([false]);
@@ -272,8 +282,7 @@ describe('EngagementRepresentativesComponent', () => {
     });
     await render(response({ rows: [repRow(), never], counts: counts(2, 1) }));
 
-    fixture.componentInstance['onFilterChange']('never');
-    fixture.detectChanges();
+    setFilter('never');
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]');
@@ -295,16 +304,13 @@ describe('EngagementRepresentativesComponent', () => {
     });
     await render(response({ rows: [repRow(), lapsed], counts: counts(2, 0) }));
 
-    fixture.componentInstance['onFilterChange']('lapsed');
-    fixture.detectChanges();
+    setFilter('lapsed');
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).not.toBeNull();
-    // The caption still counts the period's whole population, not the cut; the never part drops at zero.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe('2 representatives');
   });
 
-  it('restores the cut from the URL, so a deep link lands on the segment it named', async () => {
+  it('starts on the cut the page binds in from the URL', async () => {
     const never = repRow({
       key: 'r-2',
       periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 }],
@@ -336,26 +342,18 @@ describe('EngagementRepresentativesComponent', () => {
     await render();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    fixture.componentInstance['onFilterChange']('never');
+    setFilter('never');
     await fixture.whenStable();
 
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { repFilter: 'never' }, preserveFragment: true, replaceUrl: true }));
 
-    fixture.componentInstance['onFilterChange']('all');
+    setFilter('all');
     await fixture.whenStable();
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { repFilter: null } }));
   });
 
-  // An unknown segment in the URL is not a segment — it must land on the default, not an empty table.
-  it('falls back to the all segment for a repFilter value the table does not have', async () => {
-    await render(response(), undefined, { repFilter: 'bogus' });
-
-    expect(fixture.componentInstance['filter']()).toBe('all');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).not.toBeNull();
-  });
-
-  it('searches the person and the organization together, without another request', async () => {
+  it('searches the person and the company together, without another request', async () => {
     const other = repRow({ key: 'r-2', personName: 'Sam Rivera', accountName: 'Vendor Corp' });
     await render(response({ rows: [repRow(), other], counts: counts(2, 0) }));
     getEngagementRepresentatives.mockClear();
@@ -407,7 +405,16 @@ describe('EngagementRepresentativesComponent', () => {
 
     const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
     expect(empty?.textContent).toContain('No representatives match this filter');
-    expect(empty?.textContent).not.toContain('recorded for this scope');
+    expect(empty?.textContent).toContain('Nobody in this scope falls into this group right now.');
+
+    setFilter('never');
+    (empty?.querySelector('[data-testid="empty-state-reset-filters"]') as HTMLElement).click();
+    expect(fixture.componentInstance.filter()).toBe('all');
+    expect(fixture.componentInstance['searchText']()).toBe('');
+    // A cleared search skips the debounce, so the rows come back at once.
+    TestBed.tick();
+    fixture.detectChanges();
+    expect(query('engagement-representatives-row-r-1')).not.toBeNull();
   });
 
   // Two foundations can hold the same number of reps, so the row count cannot stand in for identity.
@@ -415,12 +422,12 @@ describe('EngagementRepresentativesComponent', () => {
     const rows = Array.from({ length: 60 }, (_, index) => repRow({ key: `r-${index}`, personName: `Person ${index}` }));
     await render(response({ rows, counts: counts(60, 0) }));
 
-    fixture.componentInstance['first'].set(50);
+    fixture.componentInstance['page'].set(5);
     selectedFoundation.set({ slug: 'other' });
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(fixture.componentInstance['first']()).toBe(0);
+    expect(fixture.componentInstance['page']()).toBe(0);
   });
 
   // A failed read renders no rows, and "no representatives" would state that absence as measured fact.

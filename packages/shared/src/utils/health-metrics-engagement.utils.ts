@@ -5,22 +5,30 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS,
-  HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
-  HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_LABEL,
+  HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_BAR_FILLS,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ICONS,
+  HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
-  HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX,
-  HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
 import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS, HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
+import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
+import { healthMetricsBarFillClass } from './health-metrics-table.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
@@ -29,36 +37,38 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementAttendanceTrendPointView,
   HealthMetricsEngagementAttendanceTrendSummaryView,
+  HealthMetricsEngagementGroupKind,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementGroupRowView,
+  HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementNewsletter,
   HealthMetricsEngagementNewsletterKpiView,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPointView,
   HealthMetricsEngagementNewsletterRowView,
   HealthMetricsEngagementNewsletterView,
-  HealthMetricsEngagementNonMemberPeriod,
-  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberRow,
+  HealthMetricsEngagementNonMemberRowView,
   HealthMetricsEngagementOrgFilter,
-  HealthMetricsEngagementOrgPeriod,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementOrgRowView,
   HealthMetricsEngagementRecipient,
   HealthMetricsEngagementRecipientFilter,
   HealthMetricsEngagementRecipientRowView,
   HealthMetricsEngagementRepFilter,
-  HealthMetricsEngagementRepPeriod,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepRow,
-  HealthMetricsEngagementRepRowLabels,
+  HealthMetricsEngagementRepRowView,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementParticipationRowView,
   HealthMetricsEngagementSectionKey,
-  HealthMetricsEngagementSparkBar,
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
 } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
+import type { HealthMetricsL2Range, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
@@ -119,33 +129,39 @@ export function selectHealthMetricsEngagementGroupPeriod(
   return selectPeriod(row.periods, range);
 }
 
-/**
- * Sparkline series, oldest → current. A period stays `null` when it had no invited population or
- * too few meetings to rate, matching `formatHealthMetricsEngagementAttendance` — the chart leaves
- * that slot empty rather than drawing a bar the table itself refuses to state.
- */
-export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagementGroupRow): (number | null)[] {
-  return row.periods.map((period) =>
-    period.meetingsHeld === null || period.meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE ? null : period.attendancePct
-  );
+/** A group-type cut from the URL; anything unknown reads as every type. */
+export function parseHealthMetricsEngagementGroupType(value: string | null): HealthMetricsEngagementGroupTypeFilter {
+  return HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.find((filter) => filter.key === value)?.key ?? 'all';
 }
 
-/**
- * The design's `spark2` bars, oldest → current, scaled to the rated values' own min-max so a tight run
- * still shows its movement. A `null` period keeps its slot with no bar; empty below two rated values.
- */
-export function buildHealthMetricsEngagementSparkBars(series: readonly (number | null)[]): HealthMetricsEngagementSparkBar[] {
-  const values = series.filter((value): value is number => value !== null);
-  if (values.length < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) return [];
+/** What a group is, from the view's type label; a governance group is the board or one of its oversight committees. */
+export function resolveHealthMetricsEngagementGroupKind(row: HealthMetricsEngagementGroupRow): HealthMetricsEngagementGroupKind {
+  // Read off the filter cuts' own labels, so the kinds cannot drift from the view's values.
+  const label = row.groupTypeLabel ?? '';
+  const labels = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS;
+  const kinds = HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS;
+  if (labels.gov?.includes(label)) return row.meetingTypeGroup === 'Board' ? kinds.board : kinds.oversight;
+  if (labels.wg?.includes(label)) return kinds.workingGroup;
+  if (labels.sigtag?.includes(label)) return kinds.sigTag;
+  return kinds.other;
+}
 
-  const min = Math.min(...values);
-  const span = Math.max(...values) - min || 1;
-  const heightOf = (value: number): number =>
-    Number((HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX + ((value - min) / span) * HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX).toFixed(1));
-  return series.map((value, index) => ({
-    heightPx: value === null ? null : heightOf(value),
-    last: value !== null && index === series.length - 1,
-  }));
+/** One Group attendance row for the selected period. A group that held no meetings shows "—" rather than 0. */
+export function buildHealthMetricsEngagementGroupRowView(row: HealthMetricsEngagementGroupRow, range: HealthMetricsRange): HealthMetricsEngagementGroupRowView {
+  const period = selectPeriod(row.periods, range);
+  const meetings = period?.meetingsHeld ?? null;
+  const pct = ratedAttendancePct(period?.attendancePct ?? null, meetings);
+
+  return {
+    key: row.committeeId,
+    name: row.committeeName,
+    kind: resolveHealthMetricsEngagementGroupKind(row),
+    meetings: meetings ? formatHealthMetricsEngagementCount(meetings) : HEALTH_METRICS_TABLE_DASH,
+    lastMetLabel: row.lastMetDate ? formatIsoDateLabel(row.lastMetDate) : HEALTH_METRICS_TABLE_DASH,
+    dormant: period?.dormant ?? false,
+    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
+    attendancePct: pct,
+  };
 }
 
 /** Sub-nav entries per the design's `counts()`; a note is dropped at zero. */
@@ -173,6 +189,59 @@ export function selectHealthMetricsEngagementParticipationPeriod(
   range: HealthMetricsRange
 ): HealthMetricsEngagementParticipationPeriod | null {
   return selectPeriod(row.periods, range);
+}
+
+/** One Meeting participation row for the selected period, named by its short meeting type as the design does. */
+export function buildHealthMetricsEngagementParticipationRowView(
+  row: HealthMetricsEngagementParticipationRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementParticipationRowView {
+  const period = selectPeriod(row.periods, range);
+  const group = row.group ?? '';
+  const pct = ratedAttendancePct(period?.attendancePct ?? null, period?.meetingsHeld ?? null);
+  // Own keys only: a type named like an Object.prototype member must not pick up a non-icon.
+  const icons = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ICONS;
+  const fills = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_BAR_FILLS;
+
+  return {
+    key: group || row.label,
+    name: group || row.label,
+    icon: Object.hasOwn(icons, group) ? icons[group] : icons['Other'],
+    description: row.governance ? HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION : '',
+    governance: row.governance,
+    meetings: formatHealthMetricsEngagementCount(period?.meetingsHeld ?? null),
+    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
+    attendancePct: pct,
+    fillRule: Object.hasOwn(fills, group) ? fills[group] : HEALTH_METRICS_VALUE_BAR_FILL,
+  };
+}
+
+/** The Meeting participation metrics row: attendance with its change, meetings held, active groups and never attended. */
+export function buildHealthMetricsEngagementParticipationMetrics(
+  total: HealthMetricsEngagementParticipationRow | null,
+  range: HealthMetricsRange
+): HealthMetricsMetricItem[] {
+  const period = total ? selectPeriod(total.periods, range) : null;
+  const change = period?.attendanceChangePp ?? null;
+  const direction = resolveHealthMetricsEngagementDeltaDirection(change);
+  const attendance: HealthMetricsMetricItem = {
+    key: 'attendance',
+    label: 'All-meeting attendance',
+    value: period ? formatHealthMetricsEngagementAttendance(period.attendancePct, period.meetingsHeld) : HEALTH_METRICS_TABLE_DASH,
+  };
+  // No prior period, no comparison: the line is left out rather than claiming a change of "—".
+  if (change !== null) {
+    attendance.descriptionLead = formatHealthMetricsEngagementPpDelta(change);
+    attendance.description = 'vs previous period';
+    attendance.descriptionLeadTone = direction === 'neutral' ? 'flat' : direction;
+  }
+
+  return [
+    attendance,
+    { key: 'meetings', label: 'Meetings held', value: formatHealthMetricsEngagementCount(period?.meetingsHeld ?? null) },
+    { key: 'groups', label: 'Active groups', value: formatHealthMetricsEngagementRatio(period?.activeGroups ?? null, total?.totalGroups ?? null) },
+    { key: 'never', label: 'Never attended', value: formatHealthMetricsEngagementCount(period?.neverAttended ?? null) },
+  ];
 }
 
 /**
@@ -262,19 +331,60 @@ export function buildHealthMetricsEngagementAttendanceTrendSummary(
   };
 }
 
-/**
- * The org row's numbers for one period. Same four-period fallback as the group and participation
- * tables.
- */
-export function selectHealthMetricsEngagementOrgPeriod(row: HealthMetricsEngagementOrgRow, range: HealthMetricsRange): HealthMetricsEngagementOrgPeriod | null {
-  return selectPeriod(row.periods, range);
+/** Company participation's activity cut from the URL; anything unknown reads as every company. */
+export function parseHealthMetricsEngagementOrgFilter(value: string | null): HealthMetricsEngagementOrgFilter {
+  return HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS.find((filter) => filter.key === value)?.key ?? 'all';
 }
 
-/** The org table's tier pill: blue for the top tiers (any case), grey for everything else. */
-export function resolveHealthMetricsEngagementOrgTierPillClass(tier: string): string {
-  return HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS.includes(tier.trim().toLowerCase())
-    ? HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top
-    : HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.other;
+/** Representatives' cut from the URL; anything unknown reads as every representative. */
+export function parseHealthMetricsEngagementRepFilter(value: string | null): HealthMetricsEngagementRepFilter {
+  return HEALTH_METRICS_ENGAGEMENT_REP_FILTERS.find((filter) => filter.key === value)?.key ?? 'all';
+}
+
+/**
+ * One Company participation row for the selected period. Meetings attended reads against the meetings that concerned
+ * the company, the same base as its rate, and a company no meeting concerned reads "—" with no bar.
+ */
+export function buildHealthMetricsEngagementOrgRowView(row: HealthMetricsEngagementOrgRow, range: HealthMetricsRange): HealthMetricsEngagementOrgRowView {
+  const period = selectPeriod(row.periods, range);
+  const attended = period?.attendedCount ?? null;
+  const total = period?.meetingsTotal ?? null;
+  const fraction = period?.attendancePct ?? null;
+  const share = attended !== null && total !== null && total > 0 && fraction !== null ? Math.round(fraction * 100) : null;
+  const tierName = row.membershipTier.trim();
+  const tier = row.isMember ? (HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((key) => key === tierName.toLowerCase()) ?? null) : null;
+
+  return {
+    key: row.accountId,
+    name: row.accountName,
+    logoUrl: row.logoUrl,
+    membership: orgMembershipLabel(row.isMember, tier, tierName),
+    isMember: row.isMember,
+    tier,
+    attendedLabel:
+      share === null
+        ? HEALTH_METRICS_TABLE_DASH
+        : `${formatHealthMetricsEngagementCount(attended)} of ${formatHealthMetricsEngagementCount(total)} (${share}%)`,
+    attendedPct: share,
+    attendedFillClass: share === null ? '' : healthMetricsBarFillClass(share),
+    avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
+    lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : HEALTH_METRICS_TABLE_DASH,
+  };
+}
+
+/** One Non-member participation row for the selected period. */
+export function buildHealthMetricsEngagementNonMemberRowView(
+  row: HealthMetricsEngagementNonMemberRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementNonMemberRowView {
+  const period = selectPeriod(row.periods, range);
+  return {
+    key: row.accountId,
+    name: row.accountName,
+    logoUrl: row.logoUrl,
+    meetings: formatHealthMetricsEngagementCount(period?.meetingsAttended ?? null),
+    people: formatHealthMetricsEngagementCount(period?.distinctPeople ?? null),
+  };
 }
 
 /** Mean reps at one decimal. `null` is "attended nothing this period", which is an em dash, not `0`. */
@@ -301,40 +411,19 @@ export function filterHealthMetricsEngagementOrgRows(
   return matched.sort((a, b) => compareByPeriodRank(a, b, range, accountNameOf));
 }
 
-/** The selected period's numbers for one non-member row, falling back to the newest period held. */
-export function selectHealthMetricsEngagementNonMemberPeriod(
-  row: HealthMetricsEngagementNonMemberRow,
-  range: HealthMetricsRange
-): HealthMetricsEngagementNonMemberPeriod | null {
-  return selectPeriod(row.periods, range);
-}
-
 /**
  * The organizations that attended a meeting in the selected period, best-first by the view's rank —
- * the population the period's caption counts, so the table and its caption cannot disagree.
+ * the population the period's scope count covers, so the table and the count cannot disagree.
  */
 export function filterHealthMetricsEngagementNonMemberRows(
   rows: readonly HealthMetricsEngagementNonMemberRow[],
   range: HealthMetricsRange
 ): HealthMetricsEngagementNonMemberRow[] {
-  // Null is unmeasured, like a real 0 attended — the population the caption counts is missing either way.
+  // Null is unmeasured, like a real 0 attended — the population the scope count covers is missing either way.
   return rows.filter((row) => !!selectPeriod(row.periods, range)?.meetingsAttended).sort((a, b) => compareByPeriodRank(a, b, range, accountNameOf));
 }
 
-/** The selected period's caption count, which the view counts per period. */
-export function selectHealthMetricsEngagementNonMemberCounts(
-  counts: readonly HealthMetricsEngagementNonMemberPeriodCounts[] | null,
-  range: HealthMetricsRange
-): HealthMetricsEngagementNonMemberPeriodCounts | null {
-  return counts ? selectPeriod(counts, range) : null;
-}
-
-/** The selected period's numbers for one representative, falling back to the newest period held. */
-export function selectHealthMetricsEngagementRepPeriod(row: HealthMetricsEngagementRepRow, range: HealthMetricsRange): HealthMetricsEngagementRepPeriod | null {
-  return selectPeriod(row.periods, range);
-}
-
-/** The selected period's caption counts. This view counts its scope per period, unlike the org view. */
+/** The selected period's scope counts. This view counts its scope per period, unlike the org view. */
 export function selectHealthMetricsEngagementRepCounts(
   counts: readonly HealthMetricsEngagementRepPeriodCounts[] | null,
   range: HealthMetricsRange
@@ -344,7 +433,7 @@ export function selectHealthMetricsEngagementRepCounts(
 
 /**
  * The representatives table's client-side cut. Every cut starts from the people invited in the
- * selected period — the population the view's own caption counts — so the table and its caption
+ * selected period — the population the view's own scope count covers — so the table and the count
  * cannot disagree. The view's rank is per period, so the pill re-sorts the cut as well.
  */
 export function filterHealthMetricsEngagementRepRows(
@@ -357,7 +446,7 @@ export function filterHealthMetricsEngagementRepRows(
 
   const matched = rows.filter((row) => {
     const period = selectPeriod(row.periods, range);
-    // Null is unmeasured, like a real 0 invited — the population the caption counts is missing either way.
+    // Null is unmeasured, like a real 0 invited — the population the scope count covers is missing either way.
     if (!period || !period.meetingsInvited) return false;
     if (filter === 'never' && !period.neverAttended) return false;
     if (filter === 'lapsed' && !period.lapsed) return false;
@@ -370,15 +459,35 @@ export function filterHealthMetricsEngagementRepRows(
   return matched.sort((a, b) => compareByPeriodRank(a, b, range, repDisplayName) || a.key.localeCompare(b.key, 'en-US'));
 }
 
-/** The labels a representatives row renders; every unknown piece drops out rather than printing "null". */
-export function buildHealthMetricsEngagementRepLabels(row: HealthMetricsEngagementRepRow): HealthMetricsEngagementRepRowLabels {
-  const org = [row.accountName, row.membershipTier].filter((part): part is string => !!part?.trim()).join(' · ');
+/** A rep's all-time last-attended date, built once per read: the period must not pay an `Intl` formatter per loaded row. */
+export function formatHealthMetricsEngagementRepLastAttended(row: HealthMetricsEngagementRepRow): string {
+  // Pre-rendered off a UTC-anchored parse: a `DatePipe` render reads a date-only value a day early west of UTC.
+  return row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : HEALTH_METRICS_TABLE_DASH;
+}
+
+/**
+ * One Representatives row for the selected period. The company and job title sit under the name, an unresolved
+ * identity keeps the company alone, and a rep who never attended has no last-attended date to show.
+ */
+export function buildHealthMetricsEngagementRepRowView(
+  row: HealthMetricsEngagementRepRow,
+  range: HealthMetricsRange,
+  lastAttendedLabel: string = formatHealthMetricsEngagementRepLastAttended(row)
+): HealthMetricsEngagementRepRowView {
+  const period = selectPeriod(row.periods, range);
+  const unresolved = isUnresolvedRep(row);
+  const neverAttended = period?.neverAttended ?? false;
+  const title = unresolved ? '' : (row.jobTitle?.trim() ?? '');
 
   return {
+    key: row.key,
     displayName: repDisplayName(row),
-    orgLabel: org || '—',
-    // Pre-rendered off a UTC-anchored parse: a `DatePipe` render reads a date-only value a day early west of UTC.
-    lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+    unresolved,
+    description: [row.accountName.trim(), title].filter(Boolean).join('・'),
+    committeeName: row.committeeName,
+    attendedLabel: formatHealthMetricsEngagementRatio(period?.meetingsAttended ?? null, period?.meetingsInvited ?? null),
+    neverAttended,
+    lastAttendedLabel: neverAttended ? HEALTH_METRICS_TABLE_DASH : lastAttendedLabel,
   };
 }
 
@@ -398,7 +507,18 @@ function compareByPeriodRank<T extends { periods: readonly { range: HealthMetric
 
 /** An unresolved identity's name is a source placeholder, and two of them would read as one person. */
 function repDisplayName(row: HealthMetricsEngagementRepRow): string {
-  return row.identityUnresolved || !row.personName.trim() ? HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL : row.personName;
+  return isUnresolvedRep(row) ? HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL : row.personName;
+}
+
+function isUnresolvedRep(row: HealthMetricsEngagementRepRow): boolean {
+  return row.identityUnresolved || !row.personName.trim();
+}
+
+/** The Membership cell: the tier, "Non-member", or "—" for a member whose tier the view left blank. */
+function orgMembershipLabel(isMember: boolean, tier: HealthMetricsMembersReservedTier | null, tierName: string): string {
+  if (!isMember) return HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_LABEL;
+  if (tier) return HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS[tier];
+  return tierName || HEALTH_METRICS_TABLE_DASH;
 }
 
 function accountNameOf(row: { accountName: string }): string {
@@ -509,6 +629,12 @@ export function formatHealthMetricsRelativeTime(iso: string | null, now: Date): 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */
 function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly T[], range: HealthMetricsRange): T | null {
   return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
+}
+
+/** The whole percent a bar shows, or `null` with no invited population or too few meetings to rate. */
+function ratedAttendancePct(fraction: number | null, meetingsHeld: number | null): number | null {
+  if (fraction === null || meetingsHeld === null || meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE) return null;
+  return Math.round(fraction * 100);
 }
 
 /** The one decimal the delta label prints; the direction resolver reads the same value. */

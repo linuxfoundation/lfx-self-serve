@@ -21,6 +21,17 @@ describe('HealthMetricsCellComponent', () => {
     await set({ text: 'Acme Motors' });
   });
 
+  it("styles the text alone with the widget's classes, keeping the dash grey", async () => {
+    await set({ text: 'Unresolved identity', textClass: 'italic text-gray-500', description: 'Acme Motors' });
+
+    expect(query('health-metrics-cell-text')?.className).toContain('italic');
+    expect(query('health-metrics-cell-text')?.className).toContain('truncate');
+    expect(query('health-metrics-cell-description')?.className).not.toContain('italic');
+
+    await set({ text: '—', textClass: 'italic' });
+    expect(query('health-metrics-cell-text')?.className).toContain('text-gray-400');
+  });
+
   it('renders the text on one line, cut with an ellipsis, and no description by default', () => {
     expect(query('health-metrics-cell-text')?.textContent?.trim()).toBe('Acme Motors');
     expect(query('health-metrics-cell-text')?.className).toContain('truncate');
