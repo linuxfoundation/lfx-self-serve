@@ -96,7 +96,7 @@ For a recurring meeting, guests are invited to **All occurrences** by default.
 
 ## Let guests see who else is invited
 
-**Show attendees to guests** lets guests see who else is invited, and who has accepted, on the meeting in LFX. Guests who can't see the list still see how many people are invited. Calendar invites never list other guests, whatever this setting says. **Board** meetings never share their guest list with guests, and the switch is locked for that type. On a **Restricted** (invited guests only) meeting the switch works the same as on any other meeting.
+**Show attendees to guests** lets guests see who else is invited, and who has accepted, on the meeting in LFX. Guests who can't see the list still see how many people are invited. Calendar invites never list other guests, whatever this setting says. **Board** meetings never share their guest list with guests, and the switch is locked for that type. On a **Restricted** (invited guests only) meeting you can turn the switch on in the **Invite guests** section like on any other meeting, and it stays on when you edit the meeting again.
 
 ## Related
 
