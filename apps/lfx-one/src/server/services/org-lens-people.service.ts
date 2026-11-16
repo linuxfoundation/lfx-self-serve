@@ -973,7 +973,9 @@ export class OrgLensPeopleService {
            FROM github_identities AS github
            LEFT JOIN lf_identities AS identities ON identities.PERSON_KEY = github.PERSON_KEY
            ORDER BY github.PERSON_KEY, github.GITHUB_USERNAME, identities.LF_USERNAME`,
-          [accountId]
+          [accountId],
+          // This optional identity view can lag its dbt rollout; core history failures must still count.
+          { expectMissingObject: 'ORG_PEOPLE_LF_USERNAMES' }
         );
         return result.rows;
       },

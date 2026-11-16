@@ -1101,11 +1101,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
               row('p-cjk', '\u660E\u534E \u674E', { commitsCount: 1 }),
               row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
               row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
+              row('p-greek', 'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', { firstName: 'ΝΙΚΟΣ', lastName: 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', commitsCount: 1 }),
               // A handle that appears nowhere in the name, email or LF username, on someone whose only activity is an event.
               row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', githubUsernames: ['example-gh-user'], commitsCount: 0, eventsCount: 1 }),
               row('p-other', 'Alan Turing', { commitsCount: 1 }),
             ],
-            5
+            6
           )
         );
         snowflake$.complete();
@@ -1127,6 +1128,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       it('finds both stored-name orders when the display name contains only the given name', async () => {
         for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
           expect(await search(query)).toEqual(['org-people-all-employees-row-p-stored-parts']);
+        }
+      });
+
+      it('finds spaced and compact Greek names in original and rotated order', async () => {
+        for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΠΑΠΑΣ ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣΝΙΚΟΣΝΙΚΟΛΑΟΣ']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-greek']);
         }
       });
 

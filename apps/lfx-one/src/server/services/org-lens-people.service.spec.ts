@@ -2001,6 +2001,28 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(rows[0].githubUsernames).toEqual(['recovered-live-handle']);
     });
 
+    it.each(['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_CONTRIBUTORS_DAILY'])(
+      'leaves %s lookup failures uncached while exempting only the optional view',
+      async (missing) => {
+        addDailyCode(ACCOUNT, personKey, '2020-01-01', 'foundation-two', 'Foundation Two');
+        setGithubUsername(personKey, 'recovered-live-handle');
+        addLfUser(personKey, 'mixeduser');
+        const rows: Pick<OrgAllEmployeeRowInternal, 'personKey' | 'lfUsername' | 'githubUsernames'>[] = [{ personKey: 'live-linked', lfUsername: 'mixeduser' }];
+        const warehouse = execute.getMockImplementation()!;
+        execute.mockRejectedValueOnce(new Error(`SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.${missing}' does not exist or not authorized.`));
+
+        expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(false);
+        expect(execute).toHaveBeenLastCalledWith(expect.stringContaining('WITH github_identities'), [ACCOUNT], {
+          expectMissingObject: 'ORG_PEOPLE_LF_USERNAMES',
+        });
+        expect(rows).toEqual([{ personKey: 'live-linked', lfUsername: 'mixeduser' }]);
+        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(false);
+        execute.mockImplementation(warehouse);
+        expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
+        expect(rows[0].githubUsernames).toEqual(['recovered-live-handle']);
+      }
+    );
+
     it.each(['all', '730d'] as const)("puts the handles of a current employee's code in range %s on their row", async (range) => {
       addRangeRow(ACCOUNT, personKey, range, false, 'recent', 'Recent Person', 'recent@company.example', 3);
       setGithubUsername(personKey, '@example-gh-user');

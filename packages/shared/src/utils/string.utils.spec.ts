@@ -70,6 +70,27 @@ describe('nameSearchKeys', () => {
     expect(nameSearchKeys('Juan Carlos Pérez', null, null)).toEqual(['juancarlosperez', 'carlosperezjuan', 'perezjuancarlos']);
   });
 
+  it('preserves Greek final sigma in spaced and compact rotations', () => {
+    const keys = nameSearchKeys('ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', null, null);
+    for (const parts of [
+      ['ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣ'],
+      ['ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣ', 'ΝΙΚΟΣ'],
+      ['ΠΑΠΑΣ', 'ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣ'],
+    ]) {
+      for (const separator of [' ', '', '\u3000', '\u200b']) {
+        const query = parts.join(separator);
+        expect(keys.some((key) => key.includes(foldForSearch(query)))).toBe(true);
+      }
+    }
+  });
+
+  it('preserves spaced and compact Greek name orders when only the stored parts provide the full name', () => {
+    const keys = nameSearchKeys('ΝΙΚΟΣ', ' ΝΙΚΟΣ ', 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ');
+    for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣΠΑΠΑΣΝΙΚΟΣ']) {
+      expect(keys.some((key) => key.includes(foldForSearch(query)))).toBe(true);
+    }
+  });
+
   it('splits on ideographic and zero-width spaces like foldForSearch removes them', () => {
     expect(nameSearchKeys('明华　李', null, null)).toEqual(['明华李', '李明华']);
     expect(nameSearchKeys('明华​李', null, null)).toEqual(['明华李', '李明华']);

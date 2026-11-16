@@ -61,6 +61,7 @@ export const VALKEY_CACHE = {
    * other's entry, so the directory mostly misses until the rollout ends. `v8` (#5687): rows carry
    * `githubUsernames` for All Employees search, bumped for the same rolling-deploy reason. `v9` (#5687): handles
    * come from retained account history, not just selected-window code; old entries must not hide those identities.
+   * `v10` (#5687): live-only rows receive retained handles through their verified LF username.
    */
   ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v10',
 
@@ -386,7 +387,8 @@ export const VALKEY_CACHE = {
     // inside the headroom. `v7` (#4401) adds a short, usually-empty `keyContactRoles` array per row —
     // only the minority of people holding a key-contact role carry any — likewise inside it. `v8` (#5687)
     // adds a `githubUsernames` array. `v9` enriches eligible rows from retained identity history rather than
-    // only in-window code. The existing cap carries over unmeasured; oversized entries skip storage safely.
+    // only in-window code. `v10` includes handles on live-only rows through verified LF usernames.
+    // The existing cap carries over unmeasured; oversized entries skip storage safely.
     // The cap is keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
     'org-people-dir:v10': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
