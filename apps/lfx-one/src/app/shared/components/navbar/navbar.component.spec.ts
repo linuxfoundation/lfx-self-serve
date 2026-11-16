@@ -4,9 +4,17 @@
 import { computed, signal } from '@angular/core';
 import type { Signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { DefaultUrlSerializer, Router } from '@angular/router';
-import { ALL_LENSES, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
+import { DefaultUrlSerializer, NavigationEnd, Router } from '@angular/router';
+import {
+  ALL_LENSES,
+  CREATABLE_ARTIFACTS,
+  NAVBAR_PEEK_CLOSE_DELAY_MS,
+  NAVBAR_PEEK_RECHECK_DELAY_MS,
+  NAVBAR_ROLE_STYLES,
+  NAVBAR_THEME_STORAGE_KEY,
+} from '@lfx-one/shared/constants';
 import type {
+  CreatableArtifactConfig,
   Lens,
   LensOption,
   NavbarMenuBlock,
@@ -19,7 +27,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { AppService } from '@services/app.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
+import { NavbarThemeService } from '@services/navbar-theme.service';
 import { ChangelogService } from '@services/changelog.service';
+import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -31,13 +42,14 @@ import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { DialogService } from 'primeng/dynamicdialog';
-import { EMPTY } from 'rxjs';
+import { EMPTY, Observable, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NavbarComponent } from './navbar.component';
 
 /** The navbar's protected view state, reached through a narrow cast (template is overridden empty). */
 interface NavbarView {
+  lfid: Signal<string | null>;
   menuBlocks: Signal<NavbarMenuBlock<SidebarMenuItem & { trackKey: string }>[]>;
   lensTabs: Signal<LensOption[]>;
   roleMarks: Signal<NavbarRoleMark[]>;
@@ -56,6 +68,13 @@ interface NavbarView {
   retryMenu(): void;
   switchLens(lens: Lens): void;
   onOrgSelected(): void;
+  railVisible: Signal<boolean>;
+  showSidebarToggle: Signal<boolean>;
+  toggleLabel: Signal<string>;
+  headTooltipPlacement: Signal<string>;
+  onToggleClick(event: MouseEvent): void;
+  brandMenuOpen: WritableSignal<boolean>;
+  openCreateDialog(artifact: CreatableArtifactConfig): void;
 }
 
 /**
@@ -91,6 +110,7 @@ const createLensServiceFake = (lens: Lens, lenses: LensOption[]) => {
 };
 
 const retryMenuLookups = vi.fn();
+const openCreateArtifactDialog = vi.fn();
 
 const createNavbarFixture = async (
   items: SidebarMenuItem[],
@@ -106,6 +126,8 @@ const createNavbarFixture = async (
     url = '/',
     retrying = false,
     template = '',
+    routerEvents = EMPTY,
+    navigation = null,
   }: {
     lens?: Lens;
     itemsPending?: boolean;
@@ -116,13 +138,24 @@ const createNavbarFixture = async (
     url?: string;
     retrying?: boolean;
     template?: string;
+    routerEvents?: Observable<unknown>;
+    navigation?: { extras: { replaceUrl?: boolean }; trigger: string } | null;
   } = {}
 ): Promise<ComponentFixture<NavbarComponent>> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [NavbarComponent],
     providers: [
-      { provide: Router, useValue: { url, events: EMPTY, navigate: vi.fn(), parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
+      {
+        provide: Router,
+        useValue: {
+          url,
+          events: routerEvents,
+          currentNavigation: () => navigation,
+          navigate: vi.fn(),
+          parseUrl: (value: string) => new DefaultUrlSerializer().parse(value),
+        },
+      },
       { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
       { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn((page: string) => ['/org', 'acme', page]) } },
@@ -131,6 +164,7 @@ const createNavbarFixture = async (
         useValue: {
           user: signal({ user_id: 'u1', name: 'Ada Lovelace' } as unknown as User),
           userInitials: computed(() => 'AL'),
+          viewerUsername: signal('auth0|alovelace'),
           effectiveAvatarUrl: computed(() => ''),
           canImpersonate: signal(false),
           impersonating: signal(false),
@@ -156,6 +190,7 @@ const createNavbarFixture = async (
         useValue: { sidebarItemsPending: signal(itemsPending), menuLookupFailed: signal(lookupFailed), menuRetryPending: signal(retrying), retryMenuLookups },
       },
       { provide: CreatePermissionService, useValue: { canShowCreateButton: signal(false), creatableTypes: signal([]) } },
+      { provide: CreateArtifactDialogService, useValue: { open: openCreateArtifactDialog } },
     ],
   });
   TestBed.overrideComponent(NavbarComponent, { set: { template, imports: [], providers: [] } });
@@ -184,6 +219,12 @@ describe('NavbarComponent', () => {
     expect(blocks.map((block) => block.section?.label ?? null)).toEqual([null, 'My Engagement', null]);
     expect(blocks.map((block) => block.items.map((item) => item.label))).toEqual([['Dashboard', 'Meetings'], ['Groups'], ['Education', 'Mentorship']]);
     expect(blocks.map((block) => block.ruleBefore)).toEqual([false, false, true]);
+  });
+
+  it('derives the account menu LFID from the viewer username, without the auth prefix (#5318)', async () => {
+    const navbar = await createNavbar([]);
+
+    expect(navbar.lfid()).toBe('alovelace');
   });
 
   it('presents the Me lens as Home and leaves the other lenses as they are', async () => {
@@ -258,6 +299,15 @@ describe('NavbarComponent', () => {
     expect((await createNavbar([], [], {}, { url: '/docs/meetings/schedule-meeting' })).isDocsActive()).toBe(true);
     expect((await createNavbar([], [], {}, { url: '/docs' })).isDocsActive()).toBe(true);
     expect((await createNavbar([], [], {}, { url: '/meetings' })).isDocsActive()).toBe(false);
+  });
+
+  it('opens the create dialog for the picked artifact type through the shared dialog service', async () => {
+    const navbar = await createNavbar([]);
+    openCreateArtifactDialog.mockClear();
+
+    navbar.openCreateDialog(CREATABLE_ARTIFACTS.find((artifact) => artifact.type === 'vote') as CreatableArtifactConfig);
+
+    expect(openCreateArtifactDialog).toHaveBeenCalledWith('vote');
   });
 
   it('closes its body-level overlays as soon as the mobile drawer starts closing', async () => {
@@ -549,6 +599,604 @@ describe('NavbarComponent', () => {
 
       expect((fixture.componentInstance as unknown as NavbarView).tabIndicator()).toBeNull();
       expect(() => fixture.destroy()).not.toThrow();
+    });
+  });
+
+  describe('sidebar collapse', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      localStorage.clear();
+      sessionStorage.clear();
+    });
+
+    /** Reports every viewport as narrow when `narrow`, and the device as touch when `touch`; otherwise matches nothing. */
+    const stubViewport = (narrow: boolean, touch = false): void => {
+      vi.stubGlobal(
+        'matchMedia',
+        vi.fn(
+          (media: string) =>
+            ({
+              matches: (narrow && media.includes('max-width')) || (touch && media.includes('pointer: coarse')),
+              media,
+              addEventListener: vi.fn(),
+              removeEventListener: vi.fn(),
+            }) as unknown as MediaQueryList
+        )
+      );
+    };
+
+    const click = new MouseEvent('click', { detail: 1 });
+
+    it('docks to the rail from the toggle, relabelling it and moving rail tooltips beside their triggers', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+
+      expect(navbar.toggleLabel()).toBe('Close sidebar');
+      expect(navbar.headTooltipPlacement()).toBe('bottom');
+
+      navbar.onToggleClick(click);
+      await fixture.whenStable();
+      expect(collapse.collapsed()).toBe(true);
+      expect(navbar.railVisible()).toBe(true);
+      expect(navbar.toggleLabel()).toBe('Show sidebar');
+      expect(navbar.headTooltipPlacement()).toBe('right');
+      expect(fixture.nativeElement.classList).toContain('is-collapsed');
+    });
+
+    it('shows the sidebar over the page from the rail’s toggle, then docks it open from the peek', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+
+      navbar.onToggleClick(click);
+      await fixture.whenStable();
+      expect(collapse.peek()).toBe(true);
+      expect(collapse.peekPinned()).toBe(false);
+      expect(collapse.collapsed()).toBe(true);
+      expect(collapse.overlay()).toBe(true);
+      expect(navbar.showSidebarToggle()).toBe(true);
+      expect(fixture.nativeElement.classList).toContain('is-overlay');
+      expect(fixture.nativeElement.classList).not.toContain('is-collapsed');
+
+      navbar.onToggleClick(click);
+      await fixture.whenStable();
+      expect(collapse.collapsed()).toBe(false);
+      expect(collapse.peek()).toBe(false);
+      expect(fixture.nativeElement.classList).not.toContain('is-collapsed');
+    });
+
+    it('drives the toggle’s Show sidebar label, bars icon and aria-expanded from the rail state', async () => {
+      stubViewport(false);
+      // A copy of the toggle's bindings in navbar.component.html (without the tooltip directive the test module leaves out):
+      // this checks the state they read, not the real markup, which the fixture cannot render with its faked router.
+      const toggleTemplate = `
+        <button type="button" data-testid="navbar-collapse-toggle" [attr.aria-label]="toggleLabel()" [attr.aria-expanded]="!railVisible()">
+          @if (railVisible()) {
+            <i class="fa-light fa-bars" aria-hidden="true"></i>
+          } @else {
+            <svg aria-hidden="true"></svg>
+          }
+        </button>`;
+      const fixture = await createNavbarFixture([], [], {}, { template: toggleTemplate });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const toggle = fixture.nativeElement.querySelector('[data-testid="navbar-collapse-toggle"]') as HTMLElement;
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+
+      expect(navbar.toggleLabel()).toBe('Show sidebar');
+      expect(toggle.getAttribute('aria-label')).toBe('Show sidebar');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(toggle.querySelector('i.fa-light.fa-bars')).not.toBeNull();
+
+      navbar.onToggleClick(click);
+      await fixture.whenStable();
+      expect(toggle.getAttribute('aria-label')).toBe('Keep sidebar open');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(toggle.querySelector('.fa-bars')).toBeNull();
+    });
+
+    it('never peeks open from the pointer moving over the rail: only the toggle’s click shows the sidebar', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([], [], {}, { template: '<nav #panel><button type="button" data-flip="side">Toggle</button></nav>' });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const toggle = fixture.nativeElement.querySelector('[data-flip="side"]') as HTMLElement;
+      collapse.setCollapsed(true);
+      vi.useFakeTimers();
+
+      toggle.dispatchEvent(new MouseEvent('mouseenter'));
+      toggle.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 20, clientY: 20 }));
+      vi.advanceTimersByTime(1000);
+      expect(collapse.peek()).toBe(false);
+      vi.useRealTimers();
+    });
+
+    it('pins the peek a touch device opens from the rail, as it has no pointer to leave it', async () => {
+      stubViewport(false, true);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+
+      expect(collapse.touch()).toBe(true);
+      navbar.onToggleClick(click);
+      expect(collapse.peek()).toBe(true);
+      expect(collapse.peekPinned()).toBe(true);
+    });
+
+    it('docks open from a wide-viewport peek instead of closing it', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      expect(navbar.toggleLabel()).toBe('Keep sidebar open');
+      expect(navbar.showSidebarToggle()).toBe(true);
+      navbar.onToggleClick(click);
+
+      expect(collapse.collapsed()).toBe(false);
+      expect(collapse.peek()).toBe(false);
+    });
+
+    it('opens a peek from the toggle on a narrow viewport that closes as the pointer leaves, without touching the preference', async () => {
+      stubViewport(true);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+
+      expect(navbar.railVisible()).toBe(true);
+      navbar.onToggleClick(click);
+
+      expect(collapse.peek()).toBe(true);
+      expect(collapse.peekPinned()).toBe(false);
+      expect(collapse.collapsed()).toBe(false);
+      expect(navbar.railVisible()).toBe(false);
+    });
+
+    describe('closing a peek', () => {
+      const panelTemplate = '<nav #panel><button type="button" class="inside">Menu item</button></nav><button type="button" class="outside">Page</button>';
+      const move = (x: number): void => {
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 100 }));
+      };
+
+      /** A desktop navbar docked to the rail, its panel laid out 280px wide from x=8 when it peeks. */
+      const createPeekFixture = async (routerEvents?: Observable<unknown>) => {
+        stubViewport(false);
+        const navigation = routerEvents ? { extras: {}, trigger: 'imperative' } : null;
+        const fixture = await createNavbarFixture([], [], {}, { template: panelTemplate, routerEvents, navigation });
+        const panel = fixture.nativeElement.querySelector('nav') as HTMLElement;
+        vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 8, 280, 800));
+        const collapse = TestBed.inject(NavbarCollapseService);
+        collapse.setCollapsed(true);
+        vi.useFakeTimers();
+        return { fixture, panel, collapse, navbar: fixture.componentInstance as unknown as NavbarView };
+      };
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('closes a peek opened from the rail’s toggle once the pointer leaves the panel', async () => {
+        const { collapse, navbar } = await createPeekFixture();
+        navbar.onToggleClick(click);
+        expect(collapse.peek()).toBe(true);
+
+        move(20);
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+        expect(collapse.collapsed()).toBe(true);
+      });
+
+      it('closes an unpinned peek 150ms after the pointer leaves the panel, unless it comes back', async () => {
+        const { collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        move(600);
+        vi.advanceTimersByTime(100);
+        move(100);
+        vi.advanceTimersByTime(200);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes 150ms after the pointer leaves, however much it keeps moving outside', async () => {
+        const { collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        move(600);
+        vi.advanceTimersByTime(100);
+        move(650);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS - 100);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('stays open while the pointer is on one of its tooltips outside the panel', async () => {
+        const { collapse } = await createPeekFixture();
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+        tooltip.remove();
+      });
+
+      it('stays open under a menu opened from it, and re-checks the pointer once the menu closes', async () => {
+        const { collapse, navbar } = await createPeekFixture();
+        collapse.openPeek();
+        navbar.brandMenuOpen.set(true);
+        TestBed.tick();
+
+        move(600);
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        navbar.brandMenuOpen.set(false);
+        TestBed.tick();
+        vi.advanceTimersByTime(NAVBAR_PEEK_RECHECK_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('stays open while keyboard focus is inside it, and re-checks once focus leaves', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        const inside = panel.querySelector('.inside') as HTMLElement;
+        const outside = fixture.nativeElement.querySelector('.outside') as HTMLElement;
+        collapse.openPeek();
+        inside.focus();
+        vi.spyOn(inside, 'matches').mockImplementation((selector: string) => selector === ':focus-visible');
+
+        move(600);
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        outside.focus();
+        inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('keeps an unpinned peek open through a navigation picked from it, closing once the pointer leaves', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek();
+
+        move(100);
+        events.next(new NavigationEnd(1, '/org/acme/overview', '/org/acme/overview'));
+        vi.advanceTimersByTime(1000);
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('keeps an unpinned peek open through a navigation while the pointer is on one of its tooltips outside the panel', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        events.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+        expect(collapse.peek()).toBe(true);
+
+        move(600);
+        vi.advanceTimersByTime(NAVBAR_PEEK_CLOSE_DELAY_MS);
+        expect(collapse.peek()).toBe(false);
+        tooltip.remove();
+      });
+
+      it('closes an unpinned peek on a navigation once the tooltip the pointer was on is gone (a role chip clicked)', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        tooltip.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 320, clientY: 100 }));
+        tooltip.remove();
+        events.next(new NavigationEnd(1, '/project/overview', '/project/overview'));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes an unpinned peek on a navigation once the pointer is off it', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek();
+
+        move(600);
+        events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a pinned peek on a navigation picked from it, even with the pointer over it', async () => {
+        const events = new Subject<unknown>();
+        const { collapse } = await createPeekFixture(events);
+        collapse.openPeek(true);
+
+        move(100);
+        events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes on Escape', async () => {
+        const { collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('leaves the first Escape to an open navbar tooltip, closing on the next', async () => {
+        const { collapse } = await createPeekFixture();
+        const tooltip = document.createElement('div');
+        tooltip.className = 'lfxn-tooltip';
+        document.body.appendChild(tooltip);
+        collapse.openPeek();
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(collapse.peek()).toBe(true);
+
+        tooltip.remove();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('keeps a pinned peek open as the pointer leaves, and closes it on an outside click', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek(true);
+
+        move(600);
+        vi.advanceTimersByTime(1000);
+        panel.querySelector('.inside')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(true);
+
+        (fixture.nativeElement.querySelector('.outside') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes an unpinned peek opened from the keyboard on an outside click, before the pointer has moved', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek();
+
+        panel.querySelector('.inside')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(true);
+
+        (fixture.nativeElement.querySelector('.outside') as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        expect(collapse.peek()).toBe(false);
+      });
+
+      it('closes a pinned peek when keyboard focus leaves it', async () => {
+        const { fixture, panel, collapse } = await createPeekFixture();
+        collapse.openPeek(true);
+        const inside = panel.querySelector('.inside') as HTMLElement;
+        const outside = fixture.nativeElement.querySelector('.outside') as HTMLElement;
+
+        inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: panel }));
+        expect(collapse.peek()).toBe(true);
+
+        inside.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }));
+        expect(collapse.peek()).toBe(false);
+      });
+    });
+
+    it('repeats the footer actions in the account menu on the rail only, not over a peek or the open panel', async () => {
+      stubViewport(false);
+      // The account menu's gated rows as navbar.component.html renders them, behind railVisible().
+      const menuTemplate = `
+        <nav #panel>
+          @if (railVisible()) {
+            <button type="button" data-testid="lens-docs-menu-item">Documentation</button>
+            <button type="button" data-testid="lens-changelog-menu-item">What's New</button>
+          }
+        </nav>`;
+      const fixture = await createNavbarFixture([], [], {}, { template: menuTemplate });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const rows = (): number => fixture.nativeElement.querySelectorAll('[data-testid="lens-docs-menu-item"], [data-testid="lens-changelog-menu-item"]').length;
+      expect(rows()).toBe(0);
+
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+      expect(rows()).toBe(2);
+
+      collapse.openPeek();
+      await fixture.whenStable();
+      expect(rows()).toBe(0);
+    });
+
+    it('moves keyboard focus to the brand when a narrow-viewport peek hides the toggle, keeping it there once Escape returns the rail', async () => {
+      stubViewport(true);
+      // The head's controls as navbar.component.html renders them: the brand, and the toggle behind showSidebarToggle().
+      const headTemplate = `
+        <nav #panel>
+          <button type="button" class="lfxn__brand">Brand</button>
+          @if (showSidebarToggle()) {
+            <button type="button" data-flip="side" (click)="onToggleClick($event)">Toggle</button>
+          }
+        </nav>`;
+      const fixture = await createNavbarFixture([], [], {}, { template: headTemplate });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const brand = fixture.nativeElement.querySelector('.lfxn__brand') as HTMLElement;
+      (fixture.nativeElement.querySelector('[data-flip="side"]') as HTMLElement).focus();
+
+      navbar.onToggleClick(new MouseEvent('click', { detail: 0 }));
+      await fixture.whenStable();
+      expect(collapse.peek()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-flip="side"]')).toBeNull();
+      expect(document.activeElement).toBe(brand);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await fixture.whenStable();
+      expect(collapse.peek()).toBe(false);
+      // Back on the rail the toggle returns, and focus stays on the brand, which the rail still shows.
+      expect(fixture.nativeElement.querySelector('[data-flip="side"]')).not.toBeNull();
+      expect(document.activeElement).toBe(brand);
+    });
+
+    it('hides the toggle over a narrow-viewport peek, which cannot dock open, and shows it again on the rail', async () => {
+      stubViewport(true);
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const collapse = TestBed.inject(NavbarCollapseService);
+      expect(navbar.showSidebarToggle()).toBe(true);
+
+      collapse.openPeek();
+      await fixture.whenStable();
+      expect(navbar.showSidebarToggle()).toBe(false);
+
+      collapse.resetPeek();
+      await fixture.whenStable();
+      expect(navbar.showSidebarToggle()).toBe(true);
+    });
+
+    it('closes an unpinned peek on a navigation the viewer made', async () => {
+      stubViewport(false);
+      const events = new Subject<unknown>();
+      await createNavbarFixture([], [], {}, { routerEvents: events, navigation: { extras: {}, trigger: 'imperative' } });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(false);
+    });
+
+    it('leaves the desktop peek to the desktop navbar: the mounted mobile drawer navbar never closes it', async () => {
+      stubViewport(false);
+      const events = new Subject<unknown>();
+      await createNavbarFixture([], [], {}, { mobile: true, routerEvents: events, navigation: { extras: {}, trigger: 'imperative' } });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek();
+
+      events.next(new NavigationEnd(1, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(true);
+    });
+
+    it('keeps a pinned peek open while a page rewrites its own address, and closes it on a real navigation', async () => {
+      // A touch device pins its peeks: the only way a peek is pinned now.
+      stubViewport(false, true);
+      const events = new Subject<unknown>();
+      const navigation = { extras: { replaceUrl: true }, trigger: 'imperative' };
+      await createNavbarFixture([], [], {}, { routerEvents: events, navigation });
+      const collapse = TestBed.inject(NavbarCollapseService);
+      collapse.setCollapsed(true);
+      collapse.openPeek(true);
+
+      events.next(new NavigationEnd(1, '/org/overview', '/org/overview?org=acme'));
+      expect(collapse.peek()).toBe(true);
+
+      navigation.trigger = 'popstate';
+      events.next(new NavigationEnd(2, '/meetings', '/meetings'));
+      expect(collapse.peek()).toBe(false);
+
+      collapse.openPeek(true);
+      navigation.extras.replaceUrl = false;
+      navigation.trigger = 'imperative';
+      events.next(new NavigationEnd(3, '/votes', '/votes'));
+      expect(collapse.peek()).toBe(false);
+    });
+
+    it('moves focus to the toggle when the rail appears without a morph and hides the focused control', async () => {
+      stubViewport(false);
+      const fixture = await createNavbarFixture(
+        [],
+        [],
+        {},
+        {
+          template: '<nav #panel><button type="button" data-flip="side">Toggle</button><a href="/meetings" class="link">Meetings</a></nav>',
+        }
+      );
+      const collapse = TestBed.inject(NavbarCollapseService);
+      const link = fixture.nativeElement.querySelector('.link') as HTMLElement;
+      const toggle = fixture.nativeElement.querySelector('[data-flip="side"]') as HTMLElement;
+      link.focus();
+
+      collapse.setCollapsed(true);
+      await fixture.whenStable();
+      expect(document.activeElement).toBe(toggle);
+    });
+
+    it('never collapses the mobile drawer’s navbar', async () => {
+      stubViewport(true);
+      const fixture = await createNavbarFixture([], [], {}, { mobile: true });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+
+      expect(navbar.railVisible()).toBe(false);
+      expect(navbar.showSidebarToggle()).toBe(false);
+      expect(fixture.nativeElement.classList).not.toContain('lfxn-host--dock');
+    });
+  });
+  describe('sidebar theme', () => {
+    afterEach(() => localStorage.clear());
+
+    type ThemeView = Record<'onSidebarThemeChange', (theme: string | null) => void>;
+
+    it('restores a stored light theme on the desktop navbar once it has rendered', async () => {
+      localStorage.setItem(NAVBAR_THEME_STORAGE_KEY, 'light');
+      const fixture = await createNavbarFixture([]);
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.classList).toContain('is-light');
+    });
+
+    it('switches the desktop navbar between dark and light, remembering the choice', async () => {
+      const fixture = await createNavbarFixture([]);
+      const navbar = fixture.componentInstance as unknown as ThemeView;
+      expect(fixture.nativeElement.classList).not.toContain('is-light');
+
+      navbar.onSidebarThemeChange('light');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.classList).toContain('is-light');
+      expect(localStorage.getItem(NAVBAR_THEME_STORAGE_KEY)).toBe('light');
+
+      navbar.onSidebarThemeChange('dark');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.classList).not.toContain('is-light');
+      expect(localStorage.getItem(NAVBAR_THEME_STORAGE_KEY)).toBe('dark');
+    });
+
+    it('ignores a value that is not a theme', async () => {
+      const fixture = await createNavbarFixture([]);
+      (fixture.componentInstance as unknown as ThemeView).onSidebarThemeChange(null);
+
+      expect(TestBed.inject(NavbarThemeService).theme()).toBe('dark');
+      expect(localStorage.getItem(NAVBAR_THEME_STORAGE_KEY)).toBeNull();
+    });
+
+    it('keeps the mobile drawer dark whatever the stored theme', async () => {
+      localStorage.setItem(NAVBAR_THEME_STORAGE_KEY, 'light');
+      const fixture = await createNavbarFixture([], [], {}, { mobile: true });
+      TestBed.inject(NavbarThemeService).setTheme('light');
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.classList).not.toContain('is-light');
     });
   });
 });

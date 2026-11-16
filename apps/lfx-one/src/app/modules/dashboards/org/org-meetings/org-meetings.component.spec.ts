@@ -36,7 +36,7 @@ async function render(options: { pageReady?: boolean; pageState?: OrgLensEmptySt
     imports: [OrgMeetingsComponent],
     providers: [
       provideRouter([]),
-      // lfxOpenIntercom (the empty state's contact-support link) injects the app-root MessageService.
+      // The empty state no longer carries a support link (#5447); MessageService stays provided for the page's other controls.
       MessageService,
       { provide: AccountContextService, useValue: { selectedAccount } },
       // The org list never starts for a contractor with no switcher access (#2961).

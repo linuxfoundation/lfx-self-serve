@@ -13,7 +13,9 @@ Is it a route/page (has its own URL)?
           YES -> shared/components/<component-name>/
           NO  -> Is it a PrimeNG wrapper?
                   YES -> shared/components/<component-name>/  (lfx- prefix)
-                  NO  -> modules/<module>/components/<component-name>/
+                  NO  -> Is it a generic, PrimeNG-free UI primitive (button, tabs, badge, ...)?
+                          YES -> shared/uikit/<component-name>/  (lfx-ui- prefix, Ui*Component, with a story and spec)
+                          NO  -> modules/<module>/components/<component-name>/
 ```
 
 See `docs/architecture/frontend/component-architecture.md` for the underlying placement guidance and the existing module list.

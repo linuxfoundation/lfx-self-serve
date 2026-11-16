@@ -19,7 +19,7 @@ High-level map of LFX One's architecture. For any given topic, follow the link b
 - **Pino** structured JSON logging routed through the singleton `logger.service.ts` (never call `serverLogger` directly).
 - **OpenTelemetry** tracing bootstrapped by `otel.mjs` (exporter activates when `OTEL_EXPORTER_OTLP_ENDPOINT` is set).
 - **PM2** process management for production (`apps/lfx-one/ecosystem.config.js`).
-- **NATS**, **Snowflake**, **LiteLLM → Claude Sonnet 4**, **Supabase** for inter-service messaging, analytics, AI features, and profile email management.
+- **NATS**, **Snowflake**, **LiteLLM → Claude** (the model `AI_MODEL` names), **Supabase** for inter-service messaging, analytics, AI features, and profile email management.
 
 **Shared (`packages/shared`):**
 

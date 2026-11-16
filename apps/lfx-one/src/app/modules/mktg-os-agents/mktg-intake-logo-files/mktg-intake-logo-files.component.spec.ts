@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { BRAND_KIT_INTAKE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, MKTG_DRIVE_SHARING_HINT } from '@lfx-one/shared/constants';
 import { MktgIntakeLogoFilesConfig } from '@lfx-one/shared/interfaces';
 import type { FileSelectEvent } from 'primeng/fileupload';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -92,6 +92,13 @@ describe('MktgIntakeLogoFilesComponent', () => {
     expect(globalThis.FileReader).toBe(realFileReader);
   });
 
+  it('describes the logo link input with the shared LF-wide Drive sharing guidance before typing', () => {
+    const input = host().querySelector<HTMLInputElement>('[data-test="mktg-intake-logo-files-link-input"]');
+    const hint = host().querySelector('#mktg-intake-logo-files-link-hint');
+    expect(hint?.textContent?.trim()).toBe(MKTG_DRIVE_SHARING_HINT);
+    expect(input?.getAttribute('aria-describedby')).toBe(hint?.id);
+  });
+
   it('reads an SVG as its text and lists it as sent as text', async () => {
     component['onFilesSelected'](fileEvent(new File(['<svg/>'], 'logo.svg', { type: 'image/svg+xml' })));
     expect(component.busy()).toBe(true);
@@ -153,6 +160,35 @@ describe('MktgIntakeLogoFilesComponent', () => {
     component['onFilesSelected'](fileEvent(new File(['x'.repeat(60)], 'edge.svg')));
     expect(HandFileReader.instances).toHaveLength(1);
     expect(component.busy()).toBe(true);
+  });
+
+  it('refuses a ZIP over 150 KB at pick time in the footnote’s words, never reading it, and reads one at the cap', async () => {
+    // The live caps: the ZIP rule is the footnote's 150 KB, under the generic per-file cap, so only a package meets it.
+    fixture.componentRef.setInput('config', liveConfig);
+    await fixture.whenStable();
+    useHandReader();
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes + 1)], 'package.zip')));
+    expect(component['errorText']()).toBe(
+      'package.zip is 150 KB. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send.'
+    );
+    fixture.detectChanges();
+    expect(query('mktg-intake-logo-files-error')?.textContent).toContain('Keep a ZIP small: SVG files only, under 150 KB');
+    expect(HandFileReader.instances).toHaveLength(0);
+    expect(names()).toEqual([]);
+
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes)], 'edge.zip')));
+    expect(HandFileReader.instances).toHaveLength(1);
+    expect(HandFileReader.instances[0].read).toBe('dataUrl');
+    HandFileReader.instances[0].finish(`data:application/zip;base64,${'A'.repeat(204_800)}`);
+    await settled();
+    expect(names()).toEqual(['edge.zip']);
+    expect(component['errorText']()).toBe('');
+
+    // The rule is for a package only: an SVG and a PNG over 150 KB are read as before.
+    component['onFilesSelected'](fileEvent(new File(['x'.repeat(liveConfig.maxZipBytes + 1)], 'big.svg')));
+    component['onFilesSelected'](fileEvent(new File([new Uint8Array(liveConfig.maxZipBytes + 1)], 'big.png')));
+    expect(component['errorText']()).toBe('');
+    expect(HandFileReader.instances).toHaveLength(3);
   });
 
   it('counts the reads in flight against the payload cap, so one pick of several large files is not all read', () => {

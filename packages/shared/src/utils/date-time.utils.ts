@@ -321,16 +321,21 @@ export function formatVoteDeadline(value: string | Date | null | undefined, time
   if (Number.isNaN(date.getTime())) return '';
 
   try {
-    return formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, timezone || LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   } catch {
-    return formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz');
+    return readableZeroOffset(formatInTimeZone(date, LEGACY_VOTE_TIMEZONE, 'MMM d, yyyy h:mm a zzz'));
   }
+}
+
+/** Zones at a zero offset with no abbreviation (e.g. Europe/Lisbon in winter) format as "GMT+0"; say "UTC" instead. */
+function readableZeroOffset(formatted: string): string {
+  return formatted.replace(/ GMT[+-]0$/, ' UTC');
 }
 
 /**
  * Long English timezone name for the given instant in the caller-supplied zone, e.g. "Pacific Standard Time"
  * (DST-aware: read at the deadline instant, so a July date in America/Los_Angeles yields "Pacific Daylight Time") —
- * expands the short abbreviation formatVoteDeadline appends, for the hover tooltip next to vote deadline strings.
+ * provides the full zone name for the hover tooltip, even when formatVoteDeadline normalizes a zero-offset label to UTC.
  * LEGACY_VOTE_TIMEZONE only when the argument is null/invalid.
  */
 export function getLongTimezoneName(value: string | Date | null | undefined, timezone?: string | null): string {
@@ -610,6 +615,24 @@ export function getUserTimezone(): string {
 }
 
 /**
+ * Short zone abbreviation for an instant in a timezone (e.g. `PST`, `PDT`), resolved for that
+ * instant so DST is honoured. Zones without a locale abbreviation come back as `GMT+1`-style.
+ * Falls back to the zone id when the zone is invalid and to '' when the date is invalid.
+ */
+export function getTimezoneAbbreviation(isoDate: string, timeZone: string): string {
+  const date = new Date(isoDate);
+  if (isNaN(date.getTime())) {
+    return '';
+  }
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(date);
+    return parts.find((part) => part.type === 'timeZoneName')?.value ?? timeZone;
+  } catch {
+    return timeZone;
+  }
+}
+
+/**
  * Helper function to format timezone display with current time
  */
 export function formatTimezoneWithCurrentTime(timezone: string): string {
@@ -651,6 +674,31 @@ export function compareDateTimesInTimezone(dateTime1: string | Date, dateTime2: 
     const date2 = typeof dateTime2 === 'string' ? new Date(dateTime2) : dateTime2;
     return date1.getTime() - date2.getTime();
   }
+}
+
+/**
+ * Whether two ISO datetime strings fall in the same minute (seconds and milliseconds ignored).
+ * @description Tells a genuine edit from round-tripping noise: a stored value's seconds/ms and a
+ * freshly-combined date+time value's zeroed seconds should not count as a change, but any
+ * difference of a full minute or more -- the smallest increment a time picker supports -- should.
+ * A plain `<= 60_000` millisecond tolerance is the wrong shape for this: it also accepts a genuine
+ * one-minute edit (exactly 60000ms), silently discarding it.
+ *
+ * Truncates in UTC (`setUTCSeconds`), not local time (`setSeconds`): local truncation reads and
+ * reconstructs through the host's wall-clock fields, and during a DST fall-back the repeated local
+ * hour makes two UTC instants a full hour apart reconstruct to the same result -- not the
+ * sub-minute noise this is meant to absorb. UTC has no repeated or skipped hours, so truncating
+ * there can never collapse two genuinely different minutes together.
+ * @param a First ISO datetime string
+ * @param b Second ISO datetime string
+ */
+export function isSameMinute(a: string, b: string): boolean {
+  const toMinuteEpoch = (iso: string): number => {
+    const date = new Date(iso);
+    date.setUTCSeconds(0, 0);
+    return date.getTime();
+  };
+  return toMinuteEpoch(a) === toMinuteEpoch(b);
 }
 
 /**

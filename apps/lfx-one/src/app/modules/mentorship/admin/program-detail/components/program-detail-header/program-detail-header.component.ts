@@ -11,6 +11,7 @@ import {
   MENTORSHIP_PROGRAM_HIDE_CONFIRM,
   MENTORSHIP_PROGRAM_HIDE_DESCRIPTION,
   MENTORSHIP_PROGRAM_HIDEABLE_STATUSES,
+  MENTORSHIP_PROGRAM_PUBLISHED_STATUSES,
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_PROGRAM_STATUS_LABELS,
   MENTORSHIP_PROGRAM_UNHIDE_CONFIRM,
@@ -28,7 +29,8 @@ import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
 /**
- * Admin program-detail header: title, season line, status, View Public Page, Edit Program, a `…` menu that hides a
+ * Admin program-detail header: title, season line, status, View Public Page (published programs only, since the public
+ * site has no page for a pending, rejected or hidden one), Edit Program, a `…` menu that hides a
  * published program or unhides a hidden one after a confirm, and underline tabs with count badges; a pending program
  * shows the Terms tab only. Visual spec matches the admin screenshot and the crowdfunding initiative header.
  */
@@ -62,8 +64,9 @@ export class ProgramDetailHeaderComponent {
   protected readonly statusLabel = computed(() => MENTORSHIP_PROGRAM_STATUS_LABELS[this.program().status]);
   protected readonly statusBadgeClass = computed(() => MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES[this.program().status]);
   protected readonly publicPageUrl = computed(() => buildMentorshipProgramsUrl(environment.urls.mentorship, this.program().id));
+  protected readonly showPublicPage = computed(() => MENTORSHIP_PROGRAM_PUBLISHED_STATUSES.includes(this.program().status));
 
-  /** Hide for a published (open or completed) program, Unhide for a hidden one; a pending or rejected program has no menu. */
+  /** Hide for a published program, Unhide for a hidden one; a pending or rejected program has no menu. */
   protected readonly moreMenuItems = computed<MentorshipProgramMenuItem[]>(() => {
     const status = this.program().status;
     if (status === 'hidden') {

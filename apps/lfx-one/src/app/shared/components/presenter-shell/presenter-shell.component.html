@@ -1,0 +1,79 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="min-h-dvh bg-gray-900 text-white flex flex-col" data-testid="vote-presenter">
+  @switch (phase()) {
+    @case ('loading') {
+      <div class="flex-1 flex flex-col gap-6 p-8 lg:p-16" aria-busy="true" data-testid="vote-presenter-loading">
+        <div class="h-6 w-40 rounded bg-gray-700"></div>
+        <div class="h-12 w-2/3 rounded bg-gray-700"></div>
+        <div class="h-40 w-full rounded bg-gray-800"></div>
+      </div>
+    }
+    @case ('error') {
+      <div class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" role="alert" data-testid="vote-presenter-error">
+        <h1 class="text-3xl font-semibold">We couldn't load this vote</h1>
+        <p class="text-lg text-gray-300">Check your connection. We'll keep trying automatically.</p>
+        <div class="flex items-center gap-3">
+          <lfx-button label="Retry" severity="primary" size="large" (onClick)="retry.emit()" data-testid="vote-presenter-retry" />
+          <lfx-button label="Exit" severity="secondary" size="large" (onClick)="exit.emit()" data-testid="vote-presenter-exit" />
+        </div>
+      </div>
+    }
+    @case ('empty') {
+      <div class="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center" data-testid="vote-presenter-empty">
+        <ng-content select="[presenterEmpty]" />
+        <lfx-button label="Exit" severity="secondary" size="large" (onClick)="exit.emit()" data-testid="vote-presenter-exit" />
+      </div>
+    }
+    @case ('ended') {
+      <div class="flex flex-1 flex-col gap-10 px-6 pt-8 pb-6 lg:px-[72px] lg:pt-14 lg:pb-12" data-testid="vote-presenter-result">
+        <ng-container *ngTemplateOutlet="presenterHeader" />
+        <ng-content select="[presenterEnded]" />
+
+        <footer class="flex items-center justify-between gap-6 border-t border-gray-800 pt-6">
+          <p class="m-0 text-base text-gray-400">Updated {{ updatedAgoSeconds() ?? 0 }} {{ updatedAgoSeconds() === 1 ? 'second' : 'seconds' }} ago</p>
+          <lfx-button label="Exit" severity="secondary" size="large" styleClass="min-h-[44px]" (onClick)="exit.emit()" data-testid="vote-presenter-exit" />
+        </footer>
+      </div>
+    }
+    @default {
+      <div class="flex flex-1 flex-col gap-10 px-6 pt-8 pb-6 lg:px-[72px] lg:pt-14 lg:pb-12" data-testid="vote-presenter-open">
+        <ng-container *ngTemplateOutlet="presenterHeader" />
+
+        <!-- Footer precedes the content in the DOM so keyboard focus runs Exit, Close first (#4146); order-last keeps it visually at the bottom. -->
+        <footer class="order-last flex flex-wrap items-center justify-between gap-6 border-t border-gray-800 pt-6" data-testid="vote-presenter-footer">
+          <p class="m-0 text-base text-gray-400" aria-live="off" data-testid="vote-presenter-updated">
+            @if (updatedAgoSeconds() !== null) {
+              Updated {{ updatedAgoSeconds() }} {{ updatedAgoSeconds() === 1 ? 'second' : 'seconds' }} ago
+            }
+          </p>
+          <div class="flex items-center gap-3">
+            <lfx-button label="Exit" severity="secondary" size="large" styleClass="min-h-[44px]" (onClick)="exit.emit()" data-testid="vote-presenter-exit" />
+            <ng-content select="[footerActions]" />
+          </div>
+        </footer>
+
+        <ng-content select="[presenterOpen]" />
+      </div>
+    }
+  }
+
+  <!-- Shared header for the open and ended states: the LFX mark, the foundation / committee, and the status pill. -->
+  <ng-template #presenterHeader>
+    <header class="flex flex-wrap items-center justify-between gap-6">
+      <div class="flex items-center gap-4">
+        <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500">
+          <i class="fa-light fa-square-check text-xl text-white" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <p class="m-0 text-xl font-bold tracking-wide" data-testid="vote-presenter-context">LFX</p>
+          @if (context()) {
+            <p class="m-0 text-base text-gray-400">{{ context() }}</p>
+          }
+        </div>
+      </div>
+      <p class="m-0 rounded-full bg-gray-800 px-[18px] py-2.5 text-base font-semibold text-gray-300" data-testid="vote-presenter-status">{{ statusPill() }}</p>
+    </header>
+  </ng-template>
+</main>

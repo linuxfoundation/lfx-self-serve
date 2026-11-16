@@ -3,19 +3,34 @@
 
 import { DecimalPipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
-import type { OrgAllEmployeeDetail } from '@lfx-one/shared/interfaces';
+import { ORG_ALL_EMPLOYEES_TRAINING_WINDOW_NOTE, ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT, PERSON_DETAIL_TRAINING_EMPTY_NOTE } from '@lfx-one/shared/constants';
+import type { OrgAllEmployeeDetail, OrgPersonCodeCount } from '@lfx-one/shared/interfaces';
+import { orgPersonCodeCount } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 
-/** Expandable detail sub-table for one All Employees row — up to five sections, empty ones hidden. */
+/**
+ * Expandable detail sub-table for one All Employees row — up to five sections, empty ones hidden. The training section also
+ * shows for a row with courses, so its window note can explain a list shorter than the row's course count.
+ */
 @Component({
   selector: 'lfx-org-people-all-employees-detail',
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, TooltipModule],
   templateUrl: './all-employees-detail.component.html',
 })
 export class AllEmployeesDetailComponent {
   public readonly detail = input.required<OrgAllEmployeeDetail | null | undefined>();
+  /** The row's course count, which follows the page's time range while the training list below it is windowed. */
+  public readonly coursesCount = input<number>(0);
   public readonly loading = input<boolean>(false);
   public readonly error = input<boolean>(false);
   public readonly retry = output<void>();
+
+  protected readonly maintainerRolesUnavailableHint = ORG_MAINTAINER_ROLES_UNAVAILABLE_HINT;
+  // The code column counts what the row does — the page's range, project type and code count (lfx-self-serve#4404).
+  protected readonly codeCount: Signal<OrgPersonCodeCount> = computed(() => orgPersonCodeCount(this.detail()?.codeView));
+
+  protected readonly trainingWindowNote = ORG_ALL_EMPLOYEES_TRAINING_WINDOW_NOTE;
+  protected readonly trainingEmptyNote = PERSON_DETAIL_TRAINING_EMPTY_NOTE;
 
   protected readonly hasAnyDetail: Signal<boolean> = computed(() => this.initHasAnyDetail());
 
@@ -24,6 +39,7 @@ export class AllEmployeesDetailComponent {
   protected readonly code = computed(() => this.detail()?.code ?? []);
   protected readonly events = computed(() => this.detail()?.events ?? []);
   protected readonly training = computed(() => this.detail()?.training ?? []);
+  protected readonly showTraining: Signal<boolean> = computed(() => this.training().length > 0 || this.coursesCount() > 0);
 
   // Server denormalizes the aggregate on every event row; render once in the section header instead of repeating per row.
   protected readonly eventsTotal = computed(() => this.events()[0]?.eventsCount ?? 0);
@@ -31,6 +47,6 @@ export class AllEmployeesDetailComponent {
   private initHasAnyDetail(): boolean {
     const d = this.detail();
     if (!d) return false;
-    return d.boardSeats.length + d.committeeSeats.length + d.code.length + d.events.length + d.training.length > 0;
+    return d.boardSeats.length + d.committeeSeats.length + d.code.length + d.events.length > 0 || this.showTraining();
   }
 }

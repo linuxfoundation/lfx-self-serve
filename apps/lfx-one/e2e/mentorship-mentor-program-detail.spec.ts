@@ -3,7 +3,7 @@
 
 /**
  * Mentor program detail — header, tab counts, tab rows, empty, not-found and error states
- * (linuxfoundation/lfx-mentorship#212).
+ * (linuxfoundation/lfx-mentorship#212), and Contact Mentee on each mentee and applicant (#376).
  *
  * The page reads `/api/mentorship/mentor/programs/:programId`, which the BFF builds from the applications
  * and tasks of all the program's terms, each row carrying its own application's term. Each test stubs that read via `page.route` with a synthetic payload,
@@ -14,7 +14,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -26,7 +25,7 @@ import { MentorshipMentorProgramDetail } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -49,7 +48,7 @@ const PROGRAM: MentorshipMentorProgramDetail['program'] = {
   slug: 'test-program-alpha',
   name: 'Test Program Alpha',
   projectName: 'Test Project',
-  status: 'open',
+  status: 'accepting',
   stats: { mentees: 2, tasksToReview: 1, applicants: 3 },
 };
 
@@ -135,7 +134,6 @@ async function stubDetail(page: Page, body: MentorshipMentorProgramDetail, statu
 
 test.describe('Mentor program detail — loaded', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, POPULATED);
     await openMentorPage(page, DETAIL_URL);
   });
@@ -143,7 +141,7 @@ test.describe('Mentor program detail — loaded', () => {
   test('shows the program header and each tab with its count', async ({ page }) => {
     await expect(page.getByTestId('mentorship-mentor-program-detail-title')).toHaveText('Test Program Alpha', { timeout: MENTOR_PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-mentor-program-detail-season')).toHaveText('Test Project');
-    await expect(page.getByTestId('mentorship-mentor-program-detail-status')).toHaveText(MENTORSHIP_PROGRAM_STATUS_LABELS.open);
+    await expect(page.getByTestId('mentorship-mentor-program-detail-status')).toHaveText(MENTORSHIP_PROGRAM_STATUS_LABELS.accepting);
 
     await expect(page.getByTestId('mentorship-mentor-program-detail-tab-tasks')).toHaveText(/Tasks\s*1/);
     await expect(page.getByTestId('mentorship-mentor-program-detail-tab-mentees')).toHaveText(/Mentees\s*2/);
@@ -190,11 +188,30 @@ test.describe('Mentor program detail — loaded', () => {
 
     await expect(page.locator('[data-testid^="mentorship-mentor-applicant-row-"]')).toHaveCount(3);
   });
+
+  // Contact Mentee (linuxfoundation/lfx-mentorship#376): an envelope link on every row, at any status.
+  test('links each mentee to their address in a new tab on Mentees', async ({ page }) => {
+    await page.getByTestId('mentorship-mentor-program-detail-tab-mentees').click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+
+    for (const mentee of [ACCEPTED_MENTEE, GRADUATED_MENTEE]) {
+      const link = page.getByTestId(`mentorship-mentor-mentee-contact-${mentee.id}`).locator('a');
+      await expect(link).toHaveAttribute('href', `mailto:${mentee.email}`);
+      await expect(link).toHaveAttribute('target', '_blank');
+    }
+  });
+
+  test('links every applicant to their address, whatever the status, on Applicants', async ({ page }) => {
+    await page.getByTestId('mentorship-mentor-program-detail-tab-applicants').click({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
+    await page.getByTestId('mentorship-mentor-applicants-status-pill-all').click();
+
+    for (const applicant of POPULATED.applicants) {
+      await expect(page.getByTestId(`mentorship-mentor-applicant-contact-${applicant.id}`).locator('a')).toHaveAttribute('href', `mailto:${applicant.email}`);
+    }
+  });
 });
 
 test.describe('Mentor program detail — empty program', () => {
   test('shows each tab empty with a zero count', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, EMPTY);
     await openMentorPage(page, DETAIL_URL);
 
@@ -211,7 +228,6 @@ test.describe('Mentor program detail — empty program', () => {
 
 test.describe('Mentor program detail — not found', () => {
   test('shows the not-found state when the program is not one the caller mentors', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await page.route(DETAIL_ROUTE, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Not found' }) }));
     await openMentorPage(page, DETAIL_URL);
 
@@ -224,7 +240,6 @@ test.describe('Mentor program detail — not found', () => {
 
 test.describe('Mentor program detail — error state', () => {
   test('shows the error state and loads the program on Retry', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubDetail(page, POPULATED, 503);
     await openMentorPage(page, DETAIL_URL);
 

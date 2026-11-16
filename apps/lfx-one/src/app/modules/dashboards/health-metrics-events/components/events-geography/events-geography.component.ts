@@ -31,12 +31,10 @@ export class EventsGeographyComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the section settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The sub-nav badge: countries in the selected period, `null` while loading, failed or unmeasured. */
-  public readonly countChange = output<number | null>();
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
@@ -48,7 +46,8 @@ export class EventsGeographyComponent {
   protected readonly view: Signal<HealthMetricsEventsGeographyView> = computed(() =>
     buildHealthMetricsEventsGeographyView(this.response(), this.chrome.selectedRange())
   );
-  private readonly count: Signal<number | null> = computed(() => (this.loading() || this.loadFailed() ? null : this.view().countries));
+  /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -56,11 +55,8 @@ export class EventsGeographyComponent {
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => {
-          if (!this.loadFailed() && !this.loading()) this.settled.emit();
+          if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyView(this.view()));
         });
-      toObservable(this.count)
-        .pipe(distinctUntilChanged(), takeUntilDestroyed())
-        .subscribe((count) => this.countChange.emit(count));
     }
   }
 
@@ -89,10 +85,11 @@ export class EventsGeographyComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsGeographyView(response, this.chrome.selectedRange())));
             })
           )
         )
@@ -100,4 +97,9 @@ export class EventsGeographyComponent {
       { initialValue: HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED }
     );
   }
+}
+
+/** Whether the period has nothing to show: the foundation or the period was never measured. */
+function isEmptyView(view: HealthMetricsEventsGeographyView): boolean {
+  return !view.foundationMeasured || !view.measured;
 }

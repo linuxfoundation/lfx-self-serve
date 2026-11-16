@@ -1,25 +1,32 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- touchTarget uses an exact min-h-[44px] (the 14px html root makes min-h-11 render ~38px); the label's ::after stretches over the whole row so a tap anywhere on it selects, not just on the 18px circle. -->
 @if (form() && control()) {
   <ng-container [formGroup]="form()!">
-    <div class="flex items-center gap-2">
+    <div class="flex items-center gap-2" [class]="rowClass()" [attr.data-selected]="card() ? selected() : null">
       <!-- [name] is required: PrimeNG's RadioControlRegistry groups radios by (root FormGroup, name) —
            without it every radio in the form shares name===undefined and selecting one deselects all others. -->
       <p-radioButton [formControlName]="control()!" [name]="name()" [value]="value()" [inputId]="inputId() || control()!" (onChange)="onRadioChange($event)">
       </p-radioButton>
       @if (label()) {
-        <label [for]="inputId() || control()!" class="text-sm font-medium text-gray-700 cursor-pointer">
+        <label
+          [for]="inputId() || control()!"
+          class="text-sm font-medium text-gray-700 cursor-pointer break-words min-w-0"
+          [class]="touchTarget() ? 'flex flex-1 items-center min-h-[44px] after:absolute after:inset-0' : ''">
           {{ label() }}
         </label>
       }
     </div>
   </ng-container>
 } @else {
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-2" [class]="rowClass()" [attr.data-selected]="card() ? selected() : null">
     <p-radioButton [name]="name()" [value]="value()" [inputId]="inputId()" (onChange)="onRadioChange($event)"> </p-radioButton>
     @if (label()) {
-      <label [for]="inputId()" class="text-sm font-medium text-gray-700 cursor-pointer">
+      <label
+        [for]="inputId()"
+        class="text-sm font-medium text-gray-700 cursor-pointer break-words min-w-0"
+        [class]="touchTarget() ? 'flex flex-1 items-center min-h-[44px] after:absolute after:inset-0' : ''">
         {{ label() }}
       </label>
     }

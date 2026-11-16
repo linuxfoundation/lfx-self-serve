@@ -10,8 +10,8 @@
         <div class="flex flex-col gap-1">
           <h3 id="import-members-format-title" class="text-sm font-semibold text-gray-900">CSV format for {{ committeeName }}</h3>
           <p class="text-sm text-gray-600">
-            One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Use the template's column names in any order; other columns are
-            rejected. No invitations are created.
+            One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Column names can be in any order and capitalization; columns the
+            import doesn't use are ignored. No invitations are created.
             @if (collectOnly) {
               Members stay pending in the form until you select Done (when creating) or Update Group (when editing).
             } @else {
@@ -25,7 +25,7 @@
           size="small"
           severity="secondary"
           [outlined]="true"
-          styleClass="shrink-0"
+          styleClass="shrink-0 whitespace-nowrap"
           (onClick)="downloadTemplate()"
           data-testid="import-members-template-btn">
         </lfx-button>
@@ -61,6 +61,7 @@
           [customUpload]="true"
           [chooseLabel]="fileName() ? 'Choose a different file' : 'Choose CSV file'"
           chooseIcon="fa-light fa-file-csv"
+          chooseStyleClass="p-button-sm"
           [disabled]="!canChooseFile()"
           dataTest="import-members-file-input"
           (onSelect)="onFileSelect($event)">
@@ -86,23 +87,28 @@
     </div>
   }
 
+  @if (phase() === 'preview' && fileNotices().length > 0) {
+    <div class="flex flex-col gap-1 rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="import-members-file-notices">
+      <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-amber-800">
+        @for (notice of fileNotices(); track $index) {
+          <li>{{ notice }}</li>
+        }
+      </ul>
+    </div>
+  }
+
   @if (rows().length > 0 || phase() !== 'select') {
     <div #resultSummary tabindex="-1" class="flex flex-col gap-2 outline-none" data-testid="import-members-summary">
-      <div class="flex flex-wrap items-center gap-2">
-        @if (phase() === 'preview') {
-          <lfx-tag [value]="readyCount() + ' ready'" severity="info" data-testid="import-members-ready-count" />
-          <lfx-tag [value]="invalidCount() + ' invalid'" [severity]="invalidCount() > 0 ? 'danger' : 'secondary'" data-testid="import-members-invalid-count" />
-          <lfx-tag [value]="skippedCount() + ' skipped'" severity="secondary" data-testid="import-members-skipped-count" />
-        } @else {
-          <lfx-tag [value]="addedCount() + ' added'" severity="success" data-testid="import-members-added-count" />
-          <lfx-tag [value]="skippedCount() + ' skipped'" severity="secondary" data-testid="import-members-skipped-count" />
-          <lfx-tag [value]="failedCount() + ' failed'" [severity]="failedCount() > 0 ? 'danger' : 'secondary'" data-testid="import-members-failed-count" />
-        }
-      </div>
+      <lfx-filter-pills
+        [options]="statusFilterOptions()"
+        [selectedFilter]="activeStatusFilter()"
+        (filterChange)="onStatusFilterChange($event)"
+        data-testid="import-members-status-filter" />
 
       @if (phase() === 'preview' && invalidCount() > 0) {
         <p class="text-sm text-red-700" data-testid="import-members-invalid-help">
-          Fix the invalid rows in your file and choose it again, or remove them below. Nothing has been added yet.
+          {{ invalidCount() }} invalid {{ invalidCount() === 1 ? 'row' : 'rows' }} will be skipped. Download them to fix and import them later, or remove them
+          below. In downloads, keep the lfx_import_encoding column and any lfx-text: safety prefixes; they are restored automatically on import.
         </p>
       } @else if (phase() === 'preview' && readyCount() === 0) {
         <p class="text-sm text-gray-600" data-testid="import-members-nothing-help">
@@ -117,16 +123,53 @@
           }
         </p>
       } @else if (phase() === 'importing') {
-        <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
+        <p class="flex flex-wrap items-center gap-2 text-sm text-gray-600" data-testid="import-members-progress">
+          <span class="inline-flex items-center gap-2">
+            <lfx-ui-spinner [size]="14" tone="current" aria-hidden="true" data-testid="import-members-spinner" />
+            <span>
+              @if (stopping()) {
+                Stopping after the current batch…
+              } @else {
+                Importing members…
+              }
+            </span>
+          </span>
+          <span class="font-medium tabular-nums text-gray-700" data-testid="import-members-processed-count">
+            {{ batchSettled() }} of {{ batchTotal() }} processed
+          </span>
+        </p>
+        @if (stopping()) {
+          <p class="text-sm text-gray-600" data-testid="import-members-stopping-notice">Rows after this batch will not be sent.</p>
+        }
       }
 
-      @if (stopReason()) {
+      @if (stopReason() && !stopping()) {
         <p role="alert" class="text-sm text-red-700" data-testid="import-members-stop-reason">
-          The import stopped: {{ stopReason() }} Rows that were not sent are marked Failed and can be retried.
+          The import stopped: {{ stopReason() }} Rows that were not sent are marked Not yet submitted and can be retried. Rows with an unconfirmed earlier
+          attempt are marked Outcome unknown; review the roster before retrying them.
         </p>
       }
-      @if (phase() === 'results' && failedCount() > 0) {
-        <p class="text-sm text-gray-600">Retry sends only the failed rows; added and skipped rows are never sent again.</p>
+      @if (retryDeadlineLabel(); as deadlineLabel) {
+        <p class="text-sm text-amber-700" data-testid="import-members-retry-deadline">{{ deadlineLabel }}</p>
+      }
+      @if (phase() === 'results' && (retryableCount() > 0 || failedCount() > 0)) {
+        <p class="text-sm text-gray-600" data-testid="import-members-retry-help">
+          Retry sends rows that are Not yet submitted, unknown outcomes and failed rows that can still succeed; added and skipped rows are never sent again.
+          Rows the service rejected as invalid need a corrected file.
+        </p>
+      }
+      @if ((phase() === 'preview' || phase() === 'results') && invalidCount() > 0) {
+        <div>
+          <lfx-button
+            label="Download invalid rows"
+            icon="fa-light fa-file-arrow-down"
+            size="small"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="downloadInvalidRows()"
+            data-testid="import-members-download-invalid-btn">
+          </lfx-button>
+        </div>
       }
       @if (cleanupWarningCount() > 0) {
         <p class="text-sm text-amber-700" data-testid="import-members-cleanup-warning">
@@ -136,7 +179,14 @@
       }
     </div>
 
-    <lfx-table [value]="rowViews()" [paginator]="rowViews().length > 10" [rows]="10" styleClass="p-datatable-sm" data-testid="import-members-table">
+    <lfx-table
+      [value]="filteredRowViews()"
+      [paginator]="filteredRowViews().length > tablePageSize"
+      [rows]="tablePageSize"
+      [first]="tableFirst()"
+      (onPage)="onTablePage($event)"
+      styleClass="p-datatable-sm"
+      data-testid="import-members-table">
       <ng-template #header>
         <tr>
           <th scope="col"><span class="text-sm text-gray-500">Row</span></th>
@@ -177,7 +227,7 @@
           <td class="align-top">
             <div class="flex flex-col items-start gap-1">
               <lfx-tag [value]="view.statusLabel" [severity]="view.statusSeverity" [attr.data-testid]="'import-members-row-status-' + view.row.rowNumber" />
-              @if (view.row.reason) {
+              @if (view.row.reason && view.row.status !== 'waiting') {
                 <span class="text-xs text-gray-600">{{ view.row.reason }}</span>
               }
               @if (view.row.cleanupWarning) {
@@ -234,7 +284,7 @@
     </lfx-button>
     @if (phase() === 'preview') {
       <lfx-button
-        [label]="(collectOnly ? 'Import ' : 'Add ') + readyCount() + (readyCount() === 1 ? ' member' : ' members')"
+        [label]="submitLabel()"
         icon="fa-light fa-user-plus"
         size="small"
         severity="info"
@@ -243,14 +293,24 @@
         data-testid="import-members-submit-btn">
       </lfx-button>
     } @else if (phase() === 'importing') {
+      <lfx-button
+        [label]="stopping() ? 'Stopping…' : 'Stop import'"
+        icon="fa-light fa-circle-stop"
+        size="small"
+        severity="secondary"
+        [disabled]="stopReason() !== null"
+        (onClick)="stopImport()"
+        data-testid="import-members-stop-btn">
+      </lfx-button>
       <lfx-button label="Adding members…" size="small" severity="info" [loading]="true" [disabled]="true" data-testid="import-members-submitting-btn">
       </lfx-button>
     } @else if (canRetry()) {
       <lfx-button
-        [label]="'Retry ' + failedCount() + ' failed'"
+        [label]="'Retry ' + retryableCount()"
         icon="fa-light fa-rotate-right"
         size="small"
         severity="info"
+        [disabled]="retryNotBefore() > 0"
         (onClick)="retryFailed()"
         data-testid="import-members-retry-btn">
       </lfx-button>

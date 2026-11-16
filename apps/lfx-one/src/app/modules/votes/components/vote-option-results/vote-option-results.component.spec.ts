@@ -19,7 +19,7 @@ describe('VoteOptionResultsComponent', () => {
     fixture = TestBed.createComponent(VoteOptionResultsComponent);
   });
 
-  function render(options: VoteResultsOption[], variant?: 'live' | 'final' | 'voter-final', testIdPrefix?: string): void {
+  function render(options: VoteResultsOption[], variant?: 'live' | 'final' | 'voter-final' | 'compact', testIdPrefix?: string): void {
     fixture.componentRef.setInput('options', options);
     if (variant) fixture.componentRef.setInput('variant', variant);
     if (testIdPrefix) fixture.componentRef.setInput('testIdPrefix', testIdPrefix);
@@ -50,6 +50,53 @@ describe('VoteOptionResultsComponent', () => {
       render([option({ isWinner: true, isTied: true, voteCount: 2 })], 'live');
       expect(text('vote-results-option-c1')).not.toContain('Winner');
       expect(text('vote-results-option-c1')).not.toContain('Tied');
+    });
+  });
+
+  describe('compact', () => {
+    it('highlights the leader in blue and mutes the rest on an open vote', () => {
+      render([option({ choiceId: 'c1', voteCount: 3, percentage: 75, isLeading: true }), option({ choiceId: 'c2', voteCount: 1, percentage: 25 })], 'compact');
+
+      expect(row('vote-results-option-c1')?.querySelector('.bg-blue-500')?.getAttribute('style')).toContain('width: 75%');
+      expect(row('vote-results-option-c2')?.querySelector('.bg-gray-300')).toBeTruthy();
+      expect(text('vote-results-option-c1')).not.toContain('Winner');
+      expect(text('vote-results-option-c1')).not.toContain('Tied');
+    });
+
+    it('shows the count and percentage with pluralization', () => {
+      render([option({ choiceId: 'c1', voteCount: 1, percentage: 50 }), option({ choiceId: 'c2', voteCount: 2, percentage: 100 })], 'compact');
+
+      expect(text('vote-results-option-c1')).toContain('1 vote · 50%');
+      expect(text('vote-results-option-c2')).toContain('2 votes · 100%');
+    });
+
+    it('marks a closed winner with a green bar and Winner tag', () => {
+      render(
+        [option({ choiceId: 'c1', voteCount: 3, percentage: 75, isWinner: true, isLeading: true }), option({ choiceId: 'c2', voteCount: 1, percentage: 25 })],
+        'compact'
+      );
+
+      expect(text('vote-results-option-c1')).toContain('Winner');
+      expect(row('vote-results-option-c1')?.querySelector('.bg-emerald-500')).toBeTruthy();
+      expect(row('vote-results-option-c1')?.querySelector('.bg-blue-500')).toBeNull();
+      expect(text('vote-results-option-c2')).not.toContain('Winner');
+    });
+
+    it('marks closed ties with amber bars and Tied tags', () => {
+      render(
+        [option({ choiceId: 'c1', voteCount: 2, isTied: true, isLeading: true }), option({ choiceId: 'c2', voteCount: 2, isTied: true, isLeading: true })],
+        'compact'
+      );
+
+      expect(text('vote-results-option-c1')).toContain('Tied');
+      expect(text('vote-results-option-c2')).toContain('Tied');
+      expect(row('vote-results-option-c1')?.querySelector('.bg-amber-500')).toBeTruthy();
+    });
+
+    it('keeps long labels wrappable', () => {
+      render([option({ text: 'LongLabel'.repeat(30) })], 'compact');
+
+      expect(row('vote-results-option-c1')?.querySelector('span')?.classList).toContain('break-words');
     });
   });
 
@@ -103,5 +150,59 @@ describe('VoteOptionResultsComponent', () => {
     expect(row('vote-results-voter-option-c1')).toBeTruthy();
     expect(row('vote-results-voter-option-c2')).toBeTruthy();
     expect(row('vote-results-option-c1')).toBeNull();
+  });
+
+  describe('voter links (#3914, #4450)', () => {
+    const viewLink = (choiceId: string): HTMLButtonElement | null =>
+      fixture.nativeElement.querySelector(`button[data-testid="vote-results-option-${choiceId}-view-voters"]`);
+
+    it('renders no links by default', () => {
+      render([option({ choiceId: 'c1', voteCount: 2, percentage: 100 })], 'final');
+
+      expect(viewLink('c1')).toBeNull();
+      expect(text('vote-results-option-c1')).toContain('2 votes');
+    });
+
+    it.each([
+      ['live', 1, '1 vote'],
+      ['live', 3, '3 votes'],
+      ['final', 1, '1 vote'],
+      ['final', 3, '3 votes'],
+      ['voter-final', 1, '1 vote'],
+      ['voter-final', 3, '3 votes'],
+    ] as const)('makes the %s count of %i the link and includes its visible label in the accessible name', (variant, count, label) => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render([option({ choiceId: 'c1', text: 'Yes', voteCount: count, percentage: 100 }), option({ choiceId: 'c2', voteCount: 0 })], variant);
+      const emitted: string[] = [];
+      fixture.componentInstance.viewVoters.subscribe((choiceId) => emitted.push(choiceId));
+
+      expect(viewLink('c1')?.textContent?.trim()).toBe(label);
+      expect(viewLink('c1')?.getAttribute('aria-label')).toBe(`${label} for Yes, view ${count === 1 ? 'voter' : 'voters'}`);
+      expect(viewLink('c2')).toBeNull();
+      expect(text('vote-results-option-c2')).toContain('0 votes');
+      viewLink('c1')!.click();
+      expect(emitted).toEqual(['c1']);
+    });
+
+    it.each(['live', 'final', 'voter-final'] as const)('keeps the correct option context for every %s count link', (variant) => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render([option({ choiceId: 'c1', text: 'Yes', voteCount: 2 }), option({ choiceId: 'c2', text: 'No', voteCount: 1 })], variant);
+      const emitted: string[] = [];
+      fixture.componentInstance.viewVoters.subscribe((choiceId) => emitted.push(choiceId));
+
+      expect(viewLink('c1')?.getAttribute('aria-label')).toBe('2 votes for Yes, view voters');
+      expect(viewLink('c2')?.getAttribute('aria-label')).toBe('1 vote for No, view voter');
+      viewLink('c1')!.click();
+      viewLink('c2')!.click();
+      expect(emitted).toEqual(['c1', 'c2']);
+    });
+
+    it('renders no separate view-voters row under an option', () => {
+      fixture.componentRef.setInput('showVoterLinks', true);
+      render([option({ choiceId: 'c1', voteCount: 1, percentage: 100 })], 'final');
+
+      expect(fixture.nativeElement.querySelectorAll('[data-testid$="-view-voters"]').length).toBe(1);
+      expect(viewLink('c1')?.textContent).not.toContain('View');
+    });
   });
 });

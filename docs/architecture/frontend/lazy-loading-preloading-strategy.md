@@ -61,7 +61,8 @@ Each feature module defines its own routes with preloading configuration:
 export const MEETING_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./meetings-dashboard/meetings-dashboard.component').then((m) => m.MeetingsDashboardComponent),
+    // Entry renders the dashboard or, behind the meetings-redesign flag, the @defer-loaded redesign
+    loadComponent: () => import('./meetings-entry/meetings-entry.component').then((m) => m.MeetingsEntryComponent),
     data: { preload: true, preloadDelay: 500 },
   },
   // ... additional child routes
@@ -114,14 +115,89 @@ export class CustomPreloadingStrategy implements PreloadingStrategy {
       }
 
       // Smart delay-based preloading
-      const delay = route.data['preloadDelay'] || 2000;
-      return timer(delay).pipe(mergeMap(() => load()));
+      const delay = route.data['preloadDelay'] ?? 2000;
+      return timer(delay).pipe(
+        mergeMap(() => load()),
+        catchError((error) => {
+          console.error('Route preloading failed', error);
+          return of(null);
+        })
+      );
     }
 
     return of(null);
   }
 }
 ```
+
+### Loading Failure Recovery
+
+Foreground router navigation errors and the global `ChunkLoadErrorHandler` delegate
+to the root-scoped `ChunkLoadRecoveryService`. It recognizes browser dynamic-import
+failures, named `ChunkLoadError`s, and bounded, cycle-safe error wrappers. A confirmed
+import failure can refresh the current address once per 60 seconds; persistent
+storage must be readable and writable before an automatic reload is allowed. Duplicate
+router/global reports during the same reload are idempotent. A repeat failure or
+unavailable loop-guard storage produces an eager root-level recovery banner instead.
+If the current document survives a reload attempt (for example, the user cancels a
+`beforeunload` prompt), a watchdog restores manual recovery after
+`CHUNK_LOAD_RELOAD_WATCHDOG_MS`. It never schedules another automatic reload and
+leaves the persistent loop marker intact. Its timer is cleared on service destruction.
+
+Angular's deferred-dependency error (`code === -750`, NG0750) discards the original
+failure reason. Without corroborating import-failure evidence, it opens the banner
+but does **not** automatically refresh: a component evaluation bug is not necessarily
+a stale asset. Existing local `@error` fallbacks remain unchanged.
+
+The banner offers **Reload page** and **Contact support**, warns about unsaved changes,
+and does not replace routed content. Explicit reload remains available if storage is
+blocked. Recovery never navigates to a URL taken from an error, and does not clear
+the loop marker at bootstrap/navigation completion because deferred failures can arrive
+later. This mechanism requires the initial application to have bootstrapped; it cannot
+repair a main bundle that never loaded.
+
+When recovery appears, its alert announces the failure without taking focus from
+an input, textarea, select, or rich-text edit (including inside the mobile drawer).
+Lost focus (including a document-root active element), inert regions, or non-editing mobile navigation focus move to the banner
+container after rendering, **not** to the destructive reload control. Tab reaches
+the actions without turning an in-flight Space/Enter into a reload. Other active
+controls retain focus. The mobile drawer pauses its focus trap and modal restriction
+while the banner is visible, without closing/unmounting the drawer or losing state.
+Recovery remains keyboard-reachable after a failed navigation with no `NavigationEnd`.
+
+For PrimeNG drawers/dialogs (including locally provided dynamic dialogs) and CDK
+dialogs, the same Angular-owned banner is placed inside the highest visible overlay's
+actual focus-trap root. It precedes PrimeNG's trailing focus sentinel so both actions
+are in the modal's Tab order; neither the trap nor modal semantics are disabled.
+Inside an overlay it is an in-flow, nonshrinking strip rather than viewport-fixed
+content inside a transformed containing block. Only the banner moves: overlay/form
+instances, drafts, and editable focus remain intact. A browser-only mutation observer
+tracks overlay opening, closing, visibility, and stacking changes while recovery is
+visible, returning the banner to the underlying overlay or its root home. Mutation
+batches coalesce to at most one scan per animation frame; style changes remain watched
+for overlay stacking updates. Cleanup disconnects the observer and cancels pending
+frames. Destruction removes the banner at its current location rather than reattaching
+a destroyed node.
+
+For a CDK `UiDrawerService` sheet, the banner is a direct child of
+`lfx-ui-drawer` within the CDK trap, not a sibling following the sheet. Its nonshrinking
+footer consumes height from the flexible scrolling body, keeping the actions inside
+the viewport without replacing drafts. The **Components/ChunkLoadRecovery/In CDK drawer → Visible Recovery**
+Storybook interaction checks real action bounding boxes, scrolling, editable focus,
+and CDK sentinel wrapping; browser execution is separate from the jsdom CI unit suite.
+This app-level integration lives beside the recovery component and is registered
+explicitly in Storybook's discovery, type-check, and typed-lint configuration, outside the
+PrimeNG-free uikit. Its manual-recovery trigger passes an `Error` carrying the NG0750
+runtime code and asserts that the service accepts it.
+
+The router hook returns `void`, not a `RedirectCommand`: ordinary navigation failures
+still emit `NavigationError` and reject the navigation promise. `RouterLink` continues
+forwarding rejections to Angular's application error handler; the recovery hook does
+not add duplicate console reporting for unrelated failures.
+
+Background preload failures, including a synchronous `load()` throw, are caught and
+reported without activating foreground recovery or ending future preloading. The
+foreground navigation path can still recover if that dependency fails when needed.
 
 ### Preloading Configuration
 
@@ -154,7 +230,7 @@ data: { preload: true, preloadDelay: 1500 }
 
 ### Bundle Size Optimization
 
-Lazy-loading feature modules and using the custom preloading strategy keeps the initial bundle small, defers non-critical work, and makes subsequent navigation near-instant because preloaded chunks are already in cache. Verify the shipping footprint for your build locally:
+Lazy-loading feature modules and using the custom preloading strategy keeps the initial bundle small, defers non-critical work, and makes subsequent navigation near-instant because most preloaded chunks are already in cache. The meetings route preloads the entry chunk, which includes the existing dashboard; only the redesign is a separate `@defer` chunk, downloaded when chosen. Verify the shipping footprint for your build locally:
 
 ```bash
 yarn build                                   # production bundle + stats

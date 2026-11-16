@@ -127,7 +127,6 @@ describe('mapMentorshipMenteeApplication', () => {
       upstreamStatus: 'pending',
       createdOn: '2026-06-28T10:00:00Z',
       updatedOn: '2026-06-29T10:00:00Z',
-      decisionExpectedDate: '2026-08-01T23:59:59.999Z',
       tasks: [mapMentorshipMenteeApplicationTask(baseTask, '2026-08-01')],
     });
   });
@@ -145,7 +144,7 @@ describe('mapMentorshipMenteeApplication', () => {
 
   it('falls back to the term id on the row when the term is not embedded', () => {
     const result = mapMentorshipMenteeApplication({ ...baseApplication, program: undefined, term: undefined }, []);
-    expect(result).toMatchObject({ programId: '', programName: '', term: { id: 'term-1', name: '' }, decisionExpectedDate: undefined });
+    expect(result).toMatchObject({ programId: '', programName: '', term: { id: 'term-1', name: '' } });
   });
 });
 

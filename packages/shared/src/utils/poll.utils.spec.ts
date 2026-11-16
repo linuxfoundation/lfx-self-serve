@@ -7,7 +7,19 @@ import { describe, expect, it } from 'vitest';
 
 import { PollStatus } from '../enums';
 import type { PollCommentResponse } from '../interfaces/poll.interface';
-import { countVotesByStatus, normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
+import {
+  countVotesByStatus,
+  getVoteEndedEarlyDetailTooltip,
+  normalizePollStatus,
+  sortCommentResponsesByRecency,
+  sortCommentResponsesByText,
+} from './poll.utils';
+
+describe('getVoteEndedEarlyDetailTooltip', () => {
+  it('states the early-close date without inferring the closure reason or participation', () => {
+    expect(getVoteEndedEarlyDetailTooltip('Oct 20, 2026')).toBe('Vote closed early on Oct 20, 2026.');
+  });
+});
 
 describe('normalizePollStatus', () => {
   it('returns an already-lowercase status unchanged', () => {
@@ -78,5 +90,31 @@ describe('sortCommentResponsesByRecency', () => {
 
   it('returns an empty array unchanged', () => {
     expect(sortCommentResponsesByRecency([])).toEqual([]);
+  });
+
+  it('sinks a response with no vote_creation_time (pseudo-anonymous, #3916) to the bottom', () => {
+    const input: PollCommentResponse[] = [{ comment_text: 'anonymous' }, response('real', '2025-02-01T10:00:00Z')];
+
+    expect(sortCommentResponsesByRecency(input).map((r) => r.comment_text)).toEqual(['comment real', 'anonymous']);
+  });
+});
+
+describe('sortCommentResponsesByText', () => {
+  it('sorts responses by comment_text', () => {
+    const input: PollCommentResponse[] = [{ comment_text: 'Charlie' }, { comment_text: 'alpha' }, { comment_text: 'Bravo' }];
+
+    expect(sortCommentResponsesByText(input).map((r) => r.comment_text)).toEqual(['alpha', 'Bravo', 'Charlie']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input: PollCommentResponse[] = [{ comment_text: 'second' }, { comment_text: 'first' }];
+
+    sortCommentResponsesByText(input);
+
+    expect(input.map((r) => r.comment_text)).toEqual(['second', 'first']);
+  });
+
+  it('returns an empty array unchanged', () => {
+    expect(sortCommentResponsesByText([])).toEqual([]);
   });
 });

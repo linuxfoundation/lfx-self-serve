@@ -42,6 +42,16 @@ describe('VoteParticipationCardComponent', () => {
     expect(squash(card('vote-results-abstained-stat')?.textContent)).toBe(squash('Abstained 2'));
   });
 
+  it('shows "—" for the abstention count while pseudo-anonymous results are held (#3916)', () => {
+    fixture.componentRef.setInput('stats', { ...STATS, abstainedVoters: 0, abstainedRate: 0 });
+    fixture.componentRef.setInput('showAbstained', true);
+    fixture.componentRef.setInput('abstainedHeld', true);
+    fixture.detectChanges();
+
+    expect(card('vote-results-abstained-value')?.textContent?.trim()).toBe('—');
+    expect(squash(card()?.textContent)).toContain(squash('Total Responses 9'));
+  });
+
   it('applies the given test id', () => {
     fixture.componentRef.setInput('testId', 'vote-results-ranked-participation');
     fixture.detectChanges();

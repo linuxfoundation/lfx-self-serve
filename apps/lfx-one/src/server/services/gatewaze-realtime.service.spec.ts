@@ -51,7 +51,11 @@ vi.mock('../utils/auth-helper', async () => ({
   isImpersonating,
 }));
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas } }));
-vi.mock('./project.service', () => ({ ProjectService: vi.fn(() => ({ getWriterSummary })) }));
+vi.mock('./project.service', () => ({
+  ProjectService: vi.fn(function () {
+    return { getWriterSummary };
+  }),
+}));
 vi.mock('./logger.service', () => ({
   logger: {
     debug: vi.fn(),

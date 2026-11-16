@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
@@ -16,98 +17,103 @@ import type {
   HealthMetricsEventsRegistrationsGrowthMetricOption,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsSectionKey,
+  HealthMetricsEventsSnapshot,
+  HealthMetricsEventsSnapshotPeriodOption,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsFootnotePart, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
- * allowlist; the DOM id is `sec-evt-<key>`. Footnotes land with each section's data.
+ * allowlist; the DOM id is `sec-evt-<key>`.
  */
 export const HEALTH_METRICS_EVENTS_SECTIONS = [
   {
     key: 'forecast',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Registration forecast',
     heading: 'Registration forecast',
     description:
       'The most decision-sensitive view in Events: where registrations will land, while there is still time to act. Plotted against days to event so a small meetup and KubeCon can be read the same way.',
-    // The section renders its own footnote, so it shows only beside a forecast and never under an empty state.
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'past',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Past events',
     heading: 'Past events',
     description:
       'Final performance for events that have already closed — the record the registration forecast was projecting toward while they were still open.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'kpi',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'At a glance',
     heading: 'Events at a glance',
     description: 'Reach across every event this period.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'reg',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event, snapshot: true },
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
     description: 'Registrations by year, split in-person versus virtual.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'rev',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Revenue',
     heading: 'Event revenue',
     description:
       'The two money lines events generate. Registration revenue is what attendees pay; sponsorship is what companies pay. They are driven by different teams and behave differently, so they are never merged into one figure.',
-    footnote: [],
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    provisional: true,
   },
   {
     key: 'spon',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Sponsorship',
     heading: 'Sponsorship',
     description: 'What companies paid to sponsor events, and what they bought.',
-    footnote: [],
-    footnoteCaution: false,
-    headingBadge: 'Provisional',
+    provisional: true,
   },
   {
     key: 'spk',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Speakers & proposals',
     heading: 'Speakers & proposals',
     description:
       'The speaking pipeline, kept separate from sponsorship — proposals measure community supply, sponsorship measures revenue. Acceptance rate shows how much choice the programme committee had.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Organizations',
     heading: 'Organizations at events',
     description:
       'Which organizations show up, sponsor and speak. This is the events view of an organization — the same company also has a membership, meeting and contribution record in Members.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'geo',
+    empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Geographic distribution',
     heading: 'Geographic distribution',
     description: 'Where registrations come from — useful for deciding where the next event should be and which regions are under-served.',
-    footnote: [],
-    footnoteCaution: false,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_EVENTS_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-ticket',
+  noun: 'event',
+  lead: 'Event results appear once the foundation has events on the calendar.',
+  reasons: [
+    'No event has been scheduled for the foundation yet',
+    'Events run under another foundation are counted there',
+    'Your LF Events contact can help plan one',
+  ],
+  pastActivity: 'event activity',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX = 'sec-evt-';
@@ -147,13 +153,6 @@ export const HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO = 3;
 
 /** Goal and forecast this far apart, either way, is a data-entry problem: the chip is withheld. */
 export const HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO = 10;
-
-/** Forecast footnote, in the design's words; shown only while there are upcoming events to forecast. */
-export const HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE: readonly HealthMetricsFootnotePart[] = [
-  { text: 'The forecast is a projection from historical pacing curves, not a promise — the band is the confidence range. An event with ' },
-  { text: 'no last-year curve', bold: true },
-  { text: ' is projected from comparable events, which is why its range is wider.' },
-];
 
 /** The verdict banner per tone, with its urgency icon and colours; `none` is the design's untinted grey Summary. */
 export const HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES: Readonly<
@@ -228,18 +227,11 @@ export const HEALTH_METRICS_EVENTS_PAST_UNMEASURED: HealthMetricsEventsPast = { 
 /** The periods the at-a-glance view compares with the year before; the two oldest carry no change columns. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
 
-/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as "No events yet". */
+/** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as a foundation without events. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
 
 /** A year-over-year fall in speakers steeper than this sets the sub-nav note. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE = -0.3;
-
-/** At-a-glance footnote, in the design's words. */
-export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_FOOTNOTE: readonly HealthMetricsFootnotePart[] = [
-  { text: 'Registrations and attendees are both shown so the ' },
-  { text: 'show-up rate', bold: true },
-  { text: ' is visible. A registration is a promise; an attendee is the value delivered — reporting only one hides which of the two moved.' },
-];
 
 /** Years read per foundation; one past it flags a truncated read. The longest history spans under ten. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP = 100;
@@ -365,3 +357,19 @@ export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeog
 
 /** Countries ranked in the list. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
+
+/** The event dialog Snapshot's periods, as the design orders them. */
+export const HEALTH_METRICS_EVENTS_SNAPSHOT_PERIODS: readonly HealthMetricsEventsSnapshotPeriodOption[] = [
+  { value: '7d', label: '7d', days: 7 },
+  { value: '30d', label: '30d', days: 30 },
+  { value: '90d', label: '90d', days: 90 },
+];
+
+/** An event the snapshot views hold nothing for: no weeks, no packages and no revenue. */
+export const HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED: HealthMetricsEventsSnapshot = {
+  today: null,
+  weeks: [],
+  packages: [],
+  sponsorshipRevenueUsd: 0,
+  sponsorshipRevenueInPeriodUsd: { '7d': 0, '30d': 0, '90d': 0 },
+};

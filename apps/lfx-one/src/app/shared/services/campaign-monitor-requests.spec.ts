@@ -72,3 +72,54 @@ describe('CampaignService monitor reads — account source marker', () => {
     }
   });
 });
+
+/** campaign-service Google Ads account discovery, read for the Monitor tab's Google Ads panel. */
+describe('CampaignService.getGoogleAdsAccounts', () => {
+  it('GETs the project-scoped account list with only the project, no account-source marker', () => {
+    const accounts = [{ key: '1000000001', label: 'CNCF Search' }];
+    const get = vi.fn().mockReturnValue(of(accounts));
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: { get } },
+        { provide: SseService, useValue: {} },
+      ],
+    });
+    let result: unknown;
+
+    TestBed.inject(CampaignService)
+      .getGoogleAdsAccounts('cncf')
+      .subscribe((r) => (result = r));
+
+    expect(get).toHaveBeenCalledWith('/api/campaigns/google/accounts', { params: { project: 'cncf' } });
+    expect(result).toBe(accounts);
+  });
+});
+
+/** The X create flow's two reads: the brief-less capability and the account an X create uses (LFXV2-3319). */
+describe('CampaignService X create reads', () => {
+  function service(get: ReturnType<typeof vi.fn>): CampaignService {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: HttpClient, useValue: { get } },
+        { provide: SseService, useValue: {} },
+      ],
+    });
+    return TestBed.inject(CampaignService);
+  }
+
+  it('scopes the capability read to the project, which the campaign-manager guard authorises on', () => {
+    const get = vi.fn().mockReturnValue(of({ enabled: true }));
+
+    service(get).getTwitterCreateCapability('cncf').subscribe();
+
+    expect(get).toHaveBeenCalledWith('/api/campaigns/twitter/create-capability', { params: { project: 'cncf' } });
+  });
+
+  it('GETs the X account read with only the project', () => {
+    const get = vi.fn().mockReturnValue(of({ accounts: [], connection: { state: 'no_connection', accountId: null, label: null } }));
+
+    service(get).getTwitterAdsAccounts('cncf').subscribe();
+
+    expect(get).toHaveBeenCalledWith('/api/campaigns/twitter/accounts', { params: { project: 'cncf' } });
+  });
+});

@@ -161,7 +161,7 @@
                   label="Invite Guests"
                   icon="fa-light fa-envelope"
                   [loading]="submitting()"
-                  [disabled]="!hasRegistrantUpdates() || submitting()"
+                  [disabled]="!hasRegistrantUpdates() || submitting() || !committeeMembersReady()"
                   severity="info"
                   (onClick)="onManageRegistrants()"
                   data-testid="meeting-manage-submit-btn">
@@ -172,7 +172,7 @@
                   label="Update Meeting"
                   icon="fa-light fa-check"
                   [loading]="submitting()"
-                  [disabled]="!canProceed() || submitting()"
+                  [disabled]="!canProceed() || submitting() || !committeeMembersReady()"
                   severity="info"
                   (onClick)="onSubmitAll()"
                   data-testid="meeting-manage-update-btn">
@@ -191,7 +191,7 @@
 
             <p-step-panel [value]="2" data-testid="meeting-manage-panel-1">
               <ng-template #content let-activateCallback="activateCallback">
-                <lfx-meeting-details [form]="form()" [savedOwner]="hydratedOwner()"></lfx-meeting-details>
+                <lfx-meeting-details [form]="form()" [savedOwner]="hydratedOwner()" [originalStartDate]="originalStartDate()"></lfx-meeting-details>
               </ng-template>
             </p-step-panel>
 
@@ -227,7 +227,8 @@
                     [savedAttendeeVisibility]="savedAttendeeVisibility()"
                     [(registrantUpdates)]="registrantUpdates"
                     [refresh]="registrantUpdatesRefresh$"
-                    [committeeContext]="committeeContext()">
+                    [committeeContext]="committeeContext()"
+                    (committeeMembersResolvedChange)="onCommitteeMembersResolved($event)">
                   </lfx-meeting-registrants-manager>
                 } @else {
                   <div class="text-center py-8 text-gray-500">

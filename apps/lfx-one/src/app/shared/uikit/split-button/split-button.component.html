@@ -1,0 +1,52 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Square off the main half's right corners and lift it above its neighbour on hover and focus, so its ring is not clipped. -->
+<lfx-ui-button
+  class="[&>button]:rounded-r-none [&>button:focus-visible]:z-10 [&>button:hover]:z-10"
+  [variant]="variant()"
+  [size]="size()"
+  [icon]="icon()"
+  [disabled]="disabled()"
+  (click)="triggered.emit()"
+  data-testid="ui-split-button-main"
+  >{{ label() }}</lfx-ui-button
+>
+@if (menu(); as menuTemplate) {
+  <button
+    #chevron
+    type="button"
+    [class]="chevronClasses()"
+    [disabled]="disabled()"
+    [attr.aria-label]="chevronName()"
+    [cdkMenuTriggerFor]="menuTemplate"
+    [cdkMenuPosition]="menuPositions()"
+    data-testid="ui-split-button-chevron">
+    @if (variant() === 'primary') {
+      <!-- 1px divider: the page background at 30% (no alpha utility for it). -->
+      <span class="absolute inset-y-0 left-0 w-px bg-ui-background-100 opacity-30" aria-hidden="true" data-testid="ui-split-button-divider"></span>
+    }
+    <i class="ui-icon fa-light fa-chevron-down" aria-hidden="true"></i>
+  </button>
+} @else {
+  <button
+    #chevron
+    type="button"
+    [class]="chevronClasses()"
+    [disabled]="disabled()"
+    [attr.aria-label]="secondaryLabel() ? null : secondaryTooltip() || null"
+    [lfxUiTooltip]="secondaryTooltip()"
+    [lfxUiTooltipDisabled]="disabled() || !secondaryTooltip()"
+    (click)="secondaryTriggered.emit()"
+    data-testid="ui-split-button-secondary">
+    @if (variant() === 'primary') {
+      <span class="absolute inset-y-0 left-0 w-px bg-ui-background-100 opacity-30" aria-hidden="true" data-testid="ui-split-button-divider"></span>
+    }
+    @if (secondaryIcon()) {
+      <i [class]="'ui-icon ' + secondaryIcon()" aria-hidden="true"></i>
+    }
+    @if (secondaryLabel()) {
+      <span data-testid="ui-split-button-secondary-label">{{ secondaryLabel() }}</span>
+    }
+  </button>
+}

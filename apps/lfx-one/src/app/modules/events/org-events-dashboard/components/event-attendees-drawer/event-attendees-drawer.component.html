@@ -14,7 +14,7 @@
       </div>
       <div class="flex flex-col gap-0.5 min-w-0">
         <h2 class="text-base font-semibold text-gray-900 truncate" data-testid="event-attendees-drawer-title">{{ companyName() }} Attendees</h2>
-        <p class="text-sm text-gray-500 truncate" data-testid="event-attendees-drawer-subtitle">{{ eventName() }} &middot; {{ attendeeCount() }} attending</p>
+        <p class="text-sm text-gray-500 truncate" data-testid="event-attendees-drawer-subtitle">{{ eventName() }} &middot; {{ countedTotal() }} counted</p>
       </div>
     </div>
   </ng-template>
@@ -38,6 +38,11 @@
     @if (loading()) {
       <div class="flex items-center justify-center py-16">
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400" aria-hidden="true"></i>
+      </div>
+    } @else if (loadFailed()) {
+      <div class="flex flex-col items-center justify-center py-16 text-center" data-testid="event-attendees-error">
+        <i class="fa-light fa-triangle-exclamation text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm text-gray-500">Could not load attendees. Close this panel and open it again to retry.</p>
       </div>
     } @else if (filteredAttendees().length === 0) {
       <div class="flex flex-col items-center justify-center py-16 text-center">
@@ -69,7 +74,11 @@
               }
             </div>
             <!-- Status badge -->
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700 flex-shrink-0"> Registered </span>
+            <span
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-700 flex-shrink-0"
+              data-testid="event-attendee-status">
+              {{ participationLabel() }}
+            </span>
           </li>
         }
       </ul>

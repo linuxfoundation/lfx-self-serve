@@ -28,10 +28,10 @@ export const MENTORSHIP_MENTOR_PAGE_TABS = [
 ];
 
 /**
- * Statuses of a mentor's program on upstream `GET /me/mentor-programs`, which the card shows with the admin card's
+ * Statuses of a mentor's program, mapped from upstream `GET /me/mentor-programs` (`_` written as `-`), which the card shows with the admin card's
  * `MENTORSHIP_PROGRAM_STATUS_LABELS` and `MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES`.
  */
-export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['open', 'completed'] as const;
+export const MENTORSHIP_MENTOR_PROGRAM_STATUSES = ['accepting', 'in-progress', 'upcoming', 'completed'] as const;
 
 export const EMPTY_MENTORSHIP_MENTOR_PROGRAMS_RESPONSE: MentorshipMentorProgramsResponse = {
   data: [],
@@ -72,6 +72,7 @@ export const MENTORSHIP_MENTOR_TASK_APPROVED_LABEL = 'Approved';
 export const MENTORSHIP_MENTOR_TASK_APPROVE_LABEL = 'Approve';
 export const MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL = 'Request Changes';
 export const MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL = 'Download Submission';
+export const MENTORSHIP_MENTOR_TASK_VIEW_SUBMISSION_LABEL = 'View Submission';
 export const MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB = 'submitted';
 export const MENTORSHIP_MENTOR_TASK_COMPLETED_VERB = 'completed';
 export const MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING = 'No tasks awaiting review.';

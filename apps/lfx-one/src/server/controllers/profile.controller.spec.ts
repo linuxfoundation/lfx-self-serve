@@ -10,8 +10,10 @@ import {
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
   EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
   EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
@@ -19,6 +21,7 @@ import {
   EMAIL_VERIFICATION_FAILED_MESSAGE,
   EMAIL_VERIFICATION_MIN_RESPONSE_MS,
   EMAIL_VERIFICATION_SENT_MESSAGE,
+  IDENTITY_ALREADY_CONNECTED_STATUS,
 } from '../../../../../packages/shared/src/constants/profile.constants';
 // The real classifier — `@lfx-one/shared/utils` is mocked below, so link-failure specs opt into it.
 import { isIdentityAlreadyLinkedError } from '../../../../../packages/shared/src/utils/identity.utils';
@@ -45,6 +48,7 @@ const {
   meetingPrefSvc,
   socialVerificationSvc,
   authStateSvc,
+  linkedEmailSupportSvc,
   auth0Svc,
   auth0ToCdpProviderMap,
   cdpPlatformToTypeMap,
@@ -73,9 +77,12 @@ const {
   },
   cdpSvc: {
     getIdentitiesForUser: vi.fn(),
+    getMemberIdentitiesForUser: vi.fn(),
     verifyIdentityForUser: vi.fn(),
+    verifyIdentity: vi.fn(),
     rejectIdentityForUser: vi.fn(),
-    createIdentityForUser: vi.fn(),
+    createIdentity: vi.fn(),
+    runMemberIdentityWrites: vi.fn(),
   },
   auth0Svc: {
     getUserIdentities: vi.fn(),
@@ -103,6 +110,7 @@ const {
     verifyOtp: vi.fn(),
     linkIdentity: vi.fn(),
     listIdentities: vi.fn(),
+    unlinkIdentity: vi.fn(),
     addAlias: vi.fn(),
   },
   forwardsSvc: {
@@ -126,6 +134,7 @@ const {
     getPendingSocialConnect: vi.fn(),
     clearPendingSocialConnect: vi.fn(),
   },
+  linkedEmailSupportSvc: { issue: vi.fn(), consume: vi.fn() },
   authStateSvc: {
     issue: vi.fn(),
     consume: vi.fn(),
@@ -135,16 +144,20 @@ const {
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
+  AUTH0_LINKED_ONLY_IDENTITY_COMBOS: new Set(['gitlab+username']),
   AUTH0_TO_CDP_PROVIDER_MAP: auth0ToCdpProviderMap,
   CDP_DISPLAYABLE_IDENTITY_COMBOS: new Set(['github+username', 'linkedin+email', 'email+email', 'google+email']),
-  CDP_PLATFORM_ICONS: { email: 'fa-light fa-envelope', google: 'fa-brands fa-google' },
+  CDP_PLATFORM_ICONS: { email: 'fa-light fa-envelope', gitlab: 'fa-brands fa-gitlab', google: 'fa-brands fa-google' },
   CDP_PLATFORM_TO_TYPE_MAP: cdpPlatformToTypeMap,
-  CDP_TO_AUTH0_PROVIDER_MAP: {},
+  // The real reverse map holds gitlab → gitlab (the connection name); unlink must still send `oauth2`.
+  CDP_TO_AUTH0_PROVIDER_MAP: { gitlab: 'gitlab' },
   EMAIL_ALREADY_CONNECTED_MESSAGE,
   EMAIL_ALREADY_CONNECTED_STATUS,
   EMAIL_ALREADY_LINKED_MESSAGE,
+  EMAIL_CALLBACK_ALREADY_LINKED_STATUS,
   EMAIL_CALLBACK_RETRY_REQUIRED_STATUS,
   EMAIL_CALLBACK_STATUS_PARAM,
+  EMAIL_LINKED_SUPPORT_CONTEXT_PARAM,
   EMAIL_REGEX: /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/,
   EMAIL_VERIFICATION_SENT_MESSAGE,
   EMAIL_VERIFICATION_FAILED_ERROR,
@@ -156,6 +169,9 @@ vi.mock('@lfx-one/shared/constants', () => ({
   // Only the member the write path sets. This factory replaces the module wholesale, so a name the
   // controller reads and this list omits fails as an undefined export rather than a wrong value.
   ERROR_CODES: { SERVICE_ADVISORY: 'SERVICE_ADVISORY' },
+  GITLAB_AUTH0_CONNECTION: 'gitlab',
+  GITLAB_AUTH0_PROVIDER: 'oauth2',
+  IDENTITY_ALREADY_CONNECTED_STATUS,
   PURCHASE_LINUX_URL: 'https://example.com',
   VALKEY_CACHE,
   PROFILE_EMAIL_PATH: '/profile/email',
@@ -248,6 +264,7 @@ vi.mock('../services/profile-auth.service', () => ({
     return profileAuthSvc;
   }),
 }));
+vi.mock('../services/linked-email-support.service', () => ({ linkedEmailSupportService: linkedEmailSupportSvc }));
 vi.mock('../services/auth-state.service', () => ({
   authStateService: authStateSvc,
 }));
@@ -271,7 +288,7 @@ function buildReq(overrides: Record<string, unknown> = {}): any {
 }
 
 function buildRes(): any {
-  return { status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), redirect: vi.fn() };
+  return { set: vi.fn().mockReturnThis(), status: vi.fn().mockReturnThis(), json: vi.fn(), send: vi.fn(), redirect: vi.fn() };
 }
 
 describe('ProfileController.uploadProfilePicture', () => {
@@ -769,6 +786,38 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
 
     expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledWith(expect.anything(), 'testuser', 'cdp-alt');
     expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  // #4523: the CDP reject can wait behind the member's queued reconcile writes, so it must not run
+  // while the meeting-invite lock (and its TTL) is held.
+  it('runs the CDP reject only after the meeting-invite lock is released', async () => {
+    meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'other@example.com' });
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    let lockHeld = false;
+    withMeetingInviteLockMock.mockImplementationOnce(async (_req: unknown, _username: string, _ttlMs: number, fn: () => Promise<unknown>) => {
+      lockHeld = true;
+      try {
+        return await fn();
+      } finally {
+        lockHeld = false;
+      }
+    });
+    const lockHeldDuringReject: boolean[] = [];
+    cdpSvc.rejectIdentityForUser.mockImplementationOnce(async () => {
+      lockHeldDuringReject.push(lockHeld);
+    });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.rejectIdentity(
+      buildRejectReq({ email: 'alt@example.com' }, { params: { identityId: 'cdp-alt' }, path: '/api/profile/identities/cdp-alt' }),
+      res,
+      next
+    );
+
+    expect(lockHeldDuringReject).toEqual([false]);
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
   });
 
   it('surfaces a lock-contention rejection as a 409 without rejecting the identity', async () => {
@@ -1386,6 +1435,270 @@ describe('ProfileController social connect — returnTo', () => {
   });
 });
 
+// #4327: reconnecting a social identity whose token subject is the signed-in session's own subject
+// is a successful no-op — it must never surface the "another account" conflict, and must return
+// before the link call and the CDP verification continuation.
+describe('ProfileController social callback — already-connected identity (#4327)', () => {
+  const sessionSub = 'auth0|synthetic-user';
+  let controller: ProfileController;
+
+  function idTokenWith(payload: unknown): string {
+    return `synthetic-header.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.synthetic-sig`;
+  }
+
+  function callbackReq(user: Record<string, unknown> | undefined = { sub: sessionSub }): any {
+    return buildReq({ path: '/social/callback', query: { code: 'c', state: 's' }, oidc: user ? { user } : undefined });
+  }
+
+  async function callbackWithToken(idToken: string, req: any = callbackReq()): Promise<any> {
+    socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: idToken });
+    const res = buildRes();
+    await controller.handleSocialCallback(req, res);
+    return res;
+  }
+
+  function expectNoCallbackWrites(): void {
+    expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue(undefined);
+    socialVerificationSvc.validateState.mockReturnValue(true);
+    profileAuthSvc.getManagementToken.mockReturnValue('synthetic-mgmt-token');
+    getEffectiveUsernameMock.mockReturnValue('synthetic-user');
+    cdpSvc.getIdentitiesForUser.mockResolvedValue([]);
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
+    controller = new ProfileController();
+  });
+
+  it('redirects a same-subject reconnect to the already-connected marker without linking or touching CDP', async () => {
+    const res = await callbackWithToken(idTokenWith({ sub: sessionSub }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`/profile/identities?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+    expectNoCallbackWrites();
+    // State is still consumed — the no-op sits after every existing guard.
+    expect(socialVerificationSvc.clearState).toHaveBeenCalled();
+    expect(socialVerificationSvc.clearConnectReturnTo).toHaveBeenCalled();
+  });
+
+  it.each([
+    { scenario: 'same-account reconnect', sub: sessionSub, linkResult: { success: true } },
+    { scenario: 'new link', sub: 'linkedin|synthetic-member', linkResult: { success: true } },
+    {
+      scenario: 'failed link',
+      sub: 'linkedin|synthetic-member',
+      linkResult: { success: false, error: 'internal', message: 'upstream unavailable' },
+    },
+  ])('does not log decoded identity values for $scenario', async ({ sub, linkResult }) => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue(linkResult);
+    const email = 'synthetic.user@example.com';
+    const idToken = idTokenWith({ sub, email });
+
+    const res = await callbackWithToken(idToken);
+
+    if (!linkResult.success) {
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+      expect(logger.error).toHaveBeenCalledOnce();
+    }
+
+    const loggedDetails = JSON.stringify(
+      [logger.startOperation, logger.success, logger.info, logger.warning, logger.error, logger.debug].flatMap((method) =>
+        vi.mocked(method).mock.calls.map((args) => args.slice(1))
+      )
+    );
+    expect(loggedDetails).not.toContain(sub);
+    expect(loggedDetails).not.toContain(email);
+    expect(loggedDetails).not.toContain(idToken);
+  });
+
+  it.each([
+    '/profile',
+    '/profile/email',
+    '/profile/emails',
+    '/profile/identities',
+    '/profile/password',
+    '/profile/linux-email',
+    '/profile/settings',
+    '/mentorship/mentor',
+  ])('returns the already-connected marker to the initiating page %s', async (page) => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue(page);
+
+    const res = await callbackWithToken(idTokenWith({ sub: sessionSub }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`${page}?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+  });
+
+  it('falls back to the Identities tab when the stashed page is not allowlisted', async () => {
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue('https://evil.example.com/steal');
+
+    const res = await callbackWithToken(idTokenWith({ sub: sessionSub }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`/profile/identities?success=${IDENTITY_ALREADY_CONNECTED_STATUS}`);
+  });
+
+  it('never puts the subject, email, or token in the redirect', async () => {
+    const idToken = idTokenWith({ sub: sessionSub, email: 'synthetic.user@example.com' });
+
+    const res = await callbackWithToken(idToken);
+
+    const target = res.redirect.mock.calls[0][0] as string;
+    expect(target).not.toContain('synthetic-user');
+    expect(target).not.toContain('example.com');
+    expect(target).not.toContain(idToken);
+  });
+
+  it('links a different social subject and keeps the existing identity_linked outcome', async () => {
+    const res = await callbackWithToken(idTokenWith({ sub: 'linkedin|synthetic-member' }));
+
+    expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?success=identity_linked');
+  });
+
+  it('keeps a different-account conflict on error=already_linked through the real classifier', async () => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue({
+      success: false,
+      error: 'validation',
+      message: 'the provided identity token belongs to an existing LFID account and cannot be linked',
+    });
+    isIdentityAlreadyLinkedErrorMock.mockImplementationOnce(isIdentityAlreadyLinkedError);
+
+    const res = await callbackWithToken(idTokenWith({ sub: 'linkedin|synthetic-member' }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=already_linked');
+  });
+
+  it('keeps any other link failure on error=link_failed', async () => {
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'internal', message: 'upstream unavailable' });
+
+    const res = await callbackWithToken(idTokenWith({ sub: 'linkedin|synthetic-member' }));
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=link_failed');
+  });
+
+  // Only an exact, full-string match on two nonempty string subjects counts as ownership evidence.
+  describe('unusable or nonmatching subjects fall through to the existing link path', () => {
+    const encodedPayload = (raw: string): string => Buffer.from(raw).toString('base64url');
+
+    it.each([
+      ['no sub claim', idTokenWith({ email: 'synthetic.user@example.com' })],
+      ['an empty sub', idTokenWith({ sub: '' })],
+      ['a non-string sub', idTokenWith({ sub: 12345 })],
+      ['an array sub', idTokenWith({ sub: [sessionSub] })],
+      ['a null payload', idTokenWith(null)],
+      ['a non-JSON payload', `synthetic-header.${encodedPayload('not-json')}.synthetic-sig`],
+      ['a two-segment token', `synthetic-header.${encodedPayload(JSON.stringify({ sub: sessionSub }))}`],
+      ['a four-segment token', `synthetic-header.${encodedPayload(JSON.stringify({ sub: sessionSub }))}.synthetic-sig.extra`],
+      ['an empty payload segment', 'synthetic-header..synthetic-sig'],
+      ['a suffix of the session subject', idTokenWith({ sub: 'synthetic-user' })],
+      ['a longer subject sharing the session prefix', idTokenWith({ sub: `${sessionSub}-other` })],
+      ['a differently cased subject', idTokenWith({ sub: sessionSub.toUpperCase() })],
+    ])('links when the token carries %s', async (_label, idToken) => {
+      const res = await callbackWithToken(idToken);
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+      expect(res.redirect).not.toHaveBeenCalledWith(expect.stringContaining(IDENTITY_ALREADY_CONNECTED_STATUS));
+    });
+
+    it.each([
+      ['no oidc user', undefined],
+      ['no session sub', {}],
+      ['an empty session sub', { sub: '' }],
+      ['a non-string session sub', { sub: 12345 }],
+    ])('links when the session has %s, even if the token sub is also missing', async (_label, user) => {
+      await callbackWithToken(idTokenWith({}), callbackReq(user as Record<string, unknown> | undefined));
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+    });
+
+    it('links when the session has no sub but the token has one', async () => {
+      const res = await callbackWithToken(idTokenWith({ sub: sessionSub }), callbackReq({}));
+
+      expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledOnce();
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?success=identity_linked');
+    });
+  });
+
+  // Every existing prerequisite still wins over a same-subject token.
+  describe('guard precedence', () => {
+    const sameSubToken = idTokenWith({ sub: sessionSub });
+
+    beforeEach(() => {
+      socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: sameSubToken });
+    });
+
+    async function run(req: any = callbackReq()): Promise<any> {
+      const res = buildRes();
+      await controller.handleSocialCallback(req, res);
+      return res;
+    }
+
+    it('impersonation is blocked before the code exchange', async () => {
+      isImpersonatingMock.mockReturnValue(true);
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=impersonation_read_only');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+      expectNoCallbackWrites();
+    });
+
+    it('an Auth0 error wins', async () => {
+      const res = await run(buildReq({ path: '/social/callback', query: { error: 'access_denied' }, oidc: { user: { sub: sessionSub } } }));
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=social_auth_failed');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('an invalid state wins', async () => {
+      socialVerificationSvc.validateState.mockReturnValue(false);
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=invalid_state');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('a missing code wins', async () => {
+      const res = await run(buildReq({ path: '/social/callback', query: { state: 's' }, oidc: { user: { sub: sessionSub } } }));
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=no_code');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('a missing management token wins', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=no_management_token');
+      expect(socialVerificationSvc.exchangeCodeForToken).not.toHaveBeenCalled();
+    });
+
+    it('a failed code exchange wins', async () => {
+      socialVerificationSvc.exchangeCodeForToken.mockRejectedValue(new Error('exchange failed'));
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=social_verification_failed');
+      expectNoCallbackWrites();
+    });
+
+    it('a missing id_token wins', async () => {
+      socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({});
+
+      const res = await run();
+
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?error=no_identity_token');
+      expectNoCallbackWrites();
+    });
+  });
+});
+
 // The root callbacks (/passwordless/callback, /social/callback in server.ts) are redirect-only and
 // sit outside the /api error-handler mount, so they enforce impersonation read-only in-handler via
 // blockCallbackDuringImpersonation rather than the blockDuringImpersonation route middleware.
@@ -1859,6 +2172,9 @@ describe('ProfileController.sendEmailVerification — enumeration-safe (lfx-self
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
     expect(next).not.toHaveBeenCalled();
+    // A legacy upstream conflict is masked, but must not be logged as a successful send.
+    expect(vi.mocked(logger.success)).toHaveBeenCalledTimes(linked ? 0 : 1);
+    expect(vi.mocked(logger.warning)).toHaveBeenCalledTimes(linked ? 1 : 0);
     const warnings = vi.mocked(logger.warning).mock.calls.map(([, , message, metadata]) => ({ message, metadata }));
     const successes = vi.mocked(logger.success).mock.calls.map(([, , , metadata]) => metadata);
     expect(JSON.stringify({ warnings, successes })).not.toContain('typed@example.test');
@@ -1917,10 +2233,10 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     isIdentityAlreadyLinkedErrorMock.mockReturnValue(false);
   });
 
-  it.each(['email already linked', 'failed to exchange OTP for token: invalid code', 'expired otp', undefined])(
+  it.each(['failed to exchange OTP for token: invalid code', 'expired otp', undefined])(
     'masks the upstream failure %s with the same floor-held 400',
     async (error) => {
-      isIdentityAlreadyLinkedErrorMock.mockReturnValue(error === 'email already linked');
+      isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
       emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error, message: 'upstream-specific message' });
       const res = buildRes();
       const pending = controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
@@ -1934,6 +2250,45 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
       expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
     }
   );
+
+  // auth-service validates the code before its ownership lookup (lfx-v2-auth-service#113), so a
+  // conflict at this step proves inbox control — it gets fixed guidance, never the upstream text.
+  it.each([
+    ['error', { error: 'email already linked', message: 'linked to lf-fixture-owner' }],
+    ['message', { error: 'validation failed', message: 'This identity belongs to an existing LFID account: lf-fixture-owner' }],
+  ])('answers a proven conflict reported in the %s with the fixed floor-held 409', async (_label, reply) => {
+    isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
+    emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, ...reply });
+    const req = verificationReq();
+    const res = buildRes();
+    const pending = controller.verifyAndLinkEmail(req, res, vi.fn());
+    await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS - 1);
+    expect(res.json).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('lf-fixture-owner');
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'Email already linked to another account');
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.resolveEmailToUsername).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.resolveEmailToSub).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
+    expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+  });
+
+  it('adds no extra delay to a proven conflict when the upstream reply already exceeded the floor', async () => {
+    isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
+    emailVerificationSvc.verifyOtp.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ success: false, error: 'email already linked' }), EMAIL_VERIFICATION_MIN_RESPONSE_MS + 200))
+    );
+    const res = buildRes();
+    const pending = controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    await vi.advanceTimersByTimeAsync(EMAIL_VERIFICATION_MIN_RESPONSE_MS + 200);
+    await pending;
+    expect(vi.getTimerCount()).toBe(0);
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
+  });
 
   it('preserves service-unavailable failures as 503 without a verification delay', async () => {
     const response = { success: false, error: 'Service temporarily unavailable', message: 'Try again later' };
@@ -1953,15 +2308,21 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
     expect(emailVerificationSvc.linkIdentity).not.toHaveBeenCalled();
   });
 
-  it('still exposes a conflict only after the OTP succeeds', async () => {
+  it('still exposes a conflict only after the OTP succeeds, without resolving or logging the holder', async () => {
     emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
-    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked', message: 'linked to lf-fixture-owner' });
     emailVerificationSvc.resolveEmailToUsername.mockResolvedValue('lf-fixture-owner');
-    isIdentityAlreadyLinkedErrorMock.mockReturnValue(true);
+    emailVerificationSvc.resolveEmailToSub.mockResolvedValue('auth0|lf-fixture-owner');
+    isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
+    const req = verificationReq();
     const res = buildRes();
-    await controller.verifyAndLinkEmail(verificationReq(), res, vi.fn());
+    await controller.verifyAndLinkEmail(req, res, vi.fn());
     expect(res.status).toHaveBeenCalledExactlyOnceWith(409);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'email already linked' }));
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: false, error: 'email already linked', message: EMAIL_ALREADY_LINKED_MESSAGE });
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'Email already linked to another account');
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.resolveEmailToUsername).not.toHaveBeenCalled();
+    expect(emailVerificationSvc.resolveEmailToSub).not.toHaveBeenCalled();
     expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
   });
 
@@ -1978,10 +2339,15 @@ describe('ProfileController.verifyAndLinkEmail — step-2 failures are indisting
 describe('ProfileController.getIdentities — primary email and multi-LFID reconciliation (#4123)', () => {
   const lfid = 'dev-user';
   const primary = 'dev@example.com';
+  const memberId = 'member-1';
   let controller: ProfileController;
 
   function cdpRow(overrides: Record<string, unknown> & { id: string; platform: string; type: string; value: string }): Record<string, unknown> {
     return { verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '', ...overrides };
+  }
+
+  function mockCdpIdentities(identities: Record<string, unknown>[]): void {
+    cdpSvc.getMemberIdentitiesForUser.mockResolvedValue({ memberId, identities });
   }
 
   const ownLfidRow = cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid, verified: true, verifiedBy: lfid });
@@ -2027,8 +2393,13 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     isImpersonatingMock.mockReturnValue(false);
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: primary, alternate_emails: [] });
     auth0Svc.getUserIdentities.mockResolvedValue([rootIdentity]);
-    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
-    cdpSvc.createIdentityForUser.mockResolvedValue(undefined);
+    cdpSvc.verifyIdentity.mockResolvedValue(undefined);
+    cdpSvc.createIdentity.mockResolvedValue(undefined);
+    // Start every queued write synchronously so assertions can run right after the response.
+    cdpSvc.runMemberIdentityWrites.mockImplementation((_req: unknown, _memberId: string, writes: (() => Promise<void>)[]) => {
+      writes.forEach((write) => void write());
+      return true;
+    });
     controller = new ProfileController();
   });
 
@@ -2088,7 +2459,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   it('uses the same current primary for the profile and identities after a mid-session change', async () => {
     const currentPrimary = 'new-primary@example.org';
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: ` ${currentPrimary} `, alternate_emails: [primary] });
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     expect(await fetchProfileEmail()).toBe(currentPrimary);
     const rows = await fetchIdentities();
@@ -2103,7 +2474,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       emailVerificationSvc.getUserEmails.mockResolvedValue(scenario === 'blank' ? { primary_email: '  ', alternate_emails: [] } : null);
     }
     getEffectiveEmailMock.mockReturnValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     expect(await fetchProfileEmail()).toBe(primary);
     const rows = await fetchIdentities();
@@ -2117,7 +2488,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     getUsernameFromAuthMock.mockResolvedValue('operator-shortcut');
     getEffectiveEmailMock.mockReturnValue('target-old@example.org');
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: targetPrimary, alternate_emails: [] });
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
     const operator = { sub: 'auth0|operator', email: 'operator@example.org' };
 
     expect(await fetchProfileEmail(operator)).toBe(targetPrimary);
@@ -2142,7 +2513,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('shows a primary email that CDP attributes to another LFID on a merged profile, without writing to CDP', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       otherLfidRow,
       cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
@@ -2151,13 +2522,13 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     const rows = await fetchIdentities();
 
     expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ displayState: 'verified', isPrimary: true }));
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('shows the primary as unverified when the session has not passed email_verified', async () => {
     getEffectiveEmailMock.mockReturnValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       otherLfidRow,
       cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
@@ -2169,7 +2540,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('adds one display-only synthetic primary row when neither CDP nor auth-service has the address', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2187,11 +2558,11 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
         inAuth0: false,
       }),
     ]);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('on a merged profile hides only rows verified by a different owner', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       otherLfidRow,
       cdpRow({ id: 'cdp-other-owner', platform: 'email', type: 'email', value: 'old@example.org', verified: true, verifiedBy: 'other-lfid' }),
@@ -2205,7 +2576,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('never treats a LinkedIn row as the primary email', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow, cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: primary })]);
+    mockCdpIdentities([ownLfidRow, cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: primary })]);
 
     const rows = await fetchIdentities();
 
@@ -2223,7 +2594,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: shared } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-shared-email', platform: 'email', type: 'email', value: shared }),
       cdpRow({ id: 'cdp-shared-linkedin', platform: 'linkedin', type: 'email', value: shared }),
@@ -2234,7 +2605,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     expect(byId(rows, 'cdp-shared-email')).toEqual(expect.objectContaining({ displayState: 'unverified', inAuth0: false }));
     expect(byId(rows, 'cdp-shared-email').isPrimary).toBeUndefined();
     expect(byId(rows, 'cdp-shared-linkedin')).toEqual(expect.objectContaining({ displayState: 'verified', inAuth0: true }));
-    expect(cdpSvc.verifyIdentityForUser.mock.calls.map(([, , identityId]) => identityId)).not.toContain('cdp-shared-email');
+    expect(cdpSvc.verifyIdentity.mock.calls.map(([, , identityId]) => identityId)).not.toContain('cdp-shared-email');
   });
 
   it('matches an auth-service email identity against CDP case-insensitively', async () => {
@@ -2242,16 +2613,13 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: 'Dev@Example.com' } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
-      ownLfidRow,
-      cdpRow({ id: 'cdp-email', platform: 'email', type: 'email', value: 'dev@example.com', verified: true, verifiedBy: lfid }),
-    ]);
+    mockCdpIdentities([ownLfidRow, cdpRow({ id: 'cdp-email', platform: 'email', type: 'email', value: 'dev@example.com', verified: true, verifiedBy: lfid })]);
 
     const rows = await fetchIdentities();
 
     const emailRows = visible(rows).filter((row) => row.type === 'email');
     expect(emailRows).toEqual([expect.objectContaining({ id: 'cdp-email', displayState: 'verified', inAuth0: true, isPrimary: true })]);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('keeps linked Google and email logins on the primary address visible and removable', async () => {
@@ -2260,7 +2628,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       { provider: 'google-oauth2', user_id: 'google-oauth2|1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
       { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2272,7 +2640,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   });
 
   it('shows the primary address once when CDP holds duplicate rows for it', async () => {
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-dup-1', platform: 'email', type: 'email', value: primary }),
       cdpRow({ id: 'cdp-dup-2', platform: 'email', type: 'email', value: 'DEV@example.com' }),
@@ -2286,7 +2654,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
 
   it('falls back to the session email when the auth-service email read fails', async () => {
     emailVerificationSvc.getUserEmails.mockResolvedValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2296,7 +2664,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
 
   it('trusts a primary changed mid-session while the session still holds the old verified email', async () => {
     emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'new-primary@example.com', alternate_emails: [] });
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities();
 
@@ -2308,7 +2676,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
   it('keeps an unverified session email as an unverified primary when the auth-service read fails', async () => {
     getEffectiveEmailMock.mockReturnValue(null);
     emailVerificationSvc.getUserEmails.mockResolvedValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities({ sub: 'auth0|dev-user', email: 'Unverified@example.com', email_verified: false });
 
@@ -2321,7 +2689,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     isImpersonatingMock.mockReturnValue(true);
     getEffectiveEmailMock.mockReturnValue('target@example.com');
     emailVerificationSvc.getUserEmails.mockResolvedValue(null);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([ownLfidRow]);
+    mockCdpIdentities([ownLfidRow]);
 
     const rows = await fetchIdentities({ sub: 'auth0|admin', email: 'admin@example.com', email_verified: true });
 
@@ -2333,7 +2701,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'email', user_id: 'email|1', connection: 'email', isSocial: false, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-lower', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: lfid }),
       cdpRow({ id: 'cdp-upper', platform: 'email', type: 'email', value: 'DEV@example.com', verified: true, verifiedBy: lfid }),
@@ -2352,7 +2720,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-linkedin-username', platform: 'linkedin', type: 'username', value: primary }),
       cdpRow({ id: 'cdp-linkedin-email', platform: 'linkedin', type: 'email', value: primary }),
@@ -2364,8 +2732,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-linkedin-email', type: 'email', displayState: 'verified', auth0UserId: 'linkedin|1' }),
     ]);
     expect(byId(rows, 'cdp-linkedin-username')).toBeUndefined();
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-linkedin-username', lfid);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalledWith(expect.anything(), memberId, 'cdp-linkedin-username', lfid);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('keeps a linked Google email visible when an unsupported email username row comes first', async () => {
@@ -2373,7 +2741,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'google-oauth2', user_id: 'google-1', connection: 'google-oauth2', isSocial: true, profileData: { email: primary } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-email-username', platform: 'email', type: 'username', value: primary }),
       cdpRow({ id: 'cdp-google-email', platform: 'email', type: 'email', value: primary }),
@@ -2385,8 +2753,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-google-email', type: 'email', displayState: 'verified', auth0UserId: 'google-1' }),
     ]);
     expect(byId(rows, 'cdp-email-username')).toBeUndefined();
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalledWith(expect.anything(), lfid, 'cdp-email-username', lfid);
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalledWith(expect.anything(), memberId, 'cdp-email-username', lfid);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('keeps linked accounts from different providers visible when their provider-specific user IDs collide', async () => {
@@ -2395,7 +2763,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       { provider: 'github', user_id: '12345', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
       { provider: 'linkedin', user_id: '12345', connection: 'linkedin', isSocial: true, profileData: { email: 'dev-linkedin@example.org' } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       ownLfidRow,
       cdpRow({ id: 'cdp-github', platform: 'github', type: 'username', value: 'dev-gh', verified: true, verifiedBy: lfid }),
       cdpRow({ id: 'cdp-linkedin', platform: 'linkedin', type: 'email', value: 'dev-linkedin@example.org', verified: true, verifiedBy: lfid }),
@@ -2407,8 +2775,8 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       expect.objectContaining({ id: 'cdp-github', platform: 'github', displayState: 'verified', auth0UserId: '12345' }),
       expect.objectContaining({ id: 'cdp-linkedin', platform: 'linkedin', displayState: 'verified', auth0UserId: '12345' }),
     ]);
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
   });
 
   it('marks the primary without any CDP writes while impersonating', async () => {
@@ -2417,7 +2785,7 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
       rootIdentity,
       { provider: 'github', user_id: 'github|1', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
     ]);
-    cdpSvc.getIdentitiesForUser.mockResolvedValue([
+    mockCdpIdentities([
       cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid }),
       otherLfidRow,
       cdpRow({ id: 'cdp-primary', platform: 'email', type: 'email', value: primary, verified: true, verifiedBy: 'other-lfid' }),
@@ -2426,8 +2794,54 @@ describe('ProfileController.getIdentities — primary email and multi-LFID recon
     const rows = await fetchIdentities();
 
     expect(byId(rows, 'cdp-primary')).toEqual(expect.objectContaining({ isPrimary: true, displayState: 'verified' }));
-    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
-    expect(cdpSvc.createIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.runMemberIdentityWrites).not.toHaveBeenCalled();
+  });
+
+  // #4523: parallel writes on one member deadlock CDP, so they go through one sequential chain.
+  describe('CDP write queue (#4523)', () => {
+    beforeEach(() => {
+      auth0Svc.getUserIdentities.mockResolvedValue([
+        rootIdentity,
+        { provider: 'github', user_id: 'github|1', connection: 'github', isSocial: true, profileData: { nickname: 'dev-gh' } },
+        { provider: 'linkedin', user_id: 'linkedin|1', connection: 'linkedin', isSocial: true, profileData: { email: 'dev-li@example.org' } },
+      ]);
+      // An unverified own LFID row plus two auth-service identities missing from CDP: three writes.
+      mockCdpIdentities([cdpRow({ id: 'cdp-lfid-own', platform: 'lfid', type: 'username', value: lfid })]);
+    });
+
+    it('hands every write for one GET to a single member-scoped chain, without re-resolving the member', async () => {
+      await fetchIdentities();
+
+      expect(cdpSvc.runMemberIdentityWrites).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, expect.any(Array));
+      expect(cdpSvc.runMemberIdentityWrites.mock.calls[0][2]).toHaveLength(3);
+      expect(cdpSvc.verifyIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, 'cdp-lfid-own', lfid);
+      expect(cdpSvc.createIdentity.mock.calls.map(([, id, body]) => [id, body.platform, body.value])).toEqual([
+        [memberId, 'github', 'dev-gh'],
+        [memberId, 'linkedin', 'dev-li@example.org'],
+      ]);
+      expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    });
+
+    it('does not start any write before the chain runs them', async () => {
+      cdpSvc.runMemberIdentityWrites.mockReturnValue(false);
+
+      await fetchIdentities();
+
+      expect(cdpSvc.runMemberIdentityWrites).toHaveBeenCalledOnce();
+      expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+      expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+    });
+
+    it('skips writes when CDP has no member to write to, still returning the synthetic rows', async () => {
+      cdpSvc.getMemberIdentitiesForUser.mockResolvedValue({ memberId: null, identities: [] });
+
+      const rows = await fetchIdentities();
+
+      expect(byId(rows, 'auth0:github|1')).toEqual(expect.objectContaining({ displayState: 'verified', value: 'dev-gh' }));
+      expect(cdpSvc.runMemberIdentityWrites).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -2455,6 +2869,28 @@ describe('ProfileController — already-connected email (#4253)', () => {
     expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
   }
 
+  // CDP rows for the fire-and-forget verification follow-up after a link (#4329).
+  function cdpRow(id: string, platform: string, value: string): Record<string, unknown> {
+    return { id, platform, type: 'email', value, verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '' };
+  }
+
+  // Decoys precede the target, so a looser predicate would select one of them first.
+  const cdpDecoys = [cdpRow('cdp-social-same-value', 'google', ownedEmail), cdpRow('cdp-email-other', 'email', 'other@example.test')];
+  const cdpTargetCases: [string, string][] = [
+    ['exact-case', ownedEmail],
+    ['mixed-case', 'Owned@EXAMPLE.TEST'],
+    ['whitespace-padded', '  owned@example.test  '],
+  ];
+  const cdpNoTargetCases: [string, Record<string, unknown>[]][] = [
+    ['no identities', []],
+    ['only a same-value social row and a different email row', cdpDecoys],
+  ];
+
+  // The CDP follow-up is not awaited by the handler; one macrotask drains its already-settled mocks.
+  async function drainCdpFollowUp(): Promise<void> {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('M2M_AUTH_ISSUER_BASE_URL', '');
@@ -2465,6 +2901,7 @@ describe('ProfileController — already-connected email (#4253)', () => {
     profileAuthSvc.getManagementToken.mockReturnValue('synthetic-user-mgmt-token');
     emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
     cdpSvc.getIdentitiesForUser.mockResolvedValue([]);
+    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
     userSvc.syncVerifiedEmailToUserService.mockResolvedValue(true);
     socialVerificationSvc.getPendingSocialConnect.mockReturnValue(undefined);
     controller = new ProfileController();
@@ -2502,6 +2939,75 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(req, 'synthetic-user-mgmt-token', 'synthetic-identity-token');
       expect(userSvc.syncVerifiedEmailToUserService).toHaveBeenCalledWith(req, ownedEmail);
       expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true, message: 'Email identity verified and linked successfully' });
+    });
+
+    describe('CDP identity verification follow-up (#4329)', () => {
+      const linkedJson = { success: true, message: 'Email identity verified and linked successfully' };
+
+      beforeEach(() => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      });
+
+      it.each(cdpTargetCases)('verifies the %s CDP email row for the linked address', async (_label, cdpValue) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([...cdpDecoys, cdpRow('cdp-email-target', 'email', cdpValue)]);
+        const req = verifyReq();
+        const res = buildRes();
+
+        await controller.verifyAndLinkEmail(req, res, vi.fn());
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+      });
+
+      it.each(cdpNoTargetCases)('verifies nothing when the lookup returns %s', async (_label, identities) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce(identities);
+        const req = verifyReq();
+        const res = buildRes();
+
+        await controller.verifyAndLinkEmail(req, res, vi.fn());
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+      });
+
+      it('keeps the linked success when the CDP lookup fails', async () => {
+        const err = new Error('synthetic CDP lookup failure');
+        cdpSvc.getIdentitiesForUser.mockRejectedValueOnce(err);
+        const req = verifyReq();
+        const res = buildRes();
+        const next = vi.fn();
+
+        await controller.verifyAndLinkEmail(req, res, next);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'CDP identity lookup failed (non-blocking)', { err });
+        expect(res.status).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+        expect(next).not.toHaveBeenCalled();
+      });
+
+      it('keeps the linked success when the CDP verification write fails', async () => {
+        const err = new Error('synthetic CDP verify failure');
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([cdpRow('cdp-email-target', 'email', 'Owned@EXAMPLE.TEST')]);
+        cdpSvc.verifyIdentityForUser.mockRejectedValueOnce(err);
+        const req = verifyReq();
+        const res = buildRes();
+        const next = vi.fn();
+
+        await controller.verifyAndLinkEmail(req, res, next);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'verify_and_link_email', 'CDP verify failed (non-blocking)', { err });
+        expect(res.status).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith(linkedJson);
+        expect(next).not.toHaveBeenCalled();
+      });
     });
 
     it('keeps the legacy fallback tokenless: never forwards the M2M link credential to OTP verification', async () => {
@@ -2645,6 +3151,71 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(logger.info).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending email verification completed');
     });
 
+    describe('CDP identity verification follow-up (#4329)', () => {
+      beforeEach(() => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+      });
+
+      it.each(cdpTargetCases)('verifies the %s CDP email row for the replayed address', async (_label, cdpValue) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([...cdpDecoys, cdpRow('cdp-email-target', 'email', cdpValue)]);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+
+      it.each(cdpNoTargetCases)('verifies nothing when the lookup returns %s', async (_label, identities) => {
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce(identities);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.getIdentitiesForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1');
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+
+      it('keeps the success redirect when the CDP lookup fails', async () => {
+        const err = new Error('synthetic CDP lookup failure');
+        cdpSvc.getIdentitiesForUser.mockRejectedValueOnce(err);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', { err });
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+
+      it('keeps the success redirect when the CDP verification write fails', async () => {
+        const err = new Error('synthetic CDP verify failure');
+        cdpSvc.getIdentitiesForUser.mockResolvedValueOnce([cdpRow('cdp-email-target', 'email', 'Owned@EXAMPLE.TEST')]);
+        cdpSvc.verifyIdentityForUser.mockRejectedValueOnce(err);
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+        await drainCdpFollowUp();
+
+        expect(cdpSvc.verifyIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'user-1', 'cdp-email-target');
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', { err });
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(successRedirect);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+      });
+    });
+
     it.each([
       ['gateway token population', (err: Error) => populateApiGatewayTokenMock.mockRejectedValueOnce(err)],
       ['v1 email sync', (err: Error) => userSvc.syncVerifiedEmailToUserService.mockRejectedValueOnce(err)],
@@ -2713,9 +3284,10 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expectNoWrites();
     });
 
-    it('reports a link failure with the retry marker and skips the follow-up writes', async () => {
+    it('reports a non-conflict link failure with the retry marker and skips the follow-up writes', async () => {
+      isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
       emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
-      emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+      emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'failed to link identity' });
       const req = callbackReq();
       const res = buildRes();
 
@@ -2726,7 +3298,126 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
       expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
       expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Pending verification link failed', {
-        error: 'email already linked',
+        error: 'failed to link identity',
+      });
+    });
+
+    describe('a proven linked-address conflict', () => {
+      const alreadyLinkedRedirect = `${successRedirect}&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}`;
+
+      beforeEach(() => {
+        isIdentityAlreadyLinkedErrorMock.mockImplementation(isIdentityAlreadyLinkedError);
+        linkedEmailSupportSvc.issue.mockResolvedValue('a'.repeat(64));
+      });
+
+      function expectAlreadyLinkedOutcome(req: any, res: any): void {
+        expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledTimes(1);
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(`${alreadyLinkedRedirect}&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${'a'.repeat(64)}`);
+        expect(linkedEmailSupportSvc.issue).toHaveBeenCalledExactlyOnceWith('auth0|user-1', ownedEmail);
+        expect(JSON.stringify(res.redirect.mock.calls)).not.toContain(ownedEmail);
+        expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('654321');
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'profile_auth_callback', 'Email already linked to another account');
+        expect(emailVerificationSvc.resolveEmailToUsername).not.toHaveBeenCalled();
+        expect(emailVerificationSvc.resolveEmailToSub).not.toHaveBeenCalled();
+        expect(logger.success).toHaveBeenCalledWith(
+          req,
+          'profile_auth_callback',
+          expect.any(Number),
+          expect.objectContaining({ pending_verification_completed: false, pending_email_status: EMAIL_CALLBACK_ALREADY_LINKED_STATUS })
+        );
+        expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('lf-fixture-owner');
+      }
+
+      it('returns the already-linked marker for a conflict at OTP verification, without linking or writing', async () => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked', message: 'linked to lf-fixture-owner' });
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+
+        expectAlreadyLinkedOutcome(req, res);
+        expectNoWrites();
+      });
+
+      it.each(['/profile', '/profile/email', '/profile/identities', '/profile/password', '/profile/linux-email', '/profile/settings'])(
+        'issues support context for the profile-layout return %s',
+        async (returnTo) => {
+          authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo });
+          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+          const res = buildRes();
+
+          await controller.handleProfileAuthCallback(callbackReq(), res);
+
+          expect(linkedEmailSupportSvc.issue).toHaveBeenCalledExactlyOnceWith('auth0|user-1', ownedEmail);
+          expect(res.redirect).toHaveBeenCalledExactlyOnceWith(
+            `${returnTo}?success=profile_token_obtained&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}&${EMAIL_LINKED_SUPPORT_CONTEXT_PARAM}=${'a'.repeat(64)}`
+          );
+        }
+      );
+
+      it.each(['OTP verification', 'identity linking'])('does not issue support context on a mentor return after a conflict at %s', async (conflictStage) => {
+        authStateSvc.consume.mockResolvedValue({ sub: 'auth0|user-1', returnTo: '/mentorship/mentor' });
+        if (conflictStage === 'OTP verification') {
+          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+        } else {
+          emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+          emailVerificationSvc.linkIdentity.mockResolvedValue({ success: false, error: 'email already linked' });
+        }
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+
+        expect(emailVerificationSvc.verifyOtp).toHaveBeenCalledExactlyOnceWith(req, ownedEmail, '654321', 'synthetic-user-mgmt-token');
+        expect(req.appSession.pendingEmailVerification).toBeUndefined();
+        expect(linkedEmailSupportSvc.issue).not.toHaveBeenCalled();
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(
+          `/mentorship/mentor?success=profile_token_obtained&${EMAIL_CALLBACK_STATUS_PARAM}=${EMAIL_CALLBACK_ALREADY_LINKED_STATUS}`
+        );
+        expect(populateApiGatewayTokenMock).not.toHaveBeenCalled();
+        expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+        expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+      });
+
+      it('returns the already-linked marker for a conflict at link time and skips the follow-up writes', async () => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: true, data: { id_token: 'synthetic-identity-token' } });
+        emailVerificationSvc.linkIdentity.mockResolvedValue({
+          success: false,
+          error: 'the provided identity token belongs to an existing LFID account and cannot be linked',
+        });
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+
+        expectAlreadyLinkedOutcome(req, res);
+        expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledTimes(1);
+        expect(populateApiGatewayTokenMock).not.toHaveBeenCalled();
+        expect(userSvc.syncVerifiedEmailToUserService).not.toHaveBeenCalled();
+        expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+        expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+      });
+
+      it('keeps the fixed notice when support-context storage is unavailable', async () => {
+        linkedEmailSupportSvc.issue.mockResolvedValueOnce(undefined);
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'email already linked' });
+        const res = buildRes();
+        await controller.handleProfileAuthCallback(callbackReq(), res);
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(alreadyLinkedRedirect);
+      });
+
+      it('keeps an invalid or expired code on the generic retry marker', async () => {
+        emailVerificationSvc.verifyOtp.mockResolvedValue({ success: false, error: 'expired otp', message: 'upstream-specific message' });
+        const req = callbackReq();
+        const res = buildRes();
+
+        await controller.handleProfileAuthCallback(req, res);
+
+        expect(res.redirect).toHaveBeenCalledExactlyOnceWith(retryRedirect);
+        expect(linkedEmailSupportSvc.issue).not.toHaveBeenCalled();
+        expectNoWrites();
       });
     });
 
@@ -2752,6 +3443,293 @@ describe('ProfileController — already-connected email (#4253)', () => {
       expect(res.redirect).toHaveBeenCalledWith('/profile?error=impersonation_read_only');
       expect(emailVerificationSvc.verifyOtp).not.toHaveBeenCalled();
       expect(req.appSession.pendingEmailVerification).toEqual({ email: ownedEmail, otp: '654321' });
+    });
+  });
+});
+
+describe('ProfileController.consumeLinkedEmailSupportContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+  });
+  it('returns only this authenticated user/attempt address with no-store caching and non-identifying logs', async () => {
+    linkedEmailSupportSvc.consume.mockResolvedValueOnce('linked@example.test');
+    const req = buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: { handle: 'a'.repeat(64) } });
+    const res = buildRes();
+    await new ProfileController().consumeLinkedEmailSupportContext(req, res);
+    expect(linkedEmailSupportSvc.consume).toHaveBeenCalledExactlyOnceWith('synthetic-user', 'a'.repeat(64));
+    expect(res.set).toHaveBeenCalledExactlyOnceWith('Cache-Control', 'no-store');
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    expect(logger.startOperation).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context');
+    expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context', 0, { has_context: true });
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+  it('returns no address and logs only context absence for missing, expired or consumed context', async () => {
+    linkedEmailSupportSvc.consume.mockResolvedValueOnce(undefined);
+    const req = buildReq({ oidc: { user: { sub: 'synthetic-user' } }, body: {} });
+    const res = buildRes();
+    await new ProfileController().consumeLinkedEmailSupportContext(req, res);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({});
+    expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context', 0, { has_context: false });
+  });
+  it.each([false, true])('rejects missing identity or impersonation before reading context (impersonating=%s)', async (impersonating) => {
+    isImpersonatingMock.mockReturnValue(impersonating);
+    const req = buildReq({ oidc: impersonating ? { user: { sub: 'synthetic-user' } } : undefined });
+    const res = buildRes();
+    await new ProfileController().consumeLinkedEmailSupportContext(req, res);
+    expect(res.status).toHaveBeenCalledExactlyOnceWith(403);
+    expect(res.json).toHaveBeenCalledExactlyOnceWith({});
+    expect(res.set).toHaveBeenCalledExactlyOnceWith('Cache-Control', 'no-store');
+    expect(logger.warning).toHaveBeenCalledExactlyOnceWith(req, 'consume_linked_email_support_context', 'Rejected linked-email support context request');
+    expect(logger.startOperation).not.toHaveBeenCalled();
+    expect(logger.success).not.toHaveBeenCalled();
+    expect(linkedEmailSupportSvc.consume).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProfileController GitLab identities (#4190)', () => {
+  const lfid = 'dev-user';
+  const memberId = 'member-1';
+  let controller: ProfileController;
+
+  // GitLab links through Auth0's generic OAuth2 connection: provider `oauth2`, connection `gitlab`.
+  const linkedGitlab = {
+    provider: 'oauth2',
+    connection: 'gitlab',
+    user_id: 'gitlab|1000001',
+    isSocial: true,
+    profileData: { nickname: 'gitlab-dev-example', name: 'GitLab Dev Example' },
+  };
+
+  function cdpRow(overrides: Record<string, unknown> & { id: string; platform: string; type: string; value: string }): Record<string, unknown> {
+    return { verified: false, verifiedBy: null, source: 'cdp', icon: '', createdAt: '', updatedAt: '', ...overrides };
+  }
+
+  async function fetchIdentities(authIdentities: Record<string, unknown>[], cdpIdentities: Record<string, unknown>[] = []): Promise<any[]> {
+    auth0Svc.getUserIdentities.mockResolvedValue(authIdentities);
+    cdpSvc.getMemberIdentitiesForUser.mockResolvedValue({ memberId, identities: cdpIdentities });
+    const res = buildRes();
+    const next = vi.fn();
+    await controller.getIdentities(
+      buildReq({ path: '/api/profile/identities', oidc: { user: { sub: 'auth0|dev-user', email: 'dev@example.com' } } }),
+      res,
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    return res.json.mock.calls[0][0];
+  }
+
+  const gitlabRows = (rows: any[]): any[] => rows.filter((row) => row.platform === 'gitlab');
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.assign(auth0ToCdpProviderMap, { github: 'github', gitlab: 'gitlab', 'google-oauth2': 'google', email: 'email', linkedin: 'linkedin' });
+    Object.assign(cdpPlatformToTypeMap, { github: 'username', gitlab: 'username', google: 'email', email: 'email', linkedin: 'email', lfid: 'username' });
+    getEffectiveUsernameMock.mockReturnValue(lfid);
+    getUsernameFromAuthMock.mockResolvedValue(lfid);
+    getEffectiveEmailMock.mockReturnValue('dev@example.com');
+    isImpersonatingMock.mockReturnValue(false);
+    emailVerificationSvc.getUserEmails.mockResolvedValue({ primary_email: 'dev@example.com', alternate_emails: [] });
+    cdpSvc.verifyIdentity.mockResolvedValue(undefined);
+    cdpSvc.createIdentity.mockResolvedValue(undefined);
+    // Start every queued write synchronously so assertions can run right after the response.
+    cdpSvc.runMemberIdentityWrites.mockImplementation((_req: unknown, _memberId: string, writes: (() => Promise<void>)[]) => {
+      writes.forEach((write) => void write());
+      return true;
+    });
+    controller = new ProfileController();
+  });
+
+  afterEach(() => {
+    for (const map of [auth0ToCdpProviderMap, cdpPlatformToTypeMap]) {
+      for (const key of Object.keys(map)) {
+        delete map[key];
+      }
+    }
+  });
+
+  it('shows a linked GitLab account as verified with its username and syncs it to CDP', async () => {
+    const rows = await fetchIdentities([linkedGitlab]);
+    expect(logger.debug).toHaveBeenCalledWith(expect.anything(), 'get_identities', 'Identity counts before reconciliation', {
+      cdp_count: 0,
+      auth_service_count: 1,
+    });
+
+    expect(gitlabRows(rows)).toEqual([
+      expect.objectContaining({
+        type: 'username',
+        value: 'gitlab-dev-example',
+        displayState: 'verified',
+        inAuth0: true,
+        auth0UserId: 'gitlab|1000001',
+        icon: 'fa-brands fa-gitlab',
+      }),
+    ]);
+    expect(cdpSvc.createIdentity).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      memberId,
+      expect.objectContaining({ value: 'gitlab-dev-example', platform: 'gitlab', type: 'username', verified: true, verifiedBy: lfid })
+    );
+  });
+
+  it('verifies a matching unverified CDP GitLab row instead of adding a second one', async () => {
+    const rows = await fetchIdentities([linkedGitlab], [cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' })]);
+
+    expect(gitlabRows(rows)).toEqual([expect.objectContaining({ id: 'cdp-gitlab', displayState: 'verified', inAuth0: true, auth0UserId: 'gitlab|1000001' })]);
+    expect(cdpSvc.verifyIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, 'cdp-gitlab', lfid);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  it('leaves mixed CDP identities untouched in the social callback and verifies only the owned GitLab row on GET', async () => {
+    const mixedIdentities = [
+      cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' }),
+      cdpRow({ id: 'unrelated-gitlab', platform: 'gitlab', type: 'username', value: 'other-gitlab-user' }),
+      cdpRow({ id: 'unrelated-email', platform: 'email', type: 'email', value: 'other@example.com' }),
+      cdpRow({ id: 'unrelated-github', platform: 'github', type: 'username', value: 'other-github-user' }),
+    ];
+    profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+    socialVerificationSvc.getConnectReturnTo.mockReturnValue('/profile/identities');
+    socialVerificationSvc.validateState.mockReturnValue(true);
+    socialVerificationSvc.exchangeCodeForToken.mockResolvedValue({ id_token: 'synthetic-id-token' });
+    emailVerificationSvc.linkIdentity.mockResolvedValue({ success: true });
+    cdpSvc.getIdentitiesForUser.mockResolvedValue(mixedIdentities);
+    cdpSvc.verifyIdentityForUser.mockResolvedValue(undefined);
+    const res = buildRes();
+
+    await controller.handleSocialCallback(
+      buildReq({ path: '/social/callback', query: { code: 'synthetic-code', state: 'synthetic-state' }, oidc: { user: { sub: 'auth0|dev-user' } } }),
+      res
+    );
+    // Flush any callback continuation before asserting that it did not mutate CDP.
+    await Promise.resolve();
+    expect(emailVerificationSvc.linkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'synthetic-id-token');
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/profile/identities?success=identity_linked');
+    expect(cdpSvc.getIdentitiesForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+
+    const rows = await fetchIdentities([linkedGitlab], mixedIdentities);
+
+    expect(gitlabRows(rows)).toEqual([expect.objectContaining({ id: 'cdp-gitlab', displayState: 'verified', inAuth0: true })]);
+    expect(rows.filter((row) => row.id === 'unrelated-email' || row.id === 'unrelated-github')).toEqual([
+      expect.objectContaining({ id: 'unrelated-email', displayState: 'unverified', inAuth0: false }),
+      expect.objectContaining({ id: 'unrelated-github', displayState: 'unverified', inAuth0: false }),
+    ]);
+    expect(cdpSvc.verifyIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), memberId, 'cdp-gitlab', lfid);
+    expect(cdpSvc.verifyIdentityForUser).not.toHaveBeenCalled();
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  it('hides an unverified CDP-only GitLab row when no GitLab account is linked', async () => {
+    const rows = await fetchIdentities([], [cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example' })]);
+
+    expect(gitlabRows(rows)).toEqual([]);
+    expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+  });
+
+  it('ignores an oauth2 identity from any other connection', async () => {
+    const rows = await fetchIdentities([{ ...linkedGitlab, connection: 'other-oauth', user_id: 'other-oauth|1000002' }]);
+
+    expect(gitlabRows(rows)).toEqual([]);
+    expect(rows.some((row) => row.auth0UserId === 'other-oauth|1000002')).toBe(false);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  it('skips a linked GitLab account with no username rather than storing its display name', async () => {
+    const rows = await fetchIdentities([{ ...linkedGitlab, profileData: { name: 'GitLab Dev Example' } }]);
+
+    expect(gitlabRows(rows)).toEqual([]);
+    expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+  });
+
+  describe('rejectIdentity', () => {
+    async function removeIdentity(body: Record<string, unknown>, identityId = 'auth0:linked-1'): Promise<any> {
+      const res = buildRes();
+      const next = vi.fn();
+      await controller.rejectIdentity(
+        buildReq({ params: { identityId }, body, path: `/api/profile/identities/${identityId}`, apiGatewayToken: 'v1-token' }),
+        res,
+        next
+      );
+      expect(next).not.toHaveBeenCalled();
+      return res;
+    }
+
+    beforeEach(() => {
+      profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+      emailVerificationSvc.unlinkIdentity.mockResolvedValue({ success: true });
+    });
+
+    it('unlinks GitLab with the oauth2 Auth0 provider, not the connection name', async () => {
+      await removeIdentity({ provider: 'gitlab', auth0UserId: 'gitlab|1000001' });
+
+      expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'oauth2', 'gitlab|1000001');
+      expect(logger.debug).toHaveBeenCalledWith(expect.anything(), 'reject_identity', 'Auth0 identity unlinked successfully', {
+        provider: 'gitlab',
+        has_auth0_user_id: true,
+      });
+    });
+
+    it('does not log the linked account ID when management authorization is unavailable', async () => {
+      profileAuthSvc.getManagementToken.mockReturnValue(undefined);
+      profileAuthSvc.isProfileAuthConfigured.mockReturnValue(false);
+
+      const res = await removeIdentity({ provider: 'gitlab', auth0UserId: linkedGitlab.user_id });
+
+      expect(res.status).toHaveBeenCalledExactlyOnceWith(501);
+      expect(emailVerificationSvc.unlinkIdentity).not.toHaveBeenCalled();
+      expect(logger.warning).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'reject_identity', 'No management token — cannot unlink from Auth0', {
+        provider: 'gitlab',
+        has_auth0_user_id: true,
+      });
+    });
+
+    describe.each(['auth0:linked-1', 'cdp-gitlab'])('unlink outcome for %s', (identityId) => {
+      it.each([
+        { success: false, error: 'Internal server error', message: 'synthetic upstream failure' },
+        { success: false, error: 'Service temporarily unavailable', message: 'Unable to reach the identity unlinking service. Please try again later.' },
+      ])('reports $error without rejecting CDP or claiming success', async (unlinkResult) => {
+        emailVerificationSvc.unlinkIdentity.mockResolvedValue(unlinkResult);
+
+        const res = await removeIdentity({ provider: 'gitlab', auth0UserId: linkedGitlab.user_id }, identityId);
+
+        expect(res.status).toHaveBeenCalledExactlyOnceWith(502);
+        expect(res.json).toHaveBeenCalledExactlyOnceWith({ error: 'identity_unlink_failed', message: 'Failed to remove identity. Please try again.' });
+        expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+        expect(logger.warning).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'reject_identity', 'Auth0 unlink failed — identity was not removed', {
+          provider: 'gitlab',
+          has_auth0_user_id: true,
+          error: unlinkResult.error,
+          message: unlinkResult.message,
+        });
+      });
+
+      it('removes a successfully unlinked GitLab identity on the next GET even if CDP retains the row', async () => {
+        const retainedCdp = cdpRow({ id: 'cdp-gitlab', platform: 'gitlab', type: 'username', value: 'gitlab-dev-example', verified: true, verifiedBy: lfid });
+        expect(gitlabRows(await fetchIdentities([linkedGitlab], [retainedCdp]))).toHaveLength(1);
+        cdpSvc.rejectIdentityForUser.mockResolvedValue(undefined);
+
+        const res = await removeIdentity({ provider: 'gitlab', auth0UserId: linkedGitlab.user_id }, identityId);
+
+        expect(res.status).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledExactlyOnceWith({ success: true });
+        expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'oauth2', linkedGitlab.user_id);
+        if (identityId.startsWith('auth0:')) {
+          expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+        } else {
+          expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledExactlyOnceWith(expect.anything(), lfid, identityId);
+        }
+        expect(gitlabRows(await fetchIdentities([], [retainedCdp]))).toEqual([]);
+        expect(cdpSvc.verifyIdentity).not.toHaveBeenCalled();
+        expect(cdpSvc.createIdentity).not.toHaveBeenCalled();
+      });
+    });
+
+    it('still unlinks GitHub with the github provider', async () => {
+      await removeIdentity({ provider: 'github', auth0UserId: '1000003' });
+
+      expect(emailVerificationSvc.unlinkIdentity).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'mgmt-token', 'github', '1000003');
     });
   });
 });

@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+@if ((canResend() || canRemove()) && !phone()) {
+  <div class="flex flex-col gap-[8px]" data-testid="meeting-details-own-actions">
+    @if (canResend()) {
+      <lfx-ui-button
+        variant="tertiary"
+        size="large"
+        icon="fa-light fa-paper-plane"
+        fullWidth
+        [loading]="resending()"
+        (click)="resendInvite()"
+        data-testid="meeting-details-resend"
+        >Resend Invite</lfx-ui-button
+      >
+    }
+    <lfx-ui-button
+      variant="tertiary"
+      size="large"
+      icon="fa-light fa-user-xmark"
+      fullWidth
+      [loading]="removing()"
+      (click)="confirmRemove()"
+      data-testid="meeting-details-remove"
+      >Remove Myself</lfx-ui-button
+    >
+  </div>
+}
+
+<ng-template #removeDialog let-ref="dialogRef">
+  <lfx-ui-modal heading="Remove Yourself" data-testid="meeting-details-remove-dialog">
+    <!-- The subtitle id makes question and notes the alertdialog's description. -->
+    <div [id]="ref.id + '-subtitle'" class="flex flex-col gap-[8px]">
+      <p class="m-0 text-[14px] leading-[1.6] text-gray-700" data-testid="meeting-details-remove-message">{{ removalQuestion() }}</p>
+      @if (removalNotes().length) {
+        <ul class="m-0 flex list-disc flex-col gap-[4px] pl-[20px] text-[14px] leading-[20px] text-gray-700" data-testid="meeting-details-remove-notes">
+          @for (note of removalNotes(); track note) {
+            <li>{{ note }}</li>
+          }
+        </ul>
+      }
+    </div>
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" [disabled]="removing()" (click)="ref.close()" data-testid="meeting-details-remove-cancel"
+        >Cancel</lfx-ui-button
+      >
+      <lfx-ui-button variant="danger" icon="fa-light fa-user-minus" [loading]="removing()" (click)="remove()" data-testid="meeting-details-remove-confirm"
+        >Remove Me</lfx-ui-button
+      >
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>

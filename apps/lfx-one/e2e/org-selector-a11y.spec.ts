@@ -23,10 +23,17 @@
  *       while `/api/nav/org-items` is still in flight still lands focus on the
  *       aria-selected row once rows finally arrive.
  *
+ * The two-grant fixture below puts both organizations in one family, so it qualifies for that
+ * family's roll-up (#4132) and the listbox holds THREE options: the pinned roll-up first, then the
+ * two organizations. Assertions name the
+ * kind (`data-option-kind`) wherever the distinction matters, so a change to what is pinned fails
+ * loudly instead of silently re-pointing an organization assertion at the roll-up row.
+ *
  * All rows and grants in this file are stubbed via `page.route` so the test is
  * deterministic regardless of what the bootstrap identity actually holds.
  */
 
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROLLUP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
@@ -55,6 +62,13 @@ const ORG_A_NAME = 'Alpha Foundation';
 const ORG_B_NAME = 'Bravo Foundation';
 
 async function stubTwoDirectGrants(page: Page): Promise<void> {
+  // The roll-up row is dark-launched behind `org-lens-rollup-enabled`; pin it on so the listbox shape does not
+  // depend on how LaunchDarkly targets the test identity.
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
+    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+    JSON.stringify({ [ORG_LENS_ROLLUP_ENABLED_FLAG]: true }),
+  ] as const);
+
   await page.route('**/api/orgs/me/role-grants', (route) =>
     route.fulfill({
       status: 200,
@@ -67,6 +81,28 @@ async function stubTwoDirectGrants(page: Page): Promise<void> {
         isStaff: false,
         username: 'e2e-a11y',
         loaded_at: new Date().toISOString(),
+      }),
+    })
+  );
+
+  await page.route('**/api/orgs/me/roll-up-set*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        families: [
+          {
+            rootUid: ORG_A_UID,
+            rootName: ORG_A_NAME,
+            rootLogoUrl: null,
+            orgs: [
+              { uid: ORG_A_UID, accountId: ORG_A_UID, name: ORG_A_NAME, logoUrl: null },
+              { uid: ORG_B_UID, accountId: ORG_B_UID, name: ORG_B_NAME, logoUrl: null },
+            ],
+          },
+        ],
+        degraded: false,
+        lookupOutcome: 'ok',
       }),
     })
   );
@@ -116,14 +152,19 @@ test.describe('Org Selector — accessibility contract', () => {
     await expect(listbox).toBeVisible({ timeout: 5_000 });
     await expect(listbox).toHaveAttribute('role', 'listbox');
 
+    // Three options: the pinned roll-up the two-grant fixture qualifies for (#4132), then the two
+    // organizations. Counted by kind rather than by position so a later change to what is pinned
+    // cannot quietly turn an organization assertion into a roll-up one.
     const options = listbox.getByRole('option');
-    await expect(options).toHaveCount(2, { timeout: 5_000 });
+    await expect(options).toHaveCount(3, { timeout: 5_000 });
+    await expect(listbox.locator('[role="option"][data-option-kind="rollup"]')).toHaveCount(1);
+    await expect(listbox.locator('[role="option"][data-option-kind="org"]')).toHaveCount(2);
 
-    // Exactly one option (the active one) reports aria-selected="true"; the other reports "false".
+    // Exactly one option (the active one) reports aria-selected="true"; the rest report "false".
     const selectedOption = listbox.locator('[role="option"][aria-selected="true"]');
     const unselectedOptions = listbox.locator('[role="option"][aria-selected="false"]');
     await expect(selectedOption).toHaveCount(1);
-    await expect(unselectedOptions).toHaveCount(1);
+    await expect(unselectedOptions).toHaveCount(2);
   });
 
   test('A4: keyboard-navigation contract — ArrowDown / ArrowUp / Home / End / Escape', async ({ page }) => {
@@ -134,23 +175,27 @@ test.describe('Org Selector — accessibility contract', () => {
     const listbox = page.locator('#org-selector-listbox');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
     const options = listbox.locator('[role="option"]');
-    await expect(options).toHaveCount(2);
+    await expect(options).toHaveCount(3);
+    // Roving focus starts on the selected organization, which the pinned roll-up pushes off index 0.
+    const selected = listbox.locator('[role="option"][aria-selected="true"]');
+    await expect(selected).toBeFocused({ timeout: 5_000 });
 
-    // ArrowDown moves focus to the second option.
+    // ArrowDown moves focus down one row.
     await page.keyboard.press('ArrowDown');
-    await expect(options.nth(1)).toBeFocused();
+    await expect(options.nth(2)).toBeFocused();
 
-    // ArrowUp moves focus back to the first option.
+    // ArrowUp moves focus back up one row.
     await page.keyboard.press('ArrowUp');
-    await expect(options.nth(0)).toBeFocused();
+    await expect(options.nth(1)).toBeFocused();
 
     // End jumps focus to the last option (boundary branch).
     await page.keyboard.press('End');
-    await expect(options.nth(1)).toBeFocused();
+    await expect(options.nth(2)).toBeFocused();
 
-    // Home jumps focus back to the first option (boundary branch).
+    // Home jumps focus to the first option — the pinned roll-up (boundary branch).
     await page.keyboard.press('Home');
     await expect(options.nth(0)).toBeFocused();
+    await expect(options.nth(0)).toHaveAttribute('data-option-kind', 'rollup');
 
     // Escape closes the panel and returns focus to the trigger.
     await page.keyboard.press('Escape');
@@ -166,11 +211,12 @@ test.describe('Org Selector — accessibility contract', () => {
     const listbox = page.locator('#org-selector-listbox');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
     const options = listbox.locator('[role="option"]');
-    await expect(options).toHaveCount(2);
+    await expect(options).toHaveCount(3);
 
-    // Move focus to the second option, then activate it via Enter.
+    // Move focus one row down from the selected organization, then activate it via Enter.
     await page.keyboard.press('ArrowDown');
-    await expect(options.nth(1)).toBeFocused();
+    await expect(options.nth(2)).toBeFocused();
+    await expect(options.nth(2)).toHaveAttribute('data-option-kind', 'org');
     await page.keyboard.press('Enter');
 
     // Panel closes on selection.
@@ -193,10 +239,11 @@ test.describe('Org Selector — accessibility contract', () => {
     const listbox = page.locator('#org-selector-listbox');
     await expect(listbox).toBeVisible({ timeout: 5_000 });
     const options = listbox.locator('[role="option"]');
-    await expect(options).toHaveCount(2);
+    await expect(options).toHaveCount(3);
 
     await page.keyboard.press('ArrowDown');
-    await expect(options.nth(1)).toBeFocused();
+    await expect(options.nth(2)).toBeFocused();
+    await expect(options.nth(2)).toHaveAttribute('data-option-kind', 'org');
     await page.keyboard.press('Space');
 
     await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
@@ -217,24 +264,11 @@ test.describe('Org Selector — accessibility contract', () => {
   });
 
   test('A6: initial focus survives a delayed first-batch response', async ({ page }) => {
-    // Rebuild the routes with a deliberate delay on /api/nav/org-items so the panel can open
-    // before rows exist — this is the async-bootstrap race the initial-focus retry addresses.
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
-    await page.route('**/api/orgs/me/role-grants', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          writers: [ORG_A_UID, ORG_B_UID],
-          auditors: [],
-          cascadingWriters: [],
-          cascadingAuditors: [],
-          isStaff: false,
-          username: 'e2e-a11y-delayed',
-          loaded_at: new Date().toISOString(),
-        }),
-      })
-    );
+    // Re-route /api/nav/org-items with a deliberate delay so the panel can open before rows exist —
+    // this is the async-bootstrap race the initial-focus retry addresses. Only that route is
+    // replaced: the grants and families stubs from `beforeEach` stay, so the one pinned roll-up
+    // below comes from the fixture rather than the live identity.
+    await page.unroute('**/api/nav/org-items*');
     await page.route('**/api/nav/org-items*', async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1_200));
       await route.fulfill({
@@ -263,9 +297,17 @@ test.describe('Org Selector — accessibility contract', () => {
     // Rows arrive after the panel opens; once they render, the aria-selected row should end up
     // focused. Without the retry, the first row would render with tabindex=-1 and focus would
     // stay on `body`.
+    // The pinned roll-up renders immediately, so the listbox is NOT empty while the organizations
+    // are still in flight. Initial focus lands on it provisionally and must move to the selected
+    // organization once that row arrives — the roll-up row otherwise ends the retry early and
+    // strands focus on an unselected row (#4415, Copilot).
+    const rollUp = listbox.locator('[role="option"][data-option-kind="rollup"]');
+    await expect(rollUp).toHaveCount(1, { timeout: 5_000 });
+
     const options = listbox.locator('[role="option"]');
-    await expect(options).toHaveCount(2, { timeout: 5_000 });
+    await expect(options).toHaveCount(3, { timeout: 5_000 });
     const selected = listbox.locator('[role="option"][aria-selected="true"]');
+    await expect(selected).toHaveAttribute('data-option-kind', 'org');
     await expect(selected).toBeFocused({ timeout: 5_000 });
   });
 });

@@ -11,6 +11,7 @@ import {
   MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL,
   MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL,
   MENTORSHIP_MENTOR_TASK_SUBMITTED_VERB,
+  MENTORSHIP_MENTOR_TASK_VIEW_SUBMISSION_LABEL,
   MENTORSHIP_MENTOR_TASKS_EMPTY_ALL,
   MENTORSHIP_MENTOR_TASKS_EMPTY_APPROVED,
   MENTORSHIP_MENTOR_TASKS_EMPTY_AWAITING,
@@ -29,7 +30,8 @@ import { MentorshipTaskFileService } from '../../../../services/mentorship-task-
 /**
  * Mentor-facing Tasks tab — submitted work awaiting review, plus already-approved
  * (completed) tasks. Approve and Request Changes ask the page to review the task, and
- * stay disabled while the page is reviewing it. Download Submission saves the mentee's file.
+ * stay disabled while the page is reviewing it. View Submission opens the mentee's file in a new tab; Download
+ * Submission saves it.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-tasks-tab',
@@ -50,6 +52,7 @@ export class MentorTasksTabComponent {
   protected readonly approveLabel = MENTORSHIP_MENTOR_TASK_APPROVE_LABEL;
   protected readonly requestChangesLabel = MENTORSHIP_MENTOR_TASK_REQUEST_CHANGES_LABEL;
   protected readonly openSubmissionLabel = MENTORSHIP_MENTOR_TASK_OPEN_SUBMISSION_LABEL;
+  protected readonly viewSubmissionLabel = MENTORSHIP_MENTOR_TASK_VIEW_SUBMISSION_LABEL;
 
   protected readonly statusFilter = signal<MentorshipMentorTaskReviewStatus | undefined>('submitted');
   protected readonly rows = this.initRows();
@@ -70,6 +73,10 @@ export class MentorTasksTabComponent {
 
   protected onOpenSubmission(row: Pick<MentorshipMentorReviewTask, 'taskId'>): void {
     this.taskFile.download(row.taskId);
+  }
+
+  protected onViewSubmission(row: Pick<MentorshipMentorReviewTask, 'taskId'>): void {
+    this.taskFile.view(row.taskId);
   }
 
   private requestReview(taskId: string, status: MentorshipMentorTaskReviewDecision): void {

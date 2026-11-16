@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ADMIN_MENTORS,
   ADMIN_PAST_APPLICATIONS,
@@ -44,7 +44,6 @@ const FIRST_ID = adminApplicationId(1);
 const TABS = ['current-mentees', 'past-mentees', 'mentors', 'terms'];
 
 async function open(page: Page, requests: AdminProgramRequests): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);
@@ -67,8 +66,9 @@ test.describe('Admin program detail — structure', () => {
   test('nests the filters, the download control, the rows and the paginator inside the Current Mentees tab', async ({ page }) => {
     const tab = page.getByTestId('mentorship-current-mentees-tab');
 
-    await expect(tab.getByTestId('mentorship-current-mentees-status')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-current-mentees-term')).toBeVisible();
+    // The select wrapper names its control with `data-test`, not `data-testid`.
+    await expect(tab.locator('[data-test="mentorship-current-mentees-status"]')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-current-mentees-term"]')).toBeVisible();
     await expect(tab.getByTestId('mentorship-current-mentees-download')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-current-mentees-search"]')).toBeVisible();
     await expect(tab.locator('[data-testid^="mentorship-current-mentee-row-"]')).toHaveCount(10);
@@ -101,8 +101,8 @@ test.describe('Admin program detail — live tab structure', () => {
     await page.getByTestId('mentorship-program-detail-tab-past-mentees').click();
     const tab = page.getByTestId('mentorship-past-mentees-tab');
 
-    await expect(tab.getByTestId('mentorship-past-mentees-status')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-past-mentees-term')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-past-mentees-status"]')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-past-mentees-term"]')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-past-mentees-search"]')).toBeVisible();
     await expect(tab.locator('[data-testid^="mentorship-past-mentee-row-"]')).toHaveCount(ADMIN_PAST_APPLICATIONS.length);
     await expect(tab.getByTestId('mentorship-past-mentees-download')).toBeVisible();
@@ -114,7 +114,7 @@ test.describe('Admin program detail — live tab structure', () => {
     const tab = page.getByTestId('mentorship-mentors-tab');
 
     await expect(tab.locator('[data-test="mentorship-mentors-search"]')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-mentors-status')).toBeVisible();
+    await expect(tab.locator('[data-test="mentorship-mentors-status"]')).toBeVisible();
     await expect(tab.getByTestId('mentorship-mentors-invitee')).toBeVisible();
     await expect(tab.getByTestId('mentorship-mentors-invite')).toBeVisible();
     await expect(tab.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toBeVisible();
@@ -144,7 +144,6 @@ test.describe('Admin program detail — tasks panel', () => {
 
   test('renders the tasks error with a Retry keyed by application id when the read fails', async ({ page }) => {
     const requests: AdminProgramRequests = { mentees: [], tasks: [] };
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, requests);
     await stubAdminTasks(page, requests, () => 500);
@@ -160,7 +159,6 @@ test.describe('Admin program detail — tasks panel', () => {
 
 test.describe('Admin program detail — failed mentees read', () => {
   test('renders the mentees error with a Retry and no rows or empty state', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, { mentees: [], tasks: [] }, 500);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
@@ -176,7 +174,6 @@ test.describe('Admin program detail — failed mentees read', () => {
 
 test.describe('Admin program detail — failed page read', () => {
   test('renders only the no-access structure for a 403', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 403);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
 
@@ -187,7 +184,6 @@ test.describe('Admin program detail — failed page read', () => {
   });
 
   test('renders only the not-found structure for a 404', async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 404);
     await openMentorPage(page, ADMIN_PROGRAM_URL);
 
@@ -198,7 +194,6 @@ test.describe('Admin program detail — failed page read', () => {
 
   test('renders the load error with a Retry for any other failure, and the tab once Retry succeeds', async ({ page }) => {
     const requests: AdminProgramRequests = { mentees: [], tasks: [] };
-    await enableMentorshipFlag(page);
     await stubAdminProgramPageError(page, 503);
     await stubAdminMentees(page, requests);
     await openMentorPage(page, ADMIN_PROGRAM_URL);

@@ -131,6 +131,8 @@ describe.each([
   ['/engagement-attendance-trend', 'foundationSlug'],
   ['/engagement-group-attendance', 'foundationSlug'],
   ['/engagement-meeting-participation', 'foundationSlug'],
+  ['/engagement-newsletter-performance', 'foundationSlug'],
+  ['/engagement-newsletter-recipients', 'foundationSlug'],
   ['/engagement-non-member-participation', 'foundationSlug'],
   ['/engagement-org-participation', 'foundationSlug'],
   ['/engagement-representatives', 'foundationSlug'],
@@ -146,10 +148,8 @@ describe.each([
   ['/events-organizations', 'foundationSlug'],
   ['/events-sponsorship', 'foundationSlug'],
   ['/events-geography', 'foundationSlug'],
+  ['/members-growth', 'foundationSlug'],
   ['/members-tiers', 'foundationSlug'],
-  ['/members-bridge', 'foundationSlug'],
-  // The year and movement ride ahead of the slug so the handler past the gate has a valid query.
-  ['/members-movements', 'year=2025&movementType=new&foundationSlug'],
   ['/members-directory', 'foundationSlug'],
   ['/members-directory-tiers', 'foundationSlug'],
   ['/members-at-risk', 'foundationSlug'],
@@ -161,7 +161,6 @@ describe.each([
   ['/non-members-orgs', 'foundationSlug'],
   ['/non-members-people', 'foundationSlug'],
   ['/non-members-conversion', 'foundationSlug'],
-  ['/training-presence', 'foundationSlug'],
   ['/training-enrollment', 'foundationSlug'],
   ['/training-courses', 'foundationSlug'],
   ['/overview-participating-orgs', 'foundationSlug'],
@@ -171,6 +170,7 @@ describe.each([
   ['/overview-events', 'foundationSlug'],
   ['/overview-board', 'foundationSlug'],
   ['/overview-code', 'foundationSlug'],
+  ['/overview-newsletters', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {
     getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });
@@ -369,8 +369,6 @@ const ORG_SCOPED_ROWS = new Set([
   '/org-involvement-contributors-monthly',
   '/org-involvement-maintainers-monthly',
   '/org-involvement-event-attendance-monthly',
-  '/org-involvement-certified-employees-monthly',
-  '/org-involvement-training-enrollments',
   '/org-lens-account-context',
 ]);
 

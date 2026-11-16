@@ -199,6 +199,24 @@
             </lfx-select>
             <p class="text-xs text-gray-400">Allow voters to abstain from voting instead of selecting an option.</p>
           </div>
+
+          <!-- Allow voters to change their vote (#4723) -->
+          <div class="flex flex-col gap-1">
+            <label for="allow-vote-change" class="text-sm font-medium text-gray-700"> Allow voters to change their vote </label>
+            <lfx-select
+              styleClass="w-full"
+              appendTo="body"
+              [form]="form()"
+              control="allow_vote_change"
+              inputId="allow-vote-change"
+              [options]="allowVoteChangeOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Select whether voters can change their vote"
+              data-testid="vote-allow-vote-change-select">
+            </lfx-select>
+            <p class="text-xs text-gray-400">Voters can change their choices, comment or abstention until the vote ends.</p>
+          </div>
         </div>
       </div>
     </div>

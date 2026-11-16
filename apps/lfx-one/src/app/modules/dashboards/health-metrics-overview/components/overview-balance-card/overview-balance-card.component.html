@@ -40,13 +40,13 @@
           role="row"
           [attr.data-testid]="'overview-balance-' + row.key">
           <div class="flex flex-col gap-[1px]" role="cell">
-            <span class="inline-flex items-center gap-[8px] text-gray-900"
+            <span class="inline-flex items-center gap-[8px] font-medium text-gray-900"
               ><span class="h-[8px] w-[8px] flex-none rounded-full" [class]="row.dotClass" aria-hidden="true"></span>{{ row.label }}</span
             >
             <span class="pl-[16px] text-[11px] text-gray-400">{{ row.daysLabel }} overdue</span>
           </div>
           <span class="text-right text-gray-700" role="cell">{{ row.membersLabel }}</span>
-          <span class="w-[96px] text-right font-semibold text-gray-900" role="cell">{{ row.amountLabel }}</span>
+          <span class="w-[96px] text-right text-gray-900" role="cell">{{ row.amountLabel }}</span>
         </div>
       }
     </div>

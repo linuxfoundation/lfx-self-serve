@@ -10,7 +10,6 @@ import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { CdpService } from '../services/cdp.service';
 import { SearchService } from '../services/search.service';
-import { resolveImpersonatorToken } from '../utils/impersonator-token';
 
 /**
  * Controller for handling search HTTP requests
@@ -18,24 +17,6 @@ import { resolveImpersonatorToken } from '../utils/impersonator-token';
 export class SearchController {
   private searchService: SearchService = new SearchService();
   private cdpService: CdpService = new CdpService();
-
-  /**
-   * GET /search/users
-   * Searches for users across meeting registrants and committee members
-   */
-  public async searchUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
-    await this.runUserSearch(req, res, next, false);
-  }
-
-  /**
-   * GET /search/users/impersonator
-   * The same search, run with the signed-in admin's own token instead of the impersonation target's. Used to
-   * pick who to switch to: while impersonating, `req.bearerToken` is the current target's, so the plain route
-   * would only find people that target can see. Gated on the admin's `can_impersonate` claim.
-   */
-  public async searchUsersAsImpersonator(req: Request, res: Response, next: NextFunction): Promise<void> {
-    await this.runUserSearch(req, res, next, true);
-  }
 
   /**
    * GET /search/users/:lfid/work-experiences
@@ -73,13 +54,16 @@ export class SearchController {
     }
   }
 
-  private async runUserSearch(req: Request, res: Response, next: NextFunction, asImpersonator: boolean): Promise<void> {
+  /**
+   * GET /search/users
+   * Searches for users across meeting registrants and committee members
+   */
+  public async searchUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { name, type, tags } = req.query;
     const startTime = logger.startOperation(req, 'search_users', {
       has_name: !!name,
       has_type: !!type,
       has_tags: !!tags,
-      as_impersonator: asImpersonator,
     });
 
     try {
@@ -156,8 +140,7 @@ export class SearchController {
       };
 
       // Perform the search
-      const options = asImpersonator ? { bearerToken: await resolveImpersonatorToken(req, 'search_users') } : undefined;
-      const results = await this.searchService.searchUsers(req, searchParams, options);
+      const results = await this.searchService.searchUsers(req, searchParams);
 
       logger.success(req, 'search_users', startTime, {
         result_count: results.results.length,

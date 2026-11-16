@@ -135,9 +135,9 @@ export class OrgEasyclaComponent {
   });
 
   /**
-   * Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016). The
-   * route guard only checks the dark-launch flag, so without this an unauthorized deep link would be
-   * told "hasn't signed any CLAs yet" — a statement about their CLAs rather than about their access.
+   * Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+   * Without this an unauthorized deep link would be told "hasn't signed any CLAs yet" — a statement
+   * about their CLAs rather than about their access.
    * Decided by the shared classifier so it cannot drift from the other pages or the sidebar gate.
    */
   protected readonly pageState = this.emptyState.pageState;

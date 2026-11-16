@@ -45,13 +45,38 @@ describe('Member360ResultComponent', () => {
     };
     return { fixture, component: fixture.componentInstance, query, names, sort };
   }
-  it('builds New run through the shared route helper without carrying asset state or stale project', async () => {
+  it('renders the agent summary first as markdown, preserving its partial-report disclosure', () => {
+    const envelope = member360Fixture();
+    envelope.summary_markdown = 'Partial report.\n\n## Run findings\n\n**Synthetic evidence** remains incomplete for this project.';
+    const view = render(envelope);
+    expect(view.query('member-360-result').firstElementChild).toBe(view.query('member-360-run-summary'));
+    expect(view.query('member-360-run-summary').textContent).toContain('Partial report.');
+    expect(view.query('member-360-run-summary').querySelector('strong')?.textContent).toBe('Synthetic evidence');
+  });
+  it.each(['absent', '', ' \n '])('omits an %j summary without rendering an empty section', (value) => {
+    const envelope = member360Fixture();
+    if (value === 'absent') Reflect.deleteProperty(envelope, 'summary_markdown');
+    else envelope.summary_markdown = value;
+    expect(render(envelope).query('member-360-run-summary')).toBeNull();
+  });
+  it('presents the used sources in neutral grey rather than success green', () => {
+    const view = render();
+    const sources = view.query('member-360-sources-used');
+    expect(sources.textContent).toBeTruthy();
+    expect(sources.classList.contains('text-gray-700')).toBe(true);
+    expect(sources.className).not.toContain('emerald');
+  });
+  it('exposes the shared form route for title-row actions without carrying asset state or stale project', async () => {
     const router = TestBed.inject(Router);
     router.resetConfig([{ path: '**', children: [] }]);
     await router.navigateByUrl('/project/mktg-os-agents/documents/member-360/run-0123456789abcdef01234567?project=old&revision=old&tab=old');
     const view = render();
     await view.fixture.whenStable();
-    expect(view.query('member-360-new-run').getAttribute('href')).toBe('/project/mktg-os-agents/member-360?project=sample-foundation');
+    expect(view.component.runRoute()).toEqual(['/project/mktg-os-agents', 'member-360']);
+    expect(view.component.projectParams()).toEqual({ project: 'sample-foundation' });
+    expect(view.query('member-360-new-run')).toBeNull();
+    expect(view.query('member-360-download')).toBeNull();
+    expect(view.component.workbookFilename()).toBe(`Member360_${view.component.envelope().project}_${view.component.envelope().period.label}.xlsx`);
   });
   it('loads ranking filters and sort from a shared URL, pushes changes and restores preceding query state', async () => {
     const router = TestBed.inject(Router);
@@ -224,6 +249,18 @@ describe('Member360ResultComponent', () => {
     envelope.run_date = envelope.period.window_start = envelope.period.window_end = '2026-10-01';
     expect(render(envelope).query('member-360-result-header').textContent).toContain('Run 1 Oct 2026 · window Oct 2026 to');
   });
+  it('shows the written calendar day for evidence dates, the method window and due days in every time zone', () => {
+    const envelope = member360Fixture();
+    envelope.tabs.evidence[0].date = '2026-10-01';
+    envelope.tabs.method.analysis_window = { start: '2025-10-01', end: '2026-10-01' };
+    envelope.tabs.actions_by_team[0].suggested_deadline = '2026-11-01';
+    const view = render(envelope);
+    // Pinned through the same UTC branch as the header: 1 Oct never becomes 30 Sep west of UTC.
+    expect(view.query('member-360-method-window').textContent?.replace(/\s+/g, ' ')).toContain('Window 1 Oct 2025 – 1 Oct 2026');
+    expect(view.query('member-360-evidence').textContent).toContain('1 Oct 2026');
+    expect(view.query('member-360-actions').textContent).toContain('1 Nov');
+    expect(view.query('member-360-actions').textContent).not.toContain('31 Oct');
+  });
   it('defaults to descending score and sorts by score, priority and tier', () => {
     const view = render();
     expect(view.names()).toEqual([SYNTHETIC_SECOND_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME]);
@@ -299,6 +336,38 @@ describe('Member360ResultComponent', () => {
     expect(view.query('member-360-ranking').querySelector('[role="img"]')?.getAttribute('tabindex')).toBe('0');
   });
   it.each([
+    { values: [null], note: 'No list-price value for this renewal' },
+    { values: [null, null], note: 'No list-price value for these 2 renewals' },
+    { values: [25000, null], note: '$25,000 known at list price · 1 without a value' },
+    { values: [25000, null, null], note: '$25,000 known at list price · 2 without a value' },
+    { values: [25000, 15000], note: '$40,000 at list price' },
+    { values: [0], note: '$0 at list price' },
+    { values: [0, null], note: '$0 known at list price · 1 without a value' },
+    { values: [], note: `No renewals within ${MEMBER_360_RENEWAL_RED_DAYS} days` },
+  ])('shows renewal value coverage for $values', ({ values, note }) => {
+    const envelope = member360Fixture();
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = values.map((annualValue, index) => ({ ...row, annual_value: annualValue, days_to_renewal: index === 0 ? 0 : 120 }));
+    const card = render(envelope).query('member-360-summary-renewals');
+    expect(card.querySelector('b')?.textContent?.trim()).toBe(String(values.length));
+    expect(card.querySelector('span:last-child')?.textContent?.trim()).toBe(note);
+    if (values.length > 0 && values.every((value) => value === null)) expect(card.textContent).not.toContain('$0');
+  });
+  it('excludes unknown, overdue and later renewals from both the subtotal and missing-value count', () => {
+    const envelope = member360Fixture();
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = [
+      { ...row, annual_value: 25000, days_to_renewal: 120 },
+      ...[null, -1, 121].flatMap((daysToRenewal) => [
+        { ...row, annual_value: null, days_to_renewal: daysToRenewal },
+        { ...row, annual_value: 90000, days_to_renewal: daysToRenewal },
+      ]),
+    ];
+    const card = render(envelope).query('member-360-summary-renewals');
+    expect(card.querySelector('b')?.textContent?.trim()).toBe('1');
+    expect(card.querySelector('span:last-child')?.textContent?.trim()).toBe('$25,000 at list price');
+  });
+  it.each([
     { days: null, classes: 'text-gray-500' },
     { days: MEMBER_360_RENEWAL_RED_DAYS, classes: 'font-bold text-red-700' },
     { days: MEMBER_360_RENEWAL_RED_DAYS + 1, classes: 'font-semibold text-amber-700' },
@@ -360,9 +429,14 @@ describe('Member360ResultComponent', () => {
     const original = JSON.stringify(envelope);
     const view = render(envelope);
     expect(view.query('member-360-result').textContent).toContain('CRM (not connected yet), Web research');
-    expect(view.query('member-360-method').textContent).toContain('LFX Platform: used');
-    expect(view.query('member-360-method').textContent).toContain('Trackers: unavailable');
-    expect(view.query('member-360-method').textContent).toContain('CRM: not connected yet');
+    const sourceText = (source: string) =>
+      Array.from(view.query(`member-360-source-${source}`).querySelectorAll('td'))
+        .map((cell) => cell.textContent?.trim())
+        .filter(Boolean)
+        .join(' ');
+    expect(sourceText('lfx_platform')).toBe('LFX Platform: used');
+    expect(sourceText('uploaded_trackers')).toBe('Trackers: unavailable');
+    expect(sourceText('hubspot')).toBe('CRM: not connected yet');
     expect(view.query('member-360-result').textContent).not.toMatch(/not wired|not_wired/);
     expect(JSON.stringify(envelope)).toBe(original);
   });
@@ -384,6 +458,77 @@ describe('Member360ResultComponent', () => {
       if (previous) Object.defineProperty(navigator, 'clipboard', previous);
       else Reflect.deleteProperty(navigator, 'clipboard');
     }
+  });
+  it('reads a negative renewal offset as overdue, zero as today and one as a single day', () => {
+    const envelope = member360Fixture();
+    const template = envelope.tabs.actions_by_team[0];
+    envelope.tabs.actions_by_team = [-7, 0, 1].map((days, index) => ({
+      ...template,
+      owner: 'Marketing',
+      priority: 'High' as typeof template.priority,
+      member_organization: `Org ${index}`,
+      days_to_renewal: days,
+    }));
+    const view = render(envelope);
+    const rows = Array.from(view.query('member-360-team-marketing').querySelectorAll('[data-testid="member-360-action-row"]')).map((row) =>
+      row.textContent?.replace(/\s+/g, ' ').trim()
+    );
+    expect(rows).toHaveLength(3);
+    expect(rows.find((row) => row?.includes('Org 0'))).toContain('7 days overdue');
+    expect(rows.find((row) => row?.includes('Org 1'))).toContain('renews today');
+    expect(rows.find((row) => row?.includes('Org 2'))).toContain('renews in 1 day');
+    expect(rows.join(' ')).not.toContain('renews in -');
+  });
+  it('orders each team High first, folds it to three rows and drops the repeated team label', () => {
+    const envelope = member360Fixture();
+    const template = envelope.tabs.actions_by_team[0];
+    envelope.tabs.actions_by_team = ['Low', 'Medium', 'High', 'High', 'Medium'].map((priority, index) => ({
+      ...template,
+      owner: 'Marketing',
+      priority: priority as typeof template.priority,
+      member_organization: `Org ${index}`,
+      recommended_action: `Marketing: invite org ${index} to speak.`,
+      suggested_deadline: `2026-11-2${index}`,
+    }));
+    const view = render(envelope);
+    const team = view.query('member-360-team-marketing');
+    const rows = () => Array.from(team.querySelectorAll('[data-testid="member-360-action-row"]')).map((row) => row.textContent?.replace(/\s+/g, ' ').trim());
+    expect(team.textContent).toContain('Marketing · 5 actions');
+    expect(
+      Array.from(view.query('member-360-team-summary-marketing').querySelectorAll('span'))
+        .map((span) => span.textContent?.trim())
+        .join(' ')
+    ).toBe('2 High 2 Medium 1 Low Next due 20 Nov');
+    expect(rows()).toHaveLength(3);
+    expect(rows()[0]).toContain('Org 2');
+    expect(rows()[0]).toContain('Due 22 Nov');
+    expect(rows()[0]).toContain('Invite org 2 to speak.');
+    expect(team.textContent).not.toContain('Marketing: invite');
+    const toggle = view.query('member-360-show-all-marketing');
+    expect(toggle.textContent?.trim()).toBe('Show all 5 actions');
+    toggle.click();
+    view.fixture.detectChanges();
+    expect(rows()).toHaveLength(5);
+    expect(rows()[4]).toContain('Org 0');
+    expect(toggle.textContent?.trim()).toBe('Show fewer');
+    expect(view.query('member-360-team-sales').textContent).toContain('No actions for this team.');
+  });
+  it('groups evidence by category and shows method weights, peer medians and run times', () => {
+    const view = render();
+    const envelope = view.component.envelope();
+    expect(view.query('member-360-evidence').querySelectorAll('[data-testid^="member-360-evidence-group-"]')).toHaveLength(
+      new Set(envelope.tabs.evidence.map((row) => row.category)).size
+    );
+    expect(view.query('member-360-baselines').textContent).not.toContain('{');
+    expect(view.query('member-360-method').textContent).not.toMatch(/merged: (true|false)/);
+    view.fixture.componentRef.setInput('history', [
+      { documentId: 'run-0123456789abcdef01234567', createdAt: '2026-11-09T21:09:00Z', updatedAt: '2026-11-09T21:09:00Z' },
+      { documentId: 'run-older', createdAt: '2026-11-09T20:33:00Z', updatedAt: '2026-11-09T20:33:00Z' },
+    ]);
+    view.fixture.detectChanges();
+    expect(view.query('member-360-history-row-run-0123456789abcdef01234567').textContent).toContain('Q4 2026 ·');
+    expect(view.query('member-360-history-row-run-older').textContent).toMatch(/\d{1,2} Nov, \d{2}:\d{2}/);
+    expect(view.query('member-360-history-open-run-older')).not.toBeNull();
   });
   it('leaves workbook export to the document header', () => {
     expect(render().fixture.nativeElement.querySelector('[data-testid="member-360-download"]')).toBeNull();

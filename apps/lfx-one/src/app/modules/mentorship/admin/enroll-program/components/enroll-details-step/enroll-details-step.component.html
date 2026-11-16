@@ -67,6 +67,7 @@
         optionLabel="label"
         optionValue="value"
         placeholder="Select Linux Foundation Open Source Project..."
+        [readonly]="!!lockedProject()"
         [filter]="true"
         [filterBy]="lfRemoteFilterField"
         filterMatchMode="notEquals"

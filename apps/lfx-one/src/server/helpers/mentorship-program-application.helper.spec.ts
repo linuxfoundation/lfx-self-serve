@@ -102,6 +102,13 @@ describe('mapMentorshipAdminApplicantRow', () => {
     expect(mapMentorshipAdminApplicantRow(applicationRow({ status: 'hold' })).status).toBe('pending');
   });
 
+  it("keeps the applicant's user id only when it is a UUID", () => {
+    expect(mapMentorshipAdminApplicantRow(applicationRow({ user_id: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890' })).userId).toBe(
+      '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'
+    );
+    expect(mapMentorshipAdminApplicantRow(applicationRow()).userId).toBeUndefined();
+  });
+
   it('keeps other applications whose program id is a UUID and drops the rest', () => {
     const mapped = mapMentorshipAdminApplicantRow(
       applicationRow({

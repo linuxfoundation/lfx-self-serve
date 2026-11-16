@@ -1,0 +1,23 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4 text-sm text-gray-700" data-testid="campaign-create-another-dialog">
+  <p data-testid="campaign-create-another-summary">{{ data.summary }}</p>
+  <div class="flex flex-col gap-1">
+    <p class="text-xs font-medium text-gray-500">Already created for this event</p>
+    <ul class="flex flex-col gap-1" data-testid="campaign-create-another-existing">
+      @for (campaign of data.existing; track campaign.id) {
+        <li class="break-all font-mono text-xs text-gray-700" [attr.data-testid]="'campaign-create-another-existing-' + campaign.id">
+          <span>{{ campaign.platformLabel }} · {{ campaign.name }} · {{ campaign.status }}</span>
+          <span class="block font-sans text-gray-500" [attr.data-testid]="'campaign-create-another-labels-' + campaign.id"
+            >Channel: {{ campaign.labels.channel }} · Stage: {{ campaign.labels.stage }} · Tactic: {{ campaign.labels.tactic }}</span
+          >
+        </li>
+      }
+    </ul>
+  </div>
+  <div class="flex justify-end gap-2">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="campaign-create-another-cancel" />
+    <lfx-button label="Create another" size="small" (onClick)="confirm()" data-testid="campaign-create-another-confirm" />
+  </div>
+</div>

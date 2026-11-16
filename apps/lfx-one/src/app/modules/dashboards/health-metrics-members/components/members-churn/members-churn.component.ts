@@ -14,7 +14,6 @@ import {
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE,
   HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED,
-  HEALTH_METRICS_MEMBERS_CHURN_FOOTER,
   HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS,
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED,
@@ -33,7 +32,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -56,7 +54,7 @@ import type { TablePageEvent } from 'primeng/table';
  */
 @Component({
   selector: 'lfx-members-churn',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
   templateUrl: './members-churn.component.html',
 })
 export class MembersChurnComponent {
@@ -67,15 +65,14 @@ export class MembersChurnComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once both reads settle — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
   protected readonly modeOptions: FilterPillOption[] = [...HEALTH_METRICS_MEMBERS_CHURN_MODE_OPTIONS];
-  protected readonly footer = HEALTH_METRICS_MEMBERS_CHURN_FOOTER;
   protected readonly tierPillClass = HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS;
   protected readonly shareBarClass = HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS;
   protected readonly size = HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE;
@@ -118,6 +115,8 @@ export class MembersChurnComponent {
   protected readonly view: Signal<HealthMetricsMembersChurnView> = computed(() =>
     buildHealthMetricsMembersChurnView(this.response(), this.range(), this.mode())
   );
+  /** The period was never measured or lost no member; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && !this.departuresFailed() && isEmptyView(this.view()));
   protected readonly departureRows: Signal<HealthMetricsMembersChurnDepartureRowView[]> = computed(() =>
     buildHealthMetricsMembersChurnDepartureRows(this.departures().rows)
   );
@@ -209,11 +208,11 @@ export class MembersChurnComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_MEMBERS_CHURN_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.responseFoundation.set(foundationSlug);
               this.loading.set(!foundationSeen);
               this.churnPending = false;
-              this.settle(foundationSeen);
+              this.settle(foundationSeen, response);
             })
           )
         )
@@ -260,9 +259,15 @@ export class MembersChurnComponent {
     );
   }
 
-  /** Held until a foundation is seen and both reads land, so an unread section cannot release the shell's deep link. */
-  private settle(foundationSeen: boolean): void {
-    if (foundationSeen && !this.churnPending && !this.departuresPending) this.settled.emit();
+  /**
+   * Held until a foundation is seen and both reads land, so an unread section cannot release the shell's deep link.
+   * The churn read passes its own response, which its signal does not carry yet.
+   */
+  private settle(foundationSeen: boolean, churn: HealthMetricsMembersChurn = this.response()): void {
+    if (!foundationSeen || this.churnPending || this.departuresPending) return;
+
+    // A failure of either read keeps its error on screen, so neither settles empty.
+    this.settled.emit(!this.loadFailed() && !this.departuresFailed() && isEmptyView(buildHealthMetricsMembersChurnView(churn, this.range(), this.mode())));
   }
 
   /** Earlier years pale, the selected one solid — red when its churn rose on the year before. */
@@ -321,4 +326,9 @@ export class MembersChurnComponent {
     const page = Number(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.churnPage));
     return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   }
+}
+
+/** Whether the period has nothing to show: it was never measured, or no member lapsed or downgraded. */
+function isEmptyView(view: HealthMetricsMembersChurnView): boolean {
+  return !view.yearMeasured || !view.hasChurn;
 }

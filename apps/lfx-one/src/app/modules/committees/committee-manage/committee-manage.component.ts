@@ -269,7 +269,7 @@ export class CommitteeManageComponent {
       calendar: {
         public: this.form.value.public || false,
       },
-      display_name: this.form.value.display_name || this.form.value.name,
+      display_name: this.resolveDisplayName(),
       website: this.form.value.website || null,
       project_uid: this.committee()?.project_uid || this.project()?.uid || null,
     };
@@ -361,7 +361,7 @@ export class CommitteeManageComponent {
       calendar: {
         public: this.form.value.public || false,
       },
-      display_name: this.form.value.display_name || this.form.value.name,
+      display_name: this.resolveDisplayName(),
       website: this.form.value.website || null,
       project_uid: this.committee()?.project_uid || this.project()?.uid || null,
     };
@@ -634,6 +634,17 @@ export class CommitteeManageComponent {
       member_visibility: new FormControl('hidden'),
       show_meeting_attendees: new FormControl(false),
     });
+  }
+
+  private resolveDisplayName(): string {
+    const { name, display_name } = this.form.value;
+    const original = this.committee();
+    // A name-derived value loaded into the form is not an explicit alias.
+    // Let it follow a rename, while preserving distinct aliases and edits.
+    if (!display_name || (original && display_name === original.display_name && original.display_name === original.name)) {
+      return name;
+    }
+    return display_name;
   }
 
   private cleanFormData(formData: Record<string, unknown>): Record<string, unknown> {

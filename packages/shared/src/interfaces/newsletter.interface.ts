@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Project } from './project.interface';
+import { SocialShareChannel } from './social-share.interface';
 
 export type NewsletterStatusTabId = 'draft' | 'scheduled' | 'sent' | 'optout';
 
@@ -41,6 +42,40 @@ export interface NewsletterCommitteeOption {
 
 export interface NewsletterRecipientCountPayload {
   committee_uids: string[];
+  /**
+   * The draft whose audience snapshot to read (lfx-self-serve#4352). With it, the count and preview come
+   * from the snapshot and return 409 `audience_not_ready` until it is ready. Without it, the committees are
+   * read live, which is only safe for small committees.
+   */
+  newsletter_uid?: string;
+}
+
+/** State of a newsletter's audience snapshot in lfx-v2-newsletter-service. */
+export type NewsletterAudienceStatus = 'processing' | 'ready' | 'failed';
+
+/** Why a snapshot can't be used, from a 409 `audience_not_ready`. `none` means it was never resolved. */
+export type NewsletterAudienceNotReadyStatus = 'none' | 'processing' | 'failed' | 'stale';
+
+/** The stored recipient list for one newsletter, built by a background job (`AudienceResponse`). */
+export interface NewsletterAudience {
+  status: NewsletterAudienceStatus;
+  /** Recipients in the snapshot, after unsubscribes at the time it was taken. 0 until `ready`. */
+  recipient_count: number;
+  skipped_no_email: number;
+  /** The sorted committee list the snapshot was built from. */
+  committee_uids: string[];
+  requested_at: string;
+  resolved_at?: string;
+  /** A short reason, set only when `failed`. */
+  error?: string;
+}
+
+/** Body of `POST …/newsletters/:newsletterUid/audience`. */
+export interface NewsletterResolveAudiencePayload {
+  /** Must be the committees saved on the draft. */
+  committee_uids: string[];
+  /** Rebuild a ready snapshot for the same committees. */
+  refresh?: boolean;
 }
 
 /**
@@ -84,8 +119,46 @@ export interface NewsletterRecipientsResponse {
 
 export interface NewsletterTestSendPayload {
   subject: string;
-  body_html: string;
+  /**
+   * The pre-rendered email HTML. Authoritative ONLY on the HTML-only path: when
+   * `body_layout` is present the service recompiles from it and ignores this
+   * field, so a layout test send need not supply it. Optional for that reason —
+   * the server's `validateTestSendPayload` enforces the real contract (exactly
+   * one of `body_layout` / `body_html` must carry the body), which a required
+   * `body_html` would misstate by forcing layout-only clients to pass a dummy.
+   */
+  body_html?: string;
   to_email: string;
+  /**
+   * @deprecated Ignored by the newsletter-service. `body_layout` is the sole
+   * layout trigger for a test send; a precompiled `is_layout` + `body_html`
+   * request is no longer dispatched verbatim (it could leave a dangling empty
+   * "Unsubscribe" row once its per-recipient sentinel resolved to nothing).
+   * Retained only for wire-compat with older clients (the service still accepts
+   * the field) — supply `body_layout` for a layout test send. Has no effect.
+   */
+  is_layout?: boolean;
+  // The structured layout for a block-composer draft. When present, the service
+  // RECOMPILES the test email from it with the compliance/unsubscribe footer
+  // suppressed — so a test send doesn't carry a dangling empty "Unsubscribe"
+  // row that the pre-compiled body_html would. Omit/null for simple drafts.
+  body_layout?: NewsletterLayout | null;
+  // Reply-to address. The layout test send recompiles the wrapper from it (the
+  // "To reply, email …" row), and it becomes the email's reply-to — matching the
+  // real send. Omitted for a test send that carries no reply address.
+  ed_reply_email?: string;
+}
+
+// Render a layout to its final email HTML server-side (the SAME MJML render the
+// send path uses), so the composer can show the authoritative sent-email size
+// and source instead of estimating from the client preview markup.
+export interface NewsletterRenderPreviewPayload {
+  body_layout: NewsletterLayout;
+  wrapper_content?: Record<string, unknown>;
+}
+
+export interface NewsletterRenderPreviewResponse {
+  body_html: string;
 }
 
 export interface NewsletterSendFailure {
@@ -140,8 +213,11 @@ export interface NewsletterCancelScheduleResult {
 export interface Newsletter {
   id: string;
   project_uid: string;
+  /** The publication this newsletter is an edition of. Absent before the publications release. */
+  publication_uid?: string;
   subject: string;
   body_html: string;
+  body_layout?: NewsletterLayout | null;
   ed_reply_email: string;
   committee_uids: string[];
   status: NewsletterStatus;
@@ -161,6 +237,12 @@ export interface Newsletter {
   version: number;
   created_at: string;
   updated_at: string;
+  /** In-app share count, one per user per channel. Sent newsletters only; absent when unknown — not zero. */
+  share_count?: number;
+  /** Raw open total (every open, not unique readers). Sent newsletters from GET one only; absent when unknown — not zero. */
+  total_opens?: number;
+  /** Unique web page views, one per signed-in user, ever. Sent newsletters only; absent when unknown — not zero. Shown summed with `total_opens` as views. */
+  page_view_count?: number;
 }
 
 /**
@@ -336,6 +418,34 @@ export interface NewsletterInviteResult {
   foundation_name: string;
 }
 
+/** Response of GET /public/api/newsletters/:projectSlug/:newsletterUid/preview — what a link preview may show of a sent issue. */
+export interface NewsletterSharePreview {
+  subject: string;
+}
+
+/** Load state of the signed-out share-preview page; `preview` is null while loading or when nothing may be shown. */
+export interface NewsletterSharePreviewState {
+  loading: boolean;
+  preview: NewsletterSharePreview | null;
+}
+
+/** What the newsletter reader page looks up to decide whether to show the invite CTA. */
+export interface NewsletterInviteLookup {
+  projectUid: string;
+  newsletterId: string;
+  /** The member benefit just added the reader to the group (or found them already on it). */
+  joined: boolean;
+}
+
+/** The newsletter reader breadcrumb's middle crumb: where "back to the list" goes. */
+export interface NewsletterReaderCrumb {
+  label: string;
+  /** Rendered href, so modified clicks open the same page in a new tab. */
+  href: string;
+  /** Router commands for a plain click. */
+  commands: string[];
+}
+
 /** DynamicDialog data of the My Newsletters invite dialog. */
 export interface NewsletterInviteDialogData {
   foundation: MyNewsletterFoundation;
@@ -414,9 +524,11 @@ export interface NewsletterInviteLandingState {
   result?: NewsletterJoinResult;
 }
 
-export interface CreateNewsletterRequest {
+/** The fields of a newsletter create. */
+export interface NewsletterCreateFields {
   subject: string;
   body_html: string;
+  body_layout?: NewsletterLayout | null;
   ed_reply_email: string;
   committee_uids: string[];
   /**
@@ -427,9 +539,68 @@ export interface CreateNewsletterRequest {
   scheduled_at?: string | null;
 }
 
+/** A create with no publication. The service creates an implicit publication, so every field is required. */
+export interface StandaloneCreateNewsletterRequest extends NewsletterCreateFields {
+  publication_uid?: undefined;
+}
+
+/**
+ * A create as an edition of a publication (#4349). The publication can supply the audience, reply-to
+ * and template set, so only the subject is required. A blank `ed_reply_email` takes the publication's
+ * reply-to, and only an omitted `committee_uids` takes its audience.
+ */
+export interface PublicationCreateNewsletterRequest extends Partial<NewsletterCreateFields> {
+  publication_uid: string;
+  subject: string;
+}
+
+export type CreateNewsletterRequest = StandaloneCreateNewsletterRequest | PublicationCreateNewsletterRequest;
+
+/** The recurring parent of newsletter editions (lfx-v2-newsletter-service `Publication`). */
+export interface NewsletterPublication {
+  id: string;
+  project_uid: string;
+  name: string;
+  /** The template set new editions use. Absent when each edition picks its own. */
+  template_key?: string;
+  /** Replaces the From display name at send. */
+  from_name?: string;
+  /** Replaces Reply-To at send, and is the default `ed_reply_email` for new editions. */
+  reply_to_email?: string;
+  /** Default audience new editions inherit. */
+  committee_uids: string[];
+  /** True when the service created it for a newsletter that named none. These are never listed. */
+  implicit: boolean;
+  created_by: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Body of publication create and the full-replace update: an omitted optional field is cleared. */
+export interface NewsletterPublicationRequest {
+  name: string;
+  template_key?: string;
+  from_name?: string;
+  reply_to_email?: string;
+  committee_uids?: string[];
+}
+
+export interface NewsletterPublicationListResponse {
+  publications: NewsletterPublication[];
+  next_page_token?: string;
+}
+
+/** One entry in the publication picker on the create flow. */
+export interface NewsletterPublicationOption {
+  label: string;
+  value: string;
+}
+
 export interface UpdateNewsletterRequest {
   subject: string;
   body_html: string;
+  body_layout?: NewsletterLayout | null;
   ed_reply_email: string;
   committee_uids: string[];
   /**
@@ -468,6 +639,12 @@ export interface CommitteeNewsletter {
   project_uid: string;
   subject: string;
   sent_at?: string;
+  /** In-app share count, one per user per channel; absent when unknown — not zero. */
+  share_count?: number;
+  /** Raw open total, the same value GET one returns; absent when unknown — not zero. */
+  total_opens?: number;
+  /** Unique web page views, one per user; absent when unknown — not zero. */
+  page_view_count?: number;
 }
 
 export interface CommitteeNewsletterListResponse {
@@ -522,6 +699,29 @@ export interface MyNewslettersState {
  */
 export interface MyNewsletterRow extends MyNewsletter {
   issuePath: string | null;
+  /** The issue's `share_count`; null when the count is unknown. */
+  shareCount: number | null;
+  /** Email opens plus unique web page views (see `combinedViewCount`); null when both are unknown. */
+  viewCount: number | null;
+}
+
+/** The issue a Share dialog was opened for — captured at open so a later navigation can't retarget it. */
+export interface NewsletterShareTarget {
+  projectUid: string;
+  newsletterId: string;
+}
+
+/** A share made from the reader drawer's dialog, bound to the issue it was opened for. */
+export interface NewsletterShareEvent extends NewsletterShareTarget {
+  channel: SocialShareChannel;
+}
+
+/** Share count shown beside a newsletter's Share button, bumped locally after each accepted share. */
+export interface NewsletterShareTally {
+  /** Null when the server did not return a count (unknown, not zero). */
+  count: number | null;
+  /** Channels already counted on this page — the server counts each channel once per user. */
+  channels: SocialShareChannel[];
 }
 
 export interface NewsletterListParams {
@@ -616,6 +816,17 @@ export interface NewsletterAnalytics {
   click_to_open_rate?: number;
   daily_clicks?: NewsletterDailyClicks[];
   top_links?: NewsletterLinkClicks[];
+  /** In-app shares, one per user per channel. Absent when the share store can't be read. */
+  total_shares?: number;
+  /** `total_shares` split by channel; every channel present, `0` when unused. */
+  shares_by_channel?: Partial<Record<SocialShareChannel, number>>;
+  /** Unique web page views, one per signed-in user. Absent for unsent newsletters or when the view store can't be read. */
+  total_page_views?: number;
+}
+
+/** Body of POST /api/newsletters/:projectUid/:newsletterUid/share. */
+export interface NewsletterShareRequest {
+  channel: SocialShareChannel;
 }
 
 /**
@@ -742,6 +953,220 @@ export interface NewsletterChartData {
   datasets: NewsletterChartDataset[];
 }
 
+// ---------------------------------------------------------------------------
+// Block-composer editor: structured layout + template manifest (spec 004 §8)
+// ---------------------------------------------------------------------------
+
+/**
+ * The editable field types the block-composer fields panel knows how to render.
+ * Mirrors the `type` discriminator in each block's parsed SCHEMA comment.
+ * `slot` is the container child-list marker and is not rendered as an input.
+ */
+export type NewsletterFieldType = 'text' | 'textarea' | 'richtext' | 'number' | 'boolean' | 'array' | 'image' | 'select' | 'slot';
+
+/** One option of a `select` field: the value stored and the label shown. */
+export interface NewsletterFieldOption {
+  label: string;
+  value: string;
+}
+
+/**
+ * A single editable field in a block's schema. `fields` describes the per-item
+ * shape of an `array` field (each array item is an object keyed by these field
+ * names). `default` seeds an empty control when the block is first edited.
+ */
+export interface NewsletterFieldDefinition {
+  type: NewsletterFieldType;
+  label?: string;
+  default?: unknown;
+  /** For `array` fields: the nested per-item field definitions. */
+  fields?: Record<string, NewsletterFieldDefinition>;
+  /** For `select` fields: the selectable options. */
+  options?: NewsletterFieldOption[];
+}
+
+/**
+ * JSON Schema describing a block's editable fields, keyed by field name. Authored
+ * in the declarative templates the newsletter service embeds and serves, and rendered into form
+ * controls by the editor's fields panel.
+ */
+export type NewsletterFieldSchema = Record<string, NewsletterFieldDefinition>;
+
+/**
+ * A field definition flattened with its key — the view-model the fields panel
+ * iterates over to render one control per field.
+ */
+export interface NewsletterFieldEntry extends NewsletterFieldDefinition {
+  key: string;
+  /** Precomputed display label (explicit `label` or a humanized `key`), so the
+   * fields-panel template reads a property instead of calling a method per row. */
+  displayLabel: string;
+  /** Precomputed nested entries for an `array` field (empty otherwise), so the
+   * template iterates a property instead of allocating on every change detection. */
+  nested: NewsletterFieldEntry[];
+}
+
+/**
+ * A block instance in a newsletter's structured layout. Blocks are recursive: a
+ * container block nests child blocks via `blocks`. This is the unified model —
+ * there is no separate "brick" type; everything is a block.
+ */
+export interface NewsletterBlock {
+  block_type: string;
+  content: Record<string, unknown>;
+  blocks?: NewsletterBlock[];
+}
+
+/**
+ * The structured layout the editor saves and the server renders to MJML →
+ * body_html. Persisted as body_layout (JSONB) on the newsletter.
+ */
+export interface NewsletterLayout {
+  wrapper_key: string;
+  /**
+   * Which embedded block library (template set) this layout was composed from.
+   * The newsletter-service persists it and renders the email from that library
+   * (LFXV2-2747). An omitted/empty key is NOT a neutral render: the service
+   * resolves it to its fallback set (`aaif-user-community`,
+   * NEWSLETTER_FALLBACK_TEMPLATE_KEY) and renders that set's wrapper and blocks.
+   * Clients treat a blank key on a saved layout as that fallback, and always
+   * set an explicit key on a new layout (NEWSLETTER_DEFAULT_TEMPLATE_KEY or the
+   * author's pick).
+   */
+  template_key?: string;
+  blocks: NewsletterBlock[];
+}
+
+/** Palette entry describing one block type, from the newsletter service's template manifest. */
+export interface NewsletterBlockManifestEntry {
+  block_type: string;
+  label: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  schema: NewsletterFieldSchema;
+  /** True when this block can nest child blocks (a container block). */
+  is_container?: boolean;
+  /** For container blocks: the block types allowed as children. */
+  allowed_block_types?: string[];
+  /**
+   * Raw declarative template HTML (the element tree, SCHEMA comment stripped),
+   * served with the manifest. The client-side renderer parses + binds it to draw a
+   * styled preview on the composer canvas. Optional: absent when a manifest is
+   * generated without templates (older asset versions).
+   */
+  template?: string;
+}
+
+/** Provenance of the template manifest (the template repo the service embeds). */
+export interface NewsletterTemplateSource {
+  repo: string;
+  commit: string;
+}
+
+/** One entry in the newsletter service's embedded template catalog. */
+export interface NewsletterTemplateInfo {
+  key: string;
+  label: string;
+}
+
+/** One option in the composer's template set picker. */
+export interface NewsletterTemplateOption {
+  label: string;
+  value: string;
+}
+
+/** Response of GET /projects/{uid}/newsletters/templates. */
+export interface NewsletterTemplatesResponse {
+  templates: NewsletterTemplateInfo[];
+}
+
+/** A category bucket of palette entries for the block-composer palette. */
+export interface NewsletterBlockPaletteGroup {
+  category: string;
+  entries: NewsletterBlockManifestEntry[];
+}
+
+/**
+ * The left-rail tabs of the block-composer editor (Puck-style). The
+ * rail switches the sidebar between the block palette and the canvas outline.
+ * Field editing lives in the persistent right sidebar, not a rail tab.
+ */
+export type NewsletterComposerTab = 'blocks' | 'outline';
+
+/**
+ * Which body editor the content step shows: the structured block composer
+ * (authors `body_layout`) or the simple rich-text + AI editor (authors
+ * `body_html`). Selectable per newsletter; the two are mutually exclusive so
+ * only one body representation is ever the source of truth.
+ */
+export type NewsletterEditorMode = 'blocks' | 'simple';
+
+/** One rail tab descriptor (id, label, icon, disabled state). */
+export interface NewsletterComposerTabDef {
+  id: NewsletterComposerTab;
+  label: string;
+  icon: string;
+  disabled?: boolean;
+}
+
+/**
+ * Block-composer canvas view-model: a NewsletterBlock plus a stable local `id`
+ * (for CDK drag-drop trackBy / drop-list correlation), the resolved palette
+ * `label`, and an `isContainer` convenience flag. Projected back to a
+ * NewsletterBlock when the composer emits its NewsletterLayout.
+ */
+export interface NewsletterComposerBlock {
+  id: string;
+  block_type: string;
+  label: string;
+  isContainer: boolean;
+  content: Record<string, unknown>;
+  children?: NewsletterComposerBlock[];
+}
+
+/**
+ * Position + state of the composer's floating block toolbar (the dark pill that
+ * hovers over the selected canvas block — block label + duplicate / delete, and
+ * the rich-text B/I/U/link controls when a richtext field is focused). `top` /
+ * `left` are pixel offsets relative to the canvas' positioned container.
+ * `richtextActive` toggles the formatting controls.
+ */
+export interface NewsletterComposerToolbarState {
+  blockId: string;
+  label: string;
+  top: number;
+  left: number;
+  isContainer: boolean;
+  richtextActive: boolean;
+}
+
+/**
+ * The block palette + field schemas for one block library, served at runtime by
+ * lfx-v2-newsletter-service from its embedded template sets (GET
+ * .../newsletters/templates/{key}/manifest, proxied by the BFF).
+ */
+export interface NewsletterTemplateManifest {
+  wrapper_key: string;
+  wrapper_keys?: string[];
+  blocks: NewsletterBlockManifestEntry[];
+  source?: NewsletterTemplateSource;
+  /**
+   * Raw page-chrome wrapper template HTML (header / footer + a
+   * `<slot name="body" />` where the composed blocks render), served with the
+   * manifest for the client-side preview. Optional: absent when no wrapper template
+   * was found at generation time.
+   */
+  wrapper?: string;
+  /** The ordered blocks a new edition starts with, from the template set's edition.json. */
+  starter_blocks?: NewsletterStarterBlock[];
+}
+
+/** One block of a template set's starting edition. */
+export interface NewsletterStarterBlock {
+  block_type: string;
+}
+
 /**
  * UI row for the "Top clicked links" table. `href` is the result of running
  * the untrusted upstream `url` through `normalizeToUrl`, precomputed so the
@@ -777,3 +1202,124 @@ export type NewsletterListLoadResult =
       arming?: NewsletterListItem[];
     }
   | { kind: 'optout'; response: NewsletterOptOutListResponse };
+
+/** Signed newsletter invite token payload (BFF-internal): a newsletter group, the address it was sent to, and an expiry (epoch ms). */
+export interface NewsletterInviteTokenPayload {
+  c: string;
+  e: string;
+  exp: number;
+}
+
+/**
+ * Signed browser-session cookie of a signed-out newsletter reader (BFF-internal): the email they read as,
+ * the newsletter group and foundation it is good for, and whether the email was proven (`v`, an invite or
+ * confirmation link) or only typed on a shared link.
+ */
+export interface NewsletterGuestSession {
+  e: string;
+  c: string;
+  f: string;
+  v: boolean;
+  /** Expiry (epoch ms), signed with the rest — the server's bound on the session, independent of the browser. */
+  exp: number;
+}
+
+/** A sent issue a signed-out reader opened from a shared link, with the group and foundation that make it a member benefit (BFF-internal). */
+export interface NewsletterGuestSharedTarget {
+  newsletter: Newsletter;
+  group: NewsletterMemberBenefitGroup;
+  resolved: ResolvedNewsletterFoundation;
+}
+
+/** An issue to show a guest, and the guest session (without its expiry, which the controller stamps) that may read it (BFF-internal). */
+export interface NewsletterGuestGrant {
+  issue: NewsletterGuestIssue;
+  session: Omit<NewsletterGuestSession, 'exp'>;
+}
+
+/** Outcome of reading a signed newsletter invite token. */
+export type NewsletterInviteTokenCheck = { status: 'valid'; payload: NewsletterInviteTokenPayload } | { status: 'expired' | 'invalid' };
+
+/** State of a newsletter invite link opened while signed out. */
+export type NewsletterGuestInviteStatus = 'valid' | 'expired' | 'invalid' | 'not_eligible';
+
+/** Response of POST /public/api/newsletters/invites/inspect. */
+export interface NewsletterGuestInviteInfo {
+  status: NewsletterGuestInviteStatus;
+  /** Every status but `invalid`/`expired`. */
+  foundation?: NewsletterFoundationSummary;
+  /** Every status but `invalid`/`expired`: the organization whose member companies get this newsletter. */
+  membership_name?: string;
+  /** The newsletter group the invite adds to — also where the signed-in confirm card is opened. */
+  committee_uid?: string;
+  /** The invited address, masked for display (`ja***@exam***.org`) — the link may have been forwarded. */
+  masked_email?: string;
+  /** `valid` only: the member company the address matched. */
+  company_name?: string;
+  /** `valid` only: a preview of the group's latest issue, shown behind the modal. Absent when it has sent none. */
+  teaser?: NewsletterGuestTeaser;
+}
+
+/** A preview of a sent issue shown, blurred, behind the signed-out reader's email prompt — never the issue body itself. */
+export interface NewsletterGuestTeaser {
+  subject: string;
+  /** The issue's first public `https:` image, or null. */
+  image_url: string | null;
+  /** Plain-text opening of the issue, at most `NEWSLETTER_GUEST_TEASER_MAX_LENGTH` characters. */
+  excerpt: string;
+}
+
+/** Body of POST /public/api/newsletters/invites/inspect and /accept. */
+export interface NewsletterGuestInviteRequest {
+  token: string;
+}
+
+/** Body of POST /public/api/newsletters/:projectSlug/:newsletterUid/guest-access. */
+export interface NewsletterGuestAccessRequest {
+  email: string;
+}
+
+/** The parts of a sent issue a signed-out member-company reader sees. */
+export interface NewsletterGuestNewsletter {
+  id: string;
+  subject: string;
+  sent_at: string | null;
+  body_html: string;
+}
+
+/** A newsletter issue shown to a signed-out member-company reader. */
+export interface NewsletterGuestIssue {
+  foundation: NewsletterFoundationSummary;
+  /** The address the reader is reading as, masked for display (`ja***@exam***.org`). */
+  masked_email: string;
+  /** Null when the newsletter group has not sent an issue yet. */
+  newsletter: NewsletterGuestNewsletter | null;
+  /** True after a shared-link read: a confirmation link was emailed, and the address joins the list only once it is opened. */
+  confirmation_sent: boolean;
+}
+
+/** Response of the guest issue reads: `issue` is null when there is no guest session for this foundation. */
+export interface NewsletterGuestIssueResponse {
+  issue: NewsletterGuestIssue | null;
+  /** Shared-link read only: the issue's foundation, for the email prompt — absent when the link is not a member-benefit issue. */
+  foundation?: NewsletterFoundationSummary;
+  /** Shared-link read only: the organization whose member companies get this newsletter. */
+  membership_name?: string;
+  /** Shared-link read without a guest session only: a preview of the issue, shown behind the email prompt. */
+  teaser?: NewsletterGuestTeaser;
+}
+
+/** Data the shared-link subscription confirmation email is rendered from. */
+export interface NewsletterGuestConfirmEmailContext {
+  company_name: string;
+  foundation_name: string;
+  confirm_url: string;
+}
+
+/** Load state of a signed-out newsletter guest page. */
+export interface NewsletterGuestPageState {
+  /** `unavailable`: the issue is not one the member benefit opens; `error`: the lookup itself failed (retryable). */
+  status: 'loading' | 'prompt' | 'reading' | 'unavailable' | 'error';
+  invite?: NewsletterGuestInviteInfo;
+  issue?: NewsletterGuestIssue;
+}

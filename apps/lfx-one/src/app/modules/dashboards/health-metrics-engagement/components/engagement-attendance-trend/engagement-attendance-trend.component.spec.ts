@@ -50,6 +50,7 @@ describe('EngagementAttendanceTrendComponent', () => {
   let getEngagementAttendanceTrend: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEngagementAttendanceTrend | Error = { months: window12() }): Promise<void> {
     getEngagementAttendanceTrend = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -68,7 +69,10 @@ describe('EngagementAttendanceTrendComponent', () => {
 
     fixture = TestBed.createComponent(EngagementAttendanceTrendComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -90,6 +94,7 @@ describe('EngagementAttendanceTrendComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation roll-up and reports the read starting and settling', async () => {
@@ -97,6 +102,7 @@ describe('EngagementAttendanceTrendComponent', () => {
 
     expect(getEngagementAttendanceTrend).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(text('engagement-attendance-trend-window')).toBe('Last 12 months');
   });
 
@@ -140,10 +146,12 @@ describe('EngagementAttendanceTrendComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-trend-chart"]')).toBeNull();
   });
 
-  it('shows the empty state when no month has a rate', async () => {
+  it('settles empty, with no body, when no month has a rate', async () => {
     await render({ months: window12(() => null) });
 
-    expect(text('engagement-attendance-trend-empty')).toContain('No meeting attendance in the last 12 months');
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-trend-hero"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-trend-insufficient"]')).toBeNull();
   });
 
   // A failed read is not a foundation without meetings, and the two states must not render the same card.
@@ -151,8 +159,8 @@ describe('EngagementAttendanceTrendComponent', () => {
     await render(new Error('boom'));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-trend-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-trend-empty"]')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   // The trend's window is fixed, so the period pill costs no request.

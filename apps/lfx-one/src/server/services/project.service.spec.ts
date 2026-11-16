@@ -17,6 +17,7 @@ const {
   addProjectWriterToResource,
   checkAccess,
   checkSingleAccessStrict,
+  checkSingleAccess,
   execute,
   warning,
   startOperation,
@@ -24,6 +25,7 @@ const {
   success,
   fetchWithETag,
   updateWithETag,
+  deleteWithETag,
   natsRequest,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
@@ -31,6 +33,7 @@ const {
   addProjectWriterToResource: vi.fn(),
   checkAccess: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
+  checkSingleAccess: vi.fn(),
   execute: vi.fn(),
   warning: vi.fn(),
   // Typed rather than a bare `vi.fn(() => 0)` so the metadata-masking suite below can index
@@ -42,6 +45,7 @@ const {
   success: vi.fn(),
   fetchWithETag: vi.fn(),
   updateWithETag: vi.fn(),
+  deleteWithETag: vi.fn(),
   natsRequest: vi.fn(),
 }));
 
@@ -53,8 +57,33 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const staffConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-staff.constants')>(
     '../../../../../packages/shared/src/constants/project-staff.constants'
   );
+  const apiConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/api.constants')>(
+    '../../../../../packages/shared/src/constants/api.constants'
+  );
+  // Real values for the formation-record guard/validation constants (#5134), not hand copies.
+  const formationRecordConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-formation.constants')>(
+    '../../../../../packages/shared/src/constants/project-formation.constants'
+  );
+  // Real values for the document delete types/paths/message, not hand copies.
+  const documentConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/documents.constants')>(
+    '../../../../../packages/shared/src/constants/documents.constants'
+  );
+  // Real value for the add-user conflict code: the add-refusal test asserts the wire value, and the
+  // user form reads the same constant. `project-permissions.constants.ts` has only a type-only import.
+  const permissionConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/project-permissions.constants')>(
+    '../../../../../packages/shared/src/constants/project-permissions.constants'
+  );
   return {
+    ...formationRecordConstants,
+    PROJECT_USER_ALREADY_ON_PROJECT_CODE: permissionConstants.PROJECT_USER_ALREADY_ON_PROJECT_CODE,
+    DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+    DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE: documentConstants.DOCUMENT_FOLDER_NOT_EMPTY_MESSAGE,
+    FORMATION_TEAM_NAME: 'formation',
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
+    ACCESS_CHECK_BATCH_SIZE: apiConstants.ACCESS_CHECK_BATCH_SIZE,
+    // The real fetchAllQueryResources paginator reads its page cap from this barrel (#4964).
+    QUERY_SERVICE_MAX_PAGES: apiConstants.QUERY_SERVICE_MAX_PAGES,
     // Real mapping rather than an empty stub, so a future getEmailCtr test exercises the actual
     // filter. No test calls getEmailCtr today — see the note on the focus filter in project.service.
     CLASSIFICATION_TO_EMAIL_TYPES: { 'LF Events': ['EVENT'] },
@@ -180,6 +209,7 @@ vi.mock('./access-check.service', () => ({
     public addProjectWriterToResource = addProjectWriterToResource;
     public checkAccess = checkAccess;
     public checkSingleAccessStrict = checkSingleAccessStrict;
+    public checkSingleAccess = checkSingleAccess;
   },
 }));
 vi.mock('./nats.service', () => ({
@@ -194,6 +224,7 @@ vi.mock('./etag.service', () => ({
   ETagService: class {
     public fetchWithETag = fetchWithETag;
     public updateWithETag = updateWithETag;
+    public deleteWithETag = deleteWithETag;
   },
 }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({ execute }), isMissingObjectError: vi.fn(() => false) } }));
@@ -2033,6 +2064,59 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
     service = new ProjectService();
   });
 
+  it.each([true, false])('returns a verified writer=%s when strict writer checking is requested', async (writer) => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
+    checkSingleAccessStrict.mockResolvedValueOnce(writer);
+
+    const result = await service.getProjectById(req, 'p1', true, false, false, true);
+
+    expect(result.writer).toBe(writer);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'p1', access: 'writer_guard' });
+    expect(addProjectWriterToResource).not.toHaveBeenCalled();
+  });
+
+  it('propagates an actual access-check outage and allows a later strict lookup to recover (#4688)', async () => {
+    // Exercise the real project -> access-check boundary, not a mock that assumes false is authoritative.
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    const outage = new MicroserviceError('access check unavailable', 503, 'SERVICE_UNAVAILABLE');
+    proxyRequest
+      .mockResolvedValueOnce({ uid: 'p1', slug: 'p1' })
+      .mockRejectedValueOnce(outage)
+      .mockResolvedValueOnce({ uid: 'p1', slug: 'p1' })
+      .mockResolvedValueOnce({ results: ['project:p1#writer_guard@user:synthetic-writer\ttrue'] });
+
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).rejects.toBe(outage);
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).resolves.toMatchObject({ writer: true });
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
+    expect(addProjectWriterToResource).not.toHaveBeenCalled();
+  });
+
+  it('does not turn an incomplete strict access-check response into a denial', async () => {
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' }).mockResolvedValueOnce({ results: [] });
+
+    await expect(service.getProjectById(req, 'p1', true, false, false, true)).rejects.toMatchObject({ code: 'ACCESS_CHECK_INCOMPLETE' });
+  });
+
+  it('preserves the ordinary non-strict lookup fallback for existing callers', async () => {
+    const { AccessCheckService } = await vi.importActual<typeof import('./access-check.service')>('./access-check.service');
+    Reflect.set(service, 'accessCheckService', new AccessCheckService());
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' }).mockRejectedValueOnce(new Error('fga unavailable'));
+
+    await expect(service.getProjectById(req, 'p1')).resolves.toMatchObject({ writer: false });
+  });
+
+  it('forwards opt-in strict writer checking through slug resolution', async () => {
+    const detail = vi.spyOn(service, 'getProjectById').mockResolvedValueOnce({ uid: 'p1', writer: true } as Project);
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1' });
+
+    await service.getProjectBySlug(req, 'test-project', false, false, true);
+
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, false, false, true);
+  });
+
   it('does not run the meeting_coordinator/auditor checks and returns neither field for a writer', async () => {
     proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1' });
     addProjectWriterToResource.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', writer: true });
@@ -2065,7 +2149,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
 
     await service.getProjectBySlug(req, 'p1', false, true);
 
-    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true);
+    expect(spy).toHaveBeenCalledWith(req, 'p1', true, false, true, false);
   });
 
   it('resolves the encoded slug via HTTP and retains the detail access and role checks', async () => {
@@ -2077,7 +2161,7 @@ describe('ProjectService — getProjectById / getProjectBySlug (GH-1955 auditor/
     await expect(service.getProjectBySlug(req, 'test project', true, true)).resolves.toBe(project);
 
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/slug-to-uid/test%20project', 'GET');
-    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true);
+    expect(detail).toHaveBeenCalledWith(req, 'p1', true, true, true, false);
     expect(legacyLookup).not.toHaveBeenCalled();
   });
 
@@ -2202,21 +2286,28 @@ describe('ProjectService — enrichWithProjectData', () => {
   it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
     vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(
       new Map([
-        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn' })],
+        ['fdn', foundationProject('fdn', { name: 'Fresh Foundation', slug: 'fresh-fdn', logo_url: 'https://logos.example/fdn.svg' })],
         ['child', childProject('child', 'fdn', { name: 'Fresh Child', slug: 'fresh-child' })],
       ])
     );
 
     const result = await service.enrichWithProjectData(req, [
-      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '' },
+      { project_uid: 'fdn', project_name: 'stale', project_slug: 'stale', is_foundation: false, parent_project_uid: '', project_logo_url: 'stale' },
       { project_uid: 'child', project_name: 'stale', project_slug: 'stale', is_foundation: true, parent_project_uid: 'stale-parent' },
     ]);
 
     // Fresh fields win on every mapped column — including is_foundation flipping both ways
     // (stale false -> computed true for the foundation; stale true -> computed false for the child).
     expect(result).toEqual([
-      { project_uid: 'fdn', project_name: 'Fresh Foundation', project_slug: 'fresh-fdn', is_foundation: true, parent_project_uid: '' },
-      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn' },
+      {
+        project_uid: 'fdn',
+        project_name: 'Fresh Foundation',
+        project_slug: 'fresh-fdn',
+        is_foundation: true,
+        parent_project_uid: '',
+        project_logo_url: 'https://logos.example/fdn.svg',
+      },
+      { project_uid: 'child', project_name: 'Fresh Child', project_slug: 'fresh-child', is_foundation: false, parent_project_uid: 'fdn', project_logo_url: '' },
     ]);
   });
 
@@ -2224,7 +2315,13 @@ describe('ProjectService — enrichWithProjectData', () => {
     vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
 
     const result = await service.enrichWithProjectData(req, [
-      { project_uid: 'gone', project_name: 'Payload Name', project_slug: 'payload-slug', parent_project_uid: 'payload-parent' },
+      {
+        project_uid: 'gone',
+        project_name: 'Payload Name',
+        project_slug: 'payload-slug',
+        parent_project_uid: 'payload-parent',
+        project_logo_url: 'payload-logo',
+      },
       { project_uid: 'gone2', project_name: 'Tiered', project_slug: 'tiered', is_foundation: true, parent_project_uid: 'p' },
     ]);
 
@@ -2234,6 +2331,7 @@ describe('ProjectService — enrichWithProjectData', () => {
       project_slug: 'payload-slug',
       parent_project_uid: 'payload-parent',
       is_foundation: undefined,
+      project_logo_url: 'payload-logo',
     });
     // The fail-soft contract: consumers treat undefined as "tier unknown" and fall back safely;
     // a coerced false would mislabel a foundation-owned entity as project-owned.
@@ -2863,5 +2961,348 @@ describe('ProjectService — getProjectIdBySlug', () => {
     natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'internal', message: 'boom' }) });
 
     await expect(service.getProjectIdBySlug(req, 'synthetic-project')).rejects.toThrow('Project slug lookup failed: internal');
+  });
+});
+
+// #4507: uid -> slug over the metadata subject, so a campaign_manager without `viewer` can name a project by uid.
+describe('ProjectService — getProjectSlugByUid', () => {
+  let service: ProjectService;
+  const uid = '00000000-0000-4000-8000-000000000001';
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a slug reply on the get_slug subject', async () => {
+    natsRequest.mockResolvedValue({ data: ' synthetic-project ' });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBe('synthetic-project');
+    expect(natsRequest).toHaveBeenCalledWith('lfx.projects-api.get_slug', expect.anything(), expect.anything());
+  });
+
+  it('answers null for the not_found error body, never a slug', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectSlugByUid(req, uid)).resolves.toBeNull();
+  });
+
+  // An unusable answer is the service's malfunction, not a miss: 502, so a caller never authorizes on it.
+  it.each([
+    ['another error body', JSON.stringify({ error: 'internal', message: 'boom' })],
+    ['an empty reply', ''],
+  ])('answers %s with a 502 MicroserviceError instead of reporting the project as missing', async (_label, data) => {
+    natsRequest.mockResolvedValue({ data });
+
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 502, code: 'BAD_GATEWAY', operation: 'get_project_slug_by_uid' });
+  });
+
+  // A lost answer is an outage, not a miss: 503 with the transport marker.
+  it.each([
+    ['a timeout', new Error('TIMEOUT')],
+    ['no responder', new Error('503 no responders')],
+    ['a closed connection', new Error('CONNECTION_CLOSED')],
+  ])('answers %s with a 503 transport MicroserviceError', async (_label, failure) => {
+    natsRequest.mockRejectedValue(failure);
+
+    const error = await service.getProjectSlugByUid(req, uid).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error).toMatchObject({ statusCode: 503, code: 'SERVICE_UNAVAILABLE', transportFailure: true, originalError: failure });
+  });
+});
+
+describe('ProjectService.updateFormationRecord', () => {
+  let service: ProjectService;
+  const req = { path: '/api/projects/project-1/formation-record' } as Request;
+
+  // Synthetic stored project with fields the formation card never edits — they must survive the PUT.
+  const stored = {
+    uid: 'project-1',
+    slug: 'cascade-data',
+    name: 'Cascade Data',
+    description: 'Synthetic project',
+    parent_uid: 'parent-1',
+    public: true,
+    is_foundation: false,
+    stage: 'Formation - Engaged',
+    category: 'Data',
+    funding_model: ['Membership'],
+    charter_url: 'https://cascade-data.example/charter',
+    legal_entity_name: 'Cascade Data LLC',
+    legal_entity_type: 'Series LLC',
+    autojoin_enabled: true,
+    logo_url: 'https://cascade-data.example/logo.png',
+    website_url: 'https://cascade-data.example',
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-02-01T00:00:00Z',
+  };
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    checkSingleAccessStrict.mockReset();
+    checkSingleAccess.mockReset();
+    checkSingleAccessStrict.mockResolvedValue(true);
+    checkSingleAccess.mockResolvedValue(true);
+    fetchWithETag.mockResolvedValue({ data: { ...stored }, etag: '7' });
+    updateWithETag.mockImplementation(async (_req: unknown, _svc: unknown, _path: unknown, _etag: unknown, body: unknown) => body);
+    service = new ProjectService();
+  });
+
+  it('writes the full stored object back with only the edited keys changed', async () => {
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1', 'update_formation_record');
+    const [, , path, etag, body] = updateWithETag.mock.calls[0];
+    expect(path).toBe('/projects/project-1');
+    expect(etag).toBe('7');
+    const expectedBase: Record<string, unknown> = { ...stored };
+    for (const key of ['uid', 'created_at', 'updated_at']) delete expectedBase[key];
+    expect(body).toEqual({ ...expectedBase, stage: 'Active', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('restores an omitted description before the PUT (GET-to-PUT)', async () => {
+    const noDescription: Record<string, unknown> = { ...stored };
+    delete noDescription['description'];
+    fetchWithETag.mockResolvedValue({ data: noDescription, etag: '4' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: 'Cascade Data Inc.' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ description: '', legal_entity_name: 'Cascade Data Inc.' });
+  });
+
+  it('clears a field sent as null', async () => {
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: null });
+
+    expect(updateWithETag.mock.calls[0][4]).not.toHaveProperty('legal_entity_name');
+  });
+
+  it('drops a cleared field and defaults a missing parent_uid to empty', async () => {
+    const rootProject: Record<string, unknown> = { ...stored };
+    delete rootProject['parent_uid'];
+    fetchWithETag.mockResolvedValue({ data: rootProject, etag: '3' });
+
+    await service.updateFormationRecord(req, 'project-1', { legal_entity_name: '' });
+
+    const body = updateWithETag.mock.calls[0][4] as Record<string, unknown>;
+    expect(body).not.toHaveProperty('legal_entity_name');
+    expect(body['parent_uid']).toBe('');
+  });
+
+  it('rejects a non-writer with NOT_PROJECT_WRITER before any upstream read', async () => {
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({ statusCode: 403, code: 'NOT_PROJECT_WRITER' });
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer_guard' });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects a writer outside the formation team with FORMATION_TEAM_REQUIRED before any upstream read', async () => {
+    checkSingleAccess.mockResolvedValue(false);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'FORMATION_TEAM_REQUIRED',
+    });
+
+    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'formation', access: 'member' });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the writer check cannot be resolved', async () => {
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toThrow('fga unavailable');
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Prospect stage', { stage: 'Prospect' }],
+    ['Confidential stage', { stage: 'Formation - Confidential' }],
+    ['unknown key', { slug: 'renamed' }],
+    ['Archived with an explicitly cleared dissolution date', { stage: 'Archived', entity_dissolution_date: '' }],
+    ['bad legal entity type', { legal_entity_type: 'Cooperative' }],
+    ['bad date', { formation_date: '04/11/2026' }],
+    ['non-http URL', { entity_formation_document_url: 'javascript:alert(1)' }],
+    ['empty body', {}],
+  ])('rejects %s with 400 before the guard or any upstream call', async (_label, body) => {
+    await expect(service.updateFormationRecord(req, 'project-1', body)).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects clearing the dissolution date of an already-Archived project before the PUT', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, stage: 'Archived', entity_dissolution_date: '2026-10-31' }, etag: '9' });
+
+    await expect(service.updateFormationRecord(req, 'project-1', { entity_dissolution_date: '' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects Archived on the merged record when no dissolution date is stored, after the read and before the PUT', async () => {
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Archived' })).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(fetchWithETag).toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('archives without resending a dissolution date that is already stored', async () => {
+    fetchWithETag.mockResolvedValue({ data: { ...stored, entity_dissolution_date: '2026-09-30' }, etag: '5' });
+
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-09-30' });
+  });
+
+  it('accepts Archived with a dissolution date', async () => {
+    await service.updateFormationRecord(req, 'project-1', { stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+
+    expect(updateWithETag.mock.calls[0][4]).toMatchObject({ stage: 'Archived', entity_dissolution_date: '2026-10-31' });
+  });
+
+  it('maps an upstream 409 on the write to the FORMATION_RECORD_CONFLICT code', async () => {
+    updateWithETag.mockRejectedValue(new MicroserviceError('conflict', 409, 'CONFLICT'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FORMATION_RECORD_CONFLICT',
+      clientMessage: 'Someone else changed this project. Reload to see the latest, then try again.',
+    });
+  });
+
+  it('maps a missing project to 404', async () => {
+    fetchWithETag.mockRejectedValue(new MicroserviceError('missing', 404, 'NOT_FOUND'));
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toMatchObject({ statusCode: 404 });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('passes unrelated upstream failures through unchanged', async () => {
+    const outage = new MicroserviceError('down', 503, 'SERVICE_UNAVAILABLE');
+    updateWithETag.mockRejectedValue(outage);
+
+    await expect(service.updateFormationRecord(req, 'project-1', { stage: 'Active' })).rejects.toBe(outage);
+  });
+});
+
+describe('ProjectService.deleteProjectDocument', () => {
+  let service: ProjectService;
+
+  /** Answers the two query-service lookups the folder-empty check makes, keyed by resource type. */
+  function mockChildren(children: { links?: unknown[]; files?: unknown[]; failOn?: string }): void {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) => {
+      if (params?.type === children.failOn) {
+        return Promise.reject(new Error('query service down'));
+      }
+      const rows = params?.type === 'project_link' ? (children.links ?? []) : (children.files ?? []);
+      return Promise.resolve({ resources: rows.map((data, i) => ({ id: `${params?.type}:${i}`, data })) });
+    });
+  }
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    deleteWithETag.mockReset();
+    fetchWithETag.mockResolvedValue({ data: {}, etag: 'etag-1' });
+    deleteWithETag.mockResolvedValue(undefined);
+    service = new ProjectService();
+  });
+
+  it.each([
+    ['link', '/projects/project-1/links/doc-1'],
+    ['file', '/projects/project-1/documents/doc-1'],
+  ] as const)('deletes a %s through its own upstream path with the fetched ETag', async (type, path) => {
+    await service.deleteProjectDocument(req, 'project-1', 'doc-1', type);
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'delete_project_document');
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', 'delete_project_document');
+    // Only folders are checked for children.
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('deletes an empty folder', async () => {
+    mockChildren({ links: [{ uid: 'link-1', folder_uid: 'other-folder' }], files: [{ uid: 'file-1' }] });
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    expect(deleteWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/project-1/folders/folder-1', 'etag-1', 'delete_project_document');
+  });
+
+  it.each([
+    ['link', { links: [{ uid: 'link-1', folder_uid: 'folder-1' }] }],
+    ['file', { files: [{ uid: 'file-1', folder_uid: 'folder-1' }] }],
+  ])('rejects a folder that still holds a %s with a 409 and deletes nothing', async (_kind, children) => {
+    mockChildren(children);
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'FOLDER_NOT_EMPTY',
+    });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a children lookup fails instead of treating the folder as empty', async () => {
+    mockChildren({ failOn: 'project_document' });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toThrow('query service down');
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it("looks links and files up by the folder's own folder_uid tag, not by listing every link and file of the project", async () => {
+    mockChildren({});
+
+    await service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder');
+
+    const queries = proxyRequest.mock.calls.map((call) => call[4]);
+    expect(queries).toHaveLength(2);
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        { type: 'project_link', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+        { type: 'project_document', tags_all: ['project_uid:project-1', 'folder_uid:folder-1'] },
+      ])
+    );
+  });
+
+  // The query service checks access after it paginates, so a page can have no visible rows while more remain.
+  it('follows the page token past a page with no visible rows and refuses when a later page holds a file', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string; page_token?: string }) => {
+      if (params?.type === 'project_document' && !params.page_token) {
+        return Promise.resolve({ resources: [], page_token: 'page-2' });
+      }
+      if (params?.type === 'project_document') {
+        return Promise.resolve({ resources: [{ id: 'project_document:f', data: { uid: 'file-1', folder_uid: 'folder-1' } }] });
+      }
+      return Promise.resolve({ resources: [] });
+    });
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409, code: 'FOLDER_NOT_EMPTY' });
+    expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+
+  it('stops at the first match instead of paging on', async () => {
+    proxyRequest.mockImplementation((_req: unknown, _svc: string, _path: string, _method: string, params?: { type?: string }) =>
+      Promise.resolve(
+        params?.type === 'project_link'
+          ? { resources: [{ id: 'project_link:l', data: { uid: 'link-1', folder_uid: 'folder-1' } }], page_token: 'more' }
+          : { resources: [] }
+      )
+    );
+
+    await expect(service.deleteProjectDocument(req, 'project-1', 'folder-1', 'folder')).rejects.toMatchObject({ statusCode: 409 });
+
+    const linkPages = proxyRequest.mock.calls.filter((call) => call[4]?.type === 'project_link');
+    expect(linkPages).toHaveLength(1);
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.deleteProjectDocument(req, 'project-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(deleteWithETag).not.toHaveBeenCalled();
   });
 });

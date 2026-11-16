@@ -50,6 +50,19 @@ describe('RowActionsComponent', () => {
     expect(picked).toEqual(['graduate']);
   });
 
+  it('renders an action with a url as a link, with nothing to emit', () => {
+    fixture.componentRef.setInput('actions', [
+      { value: 'contact-mentee', label: 'Contact Mentee', icon: 'fa-light fa-envelope', url: 'mailto:alex@example.com' },
+    ]);
+    fixture.detectChanges();
+
+    const [item] = fixture.componentInstance['menuItems']();
+    expect(item.url).toBe('mailto:alex@example.com');
+    // Opens in a new tab; unset, PrimeNG would render `target="undefined"`.
+    expect(item.target).toBe('_blank');
+    expect(item.command).toBeUndefined();
+  });
+
   it('falls back to an em dash when a row has no action left', () => {
     fixture.componentRef.setInput('actions', []);
     fixture.detectChanges();

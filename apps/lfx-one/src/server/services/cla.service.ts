@@ -10,7 +10,7 @@
 // authenticated user before searching and reports unverifiable keys in
 // `skippedIdentities` — SS surfaces that as identity-gap telemetry.
 
-import { MY_CLAS_PATH } from '@lfx-one/shared/constants';
+import { GITLAB_AUTH0_CONNECTION, GITLAB_AUTH0_PROVIDER, MY_CLAS_MAX_IDENTITY_KEYS, MY_CLAS_PATH } from '@lfx-one/shared/constants';
 import { isHttpsUrl } from '@lfx-one/shared/utils';
 import {
   Auth0Identity,
@@ -269,6 +269,33 @@ export function normalizeGithubId(rawUserId: string): string | null {
 }
 
 /**
+ * Normalizes a linked-identity GitLab ID to the bare numeric form EasyCLA keys on (#4191).
+ * Accepts a bare id ("4815162") or one carried after a single GitLab connection prefix
+ * ("gitlab|4815162", prefix compared case-insensitively as the producer does). Foreign or
+ * nested prefixes and non-decimal values return null; the id stays a string so a large one is
+ * never rounded through a JavaScript number.
+ */
+export function normalizeGitlabId(rawUserId: string): string | null {
+  const prefix = `${GITLAB_AUTH0_CONNECTION}|`;
+  const stripped = rawUserId.toLowerCase().startsWith(prefix) ? rawUserId.slice(prefix.length) : rawUserId;
+  return /^\d+$/.test(stripped) ? stripped : null;
+}
+
+/**
+ * Whether a linked identity came from the GitLab connection. `oauth2` is shared by every custom
+ * social connection, so the connection name must match too (fail closed) — the same predicate the
+ * Identities page applies.
+ */
+function isGitlabIdentity(identity: Auth0Identity): boolean {
+  return identity.provider === GITLAB_AUTH0_PROVIDER && identity.connection === GITLAB_AUTH0_CONNECTION;
+}
+
+/** Drops empty and repeated values, keeping first-seen order, then caps the list at `limit`. */
+function uniqueCapped(values: readonly (string | null | undefined)[], limit: number): string[] {
+  return [...new Set(values.filter((value): value is string => !!value))].slice(0, limit);
+}
+
+/**
  * Builds the deduplicated email set sent to `/v4/my-clas`. Contributors often sign under a
  * work email that is not their LFID primary, so all of the user's verified emails are sent
  * (#1227) — each via the indexed `email` query param.
@@ -491,8 +518,8 @@ export class ClaService {
 
   /**
    * Resolves the session identity to the identity-key set passed to `/v4/my-clas`:
-   * LF username, all of the user's verified emails, and linked GitHub numeric IDs *and*
-   * usernames.
+   * LF username, all of the user's verified emails, and linked GitHub and GitLab numeric IDs
+   * *and* usernames.
    *
    * All verified emails are sent (#1227), not just the session primary: contributors often
    * sign under a work email that differs from their LFID primary, so those signatures would
@@ -502,6 +529,10 @@ export class ClaService {
    * upstream against EasyCLA user records, while the username validates via the
    * platform user-service — which is the only path that authorizes a pre-LFID
    * GitHub signer whose numeric id has no EasyCLA LFID record.
+   *
+   * GitLab keys come only from identities linked through the GitLab connection (provider *and*
+   * connection must match), with the username read solely from `profileData.nickname`. Each
+   * GitLab list is deduplicated and capped at the upstream per-param limit (#4191).
    */
   public async resolveIdentity(req: Request): Promise<ResolvedClaIdentity> {
     const startTime = logger.startOperation(req, 'cla_resolve_identity');
@@ -510,7 +541,7 @@ export class ClaService {
     const primaryEmail = getEffectiveEmail(req);
     const auth0Sub = getEffectiveSub(req);
 
-    // The linked identities (GitHub keys) and the full verified-email set both come from the
+    // The linked identities (GitHub and GitLab keys) and the full verified-email set both come from the
     // auth-service; fetch them concurrently so the extra call adds no serial latency. Neither is
     // load-bearing: a NATS/auth-service failure degrades to LF-username + session-primary-email
     // resolution rather than failing the whole page. getUserEmails already returns null on
@@ -526,7 +557,7 @@ export class ClaService {
       if (identitiesResult.status === 'fulfilled') {
         identities = identitiesResult.value;
       } else {
-        logger.warning(req, 'cla_resolve_identity', 'linked-identity lookup failed; continuing without GitHub keys', {
+        logger.warning(req, 'cla_resolve_identity', 'linked-identity lookup failed; continuing without GitHub or GitLab keys', {
           err: identitiesResult.reason instanceof Error ? identitiesResult.reason.message : String(identitiesResult.reason),
         });
       }
@@ -547,18 +578,32 @@ export class ClaService {
     const githubUsernames = githubIdentities.map((i) => i.profileData?.nickname?.trim()).filter((name): name is string => !!name);
     const githubLinked = githubIdentities.length > 0;
 
+    const gitlabIdentities = identities.filter(isGitlabIdentity);
+    const gitlabIds = uniqueCapped(
+      gitlabIdentities.map((i) => (typeof i.user_id === 'string' ? normalizeGitlabId(i.user_id) : null)),
+      MY_CLAS_MAX_IDENTITY_KEYS
+    );
+    const gitlabUsernames = uniqueCapped(
+      gitlabIdentities.map((i) => (typeof i.profileData?.nickname === 'string' ? i.profileData.nickname.trim() : null)),
+      MY_CLAS_MAX_IDENTITY_KEYS
+    );
+
     const resolved: ResolvedClaIdentity = {
       lfUsername,
       emails,
       githubIds,
       githubUsernames,
       githubLinked,
+      gitlabIds,
+      gitlabUsernames,
     };
 
     logger.success(req, 'cla_resolve_identity', startTime, {
       github_linked: githubLinked,
       github_id_count: githubIds.length,
       github_username_count: githubUsernames.length,
+      gitlab_id_count: gitlabIds.length,
+      gitlab_username_count: gitlabUsernames.length,
       email_count: emails.length,
     });
     return resolved;
@@ -953,8 +998,8 @@ export class ClaService {
   /**
    * Builds the `/v4/my-clas` identity query from a resolved session identity.
    * `lfUsername` defaults to the authenticated principal upstream when omitted,
-   * but is sent explicitly for clarity. GitHub id and username are both sent (see
-   * resolveIdentity).
+   * but is sent explicitly for clarity. GitHub and GitLab ids and usernames are all sent
+   * (see resolveIdentity); the same query backs the list, PDF and CLA-manager reads and requests.
    */
   private identityQuery(identity: ResolvedClaIdentity): URLSearchParams {
     const params = new URLSearchParams();
@@ -968,6 +1013,12 @@ export class ClaService {
     }
     for (const githubUsername of identity.githubUsernames) {
       params.append('githubUsername', githubUsername);
+    }
+    for (const gitlabId of identity.gitlabIds) {
+      params.append('gitlabId', gitlabId);
+    }
+    for (const gitlabUsername of identity.gitlabUsernames) {
+      params.append('gitlabUsername', gitlabUsername);
     }
     return params;
   }

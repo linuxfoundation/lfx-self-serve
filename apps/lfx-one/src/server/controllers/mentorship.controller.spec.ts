@@ -50,12 +50,24 @@ describe('MentorshipController program review', () => {
   });
 
   it('returns the review for a program UUID', async () => {
-    const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue({ ...review, status: 'pending' });
+    const details = {
+      ...review,
+      status: 'pending' as const,
+      projectName: null,
+      description: null,
+      logoUrl: null,
+      repoUrl: null,
+      codeOfConductUrl: null,
+      ciiProjectId: null,
+      skills: [],
+      hasDetails: true,
+    };
+    const getProgramReview = vi.spyOn(MentorshipService.prototype, 'getProgramReview').mockResolvedValue(details);
 
     await controller.getProgramReview(buildReq({ programId }), res, next);
 
     expect(getProgramReview).toHaveBeenCalledWith(expect.anything(), programId);
-    expect(res.json).toHaveBeenCalledWith({ ...review, status: 'pending' });
+    expect(res.json).toHaveBeenCalledWith(details);
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -117,7 +129,8 @@ describe('MentorshipController enroll lookups', () => {
   let res: Response;
   let next: NextFunction;
 
-  const buildReq = (query: Record<string, string>): Request => ({ query }) as unknown as Request;
+  // Express parses a repeated query param into an array.
+  const buildReq = (query: Record<string, string | string[]>): Request => ({ query }) as unknown as Request;
 
   beforeEach(() => {
     controller = new MentorshipController();
@@ -200,6 +213,27 @@ describe('MentorshipController enroll lookups', () => {
     expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: 'alp', pageToken: 'cursor-2', limit: 5 });
     expect(res.json).toHaveBeenCalledWith(page);
   });
+
+  it('passes a parent project through, so the Foundation lens picker lists its sub-projects only', async () => {
+    const parentUid = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+    const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects').mockResolvedValue({ data: [] });
+
+    await controller.getLfProjects(buildReq({ parentUid: ` ${parentUid} ` }), res, next);
+
+    expect(getLfProjects).toHaveBeenCalledWith(expect.anything(), { search: undefined, pageToken: undefined, limit: undefined, parentUid });
+  });
+
+  it.each([['cncf'], [['7c9e6679-7425-40de-944b-e07fc1f90ae7', '0b8a4c62-0d1e-4a55-9a3c-2f6e8d9b1c47']]])(
+    'rejects a parent project %j that is not one UUID with a 400, rather than listing every project',
+    async (parentUid) => {
+      const getLfProjects = vi.spyOn(MentorshipService.prototype, 'getLfProjects');
+
+      await controller.getLfProjects(buildReq({ parentUid }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
+      expect(getLfProjects).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe('MentorshipController LFX profile sync', () => {

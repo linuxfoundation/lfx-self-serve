@@ -41,13 +41,8 @@
       title="Organization participation unavailable"
       subtitle="We could not load organization participation for this foundation. Refresh the page to try again."
       data-testid="engagement-org-participation-error" />
-  } @else if (!loading() && scopeEmpty()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-building"
-      title="No organizations recorded for this scope"
-      subtitle="The analytics model has no organization participation records for this foundation."
-      data-testid="engagement-org-participation-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       variant="compact"
@@ -72,12 +67,12 @@
       data-testid="engagement-org-participation-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meetings attended</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Avg reps</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Last engaged</span></th>
-          <th scope="col" class="w-[150px]"><span class="text-[12px] font-normal text-gray-500">Attendance</span></th>
+          <th scope="col">Organization</th>
+          <th scope="col">Tier</th>
+          <th scope="col">Meetings attended</th>
+          <th scope="col">Avg reps</th>
+          <th scope="col">Last engaged</th>
+          <th scope="col" class="w-[150px]">Attendance</th>
         </tr>
       </ng-template>
 

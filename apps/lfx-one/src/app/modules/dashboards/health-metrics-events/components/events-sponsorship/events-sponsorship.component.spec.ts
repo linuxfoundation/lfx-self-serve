@@ -46,6 +46,7 @@ describe('EventsSponsorshipComponent', () => {
   let getEventsSponsorship: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   async function render(payload: HealthMetricsEventsSponsorship | Error = sponsorship()): Promise<void> {
     getEventsSponsorship = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -62,7 +63,10 @@ describe('EventsSponsorshipComponent', () => {
 
     fixture = TestBed.createComponent(EventsSponsorshipComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -89,6 +93,7 @@ describe('EventsSponsorshipComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation once and settles', async () => {
@@ -97,6 +102,7 @@ describe('EventsSponsorshipComponent', () => {
     expect(getEventsSponsorship).toHaveBeenCalledTimes(1);
     expect(getEventsSponsorship).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(query('events-sponsorship-loading')).toBeNull();
   });
 
@@ -186,19 +192,21 @@ describe('EventsSponsorshipComponent', () => {
     expect(query('events-sponsorship-tiers-empty')).not.toBeNull();
   });
 
-  it('marks a period the read carries no figures for as unmeasured', async () => {
+  it('settles empty, with no body, for a period the read carries no figures for', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
 
-    expect(query('events-sponsorship-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(query('events-sponsorship-hero')).toBeNull();
   });
 
-  it('shows the foundation-level empty state when the read carries no period', async () => {
+  it('settles empty, with no body, when the read carries no period', async () => {
     await render(sponsorship([]));
 
-    expect(query('events-sponsorship-foundation-unmeasured')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
+    expect(query('events-sponsorship-hero')).toBeNull();
   });
 
   it('shows the error state and still settles when the read fails', async () => {
@@ -206,6 +214,7 @@ describe('EventsSponsorshipComponent', () => {
 
     expect(query('events-sponsorship-error')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('holds the skeleton without reading or settling until a foundation is selected', async () => {

@@ -475,6 +475,11 @@ export interface SidebarMenuItem {
   activeOnSubpaths?: boolean;
   /** Further paths that also highlight this item, matched with the same options as `routerLink` */
   activeAliases?: string[];
+  /**
+   * Query parameters this link copies from the current address, only while the current page is an item that carries the
+   * same parameter — e.g. the Org Lens range between People and Code Contributions. Absent ones are not added.
+   */
+  carryQueryParams?: readonly string[];
   /** External URL */
   url?: string;
   /** Target for external links */
@@ -742,6 +747,8 @@ export interface DrawerActionSection {
   label: string;
   /** Rows in this section, preserving the feed's relative order within the section. */
   rows: DrawerActionRow[];
+  /** Rows a section-level "Dismiss all" would dismiss — empty when the section offers none (invitations, applications, formation) or its rows are still loading. */
+  dismissibleRows: DrawerActionRow[];
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */
@@ -900,3 +907,6 @@ export interface TabOption<T = string> {
   /** Tab manages its own per-item save flow, so shared save/cancel footer should stay hidden */
   savesInline?: boolean;
 }
+
+/** Neutral Marketing OS loading shapes; never a guessed domain state. */
+export type MktgSkeletonVariant = 'run-page' | 'header' | 'card' | 'rows';

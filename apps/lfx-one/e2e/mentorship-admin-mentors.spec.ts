@@ -10,7 +10,7 @@
  * Delete is not offered: upstream's DELETE only withdraws an approved mentor, which Remove already does.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the browser makes the calls and the stubs
- * answer them. The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * answer them.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -20,7 +20,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   MENTOR_ACTIVE_ID,
   MENTOR_DECLINED_ID,
@@ -50,7 +50,6 @@ function countProgramReads(page: Page): { count: () => number } {
 }
 
 async function open(page: Page, state: MentorStubState, writeStatus?: number): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, { mentees: [], tasks: [] });
   await stubAdminTasks(page, { mentees: [], tasks: [] });

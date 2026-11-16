@@ -3,6 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, ElementRef, inject, input, output, PLATFORM_ID, viewChildren } from '@angular/core';
+import { BadgeComponent } from '@components/badge/badge.component';
 import type { FilterPillOption } from '@lfx-one/shared/interfaces';
 
 /**
@@ -15,6 +16,7 @@ import type { FilterPillOption } from '@lfx-one/shared/interfaces';
  */
 @Component({
   selector: 'lfx-formation-page-tabs',
+  imports: [BadgeComponent],
   templateUrl: './formation-page-tabs.component.html',
 })
 export class FormationPageTabsComponent {

@@ -54,12 +54,9 @@ describe('EngagementNonMemberParticipationComponent', () => {
   let fixture: ComponentFixture<EngagementNonMemberParticipationComponent>;
   let getEngagementNonMemberParticipation: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let verdicts: boolean[];
 
-  async function render(
-    payload: HealthMetricsEngagementNonMemberParticipation | Error = response(),
-    onCounts?: (counts: unknown) => void,
-    lifecycle?: string[]
-  ): Promise<void> {
+  async function render(payload: HealthMetricsEngagementNonMemberParticipation | Error = response(), lifecycle?: string[]): Promise<void> {
     getEngagementNonMemberParticipation = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
 
     await TestBed.configureTestingModule({
@@ -74,7 +71,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(EngagementNonMemberParticipationComponent);
-    if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
+    fixture.componentInstance.settled.subscribe((empty) => verdicts.push(empty));
     // Subscribed before the first change detection, so the initial read's own pair is recorded.
     if (lifecycle) {
       fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
@@ -88,6 +85,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
+    verdicts = [];
   });
 
   it('reads the selected foundation and renders the returned rows', async () => {
@@ -98,6 +96,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('12');
     expect(row.textContent).toContain('Non-member');
+    expect(verdicts).toEqual([false]);
   });
 
   // The design's columns: no First seen or Last attended.
@@ -167,18 +166,15 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
   });
 
-  it('emits the selected period scope count for the sub-nav badge, and nothing while a read is in flight', async () => {
-    const emitted: unknown[] = [];
-    await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
+  it('captions the selected period scope count', async () => {
+    await render(response({ counts: periodCounts(19, 33) }));
 
-    expect(emitted).toEqual([null, { range: 'YTD', orgs: 19 }]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('19 organizations');
   });
 
-  // The view counts its scope per period, so the caption and badge follow the pill without a re-read.
-  it('re-captions and re-reports the badge when the period changes', async () => {
-    const emitted: unknown[] = [];
-    await render(response({ counts: periodCounts(19, 33) }), (counts) => emitted.push(counts));
+  // The view counts its scope per period, so the caption follows the pill without a re-read.
+  it('re-captions and re-settles when the period changes', async () => {
+    await render(response({ counts: periodCounts(19, 33) }));
     getEngagementNonMemberParticipation.mockClear();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
@@ -186,7 +182,8 @@ describe('EngagementNonMemberParticipationComponent', () => {
     await fixture.whenStable();
 
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
-    expect(emitted.at(-1)).toEqual({ range: 'COMPLETED_YEAR', orgs: 33 });
+    // The period re-settles too, since whether it has any non-member moves the section's height.
+    expect(verdicts).toEqual([false, false]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('33 organizations');
   });
 
@@ -216,77 +213,68 @@ describe('EngagementNonMemberParticipationComponent', () => {
   });
 
   // Organizations on record with none active in the period are a measured zero, not an empty foundation.
-  it('renders the period-empty state when no organization attended in the selected period', async () => {
+  it('settles empty, with no body, when no organization attended in the selected period', async () => {
     const rows = [nonMemberRow({ periods: [{ range: 'YTD', meetingsAttended: 0, distinctPeople: 0, sortRank: 1 }] })];
     await render(response({ rows, counts: periodCounts(0) }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-empty"]')?.textContent).toContain(
-      'No non-member organizations attended a meeting in this period'
-    );
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('0 organizations');
   });
 
-  // Null attendance and a null count are unmeasured, so the section must not claim nobody attended.
-  it('renders the unmeasured state, not the period-empty state, when attendance was not measured', async () => {
+  // Null attendance and a null count are unmeasured, so the caption must not claim nobody attended.
+  it('settles empty, with no body, when attendance was not measured, captioning an em dash rather than zero', async () => {
     const rows = [nonMemberRow({ periods: [{ range: 'YTD', meetingsAttended: null, distinctPeople: null, sortRank: null }] })];
     await render(response({ rows, counts: null }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-unmeasured"]')?.textContent).toContain(
-      'Non-member attendance is not available for this period'
-    );
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-empty"]')).toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
   });
 
   // A view that reports no scope count has not measured zero organizations, and the table says so.
-  it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
-    const emitted: unknown[] = [];
-    await render(response({ counts: null }), (counts) => emitted.push(counts));
+  it('captions an unmeasured scope with an em dash rather than a confident zero, keeping its rows', async () => {
+    await render(response({ counts: null }));
 
-    expect(emitted).toEqual([null, null]);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
+    // Unmeasured counts only caption the rows; the table still has them, so the section is not empty.
+    expect(verdicts).toEqual([false]);
   });
 
   // A failed read is not an empty foundation, and the two states must not render the same card.
   it('renders the error state, not the empty state, when the read fails', async () => {
-    const emitted: unknown[] = [];
-    await render(new Error('boom'), (counts) => emitted.push(counts));
+    await render(new Error('boom'));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-error"]')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).toBeNull();
-    expect(emitted).toEqual([null, null]);
+    expect(verdicts).toEqual([false]);
   });
 
-  // The server answers a zero-row read with null counts, so the empty-scope state renders.
-  it('renders the empty-scope state for a foundation with no rows', async () => {
+  // The server answers a zero-row read with null counts, so the section settles empty.
+  it('settles empty, with no body, for a foundation with no rows', async () => {
     await render(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
 
-    const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]');
-    expect(empty?.textContent).toContain('No non-member organizations recorded for this foundation');
+    expect(verdicts).toEqual([true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
   });
 
   // The container holds a deep link's scroll until every section reports, so both ends must fire.
   it('reports each read starting and settling', async () => {
     const lifecycle: string[] = [];
-    await render(response(), undefined, lifecycle);
+    await render(response(), lifecycle);
 
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
   it('holds the skeleton and withholds the settle while no foundation is selected', async () => {
-    const emitted: unknown[] = [];
     const lifecycle: string[] = [];
     selectedFoundation.set(null);
-    await render(response(), (counts) => emitted.push(counts), lifecycle);
+    await render(response(), lifecycle);
 
     expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
-    expect(emitted).toEqual([null, null]);
     // Settling here would release the container's pending deep link before any read has reflowed
     // the pane, and no later read can re-arm a fragment that is already gone.
     expect(lifecycle).toEqual(['reading']);
     expect(fixture.componentInstance['loading']()).toBe(true);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-error"]')).toBeNull();
   });
 
@@ -294,7 +282,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
   it('reads the new foundation and restarts paging when the selection switches', async () => {
     const lifecycle: string[] = [];
     selectedFoundation.set(null);
-    await render(response(), undefined, lifecycle);
+    await render(response(), lifecycle);
     fixture.componentInstance['onTablePage']({ first: 25, rows: 25 });
 
     selectedFoundation.set({ slug: 'globex' });
@@ -318,6 +306,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
     // Unlike "none selected yet", this scope was read once — holding the skeleton here would leave
     // the section loading forever with nothing left to resolve it.
     expect(fixture.componentInstance['loading']()).toBe(false);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-table"]')).toBeNull();
   });
 });

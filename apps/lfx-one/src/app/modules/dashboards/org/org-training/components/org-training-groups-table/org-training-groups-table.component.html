@@ -1,0 +1,199 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="org-training-groups">
+  @if (error()) {
+    <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" role="alert" data-testid="org-training-groups-error">
+      <i class="fa-light fa-triangle-exclamation text-3xl text-amber-500" aria-hidden="true"></i>
+      <h3 class="text-gray-700 font-medium">Couldn't load {{ tab() === 'certifications' ? 'certifications' : 'trainings' }}</h3>
+      <p class="text-sm text-gray-500">Something went wrong fetching this organization's training numbers. Please try again.</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-arrow-rotate-left"
+        severity="secondary"
+        size="small"
+        (onClick)="retry()"
+        data-testid="org-training-groups-retry" />
+    </div>
+  } @else {
+    <lfx-table
+      [value]="rows()"
+      [loading]="loading()"
+      [lazy]="true"
+      [paginator]="groups().total > 0"
+      [rows]="pageSize()"
+      [first]="offset()"
+      [totalRecords]="groups().total"
+      [rowsPerPageOptions]="rppOptions()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      paginatorPosition="bottom"
+      (onPage)="onPageChange($event)"
+      data-testid="org-training-groups-data-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col" [attr.aria-sort]="sortAriaMap()['label']" data-testid="sort-label">
+            <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('label')">
+              {{ groupLabel() }} <i [class]="sortIcons()['label']" aria-hidden="true"></i>
+            </button>
+          </th>
+          <th scope="col" [attr.aria-sort]="sortAriaMap()['people']" data-testid="sort-people">
+            <button
+              type="button"
+              class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+              (click)="onHeaderClick('people')">
+              People <i [class]="sortIcons()['people']" aria-hidden="true"></i>
+            </button>
+          </th>
+          <th scope="col" [attr.aria-sort]="sortAriaMap()['coursesTaken']" data-testid="sort-courses-taken">
+            <button
+              type="button"
+              class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+              (click)="onHeaderClick('coursesTaken')">
+              Courses taken <i [class]="sortIcons()['coursesTaken']" aria-hidden="true"></i>
+            </button>
+          </th>
+          <th scope="col" [attr.aria-sort]="sortAriaMap()['completed']" data-testid="sort-completed">
+            <button
+              type="button"
+              class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+              (click)="onHeaderClick('completed')">
+              {{ completedLabel() }} <i [class]="sortIcons()['completed']" aria-hidden="true"></i>
+            </button>
+          </th>
+          <th scope="col" [attr.aria-sort]="sortAriaMap()['inProgress']" data-testid="sort-in-progress">
+            <button
+              type="button"
+              class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+              (click)="onHeaderClick('inProgress')">
+              In progress <i [class]="sortIcons()['inProgress']" aria-hidden="true"></i>
+            </button>
+          </th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-row let-rowIndex="rowIndex">
+        <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'org-training-group-row-' + row.key">
+          <!-- Group label (+ logo, foundation and level where they are meaningful) -->
+          <td>
+            <div class="flex items-center gap-3 min-w-0">
+              @if (row.logoUrl) {
+                <img
+                  [src]="row.logoUrl"
+                  alt=""
+                  class="h-8 w-8 flex-shrink-0 rounded object-contain"
+                  [attr.data-testid]="'org-training-group-logo-' + row.key" />
+              }
+              <div class="flex flex-col min-w-0">
+                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'org-training-group-name-' + row.key">{{ row.label }}</span>
+                @if (row.meta) {
+                  <span class="text-xs text-gray-500" [attr.data-testid]="'org-training-group-meta-' + row.key">{{ row.meta }}</span>
+                }
+              </div>
+            </div>
+          </td>
+
+          <!-- People -->
+          <td [attr.data-testid]="'org-training-group-people-' + row.key">
+            <span class="text-sm text-gray-900">{{ row.people | number }}</span>
+          </td>
+
+          <!-- Courses taken -->
+          <td [attr.data-testid]="'org-training-group-courses-taken-' + row.key">
+            <span class="text-sm text-gray-900">{{ row.coursesTaken | number }}</span>
+          </td>
+
+          <!-- Certified / Completed -->
+          <td [attr.data-testid]="'org-training-group-completed-' + row.key">
+            @if (row.completed > 0) {
+              <button
+                type="button"
+                class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+                [attr.aria-label]="row.completedAriaLabel"
+                [attr.data-testid]="'org-training-group-completed-button-' + row.key"
+                (click)="openDrawer(row, 'completed')">
+                {{ row.completed | number }}
+              </button>
+            } @else {
+              <span class="text-xs text-gray-400">&mdash;</span>
+            }
+          </td>
+
+          <!-- In progress -->
+          <td [attr.data-testid]="'org-training-group-in-progress-' + row.key">
+            @if (row.inProgress > 0) {
+              <button
+                type="button"
+                class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
+                [attr.aria-label]="row.inProgressAriaLabel"
+                [attr.data-testid]="'org-training-group-in-progress-button-' + row.key"
+                (click)="openDrawer(row, 'in-progress')">
+                {{ row.inProgress | number }}
+              </button>
+            } @else {
+              <span class="text-xs text-gray-400">&mdash;</span>
+            }
+          </td>
+        </tr>
+      </ng-template>
+
+      <!-- Totals over the whole tab: only Certified / Completed equals its stat tile for the same range and filters; In progress and People per tab can differ (ORG_TRAINING_GROUPS_SCOPE_NOTES). Hidden while a request is pending: the retained response is the previous view's. -->
+      <ng-template #footer>
+        @if (!loading() && groups().totals.coursesTaken > 0) {
+          <tr data-testid="org-training-groups-totals" [attr.title]="totalsNote()">
+            <td class="text-sm font-medium text-gray-900">
+              Total
+              <span class="sr-only" data-testid="org-training-groups-totals-note">{{ totalsNote() }}</span>
+            </td>
+            <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-people">{{ groups().totals.people | number }}</td>
+            <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-courses-taken">
+              {{ groups().totals.coursesTaken | number }}
+            </td>
+            <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-completed" [attr.aria-label]="totalCompletedAriaLabel()">
+              {{ groups().totals.completed | number }}
+            </td>
+            <td class="text-sm font-medium text-gray-900" data-testid="org-training-groups-totals-in-progress">{{ groups().totals.inProgress | number }}</td>
+          </tr>
+          <tr>
+            <td colspan="5" class="text-xs text-gray-500">
+              <p class="m-0" data-testid="org-training-groups-scope-note">{{ scopeNote() }}</p>
+            </td>
+          </tr>
+        }
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="5" class="text-center py-10">
+            <div class="flex items-center justify-center p-16">
+              <div class="text-center max-w-md">
+                <div class="text-gray-400 mb-4">
+                  <i class="fa-light fa-award text-3xl mb-4" aria-hidden="true"></i>
+                  <h3 class="text-gray-600 mt-2" data-testid="org-training-groups-empty-title">{{ emptyTitle() }}</h3>
+                  <p class="text-sm text-gray-400 mt-1">Try adjusting the range, filters or search.</p>
+                </div>
+                <a
+                  [href]="browseUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="lfx-table-name-link text-sm"
+                  data-testid="org-training-groups-browse-link">
+                  Browse courses
+                </a>
+              </div>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+
+  <lfx-org-training-group-employees-drawer
+    [(visible)]="drawerVisible"
+    [orgUid]="orgUid()"
+    [query]="query()"
+    [params]="drawerParams()"
+    [label]="drawerLabel()"
+    [count]="drawerCount()" />
+</div>

@@ -6,6 +6,7 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipApplicantTaskStatus,
   MentorshipMenteeStatus,
+  MentorshipMentorProgramStatus,
   MentorshipMentorStatus,
   MentorshipProgramStatus,
   MentorshipUpstreamApplicationStatus,
@@ -43,6 +44,14 @@ export const MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH = `${MENTORSHIP_BOOTSTRAP_PA
 
 /** Upstream path for the programs the signed-in user administers, with their program-wide counts and `admin_status`. */
 export const MENTORSHIP_ME_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/programs`;
+
+/**
+ * Upstream projects root. `/{projectUid}/programs` lists every program of the project in any status, with the same rows,
+ * order and filters as {@link MENTORSHIP_ME_PROGRAMS_PATH}, and with `include_subprojects=true` its sub-projects' programs
+ * too (lfx-mentorship#415). The gateway checks `mentorship_program_creator` on the project: its writers, or its mentorship
+ * program admins (lfx-mentorship#398).
+ */
+export const MENTORSHIP_PROJECTS_PATH = '/mentorship/v1/projects';
 
 /** Upstream path for the published programs the signed-in user is an active mentor of, with their status and program-wide counts. */
 export const MENTORSHIP_ME_MENTOR_PROGRAMS_PATH = `${MENTORSHIP_BOOTSTRAP_PATH}/mentor-programs`;
@@ -151,9 +160,9 @@ export const MENTORSHIP_ADMIN_MENTEE_STATUS_FILTER_TO_UPSTREAM: Readonly<Record<
 export const MENTORSHIP_ADMIN_WITHDRAWABLE_STATUSES: readonly MentorshipUpstreamApplicationStatus[] = ['pending', 'hold', 'accepted'];
 
 /**
- * How a program's own status reads on its page when the program is not published. A published program reads
- * `open` or `completed` from its terms. The header route has no `admin_status`, so the BFF maps the status itself;
- * any other value reads as pending review and is flagged as unknown.
+ * How a program's own status reads on its page when the program is not published. A published program reads its
+ * status from its terms (`mentorshipPublishedProgramStatus`). The header route has no `admin_status`, so the BFF maps
+ * the status itself; any other value reads as pending review and is flagged as unknown.
  */
 export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string, MentorshipProgramStatus>> = {
   pending: 'pending-review',
@@ -161,11 +170,21 @@ export const MENTORSHIP_ADMIN_UNPUBLISHED_PROGRAM_STATUS: Readonly<Record<string
   hidden: 'hidden',
 };
 
+/**
+ * How upstream groups a published program by its terms, as the BFF shows it: the published values of the admin list's
+ * `admin_status` and the mentor list's `status`.
+ */
+export const MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipMentorProgramStatus>> = {
+  accepting: 'accepting',
+  in_progress: 'in-progress',
+  upcoming: 'upcoming',
+  completed: 'completed',
+};
+
 /** Upstream `admin_status` of an administered program, as the BFF shows it. Upstream groups the program status with its terms. */
 export const MENTORSHIP_ADMIN_PROGRAM_STATUS_BY_UPSTREAM: Readonly<Record<string, MentorshipProgramStatus>> = {
-  open: 'open',
+  ...MENTORSHIP_PUBLISHED_PROGRAM_STATUS_BY_UPSTREAM,
   pending_review: 'pending-review',
-  completed: 'completed',
   rejected: 'rejected',
   hidden: 'hidden',
 };

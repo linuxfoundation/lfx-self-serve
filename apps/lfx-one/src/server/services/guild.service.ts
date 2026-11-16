@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_AGENT_INTAKES, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '@lfx-one/shared/constants';
-import { GuildSessionEvent, MktgChatMessage, MktgRunOutcomeSource, MktgFailedRunOutcome } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENT_INTAKES, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED, MKTG_RAW_EVENTS_MAX_PAGES } from '@lfx-one/shared/constants';
+import { GuildSessionEvent, GuildRawEventsPage, MktgChatMessage, MktgRunOutcomeSource, MktgFailedRunOutcome } from '@lfx-one/shared/interfaces';
 import { mktgRunFailureFromPayloads } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -31,9 +31,8 @@ const GUILD_EVENT_TYPES = 'trigger_message,agent_notification_message,user_messa
 // per-viewer timestamp localization deferred to LFXAI-99.
 const GUILD_HISTORY_LIMIT = 100;
 
-// Max raw events fetched when scanning a session for the Brand Kit output
-// envelope. Raw mode includes system events (llm_start/llm_done, task events),
-// which are far chattier than chat history — hence the higher cap.
+// Raw events per offset page when scanning a session for agent output.
+// System events are chattier than chat history; the shared page cap bounds reads.
 const GUILD_RAW_EVENTS_LIMIT = 500;
 
 // Leading `@mention` prefix — matches an @handle followed by whitespace OR the
@@ -52,6 +51,12 @@ export class GuildService {
   // Share the controller's event read with the outcome adapter, only for this
   // request. Never cache sessions across users or polls.
   private static readonly resultPayloads = new WeakMap<Request, { sessionId: string; payloads: string[] }>();
+
+  // Single-flight (request coalescing): concurrent polls of one session share
+  // ONE in-flight paged read instead of each pulling every page. The entry is
+  // deleted when the read settles, so a rejection is never cached. Per process
+  // only: pods do not share it, and nothing is kept once the read settles.
+  private static readonly inFlightRawReads = new Map<string, Promise<string[]>>();
 
   private get apiUrl(): string {
     // Strip trailing slashes so a configured `https://host/` doesn't produce `https://host//api/...`.
@@ -165,6 +170,19 @@ export class GuildService {
     return data.id;
   }
 
+  /** Best-effort stop after an explicit discard; tracking stays closed even if Guild is unavailable. */
+  public async interruptSession(req: Request, sessionId: string): Promise<void> {
+    const operation = 'guild_interrupt_session';
+    try {
+      this.assertConfigured(operation);
+      // Mirrors `guild session interrupt <id>`: POST /sessions/{id}/interrupt with an empty body — @guildai/cli src/commands/session/interrupt.ts.
+      const response = await this.fetchGuild(`/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, { method: 'POST', body: '{}' }, operation);
+      if (!response.ok) logger.warning(req, operation, 'Discarded session could not be interrupted', { session_id: sessionId, status: response.status });
+    } catch (err) {
+      logger.warning(req, operation, 'Discarded session could not be interrupted', { session_id: sessionId, err });
+    }
+  }
+
   /**
    * Post a follow-up message to an existing Guild session.
    */
@@ -217,48 +235,27 @@ export class GuildService {
    *
    * User-originated CONTENT (`user_message`, `trigger_message`) is excluded:
    * intake answers could plant an envelope, so only a content-free queued-turn
-   * marker survives. A full page also carries an incomplete-page marker so
-   * completion consumers cannot fail a turn whose later work is outside the cap.
+   * marker survives. Only a page-cap overflow carries an incomplete-page marker,
+   * so completion consumers cannot settle a turn from an incomplete history.
    * The authoritative envelope only ever rides
    * agent/system events (llm_start/llm_done bodies, notifications, runtime_done).
+   *
+   * Guild serves events OLDEST-first, so the receipt and the root envelope sit
+   * on the last page: the page loop is offset pagination bounded by the server's
+   * `pagination.total_count` under the explicit absolute cap
+   * `MKTG_RAW_EVENTS_MAX_PAGES` (never a fixed page count), with the `has_more`
+   * rule as the fallback when the total is absent. Concurrent calls for one
+   * session share one read (see `inFlightRawReads`).
    */
   public async getRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
     this.assertConfigured('guild_get_raw_events');
 
-    const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}`;
-
-    logger.debug(req, 'guild_get_raw_events', 'Fetching raw Guild session events', {});
-
-    const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
-    await this.assertOk(response, 'guild_get_raw_events', path);
-
-    const data = (await response.json()) as { items?: { created_at?: string; type?: string }[] };
-    const rawItems = data.items || [];
-    // Retain only the timing of queued turns, never their caller-controlled content.
-    const items = rawItems.map((item) =>
-      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
-    );
-
-    // Last-valid-wins selection downstream depends on chronological order —
-    // normalize it here instead of trusting the API's ordering.
-    const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
-
-    // Truncation guard: a full page means the session may have more events than
-    // the cap, so the terminal envelope could be missing (or a stale draft could
-    // win). Surface it loudly; pagination is a follow-up if real sessions hit it.
-    // The limit applies to the UNFILTERED response — check the raw count, or a
-    // full page would slip under the threshold after user-event filtering.
-    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
-      logger.warning(req, 'guild_get_raw_events', 'Raw event page is full — session may be truncated', {
-        count: rawItems.length,
-        limit: GUILD_RAW_EVENTS_LIMIT,
-      });
+    let read = GuildService.inFlightRawReads.get(sessionId);
+    if (!read) {
+      read = this.readRawEventPayloads(req, sessionId).finally(() => GuildService.inFlightRawReads.delete(sessionId));
+      GuildService.inFlightRawReads.set(sessionId, read);
     }
-
-    const payloads = sorted.map((item) => JSON.stringify(item));
-    if (rawItems.length >= GUILD_RAW_EVENTS_LIMIT) {
-      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
-    }
+    const payloads = await read;
     GuildService.resultPayloads.set(req, { sessionId, payloads });
     return payloads;
   }
@@ -269,10 +266,16 @@ export class GuildService {
   }
 
   /** One best-effort outcome step, after authorization and before result logging/persistence. */
-  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(req: Request, sessionId: string, result: T): Promise<T | MktgFailedRunOutcome> {
+  public async resolveRunOutcome<T extends MktgRunOutcomeSource>(
+    req: Request,
+    sessionId: string,
+    result: T,
+    resultEndpoint?: string
+  ): Promise<T | MktgFailedRunOutcome> {
     if (result.status === 'ready' || result.status === 'refused' || result.status === 'failed') return result;
     if (result.status !== 'pending' && result.status !== 'questions') return result;
-    const endpoint = (req.originalUrl ?? req.path ?? '').split('?')[0];
+    // Internal document reconciliation supplies its catalog endpoint without changing the visiting Request.
+    const endpoint = resultEndpoint ?? (req.originalUrl ?? req.path ?? '').split('?')[0];
     if (!Object.values(MKTG_AGENT_INTAKES).some((intake) => intake.endpoints.result === endpoint || intake.endpoints.result === `/api/mktg-agents${endpoint}`))
       return result;
     try {
@@ -287,6 +290,62 @@ export class GuildService {
       logger.warning(req, 'mktg_run_failure_lookup', 'Could not check the Guild outcome; keeping the current result', { err: error });
       return result;
     }
+  }
+
+  /** The paged read behind `getRawEventPayloads`; one in flight per session. */
+  private async readRawEventPayloads(req: Request, sessionId: string): Promise<string[]> {
+    logger.debug(req, 'guild_get_raw_events', 'Fetching raw Guild session events', {});
+    const rawItems: Partial<GuildSessionEvent>[] = [];
+    const ids = new Set<string>();
+    let totalCount: number | undefined;
+    let hasMore = false;
+    for (let page = 0; page < MKTG_RAW_EVENTS_MAX_PAGES; page++) {
+      const offset = page * GUILD_RAW_EVENTS_LIMIT;
+      const path = `/api/sessions/${encodeURIComponent(sessionId)}/events?limit=${GUILD_RAW_EVENTS_LIMIT}&offset=${offset}`;
+      const response = await this.fetchGuild(path, { method: 'GET' }, 'guild_get_raw_events');
+      await this.assertOk(response, 'guild_get_raw_events', path);
+      const data = (await response.json()) as GuildRawEventsPage;
+      const pageItems = data.items ?? [];
+      for (const item of pageItems) {
+        const id = item?.id;
+        if (typeof id === 'string' && id) {
+          if (ids.has(id)) continue;
+          ids.add(id);
+        }
+        rawItems.push(item);
+      }
+      const total = data.pagination?.total_count;
+      if (page === 0 && typeof total === 'number' && Number.isFinite(total)) totalCount = total;
+      // Sized from the server's total when it is given; otherwise a full page
+      // without legacy pagination metadata is conservatively incomplete.
+      hasMore =
+        totalCount !== undefined
+          ? offset + GUILD_RAW_EVENTS_LIMIT < totalCount
+          : pageItems.length >= GUILD_RAW_EVENTS_LIMIT && data.pagination?.has_more !== false;
+      if (!hasMore) break;
+    }
+    // Retain only the timing of queued turns, never their caller-controlled content.
+    const items = rawItems.map((item) =>
+      item?.type === 'user_message' || item?.type === 'trigger_message' ? { type: MKTG_SESSION_TURN_STARTED, created_at: item.created_at } : item
+    );
+
+    // Last-valid-wins selection downstream depends on chronological order —
+    // normalize it here instead of trusting the API's ordering.
+    const sorted = [...items].sort((a, b) => toEpoch(a?.created_at || '') - toEpoch(b?.created_at || ''));
+
+    if (hasMore) {
+      logger.warning(req, 'guild_get_raw_events', `Raw events truncated at ${MKTG_RAW_EVENTS_MAX_PAGES} pages`, {
+        count: rawItems.length,
+        limit: GUILD_RAW_EVENTS_LIMIT,
+        pages: MKTG_RAW_EVENTS_MAX_PAGES,
+      });
+    }
+
+    const payloads = sorted.map((item) => JSON.stringify(item));
+    if (hasMore) {
+      payloads.push(JSON.stringify({ type: MKTG_SESSION_EVENTS_TRUNCATED }));
+    }
+    return payloads;
   }
 
   /**

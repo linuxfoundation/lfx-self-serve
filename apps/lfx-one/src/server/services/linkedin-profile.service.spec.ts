@@ -26,6 +26,9 @@ vi.mock('./object-store.service', () => ({
     public async deletePrivateObject(_req: Request, _purpose: string, key: string) {
       objects.delete(key);
     }
+    public async listObjects(_req: Request, _purpose: string, prefix: string) {
+      return [...objects.keys()].filter((key) => key.startsWith(prefix)).map((key) => ({ key, lastModified: new Date() }));
+    }
   },
 }));
 import { LinkedinProfileService } from './linkedin-profile.service';
@@ -187,6 +190,25 @@ describe('LinkedIn per-user profile store', () => {
     await expect(store.read(req, 'subject-one')).rejects.toMatchObject({ code: 'LINKEDIN_PROFILE_READ_FAILED' });
     objects.set(key, { body: '{}', metadata: { 'content-sha256': createHash('sha256').update('{}').digest('hex') } });
     await expect(store.read(req, 'subject-one')).rejects.toMatchObject({ code: 'LINKEDIN_PROFILE_INVALID' });
+  });
+  it('erases the effective writer snapshots across projects on profile delete, leaving other writers and agents without body reads', async () => {
+    const service = new LinkedinProfileService();
+    await service.saveFromInput(req, 'subject-one', { setup });
+    const writer = createHash('sha256').update('subject-one').digest('hex');
+    const other = createHash('sha256').update('subject-two').digest('hex');
+    const first = `document-last-intake/project-one/linkedin-post/${writer}.json`;
+    const second = `document-last-intake/project-two/linkedin-post/${writer}.json`;
+    const retained = `document-last-intake/project-one/linkedin-post/${other}.json`;
+    const living = 'document-last-intake/project-one/foundation-message.json';
+    for (const key of [first, second, retained, living, `${first}-not-json`]) objects.set(key, { body: 'private synthetic snapshot', metadata: {} });
+    const bodyRead = vi.spyOn(ObjectStoreService.prototype, 'getPrivateObject');
+    await service.delete(req, 'subject-one');
+    expect(objects.has(first)).toBe(false);
+    expect(objects.has(second)).toBe(false);
+    expect(objects.has(retained)).toBe(true);
+    expect(objects.has(living)).toBe(true);
+    expect(objects.has(`${first}-not-json`)).toBe(true);
+    expect(bodyRead).not.toHaveBeenCalled();
   });
   it('saves without invoking any deletion, enumeration or version operations', async () => {
     const deletion = vi.spyOn(ObjectStoreService.prototype, 'deletePrivateObject').mockRejectedValue(new Error('Synthetic deletion denial'));

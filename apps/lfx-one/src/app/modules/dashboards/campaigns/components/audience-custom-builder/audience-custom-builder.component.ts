@@ -4,11 +4,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AudienceCustomService } from '@services/audience-custom.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import {
+  AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH,
   AUDIENCE_CUSTOM_CREATE_DEFINITE_FAILURES,
   AUDIENCE_CUSTOM_OPERATORS,
   AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS,
@@ -83,6 +84,8 @@ export class AudienceCustomBuilderComponent {
   public readonly eventPlanned = output<AudienceDiscoveredEvent>();
   /** True while a create is in flight, so the container can hold back anything that would reset the builder. */
   public readonly creatingChange = output<boolean>();
+  /** The operator pressed Start over (or Build another): whatever preset was loaded is abandoned. */
+  public readonly startedOver = output<void>();
 
   // === Constants ===
   protected readonly operators = AUDIENCE_CUSTOM_OPERATORS;
@@ -90,7 +93,17 @@ export class AudienceCustomBuilderComponent {
 
   // === Forms ===
   protected readonly requestControl = new FormControl('', { nonNullable: true });
-  protected readonly nameControl = new FormControl('', { nonNullable: true });
+  /** At most 200 characters: HubSpot's list-search limit, which upstream refuses past rather than cuts. */
+  protected readonly nameControl = new FormControl('', { nonNullable: true, validators: [Validators.maxLength(AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH)] });
+  protected readonly nameMaxLength = AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH;
+  /**
+   * The name as a signal, written on EVERY change: typing feeds it from valueChanges, and the silent
+   * writes (a preview's name, start over) go through `setName`. Fed from valueChanges alone it kept
+   * a stale over-long name after start over, holding Create on an empty field.
+   */
+  private readonly nameValue = signal('');
+  /** An explicit name over the limit is a 400 upstream, so create waits until it fits. */
+  protected readonly nameTooLong = computed(() => this.nameValue().trim().length > AUDIENCE_CUSTOM_LIST_NAME_MAX_LENGTH);
   protected readonly form = new FormGroup({
     cities: new FormControl('', { nonNullable: true }),
     countries: new FormControl('', { nonNullable: true }),
@@ -158,7 +171,8 @@ export class AudienceCustomBuilderComponent {
   protected readonly questionsOpen = computed(() => this.questions().length > 0);
   /** Create stays disabled until a preview of the CURRENT criteria exists. */
   protected readonly canCreate = computed(
-    () => !!this.preview() && !this.locked() && !this.unconfirmedName() && this.createInFlightElsewhere() === null && !this.questionsOpen()
+    () =>
+      !!this.preview() && !this.locked() && !this.unconfirmedName() && this.createInFlightElsewhere() === null && !this.questionsOpen() && !this.nameTooLong()
   );
   /** The similar lists with their recommendation's label, so the template reads values, not methods. */
   protected readonly similarRows = computed(() =>
@@ -184,6 +198,7 @@ export class AudienceCustomBuilderComponent {
   }
 
   public constructor() {
+    this.nameControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.nameValue.set(value));
     // Any edit makes the preview describe criteria that no longer exist, so it is dropped — a
     // Create must always follow a preview of exactly what will be created.
     // The list name is not a criterion, so editing it keeps the preview (and the create state it holds).
@@ -301,7 +316,7 @@ export class AudienceCustomBuilderComponent {
           this.form.controls.educationTopicProperty.setValue(preview.criteria.educationTopicProperty ?? '', { emitEvent: false });
           this.previewing.set(false);
           if (!this.nameControl.value) {
-            this.nameControl.setValue(preview.name, { emitEvent: false });
+            this.setName(preview.name);
           }
         },
         error: (err: HttpErrorResponse) => {
@@ -360,10 +375,16 @@ export class AudienceCustomBuilderComponent {
     });
   }
 
+  /** Start over by the operator, as distinct from the resets a preset or a context change runs. */
+  protected onStartOverClicked(): void {
+    this.onStartOver();
+    this.startedOver.emit();
+  }
+
   protected onStartOver(): void {
     this.seq++;
     this.requestControl.setValue('');
-    this.nameControl.setValue('', { emitEvent: false });
+    this.setName('');
     this.resetCriteria({});
     this.editing.set(false);
     this.questions.set([]);
@@ -438,6 +459,12 @@ export class AudienceCustomBuilderComponent {
       this.unconfirmedName.set(null);
       this.strandedCreated.set(outcome.list);
     }
+  }
+
+  /** Writes the name without emitting (it is not a criterion), keeping `nameValue` in step. */
+  private setName(name: string): void {
+    this.nameControl.setValue(name, { emitEvent: false });
+    this.nameValue.set(name);
   }
 
   /**

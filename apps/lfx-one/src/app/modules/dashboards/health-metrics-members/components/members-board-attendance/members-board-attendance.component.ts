@@ -68,8 +68,8 @@ export class MembersBoardAttendanceComponent {
 
   /** The sub-nav note, always from the board cohort; empty while a new foundation or period reads, or after a failed read. */
   public readonly noteChange = output<string>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -121,6 +121,8 @@ export class MembersBoardAttendanceComponent {
     () => this.loading() && (this.response() === HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED || this.responseScope() !== this.scope())
   );
   protected readonly noMeetings = computed(() => this.totalRecords() === 0 && this.trend().length === 0);
+  /** No cohort met in the period; the shell shows the section's empty state instead, and a quiet cohort keeps its own note. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyScope(this.response()));
   protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.summary().latestTone));
   protected readonly chartLabel = computed(
     () => `Attendance at the latest ${this.trend().length} ${this.meetingNoun()}s, oldest first. The following table lists the same values.`
@@ -224,7 +226,8 @@ export class MembersBoardAttendanceComponent {
               this.loading.set(!foundationSeen);
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersBoardNote(response.cohorts.board) : '');
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              // Judged on every cohort, not the selected one, so an empty cohort never hides the pills to switch back.
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyScope(response));
             })
           )
         )
@@ -294,4 +297,10 @@ export class MembersBoardAttendanceComponent {
     const page = Number(this.initialParams.get(HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardPage));
     return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   }
+}
+
+/** No cohort met in the period, and the selected cohort's meetings agree, so a missing summary never hides real rows. */
+function isEmptyScope(response: HealthMetricsMembersBoardAttendance): boolean {
+  const noCohortMet = Object.values(response.cohorts).every((cohort) => !cohort?.meetingsInRangeCount);
+  return noCohortMet && response.totalRecords === 0 && response.trend.length === 0;
 }

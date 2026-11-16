@@ -25,6 +25,7 @@ import {
   buildAttendeePreviewFromRsvps,
   countRegistrantAttendance,
   getRegistrantAttendanceStatus,
+  getRegistrantStatusLabel,
   isRsvpSupersededBy,
   isSameOccurrenceId,
   occurrenceIdToMs,
@@ -708,5 +709,25 @@ describe('isRsvpSupersededBy', () => {
     expect(isRsvpSupersededBy(single, later({ scope: 'this_and_following', occurrence_id: OCC_AUG_18_SECONDS }))).toBe(false);
     expect(isRsvpSupersededBy(single, { ...single, id: 'rsvp-same-time', scope: 'all' })).toBe(false);
     expect(isRsvpSupersededBy(single, later({ scope: 'all', modified_at: 'not-a-date' }))).toBe(false);
+  });
+});
+
+describe('getRegistrantStatusLabel', () => {
+  it.each([
+    ['accepted RSVP', { rsvp: { response_type: 'accepted' }, invite_accepted: null }, 'Accepted'],
+    ['maybe RSVP', { rsvp: { response_type: 'maybe' }, invite_accepted: null }, 'Maybe'],
+    ['declined RSVP', { rsvp: { response_type: 'declined' }, invite_accepted: null }, 'Declined'],
+    ['declined RSVP even when the invite was also declined', { rsvp: { response_type: 'declined' }, invite_accepted: false }, 'Declined'],
+    ['accepted RSVP over a declined invite', { rsvp: { response_type: 'accepted' }, invite_accepted: false }, 'Accepted'],
+    ['accepted invite with no RSVP', { rsvp: null, invite_accepted: true }, 'Accepted'],
+    ['declined invite with no RSVP', { rsvp: null, invite_accepted: false }, 'Invite declined'],
+    ['declined invite with an RSVP lacking a response', { rsvp: { response_type: null }, invite_accepted: false }, 'Invite declined'],
+    ['nothing recorded', {}, 'Pending'],
+  ])('labels %s', (_name, registrant, expected) => {
+    expect(getRegistrantStatusLabel(registrant)).toBe(expected);
+  });
+
+  it('is Pending, not Invite declined, when invite responses are not collected for the meeting', () => {
+    expect(getRegistrantStatusLabel({ rsvp: null, invite_accepted: false }, { inviteResponsesEnabled: false })).toBe('Pending');
   });
 });

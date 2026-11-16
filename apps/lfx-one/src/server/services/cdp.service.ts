@@ -46,6 +46,10 @@ interface CachedToken {
  * Uses PCC Auth0 client credentials with CDP audience for authentication
  */
 export class CdpService {
+  // Static: several controllers/services each construct their own CdpService. Maps member id → the
+  // never-rejecting tail of its identity write queue; present only while work is queued or running.
+  private static readonly memberIdentityWritesInFlight = new Map<string, Promise<void>>();
+
   private cachedToken: CachedToken | null = null;
 
   // Resolved lazily on first access so process.loadEnvFile has finished loading,
@@ -261,11 +265,12 @@ export class CdpService {
   }
 
   /**
-   * Reject an identity for a user by resolving their member ID first
+   * Reject an identity for a user by resolving their member ID first. Runs in the member's write
+   * queue: after any reconcile chain on this pod, and holding the slot so none can overlap it.
    */
   public async rejectIdentityForUser(req: Request | undefined, sub: string, identityId: string): Promise<void> {
     const memberId = await this.resolveMember(req, [sub]);
-    await this.rejectIdentity(req, memberId, identityId, sub);
+    await CdpService.runSerialForMember(memberId, () => this.rejectIdentity(req, memberId, identityId, sub));
   }
 
   /**
@@ -344,23 +349,29 @@ export class CdpService {
   }
 
   /**
-   * Create an identity for a user by resolving their member ID first
-   */
-  public async createIdentityForUser(req: Request | undefined, lfids: string[], body: CdpCreateIdentityRequest): Promise<void> {
-    const memberId = await this.resolveMember(req, lfids);
-    await this.createIdentity(req, memberId, body);
-  }
-
-  /**
    * Orchestrates the full flow: token → resolve → get identities
    * Maps raw CDP identities to frontend-ready CdpIdentity format
    */
   public async getIdentitiesForUser(req: Request | undefined, sub: string, email?: string): Promise<CdpIdentity[]> {
+    return (await this.getMemberIdentitiesForUser(req, sub, email)).identities;
+  }
+
+  /**
+   * {@link getIdentitiesForUser} plus the resolved member id, so a caller writing back to the same
+   * member skips a resolve per write. `memberId` is null when CDP has no profile for the user.
+   */
+  public async getMemberIdentitiesForUser(
+    req: Request | undefined,
+    sub: string,
+    email?: string
+  ): Promise<{ memberId: string | null; identities: CdpIdentity[] }> {
     const startTime = logger.startOperation(req, 'get_cdp_identities_for_user', { sub });
+    // Set once resolve succeeds, so a 404 on the identities read keeps it and reconcile can still write.
+    let memberId: string | null = null;
 
     try {
       const emails = email ? [email] : undefined;
-      const memberId = await this.resolveMember(req, [sub], emails);
+      memberId = await this.resolveMember(req, [sub], emails);
 
       logger.debug(req, 'get_cdp_identities_for_user', 'Resolved CDP member', { member_id: memberId });
 
@@ -395,17 +406,43 @@ export class CdpService {
         identity_count: identities.length,
       });
 
-      return identities;
+      return { memberId, identities };
     } catch (error) {
       // Return empty array on 404 (user has no CDP profile)
       if (error instanceof MicroserviceError && error.statusCode === 404) {
-        logger.warning(req, 'get_cdp_identities_for_user', 'No CDP profile found for user', { sub });
-        return [];
+        // A resolved member whose identities read 404s is not "no profile" — say which case it was.
+        const message = memberId ? 'CDP identities not found for resolved member' : 'No CDP profile found for user';
+        logger.warning(req, 'get_cdp_identities_for_user', message, { sub, member_id: memberId });
+        return { memberId, identities: [] };
       }
 
       logger.error(req, 'get_cdp_identities_for_user', startTime, error, { sub });
       throw error;
     }
+  }
+
+  /**
+   * Fire-and-forget: run one member's identity writes one at a time. Parallel writes on a member
+   * deadlock CDP (#4523), so this is skipped while the member has queued writes on this pod (another
+   * reconcile chain or a removal). Returns false when skipped. Each write should catch and log its own failure.
+   */
+  public runMemberIdentityWrites(req: Request | undefined, memberId: string, writes: (() => Promise<void>)[]): boolean {
+    if (CdpService.memberIdentityWritesInFlight.has(memberId)) {
+      logger.debug(req, 'run_cdp_member_identity_writes', 'Identity writes already in flight for member; skipping', {
+        member_id: memberId,
+        write_count: writes.length,
+      });
+      return false;
+    }
+
+    void CdpService.runSerialForMember(memberId, async () => {
+      for (const write of writes) {
+        await write().catch((err: unknown) => {
+          logger.warning(req, 'run_cdp_member_identity_writes', 'CDP identity write failed (non-blocking)', { member_id: memberId, err });
+        });
+      }
+    });
+    return true;
   }
 
   /**
@@ -941,6 +978,27 @@ export class CdpService {
     const created = await this.createOrganization(req, name, normalizedDomain, undefined, logo);
     logger.info(req, 'resolve_cdp_organization', 'Created new CDP organization', { id: created.id, name: created.name, domain: normalizedDomain });
     return created;
+  }
+
+  /**
+   * Queue `task` behind the member's pending identity writes on this pod. The slot is taken
+   * synchronously, before the task runs, and released once nothing newer is queued. The returned
+   * promise carries the task's own outcome; the stored tail never rejects.
+   */
+  private static runSerialForMember<T>(memberId: string, task: () => Promise<T>): Promise<T> {
+    const queue = CdpService.memberIdentityWritesInFlight;
+    const result = (queue.get(memberId) ?? Promise.resolve()).then(task);
+    const tail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    queue.set(memberId, tail);
+    void tail.then(() => {
+      if (queue.get(memberId) === tail) {
+        queue.delete(memberId);
+      }
+    });
+    return result;
   }
 
   /**

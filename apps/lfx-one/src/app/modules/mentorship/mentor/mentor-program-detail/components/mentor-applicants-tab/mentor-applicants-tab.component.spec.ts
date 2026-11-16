@@ -8,7 +8,7 @@ import { provideRouter } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES } from '@lfx-one/shared/constants';
 import { MentorshipApplicantTaskRow, MentorshipApplicantTaskStatus, MentorshipMentorProgramApplicant, MentorshipNoteRequest } from '@lfx-one/shared/interfaces';
-import { buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
+import { buildMentorshipProgramsUrl, buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { EMPTY, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +23,7 @@ describe('MentorApplicantsTabComponent', () => {
   const applicant = (overrides: Partial<MentorshipMentorProgramApplicant> = {}): MentorshipMentorProgramApplicant => ({
     id: 'app_1',
     name: 'Ifeoma Adeyemi',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     email: 'ifeoma.adeyemi@example.com',
     status: 'pending',
     termName: 'Fall 2026',
@@ -98,6 +99,11 @@ describe('MentorApplicantsTabComponent', () => {
     element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-mentor-applicants-status-pill-${value}"]`);
 
   beforeEach(() => setup());
+
+  it("links the applicant's name to the public mentee page", () => {
+    const link = element().querySelector('[data-testid="mentorship-mentor-applicant-link-app_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentees', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
+  });
 
   it('renders the mentor-facing columns from the design', () => {
     const headers = Array.from(element().querySelectorAll('thead th')).map((th) => (th.textContent ?? '').trim());
@@ -287,5 +293,25 @@ describe('MentorApplicantsTabComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-mentor-applicants-empty"]')?.textContent?.trim()).toBe('No applicants.');
     expect(rowIds()).toEqual([]);
+  });
+
+  it('offers Contact Mentee as a mailto: link at every status, in a new tab', () => {
+    pill('all')?.click();
+    fixture.detectChanges();
+
+    for (const id of ['app_1', 'app_2', 'app_3', 'app_4']) {
+      expect(element().querySelector(`[data-testid="mentorship-mentor-applicant-contact-${id}"] a`)?.getAttribute('href')).toBe(
+        'mailto:ifeoma.adeyemi@example.com'
+      );
+    }
+    const link = element().querySelector('[data-testid="mentorship-mentor-applicant-contact-app_1"] a');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('aria-label')).toBe('Contact Mentee: Ifeoma Adeyemi');
+  });
+
+  it('drops Contact Mentee when the address is not safe to put in a mailto: link', () => {
+    setup([applicant({ email: 'ifeoma@example.com%0D%0ABcc:other@example.com' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-applicant-contact-app_1"]')).toBeNull();
   });
 });

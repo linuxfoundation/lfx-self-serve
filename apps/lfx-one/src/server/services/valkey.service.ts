@@ -614,6 +614,12 @@ export function buildAuthStateCacheKey(state: string): string | null {
   return `${keyPrefix()}:${VALKEY_CACHE.AUTH_STATE_NAMESPACE}:${state}`;
 }
 
+/** User/attempt-bound support context; only the digest is stored in the key, never the address or subject. */
+export function buildLinkedEmailSupportCacheKey(sub: string, handle: string): string {
+  const digest = createHash('sha256').update(sub).update('\0').update(handle).digest('hex');
+  return `${keyPrefix()}:${VALKEY_CACHE.EMAIL_LINKED_SUPPORT_NAMESPACE}:${digest}`;
+}
+
 /** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildOrgCacheKey(accountId: string, subResource: string): string | null {
   if (!isFilterSafeIdentifier(accountId)) return null;

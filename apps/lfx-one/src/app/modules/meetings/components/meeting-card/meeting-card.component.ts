@@ -51,19 +51,19 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
+  GroupLinkState,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingDeleteTypeResult,
+  MeetingGroupLink,
   MeetingOccurrence,
   MeetingRsvp,
   MeetingRecurrence,
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
-  MEETING_V2_ENABLED_DEFAULT,
-  MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
@@ -92,11 +92,12 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
+import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -162,6 +163,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly selfRemoval = inject(MeetingSelfRemovalService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -180,6 +182,13 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
+  // Navigation state for the group links, so the group page returns to the list the card is on. Without it the page defaults to Groups.
+  public readonly groupLinkState = input<GroupLinkState | null>(null);
+  // The group whose page the card is already on (its own Meetings tab); that group shows as plain text instead of a link to itself.
+  public readonly currentGroupUid = input<string>('');
+  // The project whose meetings list the card is on. A meeting from another project (a sub-project rolled
+  // up into a foundation's list) is labelled with its own project name; empty means no label.
+  public readonly contextProjectUid = input<string>('');
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
@@ -254,6 +263,12 @@ export class MeetingCardComponent implements OnInit {
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
+  public readonly subProjectName: Signal<string | null> = computed(() => {
+    const contextUid = this.contextProjectUid();
+    const meeting = this.meeting();
+    if (!contextUid || !meeting.project_uid || meeting.project_uid === contextUid) return null;
+    return meeting.project_name?.trim() || null;
+  });
   public readonly meetingDuration: Signal<number> = computed(() => this.occurrence()?.duration || this.meeting().duration);
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
@@ -315,7 +330,11 @@ export class MeetingCardComponent implements OnInit {
   public readonly guestCount: Signal<number> = this.initGuestCount();
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-  public readonly groupNames: Signal<string[]> = this.initGroupNames();
+  public readonly groupLinks: Signal<MeetingGroupLink[]> = this.initGroupLinks();
+  public readonly groupQueryParams: Signal<{ project: string } | null> = computed(() => {
+    const slug = this.meeting().project_slug;
+    return slug ? { project: slug } : null;
+  });
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly hasTranscript: Signal<boolean> = this.initHasTranscript();
@@ -336,7 +355,7 @@ export class MeetingCardComponent implements OnInit {
    * full-page editor rather than a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
 
   // The two signals below are the flag-off edit target. They carry the same URL and query params
   // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
@@ -914,20 +933,17 @@ export class MeetingCardComponent implements OnInit {
 
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
-    const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     this.leavingMeeting.set(true);
 
-    this.meetingService
-      .removeMyMeetingRegistration(meetingId, 'meeting-card')
+    this.selfRemoval
+      .remove$(meetingId, 'meeting-card')
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))
       )
       .subscribe({
         next: (result) => {
-          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
-          const currentSubject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
-          if (this.meeting().id !== meetingId || currentSubject !== subject) return;
+          if (this.meeting().id !== meetingId) return;
           if (result.remaining_registrant_ids.length > 0) {
             this.confirmedRsvps.update((responses) => responses.filter((rsvp) => !result.removed_registrant_ids.includes(rsvp.registrant_id)));
             this.optimisticInvited.set(true);
@@ -936,13 +952,11 @@ export class MeetingCardComponent implements OnInit {
               summary: 'Removal incomplete',
               detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
             });
-            this.userService.refreshUserMeetings(false);
             this.refreshMeeting();
             return;
           }
           this.confirmedRsvps.set([]);
           this.optimisticInvited.set(false);
-          this.meetingService.markRegistrationRemoved(meetingId);
           this.meeting.update((meeting) => ({ ...meeting, invited: false, my_rsvp: null }));
           this.messageService.add({
             severity: 'success',
@@ -952,12 +966,7 @@ export class MeetingCardComponent implements OnInit {
           this.meetingDeleted.emit();
         },
         error: (error: unknown) => {
-          const fallback = 'Unable to remove you from this meeting. Please try again.';
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
-          });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: this.selfRemoval.describeFailure(error) });
         },
       });
   }
@@ -1265,9 +1274,22 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  /** Names of the groups (committees) the meeting belongs to; a group with no resolved name is left out rather than shown blank. */
-  private initGroupNames(): Signal<string[]> {
-    return computed(() => (this.meeting().committees ?? []).map((committee) => committee.name?.trim()).filter((name): name is string => !!name));
+  /**
+   * The groups (committees) the meeting belongs to, each with its group-details link; a group with no resolved name is
+   * left out rather than shown blank, and the group the card is already on gets no link.
+   */
+  private initGroupLinks(): Signal<MeetingGroupLink[]> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const currentGroupUid = this.currentGroupUid();
+      return (meeting.committees ?? []).flatMap((committee) => {
+        const name = committee.name?.trim();
+        if (!name) return [];
+        const uid = committee.uid?.trim();
+        const commands = uid && uid !== currentGroupUid ? (getEntityCommands('groups', uid, meeting.is_foundation) ?? ['/groups', uid]) : null;
+        return [{ uid: committee.uid, name, commands }];
+      });
+    });
   }
 
   private denyEdit(): void {

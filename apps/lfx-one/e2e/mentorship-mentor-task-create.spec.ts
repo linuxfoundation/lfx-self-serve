@@ -12,7 +12,6 @@
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the detail read is made by the
  * browser and the stub answers it; a direct `page.goto()` would read it during SSR, where no stub runs.
- * The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -23,7 +22,7 @@ import { MentorshipMentorProgramDetail, MentorshipTaskCreateResponse } from '@lf
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, MENTOR_PROGRAMS_URL, openMentorPage } from './helpers/mentor-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
@@ -64,7 +63,7 @@ function detailWith(taskFor?: string): MentorshipMentorProgramDetail {
       slug: 'test-program-tasks',
       name: 'Test Program Tasks',
       projectName: 'Test Project',
-      status: 'open',
+      status: 'accepting',
       stats: { mentees: 3, tasksToReview: 0, applicants: 0 },
     },
     tabCounts: { tasks: taskFor ? 1 : 0, mentees: 3, applicants: 0 },
@@ -127,10 +126,6 @@ async function submitTask(page: Page): Promise<void> {
 const SENT_TASK = { name: 'Write a design doc', description: 'One page on the plan.', requiresFileSubmission: false };
 
 test.describe('Mentor task create', () => {
-  test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
-  });
-
   test("creates a task for one mentee and lists it on the mentee's row", async ({ page }) => {
     await stubDetail(page, detailWith(), detailWith(FIRST_ID));
     const sent = await stubTaskCreate(page, 200, { created: [FIRST_ID], failed: [] });

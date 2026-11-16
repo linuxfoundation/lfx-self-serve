@@ -17,7 +17,11 @@ vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
-import { HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP, HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_OVERVIEW_BOARD_MEMBERS_ROW_CAP,
+  HEALTH_METRICS_OVERVIEW_EVENTS_ROW_CAP,
+  HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP,
+} from '@lfx-one/shared/constants';
 
 import { HealthMetricsOverviewService } from './health-metrics-overview.service';
 import { logger } from './logger.service';
@@ -508,6 +512,106 @@ describe('HealthMetricsOverviewService.getCode', () => {
   });
 });
 
+describe('HealthMetricsOverviewService.getNewsletters', () => {
+  const summary = wide(
+    {
+      SUBSCRIBERS_COUNT: '1458',
+      SUBSCRIBERS_GROWTH_PCT: 0.39,
+      SUBSCRIBERS_GROWTH_BASELINE_DATE: new Date('2026-01-05T00:00:00Z'),
+      NEWSLETTERS_SENT_COUNT: 10,
+      AVG_OPEN_RATE: 0.43,
+      AVG_CLICK_TO_OPEN_RATE: 0.09,
+      HIGH_ENGAGEMENT_SUBSCRIBERS_COUNT: 175,
+      MEDIUM_ENGAGEMENT_SUBSCRIBERS_COUNT: 496,
+      LOW_ENGAGEMENT_SUBSCRIBERS_COUNT: 787,
+      HIGH_ENGAGEMENT_SUBSCRIBERS_PCT: 0.12,
+      MEDIUM_ENGAGEMENT_SUBSCRIBERS_PCT: '0.34',
+      LOW_ENGAGEMENT_SUBSCRIBERS_PCT: 0.54,
+      ENGAGEMENT_NEWSLETTERS_CONSIDERED_COUNT: 10,
+      MOST_ENGAGING_NEWSLETTER_NAME: '  Monthly: Protocol ships ',
+      MOST_ENGAGING_NEWSLETTER_CLICK_TO_OPEN_RATE: 0.12,
+    },
+    { NEWSLETTERS_SENT_COUNT_COMPLETED_YEAR: 0, MOST_ENGAGING_NEWSLETTER_NAME_COMPLETED_YEAR: ' ' }
+  );
+
+  it('maps the summary per period and each newsletter, dropping one without a key', async () => {
+    execute.mockResolvedValueOnce({ rows: [summary] }).mockResolvedValueOnce({
+      rows: [
+        {
+          NEWSLETTER_KEY: 'n2',
+          NEWSLETTER_NAME: 'Monthly: Protocol ships',
+          SENT_DATE: '2026-09-21',
+          OPEN_RATE: '0.5',
+          CLICK_RATE: 0.06,
+        },
+        {
+          NEWSLETTER_KEY: 'n1',
+          NEWSLETTER_NAME: null,
+          SENT_DATE: new Date('2026-08-24T00:00:00Z'),
+          OPEN_RATE: 0.37,
+          CLICK_RATE: null,
+        },
+        { NEWSLETTER_KEY: ' ', NEWSLETTER_NAME: 'Test send', SENT_DATE: '2026-08-01', OPEN_RATE: 0.9, CLICK_RATE: 0.9 },
+      ],
+    });
+
+    const newsletters = await new HealthMetricsOverviewService().getNewsletters(req, query);
+
+    expect(sql(0)).toContain('subscribers_growth_baseline_date_3rd_last_completed_year AS subscribers_growth_baseline_date_COMPLETED_YEAR_3');
+    expect(sql(0)).toContain('NEWSLETTER_ENGAGEMENT_SUMMARY');
+    expect(sql(1)).toContain('NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER');
+    expect(sql(1)).toContain('has_engagement_data = TRUE');
+    expect(sql(1)).toContain(`LIMIT ${HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1}`);
+    expectBinds(0, ['acme']);
+    expectBinds(1, ['acme']);
+    expect(newsletters.measured).toBe(true);
+    expect(newsletters.periods.YTD).toEqual({
+      subscribers: 1458,
+      subscribersGrowth: 0.39,
+      growthBaselineDate: '2026-01-05',
+      newslettersSent: 10,
+      avgOpenRate: 0.43,
+      avgClickToOpenRate: 0.09,
+      highEngagement: 175,
+      mediumEngagement: 496,
+      lowEngagement: 787,
+      highEngagementShare: 0.12,
+      mediumEngagementShare: 0.34,
+      lowEngagementShare: 0.54,
+      newslettersConsidered: 10,
+      mostEngagingName: 'Monthly: Protocol ships',
+      mostEngagingClickToOpenRate: 0.12,
+    });
+    expect(newsletters.periods.COMPLETED_YEAR).toMatchObject({ newslettersSent: 0, mostEngagingName: null });
+    expect(newsletters.newsletters).toEqual([
+      { key: 'n2', name: 'Monthly: Protocol ships', sentDate: '2026-09-21', openRate: 0.5, clickRate: 0.06 },
+      { key: 'n1', name: 'Untitled newsletter', sentDate: '2026-08-24', openRate: 0.37, clickRate: null },
+    ]);
+  });
+
+  it('reports an unmeasured foundation when the summary has no row', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const newsletters = await new HealthMetricsOverviewService().getNewsletters(req, query);
+
+    expect(newsletters.measured).toBe(false);
+    expect(Object.values(newsletters.periods)).toEqual([null, null, null, null]);
+    expect(newsletters.newsletters).toEqual([]);
+  });
+
+  it('warns and trims when the newsletters hit the read cap', async () => {
+    const rows = Array.from({ length: HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP + 1 }, (_, index) => ({
+      NEWSLETTER_KEY: `n${index}`,
+    }));
+    execute.mockResolvedValueOnce({ rows: [summary] }).mockResolvedValueOnce({ rows });
+
+    const newsletters = await new HealthMetricsOverviewService().getNewsletters(req, query);
+
+    expect(newsletters.newsletters).toHaveLength(HEALTH_METRICS_OVERVIEW_NEWSLETTERS_ROW_CAP);
+    expect(logger.warning).toHaveBeenCalledWith(req, 'get_overview_newsletters', 'Overview newsletters hit the read cap', expect.any(Object));
+  });
+});
+
 describe('HealthMetricsOverviewService read failures', () => {
   it('rejects rather than reporting an empty card', async () => {
     execute.mockRejectedValue(new Error('warehouse down'));
@@ -521,6 +625,7 @@ describe('HealthMetricsOverviewService read failures', () => {
       () => service.getEvents(req, query),
       () => service.getBoard(req, query),
       () => service.getCode(req, query),
+      () => service.getNewsletters(req, query),
     ];
     for (const read of reads) await expect(read()).rejects.toThrow('warehouse down');
   });

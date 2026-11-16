@@ -9,7 +9,7 @@ import { PreferenceReadResponse, User } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { NEVER, asapScheduler, map, observeOn, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { FavoriteProjectsService } from './favorite-projects.service';
 
@@ -18,12 +18,12 @@ describe('FavoriteProjectsService', () => {
 
   let service: FavoriteProjectsService;
   let navigationService: {
-    getFavoriteProjectsPreference: ReturnType<typeof vi.fn>;
-    upsertFavoriteProjectsPreference: ReturnType<typeof vi.fn>;
-    deleteFavoriteProjectsPreference: ReturnType<typeof vi.fn>;
+    getFavoriteProjectsPreference: Mock;
+    upsertFavoriteProjectsPreference: Mock;
+    deleteFavoriteProjectsPreference: Mock;
   };
-  let userService: { user: ReturnType<typeof signal<User | null>> };
-  let messageService: { add: ReturnType<typeof vi.fn> };
+  let userService: { user: ReturnType<typeof signal<User | null>>; impersonating: ReturnType<typeof signal<boolean>> };
+  let messageService: { add: Mock };
 
   beforeEach(() => {
     // The service now owns its own HTTP transport (GH-3453, to avoid a circular dependency with
@@ -34,7 +34,7 @@ describe('FavoriteProjectsService', () => {
       upsertFavoriteProjectsPreference: vi.fn().mockReturnValue(of(undefined)),
       deleteFavoriteProjectsPreference: vi.fn().mockReturnValue(of(undefined)),
     };
-    userService = { user: signal<User | null>(null) };
+    userService = { user: signal<User | null>(null), impersonating: signal(false) };
     messageService = { add: vi.fn() };
 
     const asPreferenceResponse = (value: string | null = null): PreferenceReadResponse => ({ name: 'favorite-projects', value });
@@ -177,6 +177,24 @@ describe('FavoriteProjectsService', () => {
     });
     expect(navigationService.upsertFavoriteProjectsPreference).not.toHaveBeenCalled();
     expect(service.state().data.has('new-project')).toBe(false);
+  });
+
+  it('ignores toggles while impersonating, without writing or toasting', async () => {
+    navigationService.getFavoriteProjectsPreference.mockReturnValue(of('["p1"]'));
+    userService.impersonating.set(true);
+    userService.user.set(user);
+    await flush();
+
+    expect(service.favoritesAvailable()).toBe(false);
+
+    service.toggleFavorite('p1');
+    service.toggleFavorite('p2');
+    await flush();
+
+    expect(navigationService.upsertFavoriteProjectsPreference).not.toHaveBeenCalled();
+    expect(navigationService.deleteFavoriteProjectsPreference).not.toHaveBeenCalled();
+    expect(messageService.add).not.toHaveBeenCalled();
+    expect([...service.state().data]).toEqual(['p1']);
   });
 
   it('no-ops a toggle before any user is signed in', async () => {

@@ -20,9 +20,10 @@
         td {
           @apply text-xs leading-4 text-black;
 
+          // An icon with a named size class keeps it; in a Health Metrics table an exact-px one (`text-[10px]`) does too.
           a,
           button,
-          i:not(.text-xs):not(.text-sm):not(.text-base):not(.text-lg):not(.text-xl):not(.text-2xl):not(.text-3xl) {
+          i:not(.text-xs):not(.text-sm):not(.text-base):not(.text-lg):not(.text-xl):not(.text-2xl):not(.text-3xl):not(.hm-table [class*='text-[']) {
             font-size: 0.875rem;
             line-height: 1.25rem;
           }

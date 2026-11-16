@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
@@ -14,16 +16,27 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { DocumentFormMode, FilterPillOption, MyDocumentItem, MyDocumentSource, ProjectContext, ProjectDocument } from '@lfx-one/shared/interfaces';
-import { compareDocumentsByRecency, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
+import {
+  DocumentFormMode,
+  FilterPillOption,
+  GroupLinkState,
+  MyDocumentItem,
+  MyDocumentSource,
+  MyDocumentTableRow,
+  ProjectContext,
+  ProjectDocument,
+} from '@lfx-one/shared/interfaces';
+import { compareDocumentsByRecency, getDocumentSourceLink, resolveProjectDocumentKind } from '@lfx-one/shared/utils';
 import { DocumentService } from '@services/document.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { combineLatest, catchError, debounceTime, distinctUntilChanged, finalize, map, merge, of, startWith, Subject, switchMap, take } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
+import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -49,6 +62,7 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
     SkeletonModule,
     TooltipModule,
     PageHeaderComponent,
+    RouterLink,
   ],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider
@@ -65,6 +79,7 @@ export class DocumentsDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly dialogService = inject(DialogService);
   private readonly projectService = inject(ProjectService);
+  private readonly messageService = inject(MessageService);
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
@@ -106,6 +121,8 @@ export class DocumentsDashboardComponent {
   protected readonly projectSourceTab = signal<string>('all');
   /** Bumped after a successful upload/folder/link create so the document list re-fetches. */
   protected readonly refreshTrigger = signal<number>(0);
+  /** Uids of project documents deleted in this session, hidden from the list even if a reload still returns them. */
+  private readonly deletedDocumentUids = signal<ReadonlySet<string>>(new Set());
   /** UID of the folder the user has drilled into; null means the root view (project mode only). */
   protected readonly currentFolderUid = signal<string | null>(null);
 
@@ -145,7 +162,9 @@ export class DocumentsDashboardComponent {
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
   protected readonly mailingListFilter: Signal<string | null> = this.initMailingListFilter();
-  /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. */
+  /** The list as last fetched, including rows deleted in this session that the index may still return. */
+  private readonly fetchedProjectDocuments: Signal<ProjectDocument[]> = this.initFetchedProjectDocuments();
+  /** Raw project documents (pre-derivation) — used for folder/orphan structure + folder picker options. Leaves out rows deleted in this session. */
   protected readonly rawProjectDocuments: Signal<ProjectDocument[]> = this.initRawProjectDocuments();
   /** Aggregator-fed documents, used only when no project context is selected. */
   protected readonly legacyDocuments: Signal<MyDocumentItem[]> = this.initLegacyDocuments();
@@ -154,6 +173,9 @@ export class DocumentsDashboardComponent {
   private readonly viewDocuments: Signal<MyDocumentItem[]> = this.initViewDocuments();
   protected readonly projectSourceTabOptions: Signal<FilterPillOption[]> = this.initProjectSourceTabOptions();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
+  protected readonly documentRows: Signal<MyDocumentTableRow[]> = this.initDocumentRows();
+  // Group links return to this page. Documents has no Me-lens page, and the global lens can still be Me on a project route, so the Me lens is never restored.
+  protected readonly groupLinkState: GroupLinkState = { backLabel: DOCUMENT_LABEL.plural, backPath: '/documents', fromMeLens: false };
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredDocuments().length > 10 ? [10, 25, 50] : undefined));
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
@@ -215,6 +237,34 @@ export class DocumentsDashboardComponent {
     this.currentFolderUid.set(null);
   }
 
+  /** Deletes a project document the user already confirmed in the table, then refreshes the list. */
+  protected onDocumentDelete(doc: MyDocumentItem): void {
+    const projectUid = this.project()?.uid;
+    const type = doc.manageableType;
+    if (!projectUid || !type) return;
+
+    // Row ids are `project_<type>:<uid>`.
+    const documentUid = doc.id.slice(doc.id.indexOf(':') + 1);
+
+    this.projectService
+      .deleteProjectDocument(projectUid, documentUid, type)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${doc.name}" was deleted.` });
+          this.deletedDocumentUids.update((uids) => new Set(uids).add(documentUid));
+          this.refreshTrigger.update((v) => v + 1);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Delete failed',
+            detail: getHttpErrorDetail(err, `Failed to delete "${doc.name}". Please try again.`),
+          });
+        },
+      });
+  }
+
   protected openUploadFileDialog(): void {
     this.openDocumentDialog('file', 'Upload Files');
   }
@@ -258,11 +308,23 @@ export class DocumentsDashboardComponent {
   }
 
   /**
+   * The fetched list without the rows deleted in this session. The list is read through an index that updates after
+   * the delete returns, so the refetch right after a delete can still contain the row; hiding it by id keeps it gone
+   * (and the folder's child count right) until the index catches up.
+   */
+  private initRawProjectDocuments(): Signal<ProjectDocument[]> {
+    return computed(() => {
+      const deleted = this.deletedDocumentUids();
+      return deleted.size === 0 ? this.fetchedProjectDocuments() : this.fetchedProjectDocuments().filter((doc) => !deleted.has(doc.uid));
+    });
+  }
+
+  /**
    * Fetches raw project documents (folders + links + files) from the project-service backend.
    * Only fires when in project mode — keeps the aggregator path free of unnecessary requests.
    * Reacts to refreshTrigger so create/upload/delete flows re-render without manual navigation.
    */
-  private initRawProjectDocuments(): Signal<ProjectDocument[]> {
+  private initFetchedProjectDocuments(): Signal<ProjectDocument[]> {
     return toSignal(
       combineLatest([toObservable(this.project), toObservable(this.useProjectSource), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([project, useProjectSource]) => {
@@ -410,7 +472,9 @@ export class DocumentsDashboardComponent {
       foundationName: '',
       foundationUid: undefined,
       groupOrMeetingName: groupName,
-      groupOrMeetingUid: ownerProjectUid,
+      // The id of the entity the name refers to, which is what the name's link opens: a committee's uid, or a past meeting's id.
+      // Native project rows and meeting attachments (whose name falls back to the project's) have none, so their name stays plain text.
+      groupOrMeetingUid: (docSource === 'committee' ? doc.committee_uid : doc.past_meeting_id) ?? '',
       date: doc.created_at ?? doc.updated_at ?? '',
       url: doc.url,
       attachmentUid: isProjectFile ? doc.uid : undefined,
@@ -419,10 +483,14 @@ export class DocumentsDashboardComponent {
       isChild,
       downloadUrl,
       uploadedBy: doc.uploaded_by,
+      mailingListUid: doc.mailing_list_uid,
+      pastMeetingId: doc.past_meeting_id,
       summaryUid: doc.summary_uid,
       summaryContent: doc.summary_content,
       projectDocumentSource: docSource,
       documentKind: resolveProjectDocumentKind(doc, docSource),
+      // Only the project's own folders, links and files are managed through the project API; committee, meeting and mailing list rows are not.
+      manageableType: docSource === 'project' ? doc.type : undefined,
     };
   }
 
@@ -502,6 +570,10 @@ export class DocumentsDashboardComponent {
       doc.foundationName.toLowerCase().includes(query) ||
       doc.groupOrMeetingName.toLowerCase().includes(query)
     );
+  }
+
+  private initDocumentRows(): Signal<MyDocumentTableRow[]> {
+    return computed(() => this.filteredDocuments().map((doc) => ({ ...doc, sourceLink: getDocumentSourceLink(doc) })));
   }
 
   private initFilteredDocuments(): Signal<MyDocumentItem[]> {

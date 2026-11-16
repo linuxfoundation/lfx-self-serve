@@ -5,6 +5,9 @@ import type { FilterPillOption } from '../interfaces/dashboard-metric.interface'
 import type { MktgDocumentAgentKey } from '../interfaces/mktg-document-store.interface';
 import type { MktgKitFamily, MktgKitFilter } from '../interfaces/mktg-kit.interface';
 
+/** Flip to true to show unbuilt families, assets, agents and tabs again. */
+export const MKTG_KIT_SHOW_COMING_SOON = false;
+
 export const MKTG_KIT_POSITIONING_FAMILY_ID = 'positioning-brand';
 export const MKTG_KIT_FRAMEWORK_AGENT_ID = 'foundation-setup';
 export const MKTG_KIT_FRAMEWORK_KEY = 'foundation-message';
@@ -33,16 +36,34 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
         label: 'Messaging framework',
         runName: 'messaging framework',
         agentKey: 'foundation-message',
-        description: 'Vision, mission, positioning, tagline, goals, say and avoid · with ICPs, message house and key numbers',
+        description: 'Vision, mission, positioning, tagline, goals, say and avoid · with the messaging framework and key numbers',
+        bookSummary:
+          'Vision, mission, positioning, the goals and their key messages, the audiences, the message house and the figures every other document leans on.',
       },
-      { id: 'boilerplates', label: 'Boilerplates', runName: 'boilerplates', agentKey: 'boilerplates', description: 'One-liner, 25, 50 and 100 words' },
-      { id: 'faq', label: 'FAQ', runName: 'FAQ', agentKey: 'faq', description: 'Questions answered from the sources; unanswered questions flagged' },
+      {
+        id: 'boilerplates',
+        label: 'Boilerplates',
+        runName: 'boilerplates',
+        agentKey: 'boilerplates',
+        description: 'One-liner, 25, 50 and 100 words',
+        bookSummary: 'The approved project description at four lengths, for press releases, event listings, partner pages and bios.',
+      },
+      {
+        id: 'faq',
+        label: 'FAQ',
+        runName: 'FAQ',
+        agentKey: 'faq',
+        description: 'Questions answered from the sources; unanswered questions flagged',
+        bookSummary: 'The questions members, press and contributors ask, answered from the framework and the sources it names.',
+      },
       {
         id: 'brand-kit',
         label: 'Brand kit',
         runName: 'brand kit',
+        captionName: 'the brand kit',
         agentKey: 'brand-kit',
-        description: 'Colours, typeface, logo system, voice · the book as a print page',
+        description: 'Colors, typeface, logo system, voice · the book as a print page',
+        bookSummary: 'The logo and its rules, color and contrast, type, iconography and imagery, example usage, and the voice in brief.',
       },
       { id: 'one-pager', label: 'One pager', description: 'Message house and the 50-word boilerplate on one page' },
     ],
@@ -65,7 +86,7 @@ export const MKTG_KIT_FAMILIES: MktgKitFamily[] = [
     lead: 'HUB voices',
     leadSummary: 'LinkedIn Post agent',
     description: 'Posts in the project’s voice from a link or a note.',
-    assets: [{ id: 'linkedin-post', label: 'LinkedIn posts', agentKey: 'linkedin-post', description: 'Posts in your project voice' }],
+    assets: [{ id: 'linkedin-post', label: 'LinkedIn posts', runName: 'LinkedIn post', agentKey: 'linkedin-post', description: 'Posts in your project voice' }],
     agentIds: ['linkedin-post'],
     runOrder: '',
   },
@@ -130,8 +151,8 @@ export const MKTG_KIT_STATE_LABELS = {
   'coming-soon': 'Coming soon',
 } as const;
 export const MKTG_KIT_TABS = [
-  { path: '', label: 'Kit' },
-  { path: 'requests', label: 'Requests' },
-  { path: 'access', label: 'Access' },
-  { path: 'documents', label: 'Documents' },
+  { path: '', label: 'Kit', soon: false },
+  { path: 'requests', label: 'Requests', soon: true },
+  { path: 'access', label: 'Access', soon: true },
+  { path: 'documents', label: 'Documents', soon: false },
 ] as const;

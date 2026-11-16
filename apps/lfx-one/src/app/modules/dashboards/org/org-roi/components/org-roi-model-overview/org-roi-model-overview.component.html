@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<details class="group rounded-lg border border-gray-200 bg-white" data-testid="org-roi-model-overview">
+  <summary
+    class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+    data-testid="org-roi-model-overview-toggle">
+    <i class="fa-light fa-circle-info text-gray-400" aria-hidden="true"></i>
+    How the ROI model works
+    <i class="fa-light fa-chevron-down ml-auto text-gray-400 transition-transform group-open:rotate-180" aria-hidden="true"></i>
+  </summary>
+
+  <div class="flex flex-col gap-5 border-t border-gray-200 px-4 py-4" data-testid="org-roi-model-overview-content">
+    <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-what">
+      <h3 class="text-sm font-semibold text-gray-900">What these figures are</h3>
+      <p class="text-sm text-gray-600">{{ copy.whatTheseAre }}</p>
+    </section>
+
+    <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-data">
+      <h3 class="text-sm font-semibold text-gray-900">Where the data comes from</h3>
+      <p class="text-sm text-gray-600">{{ copy.dataSources }}</p>
+    </section>
+
+    <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-investment">
+      <h3 class="text-sm font-semibold text-gray-900">How investment is measured</h3>
+      <p class="text-sm text-gray-600">{{ copy.investment }}</p>
+    </section>
+
+    <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-markup">
+      <h3 class="text-sm font-semibold text-gray-900">How value is inferred</h3>
+      <p class="text-sm text-gray-600">{{ copy.markup }}</p>
+      <a
+        [href]="surveyUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="self-start text-xs text-blue-600 hover:underline"
+        data-testid="org-roi-model-overview-survey-link"
+        >LF Research: ROI for Open Source Software Contribution →</a
+      >
+    </section>
+
+    <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-return">
+      <h3 class="text-sm font-semibold text-gray-900">How return, ROI and BCR follow</h3>
+      <p class="text-sm text-gray-600">{{ copy.returnAndRoi }}</p>
+    </section>
+
+    <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-limits">
+      <h3 class="text-sm font-semibold text-gray-900">What it does not measure</h3>
+      <p class="text-sm text-gray-600">{{ copy.limits }}</p>
+    </section>
+
+    <!-- Rates must render as stated values, never as inputs. -->
+    <section class="flex flex-col gap-2" data-testid="org-roi-model-overview-rates">
+      <h3 class="text-sm font-semibold text-gray-900">Cost rates used by the model</h3>
+      <p class="text-sm text-gray-600" data-testid="org-roi-model-overview-rates-scope">
+        These are global constants — one rate per contribution type, applied identically to every organization across the Linux Foundation. They are not
+        specific to your organization, and they are not derived from anyone's actual or reported compensation.
+      </p>
+
+      <dl class="flex flex-col divide-y divide-gray-100 rounded-lg border border-gray-200">
+        <div class="flex items-baseline justify-between gap-4 px-3 py-2.5">
+          <dt class="text-sm text-gray-700">Code contribution rate</dt>
+          <dd class="text-sm font-medium text-gray-900">{{ assumptions.codeSalaryUsd | currency: 'USD' : 'symbol' : '1.0-0' }} per FTE-year</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-3 py-2.5">
+          <dt class="text-sm text-gray-700">Community contribution rate</dt>
+          <dd class="text-sm font-medium text-gray-900">{{ assumptions.communitySalaryUsd | currency: 'USD' : 'symbol' : '1.0-0' }} per FTE-year</dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-4 px-3 py-2.5">
+          <dt class="text-sm text-gray-700">Overhead multiplier</dt>
+          <dd class="text-sm font-medium text-gray-900">{{ assumptions.overheadMultiplier }}×</dd>
+        </div>
+      </dl>
+
+      <p class="flex items-start gap-2 rounded-md bg-gray-50 px-3 py-2.5 text-xs text-gray-600" data-testid="org-roi-model-overview-rates-readonly-note">
+        <i class="fa-light fa-lock mt-0.5 text-gray-400" aria-hidden="true"></i>
+        <span>
+          Shown for transparency only. These rates are set in the data pipeline, so the figures on this page cannot be recalculated with different values here.
+        </span>
+      </p>
+    </section>
+
+    <!-- Unrendered while the staff documentation is unpublished, so the band never offers a dead link. -->
+    @if (docsUrl) {
+      <section class="flex flex-col gap-1" data-testid="org-roi-model-overview-docs">
+        <h3 class="text-sm font-semibold text-gray-900">Full documentation</h3>
+        <a
+          [href]="docsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="self-start text-xs text-blue-600 hover:underline"
+          data-testid="org-roi-model-overview-docs-link"
+          >Read the full model documentation →</a
+        >
+      </section>
+    }
+  </div>
+</details>

@@ -11,6 +11,8 @@ intercom_collection: Mentorship
 
 A **term** is a dated run of a program. Applications are always made to a term, not to the program as a whole. Only a Program Admin can create or change a term.
 
+![A program’s Terms tab, with each term’s status, application counts and dates](/images/docs/mentorship/manage-terms.png)
+
 ## Before you begin
 
 - You must be a Program Admin on the program.
@@ -22,7 +24,7 @@ A **term** is a dated run of a program. Applications are always made to a term, 
 2. Go to the **Terms** tab.
 3. Create a term, choosing a standard period or defining a custom one. A term name is up to 50 characters.
 4. Edit or delete a term from its row. Deleting asks you to confirm, and is only offered while the term has no applications.
-5. Close a term from its row once it has ended, or re-open a closed term that has not ended yet.
+5. Close a term from its row once it has no accepted applicants, or re-open a closed term that has not ended yet. Closing declines the term's pending applications (see below).
 
 The tab is paged ten terms at a time.
 

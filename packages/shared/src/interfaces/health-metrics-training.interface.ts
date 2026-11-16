@@ -8,23 +8,10 @@ import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-m
 /** Section key from the design's `T2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsTrainingSectionKey = (typeof HEALTH_METRICS_TRAINING_SECTIONS)[number]['key'];
 
-/** Training's sub-nav badge, keyed to its own sections. */
+/** Training's sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsTrainingSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsTrainingSectionKey;
 }
-
-/** `GET /api/analytics/training-presence` query. */
-export interface HealthMetricsTrainingPresenceQuery {
-  foundationSlug: string;
-}
-
-/** Whether the foundation runs a training programme through LF Education. */
-export interface HealthMetricsTrainingPresence {
-  hasProgramme: boolean;
-}
-
-/** What the Training tab renders: a skeleton while reading, the shell, the no-programme state, or an error. */
-export type HealthMetricsTrainingPresenceState = 'loading' | 'present' | 'absent' | 'failed';
 
 /** `GET /api/analytics/training-enrollment` query; one read carries every period, so a period change never re-reads. */
 export interface HealthMetricsTrainingEnrollmentQuery {

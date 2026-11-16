@@ -72,7 +72,7 @@
       <div
         class="flex flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-white p-2"
         [attr.data-testid]="'optimization-campaign-negatives-revision-error-' + campaignId()">
-        <p class="text-xs text-gray-600">The ad group's targeting couldn't be read, and Reddit needs it before keywords can be excluded. Nothing was sent.</p>
+        <p class="text-xs text-gray-600">{{ revisionErrorMessage }}</p>
         <lfx-button
           label="Retry"
           icon="fa-light fa-rotate-right"
@@ -139,6 +139,10 @@
         }
       </ol>
     </div>
+  }
+
+  @if (heldReason(); as reason) {
+    <p class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-negatives-held-' + campaignId()">{{ reason }}</p>
   }
 
   <div class="flex items-center gap-2">

@@ -7,10 +7,12 @@ import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_LENS_PAGE_SEGMENTS,
+  ORG_LENS_SWITCH_PARAMS_RESET,
   ORG_NOT_FOUND_SEGMENTS,
   ORG_SEGMENT_PARAM,
 } from '@lfx-one/shared/constants';
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
+import { orgRollUpSegment } from '@lfx-one/shared/utils';
 
 import { AccountContextService } from './account-context.service';
 
@@ -55,9 +57,44 @@ export class OrgLensNavigationService {
     return segment ? ['/org', segment, page, ...tail] : ['/org', page, ...tail];
   }
 
+  /**
+   * Router commands for Org Lens's landing page, its overview: addressed like `orgLensLink` — the menu's Dashboard link —
+   * once the selection is known to be readable, i.e. pinned by an address or by the org list, or carrying the index slug.
+   * A uid-only stub restored from the cookie and not yet confirmed lands on the legacy form instead: the org list then
+   * writes it into the address, or re-defaults when the organization is no longer readable, where a resolver miss on the
+   * addressed form would end on `/org/not-found`.
+   */
+  public orgLensLandingLink(): string[] {
+    const confirmed = this.accountContext.isAddressedSelection() || !!this.accountContext.selectedAccount().slug;
+    return confirmed ? this.orgLensLink('overview') : ['/org', 'overview'];
+  }
+
   /** `orgLensLink` as a single path string, for string-typed `routerLink`s (sidebar items). */
   public orgLensPath(page: string, ...rest: (string | number)[]): string {
     return this.orgLensLink(page, ...rest).join('/');
+  }
+
+  /**
+   * Land on a family roll-up's home page, `/org/family-{rootUid}/overview` (#4133).
+   *
+   * Not `navigateToSelectedOrg('switch')`, which keeps the current page: the roll-up does not
+   * render every Org Lens page — Org Profile is single-org by definition (#4125) — so a switch from
+   * `/org/acme/profile` would otherwise address `/org/family-…/profile`. Pushed, not replaced, so Back
+   * returns to the organization and page the pick was made from, matching a switch between
+   * organizations (US2 scenario 3).
+   *
+   * With one exception, the same one `navigateToSelectedOrg` makes: an address that names no
+   * organization — bare `/org`, or a legacy `/org/{page}` the org list has not canonicalized yet —
+   * has no pre-switch organization for Back to return to. Pushing would leave a copy of the screen
+   * the viewer just left in history, which on the way back renders under the *new* roll-up
+   * selection. That is the uncopyable form of the same page, so it is replaced (#4415, Copilot).
+   * The dead end still pushes: a pick is the one way to leave it, and Back may return there.
+   */
+  public navigateToRollUpHome(rootUid: string): void {
+    const segments = this.currentPrimarySegments();
+    const namesNoOrganization =
+      segments[0] === 'org' && (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && !this.isNotFoundAddress(segments);
+    void this.router.navigate(['/org', orgRollUpSegment(rootUid), 'overview'], namesNoOrganization ? { replaceUrl: true } : {});
   }
 
   /** `isNotFoundAddress` for the router's current address — the one page a same-organization pick may still leave. */
@@ -83,9 +120,12 @@ export class OrgLensNavigationService {
    * rule since lfx-self-serve#2743 ended their DR-004 exemption.
    *
    * The query is preserved across the rewrite — a filter, a `?sig=` picker choice, a `utm_*` all
-   * still describe the page — with one exception: leaving an EasyCLA address, on either mount,
-   * drops the corporate-signing return parameters `?org=` and `?signed=`. Those describe a trip
-   * opened for one organization and never belong to another (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
+   * still describe the page — with two exceptions. A switch drops `?employees=`: the selection came
+   * from the previous organization's roster (`ORG_LENS_SWITCH_PARAMS_RESET`), and Back does not
+   * restore it (the pages that filter by it clear it on an org change). Leaving an EasyCLA
+   * address, on either mount, drops the corporate-signing return parameters `?org=` and
+   * `?signed=`. Those describe a trip opened for one organization and never belong to another
+   * (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -145,6 +185,9 @@ export class OrgLensNavigationService {
       // `/org/{organization}/…`: a switch swaps the organization and keeps the page; a default
       // leaves an addressed organization alone.
       const selected = this.accountContext.selectedAccount();
+      // `segment` is already the family's `family-{rootUid}` key when a roll-up is selected
+      // (`orgUrlSegment` emits it), so `/org/family-{rootUid}/people` is caught by the first comparison and
+      // switching in or out of the roll-up swaps the segment like any other organization (#4133).
       if (intent !== 'switch' || segments[1] === segment || segments[1] === selected.uid) {
         return;
       }
@@ -156,10 +199,14 @@ export class OrgLensNavigationService {
     // no organization, is a canonicalizing rewrite of the address the viewer already meant, so it
     // replaces (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen,
     // now showing the new selection.
+    const queryParams = {
+      ...(intent === 'switch' ? ORG_LENS_SWITCH_PARAMS_RESET : {}),
+      ...(leavingEasycla ? ORG_EASYCLA_RETURN_PARAMS_RESET : {}),
+    };
     void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default' || canonicalizes,
       preserveFragment: true,
-      ...(leavingEasycla ? { queryParamsHandling: 'merge', queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET } } : { queryParamsHandling: 'preserve' }),
+      ...(Object.keys(queryParams).length ? { queryParamsHandling: 'merge', queryParams } : { queryParamsHandling: 'preserve' }),
     });
   }
 

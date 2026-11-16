@@ -5,7 +5,9 @@
 // (`hmpage`, the gate's column) is 1100px or narrower. The rail opens as a floating panel on hover or focus,
 // its items fading in one after another; picking one closes it until the pointer leaves.
 :host {
-  position: relative;
+  // Pinned under the page header at every width; being positioned, it also anchors the floating panel.
+  position: sticky;
+  top: var(--hmn-top, 0px);
   z-index: 20;
   display: flex;
   flex: 0 0 28px;
@@ -14,10 +16,9 @@
   align-self: flex-start;
   min-width: 28px;
 
-  // The offset only applies while pinned; a relative host would just be pushed below the first card.
-  @media (min-width: theme('screens.lg')) {
-    position: sticky;
-    top: var(--hmn-top, 0px);
+  // Phones navigate with the header's view dropdown instead.
+  @media (max-width: 640px) {
+    display: none;
   }
 }
 

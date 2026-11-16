@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,6 +11,7 @@ import {
   SCHEDULE_SURVEY_CONFIRMATION,
   SEND_SURVEY_CONFIRMATION,
   SURVEY_AUTO_REMINDER_FREQUENCY_OPTIONS,
+  SURVEY_EMAIL_DRAFTS,
   SURVEY_IMMEDIATE_SEND_OFFSET_MS,
   SURVEY_LABEL,
   SURVEY_MANAGE_TOTAL_STEPS,
@@ -23,6 +24,8 @@ import {
   Survey,
   SurveyDistributionMethod,
   SurveyReminderType,
+  SurveyTemplateAccessTarget,
+  SurveyTemplatesState,
 } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -32,12 +35,18 @@ import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@sha
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
 import { probeCommitteeWriters, resolveEntityWriteSlug, resolveSurveyCommitteeCandidates } from '@shared/utils/write-access.util';
 import { MessageComponent } from '@components/message/message.component';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import {
+  buildSurveyEmailBodies,
+  getSurveyEmailDraft,
+  isDefaultSurveyEmailField,
+  markFormControlsAsTouched,
+  toSurveyTemplateVariables,
+} from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { SurveyAudienceTypeComponent } from '../components/survey-audience-type/survey-audience-type.component';
 import { SurveyEmailDraftComponent } from '../components/survey-email-draft/survey-email-draft.component';
@@ -88,6 +97,13 @@ export class SurveyManageComponent {
   public readonly surveyId = signal<string | null>(null);
   public readonly submitting = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
+  // Bumped by "Try again" so the template fetch reruns for the same access target.
+  private readonly templateReload = signal<number>(0);
+  private readonly surveyReload = signal<number>(0);
+  private readonly surveyLoadFailed = signal<boolean>(false);
+  // Reuse the granting candidate from the existing access probe for template authorization.
+  private readonly templateCommitteeUid = signal<string | null>(null);
+  private readonly templateProjectWriter = signal<boolean>(false);
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -98,6 +114,9 @@ export class SurveyManageComponent {
   // URL-stamped committee scope for the access predicate — mirrors writerGuard's committee leg.
   private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
   private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
+  // Template-list scope — the same project/committee target the write-access predicate uses (#5124).
+  private readonly templateAccessTarget: Signal<SurveyTemplateAccessTarget | null> = this.initTemplateAccessTarget();
+  public readonly surveyTemplates: Signal<SurveyTemplatesState> = this.initSurveyTemplates();
   public readonly formValue: Signal<Record<string, unknown>> = this.initFormValue();
   public readonly canGoPrevious: Signal<boolean> = this.initCanGoPrevious();
   public readonly canGoNext: Signal<boolean> = this.initCanGoNext();
@@ -135,6 +154,16 @@ export class SurveyManageComponent {
     // Pass the guard-mirroring predicate — the default canWrite is project-writer-only and would
     // evict guard-admitted committee writers the moment the context syncs to the survey's project.
     evictOnWriteAccessLoss(this.writeAccess);
+    this.initTemplateControlLock();
+    this.initTemplateEmailDraft();
+  }
+
+  public retryTemplates(): void {
+    if (this.surveyLoadFailed()) {
+      this.surveyReload.update((count) => count + 1);
+      return;
+    }
+    this.templateReload.update((count) => count + 1);
   }
 
   public nextStep(): void {
@@ -296,6 +325,9 @@ export class SurveyManageComponent {
     const isImmediate = distributionMethod === 'immediate';
     const immediateSendAtMs = Date.now() + SURVEY_IMMEDIATE_SEND_OFFSET_MS;
 
+    // The survey service renders subject/body as Go templates: `{{Var}}` must be `{{.Var}}`
+    const emailBodies = buildSurveyEmailBodies(formData.emailBody);
+
     const surveyData: CreateSurveyRequest = {
       survey_monkey_id: formData.surveyTemplate,
       survey_title: committees[0]?.name ? `${committees[0].name} Survey` : 'New Survey',
@@ -303,9 +335,9 @@ export class SurveyManageComponent {
       survey_send_date: isImmediate ? new Date(immediateSendAtMs).toISOString() : new Date(formData.scheduledDate).toISOString(),
       survey_cutoff_date: new Date(formData.cutoffDate).toISOString(),
       survey_reminder_rate_days: parseInt(formData.reminderFrequency, 10) || 7,
-      email_subject: formData.emailSubject,
-      email_body: `<!DOCTYPE html><html><body>${formData.emailBody}</body></html>`,
-      email_body_text: formData.emailBody,
+      email_subject: toSurveyTemplateVariables(formData.emailSubject),
+      email_body: emailBodies.html,
+      email_body_text: emailBodies.text,
       committee_uid: committees[0]?.uid || '',
       committee_voting_enabled: this.committeeContext()?.enable_voting ?? false,
       is_project_survey: false,
@@ -348,20 +380,58 @@ export class SurveyManageComponent {
       reminderType: new FormControl<SurveyReminderType>('automatic', [Validators.required]),
       reminderFrequency: new FormControl<string>('7', [Validators.required]),
 
-      // Step 3: Email Draft
-      emailSubject: new FormControl('{{FirstName}}, Your Feedback as a {{ProjectName}} Maintainer Matters!', [trimmedRequired(), Validators.maxLength(200)]),
-      emailBody: new FormControl(
-        `Thank you for being a valuable member of the {{CommitteeName}}. We respect your opinion as your feedback helps us get better every day.
-
-Please share your experience by clicking the button below and completing a short survey. It will take under a minute.
-
-{{SurveyButton}}
-
-Thank you,
-{{ExecutiveDirectorName}}`,
-        [trimmedRequired()]
-      ),
+      // Step 3: Email Draft — starts from the general draft; choosing a template swaps in its audience's draft.
+      emailSubject: new FormControl(SURVEY_EMAIL_DRAFTS.general.subject, [trimmedRequired(), Validators.maxLength(200)]),
+      emailBody: new FormControl(SURVEY_EMAIL_DRAFTS.general.body, [trimmedRequired()]),
     });
+  }
+
+  /** Keeps the picker and Next locked unless the template list has loaded. */
+  private initTemplateControlLock(): void {
+    toObservable(this.surveyTemplates)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((state) => {
+        const control = this.form().get('surveyTemplate');
+        if (!control) return;
+        const ready = state.status === 'ready';
+        // Reconcile every successful list, including synchronous ready-to-ready refreshes.
+        if (ready && control.value && !state.options.some((option) => option.value === control.value)) {
+          control.setValue('');
+        }
+        if (control.enabled === ready) return;
+        // Emit so formValue and canGoNext also recompute when a held value is locked.
+        if (ready) {
+          control.enable();
+        } else {
+          control.disable();
+        }
+      });
+  }
+
+  /**
+   * Choosing a template swaps in its audience's email draft (maintainer or general, mirroring PCC),
+   * but only into a subject or body that still holds a default draft, so edits are never overwritten.
+   */
+  private initTemplateEmailDraft(): void {
+    const form = this.form();
+    form
+      .get('surveyTemplate')
+      ?.valueChanges.pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+      .subscribe((templateId: string | null) => {
+        const title = this.surveyTemplates().options.find((option) => option.value === templateId)?.label;
+        if (!title) {
+          return;
+        }
+        const draft = getSurveyEmailDraft(title);
+        const subject = form.get('emailSubject');
+        const body = form.get('emailBody');
+        if (subject && subject.value !== draft.subject && isDefaultSurveyEmailField('subject', subject.value)) {
+          subject.setValue(draft.subject);
+        }
+        if (body && body.value !== draft.body && isDefaultSurveyEmailField('body', body.value)) {
+          body.setValue(draft.body);
+        }
+      });
   }
 
   private initIsEditMode(): Signal<boolean> {
@@ -383,6 +453,61 @@ Thank you,
       this.formValue();
       return this.currentStep() < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1);
     });
+  }
+
+  /**
+   * Create mode scopes to the active project context plus `?committee_uid=`, exactly as the
+   * write-access project leg does; edit mode uses the survey's own project and the granting
+   * committee candidate. Edit mode waits for a granting access leg instead of guessing while the probe is pending.
+   */
+  private initTemplateAccessTarget(): Signal<SurveyTemplateAccessTarget | null> {
+    const isEdit = this.route.snapshot.paramMap.has('id');
+    return computed(() => {
+      if (isEdit) {
+        const survey = this.survey();
+        if (!survey?.project_uid || (!this.templateProjectWriter() && !this.templateCommitteeUid())) {
+          return null;
+        }
+        return {
+          projectUid: survey.project_uid,
+          committeeUid: this.templateCommitteeUid() ?? resolveSurveyCommitteeCandidates(survey.committees, this.committeeUidFromUrl)[0] ?? null,
+        };
+      }
+      const projectUid = this.projectContextService.activeContext()?.uid;
+      return projectUid ? { projectUid, committeeUid: this.committeeUidFromUrl } : null;
+    });
+  }
+
+  /** Fetches once per access target (and per retry); no cache beyond this wizard session. */
+  private initSurveyTemplates(): Signal<SurveyTemplatesState> {
+    const loading: SurveyTemplatesState = { status: 'loading', options: [] };
+    return toSignal(
+      combineLatest([toObservable(this.templateAccessTarget), toObservable(this.templateReload), toObservable(this.surveyLoadFailed)]).pipe(
+        distinctUntilChanged(
+          ([prevTarget, prevReload, prevFailed], [target, reload, failed]) =>
+            prevTarget?.projectUid === target?.projectUid && prevTarget?.committeeUid === target?.committeeUid && prevReload === reload && prevFailed === failed
+        ),
+        switchMap(([target, , failed]) => {
+          if (failed) {
+            return of<SurveyTemplatesState>({ status: 'error', options: [] });
+          }
+          if (!target) {
+            return of(loading);
+          }
+          return this.surveyService.getSurveyTemplates(target.projectUid, target.committeeUid).pipe(
+            map(
+              (templates): SurveyTemplatesState => ({
+                status: 'ready',
+                options: [...templates].sort((a, b) => a.title.localeCompare(b.title)).map((template) => ({ label: template.title, value: template.id })),
+              })
+            ),
+            catchError(() => of<SurveyTemplatesState>({ status: 'error', options: [] })),
+            startWith(loading)
+          );
+        })
+      ),
+      { initialValue: loading }
+    );
   }
 
   private initIsFirstStep(): Signal<boolean> {
@@ -451,16 +576,17 @@ Thank you,
    */
   private initSurvey(): Signal<Survey | null> {
     return toSignal(
-      toObservable(this.surveyId).pipe(
-        switchMap((id) => {
+      combineLatest([toObservable(this.surveyId), toObservable(this.surveyReload)]).pipe(
+        switchMap(([id, reload]) => {
+          this.surveyLoadFailed.set(false);
           if (!id) {
             return of(null);
           }
-          return this.surveyService.getSurvey(id).pipe(
+          const request = reload > 0 ? this.surveyService.getSurvey(id, undefined, { skipCache: true }) : this.surveyService.getSurvey(id);
+          return request.pipe(
             catchError((error) => {
-              // Only a real 404 ejects — the fetch exists for context sync (no form pre-population
-              // yet), so a transient 5xx/network blip leaves the page mounted; the context simply
-              // stays uncorrected rather than mislabeling a server error as "not found".
+              // Only a real 404 ejects; transient failures expose Try again and reload this
+              // owning survey before templates can resolve their authorization target.
               if (error instanceof HttpErrorResponse && error.status === 404) {
                 this.messageService.add({
                   severity: 'error',
@@ -468,9 +594,12 @@ Thank you,
                   detail: `${this.surveyLabel.singular} not found`,
                 });
                 this.router.navigate(['/surveys']);
+              } else {
+                this.surveyLoadFailed.set(true);
               }
               return of(null);
-            })
+            }),
+            startWith(null)
           );
         })
       ),
@@ -530,13 +659,15 @@ Thank you,
         filter((key): key is string | null => key !== undefined),
         distinctUntilChanged(),
         switchMap((key) => {
+          this.templateProjectWriter.set(false);
           if (!key) {
             return of(false);
           }
           // writerGuard admits no coordinator-style role for surveys — project.writer only.
           return this.projectService.getProject(key, false).pipe(
             map((project) => project?.writer === true),
-            catchError(() => of(false))
+            catchError(() => of(false)),
+            tap((writer) => this.templateProjectWriter.set(writer))
           );
         })
       )
@@ -570,7 +701,18 @@ Thank you,
       committeeUids$.pipe(
         filter((uids): uids is string[] => uids !== undefined),
         distinctUntilChanged((a, b) => a.join('|') === b.join('|')),
-        switchMap((uids) => probeCommitteeWriters(uids, (uid) => this.committeeService.fetchCommittee(uid)).pipe(map((result) => result.writer)))
+        switchMap((uids) => {
+          this.templateCommitteeUid.set(null);
+          return probeCommitteeWriters(uids, (uid) =>
+            this.committeeService.fetchCommittee(uid).pipe(
+              tap((committee) => {
+                if (committee?.writer === true) {
+                  this.templateCommitteeUid.set(uid);
+                }
+              })
+            )
+          ).pipe(map((result) => result.writer));
+        })
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
@@ -595,7 +737,10 @@ Thank you,
         // Committee is valid if locked via group context, or if the form control has selections
         const committeesValue = this.committeeContext() ? [this.committeeContext()] : (form.get('committees')?.value as CommitteeReference[] | null);
         const committeesValid = Array.isArray(committeesValue) && committeesValue.length > 0;
-        const surveyTemplateValid = !!form.get('surveyTemplate')?.valid && !!form.get('surveyTemplate')?.value;
+        const templateControl = form.get('surveyTemplate');
+        const templates = this.surveyTemplates();
+        const surveyTemplateValid =
+          !!templateControl?.valid && templates.status === 'ready' && templates.options.some((option) => option.value === templateControl.value);
         return committeesValid && surveyTemplateValid;
       }
       case 2: {

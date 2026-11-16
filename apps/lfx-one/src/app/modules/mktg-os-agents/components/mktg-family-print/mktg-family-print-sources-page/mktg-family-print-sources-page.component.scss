@@ -1,0 +1,93 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The Sources page's table and rows (the design board's exact px). */
+.fps-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font: 400 12.5px/1.4 var(--pp-font);
+  color: var(--pp-ink);
+
+  th {
+    padding: 6px 12px 6px 0;
+    text-align: left;
+    font: 600 9.5px/1.2 var(--pp-font);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--pp-muted);
+    border-bottom: 1px solid var(--pp-ink);
+  }
+
+  td {
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--pp-hairline);
+  }
+
+  &__name {
+    font-weight: 500;
+    color: var(--pp-dark);
+  }
+
+  &__muted {
+    color: var(--pp-muted);
+  }
+}
+
+.fps-label {
+  display: block;
+}
+
+/* The Still open block follows the conflicts, the layout's block gap under their last row (MKTG_FAMILY_PRINT_SOURCES_LAYOUT.blockGap). */
+.fps-block + .fps-block {
+  margin-top: 16px;
+}
+
+.fps-rows {
+  margin-top: 6px;
+}
+
+/* A hairline-ruled conflict row: its 130px topic, then the sentence and the document to re-run. */
+.fps-row {
+  display: flex;
+  gap: 18px;
+  padding: 8px 0;
+  border-top: 1px solid var(--pp-hairline);
+  font: 400 12px/1.45 var(--pp-font);
+  color: var(--pp-ink);
+
+  &__topic {
+    flex: none;
+    width: 130px;
+    font-weight: 600;
+    color: var(--pp-dark);
+  }
+}
+
+.fps-rerun {
+  font-weight: 500;
+  color: var(--pp-dark);
+}
+
+/* The Still open rows: the chip column as wide as the longest document name, the text after it, a hairline above each row. */
+.fps-open {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 18px;
+  margin-top: 6px;
+  font: 400 11.5px/1.45 var(--pp-font);
+  color: var(--pp-ink);
+
+  &__chip,
+  &__text {
+    padding: 7px 0;
+    border-top: 1px solid var(--pp-hairline);
+  }
+}
+
+/* A list's cut note, one line of the list's own type under its last row: the rows that did not fit, counted. */
+.fps-cut {
+  margin: 6px 0 0;
+  font: 500 11.5px/1.45 var(--pp-font);
+  color: var(--pp-dark);
+}

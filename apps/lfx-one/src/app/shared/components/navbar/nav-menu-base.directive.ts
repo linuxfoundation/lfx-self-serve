@@ -4,11 +4,26 @@
 import { afterNextRender, computed, DestroyRef, Directive, ElementRef, inject, input, model, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
-import type { IsActiveMatchOptions } from '@angular/router';
+import type { IsActiveMatchOptions, Params } from '@angular/router';
 import { environment } from '@environments/environment';
-import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_PATH,
+  LENS_DEFAULT_ROUTES,
+  ORG_LENS_TIME_RANGE_QUERY_PARAM,
+  ORG_SCOPE_QUERY_PARAM,
+  ORG_TEAM_MEMBERS_QUERY_PARAM,
+} from '@lfx-one/shared/constants';
 import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { lensItemToProjectContext, orgLensDestinationKey } from '@lfx-one/shared/utils';
+import {
+  lensItemToProjectContext,
+  orgLensDestinationKey,
+  orgLensTimeRangeUrlParam,
+  orgScopeUrlParam,
+  orgTeamMembersUrlParam,
+  parseOrgLensTimeRange,
+  parseOrgScopeFilter,
+  parseOrgTeamMembersFilter,
+} from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { GwEmbedWarmupService } from '@services/gw-embed-warmup.service';
 import { LensService } from '@services/lens.service';
@@ -87,7 +102,7 @@ export abstract class NavMenuBase {
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
   // Browser-only hydration gate. Org-lens menu items are still shaped by browser-only LaunchDarkly
-  // flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one; hydrating
+  // flags (Donations), so the server menu can differ from the client-resolved one; hydrating
   // one against the other leaves stale nodes on screen. Holding the concrete menu back until
   // afterNextRender means the server and the first client render both show the loading skeleton
   // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.
@@ -111,6 +126,14 @@ export abstract class NavMenuBase {
    * left to both, `routerLinkActive` would strip the classes this adds on every navigation.
    */
   protected readonly aliasHighlightedKeys: Signal<Readonly<Record<string, boolean>>> = this.initAliasHighlightedKeys();
+
+  /**
+   * Query params per track key for the links whose `carryQueryParams` apply right now, on top of `projectQueryParams`;
+   * absent keys use `projectQueryParams` alone. A link carries a parameter only from a page that is itself an item
+   * carrying it, or a page under one (e.g. `?range=` between People and Code Contributions, `?orgScope=` from a project
+   * detail page under Projects), so unrelated pages never leak theirs.
+   */
+  protected readonly carriedQueryParams: Signal<Readonly<Partial<Record<string, Params>>>> = this.initCarriedQueryParams();
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -282,6 +305,54 @@ export abstract class NavMenuBase {
       scan(this.footerItemsWithTestIds());
       return keys;
     });
+  }
+
+  private initCarriedQueryParams(): Signal<Readonly<Partial<Record<string, Params>>>> {
+    return computed(() => {
+      const current = this.router.parseUrl(this.navigatedUrl()).queryParams;
+      const carriers: { trackKey: string; link: string; names: readonly string[] }[] = [];
+      const collect = (items: DecoratedSidebarMenuItem[]): void => {
+        for (const item of items) {
+          if (item.routerLink && item.carryQueryParams?.length) {
+            carriers.push({ trackKey: item.trackKey, link: item.routerLink, names: item.carryQueryParams });
+          }
+          if (item.items) collect(item.items);
+        }
+      };
+      collect(this.itemsWithTestIds());
+      collect(this.footerItemsWithTestIds());
+
+      // A carrier's subpaths are its pages too (a project detail under Projects), so it is matched on them as well.
+      const source = carriers.find((carrier) => this.router.isActive(carrier.link, NavMenuBase.subpathMatch));
+      if (!source) return {};
+      const project = this.projectQueryParams();
+      const params: Record<string, Params> = {};
+      for (const target of carriers) {
+        const carried: Params = {};
+        for (const name of target.names) {
+          if (!source.names.includes(name) || current[name] === undefined) continue;
+          // A range or organization scope is carried only as a valid, non-default value, so a legacy `12mo` or a typo
+          // never spreads to the next page.
+          const value = this.carriedQueryParamValue(name, current[name]);
+          if (value !== null) carried[name] = value;
+        }
+        if (Object.keys(carried).length) params[target.trackKey] = { ...project, ...carried };
+      }
+      return params;
+    });
+  }
+
+  private carriedQueryParamValue(name: string, raw: string): string | null {
+    if (name === ORG_LENS_TIME_RANGE_QUERY_PARAM) return orgLensTimeRangeUrlParam(parseOrgLensTimeRange(raw));
+    if (name === ORG_SCOPE_QUERY_PARAM) {
+      const scope = parseOrgScopeFilter(raw);
+      return scope === null ? null : orgScopeUrlParam(scope);
+    }
+    if (name === ORG_TEAM_MEMBERS_QUERY_PARAM) {
+      const teamMembers = parseOrgTeamMembersFilter(raw);
+      return teamMembers === null ? null : orgTeamMembersUrlParam(teamMembers);
+    }
+    return raw;
   }
 
   /** Test id, external-link flag and `@for` track key for an item and, recursively, its children. */

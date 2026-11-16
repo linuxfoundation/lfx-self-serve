@@ -71,7 +71,6 @@ export const mapMentorshipMenteeApplication = (
   upstreamStatus: application.status,
   createdOn: application.created_on,
   updatedOn: application.updated_on,
-  decisionExpectedDate: application.term?.application_end_date ? toMentorshipUtcEndOfDayInstant(application.term.application_end_date) : undefined,
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 

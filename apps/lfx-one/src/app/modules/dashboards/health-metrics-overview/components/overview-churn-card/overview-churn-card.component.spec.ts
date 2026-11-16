@@ -91,6 +91,7 @@ describe('OverviewChurnCardComponent', () => {
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
 
-    expect(text('overview-churn-empty')).toContain('No churn to report');
+    expect(text('overview-churn-empty-title')).toBe(`No churn in ${new Date().getFullYear() - 1}`);
+    expect(text('overview-churn-empty')).toContain('Free and associate memberships aren’t counted');
   });
 });

@@ -26,8 +26,6 @@ import type {
   HealthMetricsTrainingEnrollmentPeriod,
   HealthMetricsTrainingEnrollmentQuery,
   HealthMetricsTrainingEnrollmentTotals,
-  HealthMetricsTrainingPresence,
-  HealthMetricsTrainingPresenceQuery,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -76,24 +74,6 @@ export class HealthMetricsTrainingService {
 
   public constructor() {
     this.snowflakeService = SnowflakeService.getInstance();
-  }
-
-  /** Whether LF Education has any training rows for the foundation; none means it runs no programme. */
-  public async getPresence(req: Request, query: HealthMetricsTrainingPresenceQuery): Promise<HealthMetricsTrainingPresence> {
-    const sql = `
-      SELECT 1 AS present
-      FROM ${TRAINING_SUMMARY_VIEW}
-      WHERE foundation_slug = ?
-      LIMIT 1
-    `;
-
-    const { rows } = await executeSnowflakeViewRead<{ PRESENT: number }>(this.snowflakeService, req, sql, [query.foundationSlug], {
-      operation: 'get_training_presence',
-      view: TRAINING_SUMMARY_VIEW,
-      clientMessage: 'Training is unavailable right now.',
-    });
-
-    return { hasProgramme: rows.length > 0 };
   }
 
   /** Every period's KPI strip and by-type split from the summary, plus enrollments for every year, in one read. */
@@ -205,11 +185,11 @@ export class HealthMetricsTrainingService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        -- The badge is the view's own count, repeated on every row and the same in every period.
+        -- The scope total is the view's own count, repeated on every row and the same in every period.
         SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        -- Named columns, so the badge's scope_courses_count rides only on the totals, not every page row.
+        -- Named columns, so scope_courses_count rides only on the totals, not every page row.
         SELECT course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, sort_rank, TRUE AS is_page_row
         FROM matched
         -- course_key breaks any tie, and NULLS LAST pins placement against the session's null ordering.

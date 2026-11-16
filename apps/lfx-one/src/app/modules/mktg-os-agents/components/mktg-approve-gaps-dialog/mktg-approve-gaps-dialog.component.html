@@ -1,0 +1,93 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div #root class="flex flex-col gap-4 outline-none" tabindex="-1" data-testid="mktg-document-view-approve-confirm">
+  @if (report; as data) {
+    @if (showsFindings) {
+      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; the gaps bullets of a v1 report are not
+           repeated here: Missing assets stands for them. A v2 report with nothing in either group falls through to the list below, so leftover gaps still show. -->
+      @if (findings.failed.length) {
+        <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-failed">
+          <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.failed }}</h3>
+          <ul class="flex flex-col gap-1.5 text-sm">
+            @for (failed of findings.failed; track $index) {
+              <li class="flex flex-col" data-testid="mktg-document-view-approve-failed-item">
+                <span class="text-gray-800 [overflow-wrap:anywhere]" data-testid="mktg-document-view-approve-failed-item-title">{{ failed.title }}</span>
+                <span class="text-xs text-amber-700" data-testid="mktg-document-view-approve-failed-item-reason">{{ failed.text }}</span>
+                @if (failed.detail) {
+                  <span class="text-xs text-gray-500" data-testid="mktg-document-view-approve-failed-item-detail">{{ failed.detail }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+      @if (findings.missing.length) {
+        <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-missing">
+          <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.missing }}</h3>
+          <ul class="flex flex-col gap-1.5 text-sm">
+            @for (missing of findings.missing; track $index) {
+              <li class="flex flex-col" data-testid="mktg-document-view-approve-missing-item">
+                <span class="text-gray-800" data-testid="mktg-document-view-approve-missing-item-title">{{ missing.title }}</span>
+                <span class="text-xs text-amber-700" data-testid="mktg-document-view-approve-missing-item-reason">{{ missing.text }}</span>
+                @if (missing.fix) {
+                  <span class="text-xs text-gray-700" data-testid="mktg-document-view-approve-missing-item-fix">{{ fixPrefix }}{{ missing.fix }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+    } @else if (data.sources_failed.length || data.gaps.length) {
+      <ul class="flex list-disc flex-col gap-2 pl-5 text-sm text-gray-700">
+        @for (source of data.sources_failed; track $index) {
+          <li>{{ source.name }} — {{ source.reason }}</li>
+        }
+        @for (gap of data.gaps; track $index) {
+          <li>{{ gap }}</li>
+        }
+      </ul>
+    }
+    <!-- A Brand Kit's v2 report: the colour conflicts the kit resolved, each value with where it was seen and the one kept. -->
+    @if (colorConflicts.length) {
+      <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-conflicts">
+        <h3 class="text-sm font-semibold text-gray-900">{{ conflictsTitle }}</h3>
+        <ul class="flex flex-col gap-3 text-sm text-gray-700">
+          @for (conflict of colorConflicts; track conflict.name) {
+            <li class="flex flex-col gap-1" data-testid="mktg-document-view-approve-conflict">
+              <span class="font-medium text-gray-900">{{ conflict.name }}</span>
+              <ul class="flex flex-col gap-1">
+                @for (value of conflict.values; track value.hex) {
+                  <!-- Every value has the same two lines: the swatch, the hex and (for the one kept) its pill; then where it was seen, under the hex. -->
+                  <li class="flex min-w-0 flex-col gap-0.5">
+                    <span class="flex items-center gap-2">
+                      <span class="h-4 w-4 shrink-0 rounded-full border border-gray-200" [style.background]="value.hex" aria-hidden="true"></span>
+                      <span class="font-mono text-gray-900">{{ value.hex }}</span>
+                      @if (value.kept) {
+                        <span class="shrink-0 rounded-full border border-gray-200 px-2 py-0.5 text-xs whitespace-nowrap text-gray-600"
+                          >{{ keptPrefix }}{{ value.hex }}</span
+                        >
+                      }
+                    </span>
+                    <span class="pl-6 text-gray-600 [overflow-wrap:anywhere]">{{ value.source }}</span>
+                  </li>
+                }
+              </ul>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+    <!-- The chapters whose rules the LF reference supplied, not the project's own sources: plain words, never a path. -->
+    @if (lfReferenceRules.length) {
+      <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-rules">
+        <h3 class="text-sm font-semibold text-gray-900">{{ rulesTitle }}</h3>
+        <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-700">
+          @for (line of lfReferenceRules; track line.id) {
+            <li data-testid="mktg-document-view-approve-rule">{{ line.text }}</li>
+          }
+        </ul>
+      </section>
+    }
+  }
+</div>

@@ -14,13 +14,16 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     const fixture = await setupStructuredComments(page, agentKey);
     await fixture.open();
     const panel = page.getByTestId('mktg-comments-panel');
-    await expect(panel.getByTestId('mktg-comments-empty')).toBeVisible();
+    await expect(panel.getByTestId('mktg-comments-empty')).toHaveText('No comments yet. To ask for a change, hover a field and choose Comment.');
+    await expect(panel.getByTestId('mktg-comments-send')).toHaveCount(0);
+    await expect(panel.getByTestId('mktg-comments-disabled-reason')).toHaveCount(0);
     const field = page.getByTestId(`mktg-field-comments-${fixture.key}`);
     await field.hover();
     await field.getByRole('button', { name: /^Comment on/ }).click();
     await field.getByRole('textbox').fill('Shorten this synthetic passage.');
     await field.getByRole('button', { name: 'Add comment', exact: true }).click();
-    await expect(field.getByTestId('mktg-comment-thread')).toContainText('Shorten this synthetic passage.');
+    await field.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(field.getByTestId('mktg-comment-body')).toContainText('Shorten this synthetic passage.');
     await expect(panel).toContainText('Project writer');
     expect(fixture.state.adds[0]).toMatchObject({
       revisionId: ASSET_REVISION,
@@ -33,7 +36,9 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
       // Even when the reader moves, the submitted Voice passage must be visible on landing.
       await page.getByTestId('brand-kit-web-view-tab-color').click();
     }
-    await panel.getByRole('button', { name: 'Send 1 open comment to the agent', exact: true }).click();
+    const send = panel.getByRole('button', { name: 'Send 1 open comment to the agent', exact: true });
+    await expect(send).toBeEnabled();
+    await send.click();
     await expect(panel.getByTestId('mktg-comments-feed')).toBeVisible();
     expect(fixture.state.sends).toHaveLength(1);
     expect(fixture.state.sends[0]).toMatchObject({ project: ASSET_PROJECT.uid, revisionId: ASSET_REVISION, commentIds: ['synthetic-pinned-comment'] });
@@ -46,8 +51,11 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
       await expect(page.getByTestId('brand-kit-web-view-line')).toHaveText('Revised synthetic brand line.');
     } else await expect(page.getByTestId('mktg-boilerplates-view-text-1')).toHaveText('Revised synthetic boilerplate.');
     await expect(page.getByTestId('mktg-document-view-revision-label-2')).toContainText('Draft');
-    await expect(page.getByTestId('mktg-document-view-current-since-1')).toContainText('Current since');
-    await expect(panel).toContainText('Shortened the selected passage.');
+    await expect(page.getByTestId('mktg-document-view-current-1')).toHaveText('Current');
+    await expect(page.getByTestId('mktg-document-view-current-since-1')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-hash')).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(panel.getByTestId('mktg-comment-resolution')).toHaveText('Shortened the selected passage.');
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-redraft.png`), fullPage: true });
   });
   test(`${agentKey}: loading is not empty and failed reads recover only on explicit Retry`, async ({ page }) => {
@@ -56,7 +64,10 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     try {
       await fixture.open();
       const panel = page.getByTestId('mktg-comments-panel');
-      await expect(panel.getByTestId('mktg-comments-loading')).toContainText('Loading comments');
+      const pending = page.getByTestId('mktg-document-view-comments-skeleton');
+      await expect(pending).toBeVisible();
+      await expect(pending).toHaveAttribute('role', 'status');
+      await expect(pending).toHaveAttribute('aria-busy', 'true');
       await expect(panel.getByTestId('mktg-comments-empty')).toHaveCount(0);
       await expect(page.getByTestId(`mktg-field-comments-${fixture.key}`)).toBeHidden();
       fixture.state.fail = true;
@@ -66,7 +77,7 @@ for (const agentKey of ['brand-kit', 'boilerplates'] as const) {
     const panel = page.getByTestId('mktg-comments-panel');
     await expect(panel.getByRole('alert')).toBeVisible();
     await expect(panel.getByTestId('mktg-comments-empty')).toHaveCount(0);
-    await expect(panel.getByTestId('mktg-comments-send').getByRole('button')).toBeDisabled();
+    await expect(panel.getByTestId('mktg-comments-send')).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath(`${agentKey}-comments-error.png`), fullPage: true });
     fixture.state.fail = false;
     await panel.getByRole('button', { name: 'Retry comments' }).click();

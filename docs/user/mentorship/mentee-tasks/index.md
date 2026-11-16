@@ -5,11 +5,13 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, tasks, status, file-upload, prerequisites]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-11-02
 intercom_collection: Mentorship
 ---
 
 The **My Tasks** tab holds everything a program has assigned you — the prerequisites attached to an application, and the term's work once you are accepted.
+
+![My Tasks, listing prerequisite tasks with their status and upload buttons](/images/docs/mentorship/mentee-tasks.png)
 
 ## Before you begin
 
@@ -28,7 +30,7 @@ You set a task's status yourself from the status menu on its row, but only certa
 
 **Submitted** is greyed out on a task still in **To Do** — start it first. You cannot move a task back to **To Do** once it is under way.
 
-A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, the status menu locks: "Completed tasks can only be changed by your mentor."
+A mentor or Program Admin may also move a task on their side; your view refreshes to match. Once your mentor marks a task complete, it still shows as **Submitted** to you, and the status menu locks: "Completed tasks can only be changed by your mentor."
 
 ## Steps
 
@@ -45,16 +47,20 @@ A mentor or Program Admin may also move a task on their side; your view refreshe
 
 **Uploading the file submits the task.** There is no draft state: once the upload succeeds the task moves to **Submitted** and your mentor can review it. Upload only when the work is ready to hand in.
 
+You can upload one PDF, DOC, DOCX or plain-text file, up to 20 MB. A larger file is refused with "The file is larger than 20 MB."
+
 Until you upload, **Submitted** stays disabled and the row shows:
 
 > This task needs a file before it can be submitted. Upload one first.
 
 Afterwards:
 
-| You want to          | You can, while                                                         |
-| -------------------- | ---------------------------------------------------------------------- |
-| **Replace** the file | Your mentor has not completed the task and the due date has not passed |
-| **Remove** the file  | The task is not submitted yet and the due date has not passed          |
+| You want to           | You can, while                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| **View** the file     | Always — a PDF or plain-text file opens in a new tab; DOC and DOCX download instead |
+| **Download** the file | Always                                                                              |
+| **Replace** the file  | Your mentor has not completed the task and the due date has not passed              |
+| **Remove** the file   | The task is not submitted yet and the due date has not passed                       |
 
 Because the upload submits the task, **Remove** disappears straight after it. To take a submission back, move the task to **In Progress** first, then remove or replace the file.
 
@@ -74,13 +80,13 @@ Contact your mentor or the Program Admin if you need a task reopened.
 
 Each of these appears as a short message on screen, and your task list reloads so it matches what the program sees.
 
-| What you see                                                                                                                                 | What it means                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| "This task no longer exists. Your tasks have been refreshed."                                                                                | A mentor or Program Admin removed the task.                |
-| "This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed."                                      | The move was refused — most often a missing required file. |
-| "This task has already moved on, so your change was not applied. Your tasks have been refreshed."                                            | Someone else changed the task first.                       |
-| "You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed." | A permissions check failed; try again shortly.             |
-| "The due date for this task has passed, so it can no longer be submitted or reopened."                                                       | You tried to submit or reopen a task after its due date.   |
+| What you see                                                                                                                                 | What it means                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| "This task no longer exists. Your tasks have been refreshed."                                                                                | The Program Admin removed this prerequisite from the program. |
+| "This task could not be updated. If it needs a file, upload one first. Your tasks have been refreshed."                                      | The move was refused — most often a missing required file.    |
+| "This task has already moved on, so your change was not applied. Your tasks have been refreshed."                                            | Someone else changed the task first.                          |
+| "You do not have permission to update this task right now. If it is assigned to you, try again in a moment. Your tasks have been refreshed." | A permissions check failed; try again shortly.                |
+| "The due date for this task has passed, so it can no longer be submitted or reopened."                                                       | You tried to submit or reopen a task after its due date.      |
 
 ## Related
 

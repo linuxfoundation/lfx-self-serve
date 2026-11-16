@@ -84,7 +84,7 @@ export const MKTG_DOCUMENT_COMMENT_LABEL_GROUPS: Partial<Record<MktgCommentAgent
 export const MKTG_DOCUMENT_COMMENTS_PREFIX = 'document-comments';
 export const MKTG_DOCUMENT_COMMENTS_SCHEMA = 'mktg-document-comments/v1';
 /** Agent form-schema limits, not a new agent catalog or ordering. */
-export const MKTG_DOCUMENT_COMMENT_LIMITS = { 'foundation-message': 30, 'brand-kit': 30, boilerplates: 20 } as const;
+export const MKTG_DOCUMENT_COMMENT_LIMITS = { 'foundation-message': 30, 'brand-kit': 30, boilerplates: 20, faq: 30 } as const;
 export const MKTG_DOCUMENT_COMMENT_MAX_CHARS = 4000;
 export const MKTG_DOCUMENT_COMMENT_CLIENT_MESSAGES = {
   load: 'Comments could not be loaded. Try again.',
@@ -110,5 +110,8 @@ export const MKTG_DOCUMENT_COMMENT_ROOTS = {
   'foundation-message': ['mf', 'icp', 'mh', 'nums'],
   'brand-kit': ['kit', 'chapters'],
   boilerplates: ['bp'],
+  faq: ['faq'],
 } as const;
 export const MKTG_BOILERPLATES_COMMENT_FIELD_REGEX = /^bp(?:\[[0-3]\](?:\.t)?)?$/;
+/** FAQ answer only, in stored group/question order; null answers remain valid targets. */
+export const MKTG_FAQ_COMMENT_FIELD_REGEX = /^faq\[(0|[1-9][0-9]*)\]\[1\]\[(0|[1-9][0-9]*)\]\[1\]$/;

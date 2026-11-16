@@ -13,34 +13,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 import { MembersAtRiskComponent } from './components/members-at-risk/members-at-risk.component';
 import { MembersBoardAttendanceComponent } from './components/members-board-attendance/members-board-attendance.component';
-import { MembersBridgeComponent } from './components/members-bridge/members-bridge.component';
+import { MembersBreakdownComponent } from './components/members-breakdown/members-breakdown.component';
 import { MembersChurnComponent } from './components/members-churn/members-churn.component';
 import { MembersDirectoryComponent } from './components/members-directory/members-directory.component';
+import { MembersGrowthComponent } from './components/members-growth/members-growth.component';
 import { MembersNpsComponent } from './components/members-nps/members-nps.component';
 import { MembersRenewalsComponent } from './components/members-renewals/members-renewals.component';
-import { MembersTiersComponent } from './components/members-tiers/members-tiers.component';
 import { HealthMetricsMembersComponent } from './health-metrics-members.component';
 
-/** Stands in for Membership & revenue by tier, whose read its own spec covers; the test drives its outputs. */
-@Component({ selector: 'lfx-members-tiers', template: '<div data-testid="members-tiers-stub"></div>' })
-class TiersStubComponent {
-  public readonly settled = output<void>();
+/** Stands in for Member growth by year, whose read its own spec covers; the test drives its settle. */
+@Component({ selector: 'lfx-members-growth', template: '<div data-testid="members-growth-stub"></div>' })
+class GrowthStubComponent {
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-/** Stands in for the membership bridge, which reads separately under the same anchor. */
-@Component({ selector: 'lfx-members-bridge', template: '<div data-testid="members-bridge-stub"></div>' })
-class BridgeStubComponent {
-  public readonly settled = output<void>();
+/** Stands in for Membership breakdown by tier, whose read its own spec covers; the test drives its outputs. */
+@Component({ selector: 'lfx-members-breakdown', template: '<div data-testid="members-breakdown-stub"></div>' })
+class BreakdownStubComponent {
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
-  public readonly sectionPicked = output<string>();
 }
 
-/** Stands in for the members directory; the test drives its count and settle. */
+/** Stands in for the members directory; the test drives its settle. */
 @Component({ selector: 'lfx-members-directory', template: '<div data-testid="members-directory-stub"></div>' })
 class DirectoryStubComponent {
-  public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -48,29 +46,28 @@ class DirectoryStubComponent {
 @Component({ selector: 'lfx-members-at-risk', template: '<div data-testid="members-at-risk-stub"></div>' })
 class AtRiskStubComponent {
   public readonly noteChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for the member satisfaction section; the test drives its settle. */
 @Component({ selector: 'lfx-members-nps', template: '<div data-testid="members-nps-stub"></div>' })
 class NpsStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
 /** Stands in for the churn section; the test drives its settle. */
 @Component({ selector: 'lfx-members-churn', template: '<div data-testid="members-churn-stub"></div>' })
 class ChurnStubComponent {
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
-/** Stands in for the renewals section; the test drives its count and settle. */
+/** Stands in for the renewals section; the test drives its settle. */
 @Component({ selector: 'lfx-members-renewals', template: '<div data-testid="members-renewals-stub"></div>' })
 class RenewalsStubComponent {
-  public readonly countChange = output<number | null>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -78,7 +75,7 @@ class RenewalsStubComponent {
 @Component({ selector: 'lfx-members-board-attendance', template: '<div data-testid="members-board-stub"></div>' })
 class BoardStubComponent {
   public readonly noteChange = output<string>();
-  public readonly settled = output<void>();
+  public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
 
@@ -102,24 +99,24 @@ describe('HealthMetricsMembersComponent', () => {
           imports: [
             MembersAtRiskComponent,
             MembersBoardAttendanceComponent,
-            MembersBridgeComponent,
+            MembersBreakdownComponent,
             MembersChurnComponent,
             MembersDirectoryComponent,
+            MembersGrowthComponent,
             MembersNpsComponent,
             MembersRenewalsComponent,
-            MembersTiersComponent,
           ],
         },
         add: {
           imports: [
             AtRiskStubComponent,
             BoardStubComponent,
-            BridgeStubComponent,
+            BreakdownStubComponent,
             ChurnStubComponent,
             DirectoryStubComponent,
+            GrowthStubComponent,
             NpsStubComponent,
             RenewalsStubComponent,
-            TiersStubComponent,
           ],
         },
       })
@@ -140,7 +137,7 @@ describe('HealthMetricsMembersComponent', () => {
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  it('renders the seven sections in order, each anchored with its design copy and a body or placeholder', async () => {
+  it('renders the eight sections in order, each anchored with its design copy and a body or placeholder', async () => {
     await setup();
     const rendered = [...fixture.nativeElement.querySelectorAll('[data-testid^="members-section-"]')] as HTMLElement[];
 
@@ -148,9 +145,11 @@ describe('HealthMetricsMembersComponent', () => {
     rendered.forEach((element, index) => {
       const key = HEALTH_METRICS_MEMBERS_SECTIONS[index].key;
       expect(element.textContent).toContain(HEALTH_METRICS_MEMBERS_SECTIONS[index].heading);
-      if (key === 'tiers') {
-        expect(element.querySelector('[data-testid="members-tiers-stub"]')).not.toBeNull();
-        expect(element.querySelector('[data-testid="members-bridge-stub"]')).not.toBeNull();
+      if (key === 'growth') {
+        expect(element.querySelector('[data-testid="members-growth-stub"]')).not.toBeNull();
+        expect(element.textContent).not.toContain('Awaiting data');
+      } else if (key === 'breakdown') {
+        expect(element.querySelector('[data-testid="members-breakdown-stub"]')).not.toBeNull();
         expect(element.textContent).not.toContain('Awaiting data');
       } else if (key === 'list') {
         expect(element.querySelector('[data-testid="members-directory-stub"]')).not.toBeNull();
@@ -175,14 +174,14 @@ describe('HealthMetricsMembersComponent', () => {
     });
   });
 
-  it('lists every section in the sub-nav, with no badge and the Engagement note', async () => {
+  it('lists every section in the sub-nav, with no note before a read', async () => {
     await setup();
     const nav = fixture.nativeElement.querySelector('[data-testid="members-sub-nav"]');
 
     for (const section of HEALTH_METRICS_MEMBERS_SECTIONS) {
       expect(fixture.nativeElement.querySelector(`[data-testid="members-sub-nav-${section.key}"]`).textContent).toContain(section.label);
     }
-    expect(nav.textContent).not.toMatch(/\d/);
+    expect(nav.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   function stub<T>(type: new (...args: never[]) => T): T {
@@ -194,93 +193,68 @@ describe('HealthMetricsMembersComponent', () => {
     fixture.detectChanges();
   }
 
-  it('holds a deep link until the tiers, bridge, directory, at-risk, renewals, board, nps and churn reads settle', async () => {
+  it('holds a deep link until the growth, breakdown, directory, at-risk, renewals, board, nps and churn reads settle', async () => {
     await setup('churn');
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     // Each settle re-lands the held link; it is released only once every data section has settled.
-    stub(TiersStubComponent).settled.emit();
+    stub(GrowthStubComponent).settled.emit(false);
+    await flush();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(BridgeStubComponent).settled.emit();
-    stub(DirectoryStubComponent).settled.emit();
+    stub(DirectoryStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(AtRiskStubComponent).settled.emit();
+    stub(AtRiskStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(RenewalsStubComponent).settled.emit();
+    stub(RenewalsStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(BoardStubComponent).settled.emit();
+    stub(BoardStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(NpsStubComponent).settled.emit();
+    stub(NpsStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stub(ChurnStubComponent).settled.emit();
+    stub(ChurnStubComponent).settled.emit(false);
     await flush();
     scrollIntoView.mockClear();
-    stub(TiersStubComponent).settled.emit();
+    stub(BreakdownStubComponent).settled.emit(false);
     await flush();
 
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-churn');
-  });
-
-  it('badges All members with the directory count once it reports one', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-list"]').textContent;
-
-    stub(DirectoryStubComponent).countChange.emit(725);
-    await flush();
-    expect(item()).toContain('725');
-
-    stub(DirectoryStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
-  });
-
-  it('badges Renewals with the renewals due once it reports them', async () => {
-    await setup();
-    const item = () => fixture.nativeElement.querySelector('[data-testid="members-sub-nav-renewals"]').textContent;
-
-    stub(RenewalsStubComponent).countChange.emit(61);
-    await flush();
-    expect(item()).toContain('61');
-
-    stub(RenewalsStubComponent).countChange.emit(null);
-    await flush();
-    expect(item()).not.toMatch(/\d/);
   });
 
   it('notes At-risk & balance with the at-risk summary once it reports one', async () => {
@@ -307,14 +281,5 @@ describe('HealthMetricsMembersComponent', () => {
     stub(BoardStubComponent).noteChange.emit('');
     await flush();
     expect(item()).not.toContain('unused');
-  });
-
-  it('scrolls to churn when the bridge picks it', async () => {
-    await setup();
-
-    stub(BridgeStubComponent).sectionPicked.emit('churn');
-    await flush();
-
-    expect(fixture.nativeElement.querySelector('[aria-current="true"]').getAttribute('data-testid')).toBe('members-sub-nav-churn');
   });
 });

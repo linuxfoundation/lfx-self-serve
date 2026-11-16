@@ -58,7 +58,7 @@ Features A and C are implemented. Feature B is tracked in #XXX.
 
 ## 6. Remove stale version footers (SHOULD FIX)
 
-"Last Updated: YYYY-MM-DD" footers go stale silently. Git history is the source of truth for when a doc changed.
+"Last Updated: YYYY-MM-DD" footers go stale silently. Git history is the source of truth for when a doc changed. This applies to footers in architecture docs; the `last_updated` front-matter field in `docs/user/` articles is maintained (see `.claude/rules/development-rules.md` § User Documentation Maintenance).
 
 ---
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, output, signal, Signal } from '@angular/core';
+import { afterEveryRender, Component, ElementRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidatorFn, Validators } from '@angular/forms';
 import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
@@ -20,6 +20,7 @@ import { InputTextComponent } from '../input-text/input-text.component';
 })
 export class OrganizationSearchComponent {
   private readonly organizationService = inject(OrganizationService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   public form = input.required<FormGroup>();
   public nameControl = input<string>();
@@ -29,6 +30,20 @@ export class OrganizationSearchComponent {
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();
   public dataTestId = input<string>('organization-search');
+  /** Forwarded to the search box so a parent `<label for>` can name it. */
+  public inputId = input<string>();
+  /** Forwarded to the search box as `aria-describedby` (the id of the field's current error message). */
+  public describedBy = input<string | undefined>();
+  /** Forwarded to the search box: styles it invalid and sets `aria-invalid`. */
+  public invalid = input<boolean>(false);
+  /** Forwarded to the search box as its native `maxlength`. */
+  public maxLength = input<number | null>(null);
+  /**
+   * Marks the search box mandatory for assistive tech (`aria-required`). Unset renders no attribute, so
+   * existing consumers are unchanged. Applied after render because `lfx-autocomplete` has no way to
+   * forward it without adding `aria-required="false"` to every other consumer.
+   */
+  public required = input<boolean>(false);
   public disabled = input<boolean>(false);
   /** When false, the field keeps the user-selected name instead of being overwritten with the
    *  CDP canonical name returned by /api/organizations/resolve. Defaults to true for backward
@@ -49,6 +64,14 @@ export class OrganizationSearchComponent {
   /** Name of the parent form control that holds the resolved org id. Cleared when entering manual
    *  mode so a stale id from a prior selection does not survive as resolution evidence. */
   public idControl = input<string>();
+  /** When false the field is a plain name picker for forms that store the organization as a string:
+   *  a pick writes the name to the parent control, registers the session org and emits
+   *  `onOrganizationSelect`, then stops — no CDP find-or-create (`POST /api/organizations/resolve`),
+   *  no manual-mode switch for a missing domain, and `resolveCurrentEntry()` is a no-op. Typed text
+   *  that is never picked is mirrored into the parent name control as the user types and on blur,
+   *  so the control always holds what the box shows. Defaults to true, which leaves every existing
+   *  consumer's behavior unchanged. */
+  public resolveOnSelect = input<boolean>(true);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
   public readonly onOrganizationResolved = output<OrganizationResolveResult>();
@@ -73,6 +96,9 @@ export class OrganizationSearchComponent {
   // Name of the currently selected suggestion, so onSearchComplete can tell a live re-type
   // (query no longer matches what was picked) from PrimeNG echoing the selection back.
   private selectedName: string | null = null;
+  /** resolveOnSelect=false only: the name just picked. PrimeNG writes it back into the box, and the debounced
+   *  search would then look up the name the user already chose; that one search is skipped. */
+  private pickedTerm: string | null = null;
 
   // True once the typed query has diverged from selectedName and been synced to the parent
   // form as free text. Kept separate from the string comparison in onSearchComplete so a
@@ -93,6 +119,15 @@ export class OrganizationSearchComponent {
   protected suggestions: Signal<OrganizationSuggestion[]>;
 
   public constructor() {
+    afterEveryRender(() => {
+      if (!this.required()) {
+        return;
+      }
+      const input = this.host.nativeElement.querySelector('input');
+      if (input && input.getAttribute('aria-required') !== 'true') {
+        input.setAttribute('aria-required', 'true');
+      }
+    });
     const searchControl = this.organizationForm.get('organizationSearch')!;
 
     // Track search term for footer display. Skip PrimeNG's per-keystroke `undefined` write (see
@@ -113,6 +148,10 @@ export class OrganizationSearchComponent {
     // name control holds '' until onSearchComplete's resync lands; the mirror below is guarded
     // (syncingParentFromSelf) so that '' write doesn't echo back and blank the visible input.
     searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((value: string | null | undefined) => {
+      // The marker covers only the echo of the pick itself: any other value (an edit, a clear, PrimeNG's per-keystroke `undefined`) ends it.
+      if (this.pickedTerm !== null && (value ?? '').trim().toLowerCase() !== this.pickedTerm.toLowerCase()) {
+        this.pickedTerm = null;
+      }
       if (this.manualMode() || this.selectedName === null) return;
       if (value === undefined) {
         this.invalidateStaleSelection('');
@@ -136,6 +175,14 @@ export class OrganizationSearchComponent {
         // Only fetch suggestions when user types something
         if (!trimmedTerm) {
           return of([]);
+        }
+
+        if (this.pickedTerm !== null) {
+          const picked = this.pickedTerm;
+          this.pickedTerm = null;
+          if (trimmedTerm.toLowerCase() === picked.toLowerCase() && this.selectedName !== null && !this.selectionInvalidated) {
+            return of([]);
+          }
         }
 
         return this.organizationService.searchOrganizations(trimmedTerm);
@@ -209,6 +256,37 @@ export class OrganizationSearchComponent {
     }
 
     this.organizationForm.get('organizationSearch')?.setValue(event.query);
+    this.mirrorTypedText(event.query);
+  }
+
+  /** Blur is the only signal that lands before the debounced search when the user types and tabs
+   *  away immediately, so it reads the live input rather than the (possibly still stale) search
+   *  control. Only wired for resolveOnSelect=false; a no-op otherwise. */
+  public onSearchBlur(): void {
+    if (this.resolveOnSelect()) {
+      return;
+    }
+    const nameControlName = this.nameControl();
+    // The inner box binds a private control, so the parent never learns it was visited; without this
+    // an empty required field stays silent until submit.
+    if (nameControlName) {
+      this.form().get(nameControlName)?.markAsTouched();
+    }
+    this.onSearchInput();
+  }
+
+  /** Mirrors the live box text into the parent control on every native input event. The debounced
+   *  completeMethod lags ~300 ms behind a keystroke, so a submit (Enter) inside that window would
+   *  otherwise send a truncated name. Only wired for resolveOnSelect=false; a no-op otherwise. */
+  public onSearchInput(): void {
+    if (this.resolveOnSelect()) {
+      return;
+    }
+    const liveValue = this.host.nativeElement.querySelector('input')?.value;
+    if (liveValue === undefined) {
+      return;
+    }
+    this.mirrorTypedText(liveValue);
   }
 
   public onOrganizationSelected(event: AutoCompleteSelectEvent): void {
@@ -254,6 +332,12 @@ export class OrganizationSearchComponent {
 
     this.onOrganizationSelect.emit(selectedOrganization);
 
+    // The name is already stored; this mode never resolves the pick against CDP.
+    if (!this.resolveOnSelect()) {
+      this.pickedTerm = selectedOrganization.name;
+      return;
+    }
+
     // A committee-service flow (e.g. add-member/invite) needs a website committee-service can
     // store — its payload strips the CDP id, so a domainless match has nothing to submit. Rather
     // than leaving organization_url silently empty until the user hits submit, treat it like a
@@ -278,6 +362,7 @@ export class OrganizationSearchComponent {
     this.organizationForm.get('organizationSearch')?.setValue('');
     this.clearResolveState();
     this.selectedName = null;
+    this.pickedTerm = null;
     this.selectionInvalidated = false;
 
     // Clear form controls if they are specified
@@ -286,7 +371,8 @@ export class OrganizationSearchComponent {
     const domainControlName = this.domainControl();
 
     if (nameControlName && parentForm.get(nameControlName)) {
-      parentForm.get(nameControlName)?.setValue(null);
+      // A string-valued consumer (resolveOnSelect=false) keeps its control a string.
+      parentForm.get(nameControlName)?.setValue(this.resolveOnSelect() ? null : '');
     }
 
     // Only clear domain control if it's specified (optional for forms that only need org name)
@@ -299,6 +385,7 @@ export class OrganizationSearchComponent {
     this.manualMode.set(true);
     this.clearResolveState();
     this.selectedName = null;
+    this.pickedTerm = null;
     this.selectionInvalidated = false;
 
     const nameControlName = this.nameControl();
@@ -342,6 +429,7 @@ export class OrganizationSearchComponent {
     this.manualMode.set(false);
     this.clearResolveState();
     this.selectedName = null;
+    this.pickedTerm = null;
     this.selectionInvalidated = false;
 
     const parentForm = this.form();
@@ -375,6 +463,11 @@ export class OrganizationSearchComponent {
    * Returns an Observable so the parent can subscribe and wait for the result
    */
   public resolveCurrentEntry(): Observable<OrganizationResolveResult | null> {
+    // A string-valued consumer never resolves, so there is nothing to look up or create.
+    if (!this.resolveOnSelect()) {
+      return of(null);
+    }
+
     const parentForm = this.form();
     const nameControlName = this.nameControl();
     const domainControlName = this.domainControl();
@@ -505,6 +598,27 @@ export class OrganizationSearchComponent {
     // Bumping this invalidates any resolveOrg() callback still in flight from a superseded
     // selection, manual-mode switch, or search-mode switch.
     this.selectionToken += 1;
+  }
+
+  /** resolveOnSelect=false only: keep the parent name control equal to the trimmed box text. Guarded
+   *  by syncingParentFromSelf so the parent-to-box mirror doesn't echo the trimmed value back over
+   *  what the user is still typing (a trailing space would otherwise vanish). */
+  private mirrorTypedText(text: string): void {
+    if (this.resolveOnSelect() || this.manualMode()) {
+      return;
+    }
+    const nameControlName = this.nameControl();
+    const ctrl = nameControlName ? this.form().get(nameControlName) : null;
+    const trimmed = text.trim();
+    if (!ctrl || ctrl.value === trimmed) {
+      return;
+    }
+    this.syncingParentFromSelf = true;
+    try {
+      ctrl.setValue(trimmed);
+    } finally {
+      this.syncingParentFromSelf = false;
+    }
   }
 
   private clearIdControl(): void {

@@ -44,6 +44,8 @@ export class ProjectContextService {
   private readonly projectService = inject(ProjectService);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
+  /** Bumped by {@link refreshActiveProject} to re-run the active project's fetches once a write has changed its stage. */
+  private readonly activeProjectRefresh = signal(0);
 
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -263,6 +265,18 @@ export class ProjectContextService {
       });
   }
 
+  /**
+   * Re-fetches the active project's record and stage after a write moved it (#5134: the formation card's
+   * stage edit), so the nav and badges stop showing the previous stage until the context reloads. Only the
+   * ACTIVE context is touched — it is never replaced. On the foundation drill-down the card edits a child
+   * while the context stays the foundation, so a uid that is not the active context's is a no-op.
+   */
+  public refreshActiveProject(projectUid: string): void {
+    if (projectUid && this.activeContextUid() === projectUid) {
+      this.activeProjectRefresh.update((count) => count + 1);
+    }
+  }
+
   // The URL sync runs outside the same-context early return: a stale `?project=` left by a prior
   // selection must still be corrected when the incoming selection already matches the current one.
   public setFoundation(foundation: ProjectContext, syncUrl = true): void {
@@ -340,12 +354,18 @@ export class ProjectContextService {
    * no Angular navigation is triggered, so guards and resolvers are not re-evaluated.
    * Skipped when a navigation is already in flight: the URL already carries the correct
    * param (deep-link) or the caller's own navigation will set the destination URL.
+   *
+   * Built from `location.path(true)` — the live address WITH its `#fragment`, as
+   * `AppComponent.initProjectQueryParamSync` reads it — not `router.url`. The router never sees a
+   * `replaceState`, so `router.url` is the URL of the last NAVIGATION: rebuilding from it dropped
+   * any parameter another `replaceState` had written since (the campaigns page's `?event=`, #4756)
+   * or brought back that parameter's stale value — even when re-selecting the same foundation.
    */
   private syncProjectQueryParam(slug: string | null): void {
     if (this.router.getCurrentNavigation()) {
       return;
     }
-    const urlTree = this.router.parseUrl(this.router.url);
+    const urlTree = this.router.parseUrl(this.location.path(true));
     if (slug === null) {
       delete urlTree.queryParams['project'];
     } else {
@@ -448,7 +468,7 @@ export class ProjectContextService {
 
   private initActiveProjectDetails(): Signal<Project | null> {
     return toSignal(
-      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated), toObservable(this.activeProjectRefresh)]).pipe(
         switchMap(([ctx, authenticated]) => {
           // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266).
           if (!ctx?.slug || !authenticated) {
@@ -549,7 +569,7 @@ export class ProjectContextService {
 
   private initActiveProjectStageFetch(): Signal<string | null | undefined> {
     return toSignal(
-      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated), toObservable(this.activeProjectRefresh)]).pipe(
         switchMap(([ctx, authenticated]) => {
           if (!ctx?.slug || !authenticated) {
             return of(null);

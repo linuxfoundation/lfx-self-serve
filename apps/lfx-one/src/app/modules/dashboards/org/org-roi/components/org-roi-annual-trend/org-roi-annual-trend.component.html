@@ -2,7 +2,33 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="org-roi-annual-trend">
-  <h2 class="text-base font-semibold text-gray-900">Investment and return by year</h2>
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <h2 class="text-base font-semibold text-gray-900">Investment and return by year</h2>
+
+    <!-- Gated on the rows, like the category donut's units toggle is on its slices: the rows are
+         empty while loading, on an error (which resolves to the empty payload) and in the genuine
+         empty state, so one condition keeps the control off all three. A button group, not
+         `role="tablist"` — the full tab pattern needs a matching `tabpanel`, `aria-controls` and
+         roving-tabindex navigation, and the rationale is recorded on the projects section. -->
+    @if (hasRows()) {
+      <div class="inline-flex self-start rounded-md border border-gray-200 p-0.5" role="group" aria-label="Annual trend series">
+        @for (option of seriesModes; track option) {
+          <button
+            type="button"
+            (click)="setSeriesMode(option)"
+            class="rounded px-3 py-1 text-xs font-medium"
+            [class.bg-blue-50]="option === seriesMode()"
+            [class.text-blue-700]="option === seriesMode()"
+            [class.text-gray-600]="option !== seriesMode()"
+            [class.hover:bg-gray-50]="option !== seriesMode()"
+            [attr.aria-pressed]="option === seriesMode()"
+            [attr.data-testid]="'org-roi-annual-trend-series-' + option">
+            {{ seriesModeLabels[option] }}
+          </button>
+        }
+      </div>
+    }
+  </div>
 
   @if (loading()) {
     <div class="flex flex-col gap-2" data-testid="org-roi-annual-trend-loading">
@@ -24,7 +50,9 @@
          layout without hiding it from assistive technology (`hidden`/`display:none` would). -->
     <table class="sr-only" data-testid="org-roi-annual-trend-table">
       <caption>
-        Investment and return by year
+        {{
+          tableCaption()
+        }}
       </caption>
       <thead>
         <tr>
@@ -46,10 +74,7 @@
 
     <div class="flex flex-col gap-1 border-t border-gray-100 pt-3">
       @if (apportioned()) {
-        <p class="text-xs text-gray-500" data-testid="org-roi-annual-trend-apportionment-note">
-          Yearly figures are apportioned from lifetime totals by each year's share of investment — they are not measured independently for each year, so
-          movement between years reflects when the activity happened rather than a change in performance.
-        </p>
+        <p class="text-xs text-gray-500" data-testid="org-roi-annual-trend-apportionment-note">{{ apportionmentNote() }}</p>
       }
       @if (partialYear() !== null) {
         <p class="text-xs text-gray-500" data-testid="org-roi-annual-trend-partial-year-note">{{ partialYear() }} is a partial year and is still accruing.</p>

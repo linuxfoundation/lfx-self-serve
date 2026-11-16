@@ -19,7 +19,11 @@ vi.mock('../utils/auth-helper', async () => {
   };
 });
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas: personaMocks.getPersonas } }));
-vi.mock('../services/project.service', () => ({ ProjectService: vi.fn(() => ({ getWriterSummary: projectMocks.getWriterSummary })) }));
+vi.mock('../services/project.service', () => ({
+  ProjectService: vi.fn(function () {
+    return { getWriterSummary: projectMocks.getWriterSummary };
+  }),
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { debug: vi.fn(), startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));

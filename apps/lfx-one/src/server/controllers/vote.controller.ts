@@ -9,20 +9,17 @@ import {
   EnableVoteRequest,
   ExtendVoteRequest,
   SendVoteReminderRequest,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
 } from '@lfx-one/shared/interfaces';
-import {
-  VOTE_COMMENT_PROMPT_MAX_COUNT,
-  VOTE_COMMENT_PROMPT_MAX_LENGTH,
-  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
-  VOTE_CREATE_COMPLETED_AT_HEADER,
-} from '@lfx-one/shared/constants';
+import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_CREATE_COMPLETED_AT_HEADER } from '@lfx-one/shared/constants';
 import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { validateArrayParameter, validateRequestBody, validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
-import { assertVoteWrite } from '../helpers/vote-write-access.helper';
+import { buildValidatedCommentResponses, buildValidatedVoteAnswers } from '../helpers/vote-response-validation.helper';
+import { assertVoteWrite, hasVoteWrite } from '../helpers/vote-write-access.helper';
 import { logger } from '../services/logger.service';
 import { VoteService } from '../services/vote.service';
 
@@ -145,6 +142,7 @@ export class VoteController {
 
   /**
    * GET /votes/:uid
+   * `?include_writer=true` additively decorates `writer` (vote#writer). Opt-in so polling and every pre-existing caller skip the FGA lookup.
    */
   public async getVoteById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -162,7 +160,7 @@ export class VoteController {
         return;
       }
 
-      const vote = await this.voteService.getVoteById(req, uid, { includeProject: true });
+      const vote = await this.voteService.getVoteById(req, uid, { includeProject: true, includeWriter: req.query['include_writer'] === 'true' });
 
       logger.success(req, 'get_vote_by_id', startTime, {
         vote_uid: uid,
@@ -311,6 +309,29 @@ export class VoteController {
   }
 
   /**
+   * POST /votes/:uid/end — ends an active vote now (vote#writer only). Logs the vote uid only; the gateway records the
+   * principal upstream, and the OIDC subject is a username here, so it is never logged.
+   */
+  public async endVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'end_vote', { vote_uid: uid });
+
+    try {
+      if (!validateUidParameter(uid, req, next, { operation: 'end_vote', service: 'vote_controller' })) {
+        return;
+      }
+
+      const vote = await this.voteService.endVote(req, uid);
+
+      logger.success(req, 'end_vote', startTime, { vote_uid: uid });
+
+      res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /votes/:uid
    */
   public async deleteVote(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -344,6 +365,7 @@ export class VoteController {
 
   /**
    * GET /votes/:uid/results
+   * Vote writers get today's results; everyone else goes through the service's non-writer gate (#4330).
    */
   public async getVoteResults(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -361,12 +383,15 @@ export class VoteController {
         return;
       }
 
-      const results = await this.voteService.getVoteResults(req, uid);
+      const canWrite = await hasVoteWrite(req, uid, 'get_vote_results');
+      const results = await this.voteService.getVoteResults(req, uid, { canWrite });
 
       logger.success(req, 'get_vote_results', startTime, {
         vote_uid: uid,
+        can_write: canWrite,
         num_poll_results: results?.poll_results?.length ?? 0,
         num_votes_cast: results?.num_votes_cast,
+        results_held: results?.results_held === true,
       });
 
       res.json(results);
@@ -440,49 +465,9 @@ export class VoteController {
         throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
       }
 
-      if (payload.comment_responses !== undefined) {
-        if (!Array.isArray(payload.comment_responses)) {
-          throw ServiceValidationError.forField('comment_responses', 'comment_responses must be an array', validationContext);
-        }
-
-        for (const [index, response] of payload.comment_responses.entries()) {
-          if (!response || typeof response !== 'object') {
-            throw ServiceValidationError.forField(`comment_responses[${index}]`, 'Each comment response must be a non-null object', validationContext);
-          }
-
-          if (!response.prompt_id || typeof response.prompt_id !== 'string') {
-            throw ServiceValidationError.forField(
-              `comment_responses[${index}].prompt_id`,
-              'prompt_id is required for each comment response',
-              validationContext
-            );
-          }
-
-          if (typeof response.comment_text !== 'string' || response.comment_text.trim().length === 0) {
-            throw ServiceValidationError.forField(
-              `comment_responses[${index}].comment_text`,
-              'comment_text is required for each comment response',
-              validationContext
-            );
-          }
-
-          // Count code points (not UTF-16 units) so emoji/non-BMP text isn't rejected at roughly half the real allowance.
-          if (codePointLength(response.comment_text) > VOTE_COMMENT_RESPONSE_MAX_LENGTH) {
-            throw ServiceValidationError.forField(
-              `comment_responses[${index}].comment_text`,
-              `comment_text must be ${VOTE_COMMENT_RESPONSE_MAX_LENGTH} characters or fewer`,
-              validationContext
-            );
-          }
-        }
-      }
-
-      // Rebuild comment_responses from the validated fields only, so unexpected extra
-      // properties on the client payload never cross the BFF boundary.
-      const validatedCommentResponses: CommentResponseInput[] | undefined = payload.comment_responses?.map((response) => ({
-        prompt_id: response.prompt_id,
-        comment_text: response.comment_text,
-      }));
+      // Validated and rebuilt from allowlisted fields so unexpected extra properties on the client payload never cross the BFF boundary.
+      const validatedCommentResponses: CommentResponseInput[] | undefined =
+        payload.comment_responses === undefined ? undefined : buildValidatedCommentResponses(payload.comment_responses, validationContext);
 
       // Build the upstream payload immutably: when abstaining we drop user_vote_content entirely;
       // when not abstaining we validate each answer and forward the original content. comment_responses
@@ -497,36 +482,13 @@ export class VoteController {
           comment_responses: validatedCommentResponses,
         };
       } else {
-        if (!Array.isArray(payload.user_vote_content) || payload.user_vote_content.length === 0) {
-          throw ServiceValidationError.forField('user_vote_content', 'user_vote_content is required when not abstaining', validationContext);
-        }
-
-        for (const [index, answer] of payload.user_vote_content.entries()) {
-          if (!answer || typeof answer !== 'object') {
-            throw ServiceValidationError.forField(`user_vote_content[${index}]`, 'Each answer must be a non-null object', validationContext);
-          }
-
-          if (!answer.question_id || typeof answer.question_id !== 'string') {
-            throw ServiceValidationError.forField(`user_vote_content[${index}].question_id`, 'question_id is required for each answer', validationContext);
-          }
-
-          const hasChoiceIds = Array.isArray(answer.choice_ids) && answer.choice_ids.length > 0;
-          const hasRankedChoices = Array.isArray(answer.ranked_choices) && answer.ranked_choices.length > 0;
-
-          if (!hasChoiceIds && !hasRankedChoices) {
-            throw ServiceValidationError.forField(
-              `user_vote_content[${index}]`,
-              'Each answer must include either choice_ids or ranked_choices',
-              validationContext
-            );
-          }
-        }
+        const validatedAnswers = buildValidatedVoteAnswers(payload.user_vote_content, validationContext);
 
         upstreamPayload = {
           vote_uid: payload.vote_uid,
           vote_response_uid: payload.vote_response_uid,
           abstain: false,
-          user_vote_content: payload.user_vote_content,
+          user_vote_content: validatedAnswers,
           comment_responses: validatedCommentResponses,
         };
       }
@@ -541,6 +503,87 @@ export class VoteController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /votes/:uid/my-response — changes the caller's own submitted ballot (#4723).
+   * @description Validated like `createVoteResponse`; the ballot is resolved server-side from the caller's own row, so the
+   * body never names a response uid. `comment_responses` is forwarded as sent, so an empty array clears stored comments.
+   */
+  public async updateMyVoteResponse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const payload: UpdateMyVoteResponseRequest = req.body;
+    const startTime = logger.startOperation(req, 'update_my_vote_response', { vote_uid: uid, abstain: payload?.abstain });
+
+    try {
+      const validationContext = { operation: 'update_my_vote_response', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(payload, req, next, validationContext)) {
+        return;
+      }
+
+      if (typeof payload.abstain !== 'boolean') {
+        throw ServiceValidationError.forField('abstain', 'abstain is required and must be a boolean', validationContext);
+      }
+
+      // Rebuilt from allowlisted fields so unexpected client properties never cross the BFF boundary.
+      const validatedCommentResponses: CommentResponseInput[] | undefined =
+        payload.comment_responses === undefined ? undefined : buildValidatedCommentResponses(payload.comment_responses, validationContext);
+
+      const upstreamPayload: UpdateMyVoteResponseRequest = payload.abstain
+        ? { abstain: true, comment_responses: validatedCommentResponses }
+        : {
+            abstain: false,
+            user_vote_content: buildValidatedVoteAnswers(payload.user_vote_content, validationContext),
+            comment_responses: validatedCommentResponses,
+          };
+
+      await this.voteService.updateMyVoteResponse(req, uid, upstreamPayload);
+
+      logger.success(req, 'update_my_vote_response', startTime, { vote_uid: uid, abstain: upstreamPayload.abstain, status_code: 204 });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /votes/:uid/my-ballot — the caller's own submitted ballot for Me-lens Review (editable when allowed) and "Your ballot" (#4331, #4723). */
+  public async getMyVoteBallot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_my_vote_ballot', { vote_uid: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_vote_ballot',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const ballot = await this.voteService.getMyVoteBallot(req, uid);
+
+      if (!ballot) {
+        return next(
+          new ResourceNotFoundError('Vote ballot', uid, {
+            operation: 'get_my_vote_ballot',
+            service: 'vote_controller',
+            path: `/votes/${uid}/my-ballot`,
+          })
+        );
+      }
+
+      logger.success(req, 'get_my_vote_ballot', startTime, { vote_uid: uid, found: true });
+      res.json(ballot);
     } catch (error) {
       next(error);
     }
@@ -619,9 +662,48 @@ export class VoteController {
   }
 
   /**
-   * GET /votes/:uid/voters — every invited voter with their status and current ballot (#3911).
+   * GET /votes/:uid/summary-recipients — who the on-demand close summary would reach (#4830).
+   * Gated on `vote#writer` before any read, like `reminder-recipients`; the service refuses a vote
+   * that has not ended. Returns names and addresses, so only counts are logged.
+   */
+  public async getVoteSummaryPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_summary_preview', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_summary_preview',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertVoteWrite(req, uid, 'get_vote_summary_preview');
+
+      const preview = await this.voteService.getVoteSummaryPreview(req, uid);
+
+      logger.success(req, 'get_vote_summary_preview', startTime, {
+        vote_uid: uid,
+        ready_count: preview.ready.length,
+        missing_email_count: preview.missing_email.length,
+        unique_email_count: preview.unique_email_count,
+      });
+
+      res.json(preview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/:uid/voters — every invited voter with their status, plus their current ballot on a
+   * named vote (#3911) or participation only on a pseudo-anonymous vote (#3916).
    * Gated on `vote#writer` before any read: every vote auditor can read the underlying
-   * `vote_response` rows. The service refuses drafts and pseudo-anonymous votes before reading them.
+   * `vote_response` rows. The service refuses drafts before reading them.
    */
   public async getVoteVoters(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -702,6 +784,33 @@ export class VoteController {
   }
 
   /**
+   * POST /api/votes/:uid/send-ballots — emails a personalized ballot link to every non-responder (#4363).
+   * The service writer-checks and re-resolves recipients; the client sends no body. Logs counts only.
+   */
+  public async sendVoteBallots(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'send_vote_ballots', { vote_uid: uid });
+
+    try {
+      if (!validateUidParameter(uid, req, next, { operation: 'send_vote_ballots', service: 'vote_controller' })) {
+        return;
+      }
+
+      const result = await this.voteService.sendVoteBallots(req, uid);
+
+      logger.success(req, 'send_vote_ballots', startTime, {
+        vote_uid: uid,
+        sent: result.sent,
+        skipped: result.skipped,
+      });
+
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /votes/:uid/summary — sends the on-demand close summary to every invited voter (#3662).
    * On demand only, never scheduled. The service writer-checks, then refuses a vote that hasn't
    * ended yet; the summary carries aggregate results only, never a per-voter ballot.
@@ -728,6 +837,8 @@ export class VoteController {
         vote_uid: uid,
         recipient_count: result.recipient_count,
         failed_count: result.failed_count,
+        skipped_count: result.skipped_count,
+        uncertain_count: result.uncertain_count,
       });
 
       res.json(result);

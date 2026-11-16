@@ -67,6 +67,18 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEngagementNonMemberParticipation({ foundationSlug: 'aaif' }),
     },
     {
+      name: 'getEngagementNewsletterPerformance',
+      url: '/api/analytics/engagement-newsletter-performance',
+      // Its empty state reads "nothing sent", so a swallowed failure would read as a foundation that sent no newsletter.
+      call: () => service.getEngagementNewsletterPerformance({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEngagementNewsletterRecipients',
+      url: '/api/analytics/engagement-newsletter-recipients',
+      // Its empty state reads "no newsletter sent", so a swallowed failure would read as a foundation that sent none.
+      call: () => service.getEngagementNewsletterRecipients({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'getEngagementRepresentatives',
       url: '/api/analytics/engagement-representatives',
       // Its empty table renders "no representatives match this filter", so a swallowed failure would
@@ -88,6 +100,11 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       name: 'getEventsRegistrationHistory',
       url: '/api/analytics/events-registration-history',
       call: () => service.getEventsRegistrationHistory({ foundationSlug: 'aaif', eventId: 'evt-1' }),
+    },
+    {
+      name: 'getEventsSnapshot',
+      url: '/api/analytics/events-snapshot',
+      call: () => service.getEventsSnapshot({ foundationSlug: 'aaif', eventId: 'evt-1' }),
     },
     {
       name: 'getEventsPast',
@@ -138,22 +155,16 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getEventsGeography({ foundationSlug: 'aaif' }),
     },
     {
+      name: 'getMembersGrowth',
+      url: '/api/analytics/members-growth',
+      // A swallowed failure would read as a foundation with no new members.
+      call: () => service.getMembersGrowth({ foundationSlug: 'aaif' }),
+    },
+    {
       name: 'getMembersTiers',
       url: '/api/analytics/members-tiers',
       // A swallowed failure would read as a foundation with no members in any tier.
       call: () => service.getMembersTiers({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersBridge',
-      url: '/api/analytics/members-bridge',
-      // A swallowed failure would read as a year in which no member joined, moved or left.
-      call: () => service.getMembersBridge({ foundationSlug: 'aaif' }),
-    },
-    {
-      name: 'getMembersMovements',
-      url: '/api/analytics/members-movements',
-      // A swallowed failure would read as a bar with no organizations behind it.
-      call: () => service.getMembersMovements({ foundationSlug: 'aaif', year: 2026, movementType: 'new', offset: 0, pageSize: 25 }),
     },
     {
       name: 'getMembersDirectory',
@@ -222,12 +233,6 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       call: () => service.getNonMembersConversion({ foundationSlug: 'aaif', range: 'YTD' }),
     },
     {
-      name: 'getTrainingPresence',
-      url: '/api/analytics/training-presence',
-      // A swallowed failure would read as a foundation with no training programme.
-      call: () => service.getTrainingPresence({ foundationSlug: 'aaif' }),
-    },
-    {
       name: 'getTrainingEnrollment',
       url: '/api/analytics/training-enrollment',
       // A swallowed failure would read as a foundation with no enrollments.
@@ -280,6 +285,12 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
       url: '/api/analytics/overview-code',
       // A swallowed failure would read as a foundation with no contributors.
       call: () => service.getOverviewCode({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getOverviewNewsletters',
+      url: '/api/analytics/overview-newsletters',
+      // A swallowed failure would read as a foundation that never sent a newsletter.
+      call: () => service.getOverviewNewsletters({ foundationSlug: 'aaif' }),
     },
     {
       name: 'loadFoundationProjectsDetailGrouped',

@@ -11,7 +11,9 @@ const { getEffectiveUsernameMock, streamQueryMock } = vi.hoisted(() => ({
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: getEffectiveUsernameMock }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: vi.fn(() => false) }));
 vi.mock('../services/copilot.service', () => ({
-  CopilotService: vi.fn().mockImplementation(() => ({ streamQuery: streamQueryMock })),
+  CopilotService: vi.fn().mockImplementation(function () {
+    return { streamQuery: streamQueryMock };
+  }),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => Date.now()), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn() },

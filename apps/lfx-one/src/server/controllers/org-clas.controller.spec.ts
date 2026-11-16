@@ -13,6 +13,7 @@ const {
   listClaGroups,
   getPdfUrl,
   getCclaPreview,
+  getClaGroupCatalogue,
   getSignOptions,
   requestCorporateSignature,
   getApprovalList,
@@ -33,6 +34,7 @@ const {
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getCclaPreview: vi.fn(),
+  getClaGroupCatalogue: vi.fn(),
   getSignOptions: vi.fn(),
   requestCorporateSignature: vi.fn(),
   getApprovalList: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock('../services/org-cla.service', () => ({
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
     public getCclaPreview = getCclaPreview;
+    public getClaGroupCatalogue = getClaGroupCatalogue;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
@@ -226,6 +229,44 @@ describe('OrgClasController.getCclaPreview', () => {
     expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
     expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('Corporate_Contributor_License_Agreement.pdf'));
     expect(res.send).toHaveBeenCalledWith(pdf);
+  });
+});
+
+describe('OrgClasController.getClaGroupCatalogue', () => {
+  const CLA_GROUP_ID = '7f3a1c22-9d51-4a8e-b0c6-2e4f81d9a733';
+
+  it('rejects a malformed CLA Group id before calling the service', async () => {
+    const next = vi.fn();
+
+    await new OrgClasController().getClaGroupCatalogue({ params: { orgUid: '0014100000Te2ovAAB', claGroupId: 'not-a-group-id' } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getClaGroupCatalogue).not.toHaveBeenCalled();
+  });
+
+  it('returns the catalogue row and marks the response no-store', async () => {
+    const option = { claGroupId: CLA_GROUP_ID, claGroupName: 'Nimbus Foundation CLA', matchTypes: [], organizations: [] };
+    getClaGroupCatalogue.mockResolvedValue(option);
+    const res = buildRes();
+    const req = { params: { orgUid: '0014100000Te2ovAAB', claGroupId: CLA_GROUP_ID } } as any;
+
+    await new OrgClasController().getClaGroupCatalogue(req, res, vi.fn());
+
+    expect(getClaGroupCatalogue).toHaveBeenCalledWith(req, CLA_GROUP_ID);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.json).toHaveBeenCalledWith(option);
+  });
+
+  // Every lookup misses until the producer route deploys, so the miss must not be cached either.
+  it('answers an unknown group with a 404 that is also no-store', async () => {
+    getClaGroupCatalogue.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getClaGroupCatalogue({ params: { orgUid: '0014100000Te2ovAAB', claGroupId: CLA_GROUP_ID } } as any, res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ code: 'CLA_GROUP_NOT_FOUND' });
   });
 });
 

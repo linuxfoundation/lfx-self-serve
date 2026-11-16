@@ -28,21 +28,7 @@
       data-testid="members-churn-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-churn-loading" aria-hidden="true" />
-  } @else if (!view().yearMeasured) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-chart-column"
-      title="Churn not measured for this period"
-      subtitle="Churn appears here once memberships for the selected period are measured."
-      data-testid="members-churn-unmeasured" />
-  } @else if (!view().hasChurn) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-check"
-      title="No churn this period"
-      subtitle="No members have lapsed or downgraded in the selected period."
-      data-testid="members-churn-empty" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-churn-hero">
       <div class="flex flex-col gap-2">
         <div class="flex items-baseline gap-2">
@@ -114,11 +100,11 @@
           data-testid="members-churn-departures-table">
           <ng-template #header>
             <tr>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
-              <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Dues lost</span></th>
-              <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Lapsed</span></th>
-              <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Last engaged</span></th>
+              <th scope="col">Organization</th>
+              <th scope="col">Tier</th>
+              <th scope="col" class="text-right">Dues lost</th>
+              <th scope="col" class="text-right">Lapsed</th>
+              <th scope="col" class="text-right">Last engaged</th>
             </tr>
           </ng-template>
 
@@ -170,11 +156,11 @@
           data-testid="members-churn-tiers-table">
           <ng-template #header>
             <tr>
-              <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
-              <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Memberships lost</span></th>
-              <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Churn rate</span></th>
-              <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Dues lost</span></th>
-              <th scope="col" class="w-[150px]"><span class="text-[12px] font-normal text-gray-500">Share of the loss</span></th>
+              <th scope="col">Tier</th>
+              <th scope="col" class="text-right">Memberships lost</th>
+              <th scope="col" class="text-right">Churn rate</th>
+              <th scope="col" class="text-right">Dues lost</th>
+              <th scope="col" class="w-[150px]">Share of the loss</th>
             </tr>
           </ng-template>
 
@@ -258,7 +244,5 @@
         </table>
       </div>
     }
-
-    <lfx-health-metrics-footnote [parts]="footer" data-testid="members-churn-footer" />
   }
 </div>

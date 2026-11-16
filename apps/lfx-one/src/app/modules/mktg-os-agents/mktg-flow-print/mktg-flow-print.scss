@@ -1,0 +1,68 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+/* The flowing prints (the FAQ and the boilerplates, which run across pages through the shared sheet) share this one
+   stylesheet: the brand custom properties their roots read (the project's kit, or the LF look, bound inline by each
+   component), color that prints as it shows, the typeface the base layer would otherwise override, and the FAQ's
+   Markdown prose. The layout is Tailwind utilities in the templates; styles.scss gives every print root its side room
+   and shows one document alone while it prints. The framework's portrait book has its own files. */
+
+.lfx-framework-print {
+  --mfp-dark: black;
+  --mfp-accent: black;
+  --mfp-tint: white;
+  --mfp-on-dark: white;
+  --mfp-ink: black;
+  --mfp-font: sans-serif;
+
+  /* The cover's dark ground, the tinted cards and the accent rules are the brand: they print, whatever the dialog's "background graphics" says. */
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* styles.scss sets Inter on headings, paragraphs and controls in the base
+   layer, which beats inheritance: inside the print they inherit the brand's
+   typeface from the document instead, as in the brand kit book. */
+@layer tailwind-base {
+  .lfx-framework-print :is(h1, h2, h3, h4, h5, h6, p, label, button, input) {
+    font-family: inherit;
+  }
+}
+
+/* The FAQ's answers are the agent's restricted Markdown (a paragraph, or a
+   lead-in and a bulleted list) through the shared renderer, whose screen
+   utilities are rem: inside this sheet they give way to its typeface and ink,
+   pt spacing, and a disc marker in the ink. The paragraph keeps the size the
+   printed answer always had: styles.scss's base rule gives a bare `p`
+   text-base and leading-normal, so the list items get the same two tokens and
+   the lead-in and its bullets are one size. Scoped to the FAQ print, so the
+   framework print does not move. */
+:host ::ng-deep .lfx-faq-print .prose {
+  max-width: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+
+  p {
+    @apply text-base leading-normal;
+    margin: 0;
+    font-family: inherit;
+  }
+
+  ul {
+    margin: 3pt 0 0;
+    padding-left: 14pt;
+    list-style: disc;
+  }
+
+  li {
+    @apply text-base leading-normal;
+    margin: 1.5pt 0;
+    padding-left: 2pt;
+  }
+
+  li::marker {
+    color: var(--mfp-ink);
+  }
+}

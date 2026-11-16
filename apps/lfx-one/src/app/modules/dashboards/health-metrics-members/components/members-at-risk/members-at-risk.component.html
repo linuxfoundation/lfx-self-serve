@@ -12,13 +12,8 @@
       data-testid="members-at-risk-error" />
   } @else if (firstRead()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="members-at-risk-loading" aria-hidden="true" />
-  } @else if (!loading() && noneAtRisk()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-circle-check"
-      title="No members at risk"
-      subtitle="No member is 60 or more days overdue on dues. At-risk members appear here as balances age past 60 days."
-      data-testid="members-at-risk-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
       <lfx-filter-pills
@@ -103,11 +98,11 @@
       data-testid="members-at-risk-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Tier</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Overdue</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Age</span></th>
-          <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Last engaged</span></th>
+          <th scope="col">Organization</th>
+          <th scope="col">Tier</th>
+          <th scope="col" class="text-right">Overdue</th>
+          <th scope="col" class="text-right">Age</th>
+          <th scope="col" class="text-right">Last engaged</th>
         </tr>
       </ng-template>
 

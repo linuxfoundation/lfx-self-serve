@@ -8,3 +8,4 @@ export const MKTG_LAST_INTAKE_API = '/api/mktg-agents/intakes';
 export const MKTG_LAST_INTAKE_PREFIX = 'document-last-intake';
 export const MKTG_LAST_INTAKE_SCHEMA = 'mktg-last-intake/v1';
 export const MKTG_LAST_INTAKE_MAX_BYTES = 128 * 1024;
+export const MKTG_LAST_INTAKE_RETENTION_DAYS = 30;

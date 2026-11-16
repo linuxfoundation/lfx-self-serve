@@ -4,7 +4,7 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Route, UrlSegment } from '@angular/router';
-import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG, MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,6 +43,27 @@ describe('meetingsV2Guard', () => {
 
   it('falls through to the wizard route when the flag is off', async () => {
     expect(await runGuard()).toBe(false);
+  });
+
+  it('matches the composer route when only the redesign flag is on', async () => {
+    getBooleanFlag.mockImplementation((key: string) => signal(key === MEETINGS_REDESIGN_FLAG));
+
+    expect(await runGuard()).toBe(true);
+  });
+
+  it('lets a pinned redesign flag match even with the v2 flag pinned off', async () => {
+    getFlagOverride.mockImplementation((key: string) => key === MEETINGS_REDESIGN_FLAG);
+
+    expect(await runGuard()).toBe(true);
+    expect(getBooleanFlag).not.toHaveBeenCalled();
+  });
+
+  it('waits for the provider when only one flag is pinned off', async () => {
+    providerReady.set(false);
+    getFlagOverride.mockImplementation((key: string) => (key === MEETING_V2_ENABLED_FLAG ? false : undefined));
+
+    expect(await runGuard()).toBe(false);
+    expect(waitForReady).toHaveBeenCalled();
   });
 
   it('matches on the server without evaluating the flag, so SSR paints the list and the browser decides', async () => {

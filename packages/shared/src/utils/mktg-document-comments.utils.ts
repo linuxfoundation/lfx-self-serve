@@ -4,6 +4,7 @@
 import { BRAND_KIT_CHAPTERS } from '../constants/brand-kit.constants';
 import {
   MKTG_BOILERPLATES_COMMENT_FIELD_REGEX,
+  MKTG_FAQ_COMMENT_FIELD_REGEX,
   MKTG_DOCUMENT_COMMENT_ANCHOR_MAX_CHARS,
   MKTG_DOCUMENT_COMMENT_LIMITS,
   MKTG_DOCUMENT_COMMENT_LABELS,
@@ -47,6 +48,7 @@ export function isMktgDocumentCommentAnchor(agentKey: MktgCommentAgentKey, sourc
   const root = anchor.key.match(/^[a-zA-Z][a-zA-Z0-9_]*/)?.[0] ?? '';
   if (!(MKTG_DOCUMENT_COMMENT_ROOTS[agentKey] as readonly string[]).includes(root)) return false;
   if (agentKey === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor.key)) return false;
+  if (agentKey === 'faq' && !MKTG_FAQ_COMMENT_FIELD_REGEX.test(anchor.key)) return false;
   return readMktgDocumentCommentField(source, anchor.key) !== null;
 }
 
@@ -60,6 +62,15 @@ export function mktgDocumentCommentTab(agentKey: MktgCommentAgentKey, key: strin
 /** Same human field caption for inline pins, controls and the panel; no UI agent list. */
 export function describeMktgDocumentCommentField(agentKey: MktgCommentAgentKey | undefined, key: string, content?: unknown): string {
   if (!agentKey) return key;
+  if (agentKey === 'faq') {
+    const match = MKTG_FAQ_COMMENT_FIELD_REGEX.exec(key);
+    if (!match) return key;
+    const group = readMktgDocumentCommentField(content, `faq[${match[1]}][0]`)?.value;
+    const question = readMktgDocumentCommentField(content, key.slice(0, -3) + '[0]')?.value;
+    const caption = typeof group === 'string' && group.trim() ? group : `Group ${Number(match[1]) + 1}`;
+    const title = typeof question === 'string' && question.trim() ? `: ${question}` : '';
+    return `${caption} · Q${Number(match[2]) + 1}${title} · Answer`;
+  }
   const normalized = key.replace(/\[\d+\]/g, '[]');
   const base = MKTG_DOCUMENT_COMMENT_LABELS[agentKey]?.[normalized] ?? key;
   const match = /^(.+?)\[(\d+)\]/.exec(key);

@@ -19,6 +19,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 import {
   EMPTY_ORG_PEOPLE_BOARD_MEMBERS_RESPONSE,
   isVotingStatus,
+  ORG_ALL_FOUNDATIONS_LABEL,
   ORG_PEOPLE_BOARD_SOURCE_CAPTION,
   ORG_PEOPLE_BOARD_STAT_LABELS,
   ORG_PEOPLE_BOARD_STATUS_OPTIONS,
@@ -399,7 +400,7 @@ export class BoardMembersComponent {
           .filter(Boolean)
       ),
     ].sort((a, b) => a.localeCompare(b));
-    return [{ label: 'All Foundations', value: '' }, ...labels.map((l) => ({ label: l, value: l }))];
+    return [{ label: ORG_ALL_FOUNDATIONS_LABEL, value: '' }, ...labels.map((l) => ({ label: l, value: l }))];
   }
 
   private initIsFiltering(): boolean {

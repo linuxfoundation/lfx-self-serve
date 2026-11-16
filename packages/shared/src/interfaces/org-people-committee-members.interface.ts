@@ -19,7 +19,7 @@ export interface CommitteeMemberPerson {
   avatarUrl?: string | null;
   /**
    * Seat holder's LF username, the drawer's only address-lookup key; never resolve the person from
-   * `email`. Null must surface as "not available from this view", never inferred or backfilled.
+   * `email`. Null must surface as "Emails aren't shown on this page", never inferred or backfilled.
    */
   username?: string | null;
 }

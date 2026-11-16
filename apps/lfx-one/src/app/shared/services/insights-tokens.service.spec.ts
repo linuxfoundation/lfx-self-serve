@@ -54,11 +54,11 @@ describe('InsightsTokensService', () => {
     expect(console.error).toHaveBeenCalled();
   });
 
-  it('creates a token by name only', async () => {
+  it('creates a token with its name and expiration', async () => {
     http.post.mockReturnValue(of({ token: { uid: 't-1' }, secret: 'lfi_x' }));
 
-    await firstValueFrom(service.createToken('ci-pipeline'));
-    expect(http.post).toHaveBeenCalledWith('/api/profile/insights-tokens', { name: 'ci-pipeline' });
+    await firstValueFrom(service.createToken('ci-pipeline', '30d'));
+    expect(http.post).toHaveBeenCalledWith('/api/profile/insights-tokens', { name: 'ci-pipeline', expiration: '30d' });
   });
 
   it('revokes with an encoded uid', async () => {

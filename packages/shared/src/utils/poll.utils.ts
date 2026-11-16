@@ -31,12 +31,12 @@ export function getCombinedVoteStatus(vote: UserVote): CombinedVoteStatus {
   return 'closed';
 }
 
-/** Tooltip copy when a vote auto-ended because all eligible voters responded. */
+/** Tooltip copy for an early closure; the timestamp does not establish why voting ended. */
 export function getVoteEndedEarlyDetailTooltip(earlyEndTimeFormatted: string): string {
-  return `Vote closed early on ${earlyEndTimeFormatted}. All voters have responded.`;
+  return `Vote closed early on ${earlyEndTimeFormatted}.`;
 }
 
-/** True when ITX auto-ended the poll because all eligible voters responded. */
+/** True when an early-close timestamp is recorded, without inferring the closure reason. */
 export function isVoteEndedEarly(vote: Pick<Vote, 'early_end_time'>): boolean {
   return Boolean(vote.early_end_time);
 }
@@ -82,5 +82,15 @@ export function countVotesByStatus(votes: Pick<Vote, 'status'>[]): VoteStatusCou
  * of scrambling the comparator with NaN. Ties keep the API's original order (stable sort).
  */
 export function sortCommentResponsesByRecency(responses: PollCommentResponse[]): PollCommentResponse[] {
-  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time) || 0) - (Date.parse(a.vote_creation_time) || 0));
+  return [...responses].sort((a, b) => (Date.parse(b.vote_creation_time ?? '') || 0) - (Date.parse(a.vote_creation_time ?? '') || 0));
+}
+
+/**
+ * Sort comment-prompt responses by `comment_text` (#3916).
+ * @description Used for pseudo-anonymous votes, whose responses carry no submission time, so
+ * the order exposes nothing about when each ballot was cast. Returns a new array — never mutates
+ * the API payload.
+ */
+export function sortCommentResponsesByText(responses: PollCommentResponse[]): PollCommentResponse[] {
+  return [...responses].sort((a, b) => (a.comment_text ?? '').localeCompare(b.comment_text ?? ''));
 }

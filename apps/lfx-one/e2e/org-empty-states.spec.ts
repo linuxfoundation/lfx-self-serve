@@ -170,7 +170,7 @@ function overviewState(page: Page) {
     description: page.getByTestId('org-overview-no-access-description'),
     primary: page.getByTestId('org-overview-no-access-primary'),
     retry: page.getByTestId('org-overview-no-access-retry'),
-    contactSupport: page.getByTestId('org-overview-no-access-contact-support'),
+    secondary: page.getByTestId('org-overview-no-access-secondary'),
   };
 }
 
@@ -259,7 +259,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(state.description).toContainText(CORRELATION_ID);
       await expect(state.description).toContainText('not a change to your permissions');
       await expect(state.retry).toBeVisible();
-      await expect(state.contactSupport).toBeVisible();
+      // #5447: no support link; the reference stays in the reason text.
+      await expect(state.secondary).toHaveCount(0);
       // The never-fall-through rule: neither no-organization nor no-access wording.
       await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
       await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
@@ -281,8 +282,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // Primary: Add an affiliation → the in-app profile attributions page (SC-004 destination).
       await expect(state.primary).toBeVisible();
       await expect(state.primary).toContainText('Add an affiliation');
-      // Secondary: Contact support.
-      await expect(state.contactSupport).toBeVisible();
+      // Secondary: the documentation (#5447 — never support).
+      await expect(state.secondary).toContainText('How affiliations and access work');
       await expect(state.retry).toHaveCount(0);
       await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
       await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
@@ -310,7 +311,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(state.description).toContainText('access is limited to a small set of admins');
       // The whole point: it must not send them to add an affiliation they already have.
       await expect(page.locator('body')).not.toContainText('Add an affiliation');
-      await expect(state.contactSupport).toBeVisible();
+      await expect(state.primary).toContainText('How access to a company is granted');
       await expect(state.retry).toHaveCount(0);
       // The employer is never named — the copy is about the caller, so it interpolates nothing.
       await expect(state.description).not.toContainText('undefined');
@@ -383,7 +384,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
         // interpolated into a string that carries no placeholders.
         await expect(page.getByTestId('org-not-found-description')).toHaveText(NO_ACCESS_COPY.reason);
         await expect(page.getByTestId('org-not-found-description')).toContainText("organization's own Organization Lens administrators");
-        await expect(page.getByTestId('org-not-found-contact-support')).toBeVisible();
+        await expect(page.getByTestId('org-not-found-primary')).toContainText('How access to a company is granted');
         await expect(page.getByTestId('org-not-found-org-list')).toHaveCount(0);
         // FR-017 / FR-018: nothing about the addressed organization reaches the DOM.
         for (const text of leaked) {
@@ -417,10 +418,10 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.getByTestId(`org-not-found-org-${ORG_A_UID}`)).toBeVisible();
       await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
       await expect(page.locator('body')).not.toContainText(UNHELD_SLUG);
-      // Secondary: Ask for access → support.
-      const askForAccess = page.getByTestId('org-not-found-contact-support');
+      // Secondary: how to get access → the documentation (#5447 — never support).
+      const askForAccess = page.getByTestId('org-not-found-secondary');
       await expect(askForAccess).toBeVisible();
-      await expect(askForAccess).toContainText('Ask for access');
+      await expect(askForAccess).toContainText('How to get access to a company');
 
       // The list is the primary action, so it must actually lead somewhere: picking the held
       // organization selects it and opens its overview (FR-005 / SC-004).
@@ -615,7 +616,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(state.root).toHaveAttribute('data-state', 'contractor-no-grant');
       await expect(state.title).toHaveText(CONTRACTOR_HEADLINE);
-      await expect(state.contactSupport).toBeVisible();
+      await expect(state.primary).toContainText('How access to a company is granted');
       await expect(page.locator('body')).not.toContainText('Add an affiliation');
     });
 
@@ -696,7 +697,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       root: page.getByTestId('org-roi-annual-trend-empty-state'),
       title: page.getByTestId('org-roi-annual-trend-empty-title'),
       retry: page.getByTestId('org-roi-annual-trend-empty-retry'),
-      contactSupport: page.getByTestId('org-roi-annual-trend-empty-contact-support'),
+      docsLink: page.getByTestId('org-roi-annual-trend-empty-primary'),
     });
 
     async function stubAnnualFailure(page: Page, status: number, body: unknown): Promise<{ requests: () => number }> {
@@ -745,11 +746,11 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await stubAnnualFailure(page, 403, { code: 'FORBIDDEN', message: 'stubbed' });
       await gotoOrgRoiPage(page);
 
-      const { root, title, retry, contactSupport } = section(page);
+      const { root, title, retry, docsLink } = section(page);
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'section-no-access');
       await expect(title).toHaveText('You do not have access to this organization');
-      await expect(contactSupport).toBeVisible();
+      await expect(docsLink).toContainText('How access to a company is granted');
       await expect(retry).toHaveCount(0);
       // Retired wording must not come back through the section path either.
       await expect(page.locator('body')).not.toContainText('You do not have Org Lens access for this organization.');

@@ -20,7 +20,7 @@
       icon="fa-light fa-building"
       title="Select an organization"
       subtitle="Choose an organization to view its corporate CLAs." />
-  } @else if (claLoading()) {
+  } @else if (claLoading() || cataloguePending()) {
     <section class="flex flex-col gap-3" data-testid="org-easycla-detail-list-loading">
       <p-skeleton height="1.5rem" width="12rem" />
       <p-skeleton height="2.5rem" width="24rem" />
@@ -49,7 +49,7 @@
         {{ easyclaRoleMissingCopy.supportTail }}
       </p>
     </lfx-empty-state>
-  } @else if (fetchError()) {
+  } @else if (fetchError() || catalogueFailed()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-error-state"
       icon="fa-light fa-triangle-exclamation"
@@ -75,6 +75,14 @@
         [ctaLabel]="returnPendingRefresh"
         (ctaClick)="reloadPage()" />
     </div>
+  } @else if (groupNotFound()) {
+    <lfx-empty-state
+      data-testid="org-easycla-detail-group-not-found-state"
+      icon="fa-light fa-file-circle-question"
+      title="CLA Group was not found"
+      subtitle="This link does not match a CLA Group. It may have been removed, or the address is wrong."
+      ctaLabel="Back to EasyCLA"
+      [ctaRoute]="easyclaListLink()" />
   } @else if (cannotPreview()) {
     <!--
       A group address this organization has not signed, reached without the picker (#2364). Rendered
@@ -292,32 +300,39 @@
               <!--
               Review copy of the current corporate template, watermarked not for execution.
               A link, not the signed-document button: that control is for an agreement that
-              already exists, and this page is the one that does not.
+              already exists, and this page is the one that does not. Absent for a group with no
+              corporate CLA, which has no corporate template to copy.
             -->
-              <button
-                type="button"
-                class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
-                [disabled]="reviewCopyDownloading()"
-                [attr.aria-busy]="reviewCopyDownloading()"
-                (click)="onReviewCopyDownload()"
-                data-testid="org-easycla-detail-review-copy">
-                <i class="fa-light fa-download" aria-hidden="true"></i>
-                {{ notStartedCopy.downloadLabel }}
-              </button>
+              @if (offersReviewCopy()) {
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+                  [disabled]="reviewCopyDownloading()"
+                  [attr.aria-busy]="reviewCopyDownloading()"
+                  (click)="onReviewCopyDownload()"
+                  data-testid="org-easycla-detail-review-copy">
+                  <i class="fa-light fa-download" aria-hidden="true"></i>
+                  {{ notStartedCopy.downloadLabel }}
+                </button>
+              }
               <!--
               Skips the picker: this page already named the CLA Group. The reason a start is
               refused lives in the accessible name, not a tooltip — the tooltip host is not
               focusable while the button is disabled, so it never opens on focus.
             -->
-              <div class="flex flex-wrap items-center gap-3">
-                <lfx-button
-                  [label]="startLabel()"
-                  icon="fa-light fa-file-signature"
-                  [disabled]="startDisabled()"
-                  [ariaLabel]="startAriaLabel()"
-                  (onClick)="startClaProcess()"
-                  data-testid="org-easycla-detail-start-cla" />
-              </div>
+              @if (catalogueSignBlockReason(); as reason) {
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-unsignable">{{ reason }}</p>
+              } @else {
+                <div class="flex flex-wrap items-center gap-3">
+                  <lfx-button
+                    [label]="startLabel()"
+                    icon="fa-light fa-file-signature"
+                    [disabled]="startDisabled()"
+                    [ariaLabel]="startAriaLabel()"
+                    (onClick)="startClaProcess()"
+                    data-testid="org-easycla-detail-start-cla" />
+                </div>
+              }
             </div>
           }
           <!--

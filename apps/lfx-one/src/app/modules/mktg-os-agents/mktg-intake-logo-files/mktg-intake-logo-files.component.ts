@@ -7,6 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MKTG_DRIVE_SHARING_HINT } from '@lfx-one/shared/constants';
 import { MktgIntakeLogoFile, MktgIntakeLogoFileEntry, MktgIntakeLogoFilesConfig } from '@lfx-one/shared/interfaces';
 import { brandKitLogoFileKind, formatFileSize } from '@lfx-one/shared/utils';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
@@ -32,6 +33,8 @@ export class MktgIntakeLogoFilesComponent {
 
   // === Inputs ===
   public readonly config = input.required<MktgIntakeLogoFilesConfig>();
+
+  protected readonly driveSharingHint = MKTG_DRIVE_SHARING_HINT;
 
   // === Forms ===
   protected readonly linkForm = new FormGroup({
@@ -213,6 +216,10 @@ export class MktgIntakeLogoFilesComponent {
     }
     if (this.atLimit()) {
       return `At most ${this.config().maxFiles} files.`;
+    }
+    // A package is capped at pick time, before any read, in the footnote's words: the full logo package is far over it.
+    if (brandKitLogoFileKind(file.name) === 'zip' && file.size > this.config().maxZipBytes) {
+      return `${file.name} is ${formatFileSize(file.size)}. Keep a ZIP small: SVG files only, under ${formatFileSize(this.config().maxZipBytes)}; the full logo package linked on a brand page is usually too large to send.`;
     }
     // Refused from its size before any read, so a large package is never
     // inflated into memory only to be refused; the read re-checks the exact length.

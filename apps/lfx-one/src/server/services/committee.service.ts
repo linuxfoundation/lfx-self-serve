@@ -4,7 +4,11 @@
 import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
+  COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPSTREAM_PATH_SEGMENTS,
+  MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
+  QUERY_SERVICE_MAX_PAGE_SIZE,
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
@@ -18,6 +22,7 @@ import {
   CommitteeInvite,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeMemberBulkCreateResult,
   CommitteeOrganizationReference,
   CommitteeSettingsData,
   CommitteeUpdateData,
@@ -38,6 +43,7 @@ import {
   PendingCommitteeInviteForOrg,
   PendingInvitation,
   Project,
+  ProjectDocumentType,
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -911,6 +917,7 @@ export class CommitteeService {
       ...queryFilters,
       type: 'committee_member',
       tags: `committee_uid:${committeeId}`,
+      page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
     return fetchAllQueryResources<CommitteeMember>(
@@ -981,6 +988,42 @@ export class CommitteeService {
     });
 
     return newMember;
+  }
+
+  /**
+   * Adds up to 100 members in one upstream request and returns one result per row (GH-5111).
+   * Uses the caller's own token, so the gateway applies the same writer check as a single add.
+   */
+  public async bulkCreateCommitteeMembers(
+    req: Request,
+    committeeId: string,
+    members: CreateCommitteeMemberRequest[],
+    skipNotification: boolean = false
+  ): Promise<CommitteeMemberBulkCreateResult> {
+    // X-Skip-Notification applies to every row, matching the single-member create.
+    const customHeaders = skipNotification ? { 'X-Skip-Notification': 'true' } : undefined;
+    const result = await this.microserviceProxy.proxyRequest<CommitteeMemberBulkCreateResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/bulk`,
+      'POST',
+      {},
+      { members },
+      customHeaders,
+      { timeoutMs: MEMBER_IMPORT_BULK_TIMEOUT_MS }
+    );
+
+    // Counts only: the rows carry imported personal data.
+    logger.debug(req, 'bulk_create_committee_members', 'Committee members bulk create completed', {
+      committee_uid: committeeId,
+      row_count: members.length,
+      added: result.added,
+      skipped: result.skipped,
+      failed: result.failed,
+      skip_notification: skipNotification,
+    });
+
+    return result;
   }
 
   /**
@@ -2174,11 +2217,24 @@ export class CommitteeService {
   }
 
   /**
-   * Deletes a committee folder or link using ETag for concurrency control.
-   * @param documentType 'folder' or 'link' — determines which upstream endpoint to call
+   * Deletes a committee folder, link or uploaded file using ETag for concurrency control.
+   * A folder is only deleted when it is empty.
+   * @param documentType 'link' or 'file' — determines which upstream endpoint to call
    */
-  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: string): Promise<void> {
-    const resourcePath = documentType === 'folder' ? `/committees/${committeeId}/folders/${documentId}` : `/committees/${committeeId}/links/${documentId}`;
+  public async deleteCommitteeDocument(req: Request, committeeId: string, documentId: string, documentType: ProjectDocumentType): Promise<void> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path on a destructive route.
+    if (!COMMITTEE_DOCUMENT_DELETE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField(
+        'type',
+        `Unsupported document type: ${documentType}. Must be one of: ${COMMITTEE_DOCUMENT_DELETE_TYPES.join(', ')}.`,
+        {
+          operation: 'delete_committee_document',
+          service: 'committee_service',
+        }
+      );
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
 
     // Step 1: Fetch resource with ETag
     const { etag } = await this.etagService.fetchWithETag<CommitteeDocument>(req, 'LFX_V2_SERVICE', resourcePath, 'delete_committee_document');

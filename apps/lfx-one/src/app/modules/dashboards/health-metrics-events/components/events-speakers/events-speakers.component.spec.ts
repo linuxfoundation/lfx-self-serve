@@ -75,6 +75,7 @@ describe('EventsSpeakersComponent', () => {
   let getEventsSpeakers: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
   let notes: string[];
 
   async function render(payload: HealthMetricsEventsSpeakers | Error = speakers()): Promise<void> {
@@ -94,7 +95,10 @@ describe('EventsSpeakersComponent', () => {
 
     fixture = TestBed.createComponent(EventsSpeakersComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     fixture.componentInstance.noteChange.subscribe((note) => notes.push(note));
     await settle();
   }
@@ -128,6 +132,7 @@ describe('EventsSpeakersComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
+    verdicts = [];
     notes = [];
   });
 
@@ -137,6 +142,7 @@ describe('EventsSpeakersComponent', () => {
     expect(getEventsSpeakers).toHaveBeenCalledTimes(1);
     expect(getEventsSpeakers).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(notes).toEqual(['', 'down 35% YoY']);
     expect(query('events-speakers-loading')).toBeNull();
   });
@@ -226,19 +232,21 @@ describe('EventsSpeakersComponent', () => {
     expect(fixture.componentInstance['chartData']()).toBe(chartData);
   });
 
-  it('says a period is unmeasured rather than showing zeros', async () => {
+  it('settles an unmeasured period empty, with no body, rather than showing zeros', async () => {
     await render();
 
     await pickRange('COMPLETED_YEAR_2');
 
-    expect(query('events-speakers-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([false, true]);
     expect(query('events-speakers-hero')).toBeNull();
+    expect(query('events-speakers-breakdown')).toBeNull();
   });
 
-  it('says so when the foundation has no proposals at all', async () => {
+  it('settles empty, with no body, when the foundation has no proposals at all', async () => {
     await render(speakers({ periods: [], organizations: [], unaffiliated: [], proposals: [] }));
 
-    expect(query('events-speakers-foundation-unmeasured')).not.toBeNull();
+    expect(verdicts).toEqual([true]);
+    expect(query('events-speakers-hero')).toBeNull();
   });
 
   it('shows the error state and clears the note when the read fails', async () => {
@@ -247,6 +255,7 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-error')).not.toBeNull();
     expect(notes).toEqual(['', '']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('re-reads on a foundation switch, clearing the note until the new read settles', async () => {

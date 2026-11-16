@@ -135,21 +135,18 @@ describe('reserved redraft delivery', () => {
     expect(first.ownerToken).toBe('synthetic-capability-opaque-creator');
     expect(f.reserve.mock.invocationCallOrder[0]).toBeLessThan(f.guild.mock.invocationCallOrder[0]);
     expect(f.create.mock.invocationCallOrder[0]).toBeLessThan(f.start.mock.invocationCallOrder[0]);
+    expect(f.start).toHaveBeenNthCalledWith(1, req, context.project, type.agentKey, 'synthetic-session', context.priorVersion, context.requestId, {
+      basedOnId: context.basedOnId,
+    });
     f.known.mockResolvedValue('synthetic-session');
     const replay = await send();
     expect(replay.sessionId).toBe(first.sessionId);
     expect(replay.priorVersion).toBe(context.priorVersion);
     expect(f.guild).toHaveBeenCalledTimes(1);
     expect(f.prepare).toHaveBeenCalledTimes(1);
-    expect(f.start).toHaveBeenLastCalledWith(
-      req,
-      context.project,
-      type.agentKey,
-      'synthetic-session',
-      context.priorVersion,
-      context.requestId,
-      context.basedOnId
-    );
+    expect(f.start).toHaveBeenLastCalledWith(req, context.project, type.agentKey, 'synthetic-session', context.priorVersion, context.requestId, {
+      basedOnId: context.basedOnId,
+    });
   });
   it.each([400, 401, 409, 501])('records definitive Guild %s failure and replays that failure without another SDK call', async (status) => {
     const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic rejection', {}, 'guild', '/synthetic', 'guild_create_session');

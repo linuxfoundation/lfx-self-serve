@@ -11,8 +11,10 @@ import { NavbarComponent } from '@components/navbar/navbar.component';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { isProfileHubPath } from '@lfx-one/shared/utils';
+import { ChunkLoadRecoveryService } from '@services/chunk-load-recovery.service';
 import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
+import { NavbarCollapseService } from '@services/navbar-collapse.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
@@ -32,15 +34,19 @@ export class MainLayoutComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  /** The desktop navbar's docked state: the page gutter is 288px open, 56px on the rail. */
+  protected readonly navbarCollapse = inject(NavbarCollapseService);
   private readonly document = inject(DOCUMENT);
   private readonly injector = inject(Injector);
   protected readonly userService = inject(UserService);
+  protected readonly chunkLoadRecovery = inject(ChunkLoadRecoveryService);
 
   private readonly mobileDrawer = viewChild<ElementRef<HTMLElement>>('mobileDrawer');
   private readonly mobileMenuButton = viewChild<ElementRef<HTMLButtonElement>>('mobileMenuButton');
 
   // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
+  protected readonly pageOwnsFooter = this.appService.pageOwnsFooter;
 
   // The drawer's navbar mounts on the first open and then stays, so it is never torn down mid-slide and below `lg`
   // only — a desktop session never opens the drawer and never builds a second navbar.

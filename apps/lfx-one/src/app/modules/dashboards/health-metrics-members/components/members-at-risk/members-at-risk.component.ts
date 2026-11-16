@@ -57,8 +57,8 @@ export class MembersAtRiskComponent {
 
   /** The sub-nav note, "12 overdue · $480K"; blank for a new foundation, empty when a read fails or finds no one at risk. */
   public readonly noteChange = output<string>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -98,6 +98,8 @@ export class MembersAtRiskComponent {
   );
   /** The hero counts the whole foundation whatever the pill, so only its measured zero can say no one is at risk. */
   protected readonly noneAtRisk = computed(() => this.response().summary.memberCount === 0);
+  /** No member is at risk; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.noneAtRisk());
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -170,7 +172,7 @@ export class MembersAtRiskComponent {
               this.loading.set(!foundationSeen);
               this.noteChange.emit(query.foundationSlug && !this.loadFailed() ? buildHealthMetricsMembersAtRiskNote(response.summary) : '');
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.summary.memberCount === 0);
             })
           )
         )

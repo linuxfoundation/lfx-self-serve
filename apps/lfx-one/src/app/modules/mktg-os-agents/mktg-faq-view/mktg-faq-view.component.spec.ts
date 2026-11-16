@@ -6,7 +6,17 @@ import { Component, signal } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
-import { MktgFaqAsset } from '@lfx-one/shared/interfaces';
+import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionApproval, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
+import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
+import {
+  FAQ_INJECTED_ANSWER,
+  FAQ_LIST_ANSWER,
+  FAQ_LIST_ITEMS,
+  FAQ_LIST_LEAD_IN,
+  FAQ_PLAIN_ANSWER,
+  FAQ_PRICE_ANSWER,
+  faqAnswersContent,
+} from '@shared/testing/mktg-faq-answers-test-data';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFaqViewComponent } from './mktg-faq-view.component';
@@ -14,14 +24,15 @@ import { MktgFaqViewComponent } from './mktg-faq-view.component';
 @Component({
   selector: 'lfx-test-faq-host',
   imports: [MktgFaqViewComponent],
-  template: `<lfx-mktg-faq-view projectName="TestOrbit" [asset]="asset()" [version]="version()" [showMetadata]="showMetadata()" note="latest"
-    ><span asset-actions data-testid="faq-test-actions">Approve</span></lfx-mktg-faq-view
-  >`,
+  templateUrl: './mktg-faq-view.test-host.html',
 })
 class HostComponent {
   public readonly asset = signal<MktgFaqAsset>(ASSET);
   public readonly version = signal<number | null>(3);
   public readonly showMetadata = signal(true);
+  public readonly commentsEnabled = signal(false);
+  public readonly revisions = signal<MktgRevisionSummary[]>([]);
+  public readonly approval = signal<MktgRevisionApproval | null>(null);
 }
 
 const ASSET: MktgFaqAsset = {
@@ -51,22 +62,164 @@ const ASSET: MktgFaqAsset = {
 describe('MktgFaqViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
+  let threads = signal<MktgDocumentComment[]>([]);
+  let scope = signal<MktgDocumentCommentScope>({ ...mktgCommentScopeFixture(), agentKey: 'faq' });
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
   const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
   beforeEach(async () => {
+    threads = signal<MktgDocumentComment[]>([]);
+    scope = signal<MktgDocumentCommentScope>({ ...mktgCommentScopeFixture(), agentKey: 'faq' });
     await TestBed.configureTestingModule({
       imports: [HostComponent],
       providers: [
         provideRouter([{ path: '**', children: [] }]),
+        provideMktgCommentsStub({
+          threads,
+          loaded: signal(true),
+          selectedScope: scope,
+          labelContent: signal(ASSET.content),
+        }),
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  it('opts stored answers and gaps into the same original-index comment anchors, excluding reports', async () => {
+    const before = JSON.stringify(ASSET);
+    expect(element().querySelector('lfx-mktg-field-comments')).toBeNull();
+    expect(text('mktg-faq-view-unanswered-callout')).toBe('1 question needs an answer from your team.');
+    host.commentsEnabled.set(true);
+    await fixture.whenStable();
+    const pins = () => Array.from(element().querySelectorAll('[data-mktg-comment-field]'));
+    expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][0][1]', 'faq[0][1][1][1]', 'faq[1][1][0][1]']);
+    expect(pins()[1].querySelector('button')?.getAttribute('aria-label')).toBe('Answer About TestOrbit · Q2: How much does membership cost? · Answer');
+    expect(pins()[0].querySelector('button')?.textContent?.trim()).toBe('Comment');
+    expect(pins()[1].querySelector('button')?.textContent?.trim()).toBe('Answer');
+    expect(
+      Array.from(element().querySelectorAll('[data-testid^="mktg-faq-view-question-"]')).every((row) => row.classList.contains('group/commentfield'))
+    ).toBe(true);
+    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+      '1 question needs an answer from your team. Answer it by commenting on it; the agent adds your answer as Notes.'
+    );
+    query('mktg-faq-view-tab-unanswered')?.click();
+    await fixture.whenStable();
+    expect(pins().map((pin) => pin.getAttribute('data-mktg-comment-field'))).toEqual(['faq[0][1][1][1]']);
+    expect(pins()[0].closest('li')?.classList.contains('group/commentfield')).toBe(true);
+    expect(pins()[0].querySelector('button')?.textContent?.trim()).toBe('Answer');
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(pins()).toHaveLength(0);
+    expect(JSON.stringify(ASSET)).toBe(before);
+  });
+
+  it('excludes only server-resolved answer fields from the callout, tab count and unanswered list', async () => {
+    host.commentsEnabled.set(true);
+    host.asset.set({
+      ...ASSET,
+      checks: {
+        ...ASSET.checks,
+        unanswered: [...ASSET.checks.unanswered, { path: 'faq[1][1][0]', group: 'Getting involved', question: 'How do I contribute?' }],
+      },
+    });
+    threads.set([
+      mktgCommentFixture({ id: 'resolved-gap', status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' } }),
+      mktgCommentFixture({ id: 'sent-gap', status: 'sent', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } }),
+      mktgCommentFixture({ id: 'resolved-question-not-answer', status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][0]' } }),
+    ]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
+    expect(text('mktg-faq-view-unanswered-callout')).toContain('1 question needs an answer');
+    expect(query('mktg-faq-view-needs-answer-0-1')).toBeNull();
+    expect(query('mktg-faq-view-needs-answer-1-0')).not.toBeNull();
+    expect(element().querySelector('[data-mktg-comment-field="faq[0][1][1][1]"] button')?.textContent?.trim()).toBe('Comment');
+    expect(element().querySelector('[data-mktg-comment-field="faq[1][1][0][1]"] button')?.textContent?.trim()).toBe('Answer');
+    query('mktg-faq-view-tab-unanswered')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-unanswered-list')).toContain('How do I contribute?');
+    expect(text('mktg-faq-view-unanswered-list')).not.toContain('How much does membership cost?');
+    threads.update((current) => [
+      ...current,
+      mktgCommentFixture({ id: 'resolved-second-gap', status: 'resolved', anchor: { kind: 'field', key: 'faq[1][1][0][1]' } }),
+    ]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
+    expect(query('mktg-faq-view-unanswered-empty')).not.toBeNull();
+    query('mktg-faq-view-tab-faq')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-unanswered-callout')).toBeNull();
+    expect(element().querySelectorAll('[data-testid^="mktg-faq-view-needs-answer-"]')).toHaveLength(0);
+    expect(element().querySelector('[data-mktg-comment-field="faq[0][1][1][1]"] button')?.textContent?.trim()).toBe('Comment');
+    expect(ASSET.checks.unanswered).toHaveLength(1);
+  });
+
+  it('links a resolved historical gap to its server-listed later revision, preserving the document query', async () => {
+    await TestBed.inject(Router).navigateByUrl('/?project=synthetic&tab=faq');
+    host.commentsEnabled.set(true);
+    host.revisions.set([
+      {
+        id: 'synthetic-result',
+        number: 7,
+        createdAt: null,
+        origin: 'revised',
+        restoredFromNumber: null,
+        intakeMode: null,
+        status: '',
+        contentSha256: 'b'.repeat(64),
+        format: 'json',
+        commentCount: 1,
+        latest: true,
+        approval: null,
+      },
+    ]);
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' }, resultRevisionId: 'synthetic-result' })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-answered-revision-0-1')).toBe('Answered in v7 · Open it');
+    expect(query('mktg-faq-view-needs-answer-0-1')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-callout')).toBeNull();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
+    const link = query('mktg-faq-view-answered-revision-0-1');
+    expect(link?.getAttribute('href')).toContain('revision=synthetic-result');
+    expect(link?.getAttribute('href')).toContain('project=synthetic');
+    expect(link?.getAttribute('href')).toContain('tab=faq');
+    link?.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toContain('revision=synthetic-result');
+    expect(ASSET.content.faq[0][1][1][1]).toBeNull();
+  });
+
+  it('uses the existing resolved status without inventing a version when the result is not listed', async () => {
+    host.commentsEnabled.set(true);
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' }, resultRevisionId: `000999-${'b'.repeat(64)}` })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-resolved-0-1')).toBe('Resolved by the agent');
+    expect(query('mktg-faq-view-answered-revision-0-1')).toBeNull();
+    expect(query('mktg-faq-view-needs-answer-0-1')).toBeNull();
+    expect(element().textContent).not.toContain('v999');
+  });
+
+  it('keeps the viewed revision answer instead of replacing it with a resolved marker', async () => {
+    host.commentsEnabled.set(true);
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][0][1]' } })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-question-0-0')).toContain('TestOrbit is an open release toolkit.');
+    expect(query('mktg-faq-view-resolved-0-0')).toBeNull();
+    expect(query('mktg-faq-view-answered-revision-0-0')).toBeNull();
+  });
+
+  it('does not apply resolved comments from another agent scope or to a non-comment view', async () => {
+    threads.set([mktgCommentFixture({ status: 'resolved', anchor: { kind: 'field', key: 'faq[0][1][1][1]' } })]);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
+    host.commentsEnabled.set(true);
+    scope.set({ ...mktgCommentScopeFixture(), agentKey: 'foundation-message' });
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
   });
 
   it('loads its URL tab and pushes one history entry per user switch', async () => {
@@ -115,7 +268,9 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-approval-state')).toBe('Draft');
     expect(query('mktg-faq-view-mode')).toBeNull();
     expect(text('mktg-faq-view-size')).toBe('3 questions in 2 groups');
-    expect(text('mktg-faq-view-unanswered-chip')).toBe('1 question needs an answer from your team');
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-open')).toBeNull();
+    expect(element().textContent).not.toContain('See them');
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
   });
 
@@ -139,7 +294,7 @@ describe('MktgFaqViewComponent', () => {
   });
 
   it('lists the unanswered questions for the reviewer on their own tab, and says so when there are none', async () => {
-    query('mktg-faq-view-unanswered-open')?.click();
+    query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     expect(query('mktg-faq-view-tab-unanswered')?.getAttribute('aria-selected')).toBe('true');
     expect(text('mktg-faq-view-unanswered-list')).toContain('About TestOrbit');
@@ -152,11 +307,27 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
   });
 
-  it('moves focus to the rendered panel start when a shortcut opens it', async () => {
-    query('mktg-faq-view-unanswered-chip')?.click();
+  it('moves focus to the rendered panel start when its tab opens it', async () => {
+    query('mktg-faq-view-tab-unanswered')?.click();
     await fixture.whenStable();
     const panel = query('mktg-faq-view-panel-unanswered');
     expect(document.activeElement).toBe(panel);
+  });
+
+  it('says the plural open-question count once and only adds comment guidance for stored documents', async () => {
+    host.asset.set({
+      ...ASSET,
+      checks: { ...ASSET.checks, unanswered: [...ASSET.checks.unanswered, { path: 'faq[1][1][1]', group: 'Getting involved', question: 'Who can join?' }] },
+    });
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-unanswered-callout')).toBe('2 questions need an answer from your team.');
+    host.commentsEnabled.set(true);
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-unanswered-callout')).toBe(
+      '2 questions need an answer from your team. Answer them by commenting on them; the agent adds your answers as Notes.'
+    );
+    expect(query('mktg-faq-view-unanswered-chip')).toBeNull();
+    expect(query('mktg-faq-view-unanswered-open')).toBeNull();
   });
 
   it('shows the sources read, the failed ones, the gaps and the checks', async () => {
@@ -165,7 +336,16 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-sources-read')).toContain('https://testorbit.example.org');
     expect(text('mktg-faq-view-sources-failed')).toContain('404');
     expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
+    expect(query('mktg-faq-view-gaps-accepted')).toBeNull();
     expect(query('mktg-faq-view-checks-empty')).not.toBeNull();
+  });
+
+  it('says under an approved revision’s gaps that they were accepted at that approval and are still open', async () => {
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(text('mktg-faq-view-gaps')).toContain('How much does membership cost?');
+    expect(text('mktg-faq-view-gaps-accepted')).toBe('Accepted when v3 was approved; still open.');
   });
 
   it('moves along the tabs with the arrow keys', async () => {
@@ -176,5 +356,69 @@ describe('MktgFaqViewComponent', () => {
     tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     await fixture.whenStable();
     expect(query('mktg-faq-view-panel-faq')).not.toBeNull();
+  });
+
+  describe('answers as restricted Markdown', () => {
+    const answer = (q: number): HTMLElement => {
+      const rendered = query(`mktg-faq-view-answer-0-${q}`);
+      if (!rendered) throw new Error(`No answer rendered for question ${q}`);
+      return rendered;
+    };
+
+    beforeEach(async () => {
+      host.asset.set({ ...ASSET, content: faqAnswersContent(), checks: { findings: [], unanswered: [] } });
+      await fixture.whenStable();
+    });
+
+    it('renders a plain answer as one paragraph with its exact text, beside its source', () => {
+      const paragraphs = answer(0).querySelectorAll('p');
+      expect(paragraphs).toHaveLength(1);
+      expect(paragraphs[0].textContent).toBe(FAQ_PLAIN_ANSWER);
+      expect(answer(0).querySelector('ul')).toBeNull();
+      expect(text('mktg-faq-view-source-0-0')).toBe('Website');
+    });
+
+    it('renders a lead-in and its "- " lines as a paragraph followed by a list of the items in order', () => {
+      const lead = answer(1).querySelector('p');
+      const list = answer(1).querySelector('ul');
+      expect(lead?.textContent).toBe(FAQ_LIST_LEAD_IN);
+      expect(list).not.toBeNull();
+      expect(lead?.nextElementSibling).toBe(list);
+      expect(Array.from(answer(1).querySelectorAll('ul > li'), (item) => item.textContent)).toEqual([...FAQ_LIST_ITEMS]);
+      expect(answer(1).textContent).not.toContain('- ');
+    });
+
+    // The blank-line variant opens an empty line between the lead-in and the first item only: a blank line between
+    // every item would be a loose list, a different shape.
+    const [leadIn, ...items] = FAQ_LIST_ANSWER.split('\n');
+    const blankLineBeforeList = [leadIn, '', ...items].join('\n');
+
+    it.each([
+      ['a blank line before the first item', blankLineBeforeList],
+      ['CRLF line ends', FAQ_LIST_ANSWER.replace(/\n/g, '\r\n')],
+    ])('renders the same paragraph and list with %s', async (_shape, stored) => {
+      const content = faqAnswersContent();
+      content.faq[0][1][1][1] = stored;
+      host.asset.set({ ...ASSET, content, checks: { findings: [], unanswered: [] } });
+      await fixture.whenStable();
+      expect(answer(1).querySelector('p')?.textContent).toBe(FAQ_LIST_LEAD_IN);
+      expect(Array.from(answer(1).querySelectorAll('ul > li'), (item) => item.textContent)).toEqual([...FAQ_LIST_ITEMS]);
+    });
+
+    it('keeps thousands separators verbatim', () => {
+      expect(answer(2).querySelectorAll('p')).toHaveLength(1);
+      expect(answer(2).querySelector('p')?.textContent).toBe(FAQ_PRICE_ANSWER);
+      expect(answer(2).textContent).toContain('$5,000 to $75,000');
+    });
+
+    it('lets no injected image, script, handler or javascript: link reach the DOM', () => {
+      expect(FAQ_INJECTED_ANSWER).toContain('<script>');
+      expect(answer(3).querySelector('img')).toBeNull();
+      expect(answer(3).querySelector('script')).toBeNull();
+      expect(answer(3).querySelector('[onerror]')).toBeNull();
+      expect(answer(3).querySelector('a')).toBeNull();
+      expect(answer(3).innerHTML).not.toContain('javascript:');
+      expect(answer(3).textContent).toContain('the docs');
+    });
   });
 });

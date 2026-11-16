@@ -60,6 +60,7 @@ describe('MembersNpsComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let selectedRange: ReturnType<typeof signal<string>>;
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` (a value or a stream) every read after it.
   async function render(
@@ -87,7 +88,10 @@ describe('MembersNpsComponent', () => {
 
     fixture = TestBed.createComponent(MembersNpsComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -110,6 +114,7 @@ describe('MembersNpsComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     selectedRange = signal<string>('YTD');
     lifecycle = [];
+    verdicts = [];
   });
 
   it("reads the period's survey, renders the audience's score with its sample, and settles", async () => {
@@ -129,6 +134,7 @@ describe('MembersNpsComponent', () => {
     expect(query('members-nps-low-sample')).toBeNull();
     expect(text('members-nps-footer')).toContain('Non-responses are rendered as the grey segment');
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('sizes the distribution against everyone surveyed and leaves out an empty segment', async () => {
@@ -293,12 +299,13 @@ describe('MembersNpsComponent', () => {
     expect(text('members-nps-updated')).toBe('—');
   });
 
-  it('shows the empty state when the period holds no survey', async () => {
+  it('settles empty, with no body, when the period holds no survey', async () => {
     await render(HEALTH_METRICS_MEMBERS_NPS_UNMEASURED);
 
-    expect(text('members-nps-empty')).toContain('No survey in this period');
     expect(query('members-nps-controls')).toBeNull();
+    expect(query('members-nps-hero')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([true]);
   });
 
   it('separates a failed read from an empty one, and still settles', async () => {
@@ -310,8 +317,8 @@ describe('MembersNpsComponent', () => {
     await settle();
 
     expect(query('members-nps-error')).not.toBeNull();
-    expect(query('members-nps-empty')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -321,7 +328,6 @@ describe('MembersNpsComponent', () => {
     expect(getMembersNps).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
     expect(query('members-nps-loading')).not.toBeNull();
-    expect(query('members-nps-empty')).toBeNull();
   });
 
   it('keeps a deep-linked audience while the foundation resolves', async () => {

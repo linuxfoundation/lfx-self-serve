@@ -10,14 +10,7 @@
       title="Organizations at events unavailable"
       subtitle="We could not load the organizations at this foundation's events. Refresh the page to try again."
       data-testid="events-orgs-error" />
-  } @else if (!loading() && !scopeTotal()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-building"
-      title="No organizations at events this period"
-      subtitle="No organization registered, sponsored, proposed or spoke at this foundation's events in the selected period."
-      data-testid="events-orgs-empty" />
-  } @else {
+  } @else if (!empty()) {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="events-orgs-controls">
       <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <div class="w-full sm:w-64">
@@ -73,13 +66,13 @@
         data-testid="events-orgs-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Organization</span></th>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Membership</span></th>
-            <th scope="col" class="w-[150px] text-right"><span class="text-[12px] font-normal text-gray-500">Registrations</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Sponsorship</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Proposals</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Speakers</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Events</span></th>
+            <th scope="col">Organization</th>
+            <th scope="col">Membership</th>
+            <th scope="col" class="w-[150px] text-right">Registrations</th>
+            <th scope="col" class="text-right">Sponsorship</th>
+            <th scope="col" class="text-right">Proposals</th>
+            <th scope="col" class="text-right">Speakers</th>
+            <th scope="col" class="text-right">Events</th>
           </tr>
         </ng-template>
 

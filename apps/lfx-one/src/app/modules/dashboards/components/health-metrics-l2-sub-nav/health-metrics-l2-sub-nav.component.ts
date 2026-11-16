@@ -8,7 +8,7 @@ import type { HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
  * Section nav for a Health Metrics Level 2 tab (the design's `.hmn`), right of the sections. Purely
- * presentational — the shell owns scroll-spy and scrolling; this emits the picked section and renders the badges.
+ * presentational — the shell owns scroll-spy and scrolling; this emits the picked section and renders the notes.
  */
 @Component({
   selector: 'lfx-health-metrics-l2-sub-nav',

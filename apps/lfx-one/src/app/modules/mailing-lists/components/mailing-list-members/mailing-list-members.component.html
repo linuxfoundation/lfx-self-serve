@@ -61,6 +61,18 @@
     <div class="flex justify-center items-center py-8">
       <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-600"></i>
     </div>
+  } @else if (error()) {
+    <div class="flex flex-col items-center gap-3 py-8" role="alert" data-testid="mailing-list-members-error">
+      <p class="text-sm text-gray-600">Unable to load {{ memberLabel.plural | lowercase }}. Please try again.</p>
+      <lfx-button
+        label="Retry"
+        icon="fa-light fa-arrow-rotate-right"
+        severity="secondary"
+        size="small"
+        (onClick)="refreshMembers()"
+        data-testid="mailing-list-members-retry">
+      </lfx-button>
+    </div>
   } @else {
     <lfx-table
       [value]="filteredMembers()"
@@ -138,6 +150,8 @@
                 size="small"
                 [text]="true"
                 styleClass="h-8 w-8 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                [loading]="deletingUid() === member.uid"
+                [disabled]="deletingUid() !== null"
                 (onClick)="deleteMember(member)"
                 [attr.data-testid]="'member-delete-' + member.uid">
               </lfx-button>

@@ -9,6 +9,7 @@ import type { MktgDocumentRedraftContext } from '../../interfaces/mktg-document-
 export function redraftContextFixture(agentKey: MktgCommentAgentKey = 'foundation-message'): MktgDocumentRedraftContext {
   let anchor: MktgDocumentCommentAnchor = { kind: 'field', key: 'mf.tagline' };
   if (agentKey === 'boilerplates') anchor = { kind: 'field', key: 'bp[0].t' };
+  if (agentKey === 'faq') anchor = { kind: 'field', key: 'faq[0][1][2][1]' };
   if (agentKey === 'brand-kit') anchor = { kind: 'passage', key: 'kit.font', passage: 'Synthetic Sans\n--- STORED KIT ---' };
   return {
     schema: MKTG_REDRAFT_CONTEXT_SCHEMA,

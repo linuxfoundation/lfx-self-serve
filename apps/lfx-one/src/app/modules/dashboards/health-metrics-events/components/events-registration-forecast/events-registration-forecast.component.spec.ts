@@ -73,6 +73,7 @@ describe('EventsRegistrationForecastComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let notes: string[];
   let lifecycle: string[];
+  let verdicts: (boolean | null)[];
 
   async function render(
     payload: HealthMetricsEventsForecast | Error = { events: [event()] },
@@ -99,7 +100,10 @@ describe('EventsRegistrationForecastComponent', () => {
     fixture = TestBed.createComponent(EventsRegistrationForecastComponent);
     fixture.componentInstance.countsChange.subscribe((note) => notes.push(note));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -128,6 +132,7 @@ describe('EventsRegistrationForecastComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     notes = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the foundation, then the soonest event curve, and renders its headline and stats', async () => {
@@ -158,6 +163,7 @@ describe('EventsRegistrationForecastComponent', () => {
 
     expect(notes).toEqual(['', '1 will miss goal']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
   it('shows an error rather than an empty list when the read fails, and still settles', async () => {
@@ -165,24 +171,23 @@ describe('EventsRegistrationForecastComponent', () => {
     await render(new Error('boom'));
 
     expect(query('events-registration-forecast-error')).not.toBeNull();
-    expect(query('events-registration-forecast-empty')).toBeNull();
     expect(notes).toEqual(['', '']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
   });
 
-  it('says there are no upcoming events when the foundation has none', async () => {
+  it('settles empty, with no body, when the foundation has no upcoming events', async () => {
     await render({ events: [] });
 
-    expect(query('events-registration-forecast-empty')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'There are no upcoming events to forecast. Once an event is scheduled, its projection appears here.'
-    );
+    expect(verdicts).toEqual([true]);
+    expect(query('events-registration-forecast-card')).toBeNull();
     expect(query('events-registration-forecast-pace')).toBeNull();
   });
 
   it('keeps the pace table when upcoming events exist but none has a forecast', async () => {
     await render({ events: [event({ forecastAvg: null })] });
 
-    expect(query('events-registration-forecast-empty')).toBeNull();
+    expect(verdicts).toEqual([false]);
     expect(query('events-registration-forecast-card')).toBeNull();
     expect(query('events-registration-forecast-no-forecast')).not.toBeNull();
     expect(query('events-registration-forecast-row-evt-1')).not.toBeNull();
@@ -199,9 +204,11 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
     expect(notes.at(-1)).toBe('');
     expect(lifecycle.at(-1)).toBe('settled');
+    // A closed period keeps its own note, so it gives the shell no verdict.
+    expect(verdicts.at(-1)).toBeNull();
   });
 
-  it('points a closed period at Past events with a hint, not a button, and shows no footnote', async () => {
+  it('points a closed period at Past events with a hint, not a button', async () => {
     await render({ events: [event()] });
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     await settle();
@@ -211,7 +218,6 @@ describe('EventsRegistrationForecastComponent', () => {
       'See how events actually finished in the Past events section below.'
     );
     expect(closed?.querySelector('button')).toBeNull();
-    expect(query('events-registration-forecast-footnote')).toBeNull();
   });
 
   it('shows the event name on each pill and the selected event date at the row end, keeping the date in the full label', async () => {
@@ -230,12 +236,6 @@ describe('EventsRegistrationForecastComponent', () => {
 
     expect(query('events-registration-forecast-available-evt-1')?.textContent?.trim()).toBe('forecast available');
     expect(query('events-registration-forecast-available-evt-2')).toBeNull();
-  });
-
-  it('closes the populated section with the forecast footnote', async () => {
-    await render({ events: [event()] });
-
-    expect(query('events-registration-forecast-footnote')?.textContent).toContain('The forecast is a projection from historical pacing curves');
   });
 
   it.each([

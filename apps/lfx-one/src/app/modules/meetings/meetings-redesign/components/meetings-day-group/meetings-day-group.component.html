@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<!-- Sticks 20px under the tabs rule (MEETINGS_HOME_DAY_HEADING_GAP_PX, keep in step); 44px tall for the bar's fade offset. -->
+<div
+  class="sticky z-[1] -mt-[20px] flex h-[44px] items-center gap-[8px] bg-white pb-[6px] pt-[20px]"
+  [style.top.px]="stickyTop()"
+  data-testid="meetings-home-day-group-separator">
+  <h2 class="whitespace-nowrap text-[12px] font-semibold text-gray-500" data-testid="meetings-home-day-group-label">{{ group().label }}</h2>
+  <span class="text-[11px] text-gray-400" data-testid="meetings-home-day-group-count"
+    >{{ group().count }}<span class="sr-only"> {{ group().count === 1 ? 'meeting' : 'meetings' }}</span></span
+  >
+  <span class="h-px flex-auto bg-gray-200" aria-hidden="true"></span>
+</div>
+<ul class="flex flex-col">
+  @for (row of group().rows; track row.key) {
+    <li class="border-b border-gray-200 last:border-b-0" data-testid="meetings-home-day-group-row">
+      <lfx-meeting-home-row [row]="row" [view]="view()" />
+    </li>
+  }
+</ul>

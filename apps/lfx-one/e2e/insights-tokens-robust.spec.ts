@@ -22,6 +22,7 @@ import {
   DATA_LOAD_TIMEOUT,
   ELIGIBLE,
   EXISTING_TOKENS,
+  EXPIRED_TOKEN,
   NOT_ENABLED,
   openDeveloperSettingsWithInsightsFlagOff,
   openInsightsTokens,
@@ -59,6 +60,15 @@ test.describe('LFX Insights API tokens — Robust Tests', () => {
       await expect(page.getByTestId('insights-tokens-loading')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-empty')).toHaveCount(0);
       await expect(page.getByTestId('insights-tokens-error')).toHaveCount(0);
+    });
+
+    test('gives an expired token a remove action instead of revoke', async ({ page }) => {
+      await openInsightsTokens(page, { tokens: [...EXISTING_TOKENS, EXPIRED_TOKEN], eligibility: ELIGIBLE });
+
+      const row = page.getByTestId(`insights-tokens-row-${EXPIRED_TOKEN.uid}`);
+      await expect(row).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(row.getByTestId('insights-tokens-remove-button')).toHaveCount(1);
+      await expect(row.getByTestId('insights-tokens-revoke-button')).toHaveCount(0);
     });
 
     test('hides the list and never requests it for a user without access', async ({ page }) => {

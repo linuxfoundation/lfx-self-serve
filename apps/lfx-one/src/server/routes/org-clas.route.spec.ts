@@ -11,6 +11,7 @@ const {
   listClaGroups,
   getPdfUrl,
   getCclaPreview,
+  getClaGroupCatalogue,
   getSignOptions,
   requestCorporateSignature,
   getApprovalList,
@@ -31,6 +32,7 @@ const {
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getCclaPreview: vi.fn(),
+  getClaGroupCatalogue: vi.fn(),
   getSignOptions: vi.fn(),
   requestCorporateSignature: vi.fn(),
   getApprovalList: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
     public getCclaPreview = getCclaPreview;
+    public getClaGroupCatalogue = getClaGroupCatalogue;
     public getSignOptions = getSignOptions;
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
@@ -152,6 +155,9 @@ beforeEach(() => {
   });
   getCclaPreview.mockImplementation((_req: express.Request, res: express.Response) => {
     res.type('application/pdf').send(Buffer.from('%PDF-1.4'));
+  });
+  getClaGroupCatalogue.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ claGroupId: '7c1a9000-0000-4000-8000-000000000001', matchTypes: [], organizations: [] });
   });
   getApprovalList.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
@@ -317,6 +323,20 @@ describe('org-clas router', () => {
     expect(getCclaPreview).toHaveBeenCalled();
   });
 
+  it('refuses the CLA Group catalogue read for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/catalogue`);
+
+    expect(res.status).toBe(403);
+    expect(getClaGroupCatalogue).not.toHaveBeenCalled();
+  });
+
+  it('admits the CLA Group catalogue read for a granted org', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/7c1a9000-0000-4000-8000-000000000001/catalogue`);
+
+    expect(res.status).toBe(200);
+    expect(getClaGroupCatalogue).toHaveBeenCalled();
+  });
+
   it('refuses the approval list for an org the caller holds no grant on', async () => {
     const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`);
 
@@ -337,12 +357,9 @@ describe('org-clas router', () => {
    * everything the router put in front of it, so a guard deleted from a route line would leave
    * every controller test green.
    *
-   * There is no environment gate to assert. The module's server-side flag was removed on the
-   * parent branch, leaving the LaunchDarkly `org-lens-cla-m3-enabled` flag as the only one — and
-   * that hides the route and the nav without closing the BFF. So what stands in front of these
-   * two routes is exactly what is asserted below: the Org Lens grant on both, the impersonation
-   * guard on the write, and the CLA service's own signing-authority check past them. A shorter
-   * list than it was, which makes each of these cases more load-bearing rather than less.
+   * There is no environment gate to assert. What stands in front of these two routes is exactly
+   * what is asserted below: the Org Lens grant on both, the impersonation guard on the write, and
+   * the CLA service's own signing-authority check past them.
    */
 
   /**

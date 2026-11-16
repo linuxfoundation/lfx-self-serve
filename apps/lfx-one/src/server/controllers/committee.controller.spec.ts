@@ -22,11 +22,13 @@ const { getEffectiveEmailMock, committeeSvc } = vi.hoisted(() => ({
     getPendingCommitteeInvites: vi.fn(),
     acceptPendingCommitteeInvitesAfterLfidAccept: vi.fn(),
     getMyCommittees: vi.fn(),
+    uploadCommitteeDocument: vi.fn(),
+    bulkCreateCommitteeMembers: vi.fn(),
   },
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
-vi.mock('@lfx-one/shared/constants', () => ({ ALLOWED_FILE_TYPES: [] }));
+vi.mock('@lfx-one/shared/constants', () => ({ ALLOWED_FILE_TYPES: [], MEMBER_IMPORT_BULK_CHUNK_SIZE_MAX: 100 }));
 vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: {} }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 // canViewCommitteeRoster is a faithful copy of the shared rule (exhaustively covered in
@@ -99,6 +101,7 @@ vi.mock('../helpers/validation.helper', async () => {
 
 import { CommitteeController } from './committee.controller';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { getStringQueryParam } from '../helpers/validation.helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 function buildReq(body: Record<string, unknown> = {}): any {
@@ -528,5 +531,106 @@ describe('CommitteeController roster reads — member_visibility', () => {
       expect(committeeSvc.getCommitteeMemberById).toHaveBeenCalledWith(req, COMMITTEE_ID, MEMBER_ID);
       expect(res.json).toHaveBeenCalledWith(ROSTER[0]);
     });
+  });
+});
+
+// CodeQL js/type-confusion-through-parameter-tampering flags the later fileBuffer.length reads; the
+// Buffer.isBuffer guard must reject a string, array, or object body before any of them runs.
+describe('CommitteeController.uploadCommitteeDocument body type', () => {
+  let controller: CommitteeController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    const query: Record<string, string> = { name: 'Charter', file_name: 'charter.pdf', content_type: 'application/pdf', file_size: '4' };
+    vi.mocked(getStringQueryParam).mockImplementation((_req, key: string) => query[key]);
+  });
+
+  it.each([
+    ['a string', 'abcd'],
+    ['an array', [1, 2, 3, 4]],
+    ['an object with a length', { length: 4 }],
+  ])('rejects %s body as missing file data', async (_label, body) => {
+    const next = vi.fn();
+
+    await controller.uploadCommitteeDocument({ ...buildReq(), body } as any, buildRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'body' })] }));
+    expect(committeeSvc.uploadCommitteeDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeController.bulkCreateCommitteeMembers', () => {
+  let controller: CommitteeController;
+  const members = [{ email: 'ada@example.com' }];
+  const result = { results: [{ index: 0, email: 'ada@example.com', status: 'added', retryable: false }], added: 1, skipped: 0, failed: 0 };
+
+  function buildJsonRes(): any {
+    return { status: vi.fn().mockReturnThis(), json: vi.fn() };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CommitteeController();
+    vi.mocked(getStringQueryParam).mockReturnValue(undefined);
+  });
+
+  it('passes the upstream result through with 200', async () => {
+    committeeSvc.bulkCreateCommitteeMembers.mockResolvedValueOnce(result);
+    const res = buildJsonRes();
+    const next = vi.fn();
+
+    await controller.bulkCreateCommitteeMembers(buildReq({ members }), res, next);
+
+    expect(committeeSvc.bulkCreateCommitteeMembers).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, members, false);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('forwards skip_notification=true', async () => {
+    vi.mocked(getStringQueryParam).mockImplementation((_req, key: string) => (key === 'skip_notification' ? 'true' : undefined));
+    committeeSvc.bulkCreateCommitteeMembers.mockResolvedValueOnce(result);
+
+    await controller.bulkCreateCommitteeMembers(buildReq({ members }), buildJsonRes(), vi.fn());
+
+    expect(committeeSvc.bulkCreateCommitteeMembers).toHaveBeenCalledWith(expect.anything(), COMMITTEE_ID, members, true);
+  });
+
+  it.each([
+    ['missing', {}],
+    ['not an array', { members: { email: 'ada@example.com' } }],
+    ['empty', { members: [] }],
+    ['over 100 rows', { members: Array.from({ length: 101 }, (_, i) => ({ email: `person${i}@example.com` })) }],
+  ])('rejects %s members with a validation error', async (_label, body) => {
+    const next = vi.fn();
+
+    await controller.bulkCreateCommitteeMembers(buildReq(body), buildJsonRes(), next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ validationErrors: [expect.objectContaining({ field: 'members' })] }));
+    expect(committeeSvc.bulkCreateCommitteeMembers).not.toHaveBeenCalled();
+  });
+
+  it('logs counts, never the submitted rows', async () => {
+    committeeSvc.bulkCreateCommitteeMembers.mockResolvedValueOnce(result);
+    const { logger } = await import('../services/logger.service');
+
+    await controller.bulkCreateCommitteeMembers(buildReq({ members }), buildJsonRes(), vi.fn());
+
+    // Metadata only: argument 0 is the request itself.
+    const logged = JSON.stringify([vi.mocked(logger.startOperation).mock.calls[0][2], vi.mocked(logger.success).mock.calls[0][3]]);
+    expect(logged).toContain('"row_count":1');
+    expect(logged).not.toContain('@example.com');
+    expect(logger.sanitize).not.toHaveBeenCalled();
+  });
+
+  it('sends an upstream error to next', async () => {
+    const error = new Error('upstream failed');
+    committeeSvc.bulkCreateCommitteeMembers.mockRejectedValueOnce(error);
+    const next = vi.fn();
+
+    await controller.bulkCreateCommitteeMembers(buildReq({ members }), buildJsonRes(), next);
+
+    expect(next).toHaveBeenCalledWith(error);
   });
 });

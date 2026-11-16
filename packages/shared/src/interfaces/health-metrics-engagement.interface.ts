@@ -3,14 +3,16 @@
 
 import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
-import type { HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -37,25 +39,27 @@ export interface HealthMetricsTab {
   route: string;
 }
 
-/** Engagement's sub-nav badge, keyed to its own sections. */
+/** Engagement's sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsEngagementSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsEngagementSectionKey;
 }
 
-/**
- * Inputs to the sub-nav badges (the design's `counts()`). A `null` total means that section's data
- * has not resolved yet, so it renders no badge rather than a misleading zero.
- */
+/** Inputs to the sub-nav notes (the design's `counts()`); a zero drops its note. */
 export interface HealthMetricsEngagementSubNavCounts {
-  groups: number | null;
   dormantGroups: number;
   lowAttendanceGroups: number;
-  orgs: number | null;
   lapsedOrgs: number;
-  reps: number | null;
   neverAttendedReps: number;
-  nonMemberOrgs: number | null;
 }
+
+/** What `#committees` reports for its sub-nav note. */
+export type HealthMetricsEngagementGroupNoteCounts = Pick<HealthMetricsEngagementSubNavCounts, 'dormantGroups' | 'lowAttendanceGroups'>;
+
+/** What `#orgs` reports for its sub-nav note. */
+export type HealthMetricsEngagementOrgNoteCounts = Pick<HealthMetricsEngagementSubNavCounts, 'lapsedOrgs'>;
+
+/** What `#reps` reports for its sub-nav note. */
+export type HealthMetricsEngagementRepNoteCounts = Pick<HealthMetricsEngagementSubNavCounts, 'neverAttendedReps'>;
 
 /** One group's numbers for a single period. Every period ships on every row, so the period pill
  * re-reads rather than re-deriving. */
@@ -101,8 +105,8 @@ export interface HealthMetricsEngagementGroupRowView {
   lastMetLabel: string;
 }
 
-/** Sub-nav badge inputs for `#committees`, aggregated over the whole project scope, not the page or
- * the selected type chip. */
+/** `#committees` scope counts, aggregated over the whole project scope, not the page or the selected
+ * type chip; the dormant and low-attendance counts feed its sub-nav note. */
 export interface HealthMetricsEngagementGroupCounts {
   groups: number;
   dormantGroups: number;
@@ -315,7 +319,7 @@ export interface HealthMetricsEngagementOrgRowView {
   tierPillClass: string;
 }
 
-/** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
+/** `#orgs` scope counts; the lapsed count feeds its sub-nav note. Both are period-agnostic, denormalized onto every row. */
 export interface HealthMetricsEngagementOrgCounts {
   orgs: number;
   lapsedOrgs: number;
@@ -365,7 +369,7 @@ export interface HealthMetricsEngagementNonMemberRowView {
   period: HealthMetricsEngagementNonMemberPeriod | null;
 }
 
-/** The `#nonmem` caption and sub-nav badge for one period: organizations that attended a meeting in it. */
+/** The `#nonmem` caption for one period: organizations that attended a meeting in it. */
 export interface HealthMetricsEngagementNonMemberPeriodCounts {
   range: HealthMetricsRange;
   orgs: number;
@@ -441,7 +445,7 @@ export interface HealthMetricsEngagementRepRowView {
 export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
 
 /** Scope counts for one period. Unlike the org caption, this view's scope counts are
- * period-suffixed, so the caption and the sub-nav badge follow the pill. */
+ * period-suffixed, so the caption and the sub-nav note follow the pill. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;
@@ -471,4 +475,161 @@ export interface HealthMetricsEngagementQueryParams {
   orgFilter?: HealthMetricsEngagementOrgFilter | null;
   partMode?: HealthMetricsEngagementParticipationMode | null;
   repFilter?: HealthMetricsEngagementRepFilter | null;
+  nlMode?: HealthMetricsEngagementNewsletterMode | null;
+  nlFilter?: HealthMetricsEngagementRecipientFilter | null;
+}
+
+/** The newsletter chart's toggle: each newsletter's rates, or its recipients and unique opens. */
+export type HealthMetricsEngagementNewsletterMode = (typeof HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES)[number]['key'];
+
+/** Wire query for `GET /api/analytics/engagement-newsletter-performance`; the period resolves client-side. */
+export interface HealthMetricsEngagementNewsletterQuery {
+  foundationSlug: string;
+}
+
+/** The summary view's figures for one period. Rates are 0–1 shares of each newsletter's recipients. */
+export interface HealthMetricsEngagementNewsletterPeriod {
+  subscribers: number | null;
+  subscribersGrowth: number | null;
+  growthBaselineDate: string | null;
+  newslettersSent: number | null;
+  avgOpenRate: number | null;
+  avgClickRate: number | null;
+  avgClickToOpenRate: number | null;
+  avgDeliveryRate: number | null;
+}
+
+/** One newsletter sent. One without engagement data carries its recipients only; every other figure is `null`. */
+export interface HealthMetricsEngagementNewsletter {
+  key: string;
+  name: string;
+  sentDate: string | null;
+  hasEngagementData: boolean;
+  recipients: number | null;
+  failed: number | null;
+  uniqueOpens: number | null;
+  totalOpens: number | null;
+  uniqueClicks: number | null;
+  totalClicks: number | null;
+  openRate: number | null;
+  clickRate: number | null;
+  clickToOpenRate: number | null;
+}
+
+/** `GET /api/analytics/engagement-newsletter-performance` — every period's summary and every newsletter, latest first. */
+export interface HealthMetricsEngagementNewsletterPerformance {
+  /** `false` when the foundation has no summary row at all. */
+  measured: boolean;
+  periods: Record<HealthMetricsL2Range, HealthMetricsEngagementNewsletterPeriod | null>;
+  newsletters: HealthMetricsEngagementNewsletter[];
+}
+
+/** One of the section's KPIs: a label over its value, with a delta only on Subscribers. */
+export interface HealthMetricsEngagementNewsletterKpiView {
+  key: string;
+  label: string;
+  value: string;
+  delta: string | null;
+  deltaDirection: 'up' | 'down' | 'neutral';
+}
+
+/** One table row, with every cell already labelled; "—" stands in where the newsletter has no engagement data. */
+export interface HealthMetricsEngagementNewsletterRowView {
+  key: string;
+  name: string;
+  sentLabel: string;
+  recipientsLabel: string;
+  failedLabel: string;
+  uniqueOpensLabel: string;
+  totalOpensLabel: string;
+  openRateLabel: string;
+  /** The open-rate bar's fill, 0–100. */
+  openRateWidthPct: number;
+  uniqueClicksLabel: string;
+  totalClicksLabel: string;
+  clickRateLabel: string;
+  clickToOpenLabel: string;
+}
+
+/** One newsletter on the chart. Rates are percentages (0–100); a figure the newsletter lacks is `null`. */
+export interface HealthMetricsEngagementNewsletterPointView {
+  key: string;
+  /** The x-axis label: the send's month. */
+  tick: string;
+  /** "Name · Oct 26, 2026", the tooltip's title. */
+  title: string;
+  openPct: number | null;
+  clickPct: number | null;
+  clickToOpenPct: number | null;
+  recipients: number | null;
+  uniqueOpens: number | null;
+}
+
+/** Newsletter performance for the selected period. */
+export interface HealthMetricsEngagementNewsletterView {
+  isEmpty: boolean;
+  headline: HealthMetricsEngagementNewsletterKpiView;
+  side: HealthMetricsEngagementNewsletterKpiView[];
+  /** Latest first, as the view ranks them. */
+  rows: HealthMetricsEngagementNewsletterRowView[];
+  /** Oldest first: every newsletter for the audience chart, only those with engagement data for the rates chart. */
+  audiencePoints: HealthMetricsEngagementNewsletterPointView[];
+  ratePoints: HealthMetricsEngagementNewsletterPointView[];
+}
+
+/** The recipient table's cut: everyone, or one engagement segment. */
+export type HealthMetricsEngagementRecipientFilter = (typeof HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS)[number]['key'];
+
+/** Wire query for `GET /api/analytics/engagement-newsletter-recipients`. Search and the cut resolve client-side. */
+export interface HealthMetricsEngagementRecipientQuery {
+  foundationSlug: string;
+}
+
+/** One recipient of the latest newsletter. Times are UTC ISO strings; a figure the view lacks is `null`. */
+export interface HealthMetricsEngagementRecipient {
+  /** The view's engagement rank, unique within the newsletter; 1 is the most engaged. */
+  rank: number;
+  name: string | null;
+  organization: string | null;
+  /** `Delivered` or `Failed`, as the view reports it. */
+  deliveryStatus: string | null;
+  /** `opened`, `not-opened` or `failed`. A recipient who clicked without a recorded open is `not-opened`. */
+  segment: string | null;
+  clicked: boolean;
+  opens: number | null;
+  lastOpenedAt: string | null;
+  clicks: number | null;
+  lastClickedAt: string | null;
+}
+
+/** The newsletter the recipients received. */
+export interface HealthMetricsEngagementRecipientNewsletter {
+  key: string;
+  name: string;
+  sentDate: string | null;
+}
+
+/** `GET /api/analytics/engagement-newsletter-recipients` — every recipient of the foundation's latest newsletter, most engaged first. */
+export interface HealthMetricsEngagementNewsletterRecipients {
+  /** `null` when the foundation has sent no newsletter. */
+  newsletter: HealthMetricsEngagementRecipientNewsletter | null;
+  recipients: HealthMetricsEngagementRecipient[];
+  /** The read hit its cap, so only the most engaged recipients came back and every count covers just those. */
+  truncated: boolean;
+}
+
+/** One recipient row, every cell labelled; a failed delivery reads "—" for engagement, opens and clicks. */
+export interface HealthMetricsEngagementRecipientRowView {
+  rank: number;
+  nameLabel: string;
+  organizationLabel: string;
+  deliveryLabel: string;
+  deliveryClass: string;
+  /** Empty for a failed delivery, which shows "—" instead of a tag. */
+  engagementLabel: string;
+  engagementClass: string;
+  opensLabel: string;
+  lastOpenedLabel: string;
+  clicksLabel: string;
+  lastClickedLabel: string;
 }

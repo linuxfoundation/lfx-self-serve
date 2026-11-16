@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="creative-library-upload">
+  <div class="flex flex-col gap-1">
+    <span class="text-sm font-semibold text-gray-900">Upload images</span>
+    <span class="text-xs text-gray-500">
+      Add a designer's export once. Every platform's image slots below draw from this brief's library, so the same images are not picked again per ad manager.
+    </span>
+  </div>
+
+  <p class="text-xs tabular-nums text-gray-700" data-testid="creative-library-upload-quota">{{ quotaText() }}</p>
+
+  <!-- Only the pickers depend on the capability. A run already going stays listed and cancellable
+       when the capability read is unanswered or fails on a remount. -->
+  @if (available() === false) {
+    <p class="text-xs text-gray-500" data-testid="creative-library-upload-unavailable">Image uploads are not enabled on this deployment.</p>
+  } @else if (available() === null) {
+    <p class="text-xs text-gray-500" data-testid="creative-library-upload-checking">
+      Uploads are offered once this deployment's image capabilities have loaded.
+    </p>
+  } @else {
+    <!-- Raw file inputs, as the per-platform pickers use (#4452): `lfx-file-upload` wraps PrimeNG's
+         FileUpload, which has no folder mode and silently drops a file over `maxFileSize`, and every
+         file picked here must be reported, never dropped. -->
+    <div class="flex flex-wrap gap-4">
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-700" for="creative-library-files">Images</label>
+        <input
+          id="creative-library-files"
+          type="file"
+          multiple
+          [attr.accept]="accept"
+          (change)="onFilesPicked($event, false)"
+          aria-describedby="creative-library-hint"
+          class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+          data-testid="creative-library-upload-files" />
+      </div>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-gray-700" for="creative-library-folder">Or a folder</label>
+        <input
+          id="creative-library-folder"
+          type="file"
+          webkitdirectory
+          (change)="onFilesPicked($event, true)"
+          aria-describedby="creative-library-hint"
+          class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+          data-testid="creative-library-upload-folder" />
+      </div>
+    </div>
+    <p id="creative-library-hint" class="text-xs text-gray-500">
+      PNG or JPEG, up to 10 MB each, sent one at a time. From a folder, only images at its top level are uploaded; every file is listed with what happened to
+      it.
+    </p>
+  }
+
+  @if (overHeadroom()) {
+    <p class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="creative-library-upload-headroom">
+      {{ overHeadroom() }}
+    </p>
+  }
+
+  <!-- Always mounted so its CONTENTS change, which is what a screen reader announces. It says when
+         a run starts and how it settled, not every file's step. -->
+  <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="creative-library-upload-live">{{ liveMessage() }}</div>
+
+  @if (items().length > 0) {
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <span class="text-xs text-gray-700" data-testid="creative-library-upload-summary">{{ summary() }}</span>
+      <div class="flex gap-2">
+        @if (running()) {
+          <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="cancel()" data-testid="creative-library-upload-cancel" />
+        }
+        @if (canClear()) {
+          <lfx-button label="Clear list" size="small" severity="secondary" [text]="true" (onClick)="clear()" data-testid="creative-library-upload-clear" />
+        }
+      </div>
+    </div>
+
+    <ul class="flex max-h-80 flex-col gap-1 overflow-y-auto" data-testid="creative-library-upload-items">
+      @for (item of rows(); track item.id) {
+        <li class="flex flex-wrap items-center gap-2 rounded border border-gray-200 px-3 py-2" [attr.data-testid]="'creative-library-upload-item-' + item.id">
+          <span class="min-w-0 flex-1 truncate text-xs text-gray-900" [title]="item.name">{{ item.name }}</span>
+          <span class="text-2xs tabular-nums text-gray-500">{{ item.byteSize | fileSize }}</span>
+          <span class="rounded-full px-2 py-0.5 text-2xs font-medium" [class]="item.statusBadge">{{ item.statusLabel }}</span>
+          @if (item.retryable) {
+            <lfx-button
+              label="Retry"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              [ariaLabel]="'Retry ' + item.name"
+              (onClick)="retry(item)"
+              [attr.data-testid]="'creative-library-upload-retry-' + item.id" />
+          }
+          @if (item.message) {
+            <span class="w-full text-2xs text-gray-600">{{ item.message }}</span>
+          }
+        </li>
+      }
+    </ul>
+  }
+</div>

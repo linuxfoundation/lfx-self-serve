@@ -44,6 +44,8 @@ import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { OverlayOptions } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
 
+import { ProgramLinkComponent } from '../../../../components/program-link/program-link.component';
+
 /**
  * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
  * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up
@@ -73,7 +75,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  */
 @Component({
   selector: 'lfx-mentorship-mentor-programs-section',
-  imports: [ButtonComponent, SelectComponent],
+  imports: [ButtonComponent, SelectComponent, ProgramLinkComponent],
   templateUrl: './mentor-programs-section.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

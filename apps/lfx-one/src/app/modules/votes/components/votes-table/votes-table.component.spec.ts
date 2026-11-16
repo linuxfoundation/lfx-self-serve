@@ -1,17 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LiveAnnouncer } from '@angular/cdk/a11y';
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, signal } from '@angular/core';
+import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
-import { VOTE_SUMMARY_NOT_ENDED } from '@lfx-one/shared/constants';
+import { VOTE_CLOSE_CONFIRMATION } from '@lfx-one/shared/constants';
+import { SendVoteSummaryResponse, VoteSummaryPreviewResponse } from '@lfx-one/shared/interfaces';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
+import { UserService } from '@services/user.service';
+import { VoteSummarySendService } from '@services/vote-summary-send.service';
 import { VoteService } from '@services/vote.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -20,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
+import { VoteSummaryDialogComponent } from '../vote-summary-dialog/vote-summary-dialog.component';
 import { VotesTableComponent } from './votes-table.component';
 
 const NOW = Date.parse('2026-10-09T12:00:00Z');
@@ -106,6 +112,7 @@ describe('VotesTableComponent — status tab counts', () => {
         { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
@@ -207,6 +214,7 @@ describe('VotesTableComponent — status tab counts on initial load', () => {
         { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
@@ -251,6 +259,7 @@ describe('VotesTableComponent — personal summary filters', () => {
         { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
@@ -459,6 +468,7 @@ describe('VotesTableComponent — empty-state copy', () => {
         { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
@@ -662,6 +672,7 @@ describe('VotesTableComponent — row More menu', () => {
         { provide: MessageService, useValue: { add: messageAdd } },
         { provide: ClipboardShareService, useValue: { copyLink } },
         { provide: DialogService, useValue: { open: openDialog } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: { getMailingListsByCommittee } },
         // Only `location` is swapped: TestBed renders through DOCUMENT, and jsdom refuses a direct `document.location` assignment.
         {
@@ -765,6 +776,13 @@ describe('VotesTableComponent — row More menu', () => {
     expect(navigate).toHaveBeenCalledWith(['/', 'project', 'votes', 'create'], { queryParams: { clone: 'project-vote' } });
   });
 
+  it('opens the presenter in a new tab from the Present item, only for writers of an open or ended vote (#4140)', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    table['openPresenter']('vote-9');
+    expect(open).toHaveBeenCalledWith('/votes/vote-9/present', '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+
   it('omits Clone from the menu without hasPMOAccess', async () => {
     fixture.componentRef.setInput('hasPMOAccess', false);
     await settle();
@@ -809,22 +827,22 @@ describe('VotesTableComponent — row More menu', () => {
 
     // Clone rides on project access, reminders (and Extend) on per-vote writer access — the gates
     // are independent, which is the whole point of this case. Clone is appended last (#3781), so
-    // the reminder stays at index 2 (after Extend) whether or not Clone is there.
+    // the reminder stays at index 3 (after Present and Extend) whether or not Clone is there.
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
       hasPMOAccess
-        ? ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
-        : ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list']
+        ? ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Close vote', 'Clone']
+        : ['Copy link', 'Present', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Close vote']
     );
 
     const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
     reminderItem.dispatchEvent(new Event('mouseenter'));
     await fixture.whenStable();
     expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
-    expect(items[2].tooltipOptions?.tooltipPosition).toBe('left');
+    expect(items[3].tooltipOptions?.tooltipPosition).toBe('left');
     reminderItem.dispatchEvent(new Event('mouseleave'));
 
-    items[2].command!({});
+    items[3].command!({});
 
     expect(openDialog).toHaveBeenCalledWith(
       VoteReminderDialogComponent,
@@ -1026,7 +1044,7 @@ describe('VotesTableComponent — row More menu', () => {
     { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
     { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
-    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Send summary', 'Clone'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Present', 'Send summary', 'Clone'] },
   ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
@@ -1126,6 +1144,7 @@ describe('VotesTableComponent — participation progress', () => {
         { provide: VoteService, useValue: { isAwaitingInvitationCount: (uid: string) => AWAITING.has(uid) } },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
@@ -1320,6 +1339,7 @@ describe('VotesTableComponent — Extend deadline', () => {
         provideNoopAnimations(),
         { provide: VoteService, useValue: { extendVote, isAwaitingInvitationCount: () => false } },
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
         { provide: MailingListService, useValue: {} },
       ],
     })
@@ -1444,65 +1464,86 @@ describe('VotesTableComponent — Extend deadline', () => {
   });
 });
 
-// #3662: the menu-gating and confirm→send flow had no component coverage at all.
+// #3662 / #4830: review and results live in the dialog; #4831 row progress follows the session-owned send.
 describe('VotesTableComponent — Send summary (#3662)', () => {
   let fixture: ComponentFixture<VotesTableComponent>;
   let table: VotesTableComponent;
   let sendVoteSummary: ReturnType<typeof vi.fn>;
-  let messageAdd: ReturnType<typeof vi.fn>;
-  let capturedConfirmation: Confirmation | null;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let announce: ReturnType<typeof vi.fn>;
+  let service: VoteSummarySendService;
+  let pending: Subject<SendVoteSummaryResponse>;
+  const PREVIEW: VoteSummaryPreviewResponse = {
+    ready: [{ uid: 'synthetic-voter', user_email: 'avery@acme-motors.example' }],
+    missing_email: [],
+    unique_email_count: 1,
+    shared_email_voter_count: 0,
+  };
+  const RESULT: SendVoteSummaryResponse = {
+    recipient_count: 1,
+    failed_count: 0,
+    skipped_count: 0,
+    uncertain_count: 0,
+    recipients: [{ ...PREVIEW.ready[0]!, outcome: 'sent' }],
+  };
   const ROWS = [
     vote('active', { writer: true }),
     vote('ended', { status: PollStatus.ENDED, writer: true }),
     vote('ended-reader', { status: PollStatus.ENDED, writer: false }),
+    vote('ended-second', { status: PollStatus.ENDED, writer: true }),
   ];
-  const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
-  async function sendSummaryItem(uid: string) {
-    const button = moreButton(uid);
-    if (!button) return undefined;
-    button.click();
+  const moreButton = (uid: string): HTMLButtonElement => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
+  const indicator = (uid: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-sending-summary-${uid}"]`);
+  async function menuItemsFor(uid: string) {
+    moreButton(uid).click();
     await settle();
-    return table['rowActionMenuItems']().find((item) => item.label === 'Send summary');
+    return table['rowActionMenuItems']();
+  }
+  async function sendSummaryItem(uid: string) {
+    return (await menuItemsFor(uid)).find((item) => item.label === 'Send summary');
+  }
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+  async function startSend(uid = 'ended'): Promise<void> {
+    await settle();
+    service.send(uid, PREVIEW);
+    await settle();
   }
 
   beforeEach(async () => {
-    sendVoteSummary = vi.fn().mockReturnValue(of({ recipient_count: 3, failed_count: 0 }));
-    messageAdd = vi.fn();
-    capturedConfirmation = null;
+    pending = new Subject<SendVoteSummaryResponse>();
+    sendVoteSummary = vi.fn().mockReturnValue(pending);
+    dialogOpen = vi.fn();
+    announce = vi.fn().mockResolvedValue(undefined);
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
         { provide: VoteService, useValue: { sendVoteSummary, isAwaitingInvitationCount: () => false } },
-        { provide: MessageService, useValue: { add: messageAdd } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: MailingListService, useValue: {} },
+        { provide: LiveAnnouncer, useValue: { announce } },
       ],
     })
       .overrideComponent(VotesTableComponent, {
-        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: vi.fn() } }] },
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: dialogOpen } }] },
       })
       .compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
     table = fixture.componentInstance;
+    service = TestBed.inject(VoteSummarySendService);
     fixture.componentRef.setInput('votes', ROWS);
     fixture.componentRef.setInput('hasPMOAccess', true);
-
-    // ConfirmationService is a component-level provider here (see the "deliberately not here"
-    // comment on VotesTableComponent) — fetch it from the component's own injector, not the root.
-    const confirmationService = fixture.debugElement.injector.get(ConfirmationService);
-    vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
-      capturedConfirmation = confirmation;
-      return confirmationService;
-    });
   });
-  afterEach(() => fixture?.destroy());
-
-  async function settle(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    fixture.detectChanges();
-    await fixture.whenStable();
-  }
+  afterEach(() => {
+    pending.complete();
+    fixture?.destroy();
+  });
 
   it('shows Send summary only for a writer on an ended vote', async () => {
     await settle();
@@ -1511,49 +1552,466 @@ describe('VotesTableComponent — Send summary (#3662)', () => {
     expect(await sendSummaryItem('ended-reader')).toBeUndefined();
   });
 
-  it('asks for confirmation, then sends and shows a success toast', async () => {
+  it('opens the summary dialog without confirming or sending from the table (#4830)', async () => {
+    const confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
     await settle();
     const item = await sendSummaryItem('ended');
+    expect(item!.tooltipOptions?.tooltipLabel).toBe('Review recipients and send the results summary');
+    expect(item!.disabled).toBeUndefined();
     item!.command!({});
-
-    expect(capturedConfirmation?.header).toBe('Send summary');
-    expect(sendVoteSummary).not.toHaveBeenCalled();
-
-    capturedConfirmation?.accept?.();
-
-    expect(sendVoteSummary).toHaveBeenCalledWith('ended');
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Summary sent to 3 voter(s).' }));
-  });
-
-  it('shows a warn toast (not an error) when some sends fail', async () => {
-    sendVoteSummary.mockReturnValue(of({ recipient_count: 2, failed_count: 1 }));
-    await settle();
-    const item = await sendSummaryItem('ended');
-    item!.command!({});
-    capturedConfirmation?.accept?.();
-
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: 'Summary sent to 2 voter(s); 1 failed.' }));
-  });
-
-  it('maps a 409 VOTE_SUMMARY_NOT_ENDED error to a specific message', async () => {
-    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: VOTE_SUMMARY_NOT_ENDED } })));
-    await settle();
-    const item = await sendSummaryItem('ended');
-    item!.command!({});
-    capturedConfirmation?.accept?.();
-
-    expect(messageAdd).toHaveBeenCalledWith(
-      expect.objectContaining({ severity: 'error', summary: "Couldn't send summary", detail: 'This vote has not closed yet.' })
+    expect(dialogOpen).toHaveBeenCalledWith(
+      VoteSummaryDialogComponent,
+      expect.objectContaining({ header: 'Send summary', modal: true, closable: true, data: { vote: expect.objectContaining({ uid: 'ended' }) } })
     );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(sendVoteSummary).not.toHaveBeenCalled();
   });
 
-  it('falls back to a generic error message for any other failure', async () => {
-    sendVoteSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
-    await settle();
-    const item = await sendSummaryItem('ended');
-    item!.command!({});
-    capturedConfirmation?.accept?.();
+  it('shows progress only on the sending row, with the spinner hidden from assistive technology (#4831)', async () => {
+    await startSend();
+    const status = indicator('ended');
+    expect(status?.textContent).toContain('Sending summary…');
+    expect(status?.querySelector('lfx-ui-spinner')?.parentElement?.getAttribute('aria-hidden')).toBe('true');
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-row-ended"]')?.contains(status)).toBe(true);
+    expect(indicator('ended-second')).toBeNull();
+    expect(indicator('active')).toBeNull();
+  });
 
-    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: "We couldn't send the summary. Please try again." }));
+  it('reopens a pending send for inspection without sending again, leaving other actions and votes available', async () => {
+    await startSend();
+    const items = await menuItemsFor('ended');
+    const sendingItem = items.find((item) => item.label === 'Sending summary…');
+    expect(sendingItem).toMatchObject({ icon: expect.stringContaining('animate-spin') });
+    expect(sendingItem?.disabled).toBeFalsy();
+    for (const label of ['Copy link', 'Present', 'Clone']) {
+      expect(items.find((item) => item.label === label)?.disabled).toBeFalsy();
+    }
+    sendingItem!.command!({});
+    expect(dialogOpen).toHaveBeenCalledWith(VoteSummaryDialogComponent, expect.objectContaining({ data: { vote: expect.objectContaining({ uid: 'ended' }) } }));
+    expect(service.send('ended', PREVIEW)).toBe(false);
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+    expect(await sendSummaryItem('ended-second')).toBeDefined();
+  });
+
+  it.each(['success', 'error'])('clears row progress and updates an already-open menu after %s without dismissing the retained result', async (outcome) => {
+    await startSend();
+    await menuItemsFor('ended');
+    const panel = TestBed.inject(DOCUMENT).querySelector('[role="menu"]');
+    expect(panel?.querySelector('[role="menuitem"][aria-label="Sending summary…"]')).toBeTruthy();
+    if (outcome === 'success') pending.next(RESULT);
+    else pending.error(new HttpErrorResponse({ status: 0 }));
+    await settle();
+    expect(indicator('ended')).toBeNull();
+    expect(panel?.isConnected).toBe(true);
+    expect(panel?.querySelector('[role="menuitem"][aria-label="Send summary"]')).toBeTruthy();
+    expect(service.getAttempt('ended')?.status).toBe(outcome);
+    expect(service.send('ended', PREVIEW)).toBe(false);
+  });
+
+  it("does not rewrite another pending vote's menu or remove its progress when a different send settles", async () => {
+    await startSend();
+    const secondPending = new Subject<SendVoteSummaryResponse>();
+    sendVoteSummary.mockReturnValue(secondPending);
+    await startSend('ended-second');
+    const otherItems = await menuItemsFor('ended-second');
+    pending.next(RESULT);
+    await settle();
+    expect(indicator('ended')).toBeNull();
+    expect(indicator('ended-second')).toBeTruthy();
+    expect(table['rowActionMenuItems']()).toBe(otherItems);
+    expect(otherItems.find((item) => item.label === 'Sending summary…')).toBeDefined();
+    secondPending.next(RESULT);
+    await settle();
+    expect(table['rowActionMenuItems']().find((item) => item.label === 'Send summary')).toBeDefined();
+  });
+
+  it('preserves an unrelated row and keyboard focus when a send settles', async () => {
+    await startSend();
+    const other = fixture.nativeElement.querySelector('[data-testid="votes-name-ended-second"]') as HTMLButtonElement;
+    other.focus();
+    pending.next(RESULT);
+    await settle();
+    expect(other.isConnected).toBe(true);
+    expect(TestBed.inject(DOCUMENT).activeElement).toBe(other);
+  });
+
+  it('restores row progress from the session when the table is recreated after navigation', async () => {
+    await startSend();
+    fixture.destroy();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    await settle();
+    expect(indicator('ended')).toBeTruthy();
+    expect(sendVoteSummary).toHaveBeenCalledTimes(1);
+    pending.next(RESULT);
+    await settle();
+    expect(indicator('ended')).toBeNull();
+  });
+
+  it('retains both concurrent completions in the real live region without claiming delivery', async () => {
+    const realAnnouncer = TestBed.runInInjectionContext(() => new LiveAnnouncer());
+    announce.mockImplementation((message, politeness) => realAnnouncer.announce(message, politeness));
+    const secondPending = new Subject<SendVoteSummaryResponse>();
+    sendVoteSummary.mockImplementation((uid: string) => (uid === 'ended' ? pending : secondPending));
+    try {
+      await startSend();
+      await startSend('ended-second');
+      secondPending.next(RESULT);
+      pending.error(new HttpErrorResponse({ status: 0 }));
+      await settle();
+      const liveText = TestBed.inject(DOCUMENT).querySelector('.cdk-live-announcer-element')?.textContent;
+      expect(liveText).toContain('The summary send for "Board ended-second" has finished.');
+      expect(liveText).toContain('The summary send for "Board ended" has finished.');
+      expect(liveText).not.toContain('sent to');
+    } finally {
+      realAnnouncer.ngOnDestroy();
+    }
+  });
+
+  it('announces the start and a neutral finish pointing to retained results rather than a toast', async () => {
+    await startSend();
+    expect(announce).toHaveBeenLastCalledWith('Sending the summary for "Board ended"…', 'polite');
+    pending.error(new HttpErrorResponse({ status: 0 }));
+    await settle();
+    expect(announce).toHaveBeenLastCalledWith('The summary send for "Board ended" has finished. Open Send summary to review the result.', 'polite');
+  });
+
+  it('clears progress on sign-out without announcing another user’s retained attempt', async () => {
+    await startSend();
+    announce.mockClear();
+    TestBed.inject(UserService).user.set(null);
+    await settle();
+    expect(indicator('ended')).toBeNull();
+    expect(announce).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * #4148: below the sm breakpoint the table rows render as cards. jsdom has no matchMedia, so the
+ * BreakpointObserver is mocked; the same rows keep their `votes-row-*` hooks, so the card and the
+ * table row are the same data and the same actions in a different layout.
+ */
+describe('VotesTableComponent — mobile cards (#4148)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  const MOBILE_VOTES = [
+    vote('cast'),
+    vote('done', { response_status: VoteResponseStatus.RESPONDED }),
+    vote('closed', { status: PollStatus.ENDED, end_time: '2026-09-01T12:00:00Z' }),
+  ];
+
+  async function render(matches: boolean, platform: 'browser' | 'server' = 'browser', votes: Vote[] = MOBILE_VOTES): Promise<void> {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches, breakpoints: {} }), isMatched: () => matches } },
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', votes);
+    fixture.componentRef.setInput('quickFilterNowMs', NOW);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+  afterEach(() => fixture?.destroy());
+
+  const q = (selector: string): HTMLElement | null => fixture.nativeElement.querySelector(selector);
+
+  it('switches between the table header and cards at the breakpoint', async () => {
+    await render(true);
+    expect(q('[data-testid="votes-card-cast"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBe(0);
+
+    await render(false);
+    expect(q('[data-testid="votes-card-cast"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBeGreaterThan(0);
+  });
+
+  it('renders every row as a card with name, group, status, deadline and one primary action', async () => {
+    await render(true);
+    for (const row of MOBILE_VOTES) {
+      const card = q(`[data-testid="votes-card-${row.uid}"]`) as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.textContent).toContain(row.name);
+      expect(card.textContent).toContain('Alpha Group');
+      expect(card.textContent).toContain('Due');
+    }
+    expect(q('[data-testid="votes-card-cast"] [data-testid="votes-cast-cast"]')?.textContent).toContain('Vote');
+    expect(q('[data-testid="votes-card-done"] [data-testid="votes-cast-done"]')?.textContent).toContain('Review');
+    expect(q('[data-testid="votes-card-closed"] [data-testid="votes-results-closed"]')?.textContent).toContain('Results');
+  });
+
+  it('keeps the row hooks, action test ids and 44px touch targets identical to the table', async () => {
+    await render(true);
+    const mobileIds = Array.from(fixture.nativeElement.querySelectorAll('[data-testid]') as NodeListOf<HTMLElement>)
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) => /^votes-(row|cast|results|more|name)-/.test(id!));
+    expect(q('[data-testid="votes-cast-cast"] button, button[data-testid="votes-cast-cast"]')?.className).toContain('min-h-[44px]');
+    expect(q('[data-testid="votes-more-cast"] button, button[data-testid="votes-more-cast"]')?.className).toContain('min-w-[44px]');
+
+    await render(false);
+    const desktopIds = Array.from(fixture.nativeElement.querySelectorAll('[data-testid]') as NodeListOf<HTMLElement>)
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) => /^votes-(row|cast|results|more|name)-/.test(id!));
+    expect(mobileIds.sort()).toEqual(desktopIds.sort());
+  });
+
+  it('hides the "Showing x to y" page report on phones to avoid overflow', async () => {
+    await render(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Showing');
+  });
+
+  // The server renders the desktop table and the client's FIRST render must equal it, or Angular throws NG0500
+  // during hydration. The viewport is therefore not read until afterNextRender, and never on the server platform.
+  it('renders the desktop table on the server even when the viewport matches the phone query', async () => {
+    await render(true, 'server');
+
+    expect(q('[data-testid="votes-card-cast"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBeGreaterThan(0);
+  });
+
+  it('starts as the desktop table on the client (matching the server HTML), then swaps to cards after the first render', async () => {
+    await render(true, 'browser');
+    const firstRenderIsMobile = TestBed.createComponent(VotesTableComponent).componentInstance['isMobile']();
+
+    expect(firstRenderIsMobile).toBe(false);
+    expect(q('[data-testid="votes-card-cast"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelectorAll('thead th').length).toBe(0);
+  });
+
+  it('gives the ended-early info button a 44px phone target on the card', async () => {
+    await render(true, 'browser', [vote('closed', { status: PollStatus.ENDED, end_time: '2026-09-01T12:00:00Z', early_end_time: '2026-08-30T12:00:00Z' })]);
+
+    const info = q('[data-testid="votes-ended-early-info-closed"]');
+    expect(info).toBeTruthy();
+    expect(info!.className).toContain('max-sm:min-w-[44px]');
+    expect(info!.className).toContain('max-sm:min-h-[44px]');
+  });
+
+  it('shows the sending-summary indicator on the card, below the name and status row (#4831)', async () => {
+    await render(true, 'browser', [vote('closed', { status: PollStatus.ENDED, writer: true })]);
+    // Drive the card from the same session-owned state as the dialog.
+    Object.assign(TestBed.inject(VoteService), { sendVoteSummary: () => NEVER });
+    TestBed.inject(VoteSummarySendService).send('closed', { ready: [], missing_email: [], unique_email_count: 0, shared_email_voter_count: 0 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const card = q('[data-testid="votes-card-closed"]');
+    const status = q('[data-testid="votes-card-closed"] [data-testid="votes-sending-summary-closed"]');
+    expect(status?.textContent).toContain('Sending summary…');
+    expect(status?.previousElementSibling?.contains(q('[data-testid="votes-name-closed"]'))).toBe(true);
+    expect(card?.contains(status)).toBe(true);
+  });
+});
+
+describe('VotesTableComponent — Close vote (#4740)', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let endVote: ReturnType<typeof vi.fn>;
+  let add: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('other', { writer: false }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+
+  const menuLabels = async (uid: string): Promise<string[]> => {
+    const more = fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`) as HTMLButtonElement | null;
+    if (!more) return []; // drafts have no row menu at all
+    more.click();
+    await settle();
+    return table['rowActionMenuItems']().map((item) => item.label as string);
+  };
+  const closeItem = async (uid: string) => {
+    await menuLabels(uid);
+    return table['rowActionMenuItems']().find((item) => item.label === 'Close vote');
+  };
+  const rowStatus = (uid: string) => table['displayedVotes']().find((row) => row.uid === uid)?.status;
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(async () => {
+    endVote = vi.fn().mockReturnValue(of(vote('active', { status: PollStatus.ENDED, early_end_time: '2026-10-12T10:00:00Z' })));
+    add = vi.fn();
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { endVote, isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: { add } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.detectChanges();
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm') as unknown as ReturnType<typeof vi.fn>;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('offers Close only on a writer row whose vote is active', async () => {
+    expect(await menuLabels('active')).toContain('Close vote');
+    expect(await menuLabels('other')).not.toContain('Close vote');
+    expect(await menuLabels('ended')).not.toContain('Close vote');
+    expect(await menuLabels('draft')).not.toContain('Close vote');
+  });
+
+  it('asks with the shared Close copy and sends nothing until it is accepted', async () => {
+    (await closeItem('active'))!.command!({});
+
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining(VOTE_CLOSE_CONFIRMATION));
+    expect(endVote).not.toHaveBeenCalled();
+  });
+
+  it('closes once on accept, flips the row to ended, tells the host and toasts', async () => {
+    const closed = vi.fn();
+    table.voteClosed.subscribe(closed);
+    (await closeItem('active'))!.command!({});
+    const accept = (confirm.mock.calls[0][0] as Confirmation).accept!;
+    accept();
+    await settle();
+
+    expect(endVote).toHaveBeenCalledTimes(1);
+    expect(endVote).toHaveBeenCalledWith('active');
+    expect(rowStatus('active')).toBe(PollStatus.ENDED);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', detail: 'Vote closed' }));
+  });
+
+  it('toasts the upstream message on failure and leaves the row as it was', async () => {
+    endVote.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'Vote has not started' } })));
+    const closed = vi.fn();
+    table.voteClosed.subscribe(closed);
+    (await closeItem('active'))!.command!({});
+    (confirm.mock.calls[0][0] as Confirmation).accept!();
+    await settle();
+
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Vote has not started' }));
+    expect(rowStatus('active')).toBe(PollStatus.ACTIVE);
+    expect(closed).not.toHaveBeenCalled();
+  });
+
+  it('ignores a second accept while the first close is in flight, and one for a vote that is already closed', async () => {
+    const pending = new Subject<Vote>();
+    endVote.mockReturnValue(pending);
+    (await closeItem('active'))!.command!({});
+    const accept = (confirm.mock.calls[0][0] as Confirmation).accept!;
+    accept();
+    accept();
+    expect(endVote).toHaveBeenCalledTimes(1);
+
+    pending.next(vote('active', { status: PollStatus.ENDED }));
+    pending.complete();
+    await settle();
+    accept();
+    expect(endVote).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an accept for a row that has left the list', async () => {
+    (await closeItem('active'))!.command!({});
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.filter((row) => row.uid !== 'active')
+    );
+    fixture.detectChanges();
+    (confirm.mock.calls[0][0] as Confirmation).accept!();
+
+    expect(endVote).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+});
+
+describe('VotesTableComponent — group links', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { isAwaitingInvitationCount: () => false } },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-manager' }) } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+  });
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+  });
+
+  async function render(votes: Vote[], inputs: Record<string, unknown> = {}): Promise<void> {
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', votes);
+    Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+  const el = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+  it('links the group name to the group details page without a bordered chip', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1', project_slug: 'proj', is_foundation: false })]);
+
+    const link = el('votes-group-link-v1') as HTMLAnchorElement;
+    expect(link.textContent?.trim()).toBe('Alpha Group');
+    expect(link.getAttribute('href')).toContain('/committee-1');
+    expect(link.getAttribute('href')).toContain('project=proj');
+    expect(fixture.nativeElement.querySelector('.border-gray-300.rounded')).toBeNull();
+  });
+
+  it('shows plain text, not a link, when the vote has no group uid', async () => {
+    await render([vote('v1')]);
+
+    expect(el('votes-group-link-v1')).toBeNull();
+    expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('Alpha Group');
+  });
+
+  it('shows a dash when the vote has no group at all', async () => {
+    await render([vote('v1', { committee_name: undefined })]);
+
+    expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('-');
+  });
+
+  it('does not link back to the group whose page the table is on', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1' })], { editQueryParamsFallback: { committee_uid: 'committee-1' } });
+
+    expect(el('votes-group-link-v1')).toBeNull();
+    expect(el('votes-group-text-v1')?.textContent?.trim()).toBe('Alpha Group');
+  });
+
+  it('sends Me lens navigation state so the group page returns to Votes and restores Me', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1' })], { isMeLens: true });
+
+    expect(fixture.componentInstance['groupLinkState']()).toEqual({ backLabel: 'Votes', backPath: '/votes', fromMeLens: true });
+  });
+
+  it('still returns to Votes, without switching lens, outside the Me lens', async () => {
+    await render([vote('v1', { committee_uid: 'committee-1' })]);
+
+    expect(fixture.componentInstance['groupLinkState']()).toEqual({ backLabel: 'Votes', backPath: '/votes', fromMeLens: false });
   });
 });

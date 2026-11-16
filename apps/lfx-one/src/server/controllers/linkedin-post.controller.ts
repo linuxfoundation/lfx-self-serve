@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
+
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
@@ -9,16 +11,17 @@ import {
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
-import { LinkedinProfileInput, Project } from '@lfx-one/shared/interfaces';
+import { LinkedinProfileInput, MktgOneOffRunContext, Project } from '@lfx-one/shared/interfaces';
 import { isLinkedinProfile, isLinkedinSetup, normalizeLinkedinShareAnswers, normalizeLinkedinShareLink, validLinkedinAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
-import { GuildService } from '../services/guild.service';
 import { LinkedinPostService } from '../services/linkedin-post.service';
 import { LinkedinProfileService } from '../services/linkedin-profile.service';
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';
+import { MktgDocumentRunService } from '../services/mktg-document-run.service';
+import { MktgLastIntakeService } from '../services/mktg-last-intake.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
@@ -26,10 +29,11 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 /** Identity from the authenticated session only; every run also requires project writer access. */
 export class LinkedinPostController {
   private readonly posts = new LinkedinPostService();
-  private readonly guild = new GuildService();
   private readonly profiles = new LinkedinProfileService();
   private readonly projects = new ProjectService();
   private readonly documents = new MktgDocumentStoreService();
+  private readonly runs = new MktgDocumentRunService();
+  private readonly lastIntake = new MktgLastIntakeService();
 
   public async getProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'get_linkedin_profile';
@@ -85,8 +89,8 @@ export class LinkedinPostController {
     try {
       const user = this.requireUser(req);
       const body = this.body(req);
-      if (Object.keys(body).some((key) => !['answers', 'setup', 'project'].includes(key)))
-        throw ServiceValidationError.forField('body', 'Only source, setup and project inputs are accepted.');
+      if (Object.keys(body).some((key) => !['answers', 'setup', 'project', 'discard'].includes(key)))
+        throw ServiceValidationError.forField('body', 'Only answers, setup, project and discard inputs are accepted.');
       if (!body['answers'] || typeof body['answers'] !== 'object' || Array.isArray(body['answers']))
         throw ServiceValidationError.forField('answers', 'Content source is required.');
       const answers = body['answers'] as Record<string, unknown>;
@@ -99,9 +103,24 @@ export class LinkedinPostController {
       const setup = body['setup'];
       if (setup !== undefined && !isLinkedinSetup(setup)) throw ServiceValidationError.forField('setup', 'Complete the required profile fields.');
       const project = await this.writableProject(req, body['project']);
+      await this.runs.resolveProject(req, project.uid);
+      await this.runs.assertSingleActiveOneOffRun(req, project.uid, LINKEDIN_POST_INTAKE.agentId, body['discard']);
       const result = await this.posts.start(req, user, answers, setup, this.routingHandle(), project);
+      const runId = await this.runs.startForOneOff(req, LINKEDIN_POST_INTAKE.agentId, project.uid, result.sessionId, {
+        answers: result.answers,
+        sourceWords: result.source.words,
+      });
       logger.success(req, operation, start, {});
-      res.set('Cache-Control', 'private, no-store').json({ ...result, ownerToken: createSessionOwnerToken(user, result.sessionId) });
+      res.set('Cache-Control', 'private, no-store').json({ ...result, runId, ownerToken: createSessionOwnerToken(user, result.sessionId) });
+      // Separate from private run tracking: never delay/fail an accepted Generate for history.
+      void this.lastIntake.recordStartBestEffort(req, {
+        project: project.uid,
+        agentId: LINKEDIN_POST_INTAKE.agentId,
+        runId,
+        answers,
+        documentCount: 0,
+        logoCount: 0,
+      });
     } catch (error) {
       next(error);
     }
@@ -119,8 +138,9 @@ export class LinkedinPostController {
       const sourceWords = body['sourceWords'] ?? 0;
       if (typeof sourceWords !== 'number' || !Number.isInteger(sourceWords) || sourceWords < 0 || sourceWords > LINKEDIN_SOURCE_MAX_WORDS)
         throw ServiceValidationError.forField('sourceWords', 'Invalid source word count.');
+      const fallback: MktgOneOffRunContext = { answers, sourceWords };
       const project = await this.writableProject(req, body['project']);
-      const result = await this.guild.resolveRunOutcome(req, sessionId, await this.posts.result(req, user, sessionId, project.uid, answers, sourceWords));
+      const result = await this.runs.ownedOneOffResult(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId, fallback);
       logger.success(req, operation, start, { status: result.status });
       res.set('Cache-Control', 'private, no-store').json(result);
     } catch (error) {
@@ -141,9 +161,14 @@ export class LinkedinPostController {
       const questionsId = body['questionsId'];
       const answers = body['answers'];
       if (typeof questionsId !== 'string' || !/^[a-f0-9]{64}$/.test(questionsId) || !validLinkedinAnswers(answers))
-        throw ServiceValidationError.forField('answers', 'Send valid answers to the current questions.');
-      await this.writableProject(req, body['project']);
-      await this.posts.sendAnswers(req, sessionId, questionsId, answers, this.routingHandle());
+        throw ServiceValidationError.forField('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE);
+      const project = await this.writableProject(req, body['project']);
+      await this.runs.assertRunOpen(req, project.uid, LINKEDIN_POST_INTAKE.agentId, sessionId);
+      const prepared = await this.posts.prepareAnswers(req, sessionId, questionsId, answers);
+      if (prepared !== null) {
+        await this.runs.claimSessionAnswers(req, project.uid, sessionId, questionsId, LINKEDIN_POST_INTAKE.agentId, answers);
+        await this.posts.deliverAnswers(req, sessionId, prepared, this.routingHandle(), answers.length);
+      }
       logger.success(req, operation, start, { answers: answers.length });
       res.set('Cache-Control', 'private, no-store').json({ success: true });
     } catch (error) {

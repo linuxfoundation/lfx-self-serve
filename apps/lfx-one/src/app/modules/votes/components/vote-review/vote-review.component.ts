@@ -3,18 +3,21 @@
 
 import { LowerCasePipe } from '@angular/common';
 import { Component, computed, input, output, Signal } from '@angular/core';
+import { VoteDescriptionPipe } from '../../pipes/vote-description.pipe';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 import { COMMITTEE_LABEL, VOTE_ELIGIBLE_PARTICIPANTS, VOTE_LABEL, VOTE_RESPONSE_TYPES } from '@lfx-one/shared/constants';
 import { CommitteeReference, VoteReviewCommentPrompt, VoteReviewQuestion } from '@lfx-one/shared/interfaces';
 import { combineDateTime, formatVoteDeadline, getLongTimezoneName, isNonBlankCommentPrompt } from '@lfx-one/shared/utils';
+import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 import { filter, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-review',
-  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule],
+  imports: [ReactiveFormsModule, ButtonComponent, LowerCasePipe, TooltipModule, ExternalLinksDirective, LinkifyHtmlPipe, VoteDescriptionPipe],
   templateUrl: './vote-review.component.html',
 })
 export class VoteReviewComponent {
@@ -44,6 +47,7 @@ export class VoteReviewComponent {
   public readonly closeDate: Signal<string> = this.initCloseDate();
   public readonly closeTimezoneName: Signal<string> = this.initCloseTimezoneName();
   public readonly allowAbstain: Signal<boolean> = this.initAllowAbstain();
+  public readonly allowVoteChange: Signal<boolean> = this.initAllowVoteChange();
   public readonly questions: Signal<VoteReviewQuestion[]> = this.initQuestions();
   public readonly commentPrompts: Signal<VoteReviewCommentPrompt[]> = this.initCommentPrompts();
 
@@ -78,7 +82,8 @@ export class VoteReviewComponent {
   private initDescription(): Signal<string> {
     return computed(() => {
       this.formValue();
-      return this.form().get('description')?.value || '';
+      const description = this.form().get('description')?.value as string | null | undefined;
+      return description?.trim() ? description : '';
     });
   }
 
@@ -131,6 +136,14 @@ export class VoteReviewComponent {
     return computed(() => {
       this.formValue();
       return !!this.form().get('allow_abstain')?.value;
+    });
+  }
+
+  private initAllowVoteChange(): Signal<boolean> {
+    return computed(() => {
+      this.formValue();
+      // Absent means allowed, matching the form default and legacy votes (#4723).
+      return this.form().get('allow_vote_change')?.value !== false;
     });
   }
 

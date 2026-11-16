@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-input
+  type="search"
+  size="small"
+  prefixIcon="fa-light fa-magnifying-glass"
+  [placeholder]="placeholder()"
+  [ariaLabel]="ariaLabel()"
+  [disabled]="disabled()"
+  [(value)]="value"
+  (keydown.escape)="onEscape($event)"
+  class="[&_input::-webkit-search-cancel-button]:hidden"
+  data-testid="ui-search-input">
+  @if (value() && !disabled()) {
+    <!-- Exact px, not rem; 14px root: a 20px round button with an 8px gap to the edge. -->
+    <button
+      type="button"
+      lfxUiInputAction
+      class="mr-[8px] inline-flex h-[20px] w-[20px] shrink-0 cursor-pointer items-center justify-center self-center rounded-ui-full text-[12px] text-ui-neutral-500 transition-colors duration-ui-fast hover:bg-ui-neutral-alpha-100 hover:text-ui-neutral-900 focus-visible:shadow-focus focus-visible:outline-none motion-reduce:transition-none"
+      aria-label="Clear search"
+      (click)="clear()"
+      data-testid="ui-search-input-clear">
+      <i class="ui-icon fa-light fa-xmark" aria-hidden="true"></i>
+    </button>
+  }
+</lfx-ui-input>

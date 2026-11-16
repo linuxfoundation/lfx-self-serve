@@ -287,7 +287,7 @@ export class MentorshipMentorService {
   /**
    * My Programs: one card for each published program the caller is an active mentor of, from upstream's
    * `GET /me/mentor-programs`, which settles each program's status, its counts across all its terms, and the
-   * order (open first, then completed, each by name). A caller with no mentorship record gets an empty list.
+   * order (accepting, in progress, upcoming, then completed, each by name). A caller with no mentorship record gets an empty list.
    */
   public async getMentorPrograms(req: Request): Promise<MentorshipMentorProgramsResponse> {
     const operation = 'mentorship_get_mentor_programs';
@@ -440,7 +440,7 @@ export class MentorshipMentorService {
   private mapMentoredProgram(req: Request, item: MentorshipUpstreamMentoredProgram, operation: string): MentorshipMentorProgram {
     const { program, unknownStatus } = mapMentorshipMentorProgram(item);
     if (unknownStatus) {
-      logger.warning(req, operation, 'Unknown upstream mentor program status; showing it as open', { program_id: item.id, status: item.status });
+      logger.warning(req, operation, 'Unknown upstream mentor program status; showing it as in progress', { program_id: item.id, status: item.status });
     }
     return program;
   }

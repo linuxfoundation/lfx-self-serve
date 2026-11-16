@@ -86,6 +86,7 @@ If the work is a bug fix, enhancement, or refactoring of existing code:
 2. **Trace the data flow end-to-end** — from API call through service to component template
 3. **Identify the minimal change** with the smallest blast radius
 4. **Follow the same build order** for any new files needed (types → backend → frontend)
+5. **Note which `docs/user/` articles describe the feature** — you will re-check them in Step 8
 
 ## Step 3: Validate Backend Support (Backend First)
 
@@ -233,7 +234,13 @@ Key rules: Standalone with direct imports, correct placement per category, 11-se
 
 ---
 
-## Step 8: Validate
+## Step 8: Update User Docs & Validate
+
+### User-facing docs
+
+If the change adds a feature, removes a feature, or alters UI a user sees (labels, buttons, tabs, routes, flow, permissions, a page redesign), update the matching `docs/user/<section>/<article>/index.md` now — in its own `docs(<section>)` commit. Follow `.claude/rules/development-rules.md` § User Documentation Maintenance: find the affected articles, fix every step and label that no longer matches, bump `last_updated`, and never describe a flagged feature as generally available. If nothing a user sees changed, say "No user docs impact" in the summary and the PR.
+
+### Validation
 
 Run the full validation suite:
 
@@ -252,6 +259,7 @@ Provide a clear summary:
 - All files created or modified
 - Any new shared types and their import paths
 - Any actions needed from code owners (route registration, routing changes, etc.)
+- The `docs/user/` articles you updated, or "No user docs impact" with the reason
 - How to use the new code (inject services, import components, etc.)
 
 **Next step:** commit the work — `git commit --signoff -S` until `git status --porcelain` prints nothing (formatting and lint fixes from step 8 included) — then follow `AGENTS.md` § **Pre-PR review** exactly (the one review round, then the `Preflight` value, then the PR). The review round stops on a dirty tree. Do not run `/preflight` on its own here.

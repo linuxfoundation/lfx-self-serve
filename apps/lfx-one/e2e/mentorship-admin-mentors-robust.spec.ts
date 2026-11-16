@@ -16,7 +16,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   MENTOR_ACTIVE_ID,
   MENTOR_DECLINED_ID,
@@ -39,7 +39,6 @@ const rowActions = (page: Page, id: string) => page.getByTestId(`mentorship-ment
 
 test.describe('Admin Mentors tab actions — structure', () => {
   test.beforeEach(async ({ page }) => {
-    await enableMentorshipFlag(page);
     await stubAdminProgramPage(page);
     await stubAdminMentees(page, { mentees: [], tasks: [] });
     await stubAdminTasks(page, { mentees: [], tasks: [] });
@@ -75,7 +74,8 @@ test.describe('Admin Mentors tab actions — structure', () => {
 
       const confirmation = page.locator('.p-confirmdialog');
       await expect(confirmation).toBeVisible();
-      await expect(confirmation.getByRole('button')).toHaveCount(2);
+      // The dialog also renders its own close button, so count the footer's buttons only.
+      await expect(confirmation.locator('.p-dialog-footer').getByRole('button')).toHaveCount(2);
 
       await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
       await expect(confirmation).toHaveCount(0);

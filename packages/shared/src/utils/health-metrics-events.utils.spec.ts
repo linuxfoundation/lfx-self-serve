@@ -85,12 +85,12 @@ function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): Healt
 }
 
 describe('buildHealthMetricsEventsSubNavItems', () => {
-  it('lists every section in render order, with its label and no badge', () => {
+  it('lists every section in render order, with its label and no note', () => {
     const items = buildHealthMetricsEventsSubNavItems();
 
     expect(items.map((item) => item.key)).toEqual(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.key));
     expect(items.map((item) => item.label)).toEqual(HEALTH_METRICS_EVENTS_SECTIONS.map((section) => section.label));
-    expect(items.every((item) => item.count === null && item.note === '')).toBe(true);
+    expect(items.every((item) => item.note === '')).toBe(true);
   });
 
   it('puts a note on the section it names', () => {
@@ -98,13 +98,6 @@ describe('buildHealthMetricsEventsSubNavItems', () => {
 
     expect(items.find((item) => item.key === 'forecast')?.note).toBe('2 will miss goal');
     expect(items.filter((item) => item.note !== '')).toHaveLength(1);
-  });
-
-  it('puts a badge on the section it counts, and none on the rest', () => {
-    const items = buildHealthMetricsEventsSubNavItems({}, { past: 12 });
-
-    expect(items.find((item) => item.key === 'past')?.count).toBe(12);
-    expect(items.filter((item) => item.count !== null)).toHaveLength(1);
   });
 });
 
@@ -524,6 +517,25 @@ describe('buildHealthMetricsEventsRevenueView', () => {
     ]);
   });
 
+  it('reports revenue only when the period has an event or a non-zero figure', () => {
+    const zero = revenuePeriod({
+      range: 'COMPLETED_YEAR',
+      totalUsd: 0,
+      registrationUsd: 0,
+      sponsorshipUsd: 0,
+      registrationShare: null,
+      sponsorshipShare: null,
+    });
+
+    expect(buildHealthMetricsEventsRevenueView(revenue(), 'YTD').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(false);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [zero] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
+    expect(buildHealthMetricsEventsRevenueView(revenue({ periods: [{ ...zero, registrationUsd: -500 }], events: [] }), 'COMPLETED_YEAR').hasRevenue).toBe(true);
+    expect(
+      buildHealthMetricsEventsRevenueView(revenue({ periods: [{ ...zero, totalUsd: null, hasUnconverted: true }], events: [] }), 'COMPLETED_YEAR').hasRevenue
+    ).toBe(true);
+  });
+
   it('lists only the events in the period, with each goal only where one is set', () => {
     const { rows } = buildHealthMetricsEventsRevenueView(revenue(), 'YTD');
 
@@ -685,9 +697,7 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
   it('flags a partial year', () => {
     const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(), growthYear({ year: 2024, isPartialYear: true })] }, 'registrations');
 
-    expect(view.hasPartialYear).toBe(true);
     expect(view.rows.map((row) => row.isPartialYear)).toEqual([false, true]);
-    expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').hasPartialYear).toBe(false);
   });
 
   it('explains the pandemic years only when one was mostly virtual for the metric', () => {
@@ -724,7 +734,6 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
     expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [] }, 'registrations')).toEqual({
       rows: [],
       yearCount: 0,
-      hasPartialYear: false,
       pandemicNote: null,
     });
   });
@@ -1146,7 +1155,6 @@ describe('buildHealthMetricsEventsGeographyView', () => {
 
     expect(view.foundationMeasured).toBe(true);
     expect(view.measured).toBe(true);
-    expect(view.countries).toBe(42);
     expect(view.countriesLabel).toBe('42 countries');
     expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
     expect(view.topCountries.map((row) => [row.label, row.valueLabel])).toEqual([
@@ -1181,7 +1189,6 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ countries: 3, topCountries: [], rankedCountries: 0 })), 'YTD');
 
     expect(view.measured).toBe(false);
-    expect(view.countries).toBeNull();
     expect(view.countriesLabel).toBe('');
     expect(view.headline).toMatchObject({ value: 'not available', delta: null });
     expect(view.topCountries).toEqual([]);

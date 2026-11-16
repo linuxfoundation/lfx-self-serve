@@ -53,13 +53,15 @@ describe('MentorTasksTabComponent', () => {
 
   let fixture: ComponentFixture<MentorTasksTabComponent>;
   let download: ReturnType<typeof vi.fn>;
+  let view: ReturnType<typeof vi.fn>;
 
   const setup = (mentees: MentorshipProgramMentee[] = [mentee()]): void => {
     download = vi.fn();
+    view = vi.fn();
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorTasksTabComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskFileService, useValue: { download } }],
+      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskFileService, useValue: { download, view } }],
     });
 
     fixture = TestBed.createComponent(MentorTasksTabComponent);
@@ -96,7 +98,7 @@ describe('MentorTasksTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_approved"]')).toBeNull();
   });
 
-  it('lists submitted and completed tasks on All, and hides Download Submission when there is no file', () => {
+  it('lists submitted and completed tasks on All, and hides View and Download Submission when there is no file', () => {
     setup([
       mentee({
         tasks: [
@@ -139,6 +141,8 @@ describe('MentorTasksTabComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_done"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-task-card-mnt_1__tsk_wip"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-view-submission-mnt_1__tsk_awaiting"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentor-task-view-submission-mnt_1__tsk_done"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-task-approve-mnt_1__tsk_awaiting"]')).not.toBeNull();
   });
 
@@ -182,6 +186,13 @@ describe('MentorTasksTabComponent', () => {
     button('mentorship-mentor-task-open-submission-mnt_1__tsk_awaiting')?.click();
 
     expect(download).toHaveBeenCalledWith('tsk_awaiting');
+  });
+
+  it('views the submission by its upstream task id', () => {
+    button('mentorship-mentor-task-view-submission-mnt_1__tsk_awaiting')?.click();
+
+    expect(view).toHaveBeenCalledWith('tsk_awaiting');
+    expect(download).not.toHaveBeenCalled();
   });
 
   it('shows the empty state when no tasks match the filter', () => {

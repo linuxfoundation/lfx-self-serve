@@ -46,7 +46,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     tags: ['Messaging', 'Positioning'],
     status: 'active',
     description:
-      'Vision, mission, positioning, tagline, goal columns, ideal customer profiles, message house and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.',
+      'Vision, mission, positioning, tagline, goal columns, the messaging framework and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.',
     icon: 'fa-light fa-landmark',
     accent: 'blue',
     guildAgentHandle: 'foundation-message',
@@ -194,3 +194,6 @@ export const MKTG_AGENTS: MktgAgent[] = [
  * away from Guild and from the session-history parser that reads them back.
  */
 export const MKTG_CHAT_MESSAGE_MAX_CHARS = 200_000;
+
+/** History never renders provider-qualified subjects as staff display names. */
+export const MKTG_HISTORY_SUBJECT_PATTERN = /\b(?:auth0|oidc|google-oauth2|github|samlp|waad|email|sms)\|[A-Za-z0-9._:@+/-]+/g;

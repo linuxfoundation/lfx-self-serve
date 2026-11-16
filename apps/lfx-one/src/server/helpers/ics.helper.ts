@@ -17,13 +17,18 @@ export function formatICSDate(isoDate: string): string {
 
 /**
  * Escapes ICS text values per RFC 5545 (backslash, semicolons, commas, newlines).
+ * Other control characters (everything below SPACE except TAB, CR and LF, and DEL) are invalid in a TEXT value and are dropped.
  */
 export function escapeICSText(value: string): string {
-  return (value ?? '')
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r\n|\r|\n/g, '\\n');
+  return (
+    (value ?? '')
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/\\/g, '\\\\')
+      .replace(/;/g, '\\;')
+      .replace(/,/g, '\\,')
+      .replace(/\r\n|\r|\n/g, '\\n')
+  );
 }
 
 /**

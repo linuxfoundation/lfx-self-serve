@@ -16,6 +16,8 @@
  * a symbol key cannot be un-symboled by accident.
  */
 const CLIENT_MESSAGE = Symbol('BaseApiError.clientMessage');
+/** Client-only response facts follow the same non-enumerable logging boundary as clientMessage. */
+const RESPONSE_DETAILS = Symbol('BaseApiError.details');
 
 /**
  * Base error class for all API errors with structured metadata
@@ -43,6 +45,7 @@ export abstract class BaseApiError extends Error {
       originalError?: Error;
       transportFailure?: boolean;
       clientMessage?: string;
+      details?: Record<string, unknown>;
     } = {}
   ) {
     super(message);
@@ -50,6 +53,7 @@ export abstract class BaseApiError extends Error {
     this.name = this.constructor.name;
     this.statusCode = statusCode;
     this.code = code;
+    if (options.details) (this as Record<symbol, unknown>)[RESPONSE_DETAILS] = options.details;
     this.operation = options.operation;
     this.service = options.service;
     this.path = options.path;
@@ -64,6 +68,11 @@ export abstract class BaseApiError extends Error {
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }
+  }
+
+  /** Response-only details must not enter key-enumerating error log serializers. */
+  public get details(): Record<string, unknown> | undefined {
+    return (this as Record<symbol, unknown>)[RESPONSE_DETAILS] as Record<string, unknown> | undefined;
   }
 
   /**
@@ -115,6 +124,8 @@ export abstract class BaseApiError extends Error {
    */
   public toResponse(): Record<string, any> {
     return {
+      ...this.details,
+      ...(this.details && { message: this.clientMessage ?? this.message }),
       // `clientMessage` when the throwing site set one, `message` otherwise — so the only errors
       // whose response text differs from their log text are the ones that asked for it.
       error: this.clientMessage ?? this.message,

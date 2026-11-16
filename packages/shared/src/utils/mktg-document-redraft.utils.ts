@@ -12,6 +12,7 @@ import {
   MKTG_DOCUMENT_COMMENT_ROOTS,
   MKTG_DOCUMENT_COMMENT_UNSAFE_PARTS,
   MKTG_BOILERPLATES_COMMENT_FIELD_REGEX,
+  MKTG_FAQ_COMMENT_FIELD_REGEX,
 } from '../constants/mktg-document-comments.constants';
 import { MKTG_LIVING_DOCUMENT_ID, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
 import {
@@ -27,6 +28,8 @@ import type { MktgDocumentRedraftContext, MktgRedraftResultValidation } from '..
 import type { BrandKitEnvelope } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageEnvelope } from '../interfaces/foundation-message.interface';
 import type { BoilerplatesEnvelope } from '../interfaces/boilerplates.interface';
+import type { FaqEnvelope } from '../interfaces/faq.interface';
+import { validateFaqEnvelope } from './faq.utils';
 import { guardBrandKitText, validateBrandKitEnvelope } from './brand-kit.utils';
 import { guardBoilerplatesText, validateBoilerplatesEnvelope } from './boilerplates.utils';
 import { guardFoundationMessageText, validateFoundationMessageEnvelope } from './foundation-message.utils';
@@ -127,6 +130,7 @@ function checkedContext(value: unknown): Record<string, unknown> | null {
     )
       return null;
     if (agent === 'boilerplates' && !MKTG_BOILERPLATES_COMMENT_FIELD_REGEX.test(anchor['key'])) return null;
+    if (agent === 'faq' && !MKTG_FAQ_COMMENT_FIELD_REGEX.test(anchor['key'])) return null;
     if (agent === 'brand-kit') {
       if (typeof anchor['passage'] !== 'string' || !anchor['passage'].trim()) return null;
     } else if (anchor['passage'] !== undefined) return null;
@@ -149,6 +153,10 @@ export function isBrandKitEnvelope(value: unknown): value is BrandKitEnvelope {
 }
 export function isBoilerplatesEnvelope(value: unknown): value is BoilerplatesEnvelope {
   return validateBoilerplatesEnvelope(value).valid;
+}
+
+export function isFaqEnvelope(value: unknown): value is FaqEnvelope {
+  return validateFaqEnvelope(value).valid;
 }
 
 /** Domain envelope/hash/current-turn-finalize validation runs BEFORE this request-specific gate. */

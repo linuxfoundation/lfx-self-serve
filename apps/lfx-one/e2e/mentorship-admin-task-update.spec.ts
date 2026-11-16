@@ -10,7 +10,7 @@
  * response, so no spec expects the tasks or the page of rows to be read again. All data is synthetic.
  *
  * The page is reached by client-side navigation (`openMentorPage`), so the browser makes the calls and the stubs
- * answer them. The module is behind the `mentorship-enabled` client flag, pinned per test by `enableMentorshipFlag`.
+ * answer them.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -20,7 +20,7 @@
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
-import { enableMentorshipFlag, MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
+import { MENTOR_PAGE_LOAD_TIMEOUT, openMentorPage } from './helpers/mentor-profile.helper';
 import {
   ADMIN_PROGRAM_URL,
   ADMIN_TASKS,
@@ -49,7 +49,6 @@ const STATUS_SELECT = `mentorship-applicant-task-status-${TASK.id}`;
 const EDIT_BUTTON = `mentorship-applicant-task-edit-${TASK.id}`;
 
 async function open(page: Page, requests: AdminProgramRequests, patches: unknown[], patchStatus = 200): Promise<void> {
-  await enableMentorshipFlag(page);
   await stubAdminProgramPage(page);
   await stubAdminMentees(page, requests);
   await stubAdminTasks(page, requests);

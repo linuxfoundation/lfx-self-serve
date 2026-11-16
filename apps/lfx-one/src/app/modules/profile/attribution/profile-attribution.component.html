@@ -25,7 +25,12 @@
 
     <!-- Project Involvement -->
     <div class="flex flex-col gap-3">
-      <h2>Project Involvement</h2>
+      <div class="flex flex-col gap-1">
+        <h2>Project Involvement</h2>
+        <p class="text-sm text-slate-500" data-testid="project-involvement-description">
+          Your affiliation for each project you're involved in, whether through code, events, training, or other activity.
+        </p>
+      </div>
       <lfx-profile-affiliations [hideHeader]="true" [compact]="true" (addWorkExperience)="onAddWorkExperience()" />
     </div>
   </div>

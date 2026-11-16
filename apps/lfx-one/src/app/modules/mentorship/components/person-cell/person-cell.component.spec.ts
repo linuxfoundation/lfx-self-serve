@@ -35,6 +35,21 @@ describe('PersonCellComponent', () => {
     expect(name?.getAttribute('title')).toBe('Alex Rivera');
   });
 
+  it('links the name to the given page in a new tab, and shows plain text without one', () => {
+    expect(element().querySelector('a')).toBeNull();
+
+    fixture.componentRef.setInput('href', 'https://mentorship.example.org/mentees/u-1');
+    fixture.componentRef.setInput('linkTestId', 'mentorship-mentee-link-mnt_1');
+    fixture.detectChanges();
+
+    const link = element().querySelector('a');
+    expect(link?.textContent?.trim()).toBe('Alex Rivera');
+    expect(link?.getAttribute('href')).toBe('https://mentorship.example.org/mentees/u-1');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(link?.getAttribute('data-testid')).toBe('mentorship-mentee-link-mnt_1');
+  });
+
   it('omits the note line entirely for a read-only table', () => {
     expect(noteButton()).toBeNull();
   });

@@ -24,6 +24,23 @@ test('sends only pinned open IDs, shows the existing feed, and lands on the exac
   await expect(page.getByTestId('mktg-document-view-revision-label-2')).toContainText('Draft');
   await page.screenshot({ path: test.info().outputPath('redraft-exact-new-draft.png'), fullPage: true });
 });
+test('the Send button keeps the count from the click while the accepted send marks the comments sent', async ({ page }) => {
+  const { fixture, state } = await redraftFixture(page);
+  await fixture.open();
+  const panel = page.getByTestId('mktg-comments-panel');
+  const send = panel.getByTestId('mktg-comments-send').getByRole('button');
+  await expect(send).toContainText('Send 2 open comments to the agent');
+  await send.click();
+  await expect(send).toContainText('Sending 2 comments to the agent…');
+  await expect(send).toBeDisabled();
+  // The accepted send marked both comments sent; the panel re-read them while the button still spins.
+  await expect.poll(() => state.sends.length).toBe(1);
+  await expect(panel.getByTestId('mktg-comment-thread').filter({ hasText: 'Sent to the agent' })).toHaveCount(2);
+  await expect(send).toContainText('Sending 2 comments to the agent…');
+  await expect(panel).not.toContainText('Send 0 open comments');
+  await expect(panel.getByTestId('mktg-comments-feed')).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('redraft-sending-count-frozen.png'), fullPage: true });
+});
 test('uncertain retry keeps the original nonce/IDs and release409 says still starting without another generation', async ({ page }) => {
   const { fixture, state } = await redraftFixture(page);
   state.fail = true;

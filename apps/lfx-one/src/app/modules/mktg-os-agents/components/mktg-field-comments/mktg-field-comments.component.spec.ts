@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { mktgCommentFixture, mktgCommentScopeFixture, provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import type { MktgDocumentCommentsResponse } from '@lfx-one/shared/interfaces';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { MktgFieldCommentsComponent } from './mktg-field-comments.component';
 
 describe('MktgFieldCommentsComponent', () => {
@@ -16,7 +16,7 @@ describe('MktgFieldCommentsComponent', () => {
   const subject = signal('opaque-viewer');
   const threads = signal([mktgCommentFixture()]);
   const loaded = signal(true);
-  let add: ReturnType<typeof vi.fn>;
+  let add: Mock;
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   function click(id: string): void {
     const button = element().querySelector<HTMLButtonElement>(`[data-testid="${id}"] button`);
@@ -71,6 +71,45 @@ describe('MktgFieldCommentsComponent', () => {
     expect(document.activeElement).toBe(button);
     expect(button?.getAttribute('aria-expanded')).toBe('false');
     expect(button?.hasAttribute('aria-controls')).toBe(false);
+  });
+  it('explicitly includes the pin, Add comment and Cancel buttons in sequential keyboard navigation', () => {
+    const pin = element().querySelector<HTMLButtonElement>('[data-testid="mktg-field-comment-open"] button');
+    expect(pin?.getAttribute('tabindex')).toBe('0');
+    click('mktg-field-comment-open');
+    for (const id of ['mktg-field-comment-add', 'mktg-field-comment-cancel']) {
+      const button = element().querySelector<HTMLButtonElement>(`[data-testid="${id}"] button`);
+      expect(button?.getAttribute('tabindex')).toBe('0');
+      expect(button?.disabled).toBe(false);
+    }
+    expect(add).not.toHaveBeenCalled();
+  });
+  it.each(['Comment', 'Answer', 'Add comment'])('focuses the clicked %s pin explicitly without scrolling or submitting', (label) => {
+    fixture.componentRef.setInput('openLabel', label);
+    fixture.detectChanges();
+    const button = element().querySelector<HTMLButtonElement>('[data-testid="mktg-field-comment-open"] button');
+    if (!button) throw new Error('Missing synthetic comment pin');
+    const focus = vi.spyOn(button, 'focus');
+    button.blur();
+    click('mktg-field-comment-open');
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(document.activeElement).toBe(button);
+    expect(element().querySelector('textarea')).not.toBeNull();
+    expect(add).not.toHaveBeenCalled();
+    click('mktg-field-comment-cancel');
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('can show an always-visible Answer entry while keeping Comment hover-only by default', () => {
+    const button = () => element().querySelector('[data-testid="mktg-field-comment-open"]');
+    expect(button()?.parentElement?.classList.contains('[@media(hover:hover)]:opacity-0')).toBe(true);
+    expect(button()?.textContent?.trim()).toBe('Comment');
+    fixture.componentRef.setInput('openLabel', 'Answer');
+    fixture.componentRef.setInput('alwaysVisible', true);
+    fixture.detectChanges();
+    expect(button()?.parentElement?.classList.contains('[@media(hover:hover)]:opacity-0')).toBe(false);
+    expect(button()?.textContent?.trim()).toBe('Answer');
+    expect(button()?.querySelector('button')?.getAttribute('aria-label')).toBe('Answer Positioning');
   });
   it('keeps failed/pending drafts across tab hosts and never resets newer edits on ACK', async () => {
     add.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
@@ -133,10 +172,12 @@ describe('MktgFieldCommentsComponent', () => {
     fixture.componentRef.setInput('field', 'mf.positioning');
     await fixture.whenStable();
     fixture.detectChanges();
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
     click('mktg-field-comment-open');
     fill('SSR must not write');
     click('mktg-field-comment-add');
     expect(add).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
   });
 
   it('clears a draft on revision navigation, but not an equal-scope refresh; hides affordances without measured access', async () => {

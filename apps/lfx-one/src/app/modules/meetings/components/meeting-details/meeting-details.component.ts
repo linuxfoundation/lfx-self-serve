@@ -57,6 +57,13 @@ export class MeetingDetailsComponent implements OnInit {
   // The owner baseline hydrated from the loaded meeting (edit mode only) — drives the revert
   // target for the organizer picker's clear affordance and the "Saved organizer" row.
   public readonly savedOwner = input<MeetingUserInfo | null>(null);
+  // The meeting's own start date, already converted to its timezone the same way the `startDate`
+  // control was hydrated (edit mode only) — lets minDate() keep a past-dated meeting's own start
+  // date selectable (GH-4944). Takes the already-zoned Date rather than re-deriving one from a raw
+  // timestamp, so this can never disagree with what populateFormWithMeetingData() put in the form.
+  // Mirrors the same allowance editModeDateTimeValidator() already grants at the form level: the
+  // original date/time passes even when it is in the past, but no other past date does.
+  public readonly originalStartDate = input<Date | null>(null);
 
   // Dependency injection
   private readonly destroyRef = inject(DestroyRef);
@@ -162,11 +169,24 @@ export class MeetingDetailsComponent implements OnInit {
   // Timezone options — rebuilt whenever the meeting date changes so DST offsets are correct
   public readonly timezoneOptions = signal<{ label: string; value: string }[]>(this.buildTimezoneOptions(new Date()));
 
-  // Minimum date (yesterday)
+  // Minimum date: yesterday, unless the meeting being edited already started before that — its
+  // own saved start date must stay selectable, and not greyed out, even though it is in the past
+  // (GH-4944). Every day from that saved date through yesterday becomes selectable too, not only
+  // the saved one; editModeDateTimeValidator() still rejects any of those in-between days (within
+  // a minute of the saved value is the only past value it allows).
   public readonly minDate = computed(() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
+
+    const original = this.originalStartDate();
+    if (original) {
+      const originalDay = new Date(original.getFullYear(), original.getMonth(), original.getDate());
+      if (originalDay < yesterday) {
+        return originalDay;
+      }
+    }
+
     return yesterday;
   });
 

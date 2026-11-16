@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
@@ -8,13 +9,15 @@ import type {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNewsletterPerformance,
+  HealthMetricsEngagementNewsletterRecipients,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementQueryParams,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
-import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
+import { HEALTH_METRICS_L2_EMPTY_SOURCES, HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /** Health Metrics tab bar, in render order; every tab routes to its Level 2 page. */
 export const HEALTH_METRICS_TABS = [
@@ -33,93 +36,97 @@ export const HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS = {
   orgFilter: 'orgFilter',
   partMode: 'partMode',
   repFilter: 'repFilter',
+  nlMode: 'nlMode',
+  nlFilter: 'nlFilter',
 } as const satisfies { [K in keyof HealthMetricsEngagementQueryParams]-?: K };
 
 /**
- * The six Engagement sections in render order. `key` is the section's URL fragment and the
+ * The Engagement sections in render order. `key` is the section's URL fragment and the
  * scroll-spy allowlist; the DOM id is `sec-eng-<key>`. Copy is verbatim from the design and carries
  * the product reasoning — it is not placeholder text.
  */
 export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   {
     key: 'participation',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Meeting participation',
     heading: 'Meeting participation',
     description:
       'The complete picture of who shows up — every meeting type this foundation runs, board and groups included. This is the foundation-wide whole; the Members section adds the governance-accurate cut (board & voting, voting reps only, per member).',
-    footnote: [
-      { text: 'Board & voting are included in this foundation-wide view. The ' },
-      { text: 'Members', route: 'members' },
-      {
-        text: ' section adds the governance-accurate cut — voting reps only, per member, next to dues and renewals — using the same board number, not a different one.',
-      },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'committees',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Group attendance',
     heading: 'Group attendance',
     description:
       'Every group — governance bodies, working groups, SIGs and TAGs — lowest attendance first. Dormant groups rank above every percentage: a group that has not met at all is worse than one attending badly.',
-    footnote: [
-      { text: 'Ranked by default rather than filtered — the ED sees the failing group without configuring anything. Filters narrow, they are not required.' },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'trend',
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board, snapshot: true },
     label: 'Attendance trend',
     heading: 'Attendance trend',
     description:
       'All-meeting attendance over time. Level and direction are separate signals — attendance can be improving and still sit below where it needs to be.',
-    footnote: [
-      {
-        text: 'Empty and low-confidence states matter here — a foundation with two periods of history gets the numbers without a trend line implying a pattern.',
-      },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Organization participation',
     heading: 'Organization participation',
     description:
       'Which member organizations actually turn up, and when they were last seen. Last engaged is the stronger churn signal — recency beats rate, and it is not surfaced anywhere in PCC today.',
-    footnote: [
-      { text: 'Avg reps per meeting', bold: true },
-      { text: ' and ' },
-      { text: '% of meetings attended', bold: true },
-      {
-        text: ' are surfaced from PCC Level 4, where they sit behind an org-by-org drilldown. Here the ED scans every org at once. Row opens the meeting record.',
-      },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'reps',
+    empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Representatives',
     heading: 'Representatives',
     description: 'The people behind the organizations. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
-    footnote: [
-      { text: 'Duplicate-identity records are a known data issue — the same person appears twice under different titles in both PCC and Self Serve today.' },
-    ],
-    footnoteCaution: false,
   },
   {
     key: 'nonmem',
+    empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Non-member participation',
     heading: 'Non-member participation',
     description:
       'Organizations turning up to meetings without paying for membership. Showing up is a stronger buying signal than contributing code — they are already spending staff time.',
-    footnote: [
-      {
-        text: 'Organization matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
-      },
-    ],
-    footnoteCaution: true,
+    note: {
+      tone: 'caution',
+      parts: [
+        {
+          text: 'Organization matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
+        },
+      ],
+    },
   },
-] as const;
+  {
+    key: 'newsletters',
+    empty: { icon: 'fa-light fa-paper-plane', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter },
+    label: 'Newsletter performance',
+    heading: 'Newsletter performance',
+    description:
+      'Every newsletter sent to this foundation’s audience. Open rate shows reach; click-to-open rate shows how compelling the content was to the people who opened it.',
+  },
+  {
+    key: 'recipients',
+    // Always the foundation's latest newsletter, whatever the period, so its empty state never names a past year.
+    empty: { icon: 'fa-light fa-envelope-open-text', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter, snapshot: true },
+    label: 'Newsletter recipient engagement',
+    heading: 'Newsletter recipient engagement',
+    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and organizations surface first.',
+  },
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_ENGAGEMENT_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-users',
+  noun: 'engagement',
+  lead: 'Engagement fills in as members take part in meetings, events, code, surveys and newsletters.',
+  reasons: ['Members may not be linked to the foundation yet', 'New activity can take 24–48 hours to appear', 'Your Program Manager can help connect its data'],
+  pastActivity: 'member activity',
+};
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a
@@ -234,6 +241,8 @@ export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'orgs',
   'reps',
   'nonmem',
+  'newsletters',
+  'recipients',
 ] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
 /** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
@@ -386,4 +395,60 @@ export const HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL = 'Unresolved i
 export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED: HealthMetricsEngagementRepresentatives = {
   rows: [],
   counts: null,
+};
+
+/** The design's toggle on Newsletter performance: what the chart plots for each newsletter. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES = [
+  { key: 'rates', label: 'Open & click rate' },
+  { key: 'audience', label: 'Audience' },
+] as const;
+
+/** Most newsletters one read returns; a foundation sending weekly stays far below it. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP = 1000;
+
+/** Rows per page in the Newsletter performance table. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE = 25;
+
+/** Nothing measured: the pre-hydration render, no foundation selected, and the client's placeholder after a failed read. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED: HealthMetricsEngagementNewsletterPerformance = {
+  measured: false,
+  periods: { YTD: null, COMPLETED_YEAR: null, COMPLETED_YEAR_2: null, COMPLETED_YEAR_3: null },
+  newsletters: [],
+};
+
+/** The newsletter views the Overview card and the Engagement newsletter sections read. */
+export const HEALTH_METRICS_NEWSLETTER_VIEWS = {
+  summary: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_SUMMARY',
+  byNewsletter: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_ENGAGEMENT_BY_NEWSLETTER',
+  recipients: 'ANALYTICS.PLATINUM_LFX_ONE.NEWSLETTER_RECIPIENT_ENGAGEMENT',
+} as const;
+
+/** The design's recipient cuts; `clicked` cuts across segments, since a click can come without a recorded open. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'opened', label: 'Opened' },
+  { key: 'clicked', label: 'Clicked' },
+  { key: 'not-opened', label: 'Not opened' },
+  { key: 'failed', label: 'Failed' },
+] as const;
+
+/** Most recipients one read returns; past it the table is cut and a warning logged. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP = 20_000;
+
+/** Rows per page in the recipient table. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_PAGE_SIZE = 25;
+
+/** The design's tags: delivery in green or red, an open in blue, not opened in grey. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS = {
+  delivered: 'bg-emerald-50 text-emerald-700',
+  failed: 'bg-red-50 text-red-700',
+  opened: 'bg-blue-50 text-blue-700',
+  notOpened: 'bg-gray-100 text-gray-600',
+} as const;
+
+/** No newsletter: the pre-hydration render, no foundation selected, and the client's placeholder after a failed read. */
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED: HealthMetricsEngagementNewsletterRecipients = {
+  newsletter: null,
+  recipients: [],
+  truncated: false,
 };

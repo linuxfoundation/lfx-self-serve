@@ -10,7 +10,7 @@ import { EntityWithProject, Project, ProjectContext } from '@lfx-one/shared/inte
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { ProjectService } from '@shared/services/project.service';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { reconcileRouteProjectContext, syncEntityProjectContextFallback } from './entity-project-context.util';
 
@@ -50,10 +50,10 @@ describe('reconcileRouteProjectContext', () => {
 
   let routeProjectUid: ReturnType<typeof signal<string | null>>;
   let routerEvents$: Subject<NavigationEnd>;
-  let getProjectStrict: ReturnType<typeof vi.fn>;
-  let setRouteLensKind: ReturnType<typeof vi.fn>;
-  let setFoundation: ReturnType<typeof vi.fn>;
-  let setProject: ReturnType<typeof vi.fn>;
+  let getProjectStrict: Mock;
+  let setRouteLensKind: Mock;
+  let setFoundation: Mock;
+  let setProject: Mock;
   let routeLensKind: ReturnType<typeof signal<'foundation' | 'project' | null>>;
   let foundationSlot: ReturnType<typeof signal<ProjectContext | null>>;
   let projectContextService: ProjectContextService;
@@ -236,12 +236,12 @@ describe('syncEntityProjectContextFallback - a lookup outliving its entity', () 
 
   let entity: ReturnType<typeof signal<EntityWithProject | null>>;
   let lookup: Subject<Project | null>;
-  let getProject: ReturnType<typeof vi.fn>;
-  let freshFetch: ReturnType<typeof vi.fn>;
+  let getProject: Mock;
+  let freshFetch: Mock;
   let freshLookup: Subject<Pick<EntityWithProject, 'project_uid' | 'project_slug' | 'project_name' | 'is_foundation'> | null>;
-  let setRouteLensKindSpy: ReturnType<typeof vi.fn>;
-  let setProjectSpy: ReturnType<typeof vi.fn>;
-  let setFoundationSpy: ReturnType<typeof vi.fn>;
+  let setRouteLensKindSpy: Mock;
+  let setProjectSpy: Mock;
+  let setFoundationSpy: Mock;
   let fallbackRouter: Router;
   let contextService: ProjectContextService;
 

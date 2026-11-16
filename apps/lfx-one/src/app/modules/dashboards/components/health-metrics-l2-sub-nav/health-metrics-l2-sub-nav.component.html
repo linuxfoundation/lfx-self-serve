@@ -40,13 +40,6 @@
             </span>
           }
         </span>
-        @if (item.count !== null) {
-          <span
-            class="shrink-0 rounded-full border border-gray-200 px-[7px] text-[11px] font-medium tabular-nums text-gray-600"
-            [attr.data-testid]="testIdPrefix() + '-sub-nav-' + item.key + '-count'"
-            >{{ item.count }}</span
-          >
-        }
       </button>
     }
   </div>

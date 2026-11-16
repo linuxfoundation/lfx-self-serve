@@ -50,6 +50,7 @@ import {
   MentorshipEnrollFieldErrors,
   MentorshipEnrollImport,
   MentorshipLfProject,
+  MentorshipLfProjectsResponse,
   MentorshipNameLookupStatus,
   MentorshipProgram,
 } from '@lfx-one/shared/interfaces';
@@ -67,6 +68,7 @@ import { OverlayOptions } from 'primeng/api';
 import { AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import {
   catchError,
+  combineLatest,
   debounceTime,
   distinctUntilChanged,
   EMPTY,
@@ -104,6 +106,10 @@ export class EnrollDetailsStepComponent {
   public readonly programId = input('');
   /** The edited program's logo, `''` when it has none. Clearing a picked file goes back to it. */
   public readonly currentLogoUrl = input('');
+  /** The Project lens's project (lfx-mentorship#398): the picker offers it alone and cannot change it. */
+  public readonly lockedProject = input<MentorshipLfProject | null>(null);
+  /** The Foundation lens's foundation: the picker offers it, then its direct sub-projects. `null` offers every project. */
+  public readonly parentProject = input<MentorshipLfProject | null>(null);
   public readonly ciiLookupStatusChange = output<MentorshipCiiLookupStatus>();
   public readonly nameLookupStatusChange = output<MentorshipNameLookupStatus>();
 
@@ -301,10 +307,19 @@ export class EnrollDetailsStepComponent {
       )
       .subscribe(({ programId, data }) => this.applyImport(programId, data));
 
-    const search$ = this.lfFilter$.pipe(debounceTime(300), startWith(''), distinctUntilChanged(), share());
+    const search$ = this.lfFilter$.pipe(debounceTime(300), startWith(''), distinctUntilChanged());
+    // Which projects the picker offers: the Project lens's project, the Foundation lens's foundation and sub-projects, or
+    // every project. toObservable first emits once the inputs are bound, so the first page never goes out unscoped from the
+    // constructor (and a lens wizard renders this step only once its lens project is known); a change of scope starts the
+    // list over.
+    const scope$ = toObservable(computed(() => `${this.lockedProject()?.id ?? ''}|${this.parentProject()?.id ?? ''}`)).pipe(distinctUntilChanged());
+    const listStart$ = combineLatest([search$, scope$]).pipe(
+      map(([search]) => search),
+      share()
+    );
 
-    // Retry rereads the current search; search$ alone would not, since distinctUntilChanged drops a repeat of it.
-    const firstPage$ = merge(search$, this.lfFirstPageRetry$.pipe(map(() => this.lfSearch))).pipe(
+    // Retry rereads the current search; listStart$ alone would not, since distinctUntilChanged drops a repeat of it.
+    const firstPage$ = merge(listStart$, this.lfFirstPageRetry$.pipe(map(() => this.lfSearch))).pipe(
       tap((search) => {
         this.lfSearch = search;
         this.lfSearchPending.set(false);
@@ -313,7 +328,7 @@ export class EnrollDetailsStepComponent {
         this.lfProjectsFailed.set(false);
       }),
       switchMap((search) =>
-        this.mentorshipService.getLfProjects({ search, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+        this.readLfProjects({ search, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
           map((response) => ({ ...response, append: false as const, requestedToken: null })),
           catchError(() => {
             // Empty the list so the picker does not keep the previous search's projects under the failure.
@@ -334,8 +349,8 @@ export class EnrollDetailsStepComponent {
         if (this.lfProjectsLoading() || !pageToken) return EMPTY;
         this.lfProjectsLoading.set(true);
         this.lfProjectsFailed.set(false);
-        return this.mentorshipService.getLfProjects({ search: this.lfSearch, pageToken, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
-          takeUntil(search$),
+        return this.readLfProjects({ search: this.lfSearch, pageToken, limit: MENTORSHIP_LF_PROJECT_PAGE_SIZE }).pipe(
+          takeUntil(listStart$),
           map((response) => ({ ...response, append: true as const, requestedToken: pageToken })),
           // The cursor stays, so Retry asks for the same page again.
           catchError(() => {
@@ -394,6 +409,7 @@ export class EnrollDetailsStepComponent {
     this.resetLogo();
     this.form().patchValue(createEmptyMentorshipEnrollForm());
     this.project.set(null);
+    this.keepLockedProject();
   }
 
   protected onLfFilter(event: { filter?: string }): void {
@@ -503,10 +519,39 @@ export class EnrollDetailsStepComponent {
   private applyImport(programId: string, data: MentorshipEnrollImport): void {
     this.pendingImportId = '';
     this.resetLogo();
-    this.form().patchValue(formFromMentorshipEnrollImport(programId, data));
+    // A lens wizard keeps its own project: the imported program's may be outside the Project lens's project or the
+    // Foundation lens's sub-projects, so the Foundation lens leaves the pick to the admin.
+    const scoped = !!this.lockedProject() || !!this.parentProject();
+    const imported = formFromMentorshipEnrollImport(programId, data);
+    this.form().patchValue(scoped ? { ...imported, projectId: '' } : imported);
     // Set before the projectId watcher runs: it keeps this project when the id matches, and would otherwise clear it
     // because the imported project need not be in the page of projects the picker has loaded.
-    this.project.set(data.project);
+    this.project.set(scoped ? null : data.project);
+    this.keepLockedProject();
+  }
+
+  /** Puts the Project lens's project back after the form was reset or filled from another program. */
+  private keepLockedProject(): void {
+    const locked = this.lockedProject();
+    if (!locked) return;
+    this.project.set(locked);
+    this.form().controls['projectId']?.setValue(locked.id);
+  }
+
+  /**
+   * The picker's page read: the Project lens's project alone; the Foundation lens's foundation, first on the first page when
+   * it matches the search, then its direct sub-projects; or every LF project.
+   */
+  private readLfProjects(params: { search: string; pageToken?: string; limit: number }): Observable<MentorshipLfProjectsResponse> {
+    const locked = this.lockedProject();
+    if (locked) return of({ data: [locked] });
+    const parent = this.parentProject();
+    if (!parent) return this.mentorshipService.getLfProjects(params);
+
+    const addParent = !params.pageToken && parent.name.toLowerCase().includes(params.search.toLowerCase());
+    return this.mentorshipService
+      .getLfProjects({ ...params, parentUid: parent.id })
+      .pipe(map((page) => (addParent ? { ...page, data: [parent, ...page.data.filter((project) => project.id !== parent.id)] } : page)));
   }
 
   /** The form is left as it was, so a failed import never costs the admin what they already typed (FR-011). */

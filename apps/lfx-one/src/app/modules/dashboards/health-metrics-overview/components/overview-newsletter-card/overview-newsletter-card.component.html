@@ -1,0 +1,187 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px sizes from the newsletter card design; the 14px root makes the rem scale undershoot them. -->
+<lfx-overview-card
+  class="flex-1"
+  [heading]="card.title"
+  [info]="card.info"
+  [status]="read.status()"
+  [isEmpty]="view()?.isEmpty ?? true"
+  [emptyCopy]="emptyCopy"
+  testId="overview-newsletter">
+  @if (isYtd()) {
+    <div overviewEmptyAction class="mt-[8px]">
+      <lfx-overview-explore-link [link]="createNewsletterLink()" leadingIcon="fa-light fa-plus" testId="overview-newsletter-empty-create" />
+    </div>
+  }
+
+  @if (view(); as view) {
+    <lfx-overview-kpi-strip [kpis]="view.kpis" testId="overview-newsletter-kpis" />
+
+    <!-- The panels wrap on the card's own width; the engagement panel keeps its rule until phones drop it. -->
+    <div class="flex flex-wrap items-stretch gap-x-[32px] gap-y-[24px]">
+      <div class="flex min-w-0 flex-[2_1_420px] flex-col gap-[10px]" data-testid="overview-newsletter-rates">
+        <div class="flex flex-wrap items-center justify-between gap-[12px]">
+          <span class="text-[13px] font-medium text-gray-700">Open and click rate by newsletter</span>
+          <div class="flex items-center gap-[14px] text-[12px] text-gray-500" aria-hidden="true">
+            <span class="inline-flex items-center gap-[6px]"><span class="h-[8px] w-[8px] rounded-full" [class]="fills.blue"></span>Open rate</span>
+            <span class="inline-flex items-center gap-[6px]"><span class="h-[8px] w-[8px] rounded-full" [class]="fills.purple"></span>Click rate</span>
+          </div>
+        </div>
+
+        @if (view.chart; as chart) {
+          <div class="flex flex-auto flex-col px-[10px] pt-[6px]">
+            <div #plot class="relative min-h-[120px] flex-auto border-b border-gray-200" data-testid="overview-newsletter-plot">
+              <svg
+                width="100%"
+                height="100%"
+                viewBox="0 0 600 200"
+                preserveAspectRatio="none"
+                class="absolute inset-0 block overflow-visible"
+                aria-hidden="true"
+                data-testid="overview-newsletter-chart">
+                <defs>
+                  <linearGradient [attr.id]="areaGradientId" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-opacity="0.1" [attr.stop-color]="strokes.progress"></stop>
+                    <stop offset="1" stop-opacity="0" [attr.stop-color]="strokes.progress"></stop>
+                  </linearGradient>
+                </defs>
+                <path stroke="none" [attr.fill]="areaFill" [attr.d]="chart.openAreaPath"></path>
+                <path
+                  fill="none"
+                  stroke-width="2"
+                  stroke-linejoin="round"
+                  stroke-linecap="round"
+                  vector-effect="non-scaling-stroke"
+                  [attr.stroke]="strokes.progress"
+                  [attr.d]="chart.openPath"></path>
+                @if (chart.clickPath) {
+                  <path
+                    fill="none"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                    vector-effect="non-scaling-stroke"
+                    [attr.stroke]="strokes.thisYear"
+                    [attr.d]="chart.clickPath"></path>
+                }
+              </svg>
+              <div class="absolute inset-0" role="list" aria-label="Open and click rate by newsletter">
+                @for (point of chart.points; track point.key; let index = $index) {
+                  <!-- Each newsletter's column is centred on its points and cut off at the plot's edges; hover or focus draws a
+                       hairline through the points and opens the popover. -->
+                  <div
+                    class="group absolute inset-y-0 outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    role="listitem"
+                    tabindex="0"
+                    [class.z-20]="openTipIndex() === index"
+                    [style.left.%]="point.columnLeftPct"
+                    [style.width.%]="point.columnWidthPct"
+                    [attr.aria-label]="point.ariaLabel"
+                    [attr.data-testid]="'overview-newsletter-column-' + point.key"
+                    (mouseenter)="onColumnHover(index, $event, point.pointOffsetPct)"
+                    (focus)="onColumnFocus(index, $event, point.pointOffsetPct)"
+                    (mouseleave)="onColumnLeave(index)"
+                    (blur)="onColumnBlur(index)">
+                    <span
+                      class="pointer-events-none absolute inset-y-0 hidden w-px -translate-x-1/2 bg-[var(--ui-neutral-alpha-300)] group-hover:block group-focus-visible:block"
+                      aria-hidden="true"
+                      [style.left.%]="point.pointOffsetPct"
+                      [attr.data-testid]="'overview-newsletter-hairline-' + point.key"></span>
+                    <!-- Exact px: the design's 8px points, 10px for the latest newsletter. -->
+                    <span
+                      class="pointer-events-none absolute box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+                      [class]="point.latest ? 'h-[10px] w-[10px]' : 'h-[8px] w-[8px]'"
+                      aria-hidden="true"
+                      [style.left.%]="point.pointOffsetPct"
+                      [style.border-color]="strokes.progress"
+                      [style.top.%]="point.openYPct"
+                      [attr.data-testid]="'overview-newsletter-open-' + point.key"></span>
+                    @if (point.clickYPct) {
+                      <span
+                        class="pointer-events-none absolute box-border -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+                        [class]="point.latest ? 'h-[10px] w-[10px]' : 'h-[8px] w-[8px]'"
+                        aria-hidden="true"
+                        [style.left.%]="point.pointOffsetPct"
+                        [style.border-color]="strokes.thisYear"
+                        [style.top.%]="point.clickYPct"
+                        [attr.data-testid]="'overview-newsletter-click-' + point.key"></span>
+                    }
+                    @if (tip(); as open) {
+                      @if (open.index === index) {
+                        <lfx-health-metrics-chart-tip
+                          class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
+                          [style.left]="open.left"
+                          [style.right]="open.right"
+                          aria-hidden="true"
+                          [tip]="point.tip"
+                          [attr.data-testid]="'overview-newsletter-tip-' + point.key" />
+                      }
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+            <div class="relative mt-[6px] h-[16px]" aria-hidden="true" data-testid="overview-newsletter-labels">
+              @for (tick of ticks(); track tick.xPct) {
+                <span class="absolute -translate-x-1/2 whitespace-nowrap text-[11px] text-gray-400" [style.left.%]="tick.xPct">{{ tick.label }}</span>
+              }
+            </div>
+          </div>
+        } @else {
+          <p class="text-[13px] text-gray-500" data-testid="overview-newsletter-chart-empty">
+            No opens or clicks are recorded yet for the newsletters sent in this period.
+          </p>
+        }
+      </div>
+
+      <div
+        class="flex min-w-0 flex-[1_1_260px] flex-col gap-[12px] border-l border-gray-200 pl-[24px] max-[640px]:border-l-0 max-[640px]:pl-0"
+        data-testid="overview-newsletter-engagement">
+        <div class="flex flex-col gap-[3px]">
+          <span class="text-[13px] font-medium text-gray-700">Subscriber engagement</span>
+          @if (view.engagementBasis) {
+            <span class="text-[12px] text-gray-400" data-testid="overview-newsletter-engagement-basis">{{ view.engagementBasis }}</span>
+          }
+        </div>
+        <!-- Segments grow by share from a zero basis, so the gaps come out of the width instead of pushing the last one off. -->
+        <div class="flex h-[8px] gap-[2px] overflow-hidden rounded-full" aria-hidden="true" data-testid="overview-newsletter-engagement-bar">
+          @for (row of view.engagement; track row.key) {
+            @if (row.widthPct > 0) {
+              <span [class]="row.dotClass" [style.flex]="row.widthPct + ' 1 0%'"></span>
+            }
+          }
+        </div>
+        <div class="flex flex-col">
+          @for (row of view.engagement; track row.key; let last = $last) {
+            <div
+              class="grid grid-cols-[minmax(0,1fr)_auto_40px] items-center gap-[10px] py-[8px]"
+              [class.border-b]="!last"
+              [class.border-gray-100]="!last"
+              [attr.data-testid]="'overview-newsletter-engagement-' + row.key">
+              <span class="flex min-w-0 flex-col gap-[1px]">
+                <span class="inline-flex items-center gap-[8px] text-[13px] font-medium text-gray-900"
+                  ><span class="h-[8px] w-[8px] flex-none rounded-full" [class]="row.dotClass" aria-hidden="true"></span>{{ row.label }}</span
+                >
+                <span class="pl-[16px] text-[12px] text-gray-400">{{ row.description }}</span>
+              </span>
+              <span class="text-right text-[13px] text-gray-900">{{ row.countLabel }}</span>
+              <span class="text-right text-[12px] text-gray-400">{{ row.pctLabel }}</span>
+            </div>
+          }
+        </div>
+        @if (view.mostEngaging; as mostEngaging) {
+          <div class="mt-auto flex flex-col gap-[3px]" data-testid="overview-newsletter-most-engaging">
+            <span class="text-[12px] text-gray-500">Most engaging newsletter · {{ mostEngaging.rateLabel }}</span>
+            <span class="text-[13px] font-medium leading-[1.35] text-gray-900">{{ mostEngaging.name }}</span>
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="mt-auto flex">
+      <lfx-overview-explore-link [link]="link" testId="overview-newsletter-explore" />
+    </div>
+  }
+</lfx-overview-card>

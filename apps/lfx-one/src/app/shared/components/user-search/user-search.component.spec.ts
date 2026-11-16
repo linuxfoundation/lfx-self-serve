@@ -213,16 +213,7 @@ describe('UserSearchComponent', () => {
 
       await typeAndSettle('sa');
 
-      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member', false);
-    });
-
-    it('searches as the impersonator when asked to', async () => {
-      await render();
-      fixture.componentRef.setInput('asImpersonator', true);
-
-      await typeAndSettle('sa');
-
-      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member', true);
+      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member');
     });
 
     // The search is driven by completeMethod alone, not by the search control's valueChanges — the
@@ -457,6 +448,19 @@ describe('UserSearchComponent', () => {
 
       expect(query()?.getAttribute('aria-describedby')).toBeNull();
       expect(query()?.getAttribute('aria-invalid')).toBeNull();
+    });
+  });
+
+  describe('required', () => {
+    it('puts aria-required on the native input only when opted in', async () => {
+      await render();
+      await fixture.whenStable();
+      expect(query()?.hasAttribute('aria-required')).toBe(false);
+
+      fixture.componentRef.setInput('required', true);
+      await fixture.whenStable();
+
+      expect(query()?.getAttribute('aria-required')).toBe('true');
     });
   });
 

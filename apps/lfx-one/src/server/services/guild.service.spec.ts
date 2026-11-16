@@ -9,6 +9,12 @@ vi.mock('./logger.service', () => ({
 }));
 
 import type { Request } from 'express';
+import type { GuildRawEventsPage } from '@lfx-one/shared/interfaces';
+import { MKTG_RAW_EVENTS_MAX_PAGES } from '@lfx-one/shared/constants/mktg-run.constants';
+import {
+  MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS,
+  MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS,
+} from '../../../../../packages/shared/src/constants/mktg-one-off-terminal.fixture';
 
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -16,11 +22,11 @@ import { logger } from './logger.service';
 const req = { path: '/api/mktg-agents/brand-kit/result' } as unknown as Request;
 
 /** Builds an ok JSON Response stand-in returning the given raw-events page. */
-function mockEventsResponse(items: unknown[]): Response {
+function mockEventsResponse(items: unknown[], pagination?: GuildRawEventsPage['pagination']): Response {
   return {
     ok: true,
     status: 200,
-    json: () => Promise.resolve({ items }),
+    json: () => Promise.resolve({ items, ...(pagination ? { pagination } : {}) }),
   } as unknown as Response;
 }
 
@@ -49,6 +55,40 @@ describe('GuildService.getRawEventPayloads', () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+  });
+
+  it('interrupts a discarded Guild session via the documented POST path', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 204 });
+    await service.interruptSession(req, 'synthetic/session');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://guild.test/api/sessions/synthetic%2Fsession/interrupt',
+      expect.objectContaining({ method: 'POST', body: '{}' })
+    );
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it.each([401, 404, 503])('keeps discard successful when interrupt returns %s', async (status) => {
+    fetchMock.mockResolvedValue({ ok: false, status });
+    await expect(service.interruptSession(req, 'synthetic-session')).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'guild_interrupt_session', 'Discarded session could not be interrupted', {
+      session_id: 'synthetic-session',
+      status,
+    });
+  });
+
+  it('keeps discard successful on interrupt transport failure without logging upstream text', async () => {
+    fetchMock.mockRejectedValue(new Error('private upstream body'));
+    await expect(service.interruptSession(req, 'synthetic-session')).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'guild_interrupt_session', 'Discarded session could not be interrupted', {
+      session_id: 'synthetic-session',
+      err: expect.objectContaining({ code: 'guild_unreachable', operation: 'guild_interrupt_session', service: 'guild' }),
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private upstream body');
+  });
+
+  it('normalizes the raw recorded wrapper fixture to a content-free marker plus 11 public events', async () => {
+    fetchMock.mockResolvedValue(mockEventsResponse(MKTG_ONE_OFF_RECORDED_REFUSAL_PAYLOADS.map((payload) => JSON.parse(payload))));
+    expect(await service.getRawEventPayloads(req, 'synthetic-recorded-session')).toEqual(MKTG_ONE_OFF_NORMALIZED_REFUSAL_PAYLOADS);
   });
 
   describe('envelope-injection defense (user-event exclusion filter)', () => {
@@ -132,26 +172,154 @@ describe('GuildService.getRawEventPayloads', () => {
     });
   });
 
-  describe('truncation guard', () => {
-    it('warns on a full raw page measured against the UNFILTERED count, so user-event filtering cannot mask truncation', async () => {
-      // 500-item page (the GUILD_RAW_EVENTS_LIMIT cap) where filtering removes items.
-      const items = Array.from({ length: 500 }, (_, i) =>
-        i % 2 === 0 ? { type: 'user_message', created_at: '2026-01-01T00:00:00Z' } : { type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }
-      );
-      fetchMock.mockResolvedValue(mockEventsResponse(items));
-
+  describe('bounded raw event pagination', () => {
+    it('reads 500/500/120 newest-first events, sorts all 1120, and reuses the request cache', async () => {
+      const events = Array.from({ length: 1120 }, (_, i) => ({
+        id: `event-${i}`,
+        type: 'llm_done',
+        created_at: new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(),
+      })).reverse();
+      for (let offset = 0; offset < events.length; offset += 500)
+        fetchMock.mockResolvedValueOnce(
+          mockEventsResponse(events.slice(offset, offset + 500), { offset, limit: 500, has_more: offset + 500 < events.length, total_count: events.length })
+        );
       const payloads = await service.getRawEventPayloads(req, 'session-1');
-
-      expect(payloads).toHaveLength(501); // content-free turns plus an explicit incomplete-page marker
-      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
-      expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', expect.stringContaining('truncated'), { count: 500, limit: 500 });
+      expect(payloads).toHaveLength(1120);
+      expect(JSON.parse(payloads[0]).id).toBe('event-0');
+      expect(JSON.parse(payloads.at(-1) ?? '{}').id).toBe('event-1119');
+      expect(fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get('offset'))).toEqual(['0', '500', '1000']);
+      expect(payloads.some((payload) => payload.includes('mktg_session_events_truncated'))).toBe(false);
+      expect(logger.warning).not.toHaveBeenCalled();
+      expect(await service.resolveRunOutcome(req, 'session-1', { status: 'pending' })).toEqual({ status: 'pending' });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     });
-
-    it('does not warn on a partial page', async () => {
-      fetchMock.mockResolvedValue(mockEventsResponse([{ type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }]));
-
+    /** Oldest-first pages, as Guild serves them, with `total_count` on every page. */
+    function servePages(total: number, type: (index: number) => string = () => 'llm_done'): void {
+      fetchMock.mockImplementation((url: string) => {
+        const offset = Number(new URL(url).searchParams.get('offset'));
+        const count = Math.max(0, Math.min(500, total - offset));
+        return Promise.resolve(
+          mockEventsResponse(
+            Array.from({ length: count }, (_, i) => ({
+              id: `event-${offset + i}`,
+              type: type(offset + i),
+              content: type(offset + i) === 'user_message' ? 'private caller content' : 'agent output',
+              created_at: new Date(Date.UTC(2026, 0, 1) + (offset + i) * 1000).toISOString(),
+            })),
+            { offset, limit: 500, has_more: offset + 500 < total, total_count: total }
+          )
+        );
+      });
+    }
+    it('sizes the loop from total_count: three pages for 1,120 events, even when has_more is absent', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        const offset = Number(new URL(url).searchParams.get('offset'));
+        return Promise.resolve(
+          mockEventsResponse(
+            Array.from({ length: Math.min(500, 1120 - offset) }, (_, i) => ({ id: `event-${offset + i}`, type: 'llm_done' })),
+            { offset, limit: 500, total_count: 1120 }
+          )
+        );
+      });
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get('offset'))).toEqual(['0', '500', '1000']);
+      expect(payloads).toHaveLength(1120);
+      expect(payloads.some((payload) => payload.includes('mktg_session_events_truncated'))).toBe(false);
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('reads every page of a 2,558-event session (six pages), so the last page with the result is seen', async () => {
+      servePages(2558);
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(fetchMock).toHaveBeenCalledTimes(6);
+      expect(payloads).toHaveLength(2558);
+      expect(JSON.parse(payloads.at(-1) ?? '{}').id).toBe('event-2557');
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('stops at the page cap and appends the truncation marker when total_count exceeds it, preserving turn masking', async () => {
+      servePages(MKTG_RAW_EVENTS_MAX_PAGES * 500 + 700, (index) => (index % 2 ? 'llm_done' : 'user_message'));
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(fetchMock).toHaveBeenCalledTimes(MKTG_RAW_EVENTS_MAX_PAGES);
+      expect(payloads).toHaveLength(MKTG_RAW_EVENTS_MAX_PAGES * 500 + 1);
+      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
+      expect(JSON.stringify(payloads)).not.toContain('private caller content');
+      expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', `Raw events truncated at ${MKTG_RAW_EVENTS_MAX_PAGES} pages`, {
+        count: MKTG_RAW_EVENTS_MAX_PAGES * 500,
+        limit: 500,
+        pages: MKTG_RAW_EVENTS_MAX_PAGES,
+      });
+    });
+    it('keeps the has_more walk when total_count is absent, still bounded by the page cap', async () => {
+      fetchMock.mockImplementation((url: string) => {
+        const offset = Number(new URL(url).searchParams.get('offset'));
+        return Promise.resolve(
+          mockEventsResponse(
+            Array.from({ length: 500 }, (_, i) => ({ id: `event-${offset + i}`, type: 'llm_done' })),
+            { offset, limit: 500, has_more: true }
+          )
+        );
+      });
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(fetchMock).toHaveBeenCalledTimes(MKTG_RAW_EVENTS_MAX_PAGES);
+      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
+    });
+    it('shares one in-flight read between two concurrent calls for the same session, then forgets it', async () => {
+      let release: (value: Response) => void = () => undefined;
+      fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (release = resolve)));
+      const first = service.getRawEventPayloads(req, 'session-1');
+      const other = { path: '/api/mktg-agents/member-360/result' } as unknown as Request;
+      const second = new GuildService().getRawEventPayloads(other, 'session-1');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      release(mockEventsResponse([{ id: 'event-0', type: 'llm_done', created_at: '2026-01-01T00:00:00Z' }]));
+      const [a, b] = await Promise.all([first, second]);
+      expect(a).toEqual(b);
+      expect(a).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // Both requests may settle their outcome from the shared read without another fetch.
+      expect(await service.resolveRunOutcome(other, 'session-1', { status: 'pending' })).toEqual({ status: 'pending' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // Settled: the next call fetches afresh.
+      fetchMock.mockResolvedValueOnce(mockEventsResponse([]));
       await service.getRawEventPayloads(req, 'session-1');
-
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    it('does not share reads across different sessions', async () => {
+      fetchMock.mockResolvedValue(mockEventsResponse([]));
+      await Promise.all([service.getRawEventPayloads(req, 'session-1'), service.getRawEventPayloads(req, 'session-2')]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    it('never caches a rejected read: the next call fetches again', async () => {
+      fetchMock.mockRejectedValueOnce(new Error('connection reset'));
+      await expect(service.getRawEventPayloads(req, 'session-1')).rejects.toMatchObject({ code: 'guild_unreachable' });
+      fetchMock.mockResolvedValueOnce(mockEventsResponse([{ id: 'event-0', type: 'llm_done' }]));
+      expect(await service.getRawEventPayloads(req, 'session-1')).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    it('de-duplicates event ids across page boundaries', async () => {
+      const first = Array.from({ length: 500 }, (_, i) => ({ id: `event-${i}`, type: 'llm_done' }));
+      fetchMock
+        .mockResolvedValueOnce(mockEventsResponse(first, { has_more: true }))
+        .mockResolvedValueOnce(mockEventsResponse([first[0], { id: 'event-500', type: 'llm_done' }], { has_more: false }));
+      const payloads = await service.getRawEventPayloads(req, 'session-1');
+      expect(payloads).toHaveLength(501);
+      expect(new Set(payloads.map((payload) => JSON.parse(payload).id)).size).toBe(501);
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('does not truncate a full page whose metadata says it is the last page', async () => {
+      fetchMock.mockResolvedValue(
+        mockEventsResponse(
+          Array.from({ length: 500 }, (_, i) => ({ id: `event-${i}`, type: 'llm_done' })),
+          { has_more: false }
+        )
+      );
+      expect(await service.getRawEventPayloads(req, 'session-1')).toHaveLength(500);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+    it('keeps a short legacy page unchanged without a marker or another request', async () => {
+      const event = { type: 'llm_done', created_at: '2026-01-01T00:00:00Z' };
+      fetchMock.mockResolvedValue(mockEventsResponse([event]));
+      expect(await service.getRawEventPayloads(req, 'session-1')).toEqual([JSON.stringify(event)]);
+      expect(fetchMock).toHaveBeenCalledOnce();
       expect(logger.warning).not.toHaveBeenCalled();
     });
   });

@@ -4,15 +4,15 @@
 import { expect, test } from '@playwright/test';
 import { AUDIT_MARKDOWN, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
 
-test('the Kit Website & web family opens the audit form from Run', async ({ page }, testInfo) => {
+test('the Kit Website & web family opens the audit form from Create', async ({ page }, testInfo) => {
   const app = await setupAudit(page, { previous: true });
   await app.go('');
   const family = page.getByTestId('mktg-kit-family-link-website-web');
   await expect(family).toHaveText('Website & web');
   await family.click();
   await expect(page).toHaveURL(/\/families\/website-web\?project=/);
-  const run = page.getByTestId('mktg-family-run').getByRole('button');
-  await expect(run).toHaveText('Run AEO/GEO scorecard');
+  const run = page.getByTestId('mktg-family-run').getByRole('link');
+  await expect(run).toHaveText('Create AEO/GEO scorecard');
   await expect(run).toBeEnabled();
   await run.click();
   await expect(page.getByTestId('mktg-aeo-run-form')).toBeVisible();

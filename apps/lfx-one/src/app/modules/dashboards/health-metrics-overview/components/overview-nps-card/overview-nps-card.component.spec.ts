@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -34,13 +34,13 @@ const NPS: HealthMetricsOverviewNps = { periods: { YTD: PERIOD, COMPLETED_YEAR: 
 describe('OverviewNpsCardComponent', () => {
   let fixture: ComponentFixture<OverviewNpsCardComponent>;
 
-  async function render(): Promise<void> {
+  async function render(nps: HealthMetricsOverviewNps = NPS): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [OverviewNpsCardComponent],
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
-        { provide: AnalyticsService, useValue: { getOverviewNps: vi.fn().mockReturnValue(of(NPS)) } },
+        { provide: AnalyticsService, useValue: { getOverviewNps: vi.fn().mockReturnValue(of(nps)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
       ],
@@ -64,7 +64,7 @@ describe('OverviewNpsCardComponent', () => {
   it('reads the latest survey, the change and the response split', async () => {
     await render();
 
-    expect(text('overview-nps-subtitle')).toBe('Last survey: Q2 2026 · 5 of 24 responded (21%)');
+    expect(text('overview-nps-meta')).toBe('Latest NPS: Q2 2026 · Audience: Board · Responses: 5 of 24 (21%)');
     expect(text('overview-nps-score')).toBe('80');
     expect(text('overview-nps-delta')).toBe('Up12 pts vs Q4 2025');
     expect(cells('overview-nps-promoters')).toEqual(['Promoters scored 9–10', '4', '80%']);
@@ -72,16 +72,32 @@ describe('OverviewNpsCardComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-gauge"]').getAttribute('aria-label')).toBe(
       'Net Promoter Score 80 on a scale from -100 to 100'
     );
-    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-segment-high"]').getAttribute('stroke-opacity')).toBe('1');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-segment-high"]').getAttribute('stroke')).toBe('#00BC7D');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-segment-low"]').getAttribute('stroke')).toBe('#FFDDDE');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-gauge"]').getAttribute('width')).toBe('112');
   });
 
-  it('shows its empty state for a period with no survey sent', async () => {
+  it('shows its empty state for a past year with no survey, with no offer to start one', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_2');
     fixture.detectChanges();
 
-    expect(text('overview-nps-empty')).toContain('No survey results yet');
-    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-subtitle"]')).toBeNull();
+    expect(text('overview-nps-empty-title')).toBe(`No survey in ${new Date().getFullYear() - 2}`);
+    expect(text('overview-nps-empty')).toContain('Each survey counts toward the year it closes.');
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-meta"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="overview-nps-empty-create-survey"]')).toBeNull();
+  });
+
+  it('lists the reasons and offers to create a survey, leaving the Health Metrics filters behind, when no survey has closed this year', async () => {
+    await render({ periods: { ...NPS.periods, YTD: null } });
+    await TestBed.inject(Router).navigateByUrl('/?memTier=gold');
+    fixture.detectChanges();
+
+    expect(text('overview-nps-empty-title')).toBe('No responses yet');
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="overview-nps-empty-reasons"] li')).toHaveLength(3);
+    const create = fixture.nativeElement.querySelector('[data-testid="overview-nps-empty-create-survey"]') as HTMLAnchorElement;
+    expect(create.textContent?.trim()).toBe('Create Survey');
+    expect(create.getAttribute('href')).toBe('/foundation/surveys?project=acme');
   });
 });

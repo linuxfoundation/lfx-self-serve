@@ -41,13 +41,8 @@
       title="Representatives unavailable"
       subtitle="We could not load representatives for this foundation. Refresh the page to try again."
       data-testid="engagement-representatives-error" />
-  } @else if (!loading() && scopeEmpty()) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-user"
-      title="No representatives recorded for this scope"
-      subtitle="The analytics model has no representative records for this foundation."
-      data-testid="engagement-representatives-empty" />
+  } @else if (empty()) {
+    <!-- The shell shows the section's empty state. -->
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       variant="compact"
@@ -72,10 +67,10 @@
       data-testid="engagement-representatives-table">
       <ng-template #header>
         <tr>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Representative</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Group</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Attended</span></th>
-          <th scope="col"><span class="text-[12px] font-normal text-gray-500">Last attended</span></th>
+          <th scope="col">Representative</th>
+          <th scope="col">Group</th>
+          <th scope="col">Attended</th>
+          <th scope="col">Last attended</th>
         </tr>
       </ng-template>
 

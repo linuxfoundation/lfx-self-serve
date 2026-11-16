@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MY_EVENT_STATUS } from '../constants/events.constants';
+import type { EVENT_REQUEST_SOURCE_TABLES, MY_EVENT_STATUS } from '../constants/events.constants';
 
 import type { OffsetPaginatedResponse } from './api.interface';
 
@@ -495,6 +495,9 @@ export type TravelFundRequestsResponse = OffsetPaginatedResponse<TravelFundReque
  * Valid sort order values for event queries
  */
 export type EventSortOrder = 'ASC' | 'DESC';
+
+/** Snowflake table an event request list reads. */
+export type EventRequestSourceTable = (typeof EVENT_REQUEST_SOURCE_TABLES)[keyof typeof EVENT_REQUEST_SOURCE_TABLES];
 
 /**
  * Server-side options for fetching event requests (visa letters or travel fund) — required pagination/sort fields

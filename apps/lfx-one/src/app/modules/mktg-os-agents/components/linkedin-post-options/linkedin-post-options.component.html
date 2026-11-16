@@ -3,11 +3,37 @@
 
 <!-- Pixel spacing preserves the approved LinkedIn option-card board. -->
 <div class="flex flex-col gap-3" data-testid="mktg-linkedin-option-cards">
-  <div class="grid grid-cols-1 gap-[14px] lg:grid-cols-3">
+  <div class="grid grid-cols-1 items-stretch gap-[14px] lg:grid-cols-3" role="radiogroup" aria-label="Post options">
     @for (option of presented(); track option.number) {
-      <article class="flex min-w-0 flex-col gap-[10px] rounded-xl border border-gray-200 bg-white px-5 py-[18px]" data-testid="mktg-linkedin-option">
+      <article
+        class="flex min-w-0 cursor-pointer flex-col gap-[10px] rounded-xl border bg-white px-5 py-[18px]"
+        [class.border-blue-500]="selectedOption() === option.number"
+        [class.border-gray-200]="selectedOption() !== option.number"
+        (click)="onCardClick($event)"
+        data-testid="mktg-linkedin-option">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 class="font-bold">Option {{ option.number }}: {{ option.label }}</h3>
+          <h3 class="font-bold">
+            <button
+              type="button"
+              role="radio"
+              class="flex flex-wrap items-baseline gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+              [attr.aria-checked]="selectedOption() === option.number"
+              [attr.aria-labelledby]="
+                'mktg-linkedin-title-' + option.number + (selectedOption() === option.number ? ' mktg-linkedin-selected-' + option.number : '')
+              "
+              [attr.tabindex]="selectedOption() === option.number ? 0 : -1"
+              [attr.data-option-number]="option.number"
+              [attr.data-testid]="'mktg-linkedin-select-' + option.number"
+              (click)="$event.stopPropagation(); selectedOption.set(option.number)"
+              (keydown)="onOptionKeydown($event, option.number)">
+              <span [id]="'mktg-linkedin-title-' + option.number">Option {{ option.number }}: {{ option.label }}</span>
+              @if (selectedOption() === option.number) {
+                <span [id]="'mktg-linkedin-selected-' + option.number" class="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700"
+                  >Selected</span
+                >
+              }
+            </button>
+          </h3>
           <span class="text-xs text-gray-500">{{ option.word_count }} words</span>
         </div>
         <p class="whitespace-pre-wrap break-words text-gray-700" data-testid="mktg-linkedin-post-text">
@@ -17,7 +43,7 @@
                 type="button"
                 aria-label="Add your link"
                 [disabled]="addLinkDisabled()"
-                (click)="addLink.emit()"
+                (click)="$event.stopPropagation(); addLink.emit()"
                 class="whitespace-nowrap rounded-full border border-dashed border-blue-600 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50"
                 data-testid="mktg-linkedin-add-link">
                 {{ part.text }}
@@ -27,6 +53,7 @@
                 [href]="part.href"
                 target="_blank"
                 rel="noopener noreferrer"
+                (click)="$event.stopPropagation()"
                 class="text-blue-600 underline"
                 [attr.data-testid]="'mktg-linkedin-share-link-' + option.number"
                 >{{ part.text }}</a
@@ -36,7 +63,7 @@
             }
           }
         </p>
-        <div class="flex flex-wrap gap-1.5">
+        <div class="mt-auto flex flex-wrap gap-1.5">
           @for (tag of option.hashtags; track $index) {
             <span class="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-800">{{ tag }}</span>
           }
@@ -47,8 +74,9 @@
         </p>
         <lfx-button
           [label]="copied() === option.number ? 'Copied' : 'Copy post'"
-          severity="secondary"
-          (onClick)="onCopy(option)"
+          [outlined]="selectedOption() !== option.number"
+          (click)="$event.stopPropagation()"
+          (onClick)="$event.stopPropagation(); onCopy(option)"
           [attr.data-testid]="'mktg-linkedin-copy-' + option.number" />
         @if (notice() && copied() === option.number) {
           <p role="status" class="text-sm text-gray-500" data-testid="mktg-linkedin-copy-notice">{{ notice() }}</p>

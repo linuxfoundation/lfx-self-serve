@@ -7,15 +7,12 @@ import type {
   EventAttendeeEventOptionRow,
   EventAttendeeFoundationOptionRow,
   OrgLensProjectPerson,
-  OrgPeopleAllEventAttendeeRow,
   OrgPeopleAllRowRaw,
-  OrgPeopleAllStatsRow,
   OrgPeopleAllTraineeRow,
-  OrgPeopleEventRow,
+  OrgEventParticipationRow,
   OrgPeopleFoundationOptionRow,
   OrgPeopleTrainingRow,
-  TraineeCourseOptionRow,
-  TraineeFoundationOptionRow,
+  OrgTrainingOutsideLearnerRow,
 } from '../interfaces';
 
 /**
@@ -83,33 +80,15 @@ export const ORG_PEOPLE_ALL_ROW_COLUMNS = [
   'BOARD_SEATS_COUNT',
   'COMMITTEE_SEATS_COUNT',
   'COMMITS_COUNT',
+  'MERGED_COMMITS_COUNT',
+  'CODE_ACTIVITIES_COUNT',
   'EVENTS_COUNT',
   'COURSES_COUNT',
   'ENGAGED_FOUNDATION_IDS',
 ] as const satisfies readonly (keyof OrgPeopleAllRowRaw)[];
 
-/** `CompactOrgAllEmployeesRawCache.statsRaw`. */
-export const ORG_PEOPLE_ALL_STATS_COLUMNS = [
-  'ACCOUNT_ID',
-  'ACTIVE_IN_OSS',
-  'IN_GOVERNANCE',
-  'CODE_CONTRIBUTORS',
-  'EVENT_ATTENDEES',
-  'TRAINEES',
-] as const satisfies readonly (keyof OrgPeopleAllStatsRow)[];
-
 /** `CompactOrgAllEmployeesRawCache.foundationRaw`. */
 export const ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof OrgPeopleFoundationOptionRow)[];
-
-/** `CompactOrgEventAttendeesRawCache.attendeeRows`. */
-export const ORG_EVENT_ATTENDEE_ROW_COLUMNS = [
-  'PERSON_KEY',
-  'LFID',
-  'CDP_MEMBER_ID',
-  'NAME',
-  'TITLE',
-  'EMAIL',
-] as const satisfies readonly (keyof OrgPeopleAllEventAttendeeRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.events` — the event-level columns lifted out of every detail row. */
 export const ORG_EVENT_DICTIONARY_COLUMNS = [
@@ -123,16 +102,22 @@ export const ORG_EVENT_DICTIONARY_COLUMNS = [
   'EVENT_END_DATE',
   'FOUNDATION_ID',
   'FOUNDATION_NAME',
-] as const satisfies readonly (keyof OrgPeopleEventRow)[];
+] as const satisfies readonly (keyof OrgEventParticipationRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.details` — what genuinely varies per (person, event) row. */
-export const ORG_EVENT_DETAIL_COLUMNS = ['PERSON_KEY', 'IS_SPEAKER', 'IS_PAST_EVENT'] as const satisfies readonly (keyof OrgPeopleEventRow)[];
+export const ORG_EVENT_DETAIL_COLUMNS = [
+  'PARTICIPANT_REF',
+  'PERSON_KEY',
+  'DISPLAY_NAME',
+  'JOB_TITLE',
+  'IS_SPEAKER',
+] as const satisfies readonly (keyof OrgEventParticipationRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.foundationRows`. */
 export const ORG_EVENT_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof EventAttendeeFoundationOptionRow)[];
 
 /** `CompactOrgEventAttendeesRawCache.eventRows`. */
-export const ORG_EVENT_OPTION_COLUMNS = ['EVENT_ID', 'EVENT_NAME', 'EVENT_END_DATE'] as const satisfies readonly (keyof EventAttendeeEventOptionRow)[];
+export const ORG_EVENT_OPTION_COLUMNS = ['EVENT_ID', 'EVENT_NAME', 'EVENT_DATE'] as const satisfies readonly (keyof EventAttendeeEventOptionRow)[];
 
 /** `CompactOrgTraineesRawCache.traineeRows`. */
 export const ORG_TRAINEE_ROW_COLUMNS = [
@@ -150,6 +135,11 @@ export const ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS = [
   'COURSE_NAME',
   'FOUNDATION_ID',
   'FOUNDATION_NAME',
+  'PROJECT_ID',
+  'PROJECT_NAME',
+  'COURSE_LEVEL',
+  'COURSE_FORMAT',
+  'PRODUCT_TYPE',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
 /** `CompactOrgTraineesRawCache.details` — what genuinely varies per (person, course-or-cert) row. */
@@ -160,11 +150,8 @@ export const ORG_TRAINEE_DETAIL_COLUMNS = [
   'ACTIVITY_TS',
 ] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
 
-/** `CompactOrgTraineesRawCache.foundationRows`. */
-export const ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS = ['FOUNDATION_ID', 'FOUNDATION_NAME'] as const satisfies readonly (keyof TraineeFoundationOptionRow)[];
-
-/** `CompactOrgTraineesRawCache.courseRows`. */
-export const ORG_TRAINEE_COURSE_OPTION_COLUMNS = ['COURSE_ID', 'COURSE_NAME'] as const satisfies readonly (keyof TraineeCourseOptionRow)[];
+/** `CompactOrgTraineesRawCache.outsideLearnerRows` — learners outside the people list, name and overall status only (lfx-self-serve#4287); no warehouse key. */
+export const ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS = ['LEARNER_NAME', 'IS_CERTIFIED'] as const satisfies readonly (keyof OrgTrainingOutsideLearnerRow)[];
 
 /** `CompactOrgContributorRowsCache.projects` — the project-level columns lifted out of every aggregate row. */
 export const ORG_CONTRIBUTOR_PROJECT_COLUMNS = [
@@ -185,8 +172,7 @@ export const ORG_CONTRIBUTOR_ROW_COLUMNS = [
   'DISPLAY_NAME',
   'TITLE',
   'COMMITS',
+  'MERGED_COMMITS',
   'CODE_ACTIVITIES',
   'LAST_ACTIVE_DATE',
-  'IS_DECLARED_MAINTAINER_FOR_PROJECT',
-  'IS_DECLARED_MAINTAINER_FOR_ORG',
 ] as const satisfies readonly (keyof ContributorPersonProjectRow)[];

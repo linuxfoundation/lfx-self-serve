@@ -63,6 +63,22 @@ const parseInitiativesScope = (query: Request['query'], operation: string): Init
 };
 
 /**
+ * Path id and body of the donation/subscription anonymity PATCHes (lfx-crowdfunding#466). The id is a CF UUID
+ * interpolated into the CF path; `anonymous` must be a boolean so a missing field never flips the setting.
+ */
+const parseAnonymityRequest = (req: Request, idLabel: string, operation: string): { id: string; anonymous: boolean } => {
+  const id = (req.params['id'] ?? '').trim();
+  if (!isUuid(id)) {
+    throw ServiceValidationError.forField('id', `${idLabel} id must be a UUID`, { operation });
+  }
+  const anonymous = ((req.body ?? {}) as Record<string, unknown>)['anonymous'];
+  if (typeof anonymous !== 'boolean') {
+    throw ServiceValidationError.forField('anonymous', 'anonymous must be true or false', { operation });
+  }
+  return { id, anonymous };
+};
+
+/**
  * Body of PUT /initiatives/:id/attribution. `entityUid` is interpolated into the CF gateway's FGA check, which only
  * admits canonical ids, so it must be an 18-char b2b_org SFID for an organization or a UUID (sent lowercase) for a
  * project, and absent for personal.
@@ -226,6 +242,31 @@ export class CrowdfundingController {
     }
   }
 
+  // GET /api/crowdfunding/org-donations?orgUid=
+  public async getOrgDonations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_donations');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_donations' });
+      }
+
+      const { orgUid, pageSize, offset } = req.query;
+      // Interpolated into the CF path, so it must be an 18-char b2b_org SFID.
+      if (typeof orgUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(orgUid)) {
+        throw ServiceValidationError.forField('orgUid', 'orgUid must be an organization account id', { operation: 'get_org_donations' });
+      }
+
+      const donations = await this.crowdfundingService.getOrgDonations(req, orgUid, parseNonNegativeInt(pageSize), parseNonNegativeInt(offset));
+
+      logger.success(req, 'get_org_donations', startTime, { result_count: donations.data.length, total: donations.total });
+
+      res.json(donations);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/crowdfunding/initiatives-stats[?projectUid=|?orgUid=]
   public async getInitiativesStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_initiatives_stats');
@@ -283,6 +324,44 @@ export class CrowdfundingController {
       logger.success(req, 'cancel_subscription', startTime, { subscriptionId: id });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/my-donations/:id — hide or show the caller's name on one of their one-time donations. */
+  public async updateMyDonationAnonymity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_my_donation_anonymity');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_my_donation_anonymity' });
+      }
+
+      const { id, anonymous } = parseAnonymityRequest(req, 'Donation', 'update_my_donation_anonymity');
+      const result = await this.crowdfundingService.updateMyDonationAnonymity(req, id, anonymous);
+
+      logger.success(req, 'update_my_donation_anonymity', startTime, { donationId: id, anonymous: result.anonymous });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PATCH /api/crowdfunding/subscriptions/:id — hide or show the caller's name on every charge of a recurring donation. */
+  public async updateMySubscriptionAnonymity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_my_subscription_anonymity');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_my_subscription_anonymity' });
+      }
+
+      const { id, anonymous } = parseAnonymityRequest(req, 'Subscription', 'update_my_subscription_anonymity');
+      const result = await this.crowdfundingService.updateMySubscriptionAnonymity(req, id, anonymous);
+
+      logger.success(req, 'update_my_subscription_anonymity', startTime, { subscriptionId: id, anonymous: result.anonymous });
+      res.json(result);
     } catch (error) {
       next(error);
     }

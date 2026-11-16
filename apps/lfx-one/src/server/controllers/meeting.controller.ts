@@ -11,6 +11,8 @@ import {
   MEETING_REMOVAL_SOURCE_HEADER,
   MEETING_REMOVAL_SOURCES,
   MIN_CUSTOM_DURATION,
+  MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME,
+  MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
@@ -32,6 +34,7 @@ import {
   UpdateMeetingOccurrenceRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
+  MeetingRollupProjectsPreference,
 } from '@lfx-one/shared/interfaces';
 import { codePointLength, isMeetingAttendeeListShared, isWithinHostKeyWindow, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -45,6 +48,8 @@ import {
 import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
 import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
+import { parseRollupProjectsPreference, readRollupProjectsPreferenceRequest, setRollupProjectsPreference } from '../helpers/meeting-rollup-preference.helper';
+import { readRollupRootUid } from '../helpers/meeting-rollup.helper';
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
 import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
@@ -52,8 +57,9 @@ import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
+import { UserPreferenceService } from '../services/user-preference.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -65,6 +71,7 @@ export class MeetingController {
   private committeeService: CommitteeService = new CommitteeService();
   private natsService: NatsService = new NatsService();
   private userService: UserService = new UserService();
+  private userPreferenceService: UserPreferenceService = new UserPreferenceService();
 
   /**
    * GET /meetings
@@ -106,6 +113,97 @@ export class MeetingController {
       });
 
       res.json({ data: result, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/rollup-filters?root_project_uid=
+   *
+   * Options for the roll-up filters on a foundation or parent project's meetings list (GH-5566): the
+   * projects in the tree and their groups, as the caller can see them.
+   */
+  public async getRollupFilterOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_meeting_rollup_filters', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const rootUid = readRollupRootUid({ root_project_uid: req.query['root_project_uid'] }, 'get_meeting_rollup_filters');
+      if (!rootUid) {
+        throw ServiceValidationError.forField('root_project_uid', 'root_project_uid is required', { operation: 'get_meeting_rollup_filters' });
+      }
+
+      const options = await this.meetingService.getRollupFilterOptions(req, rootUid);
+
+      logger.success(req, 'get_meeting_rollup_filters', startTime, {
+        project_count: options.projects.length,
+        group_count: options.groups.length,
+      });
+
+      res.json(options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/rollup-projects?root_project_uid=
+   *
+   * The signed-in user's saved project selection for a roll-up root (GH-5566). `project_uids` is `null`
+   * when nothing is saved (the page then shows only the root's own meetings). During impersonation the
+   * preference would resolve the impersonator's profile, so nothing is reported as saved.
+   */
+  public async getRollupProjectsPreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'get_meeting_rollup_projects_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const rootUid = readRollupRootUid({ root_project_uid: req.query['root_project_uid'] }, operation);
+      if (!rootUid) {
+        throw ServiceValidationError.forField('root_project_uid', 'root_project_uid is required', { operation });
+      }
+
+      let projectUids: string[] | null = null;
+      if (!isImpersonating(req)) {
+        const raw = await this.userPreferenceService.getPreference(req, MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME, MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME);
+        projectUids = parseRollupProjectsPreference(raw)[rootUid] ?? null;
+      }
+
+      logger.success(req, operation, startTime, { saved: projectUids !== null, project_count: projectUids?.length ?? 0 });
+
+      const response: MeetingRollupProjectsPreference = { project_uids: projectUids };
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /meetings/rollup-projects — saves the signed-in user's project selection for one roll-up root.
+   * Body: `{ root_project_uid, project_uids }`; an empty list records a choice of all projects.
+   */
+  public async saveRollupProjectsPreference(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'save_meeting_rollup_projects_preference';
+    const startTime = logger.startOperation(req, operation);
+
+    try {
+      const request = readRollupProjectsPreferenceRequest(req.body, operation);
+      const raw = await this.userPreferenceService.getPreference(req, MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME, MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME);
+      const map = setRollupProjectsPreference(parseRollupProjectsPreference(raw), request.root_project_uid, request.project_uids);
+      await this.userPreferenceService.upsertPreference(
+        req,
+        MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME,
+        MEETING_ROLLUP_PROJECTS_PREFERENCE_NAME,
+        JSON.stringify(map)
+      );
+
+      logger.success(req, operation, startTime, { project_count: request.project_uids.length, root_count: Object.keys(map).length });
+
+      const response: MeetingRollupProjectsPreference = { project_uids: request.project_uids };
+      res.json(response);
     } catch (error) {
       next(error);
     }
@@ -1205,7 +1303,8 @@ export class MeetingController {
 
     const startTime = logger.startOperation(req, 'delete_meeting_registrants', {
       meeting_id: uid,
-      registrant_count: registrantsUid.length,
+      // The body isn't validated yet, so a string or object must not be counted by its .length.
+      registrant_count: Array.isArray(registrantsUid) ? registrantsUid.length : 0,
       // Read from the header rather than re-serializing a body that hasn't been validated yet — same
       // field as the add and update batch endpoints.
       request_content_length: MeetingController.readContentLength(req),
@@ -1224,8 +1323,8 @@ export class MeetingController {
         return;
       }
 
-      // Check if the registrant UIDs are provided
-      if (!registrantsUid.length) {
+      // Check if the registrant UIDs are provided (non-array bodies are rejected by the next check)
+      if (Array.isArray(registrantsUid) && !registrantsUid.length) {
         const validationError = ServiceValidationError.forField('registrantUids', 'Empty registrant UIDs array', {
           operation: 'delete_meeting_registrants',
           service: 'meeting_controller',

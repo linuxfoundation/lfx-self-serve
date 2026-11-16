@@ -39,7 +39,8 @@
         [form]="form()"
         [savedAttendeeVisibility]="savedAttendeeVisibility()"
         [committeeContext]="committeeContext()"
-        (committeeMembersChange)="onCommitteeMembersChange($event)">
+        (committeeMembersChange)="onCommitteeMembersChange($event)"
+        (committeeMembersResolvedChange)="committeeMembersResolvedChange.emit($event)">
       </lfx-meeting-committee-manager>
 
       <!-- Show Meeting Attendees Toggle -->

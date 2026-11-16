@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   capCodePointEdit,
   codePointLength,
+  foldForSearch,
   formatTag,
   joinAsSentenceList,
   sanitizePlainText,
@@ -25,6 +26,33 @@ describe('stripDiacritics', () => {
   it('leaves case and unaccented text untouched', () => {
     expect(stripDiacritics('ZOË Smith')).toBe('ZOE Smith');
     expect(stripDiacritics('plain text')).toBe('plain text');
+  });
+});
+
+describe('foldForSearch', () => {
+  it('maps a CJK compatibility ideograph to its unified form', () => {
+    expect(foldForSearch('王小\uF92E')).toBe(foldForSearch('王小冷'));
+    expect(foldForSearch('王小\uF92E')).toBe('王小冷');
+  });
+
+  it('removes plain, ideographic, no-break and zero-width spaces', () => {
+    expect(foldForSearch('王小 冷')).toBe('王小冷');
+    expect(foldForSearch('王小\u3000冷')).toBe('王小冷');
+    expect(foldForSearch('王小\u00A0冷')).toBe('王小冷');
+    expect(foldForSearch('王小\u200B冷')).toBe('王小冷');
+  });
+
+  it('drops accents and lowercases', () => {
+    expect(foldForSearch('José Ramírez')).toBe('joseramirez');
+  });
+
+  it('maps full-width letters to ASCII', () => {
+    expect(foldForSearch('ＪＯＳＥ')).toBe('jose');
+  });
+
+  it('folds null and undefined to an empty string', () => {
+    expect(foldForSearch(null)).toBe('');
+    expect(foldForSearch(undefined)).toBe('');
   });
 });
 

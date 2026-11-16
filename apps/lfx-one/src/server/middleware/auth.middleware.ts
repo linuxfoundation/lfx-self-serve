@@ -35,6 +35,12 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // SSR boundary aligned with the Angular `[authGuard, writerGuard]` gate instead of relying on it alone.
   { pattern: /^\/meetings\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
 
+  // Login-free vote link page (`/votes/:id#vote_token=...`, #4363) — single-segment anchored like `/meetings/:id` so
+  // `/votes/:id/edit`, `/votes/:id/present` and the reserved `create` (incl. `create;matrix` suffixes) stay `required`.
+  // The token lives in the URL fragment, which the server never sees; anonymous SSR renders a neutral shell and the
+  // browser decides token mode vs the authenticated permalink.
+  { pattern: /^\/votes\/(?!create(?:[/;]|$))[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+
   // Public group detail (`/groups/:id`, `/groups/not-found`) — same single-segment anchoring so
   // multi-segment paths don't fail-open onto the in-shell catch-all; anonymous access with optional
   // auth for membership enrichment. `/groups/create` IS a real writer-gated route (`COMMITTEE_ROUTES`
@@ -43,6 +49,17 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // authenticated subtree and falls through to the public `groups/:id`, so `create` never reaches the
   // protected shell. (Meetings has no such canMatch, which is why its matcher must exclude `create`.)
   { pattern: /^\/groups\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+
+  // Newsletter permalink (`/newsletters/:projectSlug/:id`, #4940) — optional so a signed-out link-preview
+  // crawler gets the server-rendered share preview (subject-only Open Graph tags) instead of the login
+  // page; a signed-out browser gets the guest reader modal (#5235). Anchored to exactly two
+  // segments, and the `my` lookahead (with `[/;]` for matrix suffixes, as `/votes/create` above) keeps
+  // the authenticated `/newsletters/my/:foundationSlug` on `required`; every 1- and 3-segment
+  // newsletters route (list, create, edit, analytics) falls through to `required` too.
+  { pattern: /^\/newsletters\/(?!my(?:[/;]|$))[^/]+\/[^/]+\/?$/, type: 'ssr', auth: 'optional' },
+  // Newsletter invite landing (#5235) — a signed-out invitee reads without an account; the signed
+  // token rides in the URL fragment and is checked by the public API, so the page itself is optional.
+  { pattern: /^\/newsletters\/invite\/?$/, type: 'ssr', auth: 'optional' },
 
   // Public contributor profile (LFXV2-2631) — `public` (not `optional`) skips bearer extraction so an
   // impersonation session never leaks here; anchored regex prevents `startsWith` fail-open onto `/u/...`.

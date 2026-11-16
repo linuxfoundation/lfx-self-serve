@@ -50,6 +50,7 @@ export * from './permissions.interface';
 
 // Meeting interfaces
 export * from './meeting.interface';
+export * from './meeting-list.interface';
 
 // Calendar interfaces
 export * from './calendar.interface';
@@ -117,6 +118,7 @@ export * from './server-request-context.interface';
 
 // Poll interfaces
 export * from './poll.interface';
+export * from './vote-presenter.interface';
 
 // Survey interfaces
 export * from './survey.interface';
@@ -220,6 +222,9 @@ export * from './health-metrics-overview.interface';
 // Health Metrics Training page interfaces
 export * from './health-metrics-training.interface';
 
+// Health Metrics shared table cells
+export * from './health-metrics-table.interface';
+
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
 
@@ -266,6 +271,7 @@ export * from './mktg-document-comments.interface';
 export * from './mktg-document-redraft.interface';
 export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
+export * from './mktg-portrait-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
 
@@ -277,8 +283,13 @@ export * from './org-memberships.interface';
 export * from './org-key-contacts.internal.interface';
 
 // Org People interfaces
+export * from './org-lens-time-range.interface';
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+export * from './org-maintainer-roles.internal.interface';
+
+// Org Lens commit filters (lfx-self-serve#4164, #4322)
+export * from './org-commit-filters.interface';
 
 // Org Lens per-caller cache stored shapes (GH-1906)
 export * from './org-lens-cache.interface';
@@ -311,6 +322,7 @@ export * from './person-detail-drawer.interface';
 
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
+export * from './org-contributions.internal.interface';
 
 // Project Lens — Participating Organizations (#2091)
 export * from './project-participating-orgs.interface';
@@ -318,6 +330,7 @@ export * from './project-participating-orgs.internal.interface';
 
 // Org Events interfaces
 export * from './org-events.interface';
+export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
@@ -398,6 +411,8 @@ export * from './org-lens-employer-affiliation.internal.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
 export * from './boilerplates.interface';
+export * from './brand-kit-icons.interface';
+export * from './brand-kit-portrait.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
@@ -439,11 +454,17 @@ export * from './log-scrub.interface';
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
 export * from './mktg-kit.interface';
+export * from './mktg-family-actions.interface';
 export * from './mktg-rebuild.interface';
 export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
 export * from './member-360.interface';
 export * from './mktg-family-export.interface';
+export * from './mktg-family-print.interface';
 export * from './aeo-geo.interface';
 export * from './mktg-last-intake.interface';
 export * from './mktg-project-roles.interface';
+export * from './uikit.interface';
+export * from './social-share.interface';
+export * from './org-training-view.interface';
+export * from './formation-pipeline.interface';

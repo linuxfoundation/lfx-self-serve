@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import type { Signal, WritableSignal } from '@angular/core';
 import { computed, signal } from '@angular/core';
@@ -17,6 +19,8 @@ import type {
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
   CampaignBriefApproveResult,
+  CampaignBriefEditRequest,
+  CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -27,6 +31,7 @@ import type {
   CampaignJobOutcome,
   CampaignListResult,
   CampaignProgramType,
+  CampaignSavedBriefOffer,
   CampaignTab,
   CampaignTabOption,
   ProjectContext,
@@ -37,18 +42,25 @@ import { CampaignRemovedKeywordsService } from '@services/campaign-removed-keywo
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
+import {
+  CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE,
+  CAMPAIGN_SURVEY_TYPES,
+  EVENT_TERM_GENERIC,
+  HUBSPOT_TEMPLATE_RENDER_LIMIT,
+  MAX_SPONSOR_NAME_LENGTH,
+} from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { map, NEVER, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 
 import { CampaignsComponent } from './campaigns.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
+import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
 /**
  * The controller spec covers what the server does with a brief. What is only observable here is
@@ -61,11 +73,11 @@ import { ImplementationTabComponent } from './components/implementation-tab/impl
 describe('CampaignsComponent brief persistence', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
 
-  let persistBrief: ReturnType<typeof vi.fn>;
+  let persistBrief: Mock;
   // Restoring an unapproved brief approves the stored row. Mocked like `persistBrief` so every
   // restore test keeps a stub instead of leaving a real request pending, and defaulted to a
   // successful approval so the tests written before the approve existed still read as before.
-  let approveBrief: ReturnType<typeof vi.fn>;
+  let approveBrief: Mock;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   /** A brief for a DIFFERENT event, to prove ownership is not shared across events. */
@@ -235,6 +247,44 @@ describe('CampaignsComponent brief persistence', () => {
 
     expect(setScope.mock.calls.at(-1)).toEqual(['foundation-b', '']);
     page.destroy();
+  });
+
+  /**
+   * #4756. The paid planner keeps the event URL in `?event=` and prefills it on creation. A program
+   * switch recreates that planner precisely so one program's brief cannot carry into the other, so
+   * the switch must drop the parameter before the new planner reads it.
+   */
+  describe('the event URL in the page address on a program switch', () => {
+    const EVENT_URL = 'https://events.example.com/kubecon-eu-2026';
+
+    function eventParam(): string | null {
+      return new URL(TestBed.inject(Location).path(), 'https://app.example').searchParams.get('event');
+    }
+
+    beforeEach(() => {
+      TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}`);
+    });
+
+    it('drops ?event= when the user switches program, keeping the other parameters', () => {
+      switchProgram('education');
+
+      expect(eventParam()).toBeNull();
+      expect(TestBed.inject(Location).path()).toContain('project=foundation-a');
+    });
+
+    it('keeps the #fragment when it drops ?event=', () => {
+      TestBed.inject(Location).replaceState(`/campaigns?project=foundation-a&event=${encodeURIComponent(EVENT_URL)}#plan`);
+
+      switchProgram('education');
+
+      expect(TestBed.inject(Location).path(true)).toBe('/campaigns?project=foundation-a#plan');
+    });
+
+    it("keeps ?event= when a restore adopts the brief's own program", () => {
+      restore({ ...brief, programType: 'education' } as CampaignBriefOutput, 'b-1', true, 'W/"1"');
+
+      expect(eventParam()).toBe(EVENT_URL);
+    });
   });
 
   it('switches to the Implementation tab before the save resolves', async () => {
@@ -889,7 +939,9 @@ describe('CampaignsComponent brief persistence', () => {
           await fixture.whenStable();
 
           expect(state().status).toBe('error');
-          expect(state().message).toBe('This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.');
+          expect(state().message).toBe(
+            'This saved brief could not be confirmed as approved. Reload and try again from the Plan tab (enter the event URL there if it is not already filled in).'
+          );
         }
       );
 
@@ -1555,6 +1607,251 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     /**
+     * #4731. A regenerated brief for an event that already has a saved one is refused as
+     * `unowned-brief-exists`, and Restore was the only escape — it discards the brief on screen, so
+     * its generated callouts and sitelinks could never be saved. Replace reads the stored row's id
+     * and ETag and re-saves the brief on screen as its owner, with the ETag as `If-Match`.
+     */
+    describe('Replace saved brief', () => {
+      let loadBrief: Mock;
+
+      function replace(): void {
+        (fixture.componentInstance as unknown as { onReplaceSavedBrief(): void }).onReplaceSavedBrief();
+      }
+
+      /**
+       * Saves run on a promise chain, so a save a guard failed to stop reaches the service only
+       * once that chain drains. Every "no save was sent" assertion waits for it, or it passes
+       * whether the guard exists or not.
+       */
+      async function drainSaves(): Promise<void> {
+        await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      }
+
+      function loaded(briefId: string | null, etag: string | null, status: CampaignBriefLoadResult['status'] = 'loaded'): CampaignBriefLoadResult {
+        return { status, briefId, brief: null, etag, approved: false } as unknown as CampaignBriefLoadResult;
+      }
+
+      beforeEach(async () => {
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+        TestBed.tick();
+        await fixture.whenStable();
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('marks the unowned refusal so the Implementation tab can offer Replace', () => {
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('unowned-brief-exists');
+      });
+
+      it('re-saves the brief on screen as the owner of the stored row, with its ETag as the precondition', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"6"', created: false, approved: true }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        // A validator was read, so no overwrite licence is granted: the save is a real If-Match.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+        expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+        expect(state().conflict).toBeUndefined();
+      });
+
+      it('replaces with fallback permission when the read returned no ETag', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', null)));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+
+      it('replaces a stored brief this build cannot open', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"', 'unreadable')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('creates when the stored brief has gone since the refusal', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'none')));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', null, null, false);
+      });
+
+      it('warns rather than overwrites when the stored brief moved after the read', async () => {
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+
+        replace();
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().conflict).toBe('stale-brief');
+        expect(state().message).toContain('Someone else changed this brief');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be read', async () => {
+        loadBrief.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const savesBefore = persistBrief.mock.calls.length;
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(logged).toHaveBeenCalledWith('[campaigns] Failed to read the saved brief to replace it', expect.any(HttpErrorResponse));
+        logged.mockRestore();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        // '' as the refusal carries it: a null id would re-open Create for a brief still unsaved.
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('was not replaced');
+      });
+
+      it('marks an older Restore offer superseded when the replacing save fails', async () => {
+        // The read may see a version newer than the offer Planning cached. If the replace then
+        // fails, restoring that offer must not pair its older content and approval with the newer
+        // ETag this read recorded -- that would enable Create against content never shown.
+        loadBrief.mockReturnValue(of({ ...loaded('stored-1', 'W/"5"'), approved: true }));
+        persistBrief.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        const tokenBefore = refreshToken();
+
+        replace();
+        await fixture.whenStable();
+        expect(refreshToken(), 'Planning was not told to re-read the row').toBeGreaterThan(tokenBefore);
+
+        const approvalsBefore = approveBrief.mock.calls.length;
+        // Read under the SAME token the replace's record took: the case a plain stamp waves through.
+        restoreAt(tokenBefore, brief, 'stored-1', true, 'W/"4"');
+        await fixture.whenStable();
+
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('changed after the copy shown here was read');
+        expect(approveBrief.mock.calls.length).toBe(approvalsBefore);
+      });
+
+      it('drops a read answered after a foundation switch but before the page reacts to it', async () => {
+        // The switch bumps the counters only once the `activeFoundationSlug` subscription runs, so
+        // the read is answered here BEFORE `TestBed.tick()`: only the slug check stands in that gap.
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        TestBed.tick();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the foundation changes while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-b', slug: 'foundation-b', name: 'Foundation B' } as ProjectContext, false);
+        TestBed.tick();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('does not hand the adopted id to a save queued before the replace', async () => {
+        // Saves are serialized and read ownership when they START. A save queued before the replace
+        // adopted the stored row must not inherit that id: it was never sent with it. The epoch bump
+        // is what refuses it, as a restore's does.
+        const first = new Subject<CampaignBriefPersistResult>();
+        persistBrief.mockReturnValueOnce(first).mockReturnValueOnce(NEVER).mockReturnValueOnce(NEVER);
+        proceed();
+        proceed();
+        await fixture.whenStable();
+        loadBrief.mockReturnValue(of(loaded('stored-1', 'W/"5"')));
+        const callsBefore = persistBrief.mock.calls.length;
+
+        // Driven directly: the button is hidden while a save is in flight, so this is the guard
+        // behind that, not a path a click reaches.
+        replace();
+        first.next({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' });
+        first.complete();
+        await fixture.whenStable();
+
+        expect(persistBrief.mock.calls[callsBefore]).toEqual([brief, 'foundation-a', null, null, false]);
+      });
+
+      it('cancels the read when the page is destroyed', () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        fixture.destroy();
+
+        expect(read.observed).toBe(false);
+        read.next(loaded('stored-1', 'W/"5"'));
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('drops the read when the brief is discarded while it is out', async () => {
+        const read = new Subject<CampaignBriefLoadResult>();
+        loadBrief.mockReturnValue(read);
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        switchProgram();
+        read.next(loaded('stored-1', 'W/"5"'));
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+      });
+
+      it('returns to idle when brief persistence turns out to be off', async () => {
+        loadBrief.mockReturnValue(of(loaded(null, null, 'off')));
+        const savesBefore = persistBrief.mock.calls.length;
+
+        replace();
+        await fixture.whenStable();
+        await drainSaves();
+
+        expect(persistBrief.mock.calls.length).toBe(savesBefore);
+        expect(state()).toMatchObject({ status: 'off', briefId: null });
+      });
+
+      it('treats an ETag omitted mid-rolling-deploy as absent, not as a validator', async () => {
+        // An older pod omits the field, so JSON yields `undefined` where the type says null. Left
+        // un-normalised it reads as "a validator was sent", withholding the overwrite licence and
+        // refusing the very save Replace exists for -- the case `onRestoreSavedBrief` normalises.
+        loadBrief.mockReturnValue(of({ status: 'loaded', briefId: 'stored-1', brief: null, approved: false } as unknown as CampaignBriefLoadResult));
+        persistBrief.mockReturnValueOnce(NEVER);
+
+        replace();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+      });
+    });
+
+    /**
      * A superseded save still created a row, and the next save of that event must be able to
      * name it.
      *
@@ -1943,8 +2240,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -1979,8 +2287,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2026,8 +2345,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2058,8 +2388,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2069,6 +2410,186 @@ describe('CampaignsComponent brief persistence', () => {
         const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
         expect(c.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * The Microsoft flight-date capability rides on the same read, asserted the same way: every
+       * other capability set the opposite way, so a component that read the wrong key would fail.
+       */
+      it('loads the microsoft schedule capability from its own key', async () => {
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: true,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: true,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
+        };
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBe(true);
+        expect(c.briefCampaignsBiddingEnabled()).toBe(false);
+        // Per caller, read from the same answer: a root caller's yes reaches the Implement tab.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBe(true);
+      });
+
+      /** The LinkedIn upload capability, read from its own key on the same terms as the one above. */
+      it('loads the linkedin upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: true,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsLinkedInAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBeNull();
+      });
+
+      /** The LinkedIn targeting-edit capability (#5546), read from its own key on the same terms as the one above. */
+      it('loads the linkedin targeting-edit capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: true,
+            microsoftAssetUploadEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsLinkedInTargetingEditEnabled(): boolean | null;
+          briefCampaignsLinkedInAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsLinkedInTargetingEditEnabled()).toBe(true);
+        expect(c.briefCampaignsLinkedInAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsLinkedInTargetingEditEnabled()).toBeNull();
+      });
+
+      /** The Microsoft upload capability, read from its own key on the same terms as the one above. */
+      it('loads the microsoft upload capability from its own key, and leaves it unknown when the read fails', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: false,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: true,
+            googleAudienceSegmentsEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsMicrosoftAssetUploadEnabled(): boolean | null;
+          briefCampaignsMetaAssetUploadEnabled(): boolean | null;
+          retryCreateCapabilities(): void;
+        };
+        expect(c.briefCampaignsMicrosoftAssetUploadEnabled()).toBe(true);
+        expect(c.briefCampaignsMetaAssetUploadEnabled()).toBe(false);
+
+        list.mockReturnValue(throwError(() => new Error('query service down')));
+        c.retryCreateCapabilities();
+        await fixture.whenStable();
+        expect(c.briefCampaignsMicrosoftAssetUploadEnabled()).toBeNull();
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
@@ -2089,8 +2610,17 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
+        const c = fixture.componentInstance as unknown as {
+          briefCampaignsBiddingEnabled(): boolean | null;
+          briefCampaignsMicrosoftScheduleEnabled(): boolean | null;
+          briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        // Unknown too, which the tab treats as off: no Microsoft dates, and the warning stays.
+        expect(c.briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Unknown, so the tab hides the audience section and blocks a draft that holds segments.
+        expect(c.briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
         expect(c.briefCampaignsCapabilityRead()).toBe('failed');
@@ -2141,8 +2671,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { selectTab(t: CampaignTab, owner: CampaignDeliveryType): void }).selectTab('planning', 'paid-marketing');
@@ -2187,8 +2728,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -2204,8 +2756,19 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          linkedInTargetingEditEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         capability.complete();
         await fixture.whenStable();
@@ -2237,8 +2800,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2271,8 +2845,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2300,8 +2885,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2342,8 +2938,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         (fixture.componentInstance as unknown as { loadCreateCapabilities(): void }).loadCreateCapabilities();
@@ -2385,8 +2992,19 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          linkedInTargetingEditEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         pending.complete();
         await fixture.whenStable();
@@ -2428,8 +3046,19 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: false,
           redditCreativeEnabled: false,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          linkedInTargetingEditEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         second.complete();
         await fixture.whenStable();
@@ -2455,8 +3084,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: false,
             redditCreativeEnabled: false,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
 
@@ -2469,8 +3109,92 @@ describe('CampaignsComponent brief persistence', () => {
         (fixture.componentInstance as unknown as { selectTab(t: string, o: string): void }).selectTab('implementation', 'paid-marketing');
         await fixture.whenStable();
 
-        expect(list.mock.calls.length).toBe(afterFirst);
+        // One more read: the Implement tab's list-only re-read of the campaigns already created
+        // (#4983). The capability is neither cleared nor read again by it.
+        expect(list.mock.calls.length).toBe(afterFirst + 1);
         expect((fixture.componentInstance as unknown as { briefCampaignsDemandGenEnabled(): boolean | null }).briefCampaignsDemandGenEnabled()).toBe(true);
+        expect((fixture.componentInstance as unknown as { briefCampaignsCapabilityRead(): string }).briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. The Implement tab's list read (its Retry, and after a create settles) reports a failure
+       * as unavailable for the panel, and leaves the capabilities that tab gates its controls on alone.
+       */
+      /** #4983: a switch invalidates the pending read, so it must also end the "checking" state itself. */
+      it("ends the Implement list's checking state when the foundation switches during a read", async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'brief-9', etag: 'W/"1"', created: true, approved: true }));
+        const pending = new Subject<CampaignListResult>();
+        vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(pending);
+        proceed();
+        await fixture.whenStable();
+        const loading = (): boolean => (fixture.componentInstance as unknown as { briefCampaignsLoading(): boolean }).briefCampaignsLoading();
+        expect(loading()).toBe(true);
+
+        selectFoundation('cncf');
+        await fixture.whenStable();
+
+        expect(loading(), 'the panel would say "Checking…" for good').toBe(false);
+      });
+
+      it('marks the Implement list unavailable on a failed re-read without blanking the capability', async () => {
+        const list = vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(
+          of({
+            enabled: true,
+            campaigns: [],
+            possiblyStale: false,
+            statusToggleEnabled: false,
+            demandGenEnabled: true,
+            googleChannelsEnabled: false,
+            googleCreativeEnabled: false,
+            redditCreativeEnabled: false,
+            redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
+            googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
+            biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
+          })
+        );
+        await withSavedBrief();
+        await fixture.whenStable();
+
+        list.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+        (fixture.componentInstance as unknown as { refreshImplementCampaigns(): void }).refreshImplementCampaigns();
+        await fixture.whenStable();
+
+        const page = fixture.componentInstance as unknown as {
+          briefCampaignsUnavailable(): boolean;
+          briefCampaignsDemandGenEnabled(): boolean | null;
+          briefCampaignsCapabilityRead(): string;
+        };
+        expect(page.briefCampaignsUnavailable()).toBe(true);
+        expect(page.briefCampaignsDemandGenEnabled(), 'a list-only read blanked the create capability').toBe(true);
+        expect(page.briefCampaignsCapabilityRead()).toBe('ready');
+      });
+
+      /**
+       * #4983. Proceeding with a newly generated brief drops the PREVIOUS brief's campaign list at once,
+       * so the Implement tab never shows another brief's campaigns while (or instead of, on a refused
+       * save) this brief's own read.
+       */
+      it('drops the previous brief campaigns when a new brief is proceeded', async () => {
+        const campaigns = (): unknown => (fixture.componentInstance as unknown as { briefCampaigns(): unknown }).briefCampaigns();
+        (fixture.componentInstance as unknown as { briefCampaigns: { set(v: unknown): void } }).briefCampaigns.set([
+          { id: 'old', platform: 'google-ads', status: 'active' },
+        ]);
+        persistBrief.mockReturnValue(NEVER);
+
+        proceed(otherBrief);
+
+        expect(campaigns(), "the previous brief's campaigns stayed on Implement").toBeNull();
       });
 
       it('clears the previous brief campaigns when the foundation changes', async () => {
@@ -2484,8 +3208,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2503,8 +3238,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         selectFoundation('cncf');
@@ -2531,8 +3277,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: true,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2545,6 +3302,9 @@ describe('CampaignsComponent brief persistence', () => {
         await fixture.whenStable();
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
+        expect((c as unknown as { briefCampaignsMicrosoftScheduleEnabled(): boolean | null }).briefCampaignsMicrosoftScheduleEnabled()).toBeNull();
+        // Per caller AND per foundation: a root answer for one foundation must not carry to the next.
+        expect((c as unknown as { briefCampaignsGoogleAudienceSegmentsEnabled(): boolean | null }).briefCampaignsGoogleAudienceSegmentsEnabled()).toBeNull();
         expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
@@ -2568,8 +3328,19 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          linkedInTargetingEditEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
 
@@ -2602,8 +3373,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2636,8 +3418,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         await withSavedBrief();
@@ -2673,8 +3466,19 @@ describe('CampaignsComponent brief persistence', () => {
           googleCreativeEnabled: true,
           redditCreativeEnabled: true,
           redditAssetUploadEnabled: false,
+          redditConversionPixelEnabled: false,
           googleAssetUploadEnabled: false,
+          metaCreativeEnabled: false,
+          metaAssetUploadEnabled: false,
+          linkedInAssetUploadEnabled: false,
+          linkedInTargetingEditEnabled: false,
+          microsoftAssetUploadEnabled: false,
           biddingEnabled: false,
+          microsoftScheduleEnabled: false,
+          twitterCreateEnabled: false,
+          metaInstagramDsaEnabled: false,
+          googleAudienceSegmentsEnabled: false,
+          googleGeoSearchEnabled: false,
         });
         await fixture.whenStable();
         expect(optimizeText()).toContain('Brief B campaign');
@@ -2741,8 +3545,19 @@ describe('CampaignsComponent brief persistence', () => {
             googleCreativeEnabled: true,
             redditCreativeEnabled: true,
             redditAssetUploadEnabled: false,
+            redditConversionPixelEnabled: false,
             googleAssetUploadEnabled: false,
+            metaCreativeEnabled: false,
+            metaAssetUploadEnabled: false,
+            linkedInAssetUploadEnabled: false,
+            linkedInTargetingEditEnabled: false,
+            microsoftAssetUploadEnabled: false,
             biddingEnabled: false,
+            microsoftScheduleEnabled: false,
+            twitterCreateEnabled: false,
+            metaInstagramDsaEnabled: false,
+            googleAudienceSegmentsEnabled: false,
+            googleGeoSearchEnabled: false,
           })
         );
         load();
@@ -2753,12 +3568,375 @@ describe('CampaignsComponent brief persistence', () => {
       });
     });
   });
+
+  /**
+   * #4983. The saved brief can be reopened in the Plan editor and saved back over its own row, from
+   * the restore offer, from the unowned refusal on Implement, or from Edit brief on Implement.
+   */
+  describe('open the saved brief to edit', () => {
+    const offer = (readAt = 0, etag: string | null = 'W/"3"'): CampaignSavedBriefOffer => ({ brief, briefId: 'stored-1', etag, approved: true, readAt });
+
+    function openFromOffer(o: CampaignSavedBriefOffer): void {
+      (fixture.componentInstance as unknown as { onOpenSavedBriefToEdit(o: CampaignSavedBriefOffer): void }).onOpenSavedBriefToEdit(o);
+    }
+
+    function editRequest(): CampaignBriefEditRequest | null {
+      return (fixture.componentInstance as unknown as { planningEditRequest(): CampaignBriefEditRequest | null }).planningEditRequest();
+    }
+
+    // The foundation is persisted to a cookie, which outlives this TestBed; put back whatever was
+    // there so the suites after this one read the foundation they were written against.
+    let previousFoundation: ProjectContext | null = null;
+
+    beforeEach(async () => {
+      const context = TestBed.inject(ProjectContextService);
+      previousFoundation = context.selectedFoundation();
+      context.setFoundation({ uid: 'f-a', slug: 'foundation-a', name: 'Foundation A' } as ProjectContext, false);
+      TestBed.tick();
+      await fixture.whenStable();
+    });
+
+    afterEach(() => {
+      const context = TestBed.inject(ProjectContextService);
+      if (previousFoundation === null) {
+        context.clearFoundation(false);
+      } else {
+        context.setFoundation(previousFoundation, false);
+      }
+    });
+
+    it('records ownership from the offer, so the edited brief is saved over the stored row with its ETag as If-Match', async () => {
+      openFromOffer(offer());
+      expect(editRequest()?.brief).toBe(brief);
+      expect(tab()).toBe('planning');
+
+      // The edited brief comes back through Proceed, exactly as Planning emits it.
+      const edited = { ...brief, keywords: [{ term: 'edited', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', created: false, approved: true }));
+      proceed(edited);
+      await fixture.whenStable();
+
+      // A replace of THIS row, conditioned on the version the user opened. `saveBrief` approves it
+      // in the same call, which is what re-enables Create.
+      expect(persistBrief).toHaveBeenLastCalledWith(edited, 'foundation-a', 'stored-1', 'W/"3"', false);
+      expect(state()).toMatchObject({ status: 'saved', briefId: 'stored-1', approved: true });
+      expect(tab()).toBe('implementation');
+    });
+
+    it('grants the overwrite licence only when the offer carried no validator, as a restore does', async () => {
+      openFromOffer(offer(0, null));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', null, true);
+    });
+
+    it('keeps a newer validator this session holds for the same content (an approval moved only the ETag)', async () => {
+      // This session restored the row and approved it: same bytes, newer ETag.
+      approveBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true }));
+      restore(brief, 'stored-1', false, 'W/"3"');
+      await fixture.whenStable();
+
+      // Planning still offers its cached pre-approval read.
+      openFromOffer(offer(0, 'W/"3"'));
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+
+      expect(persistBrief).toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
+    });
+
+    it("re-reads the row instead of opening an offer older than this session's last save", async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      restore(brief, 'stored-1', true, 'W/"3"');
+      proceed();
+      await fixture.whenStable();
+
+      // Planning's offer was read BEFORE that save, so it holds bytes this session already replaced.
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
+      openFromOffer(offer(0, 'W/"3"'));
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+      expect(editRequest()?.brief, 'the stale offer was opened instead of the stored brief').toBe(current);
+
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed(current);
+      await fixture.whenStable();
+      expect(persistBrief).toHaveBeenLastCalledWith(current, 'foundation-a', 'stored-1', 'W/"9"', false);
+    });
+
+    it('waits for a save still running, then re-reads, rather than opening the offer under it', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+
+      openFromOffer(offer(0, 'W/"0"'));
+      await fixture.whenStable();
+      expect(loadBrief, 'the row was read before the running save landed').not.toHaveBeenCalled();
+      expect(editRequest()).toBeNull();
+
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await fixture.whenStable();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief).toBe(current);
+    });
+
+    it('keeps an approval still in flight for the same row, so its new ETag is the precondition', async () => {
+      const approval = new Subject<CampaignBriefApproveResult>();
+      approveBrief.mockReturnValueOnce(approval);
+      restore(brief, 'stored-1', false, 'W/"3"');
+      await fixture.whenStable();
+
+      // Open to edit on the same, unchanged content while the approval is out.
+      openFromOffer(offer(0, 'W/"3"'));
+      approval.next({ enabled: true, briefId: 'stored-1', etag: 'W/"4"', approved: true });
+      approval.complete();
+      await fixture.whenStable();
+
+      persistBrief.mockReturnValueOnce(NEVER);
+      proceed();
+      await fixture.whenStable();
+      expect(persistBrief, "the approval's ETag was dropped").toHaveBeenLastCalledWith(brief, 'foundation-a', 'stored-1', 'W/"4"', false);
+    });
+
+    it('drops a pending re-read when Planning discards its brief meanwhile', async () => {
+      const save = new Subject<CampaignBriefPersistResult>();
+      persistBrief.mockReturnValueOnce(save);
+      proceed();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'b-new', etag: 'W/"1"', approved: true }));
+      openFromOffer(offer(0, 'W/"0"'));
+
+      // New Brief / Generate in Planning while the read waits on the running save.
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      save.next({ enabled: true, briefId: 'b-new', etag: 'W/"1"', created: true, approved: true });
+      save.complete();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalled();
+      expect(editRequest(), 'the late read replaced what Planning holds now').toBeNull();
+    });
+
+    it('re-reads the row on Edit brief once ownership moved past the brief on Implement', async () => {
+      // Implement holds a brief handed over earlier...
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // ...then Open to edit records a newer account of the same row.
+      openFromOffer(offer(5, 'W/"8"'));
+      const current = { ...brief, keywords: [{ term: 'current', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief: current, briefId: 'stored-1', etag: 'W/"8"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+
+      expect(loadBrief).toHaveBeenCalledTimes(1);
+      expect(editRequest()?.brief, "Implement's older copy was reopened under the newer validator").toBe(current);
+    });
+
+    it('says why Edit brief opened nothing when its re-read fails, rather than reopening the older copy', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await fixture.whenStable();
+      logged.mockRestore();
+
+      expect(editRequest(), "Implement's older copy was opened under the newer validator").toBeNull();
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).toContain('could not be read');
+    });
+
+    it('does not re-read on Edit brief after the brief on Implement was itself saved over the row', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      // An Open to edit bumped the epoch, then Implement's own brief was saved over the row again
+      // (as Replace saved brief does), so the row holds exactly Implement's bytes.
+      openFromOffer(offer(5, 'W/"8"'));
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"9"', created: false, approved: true }));
+      (fixture.componentInstance as unknown as { persistBrief(b: CampaignBriefOutput): void }).persistBrief(
+        (fixture.componentInstance as unknown as { briefOutput(): CampaignBriefOutput }).briefOutput()
+      );
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      const loadBrief = vi
+        .spyOn(TestBed.inject(CampaignService), 'loadBrief')
+        .mockReturnValue(of({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"9"', approved: true }));
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      // A re-read would start only once the save queue drains, so wait for it before asserting none ran.
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+
+      expect(loadBrief, 'Edit brief re-read a row that holds exactly the brief on Implement').not.toHaveBeenCalled();
+      expect(editRequest()?.brief).toEqual(brief);
+    });
+
+    it('drops a pending Edit brief re-read once a create job starts, so it cannot leave the running job', async () => {
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (
+        fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void }; selectedTab: { set(v: string): void } }
+      ).planningEditRequest.set(null);
+      (fixture.componentInstance as unknown as { selectedTab: { set(v: string): void } }).selectedTab.set('implementation');
+      const read = new Subject<CampaignBriefLoadResult>();
+      vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockReturnValue(read);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      (fixture.componentInstance as unknown as { onCreateStarted(): void }).onCreateStarted();
+      read.next({ status: 'loaded', brief, briefId: 'stored-1', etag: 'W/"8"', approved: true });
+      read.complete();
+      await fixture.whenStable();
+
+      expect(editRequest(), 'the late read opened Planning over a running create').toBeNull();
+      expect(tab()).toBe('implementation');
+    });
+
+    it('says why Edit brief opened nothing when there is no foundation to read under', async () => {
+      // No foundation resolved for the whole flow: the handover and the Open to edit file under the same
+      // foundation-less key, so the epoch moves and Edit brief must re-read, which it cannot do.
+      vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+      persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: 'stored-1', etag: 'W/"2"', created: false, approved: true }));
+      proceed();
+      await (fixture.componentInstance as unknown as { persistChain: Promise<void> }).persistChain;
+      await fixture.whenStable();
+      openFromOffer(offer(5, 'W/"8"'));
+      (fixture.componentInstance as unknown as { planningEditRequest: { set(v: unknown): void } }).planningEditRequest.set(null);
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+
+      expect((fixture.componentInstance as unknown as { editBriefError(): string | null }).editBriefError()).not.toBeNull();
+    });
+
+    it('drops the X fields typed on Implement, which belong to the brief that was there', () => {
+      const flag = (): boolean => (fixture.componentInstance as unknown as { twitterCarryDiscarded: boolean }).twitterCarryDiscarded;
+      persistBrief.mockReturnValueOnce(NEVER);
+      // A proceed clears the flag, so the next one would carry the X fields over.
+      proceed();
+      expect(flag()).toBe(false);
+
+      openFromOffer(offer());
+      expect(flag(), 'the X draft of the brief on Implement would ride onto the stored brief').toBe(true);
+    });
+
+    it('drops the edit request when Planning discards its brief, and on a restore', () => {
+      openFromOffer(offer());
+      (fixture.componentInstance as unknown as { onPlanningBriefDiscarded(): void }).onPlanningBriefDiscarded();
+      expect(editRequest()).toBeNull();
+
+      openFromOffer(offer());
+      restore(brief, 'stored-1', true, 'W/"3"');
+      expect(editRequest()).toBeNull();
+    });
+
+    it('reopens the Implement brief in the editor on Edit brief, with a fresh request each time', () => {
+      proceed();
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      const first = editRequest();
+      expect(first?.brief).toEqual(brief);
+      expect(tab()).toBe('planning');
+
+      (fixture.componentInstance as unknown as { onEditBriefFromImplement(): void }).onEditBriefFromImplement();
+      expect(editRequest()?.requestId).not.toBe(first?.requestId);
+    });
+
+    describe('from the unowned refusal on Implement', () => {
+      let loadBrief: Mock;
+      const stored = { ...brief, keywords: [{ term: 'stored', matchType: 'Exact', intentLevel: 'High', notes: '' }] } as CampaignBriefOutput;
+
+      function openFromImplement(): void {
+        (fixture.componentInstance as unknown as { onOpenSavedBriefFromImplement(): void }).onOpenSavedBriefFromImplement();
+      }
+
+      beforeEach(async () => {
+        loadBrief = vi.fn();
+        vi.spyOn(TestBed.inject(CampaignService), 'loadBrief').mockImplementation(loadBrief);
+        persistBrief.mockReturnValueOnce(of({ enabled: true, briefId: '', etag: null, created: false, approved: false, conflict: 'unowned-brief-exists' }));
+        proceed();
+        await fixture.whenStable();
+      });
+
+      it('words the refusal around the two buttons under it', () => {
+        expect(state().conflict).toBe('unowned-brief-exists');
+        expect(state().message).toBe(CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE);
+        expect(state().message).toContain('Open the saved brief to edit it');
+      });
+
+      it('reads the stored brief, takes ownership of it, and opens it in the editor', async () => {
+        loadBrief.mockReturnValue(of({ status: 'loaded', brief: stored, briefId: 'stored-1', etag: 'W/"5"', approved: true }));
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).toHaveBeenCalledWith('kubecon-eu-2026', 'foundation-a', 'paid-marketing', '');
+        expect(editRequest()?.brief).toBe(stored);
+        expect(tab()).toBe('planning');
+
+        persistBrief.mockReturnValueOnce(NEVER);
+        proceed(stored);
+        await fixture.whenStable();
+        expect(persistBrief).toHaveBeenLastCalledWith(stored, 'foundation-a', 'stored-1', 'W/"5"', false);
+      });
+
+      it('keeps the refusal, and Create blocked, when the open cannot even start', async () => {
+        // No foundation to read under: a failed open, not persistence going dark.
+        vi.spyOn(fixture.componentInstance as unknown as { activeFoundationSlug(): string }, 'activeFoundationSlug').mockReturnValue('');
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(loadBrief).not.toHaveBeenCalled();
+        expect(state(), 'the unowned refusal was cleared and Create re-enabled').toMatchObject({
+          status: 'error',
+          briefId: '',
+          conflict: 'unowned-brief-exists',
+        });
+        expect(state().message).toContain('could not be read');
+      });
+
+      it('keeps Replace on offer when the stored brief cannot be opened', async () => {
+        loadBrief.mockReturnValue(of({ status: 'unreadable', brief: null, briefId: 'stored-1', etag: 'W/"5"', approved: false }));
+
+        openFromImplement();
+        await fixture.whenStable();
+
+        expect(editRequest()).toBeNull();
+        expect(state()).toMatchObject({ status: 'error', briefId: '', conflict: 'unowned-brief-exists' });
+        expect(state().message).toContain('could not be opened');
+      });
+    });
+  });
 });
 
 describe('CampaignsComponent brief persistence — queue state', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
   const otherBrief = { eventDetails: { slug: 'oss-na-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
-  let persistBrief: ReturnType<typeof vi.fn>;
+  let persistBrief: Mock;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   beforeEach(async () => {
@@ -3049,6 +4227,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestCopyError: WritableSignal<string>;
     canGenerateAbTestCopy: Signal<boolean>;
     selectedEmailStage: Signal<string>;
+    selectedEmailSegment: Signal<string | undefined>;
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
@@ -3062,8 +4241,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
         programType: { setValue(v: CampaignProgramType): void };
-        emailType: { disabled: boolean };
-        emailSegment: { disabled: boolean };
+        emailType: { disabled: boolean; value: string };
+        emailSegment: { disabled: boolean; setValue(v: string): void };
       };
     };
     emailAudienceWriteInFlight: WritableSignal<boolean>;
@@ -3359,6 +4538,21 @@ describe('CampaignsComponent — email delivery channel', () => {
     expect(byTestId('campaigns-email-planning-panel')?.style.display).not.toBe('none');
   });
 
+  it('gives the Survey surface a fresh planner, so the Email brief cannot be proceeded onto it', () => {
+    selectEmail();
+    // The component host itself: a tab button shares the planner's test id.
+    const planner = (): Element | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email"] lfx-planning-tab');
+    const before = planner();
+    expect(before).not.toBeNull();
+
+    internals().selectorForm.controls.deliveryType.setValue('survey');
+    fixture.detectChanges();
+
+    const after = planner();
+    expect(after).not.toBeNull();
+    expect(after, 'a surface switch recreates the planner').not.toBe(before);
+  });
+
   it('still mounts the fetch-on-init tabs lazily', () => {
     // The counterpart constraint, and the reason only Planning was hoisted out of the @switch.
     // Implementation, Insights and Optimization all fetch in `ngOnInit` — metrics reads and
@@ -3432,7 +4626,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register', ctaUrl: '' };
 
-    let persist: ReturnType<typeof vi.fn>;
+    let persist: Mock;
 
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -3789,6 +4983,69 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(internals().generatedDestinations()).toEqual(['https://events.linuxfoundation.org/kubecon-eu-2026/']);
       expect(internals().emailBodyHtmlPreview()).toContain('href="https://events.linuxfoundation.org/kubecon-eu-2026/register"');
+    });
+
+    /**
+     * #3306. The event page's own links keep their href in the preview when they are on the CTA's host
+     * or an LF-owned domain; an off-host one keeps its words only. The controller judges the staged
+     * body with the same helper over `emailExtractedLinks`, which the stage request carries.
+     */
+    it('keeps vetted event-page links in the preview and strips an off-host one', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+          agendaUrl: 'https://evil.example/agenda',
+          venueUrl: 'https://training.linuxfoundation.org/venue',
+          sponsorshipUrl: '',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body:
+          '<p><a href="https://kubecon.example/eu/cfp">CFP</a> <a href="https://evil.example/agenda">Agenda</a> ' +
+          '<a href="https://training.linuxfoundation.org/venue">Venue</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      const preview = internals().emailBodyHtmlPreview();
+      expect(preview).toContain('href="https://kubecon.example/eu/cfp"');
+      expect(preview).toContain('href="https://training.linuxfoundation.org/venue"');
+      expect(preview).not.toContain('evil.example');
+      expect(preview).toContain('Agenda');
+    });
+
+    it('strips an LF-owned link the event page did not publish: the preview narrows the service pass', () => {
+      // The service's first pass keeps any LF-owned link, since it cannot see the event page. The
+      // preview must narrow that back to the page's own links, or an invented LF address survives.
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p><a href="https://training.linuxfoundation.org/invented">Invented</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://kubecon.example/eu/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailBodyHtmlPreview()).not.toContain('training.linuxfoundation.org');
+      expect(internals().emailBodyHtmlPreview()).toContain('Invented');
     });
 
     it('shows a refused CTA as plain text instead of dropping it silently', () => {
@@ -4414,7 +5671,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       version: 1,
     };
 
-    let persist: ReturnType<typeof vi.fn>;
+    let persist: Mock;
 
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -5694,7 +6951,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   describe('email staging trigger (LFXV2-3201)', () => {
     // Scoped to THIS block: the outer `persistBrief` spy belongs to the first describe and is
     // not in scope here.
-    let persistBrief: ReturnType<typeof vi.fn>;
+    let persistBrief: Mock;
 
     beforeEach(() => {
       persistBrief = vi.fn();
@@ -5919,6 +7176,51 @@ describe('CampaignsComponent — email delivery channel', () => {
       // an exact-arity matcher, and the selector defaults to "All audiences" -- so a default
       // generate must travel with no segment, exactly as it did before the field existed.
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo', undefined);
+    });
+
+    it('defaults the Survey & Report dropdown to Survey Promo -- the control, not just the planner', () => {
+      internals().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+
+      // The dropdown renders the CONTROL. The signal alone fed the planner and left the dropdown
+      // showing the email surface's id, which names no survey option, so it read as unselected.
+      expect(internals().selectorForm.controls.emailType.value).toBe('survey-promo');
+      expect(internals().selectedEmailTypeId()).toBe('survey-promo');
+      expect(internals().selectedEmailStage()).toBe('Survey Promo');
+    });
+
+    it('puts the email default back on the dropdown when returning from Survey & Report', () => {
+      internals().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+      selectEmail();
+
+      expect(internals().selectorForm.controls.emailType.value).toBe(internals().selectedEmailTypeId());
+      expect(internals().selectedEmailStage()).not.toBe('Survey Promo');
+    });
+
+    it('does not offer the audience segment on Survey & Report, and sends none from it', async () => {
+      selectEmail();
+      // Chosen on the email surface first: hiding the picker must also stop this riding along.
+      internals().selectorForm.controls.emailSegment.setValue('alumni');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-segment-picker"]'), 'email keeps the picker').not.toBeNull();
+      expect(internals().selectedEmailSegment()).toBe('alumni');
+
+      internals().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-segment-picker"]'), 'survey hides the picker').toBeNull();
+      expect(internals().selectedEmailSegment()).toBeUndefined();
+
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } }) as never);
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-9');
+
+      await internals().onGenerateEmailCopy();
+
+      // No urgency variant: campaign-service writes it as an event invite.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-9', 'Survey Promo', undefined, undefined);
     });
 
     it('ranks templates matching the selected type first, without removing any', () => {
@@ -6722,6 +8024,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.abTestEnabled).toBeUndefined();
       expect(cfg?.subjectB).toBeUndefined();
       expect(cfg?.bodyHtmlB).toBeUndefined();
+    });
+
+    /** #3306: the event page's links ride with the stage request, so the controller can judge the body as the preview did. */
+    it('sends the event-page links with the stage request as secondaryLinkUrls', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://kubecon.example/eu/',
+          cfpUrl: 'https://kubecon.example/eu/cfp',
+          agendaUrl: '',
+          venueUrl: 'https://training.linuxfoundation.org/venue',
+          sponsorshipUrl: 'not a url',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: 'https://kubecon.example/eu/' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.secondaryLinkUrls).toEqual(['https://kubecon.example/eu/cfp', 'https://training.linuxfoundation.org/venue']);
     });
 
     it('omits the CTA when the registration URL is not an http(s) URL', async () => {
@@ -7849,6 +9180,1473 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
   });
 
+  /**
+   * The Survey & Report series: one brief per send, written in one pass, staged as drafts, then
+   * handed to campaign-service as ONE disabled workflow.
+   */
+  describe('survey email sequence', () => {
+    interface SequenceInternals {
+      selectorForm: Internals['selectorForm'];
+      emailBriefOutput: WritableSignal<CampaignBriefOutput | null>;
+      emailBriefId: WritableSignal<string>;
+      emailAudience: WritableSignal<CampaignAudience | null>;
+      selectedEmailTemplateId: WritableSignal<string>;
+      emailTemplates: WritableSignal<HubSpotMarketingEmail[] | null>;
+      selectedEmailStage: Signal<string | undefined>;
+      surveyEmailCount: WritableSignal<number>;
+      surveySequenceStages: Signal<readonly string[]>;
+      surveySequenceSends: WritableSignal<
+        readonly { stage: string; label: string; briefId: string; copy: EmailBriefCopy; draftUrl?: string; draftId?: string }[]
+      >;
+      surveySequenceState: Signal<string>;
+      surveySequenceError: Signal<string>;
+      sequenceStagingState: Signal<string>;
+      sequenceStagingMessage: Signal<string>;
+      sequenceStagedBriefIds: WritableSignal<readonly string[]>;
+      sendWorkflowState: Signal<string>;
+      sendWorkflowError: Signal<string>;
+      canBuildSequenceWorkflow: Signal<boolean>;
+      surveySequenceBodies: Signal<ReadonlyMap<string, string>>;
+      surveySequenceButtons: Signal<ReadonlyMap<string, { text: string; url: string }>>;
+      onSurveyEmailCountChange(count: number): void;
+      sequenceDatesForm: { controls: Record<string, { setValue(v: string): void }> };
+      sequenceUnresolvedBriefIds: WritableSignal<readonly string[]>;
+      surveySequenceWarning: Signal<string>;
+      canStageSequence: Signal<boolean>;
+      sendWorkflowResult: Signal<{ editUrl: string } | null>;
+      onGenerateSurveySequence(): Promise<void>;
+      onStageSequenceSends(): Promise<void>;
+      onBuildSequenceWorkflow(): Promise<void>;
+      onSelectEmailType(typeId: string): void;
+      emailAudienceWriteInFlight: WritableSignal<boolean>;
+      emailChannelEnabled: WritableSignal<boolean | null>;
+      surveyTemplateHint: Signal<string>;
+      surveyTemplateProblem: Signal<string>;
+      audienceLockedByStaging: Signal<boolean>;
+      onRetrySurveyTemplates(): void;
+      canGenerateSurveySequence: Signal<boolean>;
+      emailStaging: WritableSignal<'idle' | 'staging' | 'done' | 'error'>;
+      canStageEmail: Signal<boolean>;
+      selectedEmailTab: WritableSignal<string>;
+      onStartSeriesOver(): void;
+      surveySeriesStarted: Signal<boolean>;
+      surveySeriesRestarted: Signal<boolean>;
+      emailCopy: WritableSignal<unknown>;
+      onStageEmailSend(): Promise<void>;
+      canGenerateEmailCopy: Signal<boolean>;
+      onEmailProceedFromPlanning(brief: unknown): void;
+      sequenceNeedsRestart: Signal<boolean>;
+      sendWorkflowUnconfirmed: Signal<boolean>;
+      selectedEmailTypeId: Signal<string>;
+    }
+    const seq = (): SequenceInternals => fixture.componentInstance as unknown as SequenceInternals;
+
+    const surveyBrief = {
+      deliveryType: 'survey',
+      emailStage: 'Survey Promo',
+      eventDetails: {
+        name: '2026 Cloud Native Survey',
+        slug: 'cloud-native-2026',
+        countryCode: '',
+        registrationUrl: 'https://surveys.example.com/r/cloud-native-2026',
+        sourceText: '2026 Cloud Native Survey',
+      },
+    } as unknown as CampaignBriefOutput;
+
+    const copyFor = (stage: string): EmailBriefCopy =>
+      ({ subject: `${stage} subject`, preheader: `${stage} preheader`, body: `<p>${stage} body</p>`, cta: 'Take the survey', ctaUrl: '' }) as EmailBriefCopy;
+
+    const selectSurvey = (): void => {
+      seq().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+    };
+
+    let service: CampaignService;
+    let persistBrief: MockInstance;
+    let generateEmailCopy: MockInstance;
+
+    beforeEach(() => {
+      sessionStorage.clear();
+      service = TestBed.inject(CampaignService);
+      let next = 0;
+      persistBrief = vi
+        .spyOn(service, 'persistBrief')
+        .mockImplementation(() => of({ enabled: true, briefId: `brief-${++next}`, etag: '"1"', approved: true, created: true }) as never);
+      generateEmailCopy = vi
+        .spyOn(service, 'generateEmailCopy')
+        .mockImplementation((_project: string, _briefId: string, stage?: string) => of({ enabled: true, copy: copyFor(stage ?? '') }) as never);
+      vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [] }) as never);
+    });
+
+    it('offers one email or the full promo, reminder and closing series', () => {
+      selectSurvey();
+      expect(seq().surveySequenceStages()).toEqual(['Survey Promo']);
+
+      seq().onSurveyEmailCountChange(3);
+      expect(seq().surveySequenceStages()).toEqual(['Survey Promo', 'Survey Reminder', 'Survey Closing']);
+
+      // A report has no series, whatever count was chosen for the survey.
+      seq().onSelectEmailType('report-promo');
+      expect(seq().surveySequenceStages()).toEqual(['Report Promo']);
+    });
+
+    it('drops the email brief when switching to the survey surface, a different brief identity', () => {
+      selectEmail();
+      seq().emailBriefOutput.set(exampleBrief);
+      seq().emailBriefId.set('email-brief-1');
+
+      selectSurvey();
+
+      // Kept, the survey generate and stage would address the EMAIL brief's row.
+      expect(seq().emailBriefId()).toBe('');
+      expect(seq().emailBriefOutput()).toBeNull();
+      expect(seq().selectedEmailStage()).toBe('Survey Promo');
+    });
+
+    it('writes one brief per send under its own stage, in send order', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+
+      await seq().onGenerateSurveySequence();
+
+      const persisted = persistBrief.mock.calls.map((call) => (call[0] as CampaignBriefOutput).emailStage);
+      expect(persisted).toEqual(['Survey Promo', 'Survey Reminder', 'Survey Closing']);
+      expect(persistBrief.mock.calls.every((call) => (call[0] as CampaignBriefOutput).deliveryType === 'survey')).toBe(true);
+      expect(generateEmailCopy.mock.calls.map((call) => [call[1], call[2]])).toEqual([
+        ['brief-1', 'Survey Promo'],
+        ['brief-2', 'Survey Reminder'],
+        ['brief-3', 'Survey Closing'],
+      ]);
+      expect(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      ).toEqual(['brief-1', 'brief-2', 'brief-3']);
+      expect(seq().surveySequenceState()).toBe('done');
+    });
+
+    it('keeps the sends already written when a later one fails, and says which', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      generateEmailCopy.mockImplementation((_p: string, _b: string, stage?: string) =>
+        stage === 'Survey Closing' ? (of({ enabled: true, error: 'model refused' }) as never) : (of({ enabled: true, copy: copyFor(stage ?? '') }) as never)
+      );
+
+      await seq().onGenerateSurveySequence();
+
+      expect(seq().surveySequenceState()).toBe('error');
+      expect(seq().surveySequenceError()).toBe('model refused');
+      expect(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.stage)
+      ).toEqual(['Survey Promo', 'Survey Reminder']);
+      // On screen for review, but not stageable or buildable: the series is missing its closing.
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2']);
+      seq().sequenceDatesForm.controls['date-0'].setValue('2026-11-02');
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
+      expect(seq().canStageSequence(), 'stage a partial series').toBe(false);
+      expect(seq().canBuildSequenceWorkflow(), 'build a partial series').toBe(false);
+    });
+
+    it('shares a multi-list audience with the later sends as the same lists, suppression included', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          of({
+            enabled: true,
+            audiences:
+              briefId === 'brief-1'
+                ? [
+                    // NEWEST FIRST, as campaign-service lists them: the current audience is the
+                    // first built row, not the last.
+                    {
+                      id: 'aud-2',
+                      platform: 'hubspot',
+                      status: 'built',
+                      platformMasterListId: '31027',
+                      includeListIds: ['31027', '31028'],
+                      suppressionListIds: ['201'],
+                    },
+                    { id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '30001', suppressionListIds: ['200'] },
+                  ]
+                : [],
+          }) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      // Not just the first list as a master: the workflow refuses briefs whose audiences differ.
+      expect(attach).toHaveBeenCalledTimes(2);
+      expect(attach.mock.calls[0][1]).toMatchObject({ briefId: 'brief-2', includeListIds: ['31027', '31028'], suppressionListIds: ['201'] });
+      expect(attach.mock.calls[0][1]).not.toHaveProperty('masterListId');
+    });
+
+    it("shows each send's button as it will be staged, beside its body", () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().surveySequenceSends.set([
+        {
+          stage: 'Survey Promo',
+          label: 'Survey Promotion',
+          briefId: 'brief-1',
+          copy: { ...copyFor('Survey Promo'), ctaUrl: 'https://surveys.example.com/r/cloud-native-2026' },
+        },
+        {
+          stage: 'Survey Reminder',
+          label: 'Survey Reminder',
+          briefId: 'brief-2',
+          copy: { ...copyFor('Survey Reminder'), ctaUrl: 'https://elsewhere.example.com/' },
+        },
+      ]);
+
+      expect(seq().surveySequenceButtons().get('brief-1')).toEqual({ text: 'Take the survey', url: 'https://surveys.example.com/r/cloud-native-2026' });
+      // A button pointing anywhere but the promoted link is not staged, so it is not shown either.
+      expect(seq().surveySequenceButtons().get('brief-2')?.text).toBe('');
+    });
+
+    it('shows each body as it will be staged, without resource-loading HTML', () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().surveySequenceSends.set([
+        {
+          stage: 'Survey Promo',
+          label: 'Survey Promotion',
+          briefId: 'brief-1',
+          copy: {
+            subject: 's',
+            preheader: 'p',
+            body: '<p>Hello</p><img src="https://tracker.example.com/pixel.gif">',
+            cta: 'Take the survey',
+            ctaUrl: 'https://surveys.example.com/r/cloud-native-2026',
+          } as EmailBriefCopy,
+        },
+      ]);
+
+      const body = seq().surveySequenceBodies().get('brief-1') ?? '';
+      expect(body).toContain('Hello');
+      expect(body).not.toContain('tracker.example.com');
+    });
+
+    it("surfaces a refused draft in the refusal's own words and stops the series there", async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().onSurveyEmailCountChange(3);
+      seq().surveySequenceSends.set([
+        { stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') },
+        { stage: 'Survey Reminder', label: 'Survey Reminder', briefId: 'brief-2', copy: copyFor('Survey Reminder') },
+        { stage: 'Survey Closing', label: 'Survey Closing', briefId: 'brief-3', copy: copyFor('Survey Closing') },
+      ]);
+      const create = vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: '', error: 'no audience found for this brief' }) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(seq().sequenceStagingState()).toBe('error');
+      expect(seq().sequenceStagingMessage()).toBe('no audience found for this brief (Survey Promotion)');
+      expect(seq().sequenceStagedBriefIds()).toEqual([]);
+    });
+
+    it('stages each send with its own copy and a button to the promoted link, then records the draft', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([
+        {
+          stage: 'Survey Promo',
+          label: 'Survey Promotion',
+          briefId: 'brief-1',
+          copy: { ...copyFor('Survey Promo'), ctaUrl: 'https://surveys.example.com/r/cloud-native-2026/' },
+        },
+      ]);
+      const create = vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: [],
+          platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'em-1', hubspotUrl: 'https://app.hubspot.com/email/1/edit/em-1' }],
+        }) as never
+      );
+
+      await seq().onStageSequenceSends();
+
+      const request = create.mock.calls[0][0] as unknown as { hubspotConfig: Record<string, string> };
+      expect(request.hubspotConfig).toMatchObject({
+        sourceEmailId: 'hs-1',
+        subject: 'Survey Promo subject',
+        buttonText: 'Take the survey',
+        buttonUrl: 'https://surveys.example.com/r/cloud-native-2026/',
+      });
+      expect(create.mock.calls[0][2]).toBe('brief-1');
+      expect(seq().sequenceStagedBriefIds()).toEqual(['brief-1']);
+      expect(seq().surveySequenceSends()[0].draftId).toBe('em-1');
+      expect(seq().sequenceStagingState()).toBe('done');
+    });
+
+    it('builds the workflow only once every send is staged AND has its date', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      await seq().onGenerateSurveySequence();
+      const build = vi
+        .spyOn(service, 'createSendWorkflow')
+        .mockReturnValue(of({ flowId: '9', name: 'w', editUrl: 'https://app.hubspot.com/x', sendEmailSteps: 2 }) as never);
+
+      seq().sequenceStagedBriefIds.set(['brief-1']);
+      seq().sequenceDatesForm.controls['date-0'].setValue('2026-11-02');
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
+      seq().sequenceDatesForm.controls['date-2'].setValue('2026-11-16');
+      expect(seq().canBuildSequenceWorkflow(), 'one send not staged').toBe(false);
+
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      seq().sequenceDatesForm.controls['date-1'].setValue('');
+      // campaign-service needs one date per dated step and refuses a missing one with a 409.
+      expect(seq().canBuildSequenceWorkflow(), 'one date blank').toBe(false);
+      await seq().onBuildSequenceWorkflow();
+      expect(build).not.toHaveBeenCalled();
+
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
+      expect(seq().canBuildSequenceWorkflow()).toBe(true);
+      await seq().onBuildSequenceWorkflow();
+      expect(build).toHaveBeenCalledWith(expect.any(String), {
+        name: '2026 Cloud Native Survey - Workflow',
+        briefIds: ['brief-1', 'brief-2', 'brief-3'],
+        sendDates: ['2026-11-02', '2026-11-09', '2026-11-16'],
+      });
+    });
+
+    it('creates each send date control before publishing it, so a failed later send leaves them usable', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      generateEmailCopy.mockImplementation((_p: string, _b: string, stage?: string) =>
+        stage === 'Survey Closing' ? (of({ enabled: true, error: 'model refused' }) as never) : (of({ enabled: true, copy: copyFor(stage ?? '') }) as never)
+      );
+
+      await seq().onGenerateSurveySequence();
+
+      // Two sends published, so the template renders two date inputs bound to these controls.
+      expect(seq().surveySequenceSends()).toHaveLength(2);
+      expect(Object.keys(seq().sequenceDatesForm.controls)).toEqual(['date-0', 'date-1']);
+    });
+
+    it('does not offer Stage all while later sends are still being written', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      const closing = new Subject<unknown>();
+      generateEmailCopy.mockImplementation((_p: string, _b: string, stage?: string) =>
+        stage === 'Survey Closing' ? (closing as never) : (of({ enabled: true, copy: copyFor(stage ?? '') }) as never)
+      );
+
+      const writing = seq().onGenerateSurveySequence();
+      await vi.waitFor(() => expect(seq().surveySequenceSends()).toHaveLength(2));
+
+      // Staging snapshots the list, so it would stage one send and call the series done.
+      expect(seq().canStageSequence()).toBe(false);
+
+      closing.next({ enabled: true, copy: copyFor('Survey Closing') });
+      closing.complete();
+      await writing;
+      expect(seq().canStageSequence()).toBe(true);
+    });
+
+    it("stops at a refused save instead of writing over another editor's brief", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      // The page's own brief is already saved; the REMINDER's save is refused.
+      seq().emailBriefId.set('brief-primary');
+      persistBrief.mockImplementation(
+        () => of({ enabled: true, briefId: 'brief-x', etag: null, approved: false, created: false, conflict: 'stale-brief' }) as never
+      );
+
+      await seq().onGenerateSurveySequence();
+
+      expect(generateEmailCopy).toHaveBeenCalledTimes(1);
+      expect(seq().surveySequenceState()).toBe('error');
+      expect(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      ).toEqual(['brief-primary']);
+      // An honest next step, not a promise of an overwrite this path does not have.
+      expect(seq().surveySequenceError()).toContain('Reload the page, restore the brief');
+    });
+
+    it('names the step that failed when the error carries no message of its own', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      generateEmailCopy.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      expect(seq().surveySequenceError()).toBe('The emails could not be written.');
+    });
+
+    it("re-attaches the first send's audience to a later send built against different lists", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      const current = { id: 'aud-b', platform: 'hubspot', status: 'built', platformMasterListId: '500', suppressionListIds: ['201'] };
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          of({
+            enabled: true,
+            audiences:
+              briefId === 'brief-1'
+                ? [current]
+                : [{ id: 'aud-a', platform: 'hubspot', status: 'built', platformMasterListId: '400', suppressionListIds: ['201'] }],
+          }) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      // A built audience that does not MATCH is not "already shared": the workflow refuses
+      // briefs whose audiences differ.
+      expect(attach).toHaveBeenCalledTimes(2);
+      expect(attach.mock.calls[0][1]).toMatchObject({ briefId: 'brief-2', masterListId: '500', suppressionListIds: ['201'] });
+
+      attach.mockClear();
+      vi.spyOn(service, 'listAudiences').mockReturnValue(of({ enabled: true, audiences: [current] }) as never);
+      await seq().onGenerateSurveySequence();
+      expect(attach, 'a matching audience is skipped').not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a dropped connection', 0, true],
+      ['a gateway error', 504, true],
+      ['a request timeout', 408, true],
+      ['throttling', 429, true],
+      ['an explicit refusal', 400, false],
+    ])('after %s on the create request, holds the send only when a draft may exist', async (_label, status, held) => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(throwError(() => new HttpErrorResponse({ status })) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(held ? ['brief-1'] : []);
+      expect(seq().canStageSequence()).toBe(!held);
+    });
+
+    it('does not hold a send of a series that was reset while its create was in flight', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      const answer = new Subject<unknown>();
+      vi.spyOn(service, 'createCampaign').mockReturnValue(answer as never);
+
+      const staging = seq().onStageSequenceSends();
+      await vi.waitFor(() => expect(service.createCampaign).toHaveBeenCalled());
+      seq().onSelectEmailType('report-promo');
+      answer.next({ jobId: '', error: 'unconfirmed', indeterminate: true });
+      answer.complete();
+      await staging;
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual([]);
+    });
+
+    const stageable = (sends: number): void => {
+      // A foundation of its own, so a series test never depends on what an earlier test left behind.
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-t', slug: 'tlf', name: 'TLF' } as ProjectContext, false);
+      selectSurvey();
+      seq().onSurveyEmailCountChange(sends === 3 ? 3 : 1);
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      const stages = sends === 3 ? ['Survey Promo', 'Survey Reminder', 'Survey Closing'] : ['Survey Promo'];
+      seq().surveySequenceSends.set(stages.map((stage, i) => ({ stage, label: stage, briefId: `brief-${i + 1}`, copy: copyFor(stage) })));
+    };
+
+    it("joins the page's own save for the first send instead of creating its brief a second time", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      // The Audience tab's warm-up already saved the page's brief.
+      seq().emailBriefId.set('brief-primary');
+
+      await seq().onGenerateSurveySequence();
+
+      expect(seq().surveySequenceSends()[0].briefId).toBe('brief-primary');
+      const savedStages = persistBrief.mock.calls.map((call) => (call[0] as CampaignBriefOutput).emailStage);
+      expect(savedStages).toEqual(['Survey Reminder', 'Survey Closing']);
+    });
+
+    it('keeps ownership of a brief saved without approval, so writing again updates it', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      let reminderAttempts = 0;
+      persistBrief.mockImplementation((brief: CampaignBriefOutput) => {
+        if (brief.emailStage === 'Survey Reminder' && reminderAttempts++ === 0) {
+          return of({ enabled: true, briefId: 'brief-r', etag: '"2"', approved: false, created: true }) as never;
+        }
+        return of({ enabled: true, briefId: `brief-${String(brief.emailStage)}`, etag: '"3"', approved: true, created: false }) as never;
+      });
+
+      await seq().onGenerateSurveySequence();
+      expect(seq().surveySequenceState()).toBe('error');
+
+      await seq().onGenerateSurveySequence();
+
+      const retry = persistBrief.mock.calls.find((call, index) => index > 0 && (call[0] as CampaignBriefOutput).emailStage === 'Survey Reminder');
+      // The saved row's id and validator -- and no overwrite licence.
+      expect(retry?.slice(2)).toEqual(['brief-r', '"2"', false]);
+    });
+
+    it('does not offer a rewrite once a send is staged, since HubSpot keeps the staged draft', () => {
+      stageable(1);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
+      seq().sequenceStagedBriefIds.set(['brief-1']);
+      expect(seq().canGenerateSurveySequence()).toBe(false);
+    });
+
+    it('holds a send whose create was accepted with nothing to track, as the single-send path does', async () => {
+      stageable(1);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: '' }) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(['brief-1']);
+      expect(seq().canStageSequence(), 'staging again could clone a second draft').toBe(false);
+    });
+
+    it('holds a send whose failed job still created its draft, and records where it landed', async () => {
+      stageable(1);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: ['recording failed'],
+          platformResults: [{ platform: 'hubspot', ok: false, campaignId: 'em-9', error: 'recording failed' }],
+        }) as never
+      );
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().surveySequenceSends()[0].draftId).toBe('em-9');
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(['brief-1']);
+      expect(seq().canStageSequence()).toBe(false);
+    });
+
+    it("reports the HubSpot row's own refusal before the job's generic failure", async () => {
+      stageable(1);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({
+          campaigns: [],
+          errors: ['Campaign creation was unsuccessful.'],
+          platformResults: [{ platform: 'hubspot', ok: false, error: 'no audience found for this brief' }],
+        }) as never
+      );
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceStagingMessage()).toContain('no audience found for this brief');
+    });
+
+    it('stops sharing an audience once the series it was for is reset', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      const laterRead = new Subject<unknown>();
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          (briefId === 'brief-1'
+            ? of({
+                enabled: true,
+                audiences: [{ id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '500', suppressionListIds: ['201'] }],
+              })
+            : laterRead) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      const writing = seq().onGenerateSurveySequence();
+      await vi.waitFor(() => expect(service.listAudiences).toHaveBeenCalledWith(expect.anything(), 'brief-2'));
+      seq().onSurveyEmailCountChange(1);
+      laterRead.next({ enabled: true, audiences: [] });
+      laterRead.complete();
+      await writing;
+
+      expect(attach).not.toHaveBeenCalled();
+    });
+
+    it("shares nothing when the first send's NEWEST audience is not built, rather than an older one", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      // Only the FIRST send has rows; the later sends have none, so sharing the older built row
+      // would show up as an attach.
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          (briefId === 'brief-1'
+            ? of({
+                enabled: true,
+                audiences: [
+                  { id: 'aud-new', platform: 'hubspot', status: 'building', platformMasterListId: '600', suppressionListIds: ['201'] },
+                  { id: 'aud-old', platform: 'hubspot', status: 'built', platformMasterListId: '500', suppressionListIds: ['201'] },
+                ],
+              })
+            : of({ enabled: true, audiences: [] })) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      expect(attach).not.toHaveBeenCalled();
+    });
+
+    it('locks the audience once the series has staged drafts, and still lets the workflow build', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      expect(seq().audienceLockedByStaging(), 'nothing staged yet').toBe(false);
+
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      // The Audience tab is handed the lock, so a replace is refused there.
+      expect(seq().audienceLockedByStaging()).toBe(true);
+      const audienceTab = fixture.debugElement.query(By.directive(AudienceBuilderTabComponent));
+      expect((audienceTab.componentInstance as { stagingInFlight(): boolean }).stagingInFlight()).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-start-over"]')?.textContent).toContain(
+        'The audience is locked because this series has staged drafts.'
+      );
+
+      // The count is locked with it: a new count would rewrite briefs HubSpot holds drafts for.
+      seq().onSurveyEmailCountChange(1);
+      expect(seq().surveySequenceStages()).toHaveLength(3);
+
+      for (const [index, date] of ['2026-11-02', '2026-11-09', '2026-11-16'].entries()) {
+        seq().sequenceDatesForm.controls[`date-${index}`].setValue(date);
+      }
+      expect(seq().canBuildSequenceWorkflow()).toBe(true);
+      seq().emailAudienceWriteInFlight.set(true);
+      expect(seq().canBuildSequenceWorkflow(), 'build during an audience write').toBe(false);
+    });
+
+    it('blocks a rewrite while a send is held unconfirmed, even with none confirmed staged', () => {
+      stageable(3);
+      expect(seq().canGenerateSurveySequence(), 'fixture precondition').toBe(true);
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      expect(seq().canGenerateSurveySequence(), 'a rewrite would clear the hold and reuse the brief').toBe(false);
+    });
+
+    it('locks the count and rewrites once the single Stage button staged the brief, until a restart', async () => {
+      stageable(1);
+      seq().emailBriefId.set('brief-primary');
+      seq().surveySequenceSends.set([]);
+      seq().emailCopy.set(copyFor('Survey Promo'));
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'j1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'c1' }] }) as never
+      );
+      expect(seq().canGenerateSurveySequence(), 'fixture precondition').toBe(true);
+
+      await seq().onStageEmailSend();
+
+      expect(seq().emailStaging()).toBe('done');
+      expect(seq().surveySeriesStarted()).toBe(true);
+      expect(seq().canGenerateSurveySequence(), 'a rewrite would reuse the staged draft').toBe(false);
+      seq().onSurveyEmailCountChange(3);
+      expect(seq().surveyEmailCount(), 'a series would open on the staged draft').toBe(1);
+
+      // Staging another brief must not forget this one, whose draft still exists.
+      seq().emailBriefId.set('brief-other');
+      await seq().onStageEmailSend();
+      expect(service.createCampaign, 'fixture precondition: the second stage ran').toHaveBeenCalledTimes(2);
+      seq().emailBriefId.set('brief-primary');
+      expect(seq().surveySeriesStarted(), 'the earlier brief is still staged').toBe(true);
+
+      seq().onStartSeriesOver();
+
+      expect(seq().surveySeriesRestarted()).toBe(true);
+      expect(seq().surveySeriesStarted()).toBe(false);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('selects the survey template itself, since its picker is hidden, and never replaces a choice', () => {
+      selectSurvey();
+      const templates = [
+        { id: 'hs-a', name: 'Newsletter', subject: 'News' },
+        { id: 'hs-b', name: 'Survey invitation', subject: 'Take our survey' },
+      ] as HubSpotMarketingEmail[];
+      const fill = fixture.componentInstance as unknown as { ensureSurveyTemplateSelected(): void };
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set(templates);
+
+      fill.ensureSurveyTemplateSelected();
+      expect(seq().selectedEmailTemplateId()).not.toBe('');
+
+      seq().selectedEmailTemplateId.set('hs-a');
+      fill.ensureSurveyTemplateSelected();
+      expect(seq().selectedEmailTemplateId(), "the operator's choice stays").toBe('hs-a');
+
+      seq().selectorForm.controls.deliveryType.setValue('email');
+      seq().selectedEmailTemplateId.set('');
+      fill.ensureSurveyTemplateSelected();
+      expect(seq().selectedEmailTemplateId(), 'the event picker only suggests (#2057)').toBe('');
+    });
+
+    it('never takes the survey template from a list an Email search filtered', () => {
+      const component = fixture.componentInstance as unknown as {
+        emailTemplateSubmittedQuery: { set(q: string): void };
+        ensureSurveyTemplateSelected(): void;
+        searchEmailTemplates(q: string): void;
+      };
+      const search = vi.spyOn(component, 'searchEmailTemplates').mockImplementation(() => undefined);
+      selectSurvey();
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set([{ id: 'hs-filtered', name: 'Newsletter', subject: 'News' }] as HubSpotMarketingEmail[]);
+      component.emailTemplateSubmittedQuery.set('newsletter');
+
+      component.ensureSurveyTemplateSelected();
+
+      expect(seq().selectedEmailTemplateId(), 'a pick from filtered rows would stick').toBe('');
+      expect(search).toHaveBeenCalledWith('');
+    });
+
+    it('reads the portal templates once when a filtered pick is dropped on the way off Planning', () => {
+      TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-t', slug: 'tlf', name: 'TLF' } as ProjectContext, false);
+      selectSurvey();
+      const search = vi.spyOn(service, 'searchHubSpotEmails').mockReturnValue(new Subject<never>() as never);
+      const component = fixture.componentInstance as unknown as {
+        emailTemplateSubmittedQuery: { set(q: string): void };
+        onEmailProceedFromPlanning(brief: CampaignBriefOutput): void;
+      };
+      seq().emailTemplates.set([{ id: 'hs-filtered', name: 'Newsletter', subject: 'News' }] as HubSpotMarketingEmail[]);
+      component.emailTemplateSubmittedQuery.set('newsletter');
+      seq().selectedEmailTemplateId.set('hs-filtered');
+
+      component.onEmailProceedFromPlanning(surveyBrief);
+
+      expect(search, 'the handoff joins the search the reset started').toHaveBeenCalledTimes(1);
+      expect(search).toHaveBeenCalledWith('tlf', '');
+    });
+
+    it('stages a one-email survey only once its copy is generated, since the template alone promotes nothing', async () => {
+      stageable(1);
+      const component = fixture.componentInstance as unknown as { canStageEmail(): boolean };
+      const create = vi.spyOn(service, 'createCampaign');
+      seq().emailCopy.set(null);
+
+      expect(component.canStageEmail()).toBe(false);
+      await seq().onStageEmailSend();
+      expect(create).not.toHaveBeenCalled();
+
+      seq().emailCopy.set(copyFor('Survey Promo'));
+      expect(component.canStageEmail()).toBe(true);
+    });
+
+    it('does not pick the survey template while a search is replacing the list', () => {
+      const component = fixture.componentInstance as unknown as {
+        emailTemplatesLoading: { set(v: boolean): void };
+        ensureSurveyTemplateSelected(): void;
+      };
+      selectSurvey();
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set([{ id: 'hs-stale', name: 'Newsletter', subject: 'News' }] as HubSpotMarketingEmail[]);
+      component.emailTemplatesLoading.set(true);
+
+      component.ensureSurveyTemplateSelected();
+
+      expect(seq().selectedEmailTemplateId(), 'the rows on screen are the ones being replaced').toBe('');
+    });
+
+    it('treats a restored approved survey send as possibly staged until the series is started over', () => {
+      stageable(1);
+      const component = fixture.componentInstance as unknown as {
+        onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        canGenerateEmailCopy(): boolean;
+        surveySingleSendRestored(): boolean;
+      };
+
+      component.onRestoreSavedEmailBrief(surveyBrief, 'brief-restored', '"1"', true);
+
+      expect(component.surveySingleSendRestored()).toBe(true);
+      expect(component.canGenerateEmailCopy(), 'staging new copy would hand back the old draft').toBe(false);
+
+      seq().onStartSeriesOver();
+
+      expect(component.surveySingleSendRestored()).toBe(false);
+      expect(component.canGenerateEmailCopy()).toBe(true);
+    });
+
+    it('does not hold back a restored survey brief that was never approved, since nothing was staged from it', () => {
+      stageable(1);
+      const component = fixture.componentInstance as unknown as {
+        onRestoreSavedEmailBrief(b: unknown, id: string, etag: string | null, approved: boolean): void;
+        canGenerateEmailCopy(): boolean;
+      };
+
+      component.onRestoreSavedEmailBrief(surveyBrief, 'brief-unapproved', '"1"', false);
+
+      expect(component.canGenerateEmailCopy()).toBe(true);
+    });
+
+    it('offers Start the series over when Write all meets a send saved in an earlier session', async () => {
+      stageable(3);
+      seq().surveySequenceSends.set([]);
+      let call = 0;
+      persistBrief.mockImplementation(() => {
+        call++;
+        // The first send is the page's own brief; the reminder was saved by an earlier session.
+        return of(
+          call === 1
+            ? { enabled: true, briefId: 'brief-1', etag: '"1"', approved: true, created: true }
+            : { enabled: true, briefId: 'old-reminder', approved: false, created: false, conflict: 'unowned-brief-exists' }
+        ) as never;
+      });
+
+      await seq().onGenerateSurveySequence();
+
+      expect(seq().sequenceNeedsRestart()).toBe(true);
+      expect(seq().canGenerateSurveySequence(), 'writing again would meet the same refusal').toBe(false);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-start-over"]')).not.toBeNull();
+
+      seq().onStartSeriesOver();
+
+      expect(seq().surveySeriesRestarted(), 'the next write uses new briefs').toBe(true);
+      expect(seq().sequenceNeedsRestart()).toBe(false);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it('builds the workflow once, and holds Build after an unconfirmed create', async () => {
+      const ready = (): void => {
+        stageable(3);
+        const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+        [0, 1, 2].forEach((index) => {
+          if (!dates.contains(`date-${index}`)) {
+            dates.addControl(`date-${index}`, new FormControl('', { nonNullable: true }));
+          }
+          dates.controls[`date-${index}`].setValue(`2026-12-0${index + 1}`);
+        });
+        seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      };
+      ready();
+      const build = vi
+        .spyOn(service, 'createSendWorkflow')
+        .mockReturnValue(of({ flowId: '9', name: 'w', editUrl: 'https://app.hubspot.com/workflows/1/platform/flow/9/edit' }) as never);
+      expect(seq().canBuildSequenceWorkflow(), 'fixture precondition').toBe(true);
+
+      await seq().onBuildSequenceWorkflow();
+
+      expect(build).toHaveBeenCalledTimes(1);
+      expect(seq().canBuildSequenceWorkflow(), 'a second click would build a second workflow').toBe(false);
+
+      seq().onStartSeriesOver();
+      ready();
+      build.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })) as never);
+      await seq().onBuildSequenceWorkflow();
+
+      expect(seq().sendWorkflowUnconfirmed()).toBe(true);
+      expect(seq().canBuildSequenceWorkflow(), 'the workflow may exist').toBe(false);
+    });
+
+    it('names the validation reason, not the field prefix, when the workflow is refused', async () => {
+      stageable(3);
+      const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+      [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl(`2026-12-0${index + 1}`, { nonNullable: true })));
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      vi.spyOn(service, 'createSendWorkflow').mockReturnValue(
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: {
+                error: 'Validation failed for name',
+                code: 'VALIDATION_ERROR',
+                errors: [{ field: 'name', message: 'name must be at most 200 characters' }],
+              },
+            })
+        ) as never
+      );
+
+      await seq().onBuildSequenceWorkflow();
+
+      expect(seq().sendWorkflowError()).toBe('name must be at most 200 characters');
+      expect(seq().sendWorkflowUnconfirmed(), 'a 400 created nothing').toBe(false);
+    });
+
+    it('moves the next write to new briefs when an asset switch drops a staged series', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+      expect(persistBrief, 'fixture precondition: the series was written').toHaveBeenCalled();
+      seq().sequenceStagedBriefIds.set([seq().surveySequenceSends()[0].briefId]);
+      const surveyType = seq().selectedEmailTypeId();
+      const reportType = CAMPAIGN_SURVEY_TYPES.find((type) => type.stage === 'Report Promo')?.id ?? '';
+      expect(reportType, 'fixture precondition').not.toBe('');
+
+      seq().onSelectEmailType(reportType);
+      seq().onSelectEmailType(surveyType);
+      // The stage change cleared the brief; the planner restores the same survey's brief on return.
+      seq().emailBriefOutput.set(surveyBrief);
+
+      expect(seq().sequenceStagedBriefIds()).toEqual([]);
+      expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
+    });
+
+    it('turns off a variant B left armed on Email when the surface switches to Survey', () => {
+      seq().selectorForm.controls.deliveryType.setValue('email');
+      fixture.detectChanges();
+      const ab = (fixture.componentInstance as unknown as { abTestForm: { controls: { enabled: { setValue(v: boolean): void; value: boolean } } } }).abTestForm;
+      ab.controls.enabled.setValue(true);
+
+      selectSurvey();
+
+      expect(ab.controls.enabled.value, 'survey has no A/B control to turn it off').toBe(false);
+    });
+
+    it('ignores a late unowned answer for a series a reset already replaced', async () => {
+      stageable(3);
+      seq().surveySequenceSends.set([]);
+      const late = new Subject<unknown>();
+      let call = 0;
+      persistBrief.mockImplementation(() => {
+        call++;
+        return (call === 1 ? of({ enabled: true, briefId: 'brief-1', etag: '"1"', approved: true, created: true }) : late) as never;
+      });
+
+      const writing = seq().onGenerateSurveySequence();
+      // The reminder's save is on the wire before the reset, or the reset would only stop the loop.
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalledTimes(2));
+      seq().onSurveyEmailCountChange(1);
+      late.next({ enabled: true, briefId: 'old', approved: false, created: false, conflict: 'unowned-brief-exists' });
+      late.complete();
+      await writing;
+
+      expect(seq().sequenceNeedsRestart(), 'the reset series must stay writable').toBe(false);
+    });
+
+    it('explains the restart for sends saved in an earlier session, not as staged drafts', () => {
+      stageable(3);
+      // Write all refused before any send landed, so there are no rows (and no date controls).
+      seq().surveySequenceSends.set([]);
+      (seq().sequenceNeedsRestart as unknown as WritableSignal<boolean>).set(true);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const card = fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-start-over"]') as HTMLElement | null;
+      expect(card?.textContent).toContain('saved in an earlier session');
+      expect(card?.textContent).not.toContain('audience is locked');
+    });
+
+    it('locks Regenerate once the single Stage button staged the brief', () => {
+      stageable(1);
+      seq().emailBriefId.set('brief-primary');
+      expect(seq().canGenerateEmailCopy(), 'fixture precondition').toBe(true);
+      seq().emailStaging.set('staging');
+      expect(seq().canGenerateEmailCopy(), 'regenerating would never reach the draft').toBe(false);
+    });
+
+    it('moves the next write to new briefs when Planning drops a staged series', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set([seq().surveySequenceSends()[0].briefId]);
+      expect(seq().surveySeriesRestarted(), 'fixture precondition').toBe(false);
+
+      seq().onEmailProceedFromPlanning(surveyBrief);
+
+      expect(seq().sequenceStagedBriefIds()).toEqual([]);
+      expect(seq().surveySeriesRestarted(), 'the old briefs hold drafts').toBe(true);
+    });
+
+    it('keeps the briefs when Planning drops a series that never reached HubSpot', async () => {
+      stageable(3);
+      await seq().onGenerateSurveySequence();
+
+      seq().onEmailProceedFromPlanning(surveyBrief);
+
+      expect(seq().surveySeriesRestarted()).toBe(false);
+    });
+
+    it('locks the count and rewrites while the single Stage button is still in flight', () => {
+      stageable(1);
+      seq().emailStaging.set('staging');
+
+      expect(seq().surveySeriesStarted()).toBe(true);
+      expect(seq().canGenerateSurveySequence()).toBe(false);
+      seq().onStartSeriesOver();
+      expect(seq().surveySeriesRestarted(), 'a restart must wait for the create').toBe(false);
+    });
+
+    it('warns when HubSpot reports the built workflow as on, and only reassures for an off one', async () => {
+      stageable(3);
+      // Writing the series is what creates its date controls, which the panel binds.
+      await seq().onGenerateSurveySequence();
+      seq().selectedEmailTab.set('implementation');
+      const workflow = fixture.componentInstance as unknown as {
+        sendWorkflowState: WritableSignal<string>;
+        sendWorkflowResult: WritableSignal<unknown>;
+      };
+      workflow.sendWorkflowState.set('done');
+      workflow.sendWorkflowResult.set({ name: 'Survey sends', sendEmailSteps: 3, isEnabled: true, editUrl: '' });
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-enabled"]')).not.toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-result"]')?.textContent).not.toContain('turned OFF');
+
+      workflow.sendWorkflowResult.set({ name: 'Survey sends', sendEmailSteps: 3, isEnabled: false, editUrl: '' });
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-enabled"]')).toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-send-workflow-result"]')?.textContent).toContain('turned OFF');
+    });
+
+    it('names a nameless survey template by its id rather than reading as still searching', () => {
+      selectSurvey();
+      seq().emailTemplates.set([{ id: 'hs-9', name: '', subject: 'S' }] as HubSpotMarketingEmail[]);
+      seq().selectedEmailTemplateId.set('hs-9');
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+
+      const line = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-template-auto"]')?.textContent ?? '';
+      expect(line).toContain('hs-9');
+      expect(line).not.toContain('Finding');
+    });
+
+    it('says to wait, not start over, while a single stage is in flight', () => {
+      stageable(1);
+      seq().selectedEmailTab.set('implementation');
+      seq().emailStaging.set('staging');
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-survey-sequence-hint"]')?.textContent).toContain('Wait for HubSpot to finish');
+      expect(host.querySelector('[data-testid="campaigns-sequence-start-over"]')).toBeNull();
+    });
+
+    it('releases the audience after a restart leaves a single-send hold on the original brief', () => {
+      stageable(1);
+      seq().emailBriefId.set('brief-primary');
+      const unresolved = fixture.componentInstance as unknown as {
+        activeFoundationSlug: Signal<string>;
+        emailStagingUnresolved: Signal<boolean>;
+        markStageUnresolved(project: string, brief: string): void;
+      };
+      unresolved.markStageUnresolved(unresolved.activeFoundationSlug(), 'brief-primary');
+      expect(unresolved.emailStagingUnresolved(), 'fixture precondition').toBe(true);
+      expect(seq().audienceLockedByStaging()).toBe(true);
+
+      seq().onStartSeriesOver();
+
+      expect(unresolved.emailStagingUnresolved(), 'the hold on the original brief remains').toBe(true);
+      expect(seq().surveySeriesRestarted()).toBe(true);
+      expect(seq().audienceLockedByStaging()).toBe(false);
+    });
+
+    it('offers one copy path at a time for a one-email survey', () => {
+      stageable(1);
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-survey-sequence"]')).toBeNull();
+
+      seq().onSurveyEmailCountChange(3);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-survey-sequence"]')).not.toBeNull();
+    });
+
+    it('starts the series over from a held send, clearing its staging so it can be written again', () => {
+      stageable(3);
+      seq().sequenceStagedBriefIds.set(['brief-1']);
+      seq().sequenceUnresolvedBriefIds.set(['brief-2']);
+      expect(seq().canGenerateSurveySequence()).toBe(false);
+
+      seq().onStartSeriesOver();
+
+      expect(seq().surveySeriesStarted()).toBe(false);
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual([]);
+      expect(seq().surveySequenceSends()).toEqual([]);
+      expect(seq().canGenerateSurveySequence()).toBe(true);
+    });
+
+    it("writes a restarted series under NEW briefs, sharing the page's audience, and remembers it across a reload", async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      );
+
+      seq().onStartSeriesOver();
+      persistBrief.mockClear();
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          of({
+            enabled: true,
+            audiences:
+              briefId === 'brief-primary'
+                ? [{ id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '500', suppressionListIds: ['201'] }]
+                : [],
+          }) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+      await seq().onGenerateSurveySequence();
+
+      // Every send, the first included, is a new brief: campaign-service would hand the original
+      // briefs' drafts back unchanged.
+      const slugs = persistBrief.mock.calls.map((call) => (call[0] as CampaignBriefOutput).eventDetails.slug);
+      expect(slugs).toEqual(['cloud-native-2026-r2', 'cloud-native-2026-r2', 'cloud-native-2026-r2']);
+      expect(
+        seq()
+          .surveySequenceSends()
+          .map((send) => send.briefId)
+      ).not.toContain('brief-primary');
+      // The audience composed for the page's own brief reaches all three new briefs.
+      expect(attach).toHaveBeenCalledTimes(3);
+
+      // A fresh page (a reload) keeps writing the restarted identity, not the original briefs.
+      const reloaded = TestBed.createComponent(CampaignsComponent);
+      const page = reloaded.componentInstance as unknown as { readSeriesRestart(project: string, slug: string): number };
+      const project = (fixture.componentInstance as unknown as { activeFoundationSlug(): string }).activeFoundationSlug();
+      expect(page.readSeriesRestart(project, 'cloud-native-2026')).toBe(1);
+      reloaded.destroy();
+    });
+
+    it('stages a restarted one-email survey on its new brief, never the original single-send brief', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set(['brief-primary']);
+      const seriesMode = (): boolean => (fixture.componentInstance as unknown as { surveySeriesMode(): boolean }).surveySeriesMode();
+      // Read BEFORE the start-over, so the assertion after it proves the mode follows the restart.
+      expect(seriesMode(), 'a one-email survey before any restart').toBe(false);
+      seq().onStartSeriesOver();
+      expect(seriesMode(), 'after a restart, the series path').toBe(true);
+
+      persistBrief.mockImplementation(
+        (brief: CampaignBriefOutput) => of({ enabled: true, briefId: `new-${brief.eventDetails.slug}`, etag: '"1"', approved: true, created: true }) as never
+      );
+      await seq().onGenerateSurveySequence();
+      const create = vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'em-1' }] }) as never
+      );
+
+      // The single Stage button addresses the ORIGINAL brief: hidden, and refused if reached.
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-stage-btn"]')).toBeNull();
+      await (fixture.componentInstance as unknown as { onStageEmailSend(): Promise<void> }).onStageEmailSend();
+      expect(create).not.toHaveBeenCalled();
+
+      await seq().onStageSequenceSends();
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create.mock.calls[0][2]).toBe('new-cloud-native-2026-r2');
+    });
+
+    it("stages a restarted series even when the original brief's single send is held unconfirmed", async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-primary');
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceStagedBriefIds.set(['brief-primary']);
+      // The single Stage button lost its response on the ORIGINAL brief: held, and its
+      // "I have checked HubSpot" acknowledgment lives in the controls a restart hides.
+      const page = fixture.componentInstance as unknown as {
+        unresolvedStages: { set(v: ReadonlySet<string>): void };
+        stageScopeKey(project: string, briefId: string): string;
+        activeFoundationSlug(): string;
+        canStageSequence(): boolean;
+      };
+      page.unresolvedStages.set(new Set([page.stageScopeKey(page.activeFoundationSlug(), 'brief-primary')]));
+      seq().onStartSeriesOver();
+
+      persistBrief.mockImplementation(
+        (brief: CampaignBriefOutput) => of({ enabled: true, briefId: `new-${brief.eventDetails.slug}`, etag: '"1"', approved: true, created: true }) as never
+      );
+      await seq().onGenerateSurveySequence();
+
+      expect(page.canStageSequence(), "the old brief's hold blocked the new series").toBe(true);
+
+      // Another condition now disables Stage all: the hint names THAT, not the hidden single draft.
+      seq().selectedEmailTemplateId.set('');
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      const hint = fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-stage-hint"]')?.textContent ?? '';
+      expect(hint, 'the hint pointed at the hidden single-email draft').not.toContain('single-email draft');
+    });
+
+    it('runs audience QA without a stage on the survey surface, since QA only takes event stages', () => {
+      selectSurvey();
+      const page = fixture.componentInstance as unknown as { selectedEmailStage(): string | undefined; audienceQaStage(): string };
+      expect(page.selectedEmailStage(), 'fixture precondition: a survey stage is selected').toMatch(/Survey|Report/);
+      expect(page.audienceQaStage()).toBe('');
+      // The planner still gets the real stage: its saved-brief lookup needs it to reopen a survey.
+      const planners = fixture.debugElement
+        .queryAll(By.directive(PlanningTabComponent))
+        .map((d) => d.componentInstance as unknown as { deliveryType(): string; emailStage(): string });
+      const planner = planners.find((p) => p.deliveryType() === 'survey');
+      expect(planner, 'fixture precondition: the survey planner').toBeDefined();
+      expect(planner?.emailStage()).toBe(page.selectedEmailStage());
+    });
+
+    it('keeps the original briefs when a series is started over before anything reached HubSpot', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().onStartSeriesOver();
+      persistBrief.mockClear();
+      seq().onSurveyEmailCountChange(3);
+
+      await seq().onGenerateSurveySequence();
+
+      expect(persistBrief.mock.calls.map((call) => (call[0] as CampaignBriefOutput).eventDetails.slug)).toEqual([
+        'cloud-native-2026',
+        'cloud-native-2026',
+        'cloud-native-2026',
+      ]);
+    });
+
+    it('hides the single-email generate and stage controls for a three-email series only', () => {
+      selectSurvey();
+      seq().selectedEmailTab.set('implementation');
+      fixture.detectChanges();
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-email-generate-btn"]'), 'one-email survey keeps them').not.toBeNull();
+
+      seq().onSurveyEmailCountChange(3);
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-email-generate-btn"]')).toBeNull();
+      expect(host.querySelector('[data-testid="campaigns-email-stage-btn"]')).toBeNull();
+    });
+
+    it('says why each Stage button is off while the other path holds the brief', () => {
+      stageable(1);
+      seq().selectedEmailTab.set('implementation');
+      seq().emailStaging.set('staging');
+      fixture.detectChanges();
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('[data-testid="campaigns-sequence-stage-hint"]')?.textContent).toContain('single-email draft');
+
+      seq().emailStaging.set('idle');
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="campaigns-email-stage-hint"]')?.textContent).toContain('email series below');
+    });
+
+    it('creates no further drafts once the page is left mid-staging', async () => {
+      stageable(3);
+      const first = new Subject<unknown>();
+      const create = vi
+        .spyOn(service, 'createCampaign')
+        .mockReturnValueOnce(first as never)
+        .mockReturnValue(of({ jobId: 'job-n' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(
+        of({ campaigns: [], errors: [], platformResults: [{ platform: 'hubspot', ok: true, campaignId: 'em-1' }] }) as never
+      );
+
+      const staging = seq().onStageSequenceSends();
+      await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+      fixture.destroy();
+      first.next({ jobId: 'job-1' });
+      first.complete();
+      await staging;
+
+      expect(create).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the single Stage button and Stage all from creating beside each other', () => {
+      stageable(1);
+      expect(seq().canStageSequence()).toBe(true);
+      seq().emailStaging.set('staging');
+      expect(seq().canStageSequence(), 'Stage all during a single-send create').toBe(false);
+      seq().emailStaging.set('idle');
+
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      expect(seq().canStageEmail(), 'single Stage over a held series send').toBe(false);
+    });
+
+    it('says why Stage all is off while the audience is being replaced', () => {
+      stageable(3);
+      // The writer adds these before publishing a row; this fixture sets the rows directly.
+      const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+      [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl('', { nonNullable: true })));
+      seq().selectedEmailTab.set('implementation');
+      seq().emailAudienceWriteInFlight.set(true);
+      fixture.detectChanges();
+
+      const hint = fixture.nativeElement.querySelector('[data-testid="campaigns-sequence-stage-hint"]') as HTMLElement | null;
+      expect(hint?.textContent).toContain('Wait for the audience to finish updating.');
+    });
+
+    it('says why Build is off while the audience is being replaced', () => {
+      stageable(3);
+      const dates = (fixture.componentInstance as unknown as { sequenceDatesForm: FormGroup }).sequenceDatesForm;
+      [0, 1, 2].forEach((index) => dates.addControl(`date-${index}`, new FormControl('2026-12-0' + (index + 1), { nonNullable: true })));
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      seq().selectedEmailTab.set('implementation');
+      seq().emailAudienceWriteInFlight.set(true);
+      fixture.detectChanges();
+
+      const note = fixture.nativeElement.querySelector('[data-testid="campaigns-send-workflow-note"]') as HTMLElement | null;
+      expect(note?.textContent).toContain('Wait for the audience to finish updating.');
+    });
+
+    it('keeps the audience locked and Stage all off around an audience replacement', () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      expect(seq().canStageSequence()).toBe(true);
+
+      seq().emailAudienceWriteInFlight.set(true);
+      expect(seq().canStageSequence(), 'staging during an audience write').toBe(false);
+      seq().emailAudienceWriteInFlight.set(false);
+
+      seq().sequenceUnresolvedBriefIds.set(['brief-1']);
+      expect(seq().audienceLockedByStaging(), 'audience replaced while a series send is held').toBe(true);
+    });
+
+    it('says why there is no template on the survey surface, and retries the read', () => {
+      selectSurvey();
+      seq().selectedEmailTemplateId.set('');
+      seq().emailTemplates.set(null);
+      seq().emailChannelEnabled.set(false);
+      expect(seq().surveyTemplateHint()).not.toBe('Finding a template in this portal to clone.');
+
+      seq().emailChannelEnabled.set(true);
+      seq().emailTemplates.set([]);
+      expect(seq().surveyTemplateProblem()).toContain('no marketing emails');
+
+      const search = vi
+        .spyOn(fixture.componentInstance as unknown as { searchEmailTemplates(q: string): void }, 'searchEmailTemplates')
+        .mockImplementation(() => undefined);
+      seq().onRetrySurveyTemplates();
+      expect(search).toHaveBeenCalledWith('');
+    });
+
+    it('keeps the chosen type, brief and copy across a trip through Paid Marketing', () => {
+      selectSurvey();
+      seq().onSelectEmailType('report-promo');
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().emailBriefId.set('brief-9');
+
+      seq().selectorForm.controls.deliveryType.setValue('paid-marketing');
+      fixture.detectChanges();
+      selectSurvey();
+
+      expect(seq().selectedEmailStage()).toBe('Report Promo');
+      expect(seq().emailBriefId()).toBe('brief-9');
+      expect(seq().emailBriefOutput()).not.toBeNull();
+    });
+
+    it('sends every date when every one is filled in', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      await seq().onGenerateSurveySequence();
+      seq().sequenceDatesForm.controls['date-0'].setValue('2026-11-02');
+      seq().sequenceDatesForm.controls['date-1'].setValue('2026-11-09');
+      seq().sequenceDatesForm.controls['date-2'].setValue('2026-11-16');
+      seq().sequenceStagedBriefIds.set(['brief-1', 'brief-2', 'brief-3']);
+      const build = vi
+        .spyOn(service, 'createSendWorkflow')
+        .mockReturnValue(of({ flowId: '9', name: 'w', editUrl: 'javascript:alert(1)', sendEmailSteps: 2 }) as never);
+
+      await seq().onBuildSequenceWorkflow();
+
+      expect(build.mock.calls[0][1]).toMatchObject({ briefIds: ['brief-1', 'brief-2', 'brief-3'], sendDates: ['2026-11-02', '2026-11-09', '2026-11-16'] });
+      // The review link is pinned to HubSpot's https app host; anything else is not rendered.
+      expect(seq().sendWorkflowResult()?.editUrl).toBe('');
+    });
+
+    it('does not attach an audience to a send whose own audience could not be read, and says so', async () => {
+      selectSurvey();
+      seq().onSurveyEmailCountChange(3);
+      seq().emailBriefOutput.set(surveyBrief);
+      vi.spyOn(service, 'listAudiences').mockImplementation(
+        (_p: string, briefId: string) =>
+          (briefId === 'brief-1'
+            ? of({
+                enabled: true,
+                audiences: [{ id: 'aud-1', platform: 'hubspot', status: 'built', platformMasterListId: '31027', suppressionListIds: ['201'] }],
+              })
+            : of({ enabled: false })) as never
+      );
+      const attach = vi.spyOn(service, 'attachExistingAudience').mockReturnValue(of({}) as never);
+
+      await seq().onGenerateSurveySequence();
+
+      // An outage that hid an existing audience must not mint a second one.
+      expect(attach).not.toHaveBeenCalled();
+      expect(seq().surveySequenceState()).toBe('done');
+      expect(seq().surveySequenceWarning()).toContain('could not be read');
+    });
+
+    it('holds a send whose draft never reported back instead of offering to stage it again', async () => {
+      selectSurvey();
+      seq().emailBriefOutput.set(surveyBrief);
+      seq().selectedEmailTemplateId.set('hs-1');
+      seq().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      vi.spyOn(service, 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+      vi.spyOn(service, 'getCreateResult').mockReturnValue(throwError(() => new Error('Campaign creation is taking longer than expected.')) as never);
+
+      await seq().onStageSequenceSends();
+
+      expect(seq().sequenceUnresolvedBriefIds()).toEqual(['brief-1']);
+      expect(seq().sequenceStagingMessage()).toContain('Check HubSpot');
+      // A retry could clone a second draft, so staging stays off until the series is rewritten.
+      expect(seq().canStageSequence()).toBe(false);
+    });
+
+    it('forgets the series, its drafts and its workflow when the brief is reset', () => {
+      selectSurvey();
+      seq().surveySequenceSends.set([{ stage: 'Survey Promo', label: 'Survey Promotion', briefId: 'brief-1', copy: copyFor('Survey Promo') }]);
+      seq().sequenceStagedBriefIds.set(['brief-1']);
+
+      seq().onSelectEmailType('report-promo');
+
+      expect(seq().surveySequenceSends()).toEqual([]);
+      expect(seq().sequenceStagedBriefIds()).toEqual([]);
+    });
+
+    it('picks the survey template again from the loaded list after a reset clears it', () => {
+      selectSurvey();
+      seq().emailTemplates.set([{ id: 'hs-7', name: 'Survey template' } as HubSpotMarketingEmail]);
+      seq().selectedEmailTemplateId.set('');
+
+      seq().onSelectEmailType('report-promo');
+
+      // The picker is hidden on this surface, so an empty selection would never be filled.
+      expect(seq().selectedEmailTemplateId()).toBe('hs-7');
+    });
+  });
+
   it('renders the hero banner note from the shared template', () => {
     selectEmail();
     // The preview panels live on the implementation tab; the default tab renders none of them.
@@ -8588,6 +11386,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     emailTemplatesRendered: Signal<HubSpotMarketingEmail[]>;
     selectedEmailTypeId: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
+    emailAudience: WritableSignal<CampaignAudience | null>;
   }
   const picker = (): PickerInternals => fixture.componentInstance as unknown as PickerInternals;
 
@@ -8627,7 +11426,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
    *
    * The mapping of event -> branding lives in HubSpot, in the names its operators gave their
    * templates. These pin that it is read rather than guessed at, and — more importantly — that a
-   * weak signal is NOT turned into a confident pre-selection.
+   * weak signal is NOT turned into a confident pre-selection. Since #2057 even a strong one is
+   * only a recommendation: nothing is selected until the operator clicks a row.
    */
   describe('event-derived template suggestion', () => {
     const briefFor = (name: string, slug: string, city = ''): CampaignBriefOutput => ({ eventDetails: { name, slug, city } }) as unknown as CampaignBriefOutput;
@@ -8655,19 +11455,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     };
 
     /**
-     * A pending search must release a SUGGESTED selection at dispatch, not only when it answers.
+     * A pending search clears the suggestion at dispatch, not only when it answers: it describes
+     * the rows being replaced. Nothing was ever selected for the operator, so there is no
+     * selection to release and Stage stays disabled throughout.
      *
-     * Every arm that clears the template list also released the suggestion, but all of them run
-     * after the response lands. In between, the loading branch hides the list while
-     * `canStageEmail` still reads only `selectedEmailTemplateId` -- and `onStageEmailSend`
-     * snapshots that id before its first await. So the operator could stage a suggestion the
-     * in-flight search was about to remove, with the row that justified it already off screen:
-     * a silent wrong clone, which is the exact failure this feature exists to prevent.
-     *
-     * Asserts the state DURING the flight -- the request is deliberately left unanswered, because
-     * flushing it is what the old code needed in order to look correct.
+     * Asserts the state DURING the flight -- the request is deliberately left unanswered.
      */
-    it('releases a suggested selection when a new search is dispatched, before it answers', () => {
+    it('clears the suggestion when a new search is dispatched, before it answers', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('KubeCon Europe 2026', 'kubecon-eu-2026'));
       picker().searchEmailTemplates('kubecon');
@@ -8678,14 +11472,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         emails: [{ id: 'k26', name: 'KubeCon Europe 2026 announcement', subject: 'Register now' }] as HubSpotMarketingEmail[],
       });
 
-      // The suggestion took, and it is SYSTEM-owned -- the precondition for the release.
-      expect(picker().selectedEmailTemplateId()).toBe('k26');
+      // Suggested, and NOT selected (#2057).
       expect(picker().emailTemplateSuggestionId()).toBe('k26');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       // Dispatch a narrower search and leave it IN FLIGHT.
       picker().searchEmailTemplates('workshop');
       fixture.detectChanges();
 
+      expect(picker().emailTemplateSuggestionId(), 'the suggestion outlived the rows it described').toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
       expect(picker().canStageEmail()).toBe(false);
 
@@ -8716,17 +11511,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      * threshold alone. An unrelated "Nairobi newsletter" is then auto-selected.
      */
     /**
-     * An UN-LISTED generic long word still pre-selects, and that is the known trade-off.
+     * An UN-LISTED generic long word still SUGGESTS, and that is the known trade-off.
      *
      * `EVENT_TERM_GENERIC` is a vocabulary, so a generic word nobody has added yet -- `developer`
      * -- still scores the double weight and clears the threshold alone. This test pins the
-     * CURRENT behavior rather than asserting it is correct: the honest statement of the limit is
-     * that the deny-list closes words someone has noticed, and the next un-noticed one is a fresh
-     * false positive.
+     * CURRENT behavior rather than asserting it is correct: the deny-list closes words someone has
+     * noticed, and the next un-noticed one is a fresh false positive.
      *
-     * It is here so the limit is visible and measured. If the scoring ever becomes structural --
-     * corroboration, or evidence weighted by rarity -- this test flips to `toBe('')` and the
-     * change is deliberate rather than silent.
+     * What #2057 changed is the cost of that false positive: it is a badge, not a selection, so the
+     * unrelated template is never staged unless the operator picks it. The test pins both halves.
      */
     it('does not let a generic-heavy row block an eligible suggestion', () => {
       showPicker();
@@ -8749,7 +11542,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionId()).toBe('eligible');
     });
 
-    it('still pre-selects on an un-enumerated generic long word (known limit)', () => {
+    it('still suggests on an un-enumerated generic long word (known limit), but selects nothing', () => {
       showPicker();
       expect(EVENT_TERM_GENERIC.has('developer')).toBe(false);
       picker().emailBriefOutput.set(briefFor('Developer Conference', 'developer-conference'));
@@ -8762,6 +11555,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('unrelated');
+      expect(picker().selectedEmailTemplateId(), 'a heuristic match selected a template nobody chose').toBe('');
+      expect(picker().canStageEmail()).toBe(false);
     });
 
     /**
@@ -8882,10 +11677,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId(), 'the prior edition outranked the year-matching one').toBe('current');
-      expect(picker().selectedEmailTemplateId()).toBe('current');
+      expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
-    it('pre-selects the template whose name carries the event, and says what it matched', () => {
+    it('suggests the template whose name carries the event, badges it, and says what it matched', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -8900,10 +11695,70 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId(), "the suggestion selected a template on the operator's behalf").toBe('');
       // The REASON must be visible; a suggestion nobody can check is one nobody should trust.
       expect(picker().emailTemplateSuggestionTerms()).toContain('nairobi');
       expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')).not.toBeNull();
+
+      // A visible TEXT badge on the suggested row only -- not colour alone.
+      const host = fixture.nativeElement as HTMLElement;
+      // Both badges stay MOUNTED, so a row's width never shifts as the suggestion moves; only the
+      // suggested row's badge is visible (frontend-checklist 8).
+      const suggestedBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-mcp"]');
+      const otherBadge = host.querySelector('[data-testid="campaigns-email-template-suggested-kc"]');
+      expect(suggestedBadge?.textContent?.trim()).toBe('Suggested');
+      expect(suggestedBadge?.classList.contains('invisible')).toBe(false);
+      expect(otherBadge, 'the badge slot was removed rather than hidden').not.toBeNull();
+      expect(otherBadge?.classList.contains('invisible')).toBe(true);
+      // And the row is NOT drawn as selected: the badge is the only mark it carries.
+      const row = host.querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]');
+      expect(row?.getAttribute('aria-pressed')).toBe('false');
+      // aria-label replaces the badge text for assistive tech, so the label carries the same fact.
+      expect(row?.getAttribute('aria-label')).toContain('suggested for this event');
+      expect(host.querySelector('[data-testid="campaigns-email-template-kc"]')?.getAttribute('aria-label')).not.toContain('suggested');
+    });
+
+    /**
+     * The core of #2057: the suggestion RECOMMENDS, and only an explicit click selects.
+     *
+     * Every other Stage precondition is satisfied here, so the selection is the only thing that
+     * can hold Stage back -- and it must, until the operator clicks. Before #2057 the suggestion
+     * wrote `selectedEmailTemplateId`, which becomes `hubspotConfig.sourceEmailId` on stage, so a
+     * heuristic match could clone a branded HubSpot draft that nobody chose.
+     */
+    it('selects nothing and keeps Stage disabled until the operator clicks the suggested row', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().emailAudience.set({
+        id: 'aud-1',
+        briefId: 'brief-1',
+        platform: 'hubspot',
+        platformMasterListId: '900',
+        inclusionSummary: '1 signal list',
+        status: 'built',
+        version: 1,
+      });
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [
+          { id: 'kc', name: 'KubeCon registration reminder' },
+          { id: 'mcp', name: 'MCP Dev Summit Nairobi — registration push' },
+        ] as HubSpotMarketingEmail[],
+      });
+
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId(), 'selected before any click').toBe('');
+      expect(picker().canStageEmail(), 'Stage was enabled on a template nobody chose').toBe(false);
+
+      // The explicit operator action, through the DOM rather than the handler.
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="campaigns-email-template-mcp"]')?.click();
+      fixture.detectChanges();
+
+      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().canStageEmail(), 'fixture precondition: the click is the only thing Stage was waiting for').toBe(true);
     });
 
     /**
@@ -8942,7 +11797,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
-    it('stops calling the selection system-chosen once the operator picks it themselves', () => {
+    it('drops the banner and announcement once the operator picks the suggested row themselves', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -8961,23 +11816,20 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         'precondition: the suggestion banner is up'
       ).not.toBeNull();
 
-      const c = fixture.componentInstance as unknown as { onSelectEmailTemplate(id: string): void };
-      // Override to another row, then deliberately pick the suggested one BACK.
-      c.onSelectEmailTemplate('kc');
-      c.onSelectEmailTemplate('mcp');
+      // The operator accepts the suggestion with a click -- now it is their choice.
+      picker().onSelectEmailTemplate('mcp');
       fixture.detectChanges();
 
-      // The ids coincide again -- an equality check would still say "system chose this".
       expect(picker().emailTemplateSuggestionId()).toBe('mcp');
       expect(picker().selectedEmailTemplateId()).toBe('mcp');
 
       expect(
         fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]'),
-        "the banner called the operator's own re-pick a pre-selection"
+        'the banner kept recommending after the operator chose'
       ).toBeNull();
       expect(
         (fixture.componentInstance as unknown as { emailTemplateSuggestionAnnouncement(): string }).emailTemplateSuggestionAnnouncement(),
-        "the screen-reader announcement called the operator's own re-pick a pre-selection"
+        'the screen-reader announcement kept recommending after the operator chose'
       ).toBe('');
     });
 
@@ -9176,7 +12028,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { id: 'other', name: 'Nairobi welcome note' },
       ] as HubSpotMarketingEmail[];
       respond({ enabled: true, error: null, possiblyTruncated: false, emails });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       picker().onSelectEmailTemplate('other');
       picker().searchEmailTemplates('');
@@ -9186,38 +12038,41 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The worst state this feature can reach: a banner announcing a pre-selected template while no
-     * VISIBLE row carries it.
+     * The worst state this feature can reach: a banner pointing at a "Suggested" row that no
+     * VISIBLE row carries.
      *
      * Ranking and the suggestion agree on the event half but not the type half, and a tie falls to
      * the server's original order — so a genuinely-suggested template can rank below enough
      * type-keyword matches to be cut by the 100-row render limit. The operator would then be told
-     * something was chosen for them with no way to see or change it. The selected row is spliced
-     * back in at the top for exactly this reason.
+     * about a recommendation they cannot see or accept. The suggested row is spliced back in for
+     * exactly this reason.
      *
-     * Built to reproduce it: 150 rows that match six keywords of the seven-keyword
-     * `final-countdown` type, plus one true KubeCon template that matches none of them.
+     * Built to reproduce it: 150 rows that match three GENERIC event words, which rank but can
+     * never justify a suggestion, plus one true KubeCon template.
      */
-    it('always draws the selected row, even when ranking would cut it past the render limit', () => {
+    it('always draws the suggested row, even when ranking would cut it past the render limit', () => {
       showPicker();
-      picker().selectedEmailTypeId.set('final-countdown');
-      picker().emailBriefOutput.set(briefFor('KubeCon North America', 'kubecon-na-2026'));
+      // Ranking counts GENERIC event terms; the suggestion does not. So 150 rows matching three
+      // generic words ("community", "training", "webinar") all outrank the one row carrying the
+      // decisive `kubecon`, pushing it past the render cap -- while it is still the only row
+      // eligible to be suggested.
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
       picker().searchEmailTemplates('');
 
       const noise = Array.from({ length: 150 }, (_, i) => ({
         id: `noise-${i}`,
-        name: `Final countdown: last chance, closing deadline, closes soon #${i}`,
+        name: `Community training webinar newsletter #${i}`,
       })) as HubSpotMarketingEmail[];
       respond({
         enabled: true,
         error: null,
         possiblyTruncated: false,
-        emails: [...noise, { id: 'kc', name: 'KubeCon NA 2026 Modern Template' } as HubSpotMarketingEmail],
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
       });
 
       expect(picker().emailTemplateSuggestionId()).toBe('kc');
-      expect(picker().selectedEmailTemplateId()).toBe('kc');
-      // The assertion that matters: it is actually DRAWN, not merely selected.
+      expect(picker().selectedEmailTemplateId()).toBe('');
+      // The assertion that matters: it is actually DRAWN, so its badge can be seen and clicked.
       expect(
         picker()
           .emailTemplatesRendered()
@@ -9225,6 +12080,56 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       ).toBe(true);
       // And the render cap is still honoured — the splice replaces a row, it does not append.
       expect(picker().emailTemplatesRendered().length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /**
+     * Both pinned rows past the cap at once: a hand-picked row AND a different suggested row. The
+     * cap must hold, both must be drawn, and the selection keeps the last slot it always had.
+     */
+    it('draws both the selected and the suggested row when ranking cuts both past the render limit', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      // The noise rows tie, so the server order decides and the last one ranks 150th -- past the cap.
+      picker().onSelectEmailTemplate('noise-149');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered.slice(-2).map((t) => t.id)).toEqual(['kc', 'noise-149']);
+      expect(new Set(rendered.map((t) => t.id)).size, 'a pinned row was drawn twice').toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+    });
+
+    /** One pinned row already drawn, the other cut: the drawn one keeps its place, the cap holds. */
+    it('keeps an already-drawn selection in place while pinning a cut suggestion', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('KubeCon Community Training Webinar', 'kubecon-community-training-webinar'));
+      picker().searchEmailTemplates('');
+      const noise = Array.from({ length: 150 }, (_, i) => ({
+        id: `noise-${i}`,
+        name: `Community training webinar newsletter #${i}`,
+      })) as HubSpotMarketingEmail[];
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [...noise, { id: 'kc', name: 'KubeCon announcement' } as HubSpotMarketingEmail],
+      });
+      picker().onSelectEmailTemplate('noise-0');
+
+      const rendered = picker().emailTemplatesRendered();
+      expect(rendered.length).toBe(HUBSPOT_TEMPLATE_RENDER_LIMIT);
+      expect(rendered[0].id).toBe('noise-0');
+      expect(rendered[rendered.length - 1].id).toBe('kc');
     });
 
     /**
@@ -9256,9 +12161,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * The chosen template belongs to the brief that chose it. Left set, it survives into the next
-     * event in the same foundation — where it is both wrong AND silently suppresses the new
-     * suggestion, since the derivation only fills an empty selection. The feature would fail
-     * precisely on the second event.
+     * event in the same foundation — where it is wrong, still stageable, and hides the new event's
+     * suggestion banner, which shows only while nothing is selected.
      */
     it('clears the chosen template when the brief-derived state resets', () => {
       showPicker();
@@ -9270,6 +12174,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
+      picker().onSelectEmailTemplate('mcp');
       expect(picker().selectedEmailTemplateId()).toBe('mcp');
 
       (fixture.componentInstance as unknown as { resetEmailBriefDerivedState(): void }).resetEmailBriefDerivedState();
@@ -9277,9 +12182,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * The banner asserts what is SELECTED, so it must not survive an override. Keyed on the
-     * suggestion merely existing, it read "pre-selected ... for this event" beside a template the
-     * derivation never chose.
+     * The banner is help BEFORE a decision, so it must not survive one: repeating the
+     * recommendation beside a template the operator chose argues with their choice.
      */
     it('hides the suggestion banner once the operator picks a different row', () => {
       showPicker();
@@ -9325,7 +12229,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       expect(picker().emailTemplateSuggestionTerms()).toContain('kubecon');
     });
 
-    /** The banner is one sentence; an @if between text nodes rendered "event . Pick a different". */
+    /** The banner is one sentence; an @if between text nodes rendered "event . Nothing is". */
     it('renders the banner without a space before the full stop', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
@@ -9339,13 +12243,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
       const text = fixture.nativeElement.querySelector('[data-testid="campaigns-email-template-suggestion"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
       expect(text).not.toContain(' .');
-      expect(text).toContain('. Pick a different one to override it.');
+      expect(text).toContain('. Nothing is selected until you choose a template.');
     });
 
     /**
      * The type is the tie-break, so it must be re-applied when the type CHANGES. A suggestion made
-     * under Registration Push is the wrong answer once the operator switches to CFP Launch — and
-     * left alone the stale template stayed selected and would have been the one staged.
+     * under Registration Push is the wrong answer once the operator switches to CFP Launch. Only
+     * the badge moves; nothing is selected either side of the change.
      */
     it('re-derives the suggestion when the email type changes', () => {
       showPicker();
@@ -9361,10 +12265,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
           { id: 'reg', name: 'MCP Dev Summit Nairobi — registration reminder' },
         ] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('reg');
+      expect(picker().emailTemplateSuggestionId()).toBe('reg');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
       (fixture.componentInstance as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
-      expect(picker().selectedEmailTemplateId()).toBe('cfp');
+      expect(picker().emailTemplateSuggestionId()).toBe('cfp');
+      expect(picker().selectedEmailTemplateId(), 'a type change selected the re-derived suggestion').toBe('');
     });
 
     /** A hand-picked template is the operator's; a type change is not permission to replace it. */
@@ -9409,10 +12315,9 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * The banner is a plain <p> inserted when the suggestion lands, and a newly inserted element is
-     * not reliably announced — so a screen-reader user could miss that a template was chosen for
-     * them and that it is the one staging will use.
+     * not reliably announced — so a screen-reader user could miss that one row is recommended.
      */
-    it('announces the auto-selection through the existing live region', () => {
+    it('announces the suggestion through the existing live region', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9424,14 +12329,15 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       });
 
       const live = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
-      expect(live).toContain('MCP Dev Summit Nairobi registration');
+      expect(live).toContain('Suggested template for this event: MCP Dev Summit Nairobi registration');
       expect(live).toContain('nairobi');
+      expect(live).toContain('Nothing is selected until you choose a template.');
 
-      // Silent once the operator overrides — it no longer describes what is selected.
+      // Silent once the operator has chosen.
       picker().onSelectEmailTemplate('mcp-other');
       fixture.detectChanges();
       const after = fixture.nativeElement.querySelector('[data-testid="campaigns-email-templates-live"]')?.textContent ?? '';
-      expect(after).not.toContain('Template selected for this event');
+      expect(after).not.toContain('Suggested template for this event');
     });
 
     /**
@@ -9457,14 +12363,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * A search that drops the auto-selected row must release it.
-     *
-     * Only the suggestion id was cleared, not the selection — so after a narrowed search the id
-     * stayed selected while the banner hid (it renders only while the suggestion IS the
-     * selection), and staging would clone a template no longer in the list. The same
-     * silent-wrong-clone the feature exists to prevent, reached from the other direction.
+     * A search that drops the suggested row drops the suggestion, and selects nothing in its
+     * place -- a badge must never describe a row the results no longer contain.
      */
-    it('releases an auto-selected template when a search no longer returns it', () => {
+    it('drops the suggestion when a search no longer returns it, and selects nothing', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9474,9 +12376,10 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
-      // A narrowed search that no longer returns the auto-selected row.
+      // A narrowed search that no longer returns the suggested row.
       picker().searchEmailTemplates('newsletter');
       respond({
         enabled: true,
@@ -9485,15 +12388,13 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         emails: [{ id: 'other', name: 'Monthly newsletter' }] as HubSpotMarketingEmail[],
       });
 
+      expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
     });
 
     /**
-     * ID equality cannot establish provenance.
-     *
-     * After suggestion A the operator can pick B, then deliberately pick A again — the ids
-     * coincide, so an equality check treats their explicit choice as system-owned and silently
-     * releases it on the next search. Provenance is a fact about how the value was SET.
+     * A hand-pick of the SUGGESTED row is the operator's like any other, and survives a search
+     * that no longer returns it.
      */
     it('keeps a hand-picked template that happens to match the suggestion', () => {
       showPicker();
@@ -9504,9 +12405,9 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         { id: 'other', name: 'Something else' },
       ] as HubSpotMarketingEmail[];
       respond({ enabled: true, error: null, possiblyTruncated: false, emails });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().selectedEmailTemplateId()).toBe('');
 
-      // Away and deliberately back to the SAME id — now the operator's choice, not the system's.
+      // Away and deliberately back to the suggested id.
       picker().onSelectEmailTemplate('other');
       picker().onSelectEmailTemplate('mcp');
 
@@ -9517,13 +12418,12 @@ describe('CampaignsComponent — HubSpot template picker', () => {
     });
 
     /**
-     * A FAILED search must release a system-owned selection too.
+     * A FAILED search drops the suggestion too, and leaves nothing selected.
      *
-     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms set
-     * `emailTemplates` to null while leaving the auto-selected id in place — invisible, since
-     * there is no list to show it in, and still stageable.
+     * `applyEventTemplateSuggestion` runs only after a successful listing, so the error arms must
+     * clear it themselves or a suggestion would outlive the list it described.
      */
-    it('releases an auto-selected template when the search fails', () => {
+    it('drops the suggestion when the search fails, leaving nothing selected', () => {
       showPicker();
       picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
       picker().searchEmailTemplates('');
@@ -9533,12 +12433,80 @@ describe('CampaignsComponent — HubSpot template picker', () => {
         possiblyTruncated: false,
         emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
       });
-      expect(picker().selectedEmailTemplateId()).toBe('mcp');
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
 
       picker().searchEmailTemplates('anything');
       respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] });
 
+      expect(picker().emailTemplateSuggestionId()).toBe('');
       expect(picker().selectedEmailTemplateId()).toBe('');
+    });
+
+    /**
+     * When the list is GONE rather than replaced, a hand-picked template goes with it (#2057).
+     *
+     * There is no list to render the row in, and `canStageEmail` reads the id, so a surviving
+     * selection would let Stage Email Draft clone a template the operator can no longer see. One
+     * row per terminal arm of `searchEmailTemplates` that answers a request. The fifth arm, no
+     * foundation, is reached only through a foundation switch, and that switch clears the
+     * selection itself, so a row for it could not fail. A search that merely replaces the list
+     * keeps the pick (the test below).
+     */
+    it.each([
+      ['HubSpot refuses the search', (): void => respond({ enabled: true, error: 'HubSpot refused the search', possiblyTruncated: false, emails: [] })],
+      ['the channel is off', (): void => respond({ enabled: false, error: null, possiblyTruncated: false, emails: [] })],
+      [
+        'every row is unusable',
+        (): void => respond({ enabled: true, error: null, possiblyTruncated: false, emails: [{ id: '', name: 'No id' }] as HubSpotMarketingEmail[] }),
+      ],
+      [
+        'the request fails in transport',
+        (): void => {
+          httpMock.expectOne((r) => r.url === '/api/campaigns/hubspot/emails').error(new ProgressEvent('error'));
+          fixture.detectChanges();
+        },
+      ],
+    ])('clears a hand-picked template when %s', (_arm, fail) => {
+      showPicker();
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'hand', name: 'Something the operator knows about' }] as HubSpotMarketingEmail[],
+      });
+      picker().onSelectEmailTemplate('hand');
+      expect(picker().selectedEmailTemplateId()).toBe('hand');
+
+      picker().searchEmailTemplates('newsletter');
+      fail();
+
+      expect(picker().selectedEmailTemplateId(), 'an invisible, stageable selection survived the list').toBe('');
+      expect(picker().emailTemplatesRendered()).toEqual([]);
+      expect(picker().canStageEmail()).toBe(false);
+    });
+
+    /**
+     * A type change during a search must not re-derive the suggestion from the rows that search is
+     * replacing: the loading state hides them, so the live region would announce a recommendation
+     * for a row nobody can see. The search's own answer derives it under the new type.
+     */
+    it('does not suggest from the previous results while a search is pending', () => {
+      showPicker();
+      picker().emailBriefOutput.set(briefFor('MCP Dev Summit Nairobi', 'mcp-dev-summit-nairobi'));
+      picker().searchEmailTemplates('');
+      respond({
+        enabled: true,
+        error: null,
+        possiblyTruncated: false,
+        emails: [{ id: 'mcp', name: 'MCP Dev Summit Nairobi registration' }] as HubSpotMarketingEmail[],
+      });
+      expect(picker().emailTemplateSuggestionId()).toBe('mcp');
+
+      picker().searchEmailTemplates('newsletter');
+      (picker() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('cfp-launch');
+
+      expect(picker().emailTemplateSuggestionId(), 'a suggestion was derived from rows the pending search is replacing').toBe('');
     });
 
     /** A HAND-PICKED template is the operator's and survives a search that drops it. */
@@ -9664,8 +12632,8 @@ describe('CampaignsComponent — HubSpot template picker', () => {
 
     /**
      * A template matched on its SUBJECT may carry no name, and announcing an empty string reads as
-     * "Template selected for this event: . Choose another" — which tells a screen-reader user
-     * nothing about what was chosen for them.
+     * "Suggested template for this event: . Nothing is selected" — which tells a screen-reader user
+     * nothing about what is recommended.
      */
     it('announces a subject-matched template by its subject rather than an empty name', () => {
       showPicker();
@@ -11096,7 +14064,14 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     driveFolderUrl: '',
   } as unknown as CampaignBriefOutput;
 
-  const capability = (biddingEnabled: boolean): Observable<CampaignListResult> =>
+  const capability = (
+    biddingEnabled: boolean,
+    microsoftScheduleEnabled = false,
+    googleAudienceSegmentsEnabled = false,
+    googleGeoSearchEnabled = false,
+    metaInstagramDsaEnabled = false,
+    twitterCreateEnabled = false
+  ): Observable<CampaignListResult> =>
     of({
       campaigns: [],
       possiblyStale: false,
@@ -11106,8 +14081,19 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
       googleCreativeEnabled: false,
       redditCreativeEnabled: false,
       redditAssetUploadEnabled: false,
+      redditConversionPixelEnabled: false,
       googleAssetUploadEnabled: false,
+      metaCreativeEnabled: false,
+      metaAssetUploadEnabled: false,
+      linkedInAssetUploadEnabled: false,
+      linkedInTargetingEditEnabled: false,
+      microsoftAssetUploadEnabled: false,
       biddingEnabled,
+      microsoftScheduleEnabled,
+      twitterCreateEnabled,
+      metaInstagramDsaEnabled,
+      googleAudienceSegmentsEnabled,
+      googleGeoSearchEnabled,
     });
 
   const saved = () => of({ enabled: true, briefId: 'brief-1', etag: '"1"', created: true, approved: true });
@@ -11180,6 +14166,287 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
   });
 
+  /**
+   * The Microsoft flight-date capability travels the same path into the tab: the real page reads
+   * it, binds it to `microsoftScheduleEnabled`, and the tab swaps its warning for the applied note.
+   */
+  it.each([
+    [true, 'implementation-microsoft-flight', 'implementation-microsoft-no-flight'],
+    [false, 'implementation-microsoft-no-flight', 'implementation-microsoft-flight'],
+  ])('hands a microsoft schedule capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, enabled));
+    const withMicrosoft = { ...brief, selectedPlatforms: ['microsoft-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withMicrosoft);
+    await settle();
+
+    expect(tab()['microsoftScheduleEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /**
+   * The X create capability travels the same path into the tab: the real page reads it and binds
+   * it to `twitterCreateEnabled`, and the tab either renders the X fields or holds X behind its block.
+   */
+  it.each([
+    [true, 'implementation-twitter-budget', 'implementation-twitter-create-block-unsupported'],
+    [false, 'implementation-twitter-create-block-unsupported', 'implementation-twitter-budget'],
+  ])('hands an X create capability of %s to the Implementation tab', async (enabled, shown, hidden) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, enabled));
+    const withTwitter = { ...brief, selectedPlatforms: ['twitter-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withTwitter);
+    await settle();
+
+    expect(tab()['twitterCreateEnabled']()).toBe(enabled);
+    expect(q(shown)).not.toBeNull();
+    expect(q(hidden)).toBeNull();
+  });
+
+  /** The Meta Instagram/DSA capability travels the same path: the real page reads it, binds it, and the tab shows the inputs only on a yes. */
+  it.each([[true], [false]])('hands a meta instagram/dsa capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, enabled));
+
+    page().onProceedToImplementation(brief as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['metaInstagramDsaEnabled']()).toBe(enabled);
+    expect(q('implementation-meta-instagram-dsa') !== null).toBe(enabled);
+  });
+
+  // === X fields across a refine ===
+
+  const withTwitter = { ...brief, selectedPlatforms: ['google-ads', 'twitter-ads'] } as unknown as CampaignBriefOutput;
+  const tweetAsset = { id: 'asset-x', mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true };
+
+  function chooseTweetImage(): void {
+    const input = q('implementation-twitter-image-file') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File([new Uint8Array(16)], 'tweet.png', { type: 'image/png' })] });
+    input.dispatchEvent(new Event('change'));
+  }
+
+  /** Proceed, then type the two X fields as the operator would. */
+  async function proceedAndTypeX(b: CampaignBriefOutput = withTwitter): Promise<void> {
+    page().onProceedToImplementation(b);
+    await settle();
+    tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
+    tab()['campaignForm'].controls['twitterBudget'].setValue('42');
+    await settle();
+  }
+
+  /** Back to Planning, which tears the Implementation tab down: the refine round trip. */
+  async function leaveForPlanning(): Promise<void> {
+    (fixture.componentInstance as unknown as { selectTab(t: string, owner: string): void }).selectTab('planning', 'paid-marketing');
+    await settle();
+  }
+
+  /**
+   * The X fields survive a refine: proceeding again for the SAME event clears the draft for the
+   * regenerated copy, but the tweet, budget and image are typed by the operator and nothing the
+   * generator produces replaces them. Implement is torn down between proceeds, as a refine from
+   * Planning does, so the image is restored from the carry rather than left standing on a live mount.
+   * These real-template round trips mount Implementation more than once and drain Angular between
+   * each phase; allow headroom beyond the default 5 seconds on shared CI runners (#5638).
+   */
+  it('keeps the typed X fields and image across a same-event proceed', { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'uploadCreativeAsset').mockReturnValue(of(tweetAsset) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    await leaveForPlanning();
+
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('42');
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    expect(tab()['twitterImageAssetName']()).toBe('tweet.png');
+    expect(tab()['twitterImageAssetBriefId']()).toBe('brief-1');
+  });
+
+  /** A different event's X fields and image must not follow it onto the next one. */
+  it('drops the typed X fields and image when the next proceed is for another event', { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'uploadCreativeAsset').mockReturnValue(of(tweetAsset) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+    await leaveForPlanning();
+
+    const otherEvent = { ...withTwitter, eventDetails: { ...withTwitter.eventDetails, slug: 'other-event-2026', name: 'Other Event' } } as CampaignBriefOutput;
+    page().onProceedToImplementation(otherEvent);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['twitterImageAssetId']()).toBe('');
+  });
+
+  /**
+   * Start Over discards the brief, so a carry made by an earlier refine must go with it: the carry
+   * is what the next proceed reads once Start Over has cleared the draft.
+   */
+  it('drops a carried X draft on Start Over, even for the same event', { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    await proceedAndTypeX();
+    await leaveForPlanning();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('Typed tweet');
+
+    (fixture.componentInstance as unknown as { resetToPlanning(): void }).resetToPlanning();
+    await settle();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /** New Brief discards the generated brief too, so the brief generated next is not a refine of it. */
+  it('drops the typed X fields after New Brief, even for the same event', { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    await proceedAndTypeX();
+    await leaveForPlanning();
+
+    // The paid planner, not the email one: both are mounted.
+    const planners = fixture.debugElement.queryAll(By.directive(PlanningTabComponent)).map((d) => d.componentInstance as PlanningTabComponent);
+    const paid = planners.find((p) => (p as unknown as { deliveryType(): string }).deliveryType() !== 'email');
+    expect(paid).toBeDefined();
+    (paid as PlanningTabComponent).reset();
+    await settle();
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /**
+   * A restore leaves Planning on its input step without going through `reset()`, so Scrape &
+   * Generate for the same event is the only signal that the next proceed is a new generation. The
+   * X fields typed over the restored brief must not follow onto it. A real-template round trip
+   * (restore, leave, generate, proceed); allow the same CI headroom as its siblings (#5638).
+   */
+  it('drops the typed X fields when a new brief is generated after a restore, even for the same event', { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(NEVER as never);
+    (
+      fixture.componentInstance as unknown as {
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null, approved: boolean, readAt: number): void;
+      }
+    ).onRestoreSavedBrief({ ...withTwitter } as CampaignBriefOutput, 'brief-1', null, true, 0);
+    await settle();
+    tab()['campaignForm'].controls['twitterTweetText'].setValue('Typed tweet');
+    tab()['campaignForm'].controls['twitterBudget'].setValue('42');
+    await settle();
+    await leaveForPlanning();
+
+    const planners = fixture.debugElement.queryAll(By.directive(PlanningTabComponent)).map((d) => d.componentInstance as PlanningTabComponent);
+    const paid = planners.find((p) => (p as unknown as { deliveryType(): string }).deliveryType() !== 'email') as unknown as {
+      briefForm: { controls: { url: { setValue(v: string): void } } };
+      selectedPlatforms: { set(v: Set<string>): void };
+      canGenerate(): boolean;
+      generate(): void;
+    };
+    expect(paid).toBeDefined();
+    paid.briefForm.controls.url.setValue('https://events.example/kubecon');
+    paid.selectedPlatforms.set(new Set(['google-ads', 'twitter-ads']));
+    await settle();
+    expect(paid.canGenerate()).toBe(true);
+    paid.generate();
+    await settle();
+
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['campaignForm'].controls['twitterTweetText'].value).toBe('');
+    expect(tab()['campaignForm'].controls['twitterBudget'].value).toBe('');
+  });
+
+  /**
+   * A refine re-saves the brief, and the save clears the brief id until it answers, so the carried
+   * pending upload is parked on mount. When the save hands the same id back, the upload must be
+   * resumed, holding Create, rather than left parked with Create free to send no image.
+   * This real-template round trip mounts Implementation twice and drains Angular between each
+   * phase; allow headroom beyond the default 5 seconds on shared CI runners.
+   */
+  it("resumes a pending X upload once a refine's delayed save returns the same brief id", { timeout: 15_000 }, async () => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, false, false, true));
+    const service = TestBed.inject(CampaignService);
+    const upload = new Subject<typeof tweetAsset>();
+    vi.spyOn(service, 'uploadCreativeAsset').mockReturnValue(upload as never);
+    const resume = vi
+      .spyOn(service, 'resumeCreativeAssetUpload')
+      .mockImplementation(((owner: string, id: string) => (owner === 'twitter' && id === 'brief-1' ? upload : null)) as never);
+
+    await proceedAndTypeX();
+    chooseTweetImage();
+    await settle();
+    expect(tab()['twitterImageUploadStatus']()).toBe('uploading');
+    await leaveForPlanning();
+
+    const save = new Subject<unknown>();
+    vi.spyOn(service, 'persistBrief').mockReturnValue(save as never);
+    page().onProceedToImplementation({ ...withTwitter } as CampaignBriefOutput);
+    await settle();
+    expect(tab()['twitterImageUploadPendingName']()).toBe('tweet.png');
+    expect(resume).not.toHaveBeenCalled();
+
+    save.next({ enabled: true, briefId: 'brief-1', etag: '"2"', created: false, approved: true });
+    save.complete();
+    await settle();
+    expect(resume).toHaveBeenCalledWith('twitter', 'brief-1');
+    expect(tab()['twitterImageUploadStatus']()).toBe('uploading');
+    expect(tab()['canSubmit']()).toBe(false);
+
+    upload.next(tweetAsset);
+    upload.complete();
+    await settle();
+    expect(tab()['twitterImageAssetId']()).toBe('asset-x');
+  });
+
+  /** The per-caller audience capability travels the same path: the real page reads it and binds it. */
+  it.each([[true], [false]])('hands a google audience segments capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, enabled));
+
+    page().onProceedToImplementation({ ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput);
+    await settle();
+
+    expect(tab()['googleAudienceSegmentsEnabled']()).toBe(enabled);
+  });
+
+  /** #4983 ("ss-3"): where "create another campaign" is offered travels the same path. */
+  it('hands the create-another platforms to the Implementation tab', async () => {
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+    listBriefCampaigns.mockReturnValue(capability(false).pipe(map((result) => ({ ...result, multiCampaignPlatforms: ['google-ads'] }))));
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+    expect(tab()['multiCampaignPlatforms']()).toEqual(['google-ads']);
+  });
+
+  it('hands no create-another platforms when the BFF sends none', async () => {
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+    listBriefCampaigns.mockReturnValue(capability(false));
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+    expect(tab()['multiCampaignPlatforms']()).toEqual([]);
+  });
+
+  /** The geo-search capability travels the same path: the real page reads it and binds it to the tab. */
+  it.each([[true], [false]])('hands a google geo search capability of %s to the Implementation tab', async (enabled) => {
+    listBriefCampaigns.mockReturnValue(capability(false, false, false, enabled));
+    const withGoogle = { ...brief, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
+
+    page().onProceedToImplementation(withGoogle);
+    await settle();
+
+    expect(tab()['googleGeoSearchEnabled']()).toBe(enabled);
+  });
+
   it('after a foundation switch offers no Retry, only "save the brief", and saving recovers the Manual bid', async () => {
     await proceedWithManualMeta();
     expect(tab()['canSubmit']()).toBe(true);
@@ -11198,7 +14465,9 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     page().onProceedToImplementation(brief);
     await settle();
 
+    // One read: the capability read also files the list for the Implement tab's panel (#4983).
     expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
+    expect((page() as unknown as { briefCampaigns(): unknown }).briefCampaigns(), 'the save did not file the campaign list').not.toBeNull();
     expect(page().briefCampaignsBiddingEnabled()).toBe(true);
     expect(q('implementation-bidding-capability-unsaved')).toBeNull();
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import type { OffsetPaginatedResponse } from './api.interface';
+import type { OrgEventsParticipation, OrgEventsScope } from './org-events-filters.interface';
+import type { OrgLensTimeRange } from './org-lens-time-range.interface';
 
 /** Tab identifier for the Org Events page tab strip. */
 export type OrgEventsTabId = 'upcoming' | 'past';
@@ -28,9 +30,18 @@ export interface OrgEvent {
   readonly eventCountry: string | null;
   readonly eventUrl: string | null;
   readonly eventRegistrationUrl: string | null;
+  /** Distinct Employee match people for the served `participation` (Upcoming events always count registrations). */
   readonly orgAttendeeCount: number;
-  /** Event-wide registration goal/target (EVENT_REGISTRATIONS_GOAL); null when no goal is set. */
-  readonly eventRegistrationsGoal: number | null;
+  /**
+   * Event-wide registration goal; `null` when the event has none, or when its goal is 0.
+   *
+   * OPTIONAL as well as nullable, and the two mean different things: ABSENT means the caller may not
+   * see it — not LF staff, or LF staff impersonating another user, since "view as" shows the member's
+   * view and that view has no goal in it. #4432 requires the figure to be missing from the payload
+   * rather than merely unrendered for external admins. `null` means the caller may see it and there is
+   * none to see.
+   */
+  readonly eventRegistrationsGoal?: number | null;
   readonly orgSpeakerAcceptedCount: number;
   readonly orgSpeakerSubmittedCount: number;
   readonly isOrgSponsor: boolean;
@@ -53,6 +64,14 @@ export interface GetOrgEventsParams {
   readonly offset?: number;
   readonly sortField?: string;
   readonly sortOrder?: 'ASC' | 'DESC';
+  /** "Count"; omitted means the default. Ignored on the Upcoming tab. */
+  readonly participation?: OrgEventsParticipation;
+  /** "Show"; omitted means the default. */
+  readonly eventScope?: OrgEventsScope;
+  /** Foundation id; omitted or `''` is All Foundations. */
+  readonly foundation?: string;
+  /** Applies to the Past tab only; omitted means the default. */
+  readonly range?: OrgLensTimeRange;
 }
 
 /** Summary counts for the Org Events stat strip. */
@@ -71,9 +90,13 @@ export interface GetOrgEventsOptions {
   readonly offset: number;
   readonly sortField: string;
   readonly sortOrder: 'ASC' | 'DESC';
+  readonly participation: OrgEventsParticipation;
+  readonly eventScope: OrgEventsScope;
+  readonly foundation: string;
+  readonly range: OrgLensTimeRange;
 }
 
-/** A single org employee in the per-event attendees drawer. */
+/** A single person in the per-event attendees drawer: everyone the picked option credits to the organization, by name (title only for roster employees). */
 export interface OrgEventAttendee {
   readonly contactId: string;
   readonly name: string;
@@ -90,8 +113,20 @@ export interface OrgEventAttendeeVm extends OrgEventAttendee {
 export interface OrgEventAttendeesDrawerResponse {
   readonly eventId: string;
   readonly eventName: string;
+  /** People in `data`: everyone the picked option counts for the event, narrowed by any name search. */
   readonly total: number;
   readonly data: readonly OrgEventAttendee[];
+}
+
+/** Foundation dropdown option on the Events page. */
+export interface OrgEventFoundationOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** Response for GET /api/orgs/:accountId/lens/events/foundations — foundations that have events under the picked `eventScope`. */
+export interface OrgEventFoundationsResponse {
+  readonly data: readonly OrgEventFoundationOption[];
 }
 
 /** A single org employee in the per-event speakers drawer. */

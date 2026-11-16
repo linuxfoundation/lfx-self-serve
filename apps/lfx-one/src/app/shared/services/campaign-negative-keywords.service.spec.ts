@@ -9,6 +9,7 @@ import { MessageService } from 'primeng/api';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CampaignKeywordTargetingService } from './campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from './campaign-negative-keywords.service';
 import { CampaignService } from './campaign.service';
 
@@ -39,7 +40,7 @@ describe('CampaignNegativeKeywordsService', () => {
     messageAdd = vi.fn();
     TestBed.configureTestingModule({
       providers: [
-        { provide: CampaignService, useValue: { addNegativeKeywords } },
+        { provide: CampaignService, useValue: { addNegativeKeywords, removeKeywordTargeting: vi.fn().mockReturnValue(new Subject()) } },
         { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
@@ -137,6 +138,94 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
   });
 
+  it("keeps each keyword's last outcome across the campaign's later requests", () => {
+    service.submit(submission());
+    answer(0, ['UNCONFIRMED', 'APPLIED']);
+    service.submit(submission({ keywords: ['gamma'] }));
+    expect(service.requests()['tlf|b-1|c-1'].keywordOutcomes['alpha'].outcome).toBe('UNCONFIRMED');
+    answer(1, ['APPLIED']);
+
+    const outcomes = service.requests()['tlf|b-1|c-1'].keywordOutcomes;
+    expect(outcomes['alpha'].outcome).toBe('UNCONFIRMED');
+    expect(outcomes['beta'].outcome).toBe('APPLIED');
+    expect(outcomes['gamma'].outcome).toBe('APPLIED');
+  });
+
+  // What decides "a newer outcome happened" must not depend on what is still on display.
+  it("raises each sent keyword's outcome high-water mark on every settle, and never clears it", () => {
+    service.submit(submission());
+    answer(0, ['UNCONFIRMED', 'APPLIED']);
+    expect(service.keywordOutcomeSeqs()).toEqual({ 'tlf|c-1|alpha': 1, 'tlf|c-1|beta': 1 });
+    service.submit(submission({ keywords: ['alpha'] }));
+    answer(1, ['APPLIED']);
+    expect(service.keywordOutcomeSeqs()).toEqual({ 'tlf|c-1|alpha': 2, 'tlf|c-1|beta': 1 });
+    expect(service.latestOutcomeSeq()).toBe(2);
+
+    service.dismiss('tlf', 'b-1', 'c-1');
+    service.setScope('tlf', 'b-2');
+    service.releaseScope();
+    expect(service.requests()).toEqual({});
+    expect(service.keywordOutcomeSeqs()).toEqual({ 'tlf|c-1|alpha': 2, 'tlf|c-1|beta': 1 });
+  });
+
+  it('says whether it sent', () => {
+    expect(service.submit(submission())).toBe(true);
+    expect(service.submit(submission())).toBe(false);
+    expect(service.submit(submission({ campaignId: 'c-2', platform: 'reddit-ads', matchType: 'Broad' }))).toBe(false);
+    expect(addNegativeKeywords).toHaveBeenCalledTimes(1);
+  });
+
+  // Keyword writes are serialized per campaign, not per brief: the page's brief id can go empty under one.
+  it('holds a campaign across brief keys, counts its settles, and leaves other campaigns alone', () => {
+    expect(service.reserve('tlf', 'c-1')).toBe(true);
+    expect(service.submit(submission({ briefId: '' }))).toBe(false);
+    expect(service.submit(submission({ briefId: 'b-2' }))).toBe(false);
+    expect(service.isWriteHeld('tlf', 'c-1')).toBe(true);
+    expect(service.submit(submission({ campaignId: 'c-2' }))).toBe(true);
+    service.release('tlf', 'c-1');
+
+    expect(service.submit(submission())).toBe(true);
+    expect(service.pendingWrites()).toEqual({ 'tlf|c-1': true, 'tlf|c-2': true });
+    expect(service.submit(submission({ briefId: '' }))).toBe(false);
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
+
+    answer(1, ['APPLIED', 'APPLIED']);
+    expect(service.pendingWrites()).toEqual({ 'tlf|c-2': true });
+    expect(service.settledWrites()['tlf|c-1']).toBe(1);
+    expect(service.isWriteHeld('tlf', 'c-1')).toBe(false);
+  });
+
+  it('refuses a held campaign until it is released, and holds nothing busy', () => {
+    expect(service.reserve('tlf', 'c-1')).toBe(true);
+    expect(service.reservations()).toEqual({ 'tlf|c-1': true });
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
+    expect(service.submit(submission())).toBe(false);
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+
+    service.release('tlf', 'c-1');
+    expect(service.reservations()).toEqual({});
+    expect(service.submit(submission())).toBe(true);
+    // A campaign with a request in flight cannot be held.
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
+  });
+
+  // A campaign's Reddit targeting is one domain: an add waits for a removal from it to settle.
+  it('refuses to send or hold while a keyword-targeting removal of the campaign is in flight', () => {
+    TestBed.inject(CampaignKeywordTargetingService).remove({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      campaignName: 'KubeCon EU',
+      platform: 'reddit-ads',
+      request: { briefId: 'b-1', keywords: [{ keyword: 'mesh' }], revision: 'sha256:r1' },
+      sent: ['mesh'],
+    });
+
+    expect(service.reserve('tlf', 'c-1')).toBe(false);
+    expect(service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: 'sha256:r1' }))).toBe(false);
+    expect(service.submit(submission({ campaignId: 'c-2' }))).toBe(true);
+  });
+
   it('refuses a second request for the same campaign while one is in flight', () => {
     service.submit(submission());
     service.submit(submission({ keywords: ['gamma'] }));
@@ -159,24 +248,27 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(unsettled).not.toHaveBeenCalled();
   });
 
+  // Outcomes are kept per brief; WRITES are serialized per campaign, so the same campaign under
+  // another brief waits for the first request to settle.
   it('keeps requests of different projects and briefs apart', () => {
     service.submit(submission());
-    service.submit(submission({ briefId: 'b-2' }));
     service.submit(submission({ projectSlug: 'cncf' }));
+    answer(0, ['APPLIED', 'APPLIED']);
+    service.submit(submission({ briefId: 'b-2' }));
 
     expect(addNegativeKeywords).toHaveBeenCalledTimes(3);
-    answer(1, ['FAILED', 'FAILED']);
+    answer(2, ['FAILED', 'FAILED']);
 
-    expect(service.requests()['tlf|b-1|c-1'].pending).toBe(true);
-    expect(service.requests()['tlf|b-2|c-1'].pending).toBe(false);
+    expect(service.requests()['tlf|b-1|c-1'].outcomeRows.map((row) => row.outcome)).toEqual(['APPLIED', 'APPLIED']);
+    expect(service.requests()['tlf|b-2|c-1'].outcomeRows.map((row) => row.outcome)).toEqual(['FAILED', 'FAILED']);
     expect(service.requests()['cncf|b-1|c-1'].pending).toBe(true);
   });
 
   it('clears the settled requests of one scope only, and never one in flight', () => {
     service.submit(submission({ campaignId: 'c-1' }));
     service.submit(submission({ campaignId: 'c-2' }));
-    service.submit(submission({ briefId: 'b-2' }));
     answer(0, ['APPLIED', 'APPLIED']);
+    service.submit(submission({ briefId: 'b-2' }));
     answer(2, ['APPLIED', 'APPLIED']);
 
     service.clearSettled('tlf', 'b-1');

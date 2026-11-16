@@ -73,7 +73,12 @@
           @for (invitation of invitations(); track invitation.id) {
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-invitation-row-' + invitation.id">
               <td class="px-4 py-4">
-                <span class="text-sm font-medium text-gray-900">{{ invitation.programName }}</span>
+                <span class="text-sm font-medium text-gray-900">
+                  <lfx-mentorship-program-link
+                    [programId]="invitation.programId"
+                    [programName]="invitation.programName"
+                    [testId]="'mentorship-mentor-invitation-program-link-' + invitation.id" />
+                </span>
               </td>
               <td class="px-4 py-4">
                 <span
@@ -116,7 +121,12 @@
           @for (row of rows(); track row.id) {
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'mentorship-mentor-request-row-' + row.id">
               <td class="px-4 py-4">
-                <span class="text-sm font-medium text-gray-900">{{ row.programName }}</span>
+                <span class="text-sm font-medium text-gray-900">
+                  <lfx-mentorship-program-link
+                    [programId]="row.programId"
+                    [programName]="row.programName"
+                    [testId]="'mentorship-mentor-request-program-link-' + row.id" />
+                </span>
               </td>
               <td class="px-4 py-4">
                 <span

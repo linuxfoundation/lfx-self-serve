@@ -4,9 +4,9 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
-import { Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
+import { EnrichedIdentity, Meeting, MeetingRsvp, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { defer, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserService } from './user.service';
@@ -33,6 +33,36 @@ describe('UserService', () => {
       ],
     });
     service = TestBed.inject(UserService);
+  });
+
+  describe('consumeLinkedEmailSupportContext', () => {
+    it('posts the opaque handle and returns only the authenticated response', () => {
+      const post = vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(of({ email: 'linked@example.test' }));
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+      expect(post).toHaveBeenCalledExactlyOnceWith('/api/profile/auth/email-support-context', { handle: 'a'.repeat(64) });
+      expect(next).toHaveBeenCalledExactlyOnceWith({ email: 'linked@example.test' });
+    });
+
+    it.each([undefined, null, '', 'not-a-handle', ['a'.repeat(64)]])('does not request missing or malformed context %j', (handle) => {
+      const next = vi.fn();
+      service.consumeLinkedEmailSupportContext(handle).subscribe(next);
+      expect(TestBed.inject(HttpClient).post).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledExactlyOnceWith({});
+    });
+
+    it('logs a failed context request without sensitive error data and keeps the generic draft', () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('linked@example.test; handle=' + 'a'.repeat(64))));
+        const next = vi.fn();
+        service.consumeLinkedEmailSupportContext('a'.repeat(64)).subscribe(next);
+        expect(next).toHaveBeenCalledExactlyOnceWith({});
+        expect(log).toHaveBeenCalledExactlyOnceWith('Linked-email support context unavailable; using the generic support draft.');
+      } finally {
+        log.mockRestore();
+      }
+    });
   });
 
   it('refreshes identities only after a successful primary-email change, without rewriting session claims', () => {
@@ -68,6 +98,124 @@ describe('UserService', () => {
     expect(onError).toHaveBeenCalledWith(error);
     expect(refreshed).not.toHaveBeenCalled();
     subscription.unsubscribe();
+  });
+
+  // #4523: every identities GET re-runs the server's CDP reconcile, so the page must share one.
+  describe('getIdentities', () => {
+    const identitiesUrl = '/api/profile/identities';
+    let response$: Subject<EnrichedIdentity[]>;
+    // HttpClient observables are cold: every subscription is a request, so count subscriptions, not get() calls.
+    let subscriptions: number;
+    const identitiesRequests = (): number => subscriptions;
+
+    beforeEach(() => {
+      response$ = new Subject<EnrichedIdentity[]>();
+      subscriptions = 0;
+      httpGet.mockImplementation((url: string) =>
+        url === identitiesUrl
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+    });
+
+    function respond(rows: EnrichedIdentity[] = []): void {
+      response$.next(rows);
+      response$.complete();
+    }
+
+    it('shares one request between concurrent and later subscribers', () => {
+      const shell = vi.fn();
+      const tab = vi.fn();
+      service.getIdentities().subscribe(shell);
+      service.getIdentities().subscribe(tab);
+      respond([{ id: 'id-1' } as EnrichedIdentity]);
+      const late = vi.fn();
+      service.getIdentities().subscribe(late);
+
+      expect(identitiesRequests()).toBe(1);
+      for (const consumer of [shell, tab, late]) {
+        expect(consumer).toHaveBeenCalledExactlyOnceWith([{ id: 'id-1' }]);
+      }
+    });
+
+    it('shares a response carrying synthetic auth0: ids with current subscribers only', () => {
+      const shell = vi.fn();
+      const tab = vi.fn();
+      const synthetic = [{ id: 'cdp-1' }, { id: 'auth0:github|1' }] as EnrichedIdentity[];
+      service.getIdentities().subscribe(shell);
+      service.getIdentities().subscribe(tab);
+      respond(synthetic);
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      // A later visit must see the real CDP id, so removal does not skip CDP rejection.
+      service.getIdentities().subscribe();
+
+      expect(shell).toHaveBeenCalledExactlyOnceWith(synthetic);
+      expect(tab).toHaveBeenCalledExactlyOnceWith(synthetic);
+      expect(identitiesRequests()).toBe(2);
+    });
+
+    it('fetches once more after refreshUserIdentities(), for every consumer together', () => {
+      service.getIdentities().subscribe();
+      respond();
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      service.refreshUserIdentities();
+      service.getIdentities().subscribe();
+      service.getIdentities().subscribe();
+
+      expect(identitiesRequests()).toBe(2);
+    });
+
+    it('does not cache a failed request', () => {
+      const onError = vi.fn();
+      service.getIdentities().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<EnrichedIdentity[]>();
+
+      service.getIdentities().subscribe();
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(identitiesRequests()).toBe(2);
+    });
+
+    it('drops the cache after a successful identity removal or email link', () => {
+      vi.mocked(TestBed.inject(HttpClient).patch).mockReturnValue(of({ success: true }));
+      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(of({ success: true }));
+      service.getIdentities().subscribe();
+      respond();
+
+      for (const mutate of [() => service.rejectIdentity('id-1'), () => service.verifyAndLinkEmail('dev@example.org', '123456')]) {
+        response$ = new Subject<EnrichedIdentity[]>();
+        const before = identitiesRequests();
+        mutate().subscribe();
+        service.getIdentities().subscribe();
+        expect(identitiesRequests()).toBe(before + 1);
+        respond();
+      }
+    });
+
+    // A removal can fail after the Auth0 unlink already landed, so the cached list can't be trusted.
+    it('drops the cache after a failed identity removal or email link', () => {
+      vi.mocked(TestBed.inject(HttpClient).patch).mockReturnValue(throwError(() => new Error('cdp unavailable')));
+      vi.mocked(TestBed.inject(HttpClient).post).mockReturnValue(throwError(() => new Error('link step failed')));
+      service.getIdentities().subscribe();
+      respond();
+
+      for (const mutate of [() => service.rejectIdentity('id-1'), () => service.verifyAndLinkEmail('dev@example.org', '123456')]) {
+        response$ = new Subject<EnrichedIdentity[]>();
+        const before = identitiesRequests();
+        const onError = vi.fn();
+        mutate().subscribe({ error: onError });
+        service.getIdentities().subscribe();
+        expect(onError).toHaveBeenCalledOnce();
+        expect(identitiesRequests()).toBe(before + 1);
+        respond();
+      }
+    });
   });
 
   it.each([
@@ -139,6 +287,144 @@ describe('UserService', () => {
     }
   });
 
+  it("never replays the previous viewer's past feeds before the identity effect runs", async () => {
+    const feeds = [
+      () => service.getUserPastMeetings(),
+      () => service.getUserPastMeetings({ includeArtifactsAndAttendance: true }),
+      () => service.getUserLatestPastMeetings(),
+    ];
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-a-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-a' } as User);
+    await TestBed.inject(ApplicationRef).whenStable();
+    feeds.forEach((getFeed) => getFeed().subscribe().unsubscribe());
+
+    httpGet.mockImplementation((url: string) => of(url.startsWith('/api/user/') ? [{ id: 'synthetic-b-meeting' }] : { profile: {} }));
+    service.user.set({ sub: 'synthetic-b' } as User);
+
+    for (const getFeed of feeds) {
+      let rows: string[] = [];
+      getFeed()
+        .subscribe((meetings) => (rows = meetings.map((meeting) => meeting.id)))
+        .unsubscribe();
+      expect(rows).toEqual(['synthetic-b-meeting']);
+    }
+  });
+
+  describe('retry after a failed personal-meeting fetch (GH-4780)', () => {
+    // The dashboard's Retry control re-calls these getters after an error. shareReplay
+    // otherwise caches and replays a failure forever, so a real retry must issue a fresh
+    // request instead of immediately re-erroring from the stale cached observable.
+    it('getUserMeetings does not cache a failed request', () => {
+      let subscriptions = 0;
+      let response$ = new Subject<Meeting[]>();
+      httpGet.mockImplementation((url: string) =>
+        url === '/api/user/meetings'
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+
+      const onError = vi.fn();
+      service.getUserMeetings().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<Meeting[]>();
+
+      let rows: Meeting[] = [];
+      service.getUserMeetings().subscribe((meetings) => (rows = meetings));
+      response$.next([{ id: 'synthetic-meeting' } as Meeting]);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(subscriptions).toBe(2);
+      expect(rows).toEqual([{ id: 'synthetic-meeting' }]);
+    });
+
+    it('getUserPastMeetings does not cache a failed request', () => {
+      let subscriptions = 0;
+      let response$ = new Subject<PastMeeting[]>();
+      httpGet.mockImplementation((url: string) =>
+        url === '/api/user/past-meetings'
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+
+      const onError = vi.fn();
+      service.getUserPastMeetings().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<PastMeeting[]>();
+
+      let rows: PastMeeting[] = [];
+      service.getUserPastMeetings().subscribe((meetings) => (rows = meetings));
+      response$.next([{ id: 'synthetic-past-meeting' } as PastMeeting]);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(subscriptions).toBe(2);
+      expect(rows).toEqual([{ id: 'synthetic-past-meeting' }]);
+    });
+
+    it('getUserMeetings caches the attendance feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as Meeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withAttendance: string[] = [];
+      service.getUserMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserMeetings({ includeAttendance: true }).subscribe((meetings) => (withAttendance = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withAttendance).toEqual(['attendance']);
+      expect(service.getUserMeetings({ includeAttendance: true })).toBe(service.getUserMeetings({ includeAttendance: true }));
+      expect(service.getUserMeetings()).not.toBe(service.getUserMeetings({ includeAttendance: true }));
+    });
+
+    it('getUserPastMeetings caches the artifacts and attendance feed apart from the plain feed', () => {
+      httpGet.mockImplementation((url: string, options?: { params?: Record<string, string> }) =>
+        url === '/api/user/past-meetings' ? of([{ id: options?.params?.['include'] ?? 'plain' } as PastMeeting]) : of({ profile: {} })
+      );
+
+      let plain: string[] = [];
+      let withDetails: string[] = [];
+      service.getUserPastMeetings().subscribe((meetings) => (plain = meetings.map((meeting) => meeting.id)));
+      service.getUserPastMeetings({ includeArtifactsAndAttendance: true }).subscribe((meetings) => (withDetails = meetings.map((meeting) => meeting.id)));
+
+      expect(plain).toEqual(['plain']);
+      expect(withDetails).toEqual(['artifacts,attendance']);
+      expect(service.getUserPastMeetings({ includeArtifactsAndAttendance: true })).toBe(service.getUserPastMeetings({ includeArtifactsAndAttendance: true }));
+      expect(service.getUserPastMeetings()).not.toBe(service.getUserPastMeetings({ includeArtifactsAndAttendance: true }));
+    });
+
+    it('getUserLatestPastMeetings does not cache a failed request', () => {
+      let subscriptions = 0;
+      let response$ = new Subject<PastMeeting[]>();
+      httpGet.mockImplementation((url: string) =>
+        url === '/api/user/latest-past-meetings'
+          ? defer(() => {
+              subscriptions++;
+              return response$;
+            })
+          : of({ profile: {} })
+      );
+
+      const onError = vi.fn();
+      service.getUserLatestPastMeetings().subscribe({ error: onError });
+      response$.error(new Error('unavailable'));
+      response$ = new Subject<PastMeeting[]>();
+
+      let rows: PastMeeting[] = [];
+      service.getUserLatestPastMeetings().subscribe((meetings) => (rows = meetings));
+      response$.next([{ id: 'synthetic-latest-past-meeting' } as PastMeeting]);
+
+      expect(onError).toHaveBeenCalledOnce();
+      expect(subscriptions).toBe(2);
+      expect(rows).toEqual([{ id: 'synthetic-latest-past-meeting' }]);
+    });
+  });
+
   it('refetches a primed personal feed on return after an inactive-lens response without fetching while inactive', () => {
     const pending = { id: 'synthetic-meeting', is_invite_responses_enabled: true, my_rsvp: null } as Meeting;
     const accepted = { ...pending, my_rsvp: { response_type: 'accepted', scope: 'all' } } as Meeting;
@@ -194,6 +480,75 @@ describe('UserService', () => {
     expect(pending.my_rsvp).toBeNull();
     other.unsubscribe();
     returning.unsubscribe();
+  });
+
+  describe('display name', () => {
+    it('overrides the SSR name with the given parts', () => {
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+
+      service.applyDisplayName('Ada', 'Byron');
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('is a no-op when both parts are empty or there is no user', () => {
+      service.applyDisplayName('Ada', 'Byron');
+      expect(service.user()).toBeNull();
+
+      service.user.set({ name: 'Ada Lovelace' } as User);
+      service.applyDisplayName('  ', null);
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('applies the stored name from the post-hydration profile fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('keeps a name saved in-session over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Lovelace' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      service.applyDisplayName('Ada', 'Byron', true);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('keeps a saved name that matches the displayed name over a stale post-hydration fetch', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Lovelace' } as User);
+      const before = service.user();
+      service.applyDisplayName('Ada', 'Lovelace', true);
+      expect(service.user()).toBe(before);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Lovelace');
+    });
+
+    it('ignores the post-hydration name when the stored profile metadata did not load', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Old', last_name: 'Login' }, profile: null }));
+      service.user.set({ sub: 'auth0|u1', name: 'Ada Byron' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Ada Byron');
+    });
+
+    it('does not apply the stored name while impersonating', async () => {
+      httpGet.mockReturnValue(of({ user: { first_name: 'Ada', last_name: 'Byron' }, profile: {} }));
+      service.impersonating.set(true);
+      service.user.set({ sub: 'auth0|target', name: 'Target User' } as User);
+
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(service.user()?.name).toBe('Target User');
+    });
   });
 
   describe('RSVP registration retention', () => {
@@ -702,6 +1057,79 @@ describe('UserService', () => {
       service.impersonator.set(null);
 
       expect(service.meetingJoinIdentity()).toBeNull();
+    });
+  });
+
+  describe('getCurrentEmployerName (#5251)', () => {
+    const lookup = (): { name: string | null; messages: ReturnType<typeof vi.fn> } => {
+      const result = { name: 'unset' as string | null, messages: vi.mocked(TestBed.inject(MessageService).add) };
+      service.getCurrentEmployerName().subscribe((value) => (result.name = value));
+      return result;
+    };
+
+    it('reads the work experiences from the profile endpoint', () => {
+      httpGet.mockReturnValue(of([]));
+
+      lookup();
+
+      expect(httpGet).toHaveBeenCalledWith('/api/profile/work-experiences');
+    });
+
+    it('returns the name of the current employer', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Acme Motors', organizationId: 'org-1', startDate: 'Jan 2020', endDate: null },
+        ])
+      );
+
+      expect(lookup().name).toBe('Acme Motors');
+    });
+
+    it('returns null for an empty history', () => {
+      httpGet.mockReturnValue(of([]));
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null when every job has ended, rather than a company the user has left', () => {
+      httpGet.mockReturnValue(
+        of([
+          { organization: 'Old Co', organizationId: null, startDate: 'Jan 2015', endDate: 'Dec 2019' },
+          { organization: 'Older Co', organizationId: null, startDate: 'Jan 2010', endDate: 'Dec 2014' },
+        ])
+      );
+
+      expect(lookup().name).toBeNull();
+    });
+
+    it('returns null without raising a toast, and logs, when the request fails', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      httpGet.mockReturnValue(throwError(() => new Error('boom')));
+
+      const { name, messages } = lookup();
+
+      expect(name).toBeNull();
+      expect(messages).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      warn.mockRestore();
+    });
+
+    it('returns null without raising a toast when the request does not answer within two seconds', () => {
+      vi.useFakeTimers();
+      try {
+        httpGet.mockReturnValue(NEVER);
+
+        const result = lookup();
+        expect(result.name).toBe('unset');
+
+        vi.advanceTimersByTime(2000);
+
+        expect(result.name).toBeNull();
+        expect(result.messages).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

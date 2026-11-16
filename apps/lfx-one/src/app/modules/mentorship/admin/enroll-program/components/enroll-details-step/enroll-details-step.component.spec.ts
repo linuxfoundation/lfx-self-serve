@@ -47,6 +47,7 @@ class StubSelectComponent {
   public readonly options = input<unknown>();
   public readonly overlayOptions = input<unknown>();
   public readonly placeholder = input<unknown>();
+  public readonly readonly = input<unknown>();
   public readonly resetFilterOnHide = input<unknown>();
   public readonly scrollHeight = input<unknown>();
   public readonly styleClass = input<unknown>();
@@ -682,5 +683,115 @@ describe('EnrollDetailsStepComponent — technologies', () => {
     add(`${first}, ${second}`);
 
     expect(form.controls['technologies'].value).toEqual([first, second]);
+  });
+});
+
+describe('EnrollDetailsStepComponent — lens project scope (lfx-mentorship#398)', () => {
+  const lensProject = { id: '7c9e6679-7425-40de-944b-e07fc1f90ae7', name: 'GridFlow', slug: 'gridflow' };
+  const other = { id: 'uid-other', name: 'Other', slug: 'other' };
+  const template: MentorshipEnrollImport = {
+    name: 'Example Program',
+    project: other,
+    description: '',
+    repositoryUrl: '',
+    websiteUrl: '',
+    codeOfConductUrl: '',
+    ciiProjectId: '',
+    technologies: [],
+    skills: [],
+    prerequisites: [],
+    logoUrl: '',
+  };
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+  let getLfProjects: ReturnType<typeof vi.fn>;
+
+  const select = (inputId: string): StubSelectComponent =>
+    fixture.debugElement
+      .queryAll(By.directive(StubSelectComponent))
+      .map((debugEl) => debugEl.componentInstance as StubSelectComponent)
+      .find((candidate) => candidate.inputId() === inputId) as StubSelectComponent;
+
+  /** Creates the step the way the wizard binds it: the scope inputs are set before the first change detection. */
+  const setUp = async (scope: { lockedProject?: typeof lensProject; parentProject?: typeof lensProject }): Promise<void> => {
+    getLfProjects = vi.fn(() => of({ data: [other] }));
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        {
+          provide: MentorshipAdminService,
+          useValue: { getPrograms: () => of({ data: [{ id: 'program-a', name: 'Program A' }] }), getEnrollTemplate: () => of(template) },
+        },
+        { provide: MentorshipService, useValue: { getLfProjects, getCiiBadge: () => of(null), isProgramNameAvailable: () => of({ available: true }) } },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    if (scope.lockedProject) fixture.componentRef.setInput('lockedProject', scope.lockedProject);
+    if (scope.parentProject) fixture.componentRef.setInput('parentProject', scope.parentProject);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const pickImport = async (programId: string): Promise<void> => {
+    form.controls['importProgramId'].setValue(programId);
+    select('importProgramId').onChange.emit({ value: programId });
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
+  it('offers the Projects lens’s project alone, read-only, without listing LF projects', async () => {
+    await setUp({ lockedProject: lensProject });
+
+    expect(getLfProjects).not.toHaveBeenCalled();
+    expect((select('projectId').options() as { value: string }[]).map((option) => option.value)).toEqual([lensProject.id]);
+    expect(select('projectId').readonly()).toBe(true);
+  });
+
+  it('keeps the Projects lens’s project when the form is filled from another project’s program', async () => {
+    await setUp({ lockedProject: lensProject });
+
+    await pickImport('program-a');
+
+    expect(form.controls['name'].value).toBe('Example Program');
+    expect(form.controls['projectId'].value).toBe(lensProject.id);
+    expect(fixture.componentInstance.project()).toEqual(lensProject);
+  });
+
+  it('offers the Foundation lens’s foundation first, then only its sub-projects, from the first page on', async () => {
+    await setUp({ parentProject: lensProject });
+
+    expect(getLfProjects).toHaveBeenCalledTimes(1);
+    expect(getLfProjects).toHaveBeenCalledWith(expect.objectContaining({ search: '', parentUid: lensProject.id }));
+    expect((select('projectId').options() as { value: string }[]).map((option) => option.value)).toEqual([lensProject.id, other.id]);
+    expect(select('projectId').readonly()).toBe(false);
+  });
+
+  it('leaves the foundation out of a search its name does not match', async () => {
+    await setUp({ parentProject: lensProject });
+
+    (fixture.componentInstance as unknown as { onLfFilter: (event: { filter: string }) => void }).onLfFilter({ filter: 'oth' });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+
+    expect(getLfProjects).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'oth', parentUid: lensProject.id }));
+    expect((select('projectId').options() as { value: string }[]).map((option) => option.value)).toEqual([other.id]);
+  });
+
+  it('leaves the project for the admin to pick when the Foundation lens form is filled from another program', async () => {
+    await setUp({ parentProject: lensProject });
+
+    await pickImport('program-a');
+
+    expect(form.controls['name'].value).toBe('Example Program');
+    expect(form.controls['projectId'].value).toBe('');
+    expect(fixture.componentInstance.project()).toBeNull();
   });
 });

@@ -6,7 +6,10 @@ import type { Committee, CommitteeInvite } from './committee.interface';
 import type { TagSeverity } from './components.interface';
 import type { CommitteeMember, CreateCommitteeMemberRequest } from './member.interface';
 
-/** A known, exact lowercase snake_case header of the member import CSV. */
+/**
+ * A canonical lowercase snake_case header of the member import CSV. A file header matches it when
+ * they are equal ignoring case, whitespace, hyphens and underscores (`First Name` → `first_name`).
+ */
 export type MemberImportColumn = (typeof MEMBER_IMPORT_COLUMNS)[number];
 
 /** Trimmed cell values of one CSV record, keyed by header. Absent headers are absent keys. */
@@ -14,9 +17,15 @@ export type MemberImportCells = Partial<Record<MemberImportColumn, string>>;
 
 /**
  * Lifecycle of one imported row: `ready`/`invalid`/`skipped` while previewing, then
- * `importing` while its POST is in flight and `added`/`skipped`/`failed` once it settles.
+ * `not_submitted` until its chunk is sent, `importing` while that bulk request is in flight,
+ * `waiting` while a retryable outcome pauses before resubmission, and `added`/`skipped`/`failed`
+ * once it settles. `unknown` preserves an earlier attempt that may have committed without a
+ * confirmed result. Rows left unsent when a run stops stay `not_submitted`.
  */
-export type MemberImportRowStatus = 'ready' | 'invalid' | 'skipped' | 'importing' | 'added' | 'failed';
+export type MemberImportRowStatus = 'ready' | 'invalid' | 'skipped' | 'importing' | 'added' | 'failed' | 'waiting' | 'not_submitted' | 'unknown';
+
+/** Status filter of the import dialog's table: one row status, or `all` rows. */
+export type MemberImportStatusFilter = MemberImportRowStatus | 'all';
 
 /** Which conditional member requirements apply to the selected group. */
 export interface MemberImportGroupRules {
@@ -56,12 +65,24 @@ export interface MemberImportRecord {
 
 /**
  * Result of reading a whole CSV. A non-empty `errors` means the file as a whole is unusable
- * (malformed quoting, unknown headers, too many rows…) and no record should be previewed.
+ * (malformed quoting, repeated or missing headers, too many rows…) and no record should be previewed.
  */
 export interface MemberImportParseResult {
   headers: MemberImportColumn[];
   records: MemberImportRecord[];
+  /**
+   * File columns the import does not use, by their original header text; a column without a header
+   * is listed as `Column N (no header)` only when a row has a value in it. Empty when `errors` is not.
+   */
+  ignoredColumns: string[];
   errors: string[];
+}
+
+/** Text of an uploaded import file and the encoding it was read with. */
+export interface MemberImportDecodedFile {
+  text: string;
+  /** `windows-1252` when the bytes were not valid UTF-8 (Excel's default "CSV (Comma delimited)"). */
+  encoding: 'utf-8' | 'windows-1252';
 }
 
 /** One previewed/imported row of the member import dialog. */
@@ -80,8 +101,12 @@ export interface MemberImportRow {
   reason?: string;
   /** Set when the member was added but their stale pending invitation could not be revoked. */
   cleanupWarning?: string;
-  /** True when the create call returned 409 — the person was already a member upstream. */
+  /** True when the create call reported the person was already a member upstream. */
   conflict?: boolean;
+  /** False when resubmitting cannot succeed (upstream `invalid` row or a rejected chunk); the file must be fixed. */
+  retryable?: boolean;
+  /** True when a prior attempt may have committed; membership existence alone does not establish creation by this import. */
+  uncertain?: boolean;
 }
 
 /** Steps of the import dialog: choose a file, review it, write rows, then show the outcome. */
@@ -109,8 +134,10 @@ export interface MemberImportDialogData {
   collectOnly?: boolean;
 }
 
-/** Cumulative outcome returned when the import dialog closes (zero counts when nothing was written). */
+/** Cumulative confirmed outcomes and unresolved attempts returned when the import dialog closes. */
 export interface MemberImportDialogResult {
   added: number;
   conflicts: number;
+  /** Refresh the roster when an attempted write may have committed without a confirmed response. */
+  uncertain?: boolean;
 }

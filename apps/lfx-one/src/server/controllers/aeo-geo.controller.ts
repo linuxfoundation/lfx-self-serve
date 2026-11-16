@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-run.constants';
+
 import { AEO_GEO_INTAKE, MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX } from '@lfx-one/shared/constants';
 import { Project } from '@lfx-one/shared/interfaces';
-import { isAeoGeoAnswers, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
+import { isAeoGeoSubmittedAnswers, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
@@ -85,8 +87,8 @@ export class AeoGeoController {
       if (!verifySessionOwnerToken(typeof ownerToken === 'string' ? ownerToken : undefined, user, `aeo-geo:${scope.uid}:${sessionId.trim()}`)) {
         throw new AuthorizationError('You do not have permission to answer this session.', { operation });
       }
-      if (!isAeoGeoAnswers(answers)) {
-        throw ServiceValidationError.forField('answers', 'Use unique question ids, valid answer origins and text answers.', { operation });
+      if (!isAeoGeoSubmittedAnswers(answers)) {
+        throw ServiceValidationError.forField('answers', MKTG_ANSWERS_INCOMPLETE_MESSAGE, { operation });
       }
       const result = await this.service.sendAnswers(req, sessionId.trim(), documentId, scope.uid, answers, this.agentHandle());
       logger.success(req, operation, start, { answers: answers.length });

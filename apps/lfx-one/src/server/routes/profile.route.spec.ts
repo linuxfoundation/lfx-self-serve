@@ -22,6 +22,8 @@ const insightsHandler = vi.fn((_req: express.Request, res: express.Response) => 
   res.status(200).end();
 });
 
+const supportHandler = vi.fn((_req: express.Request, res: express.Response) => res.status(200).json({}));
+
 vi.mock('../controllers/insights-tokens.controller', () => ({
   InsightsTokensController: class {
     public listTokens = insightsHandler;
@@ -31,7 +33,9 @@ vi.mock('../controllers/insights-tokens.controller', () => ({
   },
 }));
 vi.mock('../controllers/profile.controller', () => ({
-  ProfileController: class {},
+  ProfileController: class {
+    public consumeLinkedEmailSupportContext = supportHandler;
+  },
 }));
 let impersonatingStub = false;
 vi.mock('../utils/auth-helper', () => ({ isImpersonating: () => impersonatingStub }));
@@ -113,5 +117,19 @@ describe('profile router — Insights token impersonation gate', () => {
 
     expect(res.status).toBe(200);
     expect(insightsHandler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('profile router — linked-email support context impersonation gate', () => {
+  it('rejects impersonation before reading the real user context', async () => {
+    const res = await fetch(`${baseUrl}/api/profile/auth/email-support-context`, { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(supportHandler).not.toHaveBeenCalled();
+  });
+  it('admits a normal authenticated-layer request to the consume handler', async () => {
+    impersonatingStub = false;
+    const res = await fetch(`${baseUrl}/api/profile/auth/email-support-context`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(supportHandler).toHaveBeenCalledTimes(1);
   });
 });

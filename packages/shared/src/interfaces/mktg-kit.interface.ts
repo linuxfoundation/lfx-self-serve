@@ -12,7 +12,11 @@ export interface MktgKitAsset {
   label: string;
   /** Board action wording when its sentence case differs from the row heading. */
   runName?: string;
+  /** Sentence noun phrase for the Family's next-steps caption. */
+  captionName?: string;
   description: string;
+  /** The family book's opener line for the document: what it holds, in a sentence (the design board's words). */
+  bookSummary?: string;
   agentKey?: MktgDocumentAgentKey;
 }
 
@@ -41,7 +45,7 @@ export interface MktgKitFamily {
 
 export interface MktgKitAssetRow {
   asset: MktgKitAsset;
-  /** Run assets have a count instead of a living-document workflow state. */
+  /** Already-run one-offs have no approval state; never-run and unavailable ones still have states. */
   state: MktgKitAssetState | null;
   version: number | null;
   monthlyCount: number | null;
@@ -74,6 +78,8 @@ export interface MktgKitAgentGroup {
 }
 
 export interface MktgKitSourcesView {
+  readCount: number;
+  failedCount: number;
   readText: string;
   failedText: string;
 }

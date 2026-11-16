@@ -321,6 +321,52 @@ describe('CommitteeManageComponent', () => {
     });
   });
 
+  describe('display name on rename', () => {
+    let updateCommittee: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      updateCommittee = vi.fn().mockReturnValue(of(enrichedCommittee()));
+      TestBed.overrideProvider(CommitteeService, {
+        useValue: { getCommittee, updateCommittee },
+      });
+      TestBed.overrideComponent(CommitteeManageComponent, { set: { template: '' } });
+    });
+
+    describe.each(['onSubmit', 'onSubmitAll'] as const)('%s', (submit) => {
+      it.each([
+        { label: 'publishing and renaming', public: false, displayName: 'Original Group', want: 'Renamed Group' },
+        { label: 'renaming an already public group', public: true, displayName: 'Original Group', want: 'Renamed Group' },
+        { label: 'preserving a distinct alias', public: false, displayName: 'Public Alias', want: 'Public Alias' },
+        { label: 'preserving an edited display name', public: false, displayName: 'Original Group', editedDisplayName: 'Edited Alias', want: 'Edited Alias' },
+        {
+          label: 'replacing a distinct alias explicitly',
+          public: true,
+          displayName: 'Public Alias',
+          editedDisplayName: 'Original Group',
+          want: 'Original Group',
+        },
+        { label: 'falling back from an empty display name', public: false, displayName: '', want: 'Renamed Group' },
+        { label: 'falling back from an omitted display name', public: false, displayName: undefined, want: 'Renamed Group' },
+      ])('$label', async ({ public: isPublic, displayName, editedDisplayName, want }) => {
+        getCommittee.mockReturnValue(of({ ...enrichedCommittee(), name: 'Original Group', display_name: displayName, public: isPublic }));
+        const fixture = await createComponent();
+        const component = fixture.componentInstance;
+        vi.spyOn(component, 'memberSaveDisabled').mockReturnValue(false);
+        component.form.patchValue({ name: 'Renamed Group', public: true });
+        if (editedDisplayName !== undefined) {
+          component.form.get('display_name')?.setValue(editedDisplayName);
+        }
+
+        component[submit]();
+
+        expect(updateCommittee).toHaveBeenCalledExactlyOnceWith(
+          COMMITTEE_UID,
+          expect.objectContaining({ name: 'Renamed Group', display_name: want, public: true, calendar: { public: true } })
+        );
+      });
+    });
+  });
+
   describe('deferred CSV member save', () => {
     let updateCommittee: ReturnType<typeof vi.fn>;
     let createCommitteeMember: ReturnType<typeof vi.fn>;

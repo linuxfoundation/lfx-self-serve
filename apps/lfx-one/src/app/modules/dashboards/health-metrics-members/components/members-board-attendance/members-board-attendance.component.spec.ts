@@ -60,6 +60,7 @@ describe('MembersBoardAttendanceComponent', () => {
   let selectedRange: ReturnType<typeof signal<string>>;
   let notes: string[];
   let lifecycle: string[];
+  let verdicts: boolean[];
 
   // `payload` answers the first read; `followUpPayload` (a value or a stream) every read after it.
   async function render(
@@ -88,7 +89,10 @@ describe('MembersBoardAttendanceComponent', () => {
     fixture = TestBed.createComponent(MembersBoardAttendanceComponent);
     fixture.componentInstance.noteChange.subscribe((note) => notes.push(note));
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
-    fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    fixture.componentInstance.settled.subscribe((empty) => {
+      lifecycle.push('settled');
+      verdicts.push(empty);
+    });
     await settle();
   }
 
@@ -112,6 +116,7 @@ describe('MembersBoardAttendanceComponent', () => {
     selectedRange = signal<string>('YTD');
     notes = [];
     lifecycle = [];
+    verdicts = [];
   });
 
   it('reads the board cohort for the period, renders the hero, and settles with the board note', async () => {
@@ -130,6 +135,7 @@ describe('MembersBoardAttendanceComponent', () => {
     // The meetings-in-range line above the hero is the only count; none repeats over the table.
     expect(query('members-board-count')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false]);
     expect(notes).toEqual(['', '82% attended']);
   });
 
@@ -276,12 +282,31 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(text('members-board-meetings')).toBe('—');
   });
 
-  it('shows the empty state when the period holds no meeting', async () => {
+  it('settles empty, with no body, when the period holds no meeting', async () => {
     await render(NO_MEETINGS);
 
-    expect(text('members-board-empty')).toContain('No board meetings in this period');
+    expect(verdicts).toEqual([true]);
+    expect(query('members-board-hero')).toBeNull();
     expect(query('members-board-table')).toBeNull();
     expect(notes.at(-1)).toBe('');
+  });
+
+  it('does not settle empty for a cohort with no meeting while the other cohort met, keeping the pills to switch back', async () => {
+    const votingOnly = { board: cohort({ meetingsInRangeCount: 0 }), voting_members: cohort({ meetingsInRangeCount: 4 }) };
+    await render(response({ cohorts: votingOnly, trend: [], rows: [], totalRecords: 0 }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('members-board-cohort-pills')).not.toBeNull();
+    expect(text('members-board-empty')).toContain('No board meetings in this period');
+    expect(query('members-board-hero')).toBeNull();
+  });
+
+  it('keeps the body for rows and a trend the cohort summaries leave unmeasured', async () => {
+    await render(response({ cohorts: { board: null, voting_members: null } }));
+
+    expect(verdicts).toEqual([false]);
+    expect(query('members-board-hero')).not.toBeNull();
+    expect(query('members-board-empty')).toBeNull();
   });
 
   it('separates a failed read from an empty one, settling it without a note', async () => {
@@ -294,9 +319,9 @@ describe('MembersBoardAttendanceComponent', () => {
     await settle();
 
     expect(query('members-board-error')).not.toBeNull();
-    expect(query('members-board-empty')).toBeNull();
     expect(notes).toEqual(['']);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    expect(verdicts).toEqual([false, false]);
   });
 
   it('holds the loading state and reads nothing while no foundation is selected', async () => {
@@ -306,6 +331,5 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(getMembersBoardAttendance).not.toHaveBeenCalled();
     expect(lifecycle).not.toContain('settled');
     expect(query('members-board-loading')).not.toBeNull();
-    expect(query('members-board-empty')).toBeNull();
   });
 });

@@ -18,15 +18,16 @@ export class ClipboardShareService {
    * Copy a URL to the clipboard and display success/error toast feedback.
    * @param url The URL to copy
    * @param detail Optional custom detail text for the success toast (default: "Link copied to clipboard.")
+   * @returns Whether the link was copied
    */
-  public copyLink(url: string, detail: string = 'Link copied to clipboard.'): void {
+  public copyLink(url: string, detail: string = 'Link copied to clipboard.'): boolean {
     if (!url) {
       this.messageService.add({
         severity: 'warn',
         summary: 'No Link',
         detail: 'No link available to copy.',
       });
-      return;
+      return false;
     }
 
     const success = this.clipboard.copy(url);
@@ -43,5 +44,6 @@ export class ClipboardShareService {
         detail: 'Failed to copy link. Please try again.',
       });
     }
+    return success;
   }
 }

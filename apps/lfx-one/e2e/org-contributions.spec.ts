@@ -12,16 +12,11 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - S3's company-email assertions pin `org-lens-private-release` ON via the same
- *   `stubFeatureFlags` localStorage override used by the ROI specs (GH-1655) — no LaunchDarkly
- *   targeting needed for this one
  */
 
 import type { OrgAllEmployeeDetail, OrgContributionsResponse, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
-import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
-import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const CONTRIBUTIONS_URL = '/org/contributions';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -40,11 +35,12 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
       projectName: 'Kubernetes',
       foundationId: 'fdn-cncf',
       foundationName: 'CNCF',
-      totalCommits: 1240,
+      commits: 1240,
       lastActivityDate: '2026-05-13',
       isMaintainer: true,
     },
   ],
+  totalCommits: 1240,
   events: [],
   training: [],
 };
@@ -56,7 +52,7 @@ const MOCK_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
 
 const BASE_RESPONSE: OrgContributionsResponse = {
   accountId: MOCK_ACCOUNT_ID,
-  dateRange: '12mo',
+  dateRange: '730d',
   kpis: { projectsWithActivity: 2, repositories: 2, commits: 1780 },
   repositories: [
     {
@@ -102,9 +98,14 @@ const BASE_RESPONSE: OrgContributionsResponse = {
       commitUrl: null,
     },
   ],
+  foundationOptions: [
+    { foundationId: 'fdn-cncf', foundationName: 'CNCF' },
+    { foundationId: 'fdn-pytorch', foundationName: 'PyTorch Foundation' },
+  ],
   projectOptions: [
-    { slug: 'kubernetes', projectId: 'proj-k8s', name: 'Kubernetes', commits: 1240, parentSlug: null },
-    { slug: 'prometheus', projectId: 'proj-prom', name: 'Prometheus', commits: 540, parentSlug: null },
+    { slug: 'kubernetes', projectId: 'proj-k8s', name: 'Kubernetes', commits: 1240, foundationId: 'fdn-cncf' },
+    { slug: 'prometheus', projectId: 'proj-prom', name: 'Prometheus', commits: 540, foundationId: 'fdn-cncf' },
+    { slug: 'pytorch', projectId: 'proj-pytorch', name: 'PyTorch', commits: 12, foundationId: 'fdn-pytorch' },
   ],
   employeeOptions: [{ id: 'emp-ana', displayName: 'Ana Ramirez', commits: 1240 }],
   totalRecords: 2,
@@ -281,7 +282,6 @@ test.describe('Org Lens Code Contributions — commits tab (S2)', () => {
 
 test.describe('Org Lens Code Contributions — person detail drawer (S3)', () => {
   test('S3: clicking a committer opens the shared person-detail drawer on the Code tab', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await gotoContributions(page);
     await waitForContributionsLoaded(page);
 
@@ -298,39 +298,11 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(emailSection).toContainText('aramirez@contractor.acme-corp.example');
   });
 
-  test('S3b: company emails and the unavailable fallback stay hidden when org-lens-private-release is OFF', async ({ page }) => {
-    await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
-    await gotoContributions(page);
-    await waitForContributionsLoaded(page);
-    let companyEmailCalls = 0;
-    await page.route('**/api/orgs/*/lens/people/*/company-emails', (route) => {
-      companyEmailCalls += 1;
-      return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
-    });
-
-    await switchToCommitsTab(page);
-    await expect(page.getByTestId('org-contributions-commit-demo-aramirez-20260513')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
-    await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
-    // The header renders synchronously from click context, before the async person-detail fetch
-    // resolves — wait for the fetch's loading skeleton to clear so the email assertions below reflect
-    // settled state, not a fetch that merely hasn't started rendering the email yet.
-    await expect(page.getByTestId('person-detail-drawer-loading')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
-
-    // Flag off: no address state renders, and a hidden response must not be re-read as failed/not-available.
-    await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
-    await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);
-    expect(companyEmailCalls).toBe(0);
-  });
-
   for (const { label, status, state, otherState } of [
     { label: 'S3c', status: 'failed', state: 'failed', otherState: 'not-available' },
     { label: 'S3d', status: 'unavailable', state: 'not-available', otherState: 'failed' },
   ] as const) {
     test(`${label}: person-key company emails with ${status} status hide stale addresses`, async ({ page }) => {
-      await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
       await gotoContributions(page);
       await waitForContributionsLoaded(page);
       // Keep the populated fixture adversarial: only a resolved status may expose addresses.
@@ -354,4 +326,25 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
       }
     });
   }
+});
+
+// lfx-self-serve#4559 — the Foundation filter means what it means on People → Contributors: one exact foundation id.
+test.describe('Org Lens Code Contributions — foundation filter (S4)', () => {
+  test('S4: picking a foundation sends it, lists only its projects and keeps it in the URL', async ({ page }) => {
+    await gotoContributions(page);
+    await waitForContributionsLoaded(page);
+
+    const filtered = page.waitForRequest(
+      (request) => new URL(request.url()).pathname.endsWith('/lens/contributions') && new URL(request.url()).searchParams.get('foundation') === 'fdn-cncf'
+    );
+    await page.locator('[data-test="org-contributions-foundation-filter"]').click();
+    await page.getByRole('option', { name: 'CNCF', exact: true }).click();
+    await filtered;
+    await expect(page).toHaveURL(/[?&]foundation=fdn-cncf(&|$)/);
+
+    await page.getByTestId('org-contributions-projects-filter').locator('.p-multiselect').click();
+    await expect(page.getByRole('option').filter({ hasText: 'Kubernetes' })).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByRole('option').filter({ hasText: 'Prometheus' })).toBeVisible();
+    await expect(page.getByRole('option').filter({ hasText: 'PyTorch' })).toHaveCount(0);
+  });
 });

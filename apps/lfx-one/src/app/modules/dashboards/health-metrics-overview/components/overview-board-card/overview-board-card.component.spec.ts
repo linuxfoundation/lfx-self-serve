@@ -67,7 +67,19 @@ describe('OverviewBoardCardComponent', () => {
     expect(query('overview-board-sort-attended')?.parentElement?.getAttribute('aria-sort')).toBe('ascending');
   });
 
-  it('lets the keyboard reach the full organization behind its truncation', async () => {
+  it('heads the second column Company and gives each member an initials avatar', async () => {
+    await render();
+
+    expect([...(query('overview-board-table')?.querySelectorAll('[role="columnheader"]') ?? [])].map((cell) => cell.textContent?.trim())).toEqual([
+      'Name',
+      'Company',
+      'Attended',
+      'Last attended',
+    ]);
+    expect(query('overview-board-row-k1')?.querySelector('[data-testid="overview-board-avatar"]')?.textContent?.trim()).toBe('PD');
+  });
+
+  it('lets the keyboard reach the full company behind its truncation', async () => {
     await render();
 
     const organization = [...(query('overview-board-row-k1')?.querySelectorAll('[role="cell"] span') ?? [])].find(
@@ -110,7 +122,7 @@ describe('OverviewBoardCardComponent', () => {
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
 
-    expect(query('overview-board-empty')?.textContent).toContain('No board meetings recorded yet');
-    expect(query('overview-board-empty-add-meeting')).not.toBeNull();
+    expect(query('overview-board-empty-title')?.textContent).toBe(`No board meetings in ${new Date().getFullYear() - 1}`);
+    expect(query('overview-board-empty-add-meeting')?.textContent?.trim()).toContain('Add Past Meeting');
   });
 });

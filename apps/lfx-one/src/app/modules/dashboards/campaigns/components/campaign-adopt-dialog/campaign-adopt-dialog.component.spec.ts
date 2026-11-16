@@ -18,7 +18,7 @@ import { CampaignService } from '@services/campaign.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, type Mock, vi } from 'vitest';
 
 import { CampaignAdoptDialogComponent } from './campaign-adopt-dialog.component';
 
@@ -31,11 +31,11 @@ function bffError(status: number, error: string): HttpErrorResponse {
 
 describe('CampaignAdoptDialogComponent (#3299)', () => {
   let fixture: ComponentFixture<CampaignAdoptDialogComponent>;
-  let close: ReturnType<typeof vi.fn>;
+  let close: Mock;
   /** Each dialog instance's OWN ref, in creation order; every one also reports to `close`. */
-  let refs: ReturnType<typeof vi.fn>[];
-  let toast: ReturnType<typeof vi.fn>;
-  let service: { listAdoptableBriefs: ReturnType<typeof vi.fn>; adoptCampaign: ReturnType<typeof vi.fn>; resolvePlatformCampaign: ReturnType<typeof vi.fn> };
+  let refs: Mock[];
+  let toast: Mock;
+  let service: { listAdoptableBriefs: Mock; adoptCampaign: Mock; resolvePlatformCampaign: Mock };
 
   async function setup(briefs: unknown = of(BRIEFS)): Promise<void> {
     TestBed.resetTestingModule();

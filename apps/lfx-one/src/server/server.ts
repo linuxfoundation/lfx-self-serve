@@ -16,17 +16,22 @@ import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
 import { ProfileController } from './controllers/profile.controller';
+import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
+import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
+import { resolveSsrFlags } from './helpers/ssr-flags.helper';
 import { applySsrRenderStatus } from './helpers/ssr-render-status.helper';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
+import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import inviteRouter from './routes/invite.route';
@@ -39,6 +44,7 @@ import createPickerRouter from './routes/create-picker.route';
 import documentsRouter from './routes/documents.route';
 import enrollmentRouter from './routes/enrollment.route';
 import eventsRouter from './routes/events.route';
+import formationPipelineRouter from './routes/formation-pipeline.route';
 import formationsRouter from './routes/formations.route';
 import gatewazeRouter from './routes/gatewaze.route';
 import projectApplicationsRouter from './routes/project-applications.route';
@@ -48,6 +54,7 @@ import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import meetupsRouter from './routes/meetups.route';
 import navigationRouter from './routes/navigation.route';
+import newsletterPublicationsRouter from './routes/newsletter-publications.route';
 import newslettersRouter from './routes/newsletters.route';
 import organizationsRouter from './routes/organizations.route';
 import orgsRouter from './routes/orgs.route';
@@ -59,6 +66,8 @@ import publicCommitteesRouter from './routes/public-committees.route';
 import publicFoundationsRouter from './routes/public-foundations.route';
 import publicGroupsRouter from './routes/public-groups.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import publicNewslettersRouter from './routes/public-newsletters.route';
+import publicVotesRouter from './routes/public-votes.route';
 import publicProfileRouter from './routes/public-profile.route';
 import publicProjectsRouter from './routes/public-projects.route';
 import rewardsRouter from './routes/rewards.route';
@@ -86,7 +95,13 @@ import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
 import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
-import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload, refreshExpiredSsrAccessToken } from './utils/auth-helper';
+import {
+  buildImpersonationIdentityOverride,
+  clearImpersonationSession,
+  decodeJwtPayload,
+  isImpersonating,
+  refreshExpiredSsrAccessToken,
+} from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
@@ -112,7 +127,13 @@ installAsyncRouteErrorBridge();
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
 
-const angularApp = new AngularNodeAppEngine();
+// @angular/ssr 20.3.42+ serves the client-only shell (no auth state, so authGuard loops through
+// /login) for any request whose Host is not allowed or that carries an untrusted x-forwarded-*
+// header. Trust exactly the headers our ingress sends (#4649).
+const angularApp = new AngularNodeAppEngine({
+  allowedHosts: [new URL(process.env['PCC_BASE_URL'] || 'http://localhost:4000').hostname],
+  trustProxyHeaders: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-port', 'x-forwarded-proto', 'x-forwarded-server'],
+});
 const app = express();
 
 // Cold-start phase marks (see #1378) — performance.now() is monotonic and
@@ -223,28 +244,8 @@ app.get('/readyz', (_req: Request, res: Response) => {
 // for any code path that does fall through.
 app.use(sitemapRouter);
 
-app.get(
-  '**',
-  express.static(browserDistFolder, {
-    index: false,
-    setHeaders: (res, filePath) => {
-      if (/-[A-Z0-9]{8,}\.(js|css|woff2?|ttf|otf|png|jpg|jpeg|svg|ico|webp)$/i.test(filePath)) {
-        // Angular emits content-hashed filenames (outputHashing: "all") — safe to
-        // cache permanently; the hash changes whenever content changes.
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        return;
-      }
-      if (/\.(html|js|css)$/i.test(filePath)) {
-        // Non-hashed HTML, JS, and CSS (e.g. index.html, main.js in dev builds where
-        // outputHashing is not "all") must revalidate on every request — stale entry
-        // bundles reference old chunk hashes and cause "Importing a module script failed".
-        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-        return;
-      }
-      res.setHeader('Cache-Control', 'public, max-age=300');
-    },
-  })
-);
+// Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
+app.use(createBrowserAssetsMiddleware(browserDistFolder));
 
 const httpLogger = pinoHttp({
   logger: serverLogger,
@@ -356,12 +357,17 @@ app.use('/logout', clearIntercomCookies(authConfig.baseURL as string));
 // next(), so a Gatewaze or Valkey fault never blocks the LFX logout.
 app.use('/logout', endGatewazeSessionOnLogout);
 
+// Old openprofile.dev paths (ID-1147). Before auth so signed-out visitors are redirected, then logged in on the new URL.
+app.use(openprofileRedirect);
+
 app.use(auth(authConfig));
 
 // Public pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
 app.use('/groups/', attemptSilentLogin());
 
+// Must precede the /login handler below, which always ends the response.
+app.use('/login', authRateLimiter);
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     const returnTo = req.query['returnTo'] as string;
@@ -386,9 +392,17 @@ app.use(authMiddleware);
 
 app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
-app.use('/login', authRateLimiter);
+
+// Vote pages can carry a login-free vote link token in the URL fragment. Browsers never send the fragment, but the
+// document must also never leak the page URL via Referer to anything it links to or loads (#4363).
+app.use('/votes', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
 
 app.use('/public/api/meetings', publicMeetingsRouter);
+app.use('/public/api/newsletters', publicNewslettersRouter);
+app.use('/public/api/votes', publicVotesRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
 app.use('/public/api/groups', publicGroupsRouter);
@@ -430,6 +444,8 @@ app.use('/api/events', eventsRouter);
 // resource prefix, so it's mounted bare at /api rather than under a single resource segment like the
 // routers above.
 app.use('/api', formationsRouter);
+// Formation team's project pipeline (#5475) — its own router so the checklist router and its specs stay untouched.
+app.use('/api/formations/pipeline', formationPipelineRouter);
 app.use('/api/project-applications', projectApplicationsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/campaigns', campaignsRouter);
@@ -446,6 +462,7 @@ app.use('/api/changelog', changelogRouter);
 // manager router below — different prefixes, no overlap.
 app.use('/api/newsletters', userNewslettersRouter);
 app.use('/api/projects/:projectUid/newsletters', newslettersRouter);
+app.use('/api/projects/:projectUid/newsletter-publications', newsletterPublicationsRouter);
 app.use('/api/invite', inviteRouter);
 // Akrites (formerly OSSPREY): LD-flag-controlled rollout for all authenticated LFX users (akritesEnabledGuard).
 // Not role-restricted — if per-role access is needed in future, add requireExecutiveDirector here.
@@ -524,7 +541,21 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   }
 
   if (auth.authenticated) {
-    const personaResult = await resolvePersonaForSsr(req, res);
+    // The stored-name lookup is bounded and fail-open, and runs alongside persona resolution so a
+    // healthy NATS adds no serial round trip. Skipped while impersonating: that identity is
+    // overridden below.
+    const [personaResult, storedName] = await Promise.all([
+      resolvePersonaForSsr(req, res),
+      auth.user && !isImpersonating(req)
+        ? resolveStoredDisplayName(req, {
+            given_name: auth.user.given_name || auth.user.first_name,
+            family_name: auth.user.family_name || auth.user.last_name,
+          })
+        : Promise.resolve(null),
+    ]);
+    if (auth.user && storedName) {
+      auth.user = { ...auth.user, name: storedName };
+    }
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
     auth.organizations = personaResult.organizations ?? [];
@@ -561,6 +592,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
+  // After the impersonation override, so the flag context is the identity the browser evaluates.
+  const flags = auth.authenticated ? await resolveSsrFlags(req, auth.user) : {};
+
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
     dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
@@ -584,6 +618,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const renderContext: ServerRequestContext = {
     auth,
     runtimeConfig,
+    flags,
     notFound: false,
     unavailable: false,
     providers: [
@@ -803,6 +838,8 @@ export function startServer() {
       routes_ms: Math.round(routesReadyMs),
       boot_ms: Math.round(performance.now()),
     });
+    // Once per process: which model AI_MODEL resolved to and which sampling params it gets.
+    logAiModelConfig();
   });
   // Gatewaze Realtime WebSocket upgrades. Hooked here because only this server sees them: under
   // `ng serve` Express is mounted through `createNodeRequestHandler` and upgrades go to the dev

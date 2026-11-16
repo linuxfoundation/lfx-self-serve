@@ -8,4 +8,11 @@ export const LINKS_CONFIG = {
   INSIGHTS: {
     BASE: 'https://insights.linuxfoundation.org',
   },
+  /**
+   * User documentation for the Company Lens (#5447), served by the app's own docs portal. Company Lens empty and
+   * error states may link only to the person's own profile or to these pages.
+   */
+  DOCS: {
+    COMPANY_LENS_ACCESS: '/docs/organization/choose-an-organization',
+  },
 };

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ApiRequestOptions,
   CommitteeNewsletter,
   CommitteeNewsletterFeedResult,
   CreateNewsletterRequest,
@@ -9,6 +10,7 @@ import {
   MyNewslettersResponse,
   Newsletter,
   NewsletterAnalytics,
+  NewsletterAudience,
   NewsletterCancelScheduleResult,
   NewsletterListParams,
   NewsletterListResponse,
@@ -17,20 +19,29 @@ import {
   NewsletterRecipientCountPayload,
   NewsletterRecipientEngagementResponse,
   NewsletterRecipientsResponse,
+  NewsletterRenderPreviewPayload,
+  NewsletterRenderPreviewResponse,
+  NewsletterResolveAudiencePayload,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterSharePreview,
+  NewsletterShareRequest,
   NewsletterStatusCounts,
+  NewsletterTemplateManifest,
+  NewsletterTemplatesResponse,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
+import { isNewsletterLiveSendLocked } from '@lfx-one/shared/utils/newsletter.utils';
 import { computeIsFoundation } from '@lfx-one/shared/utils/project.utils';
 import { Request } from 'express';
 
-import { isBaseApiError } from '../errors';
+import { AuthorizationError, isBaseApiError, PreconditionFailedError } from '../errors';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { NewsletterServiceClient } from './newsletter-service.client';
 import { ProjectService } from './project.service';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 /** Upstream committee-list calls in flight at once during the my-newsletters fan-out. */
 const MY_NEWSLETTERS_CONCURRENCY = 5;
@@ -128,12 +139,98 @@ export class NewsletterService {
     return this.newsletterClient.createNewsletter(req, projectUid, payload);
   }
 
-  public getNewsletter(req: Request, projectUid: string, newsletterUid: string): Promise<Newsletter> {
-    return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid);
+  /**
+   * What a signed-out link preview may show of a permalink (#4940): the subject of a sent issue of the
+   * slug's project, else null. The slug resolves over NATS (no token); the issue is read with an M2M
+   * token scoped to that one call, because the visitor has no session. Nothing else leaves here, and an
+   * unknown slug, unknown issue and unsent issue are the same null, so drafts are not revealed.
+   */
+  public async getSharePreview(req: Request, projectSlug: string, newsletterUid: string): Promise<NewsletterSharePreview | null> {
+    const project = await this.projectService.getProjectIdBySlug(req, projectSlug, { unavailableAsMissing: false });
+    if (!project.exists) {
+      logger.debug(req, 'get_newsletter_share_preview', 'Project slug not found', { project_slug: projectSlug });
+      return null;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    let newsletter: Newsletter;
+    try {
+      newsletter = await this.getNewsletter(req, project.uid, newsletterUid, { bearerToken: m2mToken });
+    } catch (error) {
+      // Every upstream 4xx is "nothing to show", indistinguishable from a draft, so neither the upstream
+      // message nor its status reaches a signed-out caller. A 403 means the M2M client lacks `viewer` on
+      // the project — worth seeing, since every preview of that project then falls back to the neutral card.
+      const statusCode = isBaseApiError(error) ? error.statusCode : undefined;
+      if (statusCode === undefined || statusCode < 400 || statusCode >= 500) throw error;
+      const metadata = { project_uid: project.uid, newsletter_uid: newsletterUid, status_code: statusCode };
+      if (statusCode === 403) {
+        logger.warning(req, 'get_newsletter_share_preview', 'M2M issue read refused; preview falls back to the neutral card', metadata);
+      } else {
+        logger.debug(req, 'get_newsletter_share_preview', 'Upstream refused the issue read', metadata);
+      }
+      return null;
+    }
+    if (newsletter.status !== 'sent' || newsletter.project_uid !== project.uid) {
+      logger.debug(req, 'get_newsletter_share_preview', 'Issue is not a sent issue of this project', {
+        project_uid: project.uid,
+        newsletter_uid: newsletterUid,
+      });
+      return null;
+    }
+    return { subject: newsletter.subject };
+  }
+
+  /** `options.bearerToken` scopes an M2M override to this one read (the public share preview). */
+  public getNewsletter(req: Request, projectUid: string, newsletterUid: string, options?: ApiRequestOptions): Promise<Newsletter> {
+    return this.newsletterClient.getNewsletter(req, projectUid, newsletterUid, options);
+  }
+
+  /**
+   * The editor-only release sends tests only, so a real send or schedule of a draft with a block
+   * layout is refused here as well as in the UI, until NEWSLETTER_BLOCKS_LIVE_SEND_ENABLED is on.
+   * The check must be on the version being sent, or an edit between this read and the send could
+   * add a layout unseen, so a stale If-Match is refused here. A failed read fails closed.
+   */
+  public async assertLiveSendAllowed(req: Request, projectUid: string, newsletterUid: string, version: number, operation: string): Promise<void> {
+    const draft = await this.getNewsletter(req, projectUid, newsletterUid);
+    if (draft.version !== version) {
+      throw new PreconditionFailedError(undefined, { operation, service: 'newsletter_service', path: req.path });
+    }
+    if (isNewsletterLiveSendLocked(draft.body_layout != null)) {
+      throw new AuthorizationError("Real sends from the block editor aren't switched on yet", {
+        operation,
+        service: 'newsletter_service',
+        path: req.path,
+        code: 'NEWSLETTER_LIVE_SEND_LOCKED',
+      });
+    }
+  }
+
+  public getTemplates(req: Request, projectUid: string): Promise<NewsletterTemplatesResponse> {
+    return this.newsletterClient.getTemplates(req, projectUid);
+  }
+
+  public renderPreview(req: Request, projectUid: string, payload: NewsletterRenderPreviewPayload): Promise<NewsletterRenderPreviewResponse> {
+    return this.newsletterClient.renderPreview(req, projectUid, payload);
+  }
+
+  public getTemplateManifest(req: Request, projectUid: string, templateKey: string): Promise<NewsletterTemplateManifest> {
+    return this.newsletterClient.getTemplateManifest(req, projectUid, templateKey);
   }
 
   public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
     return this.newsletterClient.listNewsletters(req, projectUid, params);
+  }
+
+  /**
+   * The newest sent issue addressed to a newsletter group, or null when it has sent none. The
+   * committee-scoped upstream list is sent-only and ordered by `sent_at` descending, so the first row
+   * of the first page is the latest. Only the signed-out guest reader calls this, with an M2M token
+   * (`options.bearerToken`), after it has verified the reader in-app.
+   */
+  public async getLatestCommitteeNewsletter(req: Request, committeeUid: string, options?: ApiRequestOptions): Promise<CommitteeNewsletter | null> {
+    const page = await this.newsletterClient.listCommitteeNewsletters(req, committeeUid, undefined, options);
+    return page.newsletters?.[0] ?? null;
   }
 
   /**
@@ -216,6 +313,14 @@ export class NewsletterService {
     return this.newsletterClient.cancelScheduleNewsletter(req, projectUid, newsletterUid, ifMatchVersion);
   }
 
+  public resolveAudience(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterResolveAudiencePayload): Promise<NewsletterAudience> {
+    return this.newsletterClient.resolveAudience(req, projectUid, newsletterUid, payload);
+  }
+
+  public getAudience(req: Request, projectUid: string, newsletterUid: string): Promise<NewsletterAudience> {
+    return this.newsletterClient.getAudience(req, projectUid, newsletterUid);
+  }
+
   public recipientCount(req: Request, projectUid: string, payload: NewsletterRecipientCountPayload): Promise<NewsletterRecipientCount> {
     return this.newsletterClient.recipientCount(req, projectUid, payload);
   }
@@ -238,6 +343,14 @@ export class NewsletterService {
 
   public listOptOuts(req: Request, projectUid: string): Promise<NewsletterOptOutListResponse> {
     return this.newsletterClient.listOptOuts(req, projectUid);
+  }
+
+  public recordShare(req: Request, projectUid: string, newsletterUid: string, payload: NewsletterShareRequest): Promise<void> {
+    return this.newsletterClient.recordShare(req, projectUid, newsletterUid, payload);
+  }
+
+  public recordPageView(req: Request, projectUid: string, newsletterUid: string): Promise<void> {
+    return this.newsletterClient.recordPageView(req, projectUid, newsletterUid);
   }
 
   public deleteOptOut(req: Request, projectUid: string, optOutId: string): Promise<void> {

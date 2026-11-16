@@ -1,0 +1,15 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (programId() | mentorshipPublicUrl: 'programs'; as url) {
+  <a
+    class="text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+    [href]="url"
+    target="_blank"
+    rel="noopener noreferrer"
+    [attr.data-testid]="testId()"
+    >{{ programName() }}</a
+  >
+} @else {
+  {{ programName() }}
+}

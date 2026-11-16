@@ -1,15 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { CUSTOM_ELEMENTS_SCHEMA, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
+import { IDENTITY_ALREADY_CONNECTED_MESSAGE, IDENTITY_ALREADY_CONNECTED_STATUS, IDENTITY_ALREADY_CONNECTED_SUMMARY } from '@lfx-one/shared/constants';
 import { EnrichedIdentity } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileIdentitiesComponent } from './profile-identities.component';
 
@@ -106,6 +108,113 @@ describe('ProfileIdentitiesComponent — Flow C vs identity-link error ownership
     const { fixture } = await setup({ error: 'already_linked' });
     fixture.componentInstance.dismissConflictBanner();
     expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
+});
+
+/**
+ * #4327: a social reconnect whose subject is already this account's lands with
+ * success=identity_already_connected. It is a truthful no-op notice — never the conflict banner,
+ * never the "linked successfully" copy — shown once in the browser only.
+ */
+describe('ProfileIdentitiesComponent — already-connected social identity (#4327)', () => {
+  async function setup(
+    queryParams: Record<string, string>,
+    platform: 'browser' | 'server' = 'browser'
+  ): Promise<{
+    fixture: ComponentFixture<ProfileIdentitiesComponent>;
+    add: ReturnType<typeof vi.fn>;
+    refreshUserIdentities: ReturnType<typeof vi.fn>;
+  }> {
+    const add = vi.fn();
+    const refreshUserIdentities = vi.fn();
+
+    TestBed.configureTestingModule({
+      imports: [ProfileIdentitiesComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams } } },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating: signal(false),
+            identitiesRefresh$: EMPTY,
+            getIdentities: vi.fn(() => of([])),
+            getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+            refreshUserIdentities,
+          },
+        },
+        { provide: MessageService, useValue: { add } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileIdentitiesComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { fixture, add, refreshUserIdentities };
+  }
+
+  let replaceState: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+    replaceState = vi.spyOn(window.history, 'replaceState').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    replaceState.mockRestore();
+  });
+
+  it('shows one already-connected notice, refreshes once, and consumes the callback params', async () => {
+    const { fixture, add, refreshUserIdentities } = await setup({ success: IDENTITY_ALREADY_CONNECTED_STATUS });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'success',
+      summary: IDENTITY_ALREADY_CONNECTED_SUMMARY,
+      detail: IDENTITY_ALREADY_CONNECTED_MESSAGE,
+    });
+    expect(refreshUserIdentities).toHaveBeenCalledOnce();
+    expect(replaceState).toHaveBeenCalledExactlyOnceWith(window.history.state, '', window.location.pathname);
+    expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
+
+  it('never uses the new-link or another-account copy', async () => {
+    const { add } = await setup({ success: IDENTITY_ALREADY_CONNECTED_STATUS });
+
+    const detail = add.mock.calls[0][0].detail as string;
+    expect(detail).not.toMatch(/linked successfully|verified|another account|already linked/i);
+  });
+
+  it('stays silent during SSR — no toast, refresh, or cleanup', async () => {
+    const { add, refreshUserIdentities } = await setup({ success: IDENTITY_ALREADY_CONNECTED_STATUS }, 'server');
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it('ignores an unknown success marker', async () => {
+    const { fixture, add, refreshUserIdentities } = await setup({ success: 'identity_something_else' });
+
+    expect(add).not.toHaveBeenCalled();
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.conflictBanner()).toBe(false);
+  });
+
+  it('keeps the existing identity_linked success notice', async () => {
+    const { add, refreshUserIdentities } = await setup({ success: 'identity_linked' });
+
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'success', summary: 'Success', detail: 'Identity linked successfully.' });
+    expect(refreshUserIdentities).toHaveBeenCalledOnce();
+  });
+
+  it('keeps error=already_linked on the conflict banner', async () => {
+    const { fixture, add } = await setup({ error: 'already_linked' });
+
+    expect(fixture.componentInstance.conflictBanner()).toBe(true);
+    expect(add).not.toHaveBeenCalled();
   });
 });
 
@@ -295,5 +404,59 @@ describe('ProfileIdentitiesComponent — primary email row template (#4123)', ()
     );
 
     expect(query(fixture, 'identity-menu-cdp-primary')).not.toBeNull();
+  });
+});
+
+describe('ProfileIdentitiesComponent — GitLab unlink failure (#4190)', () => {
+  it('surfaces retry messaging, keeps the identity, and does not refresh on failed unlink', async () => {
+    TestBed.resetTestingModule();
+    const identity = makeIdentity({
+      id: 'auth0:linked-1',
+      platform: 'gitlab',
+      type: 'username',
+      value: 'gitlab-dev-example',
+      inAuth0: true,
+      auth0UserId: 'gitlab|1000001',
+    });
+    const add = vi.fn();
+    const refreshUserIdentities = vi.fn();
+    const rejectIdentity = vi.fn(() =>
+      throwError(
+        () => new HttpErrorResponse({ status: 502, error: { error: 'identity_unlink_failed', message: 'Failed to remove identity. Please try again.' } })
+      )
+    );
+    TestBed.configureTestingModule({
+      imports: [ProfileIdentitiesComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParams: {} } } },
+        {
+          provide: UserService,
+          useValue: {
+            impersonating: signal(false),
+            identitiesRefresh$: EMPTY,
+            getIdentities: vi.fn(() => of([identity])),
+            getMeetingInviteEmail: vi.fn(() => of({ email_id: null, email: null })),
+            getProfileAuthStatus: vi.fn(() => of({ authorized: true })),
+            rejectIdentity,
+            refreshUserIdentities,
+          },
+        },
+        { provide: MessageService, useValue: { add } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileIdentitiesComponent, {
+      set: { template: '', imports: [], providers: [{ provide: DialogService, useValue: { open: vi.fn(() => ({ onClose: of(true) })) } }] },
+    });
+    const fixture = TestBed.createComponent(ProfileIdentitiesComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentInstance.onRemove(fixture.componentInstance.verifiedIdentities()[0]!);
+
+    expect(rejectIdentity).toHaveBeenCalledExactlyOnceWith(identity.id, 'gitlab', identity.auth0UserId, undefined);
+    expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'error', summary: 'Error', detail: 'Failed to remove identity. Please try again.' });
+    expect(refreshUserIdentities).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.verifiedIdentities()).toEqual([expect.objectContaining({ id: identity.id })]);
   });
 });

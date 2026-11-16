@@ -31,11 +31,19 @@ import {
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
   MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  META_CHAR_LIMITS,
 } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { fetchSafeUrl } from '../helpers/url-validation';
-import { buildFinalUrl, CampaignProxyService, extractableHtml } from './campaign-proxy.service';
+import {
+  buildFinalUrl,
+  CampaignProxyService,
+  ensureShortGoogleDescription,
+  extractableHtml,
+  filterGeneratedKeywords,
+  truncateAdCopy,
+} from './campaign-proxy.service';
 
 const req = {} as unknown as Request;
 
@@ -123,8 +131,7 @@ describe('CampaignProxyService email delivery type', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => '{}',
-          json: async () => ({ choices: [{ message: { content: '{}' } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: '{}' } }] }),
           body: new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(new TextEncoder().encode(sse));
@@ -331,8 +338,12 @@ describe('CampaignProxyService email delivery type', () => {
     expect(keywordPrompt).not.toMatch(/Google Search keywords/i);
   });
 
-  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
-  it('still refuses twitter-ads, which the brief generator does not serve', async () => {
+  /**
+   * X, selectable in the Plan tab behind `twitterCreateEnabled`, is served like Microsoft with no
+   * copy key, and needs no keywords either: an X-only brief skips both stages rather than paying
+   * for the Google default.
+   */
+  it('accepts an X-only brief, skipping the ad-copy and keyword stages', async () => {
     const events = await drain(
       service.streamBrief(
         req,
@@ -341,9 +352,26 @@ describe('CampaignProxyService email delivery type', () => {
       ) as AsyncGenerator<{ type: string; data: unknown }>
     );
 
+    expect(events.some((e) => e.type === 'error')).toBe(false);
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(generatedAdCopy()).toBe(false);
+    expect(generatedKeywords()).toBe(false);
+    expect(events.find((e) => e.type === 'copy_structured')?.data).toEqual({});
+  });
+
+  /** The contrast: a platform this service genuinely cannot serve is still refused by name. */
+  it('still refuses a platform the brief generator does not know', async () => {
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['tiktok-ads' as never] },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
     const error = events.find((e) => e.type === 'error');
     expect(error).toBeDefined();
-    expect(String(error?.data)).toContain('twitter-ads');
+    expect(String(error?.data)).toContain('tiktok-ads');
     // The message enumerates the live set, so it names microsoft-ads as supported rather than
     // carrying a stale hand-written list.
     expect(String(error?.data)).toContain('microsoft-ads');
@@ -488,6 +516,82 @@ describe('CampaignProxyService email delivery type', () => {
     );
     expect(generatedAdCopy()).toBe(true);
   });
+  describe('survey delivery type', () => {
+    const surveyRequest = {
+      url: 'https://surveys.example.com/r/cloud-native-2026',
+      deliveryType: 'survey' as const,
+      sourceText: '\n  2026 Cloud Native Survey\nTwelve questions, closes 30 November.',
+      targetAudience: ' platform engineers ',
+    };
+
+    it('writes the brief from the pasted document: no fetch, no model call', async () => {
+      vi.mocked(fetchSafeUrl).mockClear();
+      const events = await drain(service.streamBrief(req, surveyRequest, new AbortController().signal) as AsyncGenerator<{ type: string; data: unknown }>);
+
+      expect(vi.mocked(fetchSafeUrl)).not.toHaveBeenCalled();
+      expect(aiCalls).toEqual([]);
+      const details = events.find((e) => e.type === 'event')?.data as Record<string, unknown>;
+      // The first non-empty line names it; the promoted URL is the button destination and slug.
+      expect(details).toMatchObject({
+        sourceText: '2026 Cloud Native Survey\nTwelve questions, closes 30 November.',
+        name: '2026 Cloud Native Survey',
+        slug: 'cloud-native-2026',
+        registrationUrl: 'https://surveys.example.com/r/cloud-native-2026',
+        audience: 'platform engineers',
+      });
+      expect(events.at(-1)?.type).toBe('done');
+    });
+
+    it('names a Google Form after its title, not after the `viewform` every form ends in', async () => {
+      const events = await drain(
+        service.streamBrief(
+          req,
+          { ...surveyRequest, url: 'https://docs.google.com/forms/d/e/1FAIpQ/viewform' },
+          new AbortController().signal
+        ) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      // Two forms in one project would otherwise share one brief, keyed on the slug.
+      expect((events.find((e) => e.type === 'event')?.data as Record<string, unknown>)['slug']).toBe('2026-cloud-native-survey');
+    });
+
+    it('refuses a source over the limit instead of cutting it', async () => {
+      const events = await drain(
+        service.streamBrief(req, { ...surveyRequest, sourceText: 'x'.repeat(3001) }, new AbortController().signal) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('error');
+      expect(String(events[0].data)).toContain('3000-character limit');
+    });
+
+    it('refuses a survey with nothing pasted rather than inventing its facts', async () => {
+      const events = await drain(
+        service.streamBrief(req, { ...surveyRequest, sourceText: '   ' }, new AbortController().signal) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      expect(events).toEqual([{ type: 'error', data: 'Paste the survey or report text to write the email from.' }]);
+    });
+
+    it('refuses to refine a survey brief, as it does an email one', async () => {
+      const events = await drain(
+        service.streamRefinedBrief(
+          req,
+          { currentCopy: {}, currentKeywords: [], feedback: 'shorter', deliveryType: 'survey' },
+          new AbortController().signal
+        ) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      expect(events).toEqual([{ type: 'error', data: 'Refining email copy is not supported yet.' }]);
+      expect(aiCalls).toEqual([]);
+    });
+  });
 });
 
 /**
@@ -533,8 +637,7 @@ describe('CampaignProxyService model JSON fences', () => {
       vi.fn(async () => ({
         ok: true,
         status: 200,
-        text: async () => payload,
-        json: async () => ({ choices: [{ message: { content: payload } }] }),
+        text: async () => JSON.stringify({ choices: [{ message: { content: payload } }] }),
         body: new ReadableStream<Uint8Array>({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -710,8 +813,7 @@ describe('CampaignProxyService Google extensions', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => body,
-          json: async () => ({ choices: [{ message: { content: body } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: body } }] }),
           body: new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
@@ -1500,6 +1602,37 @@ describe('extractableHtml', () => {
     expect(Date.now() - started, 'the removal pass scanned past MAX_JSON_LD_SCAN_CHARS').toBeLessThan(4000);
     // The block found inside the cap is still preserved -- bounding must not cost the extraction.
     expect(out).toContain('"startDate":"2027-03-15"');
+  });
+
+  // The closing-tag STRIP used `.replace(/<\/script[^>]*>$/i, '')` on the collected body: unanchored
+  // at the front, with `[^>]*` running forward to the next `>` before `$` is tested. Every `</script`
+  // literal the block's own close scan (`rawTextBlockEnd`) does NOT recognise as a real close -- its
+  // `(?=[\s>])` lookahead rejects `</scriptx` -- is a fresh backtracking candidate for that regex.
+  // A body of many `</scriptx` tokens followed by one lone `>` and then the real `</script>` makes
+  // `rawTextBlockEnd` treat the whole thing as one element (every inner token fails its lookahead),
+  // so the strip regex sees all of them as start candidates whose `[^>]*` must each scan forward to
+  // that one inner `>` and then backtrack. Quadratic in the token count; GH-549 measured tens of
+  // seconds on ~116k tokens. The fix slices the body up to the close position `rawTextBlockEnd`
+  // already computed instead of re-finding and stripping the close tag with a regex.
+  it('does not stall stripping a json-ld body full of near-miss close tokens', () => {
+    // 100k, not 20k: at 20k tokens the OLD regex itself only took ~1.3-1.5s, well inside a 4s
+    // budget -- three reviewers independently caught that the old code would pass this test too,
+    // so it could not detect its own regression. 100k decoys (~900KB, still under the 1 MiB
+    // MAX_SCAN_CHARS cap) pushed the old regex to ~46.5s measured directly against the fix's
+    // slice-based version, which stays in the tens of milliseconds -- a budget comfortably between
+    // the two, with room for a loaded CI runner.
+    const decoys = '</scriptx'.repeat(100_000);
+    const html = `<script type="application/ld+json">{"startDate":"2027-03-15"}${decoys}>REST</script><p>Tokyo</p>`;
+
+    const started = Date.now();
+    const out = extractableHtml(html);
+    const elapsed = Date.now() - started;
+
+    expect(elapsed, `extractableHtml took ${elapsed}ms stripping a json-ld body with 100k near-miss close tokens`).toBeLessThan(4000);
+    expect(out).toContain('"startDate":"2027-03-15"');
+    // The real closing tag must still be stripped out of the preserved json-ld.
+    expect(out).not.toContain('</script>');
+    expect(out).toContain('Tokyo');
   });
 
   // A flat `slice(0, MAX_SOURCE_CHARS)` cut whichever block 150k landed inside, taking its closing
@@ -2445,8 +2578,7 @@ describe('CampaignProxyService streaming AI failures', () => {
         return {
           ok: true,
           status: 200,
-          text: async () => EXTRACTION,
-          json: async () => ({ choices: [{ message: { content: EXTRACTION } }] }),
+          text: async () => JSON.stringify({ choices: [{ message: { content: EXTRACTION } }] }),
           body: null,
         };
       })
@@ -2526,6 +2658,23 @@ describe('CampaignProxyService streaming AI failures', () => {
     expect(loggedMessage('campaign_brief_extract')).toBe('AI request failed (403): rejected Authorization: Bearer [redacted]');
   });
 
+  it('fails the non-streaming call cleanly on a 2xx that is not JSON (#4500)', async () => {
+    const service = stubAi({ ok: true, status: 200, body: null }, 'sk-live-abc+123', {
+      ok: true,
+      status: 200,
+      text: '<html>gateway page echoing Bearer sk-live-abc+123</html>',
+    });
+
+    await errorEvent(briefStream(service));
+
+    // A raw `response.json()` threw V8's `SyntaxError` here, which names neither the proxy nor the
+    // status and quotes the body unredacted. Extraction is non-fatal, so this stage logs and the
+    // brief continues.
+    expect(loggedMessage('campaign_brief_extract')).toBe(
+      'AI proxy returned a response that is not a JSON object (200): <html>gateway page echoing Bearer [redacted]</html>'
+    );
+  });
+
   it('bounds the body rather than putting a whole error page in one log line', async () => {
     const service = stubAi({ ok: false, status: 502, text: `<html>${'x'.repeat(900)}</html>` });
 
@@ -2558,5 +2707,356 @@ describe('CampaignProxyService streaming AI failures', () => {
     expect(loggedMessage('campaign_refine_copy')).toBe('AI streaming request failed (401): Invalid proxy credential for host litellm.example.test');
     expect(browserMessage).toBe('Brief refinement failed: AI streaming request failed (401)');
     expect(browserMessage).not.toContain('litellm.example.test');
+  });
+});
+
+/**
+ * The brief generator's copy limits (#5378, #5384, #5494) and its keyword targeting (#5383).
+ */
+describe('CampaignProxyService generated copy and keywords', () => {
+  /** Google's display width: CJK and full-width characters count double (`ad_copy.go`'s `googleAdsCharWeight`). */
+  const weight = (text: string): number => [...text].reduce((sum, char) => sum + (/[\u3000-\u9fff\uff00-\uff60]/u.test(char) ? 2 : 1), 0);
+  const words = (count: number, word = 'cloud'): string => Array.from({ length: count }, () => word).join(' ');
+
+  describe('truncateAdCopy', () => {
+    it('cuts Google descriptions over 90 on a word boundary, never mid-word (#5378)', () => {
+      const line = 'Two days of GitOps talks and labs with the people who build it. Learn Argo CD, Rollouts & Events';
+      // A short line already present, so the #5494 net below leaves the long ones as fitted.
+      const copy: Record<string, unknown> = { google_search: { descriptions: [line] }, google_display: { descriptions: [line, 'Register today.'] } };
+
+      truncateAdCopy(copy);
+
+      for (const key of ['google_search', 'google_display']) {
+        const [fitted] = (copy[key] as { descriptions: string[] }).descriptions;
+        expect(fitted).toBe('Two days of GitOps talks and labs with the people who build it. Learn Argo CD, Rollouts');
+      }
+    });
+
+    it('cuts Search headlines to 30 on a word boundary and drops a line nothing survives', () => {
+      const copy: Record<string, unknown> = { google_search: { headlines: ['Register for ArgoCon Europe today', '&'.repeat(31), 'Join us'] } };
+
+      truncateAdCopy(copy);
+
+      expect((copy['google_search'] as { headlines: string[] }).headlines).toEqual(['Register for ArgoCon Europe', 'Join us']);
+    });
+
+    it("writes Demand Gen headlines to the image ad's 30, not 40 (#5384)", () => {
+      const headline = 'Register now for ArgoCon in Barcelona';
+      expect(headline.length).toBeGreaterThan(30);
+      expect(headline.length).toBeLessThanOrEqual(40);
+      const copy: Record<string, unknown> = { google_display: { headlines: [headline], business_name: 'Cloud Native Computing Foundation' } };
+
+      truncateAdCopy(copy);
+
+      const display = copy['google_display'] as { headlines: string[]; business_name: string };
+      expect(display.headlines).toEqual(['Register now for ArgoCon']);
+      expect(display.business_name).toBe('Cloud Native Computing');
+    });
+
+    it('measures Google copy by display width, so a CJK description is held to 90 wide', () => {
+      const copy: Record<string, unknown> = { google_search: { descriptions: ['会'.repeat(46), words(10)] } };
+
+      truncateAdCopy(copy);
+
+      const [cjk] = (copy['google_search'] as { descriptions: string[] }).descriptions;
+      expect(cjk).toBe('会'.repeat(45));
+      expect(weight(cjk)).toBe(90);
+    });
+
+    it('fits the nested platforms shape and the older demand_gen key the same way', () => {
+      const copy: Record<string, unknown> = {
+        platforms: {
+          google_search: { headlines: ['Register for ArgoCon Europe today'] },
+          demand_gen: { headlines: ['Register now for ArgoCon in Barcelona'] },
+        },
+      };
+
+      truncateAdCopy(copy);
+
+      const nested = copy['platforms'] as Record<string, { headlines: string[] }>;
+      expect(nested['google_search'].headlines).toEqual(['Register for ArgoCon Europe']);
+      expect(nested['demand_gen'].headlines).toEqual(['Register now for ArgoCon']);
+    });
+
+    it('cuts LinkedIn, Reddit and Meta copy on a word boundary too, at their own limits', () => {
+      const copy: Record<string, unknown> = {
+        linkedin_sponsored: { variants: [{ headline: words(41) }] },
+        reddit_promoted: { variants: [{ headline: words(61) }] },
+        meta_ads: { variants: [{ primary_text: words(200) }] },
+      };
+
+      truncateAdCopy(copy);
+
+      const li = (copy['linkedin_sponsored'] as { variants: { headline: string }[] }).variants[0].headline;
+      const rd = (copy['reddit_promoted'] as { variants: { headline: string }[] }).variants[0].headline;
+      const ma = (copy['meta_ads'] as { variants: { primary_text: string }[] }).variants[0].primary_text;
+      expect(li).toBe(words(33));
+      expect(rd).toBe(words(50));
+      expect(ma.length).toBeLessThanOrEqual(META_CHAR_LIMITS.primaryText);
+      expect(ma.endsWith('cloud')).toBe(true);
+    });
+
+    it('gives the Google copy a description of 60 or fewer when the model wrote none (#5494)', () => {
+      const long = (n: number): string => `${words(13)} ${n}`.padEnd(85, '!');
+      const copy: Record<string, unknown> = {
+        google_search: { descriptions: [long(1), long(2), words(13), long(3)] },
+        google_display: { descriptions: [long(4)] },
+      };
+
+      truncateAdCopy(copy);
+
+      const search = (copy['google_search'] as { descriptions: string[] }).descriptions;
+      expect(search).toHaveLength(4);
+      expect(search.filter((line) => weight(line) <= 60)).toEqual([words(10)]);
+    });
+  });
+
+  describe('ensureShortGoogleDescription', () => {
+    const over = (n: number): string => `${words(14)} number ${n}`;
+
+    it('shortens the shortest Search description in place, keeping the count', () => {
+      const search = { descriptions: [over(1), words(13), over(2)] };
+
+      ensureShortGoogleDescription(search, { descriptions: [over(3)] });
+
+      expect(search.descriptions).toEqual([over(1), words(10), over(2)]);
+    });
+
+    it('changes nothing when either list already holds a short line', () => {
+      const search = { descriptions: [over(1)] };
+
+      ensureShortGoogleDescription(search, { descriptions: [over(2), 'Register today.'] });
+
+      expect(search.descriptions).toEqual([over(1)]);
+    });
+
+    it('does not take a blank line as the short one', () => {
+      const search = { descriptions: ['   ', over(1)] };
+
+      ensureShortGoogleDescription(search, undefined);
+
+      expect(search.descriptions).toEqual(['   ', words(10)]);
+    });
+
+    it('shortens a Demand Gen description when there are no Search descriptions', () => {
+      const demandGen = { descriptions: [over(1)] };
+
+      ensureShortGoogleDescription({ headlines: ['Join us'] }, demandGen);
+
+      expect(demandGen.descriptions).toEqual([words(10)]);
+    });
+
+    /** 31 ideographs are 31 characters but 62 wide, so they do not count as short. */
+    it('counts a CJK description by display width', () => {
+      const search = { descriptions: ['会'.repeat(31)] };
+
+      ensureShortGoogleDescription(search, undefined);
+
+      expect(search.descriptions).toEqual(['会'.repeat(30)]);
+    });
+
+    it('leaves a line alone when nothing would survive the cut', () => {
+      const search = { descriptions: ['&'.repeat(70)] };
+
+      ensureShortGoogleDescription(search, undefined);
+
+      expect(search.descriptions).toEqual(['&'.repeat(70)]);
+    });
+  });
+
+  describe('filterGeneratedKeywords', () => {
+    const kw = (term: string): { term: string } => ({ term });
+
+    it.each([
+      'KubeCon alternative Barcelona',
+      'ArgoCon alternatives',
+      'alternatives to KubeCon',
+      'ArgoCon vs KubeCon',
+      'ArgoCon vs. KubeCon',
+      'Argo versus Flux',
+      'ArgoCon competitor',
+      'GitOps event instead of KubeCon',
+    ])('drops the competitor term %j (#5383)', (term) => {
+      expect(filterGeneratedKeywords([kw(term)], '2027', false)).toEqual([]);
+    });
+
+    it('keeps topic terms that hold those words outside a comparison shape', () => {
+      const terms = [
+        'vsphere conference',
+        'alternatively argo',
+        'argocon barcelona',
+        'alternative energy summit',
+        'open source alternative energy summit',
+        'linux alternative fuels conference',
+        'vs code conference',
+        'learn vs code summit',
+      ];
+      expect(filterGeneratedKeywords(terms.map(kw), '2027', false).map((k) => k.term)).toEqual(terms);
+    });
+
+    it('drops a term naming another year when the event year is known, and keeps it otherwise', () => {
+      const terms = ['argocon 2027', 'flux conference 2026', 'gitops summit'];
+      expect(filterGeneratedKeywords(terms.map(kw), '2027', false).map((k) => k.term)).toEqual(['argocon 2027', 'gitops summit']);
+      expect(filterGeneratedKeywords(terms.map(kw), null, false).map((k) => k.term)).toEqual(terms);
+    });
+
+    it('passes education keywords through, whose prompt asks for alternative certifications', () => {
+      expect(filterGeneratedKeywords([kw('CKA alternative certification 2025')], '2027', true)).toHaveLength(1);
+    });
+  });
+
+  describe('through the brief stream', () => {
+    const originalEnv = { ...process.env };
+    let systemPrompts: string[];
+    let userPrompts: string[];
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      process.env = { ...originalEnv };
+    });
+
+    async function drain(gen: AsyncGenerator<{ type: string; data: unknown }>): Promise<{ type: string; data: unknown }[]> {
+      const events: { type: string; data: unknown }[] = [];
+      for await (const e of gen) events.push(e);
+      return events;
+    }
+
+    /** One payload answers every non-streamed call (extraction reads the event, the keyword stage reads `keywords`); `copy` is the streamed copy. */
+    function stub(payload: Record<string, unknown>, copy: Record<string, unknown>): CampaignProxyService {
+      systemPrompts = [];
+      userPrompts = [];
+      process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
+      process.env['AI_API_KEY'] = 'test-key';
+      const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: JSON.stringify(copy) } }] })}\n\ndata: [DONE]\n\n`;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (_url: string, init?: { body?: string }) => {
+          const parsed = JSON.parse(init?.body ?? '{}') as { messages?: { role: string; content: string }[] };
+          systemPrompts.push(parsed.messages?.find((m) => m.role === 'system')?.content ?? '');
+          userPrompts.push(parsed.messages?.find((m) => m.role === 'user')?.content ?? '');
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ choices: [{ message: { content: JSON.stringify(payload) } }] }),
+            body: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(sse));
+                controller.close();
+              },
+            }),
+          };
+        })
+      );
+      return new CampaignProxyService();
+    }
+
+    const event = { name: 'ArgoCon Europe 2027', dates: 'March 22, 2027', city: 'Barcelona', themes: ['GitOps'], audience: 'Platform engineers' };
+    const keywords = ['argocon 2027', 'KubeCon alternative Barcelona', 'flux conference 2026', 'gitops conference barcelona'].map((term) => ({
+      term,
+      match_type: 'Phrase',
+      intent_level: 'High',
+      notes: '',
+    }));
+
+    it('asks for Demand Gen headlines within 30 and one description within 60, and fits what comes back', async () => {
+      const service = stub(event, {
+        google_search: { headlines: ['Register for ArgoCon Europe today'], descriptions: [`${words(17)} innovation`] },
+        google_display: { headlines: ['Register now for ArgoCon in Barcelona'], descriptions: [words(16)] },
+      });
+
+      const events = await drain(
+        service.streamBrief(req, { url: 'https://events.example.com/argocon', platforms: ['google-ads'] }, new AbortController().signal) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      const copyPrompt = systemPrompts.find((p) => p.includes('GOOGLE DEMAND GEN')) ?? '';
+      expect(copyPrompt).toContain('headlines: 5 variations, each ≤ 30 characters (STRICT — the Demand Gen image ad takes 30)');
+      expect(copyPrompt).toContain('At least ONE description must be ≤ 60 characters');
+      expect(copyPrompt).toContain('5. Demand Gen headlines are 30 chars max');
+      expect(copyPrompt).not.toContain('40');
+
+      const copy = events.find((e) => e.type === 'copy_structured')?.data as Record<string, { headlines: string[]; descriptions: string[] }>;
+      expect(copy['google_display'].headlines).toEqual(['Register now for ArgoCon']);
+      expect(copy['google_search'].descriptions).toEqual([words(10)]);
+    });
+
+    it('tells the keyword generator not to target other events and drops the terms it writes anyway (#5383)', async () => {
+      const service = stub({ ...event, keywords }, {});
+
+      const events = await drain(
+        service.streamBrief(req, { url: 'https://events.example.com/argocon', platforms: ['google-ads'] }, new AbortController().signal) as AsyncGenerator<{
+          type: string;
+          data: unknown;
+        }>
+      );
+
+      const keywordPrompt = userPrompts.find((p) => p.startsWith('Generate 25-40 high-intent paid search keywords for this event.')) ?? '';
+      expect(keywordPrompt).toContain('Never target another event.');
+      expect(keywordPrompt).not.toContain('alternative events');
+      expect((events.find((e) => e.type === 'keywords')?.data as { term: string }[]).map((k) => k.term)).toEqual([
+        'argocon 2027',
+        'gitops conference barcelona',
+      ]);
+    });
+
+    it('applies the same rule and filter on refine', async () => {
+      const service = stub({ keywords }, {});
+
+      const events = await drain(
+        service.streamRefinedBrief(
+          req,
+          {
+            currentCopy: {},
+            currentKeywords: [],
+            feedback: 'more technical',
+            platforms: ['google-ads'],
+            eventDetails: { name: event.name, dates: event.dates, city: event.city } as never,
+          },
+          new AbortController().signal
+        ) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      const keywordPrompt = userPrompts.find((p) => p.startsWith('Regenerate keywords')) ?? '';
+      expect(keywordPrompt).toContain('Never target another event.');
+      expect((events.find((e) => e.type === 'keywords')?.data as { term: string }[]).map((k) => k.term)).toEqual([
+        'argocon 2027',
+        'gitops conference barcelona',
+      ]);
+    });
+
+    it('leaves an education refine prompt and its keywords without the event rule and filter', async () => {
+      const service = stub({ keywords: [{ term: 'CKA alternative certification', match_type: 'Phrase' }] }, {});
+
+      const events = await drain(
+        service.streamRefinedBrief(
+          req,
+          { currentCopy: {}, currentKeywords: [], feedback: 'more technical', platforms: ['google-ads'], programType: 'education' },
+          new AbortController().signal
+        ) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      const keywordPrompt = userPrompts.find((p) => p.startsWith('Regenerate keywords')) ?? '';
+      expect(keywordPrompt).not.toBe('');
+      expect(keywordPrompt).not.toContain('Never target another event.');
+      expect((events.find((e) => e.type === 'keywords')?.data as { term: string }[]).map((k) => k.term)).toEqual(['CKA alternative certification']);
+    });
+
+    it('leaves the education keyword prompt without the event rule', async () => {
+      const service = stub({ name: 'Certified Kubernetes Administrator', keywords: [] }, {});
+
+      await drain(
+        service.streamBrief(
+          req,
+          { url: 'https://training.example.com/cka', platforms: ['google-ads'], programType: 'education' },
+          new AbortController().signal
+        ) as AsyncGenerator<{ type: string; data: unknown }>
+      );
+
+      const keywordPrompt = userPrompts.find((p) => p.includes('paid search keywords for this training/certification program')) ?? '';
+      expect(keywordPrompt).not.toBe('');
+      expect(keywordPrompt).not.toContain('Never target another event.');
+    });
   });
 });

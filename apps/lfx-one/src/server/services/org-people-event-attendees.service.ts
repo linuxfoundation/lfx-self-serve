@@ -3,32 +3,51 @@
 
 import {
   EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
-  ORG_EVENT_ATTENDEE_ROW_COLUMNS,
   ORG_EVENT_DETAIL_COLUMNS,
   ORG_EVENT_DICTIONARY_COLUMNS,
   ORG_EVENT_FOUNDATION_OPTION_COLUMNS,
   ORG_EVENT_OPTION_COLUMNS,
+  ORG_EVENTS_COUNTED_ATTRIBUTION,
+  ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
 import type {
   CompactOrgEventAttendeesRawCache,
   EventAttendeeEventOptionRow,
   EventAttendeeFoundationOptionRow,
+  EventAttendeesRaw,
   OrgEventAttendeeDetailRow,
   OrgEventAttendeeEventOption,
   OrgEventAttendeeFoundationOption,
-  OrgEventAttendeeRow,
   OrgEventAttendeesResponse,
-  OrgPeopleAllEventAttendeeRow,
-  OrgPeopleEventRow,
+  OrgEventAttendeesSummary,
+  OrgEventParticipationRow,
+  OrgEventParticipationSummaryRow,
+  OrgEventsFilters,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, normalizeToUrl, toColumnar, tupleKey } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  isObjectRowArray,
+  normalizeToUrl,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
+import { distinctFoundationOptions, orgEventsAttendeePredicate, orgEventsRangeWindow, orgEventsSpeakerPredicate } from '../helpers/org-events-filters.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCompactCache } from './valkey.service';
+import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
-/** Event Attendees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and expanded event-grain sub-table client-side. */
+/**
+ * Event Attendees tab data access — one bundled GET: the person × event rows of ORG_EVENT_PARTICIPATION for the picked range and
+ * participation (everyone Employee match credits to the organization, by name and title; ended events only; the
+ * server applies the window, the browser does not), the summary row dbt computed for the same pick, and the foundation and
+ * event dropdown options of that same row set.
+ */
 export class OrgPeopleEventAttendeesService {
   private readonly snowflakeService: SnowflakeService;
 
@@ -36,34 +55,31 @@ export class OrgPeopleEventAttendeesService {
     this.snowflakeService = SnowflakeService.getInstance();
   }
 
-  /** Bundled attendees + per-(person, event) details + filter dropdowns. Four parallel Snowflake queries; stats are recomputed client-side from filtered details so the server ships none. */
-  public async getEventAttendees(accountId: string): Promise<OrgEventAttendeesResponse> {
+  public async getEventAttendees(accountId: string, filters: Pick<OrgEventsFilters, 'range' | 'participation'>): Promise<OrgEventAttendeesResponse> {
     if (!accountId) {
       return { ...EMPTY_ORG_EVENT_ATTENDEES_RESPONSE };
     }
 
-    // `people-event-attendees:v2`: the stored value is now the compact projection below (GH-1906),
-    // with the event-level columns lifted out of the per-(person, event) detail rows — a `v1` entry
-    // is a different shape entirely and must miss.
-    const { attendeeRows, detailRows, foundationRows, eventRows } = await withOrgCompactCache(
-      accountId,
-      'people-event-attendees:v2',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchEventAttendeesRaw(accountId),
-      { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
-    );
+    const { range, participation } = filters;
 
-    const attendees: OrgEventAttendeeRow[] = attendeeRows.map((row) => ({
-      personKey: row.PERSON_KEY,
-      lfid: row.LFID,
-      cdpMemberId: row.CDP_MEMBER_ID,
-      name: row.NAME ?? '',
-      title: row.TITLE,
-      email: row.EMAIL,
-    }));
+    // Only the filters that select rows are in the key. `v7`: Employee match only; a `v6` entry may hold the retired Self-reported only
+    // or All row sets, so it must miss.
+    const [{ detailRows, foundationRows, eventRows }, summary] = await Promise.all([
+      withOrgCompactCache(
+        accountId,
+        `people-event-attendees:v7:${range}:${participation}`,
+        VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
+        () => this.fetchEventAttendeesRaw(accountId, range, participation),
+        { encode: encodeEventAttendeesRaw, decode: decodeEventAttendeesRaw, accept: isCompactEventAttendeesRaw }
+      ),
+      this.readSummary(accountId, range, participation),
+    ]);
 
     const details: OrgEventAttendeeDetailRow[] = detailRows.map((row) => ({
+      participantRef: row.PARTICIPANT_REF,
       personKey: row.PERSON_KEY,
+      displayName: displayText(row.DISPLAY_NAME) ?? ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL,
+      jobTitle: displayText(row.JOB_TITLE),
       eventId: row.EVENT_ID,
       eventName: row.EVENT_NAME ?? row.EVENT_ID,
       eventLocation: row.EVENT_LOCATION,
@@ -76,10 +92,9 @@ export class OrgPeopleEventAttendeesService {
       eventStartDate: toIsoDate(row.EVENT_START_DATE),
       eventEndDate: toIsoDate(row.EVENT_END_DATE),
       isSpeaker: row.IS_SPEAKER === true,
-      isPastEvent: row.IS_PAST_EVENT === true,
     }));
 
-    const foundationOptions: OrgEventAttendeeFoundationOption[] = foundationRows.map((row) => ({
+    const foundationOptions: OrgEventAttendeeFoundationOption[] = distinctFoundationOptions(foundationRows).map((row) => ({
       foundationId: row.FOUNDATION_ID,
       foundationName: row.FOUNDATION_NAME,
     }));
@@ -89,122 +104,107 @@ export class OrgPeopleEventAttendeesService {
       eventName: row.EVENT_NAME,
     }));
 
-    return {
+    return { accountId, details, summary, foundationOptions, eventOptions };
+  }
+
+  /** The dbt summary row for (range, participation), Employee match; zeros when the account has none. Read by the Event Attendees tab and the All Employees Event Attendees tile, so both show the same number. */
+  public async readSummary(
+    accountId: string,
+    range: OrgEventsFilters['range'],
+    participation: OrgEventsFilters['participation']
+  ): Promise<OrgEventAttendeesSummary> {
+    const sql = `
+      SELECT ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION_SUMMARY
+      WHERE ACCOUNT_ID = ?
+        AND TIME_RANGE = ?
+        AND ATTRIBUTION = ?
+        AND PARTICIPATION = ?
+    `;
+    // `v3`: Employee match only; a `v2` entry may hold the retired Self-reported only and All rows.
+    const rows = await withOrgCache(
       accountId,
-      attendees,
-      details,
-      foundationOptions,
-      eventOptions,
+      `people-event-attendees-summary:v3:${range}:${participation}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () =>
+        (await this.snowflakeService.execute<OrgEventParticipationSummaryRow>(sql, [accountId, range, ORG_EVENTS_COUNTED_ATTRIBUTION, participation])).rows,
+      isObjectRowArray
+    );
+    const row = rows[0];
+    return {
+      attendeesCount: row?.ATTENDEES_COUNT ?? 0,
+      speakersCount: row?.SPEAKERS_COUNT ?? 0,
+      eventsCount: row?.EVENTS_COUNT ?? 0,
+      foundationsCount: row?.FOUNDATIONS_COUNT ?? 0,
     };
   }
 
-  private async fetchEventAttendeesRaw(accountId: string): Promise<{
-    attendeeRows: OrgPeopleAllEventAttendeeRow[];
-    detailRows: OrgPeopleEventRow[];
-    foundationRows: EventAttendeeFoundationOptionRow[];
-    eventRows: EventAttendeeEventOptionRow[];
-  }> {
-    const [attendeeRows, detailRows, foundationRows, eventRows] = await Promise.all([
-      this.fetchAttendeeRows(accountId),
-      this.fetchDetailRows(accountId),
-      this.fetchFoundationOptions(accountId),
-      this.fetchEventOptions(accountId),
+  private async fetchEventAttendeesRaw(
+    accountId: string,
+    range: OrgEventsFilters['range'],
+    participation: OrgEventsFilters['participation']
+  ): Promise<EventAttendeesRaw> {
+    // One row set, two projections: the rows, and the dropdown options narrowed to what the rows hold. Everyone who
+    // credits the organization by Employee match for the participation, ended events only, inside the range window.
+    const where = `
+      WHERE p.ACCOUNT_ID = ?
+        AND p.${orgEventsAttendeePredicate(participation)}
+        AND p.EVENT_DATE < CURRENT_DATE()
+        ${orgEventsRangeWindow('p.EVENT_DATE', range)}
+    `;
+    const from = 'FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p';
+    const speaker = `p.${orgEventsSpeakerPredicate()}`;
+    const binds = [accountId];
+
+    const [detail, foundations, events] = await Promise.all([
+      this.snowflakeService.execute<OrgEventParticipationRow>(
+        `SELECT p.PARTICIPANT_REF, p.PERSON_KEY, p.DISPLAY_NAME, p.JOB_TITLE, p.EVENT_ID, p.EVENT_NAME, p.EVENT_LOCATION, p.EVENT_CITY,
+                p.EVENT_COUNTRY, p.EVENT_URL, p.EVENT_START_DATE, p.EVENT_END_DATE, p.FOUNDATION_ID, p.FOUNDATION_NAME,
+                CASE WHEN ${speaker} THEN TRUE ELSE FALSE END AS IS_SPEAKER
+         ${from} ${where}
+         ORDER BY p.PARTICIPANT_REF ASC, p.EVENT_DATE DESC NULLS LAST, p.EVENT_ID ASC`,
+        binds
+      ),
+      this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(
+        `SELECT DISTINCT p.FOUNDATION_ID, p.FOUNDATION_NAME ${from} ${where}
+           AND p.FOUNDATION_ID IS NOT NULL AND p.FOUNDATION_NAME IS NOT NULL
+         ORDER BY p.FOUNDATION_NAME ASC`,
+        binds
+      ),
+      // Most-recent-first, matching the prototype's flat list.
+      this.snowflakeService.execute<EventAttendeeEventOptionRow>(
+        `SELECT DISTINCT p.EVENT_ID, p.EVENT_NAME, p.EVENT_DATE ${from} ${where}
+           AND p.EVENT_ID IS NOT NULL AND p.EVENT_NAME IS NOT NULL
+         ORDER BY p.EVENT_DATE DESC NULLS LAST, p.EVENT_NAME ASC`,
+        binds
+      ),
     ]);
-    return { attendeeRows, detailRows, foundationRows, eventRows };
-  }
 
-  private async fetchAttendeeRows(accountId: string): Promise<OrgPeopleAllEventAttendeeRow[]> {
-    const query = `
-      SELECT
-        PERSON_KEY,
-        LFID,
-        CDP_MEMBER_ID,
-        NAME,
-        TITLE,
-        EMAIL
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
-      WHERE ACCOUNT_ID = ? AND EVENTS_COUNT > 0
-      ORDER BY NAME ASC NULLS LAST
-    `;
-    const result = await this.snowflakeService.execute<OrgPeopleAllEventAttendeeRow>(query, [accountId]);
-    return result.rows;
-  }
-
-  private async fetchDetailRows(accountId: string): Promise<OrgPeopleEventRow[]> {
-    const query = `
-      SELECT
-        PERSON_KEY,
-        EVENT_ID,
-        EVENT_NAME,
-        EVENT_LOCATION,
-        EVENT_CITY,
-        EVENT_COUNTRY,
-        EVENT_URL,
-        EVENT_START_DATE,
-        EVENT_END_DATE,
-        IS_SPEAKER,
-        IS_PAST_EVENT,
-        FOUNDATION_ID,
-        FOUNDATION_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS
-      WHERE ACCOUNT_ID = ?
-      ORDER BY PERSON_KEY ASC, EVENT_END_DATE DESC NULLS LAST
-    `;
-    const result = await this.snowflakeService.execute<OrgPeopleEventRow>(query, [accountId]);
-    return result.rows;
-  }
-
-  private async fetchFoundationOptions(accountId: string): Promise<EventAttendeeFoundationOptionRow[]> {
-    const query = `
-      SELECT DISTINCT FOUNDATION_ID, FOUNDATION_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS
-      WHERE ACCOUNT_ID = ?
-        AND FOUNDATION_ID IS NOT NULL
-        AND FOUNDATION_NAME IS NOT NULL
-      ORDER BY FOUNDATION_NAME ASC
-    `;
-    const result = await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(query, [accountId]);
-    return result.rows;
-  }
-
-  private async fetchEventOptions(accountId: string): Promise<EventAttendeeEventOptionRow[]> {
-    // R2.3 — most-recent-first, matches the prototype's flat list. Distinct on (EVENT_ID, EVENT_NAME, EVENT_END_DATE)
-    // to keep the EVENT_END_DATE column available for ORDER BY without forcing a re-aggregation.
-    const query = `
-      SELECT DISTINCT EVENT_ID, EVENT_NAME, EVENT_END_DATE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_EVENTS
-      WHERE ACCOUNT_ID = ?
-        AND EVENT_ID IS NOT NULL
-        AND EVENT_NAME IS NOT NULL
-      ORDER BY EVENT_END_DATE DESC NULLS LAST, EVENT_NAME ASC
-    `;
-    const result = await this.snowflakeService.execute<EventAttendeeEventOptionRow>(query, [accountId]);
-    return result.rows;
+    return { detailRows: detail.rows, foundationRows: foundations.rows, eventRows: events.rows };
   }
 }
 
+/** A name or title for display: trimmed, `null` when empty or when it holds an address — no email reaches the client, whatever the warehouse sent. */
+function displayText(value: string | null): string | null {
+  const text = value?.trim();
+  return text && !text.includes('@') ? text : null;
+}
+
 /**
- * Compacts the four raw reads for Valkey storage (GH-1906).
+ * Compacts the three raw reads for Valkey storage (GH-1906).
  *
- * `detailRows` is nearly all of the payload — 4.8 MB of a 5.69 MB value for the largest org — and
- * almost none of it is per-row data: the grain is (person, event), so each of the ~25k rows repeats
- * the same EVENT_NAME / LOCATION / CITY / COUNTRY / URL / START / END / FOUNDATION_ID /
- * FOUNDATION_NAME as every other row for that event. Those nine columns are stored once per
- * distinct event and referenced by index; what stays per row is `PERSON_KEY`, `IS_SPEAKER` and
- * `IS_PAST_EVENT`.
+ * `detailRows` is nearly all of the payload, and almost none of it is per-row data: the grain is (person, event), so each
+ * row repeats the same EVENT_NAME / LOCATION / CITY / COUNTRY / URL / START / END / FOUNDATION_ID / FOUNDATION_NAME as every
+ * other row for that event. Those columns are stored once per distinct event and referenced by index; what stays per row is
+ * `PARTICIPANT_REF`, `PERSON_KEY`, `DISPLAY_NAME`, `JOB_TITLE` and `IS_SPEAKER`.
  */
-function encodeEventAttendeesRaw(raw: {
-  attendeeRows: OrgPeopleAllEventAttendeeRow[];
-  detailRows: OrgPeopleEventRow[];
-  foundationRows: EventAttendeeFoundationOptionRow[];
-  eventRows: EventAttendeeEventOptionRow[];
-}): CompactOrgEventAttendeesRawCache {
+function encodeEventAttendeesRaw(raw: EventAttendeesRaw): CompactOrgEventAttendeesRawCache {
   // Keyed on the whole event tuple, not on EVENT_ID: two rows sharing an id but disagreeing on any
   // event column must not collapse onto the first one seen, or the rebuilt rows would differ from
   // the uncached ones. Rows that agree — the overwhelming majority — still collapse.
   // Keyed once per row and reused for both the dictionary and the index array: the key is the
   // expensive part of the encode, and computing it twice per row bought nothing.
-  const keys = new Map<OrgPeopleEventRow, string>(
+  const keys = new Map<OrgEventParticipationRow, string>(
     raw.detailRows.map((row) => [
       row,
       tupleKey([
@@ -224,7 +224,6 @@ function encodeEventAttendeesRaw(raw: {
   const events = dedupeByKey(raw.detailRows, (row) => keys.get(row)!);
 
   return {
-    attendeeRows: toColumnar(raw.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS),
     events: toColumnar(events.values, ORG_EVENT_DICTIONARY_COLUMNS),
     details: toColumnar(raw.detailRows, ORG_EVENT_DETAIL_COLUMNS),
     // Every detail row was part of the set `events` was built from, so the lookup always resolves.
@@ -235,17 +234,11 @@ function encodeEventAttendeesRaw(raw: {
 }
 
 /** Rebuilds the raw rows {@link encodeEventAttendeesRaw} stored, so the mapping below sees exactly what a cache miss would hand it. */
-function decodeEventAttendeesRaw(value: CompactOrgEventAttendeesRawCache): {
-  attendeeRows: OrgPeopleAllEventAttendeeRow[];
-  detailRows: OrgPeopleEventRow[];
-  foundationRows: EventAttendeeFoundationOptionRow[];
-  eventRows: EventAttendeeEventOptionRow[];
-} {
-  const events = fromColumnar<OrgPeopleEventRow>(value.events);
-  const detailRows = fromColumnar<OrgPeopleEventRow>(value.details);
+function decodeEventAttendeesRaw(value: CompactOrgEventAttendeesRawCache): EventAttendeesRaw {
+  const events = fromColumnar<OrgEventParticipationRow>(value.events);
+  const detailRows = fromColumnar<OrgEventParticipationRow>(value.details);
   detailRows.forEach((row, index) => Object.assign(row, events[value.detailEvents[index]]));
   return {
-    attendeeRows: fromColumnar<OrgPeopleAllEventAttendeeRow>(value.attendeeRows),
     detailRows,
     foundationRows: fromColumnar<EventAttendeeFoundationOptionRow>(value.foundationRows),
     eventRows: fromColumnar<EventAttendeeEventOptionRow>(value.eventRows),
@@ -257,7 +250,6 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
   if (
     !cache ||
     typeof cache !== 'object' ||
-    !isColumnarTable(cache.attendeeRows) ||
     !isColumnarTable(cache.events) ||
     !isColumnarTable(cache.details) ||
     !isColumnarTable(cache.foundationRows) ||
@@ -265,7 +257,6 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
     // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
     // "successfully" into rows missing data the writer always emits, which is worse than a miss —
     // the tab renders with holes in it for the rest of the TTL instead of refetching.
-    !hasExactColumns(cache.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS) ||
     !hasExactColumns(cache.events, ORG_EVENT_DICTIONARY_COLUMNS) ||
     !hasExactColumns(cache.details, ORG_EVENT_DETAIL_COLUMNS) ||
     !hasExactColumns(cache.foundationRows, ORG_EVENT_FOUNDATION_OPTION_COLUMNS) ||
@@ -279,13 +270,12 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
   // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
   // through, so demanding a string would turn one null row into a permanent miss for that org.
   // Absence and wrong types are still rejected — those the mapper cannot survive.
+  const participantRefIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PARTICIPANT_REF');
   const personKeyIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const eventIdIndex = ORG_EVENT_DICTIONARY_COLUMNS.indexOf('EVENT_ID');
-  const attendeeKeyIndex = ORG_EVENT_ATTENDEE_ROW_COLUMNS.indexOf('PERSON_KEY');
   if (
-    !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex])) ||
-    !cache.events.r.every((row) => isStoredNullableString(row[eventIdIndex])) ||
-    !cache.attendeeRows.r.every((row) => isStoredNullableString(row[attendeeKeyIndex]))
+    !cache.details.r.every((row) => typeof row[participantRefIndex] === 'number' && isStoredNullableString(row[personKeyIndex])) ||
+    !cache.events.r.every((row) => isStoredNullableString(row[eventIdIndex]))
   ) {
     return false;
   }

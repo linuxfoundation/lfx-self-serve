@@ -100,6 +100,67 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     await expect(service.getSuppressionLists(req, 'tlf', 'LF', 'Synthetic Summit')).rejects.toThrow(/lists/);
   });
 
+  it('asks for the registrants row only with an edition, and maps will_create', async () => {
+    proxyRequest.mockResolvedValue({
+      lists: [
+        {
+          key: 'current_registrants',
+          label: 'Current registrants',
+          list_id: '',
+          name: 'S 2026 - Current Registrants',
+          category: 'current_registrants',
+          hubspot_url: '',
+          will_create: true,
+        },
+        {
+          key: 'lf_events_gdpr',
+          label: 'GDPR',
+          list_id: '201',
+          name: 'GDPR',
+          category: 'standard',
+          hubspot_url: 'https://app.hubspot.com/l/201',
+          will_create: false,
+        },
+      ],
+    });
+
+    const { lists, standardList } = await service.getSuppressionLists(req, 'tlf', '', '', 'Synthetic Summit 2026');
+    expect(standardList, 'no standing list upstream means none exists yet').toBeUndefined();
+    expect(proxyRequest.mock.calls.at(-1)?.[4]).toEqual({ registrants_event: 'Synthetic Summit 2026' });
+    expect(lists[0].willCreate).toBe(true);
+    expect(lists[1], 'a false will_create is left out, not carried as false').not.toHaveProperty('willCreate');
+
+    await service.getSuppressionLists(req, 'tlf', '', '');
+    expect(proxyRequest.mock.calls.at(-1)?.[4], 'an empty edition is a filter matching nothing, so it is omitted').toEqual({});
+  });
+
+  it("passes the project's standing standard list through, and drops one without an id", async () => {
+    proxyRequest.mockResolvedValue({
+      lists: [],
+      standard_list: { list_id: '300', name: 'LFX Standard Suppressions - tlf', hubspot_url: 'https://app.hubspot.com/l/300', size: 42 },
+    });
+
+    const result = await service.getSuppressionLists(req, 'tlf', '', '');
+    expect(result.standardList).toEqual({ listId: '300', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/300', size: 42 });
+
+    proxyRequest.mockResolvedValue({ lists: [], standard_list: { list_id: ' ', name: 'x', hubspot_url: '' } });
+    const blank = await service.getSuppressionLists(req, 'tlf', '', '');
+    expect(blank, 'a standing list with no id is no evidence it exists').not.toHaveProperty('standardList');
+  });
+
+  it('forwards the registrants edition on compose', async () => {
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
+      source_list_ids: ['1'],
+      recorded: false,
+    });
+
+    await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'], currentRegistrantsEvent: 'Synthetic Summit 2026' });
+
+    const [, , , , , body] = proxyRequest.mock.calls.at(-1) ?? [];
+    expect(body).toMatchObject({ compose: { current_registrants_event: 'Synthetic Summit 2026' } });
+  });
+
   // A 2xx compose means the master EXISTS, so an unusable reply is a do-not-retry partial, never a
   // plain error: the client lets an operator retry a plain error, and a retry composes a second
   // master list (the orphaned duplicates of the blank-portal-id incident).
@@ -180,6 +241,36 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     proxyRequest.mockRejectedValue(err);
 
     await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: [] })).rejects.toThrow(AudienceComposePartialError);
+  });
+
+  it("maps compose's optional suppression_list_ids, and leaves it out when upstream omits it", async () => {
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
+      source_list_ids: ['1'],
+      suppression_list_ids: ['300', '202', '9001'],
+    });
+    const result = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'] });
+    expect(result.suppressionListIds).toEqual(['300', '202', '9001']);
+
+    proxyRequest.mockResolvedValue({ master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' }, source_list_ids: ['1'] });
+    const older = await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'] });
+    expect(older).not.toHaveProperty('suppressionListIds');
+  });
+
+  it('rethrows a 409 squatted-name conflict unchanged rather than as a compose partial', async () => {
+    const err = MicroserviceError.fromMicroserviceResponse(
+      409,
+      'Conflict',
+      { code: '409', message: 'a HubSpot list (id 4242) already uses the name "S 2026 - Current Registrants"; rename or remove it in HubSpot' },
+      'LFX_V2_CAMPAIGN_SERVICE',
+      '/x',
+      'compose'
+    );
+    proxyRequest.mockRejectedValue(err);
+
+    await expect(service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'] })).rejects.toBe(err);
+    await expect(service.attachExisting(req, 'tlf', { briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'] })).rejects.toBe(err);
+    expect(err.toResponse()['error']).toContain('rename or remove it in HubSpot');
   });
 
   it('forwards brief_id only when the caller supplied one', async () => {
@@ -378,6 +469,31 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(body).toEqual({ attach: { brief_id: 'brief-1', master_list_id: '501', suppression_list_ids: ['201'] } });
     expect(result.audience.briefId).toBe('brief-1');
     expect(result.suppressionListIds).toEqual(['201']);
+  });
+
+  it('maps the standing standard suppression list and forwards the registrants edition', async () => {
+    const req = {} as Request;
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '501', name: 'Prospects', hubspot_url: 'https://app.hubspot.com/l/1' },
+      suppression_list_ids: ['40000', '9001'],
+      suppression: { list_id: '40000', name: 'LFX Standard Suppressions - tlf', hubspot_url: 'https://app.hubspot.com/l/2' },
+      audience: { id: 'aud-4', status: 'built', version: 1, platform_master_list_id: '501' },
+    });
+
+    const result = await service.attachExisting(req, 'tlf', {
+      briefId: 'brief-1',
+      masterListId: '501',
+      suppressionListIds: ['201', '202'],
+      currentRegistrantsEvent: 'Synthetic Summit 2026',
+    });
+
+    const [, , , , , body] = proxyRequest.mock.calls[0];
+    expect(body).toEqual({
+      attach: { brief_id: 'brief-1', master_list_id: '501', suppression_list_ids: ['201', '202'], current_registrants_event: 'Synthetic Summit 2026' },
+    });
+    expect(result.suppressionListIds).toEqual(['40000', '9001']);
+    expect(result.standardSuppression?.listId).toBe('40000');
+    expect(result.standardSuppression?.name).toBe('LFX Standard Suppressions - tlf');
   });
 
   it('posts several include lists and maps them back onto the audience', async () => {
@@ -589,6 +705,37 @@ describe('AudienceBuilderProxyService custom audiences', () => {
 
     expect(proxyRequest.mock.calls[0][5]).toMatchObject({ event_name: 'KubeCon Japan 2026' });
     expect(out.needsDisambiguation === false && out.checks.currentRegistrants?.verdict).toBe('FAIL');
+  });
+
+  // lfx-v2-campaign-service#244.
+  it('forwards the stage as campaign-service spells it, and keeps a NOT APPLICABLE check with its note', async () => {
+    const check = { verdict: 'PASS', findings: [] };
+    const note = 'Not applicable to a Post-Event send: this edition attendees are its intended audience.';
+    proxyRequest.mockResolvedValueOnce({
+      needs_disambiguation: false,
+      list_id: '1',
+      name: 'L',
+      checks: {
+        signal_mapping: check,
+        suppression: { ...check, applied_gdpr: true, applied_opt_out: true },
+        exclusion_completeness: { ...check, exclusion_count: 1 },
+        current_registrants: { verdict: 'NOT APPLICABLE', findings: [], note },
+      },
+      overall: 'PASS',
+    });
+
+    const out = await service.runQa(req, 'tlf', { listRef: '1', eventName: 'KubeCon Japan 2026', stage: 'Post-Event' });
+
+    expect(proxyRequest.mock.calls[0][5]).toMatchObject({ event_name: 'KubeCon Japan 2026', stage: 'Post-Event' });
+    expect(out.needsDisambiguation === false && out.checks.currentRegistrants).toEqual({ verdict: 'NOT APPLICABLE', findings: [], note });
+  });
+
+  it('sends no stage when the request has none', async () => {
+    proxyRequest.mockResolvedValueOnce({ needs_disambiguation: true, candidates: [] });
+
+    await service.runQa(req, 'tlf', { listRef: '1' });
+
+    expect(proxyRequest.mock.calls[0][5]).not.toHaveProperty('stage');
   });
 });
 

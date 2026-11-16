@@ -270,7 +270,7 @@ export interface MentorshipMentorProgramStats {
   applicants: number;
 }
 
-/** A mentor's program status: `completed` once every term is closed, otherwise `open`. */
+/** A mentor's program status: a published program's `MentorshipProgramStatus`, which upstream reads from its terms. */
 export type MentorshipMentorProgramStatus = (typeof MENTORSHIP_MENTOR_PROGRAM_STATUSES)[number];
 
 /** Program row on the mentor My Programs list and the program-detail header. The counts cover all the program's terms. */
@@ -366,6 +366,8 @@ export type MentorshipMentoringHistoryStatus = 'in-progress' | 'completed';
 /** One row on the Mentoring History section of the mentor profile page. */
 export interface MentorshipMentoringHistoryEntry {
   id: string;
+  /** The program the row names, when exactly one of the mentor's programs has that name; links its public page. */
+  programId?: string;
   /** Program name, e.g. "GridFlow: Ingestion Pipeline". */
   programName: string;
   /** Term the mentor supported, e.g. "Fall 2026". */

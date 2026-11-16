@@ -7,6 +7,7 @@ import {
   COMING_SOON_SENTINEL,
   DEFAULT_EVENT_SORT_FIELD,
   DEFAULT_VISA_REQUEST_SORT_FIELD,
+  EVENT_REQUEST_SOURCE_TABLES,
   EVENT_SOURCE_BACKFILL,
   MY_EVENT_STATUS,
   TRAVEL_FUND_LATEST_DEADLINE_AGG,
@@ -17,6 +18,7 @@ import {
   WHOLE_NUMBER_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
+  EventRequestSourceTable,
   EventRow,
   EventSortOrder,
   EventsResponse,
@@ -663,11 +665,28 @@ export class EventsService {
   }
 
   public async getVisaRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
-    return this.executeEventRequestsQuery(req, userEmail, options, 'VL_REQUEST_STATUS', 'VL_APPLICATION_DATE', 'get_visa_requests');
+    return this.executeEventRequestsQuery(
+      req,
+      userEmail,
+      options,
+      EVENT_REQUEST_SOURCE_TABLES.VISA_LETTERS,
+      'VL_REQUEST_STATUS',
+      'VL_APPLICATION_DATE',
+      'get_visa_requests'
+    );
   }
 
   public async getTravelFundRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
-    return this.executeEventRequestsQuery(req, userEmail, options, 'TF_REQUEST_STATUS', 'TF_APPLICATION_DATE', 'get_travel_fund_requests');
+    // Travel funding does not require a registration, so requests are read from their own table rather than EVENT_REGISTRATIONS.
+    return this.executeEventRequestsQuery(
+      req,
+      userEmail,
+      options,
+      EVENT_REQUEST_SOURCE_TABLES.TRAVEL_FUNDING,
+      'TF_REQUEST_STATUS',
+      'TF_APPLICATION_DATE',
+      'get_travel_fund_requests'
+    );
   }
 
   /**
@@ -1031,6 +1050,7 @@ export class EventsService {
     req: Request,
     userEmail: string,
     options: GetEventRequestsOptions,
+    sourceTable: EventRequestSourceTable,
     statusColumn: string,
     applicationDateColumn: string,
     operationName: string
@@ -1070,9 +1090,9 @@ export class EventsService {
         COALESCE(EVENT_END_DATE, EVENT_START_DATE) < CURRENT_DATE() AS EVENT_ENDED,
         COUNT(*) OVER() AS TOTAL_RECORDS
       FROM (
-        -- Registrations are keyed by case-sensitive email upstream, so LOWER() can match several per event; keep the latest request.
+        -- Both source tables are keyed by case-sensitive email upstream, so LOWER() can match several rows per event; keep the latest request.
         SELECT *
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        FROM ${sourceTable}
         WHERE ${statusColumn} IS NOT NULL
           AND LOWER(USER_EMAIL) = ?
         QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY ${applicationDateColumn} DESC NULLS LAST) = 1

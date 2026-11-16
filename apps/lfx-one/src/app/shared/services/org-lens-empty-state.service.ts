@@ -4,6 +4,7 @@
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment, orgRollUpRootUid } from '@lfx-one/shared/utils';
 import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -88,10 +89,16 @@ export class OrgLensEmptyStateService {
    * the page must ask the server whether it is readable. `null` for everyone else.
    */
   private readonly contractorProbeUid: Signal<string | null> = computed(() => {
-    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly()) {
+    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly() || this.selectionAwaitsClaOnlyRows()) {
       return null;
     }
-    return this.accountContext.selectedAccount().uid || null;
+    const uid = this.accountContext.selectedAccount().uid;
+    // Never the roll-up. The read gate is per organization and the server refuses the reserved
+    // sentinel, so the probe could only fail — and `settled` waits on its verdict, parking a
+    // contractor on the page skeleton until the doomed request finishes. This cannot lean on
+    // `selectedHeld`, which returns false for the roll-up in the outage branches by design
+    // (#4415, Cursor).
+    return uid && !isOrgRollUpSegment(uid) ? uid : null;
   });
 
   /** The read gate's answer for `contractorProbeUid`; `admitted` is `undefined` until it lands. */
@@ -112,6 +119,14 @@ export class OrgLensEmptyStateService {
     const uid = this.contractorProbeUid();
     const probe = this.contractorProbe();
     return uid !== null && !(probe?.uid === uid && probe.admitted !== undefined);
+  });
+
+  private readonly selectionAwaitsClaOnlyRows: Signal<boolean> = computed(() => {
+    if (!this.orgNavigation.selectionUndecided()) {
+      return false;
+    }
+    const uid = this.accountContext.selectedAccount().uid;
+    return !!uid && !isOrgRollUpSegment(uid) && !this.selectedHeld() && !this.selectedClaOnly();
   });
 
   /**
@@ -147,12 +162,15 @@ export class OrgLensEmptyStateService {
     return !this.roleGrants.affiliatedToMember();
   });
 
-  /** The shared bootstrap: both one-shot loads have answered, and a contractor's read check when one is owed. */
+  /**
+   * The shared bootstrap: both one-shot loads have answered, an owed contractor read check has
+   * answered, and the selection is not waiting on a grant holder's CLA-only rows.
+   */
   private readonly bootstrapSettled: Signal<boolean> = computed(
-    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending()
+    () => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending() && !this.selectionAwaitsClaOnlyRows()
   );
 
-  /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
+  /** The bootstrap above, plus the employer answer when the page decision will actually read it; before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(() => this.bootstrapSettled() && !this.employerAnswerOwed());
 
   /**
@@ -187,6 +205,39 @@ export class OrgLensEmptyStateService {
     if (!uid) {
       return false;
     }
+    // The roll-up is a view mode, not an organization: it names no `b2b_org` row, so by construction
+    // it is in no grant set and a uid lookup would call it unheld. That is not a missing entitlement
+    // — it would withdraw the switcher's FR-010 partial-lookup notice and its Retry exactly when the
+    // roster is short, and send a contractor to the probe with the reserved sentinel.
+    //
+    // Held whenever it is still *admitted*, which is the condition `selectRollUp` applies: the
+    // caller may select it, or the grants are only a lower bound and admission is deliberately
+    // riding that out. `canSelectRollUpFor` alone was not enough — a conglomerate's siblings arrive as
+    // inherited grants, so the count sits below two through the whole partial window while the
+    // selection stands (#4415, Copilot then Cursor).
+    //
+    // The outage rules come FIRST, because optimism must never paper one over. Writing the failure
+    // check as one disjunct among others did exactly that: two persona seeds keep `canSelectRollUpFor`
+    // true after the roster fails outright, and that short-circuited rules 2 and 3 away, taking the
+    // page-level state and its shared Retry with them (#4415, Copilot).
+    const rollUpRootUid = orgRollUpRootUid(uid);
+    if (rollUpRootUid) {
+      const outcome = this.roleGrants.lookupOutcome();
+      // Rule 2 — the roster never answered, so the selection is not evidence of anything.
+      if (outcome === 'failed') {
+        return false;
+      }
+      // Rule 3 — a lower bound with nothing held at all is the same outage. `holdsAnything` is the
+      // caller's own evidence of holding something, weighed exactly as `classifyLookup` weighs it.
+      // The families answer is part of the same bound: admission rides out its pending, partial or
+      // failed window (`grantsUnsettled`), so held-ness must too.
+      const lowerBound =
+        !this.roleGrants.loaded() || outcome === 'partial' || this.claOnlyAccess.lookupFailed() || this.accountContext.rollUpFamiliesUnsettled();
+      if (lowerBound && !this.accountContext.hasOrgSelectorAccess()) {
+        return false;
+      }
+      return this.accountContext.canSelectRollUpFor(rollUpRootUid) || lowerBound;
+    }
     return (
       this.roleGrants.writerSet().has(uid) ||
       this.roleGrants.auditorSet().has(uid) ||
@@ -203,7 +254,14 @@ export class OrgLensEmptyStateService {
   private readonly selectedClaOnly: Signal<boolean> = computed(() => this.claOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid));
 
   /** FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state. */
-  public readonly listIncomplete: Signal<boolean> = computed(() => this.settled() && this.roleGrants.lookupOutcome() === 'partial' && this.selectedHeld());
+  public readonly listIncomplete: Signal<boolean> = computed(
+    () =>
+      this.settled() &&
+      (this.selectedHeld() || this.selectedClaOnly()) &&
+      (this.roleGrants.lookupOutcome() === 'partial' ||
+        this.claOnlyAccess.lookupFailed() ||
+        (!this.roleGrants.isStaff() && this.orgNavigation.upstreamFailed()))
+  );
 
   /** The page-level state to render, or `null` when the page itself should render. */
   public readonly pageState: Signal<OrgLensEmptyStateName | null> = computed(() => {
@@ -318,7 +376,7 @@ export class OrgLensEmptyStateService {
       .pipe(take(1))
       .subscribe(() => {
         if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
-          this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid()));
+          this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.orgListPinUid()));
         }
       });
   }

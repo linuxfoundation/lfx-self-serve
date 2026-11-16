@@ -17,6 +17,13 @@ const guildMocks = vi.hoisted(() => ({
 const projectMocks = vi.hoisted(() => ({
   getProjectById: vi.fn(),
 }));
+const redraftScope = vi.hoisted(() => vi.fn());
+const settlement = vi.hoisted(() => vi.fn());
+vi.mock('./mktg-document-comments.service', () => ({
+  MktgDocumentCommentsService: class {
+    public settle = settlement;
+  },
+}));
 const documentStoreMocks = vi.hoisted(() => ({
   recorded: [] as { sessionId: string; project: string; agentKey: string; content: unknown; sidecar: Record<string, unknown> }[],
 }));
@@ -28,6 +35,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const sessionEvent = await vi.importActual('../../../../../packages/shared/src/utils/mktg-session-event.utils');
   const artifact = await vi.importActual('../../../../../packages/shared/src/utils/mktg-artifact.utils');
   const activity = await vi.importActual('../../../../../packages/shared/src/utils/mktg-run-activity.utils');
+  const redraft = await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-redraft.utils');
   return {
     ...(foundationMessage as object),
     ...(faq as object),
@@ -35,6 +43,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     ...(sessionEvent as object),
     ...(artifact as object),
     ...(activity as object),
+    ...redraft,
   };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
@@ -63,6 +72,7 @@ vi.mock('./mktg-document-store.service', async () => {
   const { MktgArtifactService } = await import('./mktg-artifact.service');
   return {
     MktgDocumentStoreService: class {
+      public assertRedraftScope = redraftScope;
       public captureFramework = vi.fn(async () => null);
       public rememberGenerationFramework = vi.fn(async () => undefined);
       private readonly artifactService = new MktgArtifactService();
@@ -98,6 +108,7 @@ import type { MktgArtifactJsonEnvelope, MktgArtifactSpec } from '@lfx-one/shared
 import type { Request } from 'express';
 
 import { FAQ_NOT_FINALIZED_REPLY } from '@lfx-one/shared/constants';
+import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 
 import { FaqService } from './faq.service';
 
@@ -311,6 +322,29 @@ describe('FaqService.getResult', () => {
     expect(recorded.sidecar).toMatchObject({ contract: 'faq-output/v1', report: ENVELOPE['report'], checks: ENVELOPE['checks'] });
     expect(recorded.sidecar).not.toHaveProperty('content');
     expect(result.persistence?.s3_key).toBe(`documents/${PROJECT_UID}/faq/living/000001-${'c'.repeat(64)}.json`);
+  });
+
+  it('fails and settles a mismatched redraft echo before any revision write', async () => {
+    const context = redraftContextFixture('faq');
+    redraftScope.mockResolvedValueOnce(context);
+    guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(ENVELOPE)]);
+
+    const result = await service.getResult(req, 'synthetic-redraft', context.project);
+
+    expect(redraftScope).toHaveBeenCalledWith(req, expect.objectContaining({ agentKey: 'faq' }), 'synthetic-redraft', context.project);
+    expect(result).toMatchObject({ status: 'failed', failureText: 'The agent result did not match the frozen redraft input.' });
+    expect(settlement).toHaveBeenCalledWith(req, context, result);
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+  });
+
+  it('refuses a foreign bound scope before reading or writing a result', async () => {
+    redraftScope.mockRejectedValueOnce(new Error('Synthetic scope refusal'));
+
+    await expect(service.getResult(req, 'synthetic-redraft', 'other-project')).rejects.toThrow('Synthetic scope refusal');
+
+    expect(guildMocks.getRawEventPayloads).not.toHaveBeenCalled();
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+    expect(settlement).not.toHaveBeenCalled();
   });
 
   it('still returns the FAQ, unstored, when the caller cannot write the project', async () => {

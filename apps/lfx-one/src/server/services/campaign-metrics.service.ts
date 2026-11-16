@@ -15,9 +15,11 @@ import type {
   PacingLabel,
   RedditMonitorResponse,
 } from '@lfx-one/shared/interfaces';
+import { googleAdsCampaignUrl } from '@lfx-one/shared/utils/campaign.utils';
 import type { Request } from 'express';
 
 import { gaqlSearch } from './campaign-proxy.service';
+import { toGoogleAdsReadError } from './google-ads-read-error';
 import { getLinkedInAnalytics } from './linkedin-ads.service';
 import { getMetaAnalytics } from './meta-ads.service';
 import { getRedditAnalytics } from './reddit-ads.service';
@@ -69,7 +71,14 @@ export class CampaignMetricsService {
         AND metrics.impressions > 0
       ORDER BY metrics.cost_micros DESC`;
 
-    const rows = await gaqlSearch(query);
+    let rows: unknown[];
+    try {
+      rows = await gaqlSearch(query);
+    } catch (error) {
+      // A plain Google Ads failure would otherwise become a bare 500 the Monitor tab can only show
+      // as "Failed to load campaign data" (#4526).
+      throw toGoogleAdsReadError(error, 'campaign_monitor');
+    }
     const rangeStart = queryRangeStart(effectiveDays);
     const rangeEnd = todayIso();
     const campaigns = rows.map((row) => parseCampaignMetrics(row, effectiveDays, rangeStart, rangeEnd)).filter((c) => !c.name.toLowerCase().startsWith('zz'));
@@ -170,10 +179,6 @@ function normalizeCampaignStatus(raw: unknown): CampaignMetrics['status'] {
   return VALID_CAMPAIGN_STATUSES.has(status) ? status : 'unknown';
 }
 
-function buildGoogleAdsUrl(campaignId: string): string {
-  return campaignId ? `https://ads.google.com/aw/campaigns?campaignId=${campaignId}` : '';
-}
-
 function computeTotalBudget(budgetDay: number, days: number): number {
   return budgetDay * days;
 }
@@ -228,7 +233,7 @@ function parseCampaignMetrics(row: unknown, days: number, rangeStart: string, ra
     pacingPct,
     pacingLabel,
     campaignId,
-    googleAdsUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: googleAdsCampaignUrl(campaignId),
   };
 }
 
@@ -399,7 +404,7 @@ function parseKeywordRow(row: unknown): KeywordMetrics {
     criterionId: String(extractNested(r, 'ad_group_criterion.criterion_id') || ''),
     campaign: (extractNested(r, 'campaign.name') as string) || '',
     campaignId,
-    googleAdsUrl: buildGoogleAdsUrl(campaignId),
+    googleAdsUrl: googleAdsCampaignUrl(campaignId),
     impressions: Number(extractNested(r, 'metrics.impressions') || 0),
     clicks,
     ctr: Number(extractNested(r, 'metrics.ctr') || 0) * 100,

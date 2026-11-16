@@ -4,6 +4,7 @@
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
+import { stubMeetingsRedesignFlag } from './helpers/meetings-v2-flag.helper';
 
 const MEETINGS_URL = '/meetings';
 const LENS_COOKIE = 'lfx-active-lens';
@@ -16,7 +17,10 @@ const OTHER_ORGANIZER = { name: 'Grace Hopper', username: 'ghopper-e2e', email: 
 const SERVICE_ACCOUNT = { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' };
 
 test.setTimeout(120_000);
-test.beforeEach(async ({ page }) => suppressCookieBanner(page));
+test.beforeEach(async ({ page }) => {
+  await suppressCookieBanner(page);
+  await stubMeetingsRedesignFlag(page);
+});
 
 function fulfillJson(route: Route, body: unknown): Promise<void> {
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });

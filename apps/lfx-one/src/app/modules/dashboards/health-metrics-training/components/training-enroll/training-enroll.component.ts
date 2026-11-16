@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
@@ -17,7 +17,7 @@ import { buildHealthMetricsTrainingEnrollmentView, formatHealthMetricsTrainingCo
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -47,8 +47,8 @@ export class TrainingEnrollComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -65,6 +65,8 @@ export class TrainingEnrollComponent {
   protected readonly view: Signal<HealthMetricsTrainingEnrollmentView> = computed(() =>
     buildHealthMetricsTrainingEnrollmentView(this.response(), this.range(), this.metric())
   );
+  /** Nothing was enrolled or earned in the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyPeriod(this.response(), this.range()));
 
   protected readonly byTypeTitle = computed(() => (this.metric() === 'revenue' ? 'Revenue by type' : 'Enrollments by type'));
   protected readonly byTypeNote = computed(() => (this.metric() === 'revenue' ? 'highest revenue first' : 'highest volume first'));
@@ -95,6 +97,17 @@ export class TrainingEnrollComponent {
       },
     },
   };
+
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      // Whether the period has anything to show moves with it, so a pill change re-settles off the loaded response.
+      toObservable(this.chrome.selectedRange)
+        .pipe(skip(1), takeUntilDestroyed())
+        .subscribe(() => {
+          if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyPeriod(this.response(), this.range()));
+        });
+    }
+  }
 
   protected onMetricChange(id: string): void {
     const option = HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS.find((candidate) => candidate.id === id);
@@ -127,10 +140,10 @@ export class TrainingEnrollComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && isEmptyPeriod(response, this.range()));
             })
           )
         )
@@ -179,4 +192,10 @@ export class TrainingEnrollComponent {
 
     return year.isPartialYear ? `${year.year} · partial year` : String(year.year);
   }
+}
+
+/** Unmeasured, or nothing enrolled, certified or earned in the period. */
+function isEmptyPeriod(response: HealthMetricsTrainingEnrollment, range: HealthMetricsL2Range): boolean {
+  const totals = response.periods[range]?.totals;
+  return !response.measured || !(totals?.enrollments || totals?.certifications || totals?.revenueUsd);
 }

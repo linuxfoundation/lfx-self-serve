@@ -17,6 +17,15 @@ import { OpenIntercomDirective } from './open-intercom.directive';
 })
 class TestHostComponent {}
 
+@Component({
+  selector: 'lfx-open-intercom-prefill-test-host',
+  imports: [OpenIntercomDirective],
+  template: '<a lfxOpenIntercom [intercomMessage]="message" href="#">Contact support</a>',
+})
+class PrefillTestHostComponent {
+  public readonly message = 'Pre-filled text';
+}
+
 /**
  * Covers the user-visible decisions GH-1857 put in the directive rather than the service: an
  * empty intercomAppId fails visibly (toast) instead of delegating to boot()'s console.warn
@@ -30,7 +39,7 @@ class TestHostComponent {}
  * support CTA would have to provide that whole dependency chain in its own TestBed.
  */
 describe('OpenIntercomDirective', () => {
-  let fixture: ComponentFixture<TestHostComponent>;
+  let fixture: ComponentFixture<TestHostComponent | PrefillTestHostComponent>;
   let transferState: TransferState;
   let add: ReturnType<typeof vi.fn>;
   let openMessenger: ReturnType<typeof vi.fn>;
@@ -46,7 +55,7 @@ describe('OpenIntercomDirective', () => {
     openMessenger = vi.fn();
 
     await TestBed.configureTestingModule({
-      imports: [TestHostComponent],
+      imports: [TestHostComponent, PrefillTestHostComponent],
       providers: [
         { provide: MessageService, useValue: { add } },
         { provide: IntercomService, useValue: { openMessenger } },
@@ -86,5 +95,27 @@ describe('OpenIntercomDirective', () => {
     onLoadError();
 
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Support Unavailable' }));
+  });
+
+  describe('with a pre-fill', () => {
+    beforeEach(async () => {
+      fixture = TestBed.createComponent(PrefillTestHostComponent);
+      await fixture.whenStable();
+    });
+
+    it('passes the pre-fill through to the messenger', () => {
+      transferState.set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+
+      supportLink().click();
+
+      expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function), 'Pre-filled text');
+    });
+
+    it('keeps the unavailable toast and skips the messenger when no app id is configured', () => {
+      supportLink().click();
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Support Unavailable' }));
+      expect(openMessenger).not.toHaveBeenCalled();
+    });
   });
 });

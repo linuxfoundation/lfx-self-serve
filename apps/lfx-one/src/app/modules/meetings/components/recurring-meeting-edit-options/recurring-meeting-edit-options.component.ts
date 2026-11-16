@@ -7,11 +7,11 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence, MeetingOccurrenceOption, RecurringMeetingEditScope, RecurringMeetingEditScopeResult } from '@lfx-one/shared/interfaces';
 import { buildMeetingOccurrenceOptions, isSameOccurrenceId } from '@lfx-one/shared/utils';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 /**
@@ -31,7 +31,7 @@ export class RecurringMeetingEditOptionsComponent {
   private readonly dialogConfig = inject(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
-  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
+  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(inject(FeatureFlagService));
 
   public readonly meeting: Meeting = this.dialogConfig.data?.meeting;
   public readonly occurrence: MeetingOccurrence | null = this.dialogConfig.data?.occurrence ?? null;

@@ -76,6 +76,7 @@ import { isSafeUploadFileName } from './file.utils';
 import {
   buildMentorshipMenteeApplicationView,
   hasMentorshipTaskFileExtension,
+  mentorshipTaskFileViewType,
   sanitizeMentorshipTaskFileName,
   buildMentorshipMenteeDemographicsUpdate,
   buildMentorshipMenteeProfileUpdate,
@@ -85,6 +86,9 @@ import {
   buildMentorshipMentorRegisterRequest,
   buildMentorshipMenteeTaskView,
   buildMentorshipProgramsUrl,
+  buildMentorshipPublicUrl,
+  getMentorshipAdminBasePath,
+  getMentorshipLensQueryParams,
   countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
   normalizeMentorshipMenteeTaskStatus,
@@ -112,6 +116,7 @@ import {
   buildMentorshipTaskUpdate,
   mentorshipTaskSubmittedCount,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   getMentorshipEnrollLogoError,
   getMentorshipEnrollStepErrors,
   getMentorshipEnrollTermDateErrors,
@@ -156,7 +161,30 @@ import {
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
   mentorshipMenteeApplyBlockedState,
+  mentorshipUpstreamReasonMessage,
 } from './mentorship.utils';
+
+describe('mentorshipUpstreamReasonMessage', () => {
+  const entries = [
+    { match: 'not open for this term', message: 'the term is closed.' },
+    { match: 'program is hidden', message: 'the program is hidden.' },
+  ];
+
+  it('picks the copy of the first entry the upstream text contains, ignoring case', () => {
+    expect(mentorshipUpstreamReasonMessage(entries, 'Eligibility criteria not met: The program is hidden')).toBe('the program is hidden.');
+  });
+
+  it('matches an entry written in upstream casing', () => {
+    const cased = [{ match: 'belongs to another Mentorship user', message: 'in use.' }];
+    expect(mentorshipUpstreamReasonMessage(cased, 'eligibility criteria not met: the primary email of lfid "x" belongs to another Mentorship user')).toBe(
+      'in use.'
+    );
+  });
+
+  it.each([undefined, null, '', 'eligibility criteria not met: some new rule'])('answers undefined for %j', (message) => {
+    expect(mentorshipUpstreamReasonMessage(entries, message)).toBeUndefined();
+  });
+});
 
 describe('mentorshipMenteeApplyBlockedState', () => {
   it('picks the state for the rule named in the upstream message, ignoring case', () => {
@@ -879,6 +907,17 @@ describe('toMentorshipEnrollUpdateRequest', () => {
   });
 });
 
+describe('buildMentorshipPublicUrl', () => {
+  it("links a mentee's or mentor's public page, URL-encoding the id", () => {
+    expect(buildMentorshipPublicUrl('https://mentorship.example.org/', 'mentees', 'user-1')).toBe('https://mentorship.example.org/mentees/user-1');
+    expect(buildMentorshipPublicUrl('https://mentorship.example.org', 'mentors', 'a/b')).toBe('https://mentorship.example.org/mentors/a%2Fb');
+  });
+
+  it('links the listing without an id', () => {
+    expect(buildMentorshipPublicUrl('https://mentorship.example.org//', 'mentors')).toBe('https://mentorship.example.org/mentors');
+  });
+});
+
 describe('buildMentorshipProgramsUrl', () => {
   it('links the program listing, with or without a trailing slash on the base', () => {
     expect(buildMentorshipProgramsUrl('https://mentorship.example.org')).toBe('https://mentorship.example.org/programs');
@@ -897,12 +936,33 @@ describe('buildMentorshipProgramsUrl', () => {
   });
 });
 
+describe('getMentorshipAdminBasePath', () => {
+  it('keeps the Project and Foundation lenses on their Mentorship Programs and every other lens on the Me lens Admin', () => {
+    expect(getMentorshipAdminBasePath('project')).toBe('/project/mentorship');
+    expect(getMentorshipAdminBasePath('foundation')).toBe('/foundation/mentorship');
+    expect(getMentorshipAdminBasePath('me')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath('org')).toBe('/mentorship/admin');
+    expect(getMentorshipAdminBasePath(undefined)).toBe('/mentorship/admin');
+  });
+});
+
+describe('getMentorshipLensQueryParams', () => {
+  it('names the lens project on the Project and Foundation lenses only, once it is known', () => {
+    expect(getMentorshipLensQueryParams('project', 'gridflow')).toEqual({ project: 'gridflow' });
+    expect(getMentorshipLensQueryParams('foundation', 'lf-energy')).toEqual({ project: 'lf-energy' });
+    expect(getMentorshipLensQueryParams('project', undefined)).toEqual({});
+    expect(getMentorshipLensQueryParams('project', '')).toEqual({});
+    expect(getMentorshipLensQueryParams('me', 'gridflow')).toEqual({});
+    expect(getMentorshipLensQueryParams(undefined, 'gridflow')).toEqual({});
+  });
+});
+
 describe('getMentorshipProgramDetailTabs', () => {
   it('shows a pending program the Terms tab only', () => {
     expect(getMentorshipProgramDetailTabs('pending-review').map((tab) => tab.value)).toEqual(['terms']);
   });
 
-  it.each(['open', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
+  it.each(['accepting', 'in-progress', 'upcoming', 'completed', 'rejected', 'hidden'] as const)('shows a %s program all four tabs in order', (status) => {
     expect(getMentorshipProgramDetailTabs(status).map((tab) => tab.value)).toEqual(['current-mentees', 'past-mentees', 'mentors', 'terms']);
   });
 });
@@ -1244,7 +1304,7 @@ describe('program detail helpers', () => {
     expect(matchesMentorshipPersonSearch(person, 'winter')).toBe(false);
   });
 
-  it('offers Current Mentees row actions by status, and none once the application ends', () => {
+  it('offers Current Mentees row actions by status, and only contact and a walk-back once the application ends', () => {
     const labelsFor = (status: MentorshipProgramMentee['status']): string[] =>
       mentorshipRowActions(
         MENTORSHIP_CURRENT_MENTEE_ACTIONS_BY_STATUS[status],
@@ -1253,12 +1313,21 @@ describe('program detail helpers', () => {
       ).map((action) => action.label);
 
     // An application under review is decided.
-    expect(labelsFor('pending')).toEqual(['Accept', 'Decline', 'Withdraw']);
+    expect(labelsFor('pending')).toEqual(['Contact Mentee', 'Accept', 'Decline', 'Withdraw']);
     // Only an accepted mentee is given tasks or graduated.
-    expect(labelsFor('accepted')).toEqual(['Create task', 'Graduate', 'Decline', 'Withdraw']);
-    expect(labelsFor('declined')).toEqual([]);
-    expect(labelsFor('withdrawn')).toEqual([]);
-    expect(labelsFor('graduated')).toEqual([]);
+    expect(labelsFor('accepted')).toEqual(['Create task', 'Contact Mentee', 'Graduate', 'Decline', 'Withdraw']);
+    // A declined or withdrawn application can be re-opened, back to review.
+    expect(labelsFor('declined')).toEqual(['Contact Mentee', 'Re-open']);
+    expect(labelsFor('withdrawn')).toEqual(['Contact Mentee', 'Re-open']);
+    // A graduation can be undone, back to accepted.
+    expect(labelsFor('graduated')).toEqual(['Contact Mentee', 'Undo graduation']);
+  });
+
+  it('builds the Contact Mentee mailto: link, and none for an address not safe to put in one', () => {
+    expect(mentorshipContactMenteeUrl('ifeoma.adeyemi@example.com')).toBe('mailto:ifeoma.adeyemi@example.com');
+    expect(mentorshipContactMenteeUrl('ifeoma@example.com%0D%0ABcc:other@example.com')).toBeNull();
+    expect(mentorshipContactMenteeUrl('')).toBeNull();
+    expect(mentorshipContactMenteeUrl(undefined)).toBeNull();
   });
 
   it('reads an application as Applied until every prerequisite is submitted', () => {
@@ -2148,6 +2217,34 @@ describe('hasMentorshipTaskFileExtension', () => {
   });
 });
 
+describe('mentorshipTaskFileViewType', () => {
+  it('opens a PDF or plain-text response as itself, whatever the name says', () => {
+    expect(mentorshipTaskFileViewType('application/pdf', 'essay.docx')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('Text/Plain; charset=iso-8859-1', null)).toBe('text/plain;charset=utf-8');
+  });
+
+  it('refuses any other specific type, even under a viewable name', () => {
+    expect(mentorshipTaskFileViewType('application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'a.pdf')).toBeNull();
+    expect(mentorshipTaskFileViewType('application/msword', 'a.doc')).toBeNull();
+    expect(mentorshipTaskFileViewType('text/html', 'a.txt')).toBeNull();
+  });
+
+  it('never matches an inherited key', () => {
+    for (const type of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      expect(mentorshipTaskFileViewType(type, 'a.pdf')).toBeNull();
+    }
+  });
+
+  it('reads the extension when the type is missing or generic', () => {
+    expect(mentorshipTaskFileViewType(null, 'Report.PDF')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('', 'notes.v2.txt')).toBe('text/plain;charset=utf-8');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.pdf')).toBe('application/pdf');
+    expect(mentorshipTaskFileViewType('application/octet-stream', 'essay.docx')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, 'submission')).toBeNull();
+    expect(mentorshipTaskFileViewType(undefined, null)).toBeNull();
+  });
+});
+
 describe('sanitizeMentorshipTaskFileName', () => {
   it('replaces path separators, quotes and control characters, and collapses dot runs', () => {
     expect(sanitizeMentorshipTaskFileName('a/b\\c.pdf')).toBe('a_b_c.pdf');
@@ -2300,7 +2397,6 @@ function menteeApplication(overrides: Partial<MentorshipMenteeApplication> = {})
     upstreamStatus: 'pending',
     createdOn: '2026-06-01T10:00:00Z',
     updatedOn: '2026-06-02T10:00:00Z',
-    decisionExpectedDate: '2026-08-01',
     tasks: [],
     ...overrides,
   };
@@ -2418,18 +2514,15 @@ describe('buildMentorshipMenteeApplicationView', () => {
     expect(buildMentorshipMenteeApplicationView(app, 'in-progress').lastUpdatedOn).toBe('2026-07-05T10:00:00Z');
   });
 
-  it('reports zero progress and a null decision date when there is nothing to track', () => {
-    const view = buildMentorshipMenteeApplicationView(menteeApplication({ decisionExpectedDate: undefined }), 'awaiting-review');
+  it('reports zero progress when there is nothing to track', () => {
+    const view = buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review');
     expect(view.progressPercent).toBe(0);
     expect(view.progressLabel).toBe('Prerequisite Tasks');
     expect(view.accepted).toBe(false);
-    expect(view.decisionExpectedDate).toBeNull();
   });
 
-  it('drops the decision date once the application is accepted or graduated', () => {
-    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').decisionExpectedDate).toBe('2026-08-01');
-    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'accepted' }), 'active').decisionExpectedDate).toBeNull();
-    expect(buildMentorshipMenteeApplicationView(menteeApplication({ upstreamStatus: 'graduated' }), 'graduated').decisionExpectedDate).toBeNull();
+  it('carries the program id so the card can link the program page', () => {
+    expect(buildMentorshipMenteeApplicationView(menteeApplication(), 'awaiting-review').programId).toBe('prog-1');
   });
 
   it('labels a graduated card Graduated and tracks its non-prerequisite tasks', () => {

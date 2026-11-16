@@ -15,7 +15,7 @@ import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { VoteManageComponent } from './vote-manage.component';
 
@@ -35,24 +35,24 @@ describe('VoteManageComponent', () => {
   const PROJECT_SLUG = 'test-project';
   const COMMITTEE_UID = 'committee-uid-1';
 
-  let fetchVote: ReturnType<typeof vi.fn>;
-  let getProject: ReturnType<typeof vi.fn>;
-  let fetchCommittee: ReturnType<typeof vi.fn>;
-  let getCommittee: ReturnType<typeof vi.fn>;
+  let fetchVote: Mock;
+  let getProject: Mock;
+  let fetchCommittee: Mock;
+  let getCommittee: Mock;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
-  let setProject: ReturnType<typeof vi.fn>;
-  let messageAdd: ReturnType<typeof vi.fn>;
+  let setProject: Mock;
+  let messageAdd: Mock;
   let voteServiceMock: {
-    getVote: ReturnType<typeof vi.fn>;
-    fetchVote: ReturnType<typeof vi.fn>;
-    createVote: ReturnType<typeof vi.fn>;
-    updateVote: ReturnType<typeof vi.fn>;
-    enableVote: ReturnType<typeof vi.fn>;
-    beginSpeculativeCreate: ReturnType<typeof vi.fn>;
-    confirmSpeculativeVote: ReturnType<typeof vi.fn>;
-    discardSpeculativeVote: ReturnType<typeof vi.fn>;
-    markVoteOpened: ReturnType<typeof vi.fn>;
-    markVoteCreated: ReturnType<typeof vi.fn>;
+    getVote: Mock;
+    fetchVote: Mock;
+    createVote: Mock;
+    updateVote: Mock;
+    enableVote: Mock;
+    beginSpeculativeCreate: Mock;
+    confirmSpeculativeVote: Mock;
+    discardSpeculativeVote: Mock;
+    markVoteOpened: Mock;
+    markVoteCreated: Mock;
   };
 
   // Mutable route double — edit mode by default; create-mode tests call setRouteMode(null) before
@@ -310,6 +310,7 @@ describe('VoteManageComponent', () => {
         name: 'Board decision 2026',
         project_uid: PROJECT_UID,
         committee_uid: COMMITTEE_UID,
+        allow_vote_change: true, // default Yes, always sent (#4723)
       });
       expect(capturedConfirmation).not.toBeNull();
       expect(fixture.componentInstance.confirmingOpenVote()).toBe(true);
@@ -470,6 +471,7 @@ describe('VoteManageComponent', () => {
               },
             ],
             poll_comment_prompts: [{ prompt_id: 'p1', prompt: 'Any concerns?' }],
+            allow_vote_change: false,
           })
         )
       );
@@ -488,6 +490,7 @@ describe('VoteManageComponent', () => {
       expect((form.get('questions') as FormArray).at(0).get('question')?.value).toBe('Who should join?');
       expect((form.get('commentPrompts') as FormArray).length).toBe(1);
       expect((form.get('commentPrompts') as FormArray).at(0).get('prompt')?.value).toBe('Any concerns?');
+      expect(form.get('allow_vote_change')?.value).toBe(false); // source setting preselected (#4723)
       expect(voteServiceMock.createVote).not.toHaveBeenCalled();
     });
 

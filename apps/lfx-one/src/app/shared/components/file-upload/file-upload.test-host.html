@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-file-upload [mode]="mode" [customUpload]="true">
+  <ng-template #header><span data-testid="projected-header">Header</span></ng-template>
+  <ng-template #content let-files let-choose="chooseCallback">
+    <lfx-button data-testid="projected-choose" [label]="'Choose ' + files.length" (onClick)="choose()" />
+  </ng-template>
+  <ng-template #chooseicon><span data-testid="projected-icon">+</span></ng-template>
+  <ng-template #filelabel let-files
+    ><span data-testid="projected-label">Files: {{ files.length }}</span></ng-template
+  >
+</lfx-file-upload>

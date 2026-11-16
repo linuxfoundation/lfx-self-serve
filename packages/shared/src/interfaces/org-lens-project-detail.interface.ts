@@ -314,3 +314,13 @@ export interface BoardRenderState {
   rowsPerPage: number;
   loading: boolean;
 }
+
+/**
+ * Which leaderboard rows are the viewing organization's (lfx-self-serve-ops#1219): every row carrying the account
+ * under `all`, and only the account's LFX Insights organization's row under `insights` (`insightsOrgId` set).
+ * Server-internal.
+ */
+export interface OrgLensViewingOrg {
+  accountId: string;
+  insightsOrgId: string | null;
+}

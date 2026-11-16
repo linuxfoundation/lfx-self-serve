@@ -23,6 +23,14 @@ export type ObjectStorePurpose = 'avatars' | 'marketing-os-artifacts';
 /** Which backend serves a purpose — surfaced in logs so a local run says where its documents went. */
 export type ObjectStoreBackendKind = 's3' | 'file';
 
+/** Server-only diagnostic projection: fixed categories, never provider messages or arbitrary codes. */
+export interface ObjectStoreFailureClassification {
+  transient: boolean;
+  /** 0 means no HTTP response, including transport failures. */
+  status: number;
+  code: 'http' | 'timeout' | 'network' | 'unknown';
+}
+
 /** One listed object: key plus the store's last-modified stamp (S3 `LastModified`, file mtime). */
 export interface ObjectStoreListEntry {
   key: string;

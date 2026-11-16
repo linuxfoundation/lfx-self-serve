@@ -17,17 +17,14 @@ import type {
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
-  HealthMetricsNonMembersSectionKey,
   HealthMetricsNonMembersSubNavItem,
   HealthMetricsNonMembersWarmOrg,
   HealthMetricsNonMembersWarmOrgRowView,
 } from '../interfaces/health-metrics-non-members.interface';
 
-/** Sub-nav items for the Non-Members tab; a section without a count carries no badge. */
-export function buildHealthMetricsNonMembersSubNavItems(
-  counts: Partial<Record<HealthMetricsNonMembersSectionKey, number | null>> = {}
-): HealthMetricsNonMembersSubNavItem[] {
-  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
+/** Sub-nav items for the Non-Members tab; no section here carries a note. */
+export function buildHealthMetricsNonMembersSubNavItems(): HealthMetricsNonMembersSubNavItem[] {
+  return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, note: '' }));
 }
 
 /** Company participation rows. A zero or NULL count renders a dash. */
@@ -77,7 +74,6 @@ export function buildHealthMetricsNonMembersPeopleCountLabel(count: number | nul
 export function buildHealthMetricsNonMembersConversionView(conversion: HealthMetricsNonMembersConversion): HealthMetricsNonMembersConversionView {
   const pipeline = conversion.estimatedPipelineUsd;
   const hasEstimate = pipeline !== null;
-  const tier = conversion.entryTierName?.trim();
   return {
     measured: conversion.measured,
     summary:
@@ -92,11 +88,6 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
       { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
     ],
     warmest: buildWarmestRows(conversion.warmest),
-    footnote: [
-      { text: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only. The ` },
-      { text: 'fit score', bold: true },
-      { text: ' is a model change, sequenced after the matching fix.' },
-    ],
   };
 }
 

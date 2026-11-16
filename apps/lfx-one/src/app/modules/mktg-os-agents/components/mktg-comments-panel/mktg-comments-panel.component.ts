@@ -5,6 +5,7 @@ import { Component, computed, DestroyRef, inject, input, output, Signal, signal 
 import { _IdGenerator } from '@angular/cdk/a11y';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
+import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import { MKTG_DOCUMENT_COMMENT_LIMITS } from '@lfx-one/shared/constants';
 import type { MktgDocumentCommentScope, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { mktgDocumentCommentTab } from '@lfx-one/shared/utils';
@@ -17,7 +18,7 @@ import { MktgCommentThreadComponent } from '../mktg-comment-thread/mktg-comment-
 
 @Component({
   selector: 'lfx-mktg-comments-panel',
-  imports: [ButtonComponent, MktgCommentThreadComponent, MktgRunActivityComponent],
+  imports: [ButtonComponent, MktgCommentThreadComponent, MktgRunActivityComponent, MktgSkeletonComponent],
   templateUrl: './mktg-comments-panel.component.html',
 })
 export class MktgCommentsPanelComponent {
@@ -37,16 +38,24 @@ export class MktgCommentsPanelComponent {
   public readonly ready = output<MktgRedraftLanding>();
   protected readonly reasonId = this.ids.getId('mktg-comments-reason-');
 
+  protected readonly expandedThreads = signal(new Set<string>());
   protected readonly accepted = signal(false);
   protected readonly runPending = signal(false);
   protected readonly retrySend = signal(false);
   protected readonly releaseAvailable = signal(false);
   protected readonly activity = signal<MktgRunActivity[]>([]);
+  /** The redraft ended without landing (a terminal failure): its feed stays on screen, closed. */
+  protected readonly runEnded = signal(false);
   protected readonly startedAt = signal(0);
   protected readonly message = signal('');
+  /** The open count frozen when Send was chosen: the label keeps it while the run is under way, as the comments flip open → sent beneath it. */
+  protected readonly sendingCount = signal<number | null>(null);
 
   protected readonly openCount = computed(
     () => this.comments.threads().filter((row) => row.status === 'open' && row.revisionId === this.scope().revisionId).length
+  );
+  protected readonly showSend = computed(
+    () => (this.comments.loaded() && !this.comments.loadError() && this.openCount() > 0) || this.retrySend() || this.runPending()
   );
   protected readonly sendLabel = this.initSendLabel();
   protected readonly disabledReason = this.initDisabledReason();
@@ -63,10 +72,13 @@ export class MktgCommentsPanelComponent {
     toObservable(this.comments.draftScopeKey)
       .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
+        this.expandedThreads.set(new Set());
         this.work?.unsubscribe();
         this.message.set('');
         this.activity.set([]);
+        this.runEnded.set(false);
         this.runPending.set(false);
+        this.sendingCount.set(null);
         this.landingTab = undefined;
         this.syncRecovery();
         if (this.redrafts.hasAcceptedAttempt(this.scope())) this.observe(this.redrafts.resume(this.scope())); // Read-only: never auto-resubmit an unknown ACK.
@@ -74,6 +86,14 @@ export class MktgCommentsPanelComponent {
     this.destroyRef.onDestroy(() => {
       this.work?.unsubscribe();
       this.comments.select(null);
+    });
+  }
+  protected setExpanded(id: string, expanded: boolean): void {
+    this.expandedThreads.update((current) => {
+      const next = new Set(current);
+      if (expanded) next.add(id);
+      else next.delete(id);
+      return next;
     });
   }
   protected refresh(): void {
@@ -87,6 +107,7 @@ export class MktgCommentsPanelComponent {
         .filter((row) => row.status === 'open' && row.revisionId === this.scope().revisionId)
         .at(-1);
       this.landingTab = pinned ? mktgDocumentCommentTab(this.scope().agentKey, pinned.anchor.key) : undefined;
+      this.sendingCount.set(this.openCount());
     }
     this.observe(this.redrafts.send(this.scope(), this.priorVersion() ?? 0));
   }
@@ -118,6 +139,12 @@ export class MktgCommentsPanelComponent {
   // Private initializers.
   private initSendLabel(): Signal<string> {
     return computed(() => {
+      if (this.runPending()) {
+        const sending = this.sendingCount();
+        if (sending !== null) return `Sending ${sending} comment${sending === 1 ? '' : 's'} to the agent…`;
+        // A restored accepted attempt is being observed, not retried: its intent is still saved, so retrySend alone would read as Retry.
+        if (!this.retrySend() || this.accepted()) return 'Sending comments to the agent…';
+      }
       if (this.retrySend()) return 'Retry the same redraft';
       if (!this.comments.loaded() || this.comments.loading() || this.comments.loadError()) return 'Send comments to the agent';
       const count = this.openCount();
@@ -147,6 +174,9 @@ export class MktgCommentsPanelComponent {
     const owner = this.comments.draftScopeKey();
     this.work?.unsubscribe();
     this.runPending.set(true);
+    // A new attempt starts its own feed: the closed feed of a failed one never reopens as under way.
+    this.activity.set([]);
+    this.runEnded.set(false);
     this.accepted.set(this.redrafts.hasAcceptedAttempt(this.scope()));
     this.releaseAvailable.set(false);
     this.startedAt.set(Date.now());
@@ -155,7 +185,10 @@ export class MktgCommentsPanelComponent {
     this.work = stream
       .pipe(
         finalize(() => {
-          if (owner === this.comments.draftScopeKey()) this.runPending.set(false);
+          if (owner === this.comments.draftScopeKey()) {
+            this.runPending.set(false);
+            this.sendingCount.set(null);
+          }
         })
       )
       .subscribe({
@@ -169,6 +202,7 @@ export class MktgCommentsPanelComponent {
           }
           if (progress.type === 'failed') {
             this.storing = false;
+            this.runEnded.set(true);
             this.message.set(progress.message);
           }
           if (progress.type === 'ready') {
@@ -177,7 +211,10 @@ export class MktgCommentsPanelComponent {
           }
         },
         error: (error: unknown) => {
-          if (owner === this.comments.draftScopeKey()) this.showError(error);
+          if (owner !== this.comments.draftScopeKey()) return;
+          // A poll error after an accepted attempt is reconnectable (the agent may still be working): only an attempt that never took closes the feed.
+          if (!this.redrafts.hasAcceptedAttempt(this.scope())) this.runEnded.set(true);
+          this.showError(error);
         },
         complete: () => {
           if (owner !== this.comments.draftScopeKey()) return;

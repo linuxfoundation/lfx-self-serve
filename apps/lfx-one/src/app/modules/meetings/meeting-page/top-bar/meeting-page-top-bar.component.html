@@ -1,0 +1,94 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. 72px tall, 56px on phones. -->
+<header
+  class="mx-auto flex h-[72px] max-w-[1016px] items-center gap-[16px] border-b border-gray-200 px-[16px] max-sm:h-[56px] max-sm:gap-[10px] sm:px-[32px] min-[1081px]:px-0"
+  data-testid="meeting-page-top-bar">
+  <a
+    routerLink="/"
+    class="grid size-[40px] flex-none place-items-center rounded-[6px] border border-gray-200 bg-white transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 max-sm:size-[32px]"
+    aria-label="Open LFX App"
+    lfxUiTooltip="LFX App"
+    lfxUiTooltipSide="bottom"
+    data-testid="meeting-page-top-bar-logo">
+    <img src="/images/logo_lf_icon.png" alt="" class="size-[22px] max-sm:size-[18px]" />
+  </a>
+
+  <!-- Inert until the page title scrolls under the bar, so the title is neither seen nor focused twice. -->
+  <div
+    class="flex min-w-0 flex-auto items-center gap-[16px] transition duration-200 motion-reduce:transition-none max-sm:gap-[8px]"
+    [class]="scrolled() ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-[6px] opacity-0'"
+    [attr.aria-hidden]="scrolled() ? null : 'true'"
+    [attr.inert]="scrolled() ? null : ''"
+    data-testid="meeting-page-top-bar-meeting">
+    @if (row(); as row) {
+      <span class="h-[28px] w-px flex-none bg-gray-200 max-sm:hidden" aria-hidden="true"></span>
+      <span
+        class="flex size-[40px] flex-none flex-col overflow-hidden rounded-[8px] border border-gray-200 bg-white max-sm:size-[32px] max-sm:rounded-[6px]"
+        aria-hidden="true">
+        <span
+          class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold leading-none tracking-[0.08em] max-sm:h-[10px] max-sm:text-[7px]"
+          [class]="past() ? 'bg-gray-400 text-white' : 'bg-blue-500 text-white'"
+          >{{ row.startTime | date: 'MMM' | uppercase }}</span
+        >
+        <span class="flex flex-auto items-center justify-center text-[17px] leading-none text-gray-900 max-sm:text-[13px]">{{
+          row.startTime | date: 'd'
+        }}</span>
+      </span>
+      <!-- Focusable once shown, so keyboard users can open the tooltip with the full title and project. -->
+      <span
+        class="flex min-w-0 flex-col gap-[2px] rounded-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+        tabindex="0"
+        [lfxUiTooltip]="row.title"
+        [lfxUiTooltipTitle]="projectName()"
+        lfxUiTooltipSide="bottom"
+        data-testid="meeting-page-top-bar-title">
+        <span class="truncate text-[15px] font-semibold leading-[20px] text-gray-900 max-sm:text-[13px] max-sm:leading-[18px]">{{ row.title }}</span>
+        @if (projectName(); as project) {
+          <span class="truncate text-[12px] leading-[16px] text-gray-500 max-sm:text-[11px]">{{ project }}</span>
+        }
+      </span>
+    }
+  </div>
+
+  <div class="flex flex-none items-center gap-[12px] max-sm:gap-[8px]">
+    <lfx-ui-button class="max-sm:hidden" variant="tertiary" icon="fa-light fa-calendar" (click)="openMyMeetings()" data-testid="meeting-page-my-meetings"
+      >My Meetings</lfx-ui-button
+    >
+    <button
+      type="button"
+      class="flex h-[48px] items-center gap-[10px] rounded-[8px] border border-gray-200 bg-white pl-[10px] pr-[14px] text-left text-gray-900 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 active:bg-gray-100 max-sm:h-[36px] max-sm:gap-[6px] max-sm:pl-[6px] max-sm:pr-[8px]"
+      aria-labelledby="meeting-page-account-name meeting-page-account-hint"
+      data-dd-action-name="Account menu"
+      [cdkMenuTriggerFor]="accountMenu"
+      [cdkMenuPosition]="menuPositions"
+      data-testid="meeting-page-account">
+      <lfx-ui-avatar [size]="28" [name]="userService.user()?.name ?? ''" [src]="userService.effectiveAvatarUrl()" decorative />
+      <!-- Masked in Session Replay: the viewer's name and email. -->
+      <span class="flex min-w-0 max-w-[170px] flex-col max-sm:hidden" data-dd-privacy="mask">
+        <!-- Names the button, from inside the mask; phones hide it but it still labels. -->
+        <span id="meeting-page-account-name" class="truncate text-[14px] font-semibold leading-[18px]">{{ userService.user()?.name }}</span>
+        <span class="truncate text-[12px] leading-[16px] text-gray-500">{{ userService.user()?.email }}</span>
+      </span>
+      <span id="meeting-page-account-hint" class="sr-only">account menu</span>
+      <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
+    </button>
+  </div>
+</header>
+
+<ng-template #accountMenu>
+  <lfx-ui-menu ariaLabel="Account" class="!w-[220px]" data-testid="meeting-page-account-menu">
+    <lfx-ui-menu-item icon="fa-light fa-circle-user" (triggered)="openProfile('/profile')" data-testid="meeting-page-account-profile"
+      >Profile &amp; Account</lfx-ui-menu-item
+    >
+    <lfx-ui-menu-item icon="fa-light fa-gear" (triggered)="openProfile('/profile/settings')" data-testid="meeting-page-account-settings"
+      >Settings</lfx-ui-menu-item
+    >
+    <lfx-ui-menu-item icon="fa-light fa-circle-question" (triggered)="openSupport()" data-testid="meeting-page-account-support">Support</lfx-ui-menu-item>
+    <lfx-ui-menu-separator />
+    <lfx-ui-menu-item icon="fa-light fa-arrow-right-from-bracket" (triggered)="signOut()" data-testid="meeting-page-account-sign-out"
+      >Sign out</lfx-ui-menu-item
+    >
+  </lfx-ui-menu>
+</ng-template>

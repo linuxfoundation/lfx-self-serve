@@ -25,9 +25,6 @@ import {
   HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_TIER_LENGTH,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-  HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH,
@@ -47,7 +44,6 @@ import type {
   HealthMetricsEventsOrganizationsSegment,
   HealthMetricsMembersAtRiskFilter,
   HealthMetricsMembersBoardCohort,
-  HealthMetricsMembersMovementListType,
   HealthMetricsMembersNpsCategory,
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsNonMembersOrgsFilter,
@@ -91,9 +87,6 @@ const ENGAGEMENT_GROUP_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_ENGAG
 /** Membership segments the Events organizations table accepts. */
 const EVENTS_ORGANIZATIONS_SEGMENTS: ReadonlySet<string> = new Set(HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEGMENT_OPTIONS.map((option) => option.id));
 const TRAINING_COURSES_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_TRAINING_COURSES_TYPE_OPTIONS.map((option) => option.id));
-
-/** Bridge bars whose organizations the Members movements list serves. */
-const MEMBERS_MOVEMENT_LIST_TYPES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_MOVEMENT_LIST_TYPES);
 
 /** NPS categories the Members directory filter accepts. */
 const MEMBERS_DIRECTORY_NPS_CATEGORIES: ReadonlySet<string> = new Set(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -1968,7 +1961,8 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/org-involvement-contributors-monthly
    * Get cross-foundation active contributors monthly for an organization
-   * Query params: accountId (required)
+   * Query params: accountId (required). Always the default organization scope, the Overview having no scope picker
+   * (lfx-self-serve-ops#1219).
    */
   public async orgContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_involvement_contributors_monthly');
@@ -1992,7 +1986,7 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/org-involvement-maintainers-monthly
-   * Get cross-foundation maintainers monthly for an organization
+   * The organization's maintainer roles in all projects: headline over the Org Lens default range and monthly trend
    * Query params: accountId (required)
    */
   public async orgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -2005,8 +1999,7 @@ export class AnalyticsController {
 
       logger.success(req, 'get_org_involvement_maintainers_monthly', startTime, {
         account_id: accountId,
-        total_maintainers: response.totalMaintainersYearly,
-        total_projects: response.totalProjectsYearly,
+        maintainer_roles: response.maintainerRoles,
         monthly_data_points: response.monthlyData.length,
       });
 
@@ -2034,57 +2027,6 @@ export class AnalyticsController {
         total_attended: response.totalAttended,
         total_speakers: response.totalSpeakers,
         monthly_data_points: response.monthlyLabels.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/org-involvement-certified-employees-monthly
-   * Get cross-foundation certified employees monthly for an organization
-   * Query params: accountId (required)
-   */
-  public async orgCertifiedEmployeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_certified_employees_monthly');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_certified_employees_monthly');
-
-      const response = await this.orgInvolvementService.getCertifiedEmployeesMonthly(accountId);
-
-      logger.success(req, 'get_org_involvement_certified_employees_monthly', startTime, {
-        account_id: accountId,
-        total_certifications: response.totalCertifications,
-        total_certified_employees: response.totalCertifiedEmployees,
-        monthly_data_points: response.monthlyData.length,
-      });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/analytics/org-involvement-training-enrollments
-   * Get cross-foundation training enrollments YTD for an organization
-   * Query params: accountId (required)
-   */
-  public async orgTrainingEnrollments(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_org_involvement_training_enrollments');
-
-    try {
-      const accountId = this.parseAccountIdParam(req, 'get_org_involvement_training_enrollments');
-
-      const response = await this.orgInvolvementService.getTrainingEnrollments(accountId);
-
-      logger.success(req, 'get_org_involvement_training_enrollments', startTime, {
-        account_id: accountId,
-        total_enrollments: response.totalEnrollments,
-        daily_data_points: response.dailyData.length,
       });
 
       res.json(response);
@@ -3443,6 +3385,75 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-newsletter-performance` — every period's newsletter summary and every newsletter
+   * sent, one read. The period pill resolves client-side.
+   */
+  public async getEngagementNewsletterPerformance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_performance');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_performance',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_performance',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterPerformance(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_newsletter_performance', startTime, {
+        foundation_slug: foundationSlug,
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/engagement-newsletter-recipients` — every recipient of the foundation's latest newsletter.
+   * Search and the segment cut resolve client-side.
+   */
+  public async getEngagementNewsletterRecipients(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_newsletter_recipients');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_newsletter_recipients',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNewsletterRecipients(req, { foundationSlug });
+
+      // Counts only: recipient names never reach the logs.
+      logger.success(req, 'get_engagement_newsletter_recipients', startTime, {
+        foundation_slug: foundationSlug,
+        has_newsletter: response.newsletter !== null,
+        recipient_count: response.recipients.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * `GET /api/analytics/engagement-representatives` — every representative, every period. Search,
    * the filter cut and the period all resolve client-side, so none of them reaches the wire.
    */
@@ -3564,6 +3575,43 @@ export class AnalyticsController {
         foundation_slug: foundationSlug,
         event_id: eventId,
         format_count: response.formats.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/events-snapshot` — one event's registration weeks and sponsorship packages for the event dialog.
+   * The foundation is required alongside the event so an id alone cannot read another foundation's.
+   */
+  public async getEventsSnapshot(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_snapshot');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_events_snapshot');
+
+      const eventId = getStringQueryParam(req, 'eventId');
+      if (!eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId query parameter is required', {
+          operation: 'get_events_snapshot',
+        });
+      }
+      if (!EVENT_ID_PATTERN.test(eventId)) {
+        throw ServiceValidationError.forField('eventId', 'Invalid eventId format', {
+          operation: 'get_events_snapshot',
+        });
+      }
+
+      const response = await this.healthMetricsEventsService.getSnapshot(req, { foundationSlug, eventId });
+
+      logger.success(req, 'get_events_snapshot', startTime, {
+        foundation_slug: foundationSlug,
+        event_id: eventId,
+        week_count: response.weeks.length,
+        package_count: response.packages.length,
       });
 
       res.json(response);
@@ -3713,7 +3761,24 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/members-tiers` — every year's members, new members and revenue per tier, and the foundation's revenue per period. */
+  /** `GET /api/analytics/members-growth` — every month's running total of new members. */
+  public async getMembersGrowth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_members_growth');
+
+    try {
+      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_growth');
+
+      const response = await this.healthMetricsMembersService.getGrowth(req, { foundationSlug });
+
+      logger.success(req, 'get_members_growth', startTime, { foundation_slug: foundationSlug, month_count: response.months.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** `GET /api/analytics/members-tiers` — every year's members and revenue per tier. */
   public async getMembersTiers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_tiers');
 
@@ -3723,70 +3788,6 @@ export class AnalyticsController {
       const response = await this.healthMetricsMembersService.getTiers(req, { foundationSlug });
 
       logger.success(req, 'get_members_tiers', startTime, { foundation_slug: foundationSlug, row_count: response.rows.length });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/members-bridge` — every year's start total, movements and closing total. */
-  public async getMembersBridge(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_members_bridge');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_bridge');
-
-      const response = await this.healthMetricsMembersService.getBridge(req, { foundationSlug });
-
-      logger.success(req, 'get_members_bridge', startTime, { foundation_slug: foundationSlug, step_count: response.steps.length });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /** `GET /api/analytics/members-movements` — one page of the organizations behind a bridge bar. */
-  public async getMembersMovements(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_members_movements');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_members_movements');
-
-      const rawYear = getStringQueryParam(req, 'year') ?? '';
-      if (!YEAR_PATTERN.test(rawYear)) {
-        throw ServiceValidationError.forField('year', 'year must be a four-digit year', { operation: 'get_members_movements' });
-      }
-
-      const movementType = getStringQueryParam(req, 'movementType') ?? '';
-      if (!MEMBERS_MOVEMENT_LIST_TYPES.has(movementType)) {
-        throw ServiceValidationError.forField('movementType', `Invalid movementType value. Allowed: ${[...MEMBERS_MOVEMENT_LIST_TYPES].join(', ')}`, {
-          operation: 'get_members_movements',
-        });
-      }
-
-      const { pageSize, offset } = parseOffsetPagination(req, {
-        defaultPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_PAGE_SIZE,
-        maxPageSize: HEALTH_METRICS_MEMBERS_MOVEMENTS_MAX_PAGE_SIZE,
-      });
-
-      const year = Number(rawYear);
-      const response = await this.healthMetricsMembersService.getMovements(req, {
-        foundationSlug,
-        year,
-        movementType: movementType as HealthMetricsMembersMovementListType,
-        offset,
-        pageSize,
-      });
-
-      logger.success(req, 'get_members_movements', startTime, {
-        foundation_slug: foundationSlug,
-        year,
-        movement_type: movementType,
-        row_count: response.rows.length,
-        total_records: response.totalRecords,
-      });
 
       res.json(response);
     } catch (error) {
@@ -4239,23 +4240,6 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/training-presence` — whether the foundation runs a training programme, which decides the Training tab's shell. */
-  public async getTrainingPresence(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_training_presence');
-
-    try {
-      const foundationSlug = this.getValidatedFoundationSlug(req, 'get_training_presence');
-
-      const response = await this.healthMetricsTrainingService.getPresence(req, { foundationSlug });
-
-      logger.success(req, 'get_training_presence', startTime, { foundation_slug: foundationSlug, has_programme: response.hasProgramme });
-
-      res.json(response);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   /** `GET /api/analytics/training-enrollment` — every period's enrollment, certification and revenue KPIs, by-type split and yearly trend. */
   public async getTrainingEnrollment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_training_enrollment');
@@ -4424,6 +4408,21 @@ export class AnalyticsController {
       (query) => this.healthMetricsOverviewService.getCode(req, query),
       (response) => ({
         measured: response.measured,
+      })
+    );
+  }
+
+  /** `GET /api/analytics/overview-newsletters` — the newsletter summary in every period and each newsletter sent. */
+  public async getOverviewNewsletters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    await this.readOverviewCard(
+      req,
+      res,
+      next,
+      'get_overview_newsletters',
+      (query) => this.healthMetricsOverviewService.getNewsletters(req, query),
+      (response) => ({
+        measured: response.measured,
+        newsletter_count: response.newsletters.length,
       })
     );
   }

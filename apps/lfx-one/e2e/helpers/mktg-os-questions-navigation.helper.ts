@@ -42,6 +42,11 @@ export async function setupQuestionsNavigation(page: Page) {
   const revision = { ...view.revision, id: `000001-${digest}`, contentSha256: digest };
   const stored = { ...view, revision, revisions: [revision], current: { revisionId: revision.id, changedAt: revision.createdAt, changedBy: null } };
   const runId = 'd'.repeat(64);
+  const pendingQuestions = {
+    questionsId: 'e'.repeat(64),
+    askedAt: '2026-10-23T14:34:01Z',
+    questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: 'A missing source.', suggestedAnswer: 'Grow adoption', basis: [] }],
+  };
   let stage: 'questions' | 'writing' | 'ready' = 'questions';
   const posts: string[] = [];
   const activity = buildMktgRunActivity(noQuestionsActivityPayloads('writing', true));
@@ -56,8 +61,8 @@ export async function setupQuestionsNavigation(page: Page) {
     if (stage === 'questions') {
       return fulfillDocumentJson(route, {
         status: 'questions',
-        questionsId: 'e'.repeat(64),
-        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: 'A missing source.', suggestedAnswer: 'Grow adoption', basis: [] }],
+        questionsId: pendingQuestions.questionsId,
+        questions: pendingQuestions.questions,
       });
     }
     if (stage === 'writing') return fulfillDocumentJson(route, { status: 'pending', activity });
@@ -89,6 +94,8 @@ export async function setupQuestionsNavigation(page: Page) {
                 documentId: 'living',
                 runId,
                 state: stage,
+                // Rule 1/#4592: the BFF records the same block before the private poll exposes it.
+                ...(stage === 'questions' && { pendingQuestions }),
                 startedAt: '2026-10-23T14:34:00Z',
                 activity,
               },

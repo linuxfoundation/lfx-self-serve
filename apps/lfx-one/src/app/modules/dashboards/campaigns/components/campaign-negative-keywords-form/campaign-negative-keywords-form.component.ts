@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES, REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR } from '@lfx-one/shared/constants';
 import type {
   CampaignNegativeKeywordMatchType,
   CampaignNegativeKeywordMatchTypeOption,
@@ -21,9 +21,10 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
-import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
+import { campaignKeywordWriteKey, campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
 import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
 import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
@@ -60,6 +61,7 @@ import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 })
 export class CampaignNegativeKeywordsFormComponent {
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly keywordTargetingService = inject(CampaignKeywordTargetingService);
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -86,6 +88,7 @@ export class CampaignNegativeKeywordsFormComponent {
   /** The platform's own text limit, shorter than the shared one on Google Ads. */
   private readonly maxTextLength: Signal<number> = computed(() => this.rules().maxTextLength);
   protected readonly matchTypeOptions: Signal<readonly CampaignNegativeKeywordMatchTypeOption[]> = computed(() => this.rules().matchTypes);
+  protected readonly revisionErrorMessage = REDDIT_KEYWORD_NEGATIVE_REVISION_ERROR;
 
   public readonly form = new FormGroup({
     keywords: new FormControl<string>('', {
@@ -110,8 +113,33 @@ export class CampaignNegativeKeywordsFormComponent {
     () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
   );
   protected readonly pending: Signal<boolean> = computed(() => this.request()?.pending ?? false);
-  /** Bumped by every settled request of this campaign: the targeting the revision fingerprints may have changed. */
-  private readonly settleCount: Signal<number> = computed(() => this.request()?.settleCount ?? 0);
+  /**
+   * Why a request cannot be sent although none of this campaign's is in flight, or `''`: another
+   * sender holds the campaign (the Reddit keyword table reading its revision), or a keyword-targeting
+   * removal of it is in flight — the campaign's Reddit targeting is one domain, written one change at a time.
+   */
+  protected readonly heldReason: Signal<string> = computed(() => {
+    // By campaign, not brief: a write in flight keeps its own brief while the page's goes empty.
+    const writeKey = campaignKeywordWriteKey(this.projectSlug(), this.campaignId());
+    if (this.negativeKeywordsService.reservations()[writeKey]) {
+      return 'A negative keyword for this campaign is being added from the keyword table. Wait for it to finish.';
+    }
+    if (this.negativeKeywordsService.pendingWrites()[writeKey] && !this.pending()) {
+      return 'Negative keywords are already being added to this campaign. Wait for that to finish.';
+    }
+    if (this.keywordTargetingService.pendingWrites()[writeKey]) {
+      return "A removal from this campaign's keyword targeting is in progress. Wait for it to finish.";
+    }
+    return '';
+  });
+  /**
+   * Bumped by every settled keyword write of this campaign on either lever, under any brief key: the
+   * targeting the revision fingerprints may have changed.
+   */
+  private readonly settleCount: Signal<number> = computed(() => {
+    const writeKey = campaignKeywordWriteKey(this.projectSlug(), this.campaignId());
+    return (this.negativeKeywordsService.settledWrites()[writeKey] ?? 0) + (this.keywordTargetingService.settledWrites()[writeKey] ?? 0);
+  });
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */
   protected readonly outcomeRows: Signal<CampaignNegativeKeywordOutcomeRow[]> = computed(() => this.request()?.outcomeRows ?? []);
   /** The last request's outcome when it produced no per-keyword results at all. */
@@ -167,7 +195,7 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly revisionState: Signal<NegativeKeywordsRevisionState> = this.initRevisionState();
   /** Whether a request can be sent now: never while one is in flight, nor on Reddit before its revision is read. */
   protected readonly canSubmit: Signal<boolean> = computed(() => {
-    if (this.pending()) {
+    if (this.pending() || this.heldReason() !== '') {
       return false;
     }
     return !this.rules().requiresRevision || this.revisionState().status === 'ready';

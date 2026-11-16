@@ -149,6 +149,7 @@ describe('AudienceQaPanelComponent', () => {
   it.each([
     ['the send-time suppressions', () => fixture.componentRef.setInput('sendSuppressionIds', [])],
     ['the event', () => fixture.componentRef.setInput('eventName', 'Another Event')],
+    ['the email stage', () => fixture.componentRef.setInput('stage', 'Post-Event')],
   ])('drops a verdict when %s change', (_label, change) => {
     fixture.componentRef.setInput('eventName', 'Synthetic Summit');
     fixture.componentRef.setInput('sendSuppressionIds', ['201']);
@@ -340,6 +341,79 @@ describe('AudienceQaPanelComponent', () => {
 
       expect(runAudienceQa).toHaveBeenCalledWith('tlf', { listRef: '601', targetsEu: false, targetsCa: false });
       expect(host().textContent).not.toContain('Current registrants');
+    });
+
+    // lfx-v2-campaign-service#244: the stage lets upstream set the check aside for a Post-Event send.
+    it('sends the email stage with the run', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.componentRef.setInput('stage', 'Post-Event');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa).toHaveBeenCalledWith('tlf', {
+        listRef: '601',
+        targetsEu: false,
+        targetsCa: false,
+        eventName: 'Synthetic Summit 2026',
+        stage: 'Post-Event',
+      });
+    });
+
+    it('sends no stage when none is known', () => {
+      runAudienceQa.mockReturnValue(of(report()));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(runAudienceQa.mock.calls.at(-1)?.[1]).not.toHaveProperty('stage');
+    });
+
+    it('shows a check set aside for the stage as NOT APPLICABLE, with upstream reason', () => {
+      const note = 'Not applicable to a Post-Event send: its audience is this edition attendees.';
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'NOT APPLICABLE', findings: [], note } }) })));
+      fixture.componentRef.setInput('eventName', 'Synthetic Summit 2026');
+      fixture.componentRef.setInput('stage', 'Post-Event');
+      fixture.detectChanges();
+
+      enterRefAndRun();
+
+      expect(host().textContent).toContain('Current registrants');
+      expect(host().textContent).toContain('NOT APPLICABLE');
+      const row = host().querySelector('[data-testid="audience-qa-panel-check-currentRegistrants"]');
+      expect(row?.textContent).toContain(note);
+      expect(row?.textContent, 'a set-aside check must not carry the green pass line').not.toContain('No findings.');
+    });
+
+    it('exports a set-aside check with its reason rather than "No findings"', async () => {
+      const note = 'Not applicable to a Post-Event send: its audience is this edition attendees.';
+      runAudienceQa.mockReturnValue(of(report({ checks: checks({ currentRegistrants: { verdict: 'NOT APPLICABLE', findings: [], note } }) })));
+      const blobs: Blob[] = [];
+      // jsdom implements neither, so they are installed for this test and removed after it.
+      const urlApi = URL as unknown as { createObjectURL?: (blob: Blob) => string; revokeObjectURL?: (url: string) => void };
+      const original = { create: urlApi.createObjectURL, revoke: urlApi.revokeObjectURL };
+      urlApi.createObjectURL = (blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:qa';
+      };
+      urlApi.revokeObjectURL = () => undefined;
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+      try {
+        enterRefAndRun();
+        host().querySelector<HTMLButtonElement>('[data-testid="audience-qa-panel-download-csv"]')?.click();
+
+        expect(blobs).toHaveLength(1);
+        const row = (await blobs[0].text()).split('\n').find((line) => line.includes('Current registrants'));
+        expect(row).toContain('NOT APPLICABLE');
+        expect(row).toContain(note);
+        expect(row).not.toContain('No findings');
+      } finally {
+        urlApi.createObjectURL = original.create;
+        urlApi.revokeObjectURL = original.revoke;
+        click.mockRestore();
+      }
     });
 
     it('shows the check when upstream ran it', () => {

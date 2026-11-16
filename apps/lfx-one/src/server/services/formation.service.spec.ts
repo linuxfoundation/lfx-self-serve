@@ -72,13 +72,15 @@ vi.mock('./logger.service', () => ({
 // `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
 // cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
 vi.mock('./nats.service', () => ({
-  NatsService: vi.fn().mockImplementation(() => ({
-    getCodec: () => ({
-      encode: (v: string) => v,
-      decode: (v: unknown) => v as string,
-    }),
-    request: natsRequest,
-  })),
+  NatsService: vi.fn().mockImplementation(function () {
+    return {
+      getCodec: () => ({
+        encode: (v: string) => v,
+        decode: (v: unknown) => v as string,
+      }),
+      request: natsRequest,
+    };
+  }),
 }));
 
 const { FormationService } = await import('./formation.service');
@@ -650,6 +652,34 @@ describe('FormationService', () => {
       const result = await service.getProjectFormation(buildReq(), 'live-project');
 
       expect(result.can_set_status).toBe(false);
+    });
+
+    it('resolves can_edit_record as writer AND team:formation membership (#5134)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_edit_record).toBe(true);
+    });
+
+    it('reports can_edit_record false for a writer who is not on team:formation (#5134)', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_write).toBe(true);
+      expect(result.can_edit_record).toBe(false);
+    });
+
+    it('reports can_edit_record false for a team member who is not a writer (#5134)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_edit_record).toBe(false);
     });
 
     it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {

@@ -14,6 +14,8 @@ import {
   MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_STATUS_LABELS,
   MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS,
+  MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS,
   MENTORSHIP_MENTOR_APPLICANT_STATUS_FILTER_PILLS,
   MENTORSHIP_PERSON_PAGE_SIZE,
   MENTORSHIP_PERSON_ROWS_PER_PAGE_OPTIONS,
@@ -25,11 +27,13 @@ import {
   matchesMentorshipPersonSearch,
   mentorshipApplicantDisplayStatus,
   mentorshipApplicantTaskRows,
+  mentorshipContactMenteeUrl,
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
 } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { startWith, tap } from 'rxjs';
 
 import { ApplicantTasksPanelComponent } from '../../../../components/applicant-tasks-panel/applicant-tasks-panel.component';
@@ -42,7 +46,15 @@ import { PersonCellComponent } from '../../../../components/person-cell/person-c
  */
 @Component({
   selector: 'lfx-mentorship-mentor-applicants-tab',
-  imports: [ReactiveFormsModule, ApplicantTasksPanelComponent, ButtonComponent, InputTextComponent, PersonCellComponent, TableComponent],
+  imports: [
+    ReactiveFormsModule,
+    ApplicantTasksPanelComponent,
+    ButtonComponent,
+    InputTextComponent,
+    PersonCellComponent,
+    TableComponent,
+    MentorshipPublicUrlPipe,
+  ],
   templateUrl: './mentor-applicants-tab.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -57,6 +69,8 @@ export class MentorApplicantsTabComponent {
   protected readonly statusPills = MENTORSHIP_MENTOR_APPLICANT_STATUS_FILTER_PILLS;
   protected readonly viewTasksLabel = MENTORSHIP_APPLICANT_VIEW_TASKS_LABEL;
   protected readonly minimizeTasksLabel = MENTORSHIP_APPLICANT_MINIMIZE_TASKS_LABEL;
+  protected readonly contactLabel = MENTORSHIP_CURRENT_MENTEE_ACTION_LABELS['contact-mentee'];
+  protected readonly contactIcon = MENTORSHIP_CURRENT_MENTEE_ACTION_ICONS['contact-mentee'];
 
   protected readonly form = new FormGroup({
     search: new FormControl('', { nonNullable: true }),
@@ -136,6 +150,8 @@ export class MentorApplicantsTabComponent {
       // `tasks` but with upstream's `tasksTotal`, and View Tasks would open an empty panel.
       hasTasks: !!person.tasks?.length,
       taskRows: mentorshipApplicantTaskRows(person.tasks ?? []),
+      // Offered at every status; null drops the link when the address is not safe to put in a `mailto:`.
+      contactUrl: mentorshipContactMenteeUrl(person.email),
     };
   }
 }

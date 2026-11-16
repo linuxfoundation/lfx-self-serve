@@ -13,6 +13,7 @@ import {
   BRAND_KIT_MAX_LOGO_FILE_CHARS,
   BRAND_KIT_MAX_LOGO_FILES,
   BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+  BRAND_KIT_MAX_LOGO_ZIP_BYTES,
   BRAND_KIT_REQUIRED_HEADINGS,
 } from './brand-kit.constants';
 import {
@@ -46,6 +47,18 @@ import {
   FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
+import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
+
+/** A start must explicitly discard the current active run before replacing it. */
+export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
+/** Another writer already accepted the answers for this exact questions turn. */
+export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
+/** A discarded or superseded session cannot accept another turn. */
+export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
+/** Only a failed started run can be dismissed from the Documents page. */
+export const MKTG_RUN_NOT_FAILED = 'MKTG_RUN_NOT_FAILED';
+/** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
+export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -131,9 +144,10 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   logoFiles: {
     title: 'Logo files',
     hint: 'the horizontal lockup, the stacked lockup and the symbol',
-    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. A file too big to send, or one on the site, goes as a link (SVG only); the agent fetches it. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
+    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. Keep a ZIP small: SVG files only, under 150 KB; the full logo package linked on a brand page is usually too large to send. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
     maxFiles: BRAND_KIT_MAX_LOGO_FILES,
     maxFileChars: BRAND_KIT_MAX_LOGO_FILE_CHARS,
+    maxZipBytes: BRAND_KIT_MAX_LOGO_ZIP_BYTES,
     maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
     fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
   },
@@ -684,7 +698,10 @@ export const ICP_INTAKE: MktgAgentIntake = {
 /** Dedicated per-user profile and source intake; no project dependencies or feedback round. */
 export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   agentId: 'linkedin-post',
+  liveActivity: true,
   oneOffDocument: true,
+  tracksDocumentRun: true,
+  lastIntakeFields: ['content_source', 'content_text', 'content_url', LINKEDIN_SHARE_LINK_ANSWER_KEY],
   formTitleAction: 'Draft',
   documentName: 'LinkedIn post',
   intro: 'Three post options in your voice, from pasted text, a link or a file.',
@@ -705,7 +722,7 @@ export const AEO_GEO_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Run',
   documentName: 'AEO/GEO report',
   intro:
-    'Scores how a website shows up in AI search and answer engines, with prioritized recommendations. One input: the site. Each run is its own report; nothing is revised, run again instead.',
+    'Scores how a website shows up in AI search and answer engines, with prioritised recommendations. One input: the site. Each audit is its own report; to update it, audit again.',
   batchPreamble: [],
   fields: [
     { key: 'domain', question: 'The website to audit', kind: 'text' },
@@ -736,13 +753,19 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
   'member-360': {
     agentId: 'member-360',
+    oneOffDocument: true,
+    tracksDocumentRun: true,
     formTitleAction: 'Run',
     documentName: 'Member 360',
     intro: 'Scores member engagement for the active, entitlement-checked project.',
     batchPreamble: [],
     fields: [],
     sections: ['Member Ranking', 'Actions by Team', 'Evidence', 'Method'],
-    endpoints: { generate: '/api/mktg-agents/member-360/generate', result: '/api/mktg-agents/member-360/result' },
+    endpoints: {
+      generate: '/api/mktg-agents/member-360/generate',
+      result: '/api/mktg-agents/member-360/result',
+      answers: '/api/mktg-agents/member-360/answers',
+    },
     persistsDocument: true,
     regenerateViaGenerate: true,
   },
@@ -899,6 +922,8 @@ export const MKTG_RUN_POLL = {
   initialDelayMs: 4000,
   /** Interval between subsequent polls. */
   intervalMs: 5000,
+  /** Reconcile another writer's answers while a questions screen is open. */
+  questionsIntervalMs: 10000,
   /** Overall deadline for the agent's validated document to appear. */
   timeoutMs: 600000,
 } as const;
@@ -915,11 +940,28 @@ export const MKTG_RUN_POLL = {
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
 
+/**
+ * Absolute cap on raw Guild event pages (500 each) read for one result request:
+ * 10,000 raw events. Guild serves a session's events oldest-first, so the
+ * finalize receipt and the root envelope ride the LAST page, and the loop is
+ * sized from the API's `pagination.total_count`; this cap only bounds it. A
+ * Member 360 session writes about 8 raw events per member (a 308-member
+ * foundation: 2,558 events; the biggest session seen: 3,037). A safety bound,
+ * not a product limit: past it the truncation marker is appended as before.
+ */
+export const MKTG_RAW_EVENTS_MAX_PAGES = 20;
+
 /** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
 export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
 /** Content-free BFF marker: a user/trigger turn queued before runtime_start appears. */
 export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
 /** Model reasoning is never a reply, a questions turn, or feed activity. */
 export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-progress';
-/** Stable questions-block hash carried by accepted-answers continuation. */
-export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;
+/** Stable questions-block hash: catalog's short digest or LinkedIn's full SHA-256. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;
+
+/** Plain validation message shared by every answers transport. */
+export const MKTG_ANSWERS_INCOMPLETE_MESSAGE = 'Every question needs an answer before the agent can continue.';
+
+/** Only LinkedIn's stable avoid question accepts a literal none answer. */
+export const MKTG_NONE_ALLOWED_QUESTION_IDS: readonly string[] = ['avoid'];

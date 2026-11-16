@@ -2,10 +2,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="lfxn-float" [class.lfxn-float--mobile]="mobile()" data-testid="navbar">
-  <nav class="lfxn" aria-label="LFX navigation" data-testid="sidebar">
+  <nav #panel class="lfxn" aria-label="LFX navigation" data-testid="sidebar">
     <div class="lfxn__top">
       <div class="lfxn__head">
-        <!-- Brand row: LF symbol + LF apps menu, Create -->
+        <!-- Brand row: LF symbol + LF apps menu; sidebar toggle, Create. On the rail the actions stack under the logo
+             (column-reverse, so DOM order matters): Create, separator, toggle. -->
         <div class="lfxn__brand-row">
           <button
             type="button"
@@ -23,16 +24,43 @@
             <span class="lfxn__brand-menu"><i class="fa-light fa-ellipsis-vertical" aria-hidden="true"></i></span>
           </button>
           <div class="lfxn__head-actions">
+            @if (showSidebarToggle()) {
+              <button
+                type="button"
+                class="lfxn__icon-btn lfxn__icon-btn--toggle"
+                data-flip="side"
+                (click)="onToggleClick($event)"
+                [attr.aria-label]="toggleLabel()"
+                [attr.aria-expanded]="!railVisible()"
+                [lfxNavTooltip]="toggleLabel()"
+                [lfxNavTooltipPlacement]="headTooltipPlacement()"
+                data-testid="navbar-collapse-toggle">
+                <span class="lfxn__icon-btn-glyph">
+                  @if (railVisible()) {
+                    <i class="fa-light fa-bars" aria-hidden="true"></i>
+                  } @else {
+                    <svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+                      <rect x="0.65" y="0.65" width="12.7" height="10.7" rx="2.6" />
+                      <line x1="5" y1="0.65" x2="5" y2="11.35" />
+                    </svg>
+                  }
+                </span>
+              </button>
+            }
             @if (createPermissionService.canShowCreateButton()) {
+              @if (!mobile()) {
+                <span class="lfxn__collapse-sep" data-flip="sep" aria-hidden="true"></span>
+              }
               <button
                 type="button"
                 class="lfxn__icon-btn lfxn__icon-btn--accent"
+                data-flip="create"
                 (click)="toggleCreateMenu($event)"
                 aria-label="Create new artifact"
                 aria-haspopup="menu"
                 [attr.aria-expanded]="createMenuOpen()"
                 lfxNavTooltip="Create"
-                lfxNavTooltipPlacement="bottom"
+                [lfxNavTooltipPlacement]="headTooltipPlacement()"
                 [attr.data-testid]="mobile() ? 'create-rail-button-mobile' : 'create-rail-button'">
                 <span class="lfxn__icon-btn-glyph"><i class="fa-light fa-plus" aria-hidden="true"></i></span>
               </button>
@@ -111,7 +139,8 @@
             variant="navbar"
             [(isPanelOpen)]="selectorPanelOpen"
             [enabled]="effectiveShowOrgSelector()"
-            (itemSelected)="onOrgSelected()"></lfx-org-selector>
+            (itemSelected)="onOrgSelected()"
+            (rollUpSelected)="onOrgSelected()"></lfx-org-selector>
         </div>
 
         <!-- Context card: me. [class.hidden] avoids SSR hydration mismatch. -->
@@ -138,6 +167,8 @@
                   class="lfxn__me-role"
                   [attr.aria-label]="role.ariaLabel"
                   [style.--lfxn-role-ink]="role.ink"
+                  [style.--lfxn-role-ink-light]="role.inkLight"
+                  [style.--lfxn-role-fill-light]="role.fillLight"
                   [style.z-index]="roleMarks().length - i"
                   [lfxNavTooltip]="role.title"
                   [lfxNavTooltipIcon]="role.icon"
@@ -298,6 +329,8 @@
         aria-label="Account menu"
         aria-haspopup="menu"
         [attr.aria-expanded]="userMenuOpen()"
+        [lfxNavTooltip]="railVisible() ? (user()?.name ?? '') : ''"
+        lfxNavTooltipPlacement="right"
         data-testid="lens-user-avatar">
         <span class="lfxn__avatar">
           @if (photoUrl(); as photo) {
@@ -306,8 +339,6 @@
             <span class="lfxn__avatar-initials">{{ userInitials() }}</span>
           }
         </span>
-        <span class="lfxn__user-name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
-        <i class="fa-light fa-chevron-down" aria-hidden="true"></i>
       </button>
 
       <div class="lfxn__foot-actions">
@@ -376,7 +407,7 @@
   @if (item.routerLink) {
     <a
       [routerLink]="item.routerLink"
-      [queryParams]="projectQueryParams()"
+      [queryParams]="carriedQueryParams()[item.trackKey] ?? projectQueryParams()"
       [routerLinkActive]="item.activeAliases?.length ? '' : 'is-active'"
       [routerLinkActiveOptions]="item.activeMatchOptions"
       #rla="routerLinkActive"
@@ -513,7 +544,12 @@
 </p-popover>
 
 <!-- Account menu — pinned just above the footer, styled like the brand menu. -->
-<p-popover #userMenu appendTo="body" styleClass="lfxn-menu-popover lfxn-account-popover" (onShow)="userMenuOpen.set(true)" (onHide)="userMenuOpen.set(false)">
+<p-popover
+  #userMenu
+  appendTo="body"
+  [styleClass]="bannerOffset() ? 'lfxn-menu-popover lfxn-account-popover lfxn-account-popover--banner-offset' : 'lfxn-menu-popover lfxn-account-popover'"
+  (onShow)="userMenuOpen.set(true)"
+  (onHide)="userMenuOpen.set(false)">
   <ng-template #content>
     <div class="lfxn-account-menu" data-testid="navbar-account-menu">
       <div class="lfxn-account-menu__head">
@@ -527,6 +563,9 @@
         <span class="lfxn-account-menu__identity">
           <span class="lfxn-account-menu__name" [lfxNavTooltip]="user()?.name ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.name }}</span>
           <span class="lfxn-account-menu__email" [lfxNavTooltip]="user()?.email ?? ''" [lfxNavTooltipOnlyIfTruncated]="true">{{ user()?.email }}</span>
+          @if (lfid(); as id) {
+            <span class="lfxn-account-menu__lfid" data-testid="account-menu-lfid">LFID: {{ id }}</span>
+          }
         </span>
       </div>
 
@@ -544,6 +583,58 @@
         <i class="fa-light fa-circle-question" aria-hidden="true"></i>
         <span>Support</span>
       </button>
+
+      <!-- Desktop only: the mobile drawer's sidebar is always dark. -->
+      @if (!mobile()) {
+        <div class="lfxn-account-menu__row lfxn-account-menu__row--static" data-testid="sidebar-theme-row">
+          <i class="fa-light fa-palette" aria-hidden="true"></i>
+          <span class="lfxn-account-menu__row-label">Sidebar theme</span>
+          <lfx-ui-switch
+            class="lfxn-account-menu__row-trail"
+            ariaLabel="Sidebar theme"
+            size="tiny"
+            [value]="sidebarTheme.theme()"
+            (valueChange)="onSidebarThemeChange($event)"
+            data-testid="sidebar-theme-switch">
+            @for (option of sidebarThemeOptions; track option.value) {
+              <lfx-ui-switch-option
+                [value]="option.value"
+                [label]="option.label"
+                [icon]="option.icon"
+                [iconOnly]="true"
+                [attr.data-testid]="'sidebar-theme-' + option.value" />
+            }
+          </lfx-ui-switch>
+        </div>
+      }
+
+      <!-- The footer's Documentation, What's New and Impersonate, repeated only on the rail, where the footer actions are out of
+           reach. A peek or the docked-open panel shows the footer, so the menu leaves them out. -->
+      @if (railVisible()) {
+        <div class="lfxn-account-menu__rule" role="separator"></div>
+        <button type="button" class="lfxn-account-menu__row" (click)="navigateToDocs()" data-testid="lens-docs-menu-item">
+          <i class="fa-light fa-book-open" aria-hidden="true"></i>
+          <span>Documentation</span>
+        </button>
+        <button
+          type="button"
+          class="lfxn-account-menu__row"
+          (click)="openChangelogDrawer()"
+          [attr.aria-label]="changelogAriaLabel()"
+          data-testid="lens-changelog-menu-item">
+          <i class="fa-light fa-gift" aria-hidden="true"></i>
+          <span>What's New</span>
+          @if (unseenChangelogCount() > 0) {
+            <span class="lfxn-account-menu__dot" aria-hidden="true"></span>
+          }
+        </button>
+        @if (canImpersonate() && !isImpersonating()) {
+          <button type="button" class="lfxn-account-menu__row" (click)="openImpersonationDialog()" data-testid="lens-impersonate-menu-item">
+            <i class="fa-light fa-user-secret" aria-hidden="true"></i>
+            <span>Impersonate User</span>
+          </button>
+        }
+      }
 
       <div class="lfxn-account-menu__rule" role="separator"></div>
 

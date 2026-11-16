@@ -38,9 +38,9 @@
           <img [src]="logoUrl()" [alt]="record().name + ' logo'" class="h-full w-full rounded-md object-contain" data-testid="org-profile-edit-logo-image" />
         } @else {
           <div
-            class="flex h-full w-full items-center justify-center rounded-md bg-blue-600 text-xl font-semibold text-white"
-            data-testid="org-profile-edit-logo-initials">
-            {{ (record().name | initials) || 'OR' }}
+            class="flex h-full w-full items-center justify-center rounded-md bg-gray-100 text-sm font-medium text-gray-500"
+            data-testid="org-profile-edit-logo-empty">
+            No logo
           </div>
         }
         @if (logoUploading()) {
@@ -73,7 +73,7 @@
           [loading]="logoUploading()"
           (onClick)="triggerLogoUpload()"
           data-testid="org-profile-edit-upload-logo-button" />
-        <p class="text-xs text-gray-500">PNG, JPEG, or SVG, not more than 2MB. SVGs are sanitized; those using unsupported CSS may be rejected.</p>
+        <p class="text-xs text-gray-500">SVG only, not more than 2MB. SVGs are sanitized; those using unsupported CSS may be rejected.</p>
       </div>
     </header>
 

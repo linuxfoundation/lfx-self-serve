@@ -12,7 +12,7 @@ import type { MktgStoredDocumentRunState } from '../interfaces/mktg-document-run
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
 import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
 
-/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`. */
+/** Documents API: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`, `POST …/runs/:runId/retry`, `POST …/runs/:runId/dismiss`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
 /** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */
@@ -43,6 +43,7 @@ export const MKTG_STARTED_RUN_STATE_ORDER: Record<MktgStoredDocumentRunState, nu
   failed: 3,
   superseded: 4,
   completed: 5,
+  discarded: 6,
 };
 
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
@@ -79,6 +80,9 @@ export const MKTG_REVISION_ID_REGEX = /^((?!000000)[0-9]{6}-[0-9a-f]{64}|legacy-
 export const MKTG_DOCUMENT_READ_CONCURRENCY = 4;
 export const MKTG_DOCUMENT_WRITE_ATTEMPTS = 8;
 export const MKTG_DOCUMENT_CURRENT_KEY = 'current.json';
+/** The last successfully resolved display name per subject, served when a directory lookup fails: at most this many subjects, each for this long after its last success. */
+export const MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT = 500;
+export const MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
 function catalogAgentName(catalogAgentId: string): string {
@@ -177,8 +181,11 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   },
 ];
 
-/** Collapsed document-view history keeps this many newest revisions, plus open/current rows. */
-export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 5;
+/** Maximum collapsed document-view rows, including the open and current revisions. */
+export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 4;
+
+/** Side-panel action help, shared by its tooltip and accessible description. */
+export const MKTG_DOCUMENT_MAKE_CURRENT_HINT = 'Agents read the current version. Nothing is added or deleted.';
 
 /** Maximum status characters stored in S3 metadata, including the truncation ellipsis. */
 export const MKTG_REVISION_STATUS_METADATA_MAX_CHARS = 200;

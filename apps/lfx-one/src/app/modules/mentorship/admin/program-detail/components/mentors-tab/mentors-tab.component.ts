@@ -26,6 +26,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS,
   MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE,
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
@@ -48,7 +49,8 @@ import {
   MentorshipAdminMentorStatus,
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { formatIsoDateLabel, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipUpstreamReasonMessage } from '@lfx-one/shared/utils';
+import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { AutoCompleteCompleteEvent } from 'primeng/autocomplete';
@@ -73,6 +75,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
     InputTextComponent,
     SelectComponent,
     TableComponent,
+    MentorshipPublicUrlPipe,
   ],
   providers: [ConfirmationService],
   templateUrl: './mentors-tab.component.html',
@@ -85,6 +88,11 @@ export class MentorsTabComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly programId = input.required<string>();
+  /**
+   * True when the program is upstream `published`. Upstream only serves public mentee and mentor pages through a
+   * published program, so names link only then.
+   */
+  public readonly programPublished = input(false);
   /**
    * Has the parent program page read its tab counts again. A callback rather than an output, as on Current Mentees:
    * a write that lands after a tab switch destroyed this tab must still refresh the parent's counts.
@@ -274,6 +282,8 @@ export class MentorsTabComponent {
       statusBadgeClass: MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES[person.status],
       invitationLabel: person.invitedOn ? formatIsoDateLabel(person.invitedOn) : '—',
       profileCreatedLabel: person.profileCreated ? 'Yes' : 'No',
+      // Any mentor with a profile on a published program links, whatever the status.
+      hasPublicPage: this.programPublished() && !!person.profileCreated,
       profileCreatedClass: person.profileCreated ? 'text-emerald-600' : 'text-red-600',
       actions: MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS[person.status].map((action) => ({
         ...action,
@@ -327,8 +337,9 @@ export class MentorsTabComponent {
 
   /**
    * A 409 means the person is already invited or a mentor, so the field clears and the page reloads to show them. A 400
-   * (an unpublished program), a 422 (no LF account), a 503 (account lookup down) and every other failure keep the pick
-   * so the admin can retry.
+   * (an unpublished program), a 422 (no LF account, or another reason upstream names; see
+   * `MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS`), a 503 (account lookup down) and every other failure keep the
+   * pick so the admin can retry.
    */
   private onInviteError(err: unknown): void {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
@@ -343,7 +354,8 @@ export class MentorsTabComponent {
       return;
     }
     if (status === 422) {
-      this.showToast('error', 'Error', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE, 5000);
+      const reason = mentorshipUpstreamReasonMessage(MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS, serverAuthoredMessage(err, ''));
+      this.showToast('error', 'Error', reason ?? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE, 5000);
       return;
     }
     if (status === 503) {

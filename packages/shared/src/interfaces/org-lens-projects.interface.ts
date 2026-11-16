@@ -167,6 +167,17 @@ export interface OrgLensProjectsResponse {
   dataUpdatedAt: string;
   /** All projects the organization is associated with. */
   projects: OrgLensProject[];
+  /**
+   * Present (and `true`) only when the maintainer roles table could not be read: every project's `maintainers`
+   * is then empty because the data is unavailable, not because the org has no maintainers. Such a response is
+   * never cached, so the compact cache encoding never needs to carry it.
+   */
+  maintainerRolesUnavailable?: true;
+  /**
+   * Present (and `true`) only when Exclude team members was asked but the team-member flag could not be read
+   * (lfx-self-serve-ops#1246): the contributors then include CDP team members. Never cached, like the flag above.
+   */
+  teamMembersUnavailable?: true;
 }
 
 export interface OrgLensProjectSearchResult {

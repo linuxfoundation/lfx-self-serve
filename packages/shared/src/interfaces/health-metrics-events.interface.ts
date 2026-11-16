@@ -15,7 +15,7 @@ import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-me
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
 
-/** Events' sub-nav badge, keyed to its own sections. */
+/** Events' sub-nav entry, keyed to its own sections. */
 export interface HealthMetricsEventsSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsEventsSectionKey;
 }
@@ -51,7 +51,7 @@ export interface HealthMetricsEventsForecastEvent {
   priorYearSamePoint: number | null;
   /** `null` when no goal is set. */
   goal: number | null;
-  /** Whole days from today to the event, `0` on the event day. */
+  /** Whole days from today to the event, `0` on the event day, `null` once a running event is past its start day. */
   daysLeft: number | null;
   /** True only when every format is a first edition. */
   isNewEvent: boolean;
@@ -313,7 +313,6 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   rows: HealthMetricsEventsRegistrationsGrowthRowView[];
   /** Years spanned, gap years included, so the count matches the table. */
   yearCount: number;
-  hasPartialYear: boolean;
   /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
   pandemicNote: string | null;
 }
@@ -395,6 +394,8 @@ export interface HealthMetricsEventsRevenueView {
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
+  /** `false` when the period lists no event, has no non-zero figure and no unconverted revenue, so it reads as empty. */
+  hasRevenue: boolean;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
   /** Upcoming events soonest first (current-year view only, as they fall in no period), then the period's past events latest first. */
@@ -715,10 +716,62 @@ export interface HealthMetricsEventsGeographyView {
   foundationMeasured: boolean;
   /** `false` when no country has a registration in the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** Countries represented, for the sub-nav badge; `null` when unmeasured. */
-  countries: number | null;
   /** e.g. `42 countries`; empty when unmeasured. */
   countriesLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;
   topCountries: HealthMetricsEventsRankedRowView[];
+}
+
+/** The event dialog Snapshot's period switch. */
+export type HealthMetricsEventsSnapshotPeriod = '7d' | '30d' | '90d';
+
+/** One option on the Snapshot's period switch: its label and the days it spans. */
+export interface HealthMetricsEventsSnapshotPeriodOption {
+  value: HealthMetricsEventsSnapshotPeriod;
+  label: string;
+  days: number;
+}
+
+/** `GET /api/analytics/events-snapshot` query: one event, scoped to the foundation it belongs to. */
+export interface HealthMetricsEventsSnapshotQuery {
+  foundationSlug: string;
+  eventId: string;
+}
+
+/**
+ * One completed ISO week of an event's registrations: the cumulative levels at its end and the change during it.
+ * The newest week's levels run through yesterday, past the week's own end.
+ */
+export interface HealthMetricsEventsSnapshotWeek {
+  /** `YYYY-MM-DD`, a Monday. */
+  weekStartDate: string;
+  /** `YYYY-MM-DD`, a Sunday. */
+  weekEndDate: string;
+  registrations: number;
+  registrationsDelta: number;
+  registrationRevenueUsd: number;
+  registrationRevenueDeltaUsd: number;
+  /** Whether the week overlaps each trailing period, as the view flags it. */
+  inPeriod: Record<HealthMetricsEventsSnapshotPeriod, boolean>;
+}
+
+/** One sponsorship package: how many are sold in all, and how many of those in each trailing period. */
+export interface HealthMetricsEventsSnapshotPackage {
+  tier: string;
+  sold: number;
+  soldInPeriod: Record<HealthMetricsEventsSnapshotPeriod, number>;
+  revenueUsd: number;
+}
+
+/** `GET /api/analytics/events-snapshot` — an event's registration weeks and sponsorship packages, for the Snapshot tab. */
+export interface HealthMetricsEventsSnapshot {
+  /** `YYYY-MM-DD` that the warehouse read as today; every figure runs through the day before. `null` with no rows. */
+  today: string | null;
+  /** Oldest first. */
+  weeks: HealthMetricsEventsSnapshotWeek[];
+  /** Packages with at least one sold, priciest per package first. */
+  packages: HealthMetricsEventsSnapshotPackage[];
+  /** Every sponsorship line, taxes and fees included, as the view counts them. */
+  sponsorshipRevenueUsd: number;
+  sponsorshipRevenueInPeriodUsd: Record<HealthMetricsEventsSnapshotPeriod, number>;
 }

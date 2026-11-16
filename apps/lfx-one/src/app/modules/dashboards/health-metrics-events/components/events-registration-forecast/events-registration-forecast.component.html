@@ -27,14 +27,7 @@
       data-testid="events-registration-forecast-error" />
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-registration-forecast-loading" aria-hidden="true" />
-  } @else if (response().events.length === 0) {
-    <lfx-empty-state
-      variant="compact"
-      icon="fa-light fa-chart-line"
-      title="No upcoming events to forecast"
-      subtitle="There are no upcoming events to forecast. Once an event is scheduled, its projection appears here."
-      data-testid="events-registration-forecast-empty" />
-  } @else {
+  } @else if (!empty()) {
     @if (selectedEvent()) {
       <!-- Pills carry the name only; the selected event's date sits at the row's end. -->
       <div class="flex flex-wrap items-center gap-[10px]">
@@ -204,10 +197,10 @@
       <lfx-table styleClass="hm-table" [rowHover]="false" [value]="rowViews()" data-testid="events-registration-forecast-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Event</span></th>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Date</span></th>
-            <th scope="col" class="w-[220px]"><span class="text-[12px] font-normal text-gray-500">Registrations vs goal</span></th>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Status</span></th>
+            <th scope="col">Event</th>
+            <th scope="col">Date</th>
+            <th scope="col" class="w-[220px]">Registrations vs goal</th>
+            <th scope="col">Status</th>
           </tr>
         </ng-template>
 
@@ -252,7 +245,5 @@
         </ng-template>
       </lfx-table>
     </div>
-
-    <lfx-health-metrics-footnote [parts]="footnote" data-testid="events-registration-forecast-footnote" />
   }
 </div>

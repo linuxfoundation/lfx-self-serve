@@ -15,7 +15,7 @@ export interface OrgFoundationCoverageResponse {
   foundations: OrgFoundationCoverageFoundation[];
 }
 
-/** GET /api/analytics/org-involvement-contributors-monthly — cross-foundation active contributors (12-month window). */
+/** GET /api/analytics/org-involvement-contributors-monthly — active contributors in all projects (lfx-self-serve#4694). */
 export interface OrgInvolvementContributorsMonthlyResponse {
   accountId: string;
   totalActiveContributors: number;
@@ -23,12 +23,15 @@ export interface OrgInvolvementContributorsMonthlyResponse {
   monthlyLabels: string[];
 }
 
-/** GET /api/analytics/org-involvement-maintainers-monthly — cross-foundation maintainers (12-month window). */
+/** GET /api/analytics/org-involvement-maintainers-monthly — the account's maintainer roles in all projects (lfx-self-serve#4482, #4694). */
 export interface OrgInvolvementMaintainersMonthlyResponse {
   accountId: string;
-  accountName: string;
-  totalMaintainersYearly: number;
-  totalProjectsYearly: number;
+  /**
+   * Maintainer roles in all projects overlapping the last 2 years to today — the same count as People -> Contributors at its defaults.
+   * `null` when the roles table is unavailable (never shown as zero).
+   */
+  maintainerRoles: number | null;
+  /** Maintainer roles in all projects held in each month, oldest first. */
   monthlyData: number[];
   monthlyLabels: string[];
 }
@@ -37,32 +40,11 @@ export interface OrgInvolvementMaintainersMonthlyResponse {
 export interface OrgInvolvementEventAttendanceMonthlyResponse {
   accountId: string;
   accountName: string;
+  /** Distinct people who registered or attended foundation events over the window — NOT the sum of the monthly points. */
   totalAttended: number;
+  /** Distinct accepted speakers over the window — NOT the sum of the monthly points. */
   totalSpeakers: number;
   attendeesMonthlyData: number[];
   speakersMonthlyData: number[];
   monthlyLabels: string[];
-}
-
-/** GET /api/analytics/org-involvement-certified-employees-monthly — cross-foundation certified employees (12-month window). */
-export interface OrgInvolvementCertifiedEmployeesMonthlyResponse {
-  accountId: string;
-  totalCertifications: number;
-  totalCertifiedEmployees: number;
-  monthlyData: number[];
-  monthlyLabels: string[];
-}
-
-/** Daily data point for training enrollments. */
-export interface OrgTrainingEnrollmentDailyDataPoint {
-  date: string;
-  count: number;
-  cumulativeCount: number;
-}
-
-/** GET /api/analytics/org-involvement-training-enrollments — cross-foundation training enrollments YTD (daily grain). */
-export interface OrgTrainingEnrollmentsResponse {
-  accountId: string;
-  totalEnrollments: number;
-  dailyData: OrgTrainingEnrollmentDailyDataPoint[];
 }

@@ -23,13 +23,15 @@ const { natsRequest, loggerMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('./nats.service', () => ({
-  NatsService: vi.fn(() => ({
-    getCodec: () => ({
-      encode: (value: string) => new TextEncoder().encode(value),
-      decode: (data: Uint8Array) => new TextDecoder().decode(data),
-    }),
-    request: natsRequest,
-  })),
+  NatsService: vi.fn(function () {
+    return {
+      getCodec: () => ({
+        encode: (value: string) => new TextEncoder().encode(value),
+        decode: (data: Uint8Array) => new TextDecoder().decode(data),
+      }),
+      request: natsRequest,
+    };
+  }),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMock }));
 

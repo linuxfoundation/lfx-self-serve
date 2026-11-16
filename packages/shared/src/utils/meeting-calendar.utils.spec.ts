@@ -20,7 +20,8 @@ import {
   resolvePublicCalendarLegend,
 } from './meeting-calendar.utils';
 
-import type { PublicCalendarMeeting } from '../interfaces';
+import { MeetingVisibility } from '../enums';
+import type { Meeting, PublicCalendarMeeting } from '../interfaces';
 import type { PublicCalendarCommittee, PublicCalendarCommitteeContext } from '../interfaces/calendar.interface';
 
 describe('meetingToCalendarEvents', () => {
@@ -44,6 +45,49 @@ describe('meetingToCalendarEvents', () => {
     } as never);
 
     expect(events[0].classNames).toContain('meeting-event-past');
+  });
+
+  describe('project prefix for rolled-up meetings', () => {
+    // Complete typed defaults, so a change to the Meeting interface fails type checking here.
+    function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
+      return {
+        id: 'm-1',
+        created_at: '',
+        modified_at: '',
+        project_uid: 'child',
+        project_name: 'TraderX',
+        start_time: new Date(Date.now() + 60 * 60_000).toISOString(),
+        duration: 30,
+        timezone: 'UTC',
+        title: 'Weekly sync',
+        description: '',
+        recurrence: null,
+        committees: [],
+        meeting_type: 'Technical',
+        visibility: MeetingVisibility.PUBLIC,
+        restricted: false,
+        recording_enabled: null,
+        transcript_enabled: null,
+        youtube_upload_enabled: null,
+        artifact_visibility: null,
+        cancel_on_committee_removal: null,
+        organizers: [],
+        password: null,
+        invited: false,
+        occurrences: [],
+        ...overrides,
+      };
+    }
+    const subProjectMeeting = buildMeeting();
+
+    it('prefixes the project name when the meeting belongs to another project', () => {
+      expect(meetingToCalendarEvents(subProjectMeeting, 'foundation')[0].title).toBe('TraderX · Weekly sync');
+    });
+
+    it('leaves the title alone for the calendar project itself or without a context', () => {
+      expect(meetingToCalendarEvents(subProjectMeeting, 'child')[0].title).toBe('Weekly sync');
+      expect(meetingToCalendarEvents(subProjectMeeting)[0].title).toBe('Weekly sync');
+    });
   });
 });
 

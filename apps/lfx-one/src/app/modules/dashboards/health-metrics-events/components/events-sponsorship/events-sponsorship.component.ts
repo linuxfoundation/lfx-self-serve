@@ -31,8 +31,8 @@ export class EventsSponsorshipComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the section settles — this section's height changes, moving every anchor below. */
-  public readonly settled = output<void>();
+  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
+  public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -47,6 +47,8 @@ export class EventsSponsorshipComponent {
   protected readonly view: Signal<HealthMetricsEventsSponsorshipView> = computed(() =>
     buildHealthMetricsEventsSponsorshipView(this.response(), this.chrome.selectedRange())
   );
+  /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -54,7 +56,7 @@ export class EventsSponsorshipComponent {
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => {
-          if (!this.loadFailed() && !this.loading()) this.settled.emit();
+          if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyView(this.view()));
         });
     }
   }
@@ -84,10 +86,11 @@ export class EventsSponsorshipComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED);
             }),
-            tap(() => {
+            tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen)
+                this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsSponsorshipView(response, this.chrome.selectedRange())));
             })
           )
         )
@@ -95,4 +98,9 @@ export class EventsSponsorshipComponent {
       { initialValue: HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED }
     );
   }
+}
+
+/** Whether the period has nothing to show: the foundation or the period was never measured. */
+function isEmptyView(view: HealthMetricsEventsSponsorshipView): boolean {
+  return !view.foundationMeasured || !view.measured;
 }

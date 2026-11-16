@@ -47,6 +47,13 @@ export const CLA_GROUP_ORG_SOURCE_ICONS = {
 export const MY_CLAS_PATH = '/profile/clas';
 
 /**
+ * Maximum number of values `GET /v4/my-clas` accepts in each repeatable `gitlabId` and `gitlabUsername` query
+ * param (`maxItems: 100` in easycla cla-backend-go/swagger/cla.v2.yaml). Exceeding it fails
+ * validation and 400s the whole request, so each linked-GitLab key list is capped (#4191).
+ */
+export const MY_CLAS_MAX_IDENTITY_KEYS = 100;
+
+/**
  * The Contributor Console's Gerrit signing route, as its own router declares it
  * (`cla/gerrit/project/:projectId/:contractType`). The contract-type segment is chosen on
  * the Gerrit path from the group's enablement flags (#2066).
@@ -119,10 +126,9 @@ export const SIGN_IDENTITY_PLATFORM_LABELS = {
 } as const;
 
 /**
- * Why a GitLab-linked CLA Group cannot be signed here. An identity gap, not a configuration
- * flag: GitLab signing authenticates the contributor through GitLab OAuth at signing time and
- * keys the EasyCLA user record on the GitLab numeric id, and Self Serve can neither obtain nor
- * verify a GitLab identity today.
+ * GitLab account linking is supported in Profile → Identities, but the CLA signing flow
+ * does not yet implement GitLab identity selection or the signing handoff. Linking a
+ * GitLab account does not enable signing a GitLab-only CLA Group here.
  */
 export const GITLAB_UNSUPPORTED_MESSAGE = 'Signing CLA using GitLab is not supported from Self Serve';
 
@@ -987,12 +993,18 @@ export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
 
 export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;
 
+const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+
+const ORG_CLA_MANAGER_DESIGNEE_ROLE = 'cla-manager-designee';
+
 /**
- * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager` on one `project|organization`
- * scope per CLA Group, and that scope is the only record of the role readable with their own token,
- * so it is how Self Serve finds the companies a CLA Manager without a `b2b_org` grant may open.
+ * M3 CLA-manager lens entry. A CLA Manager holds ACS `cla-manager`, and the initial CLA Manager
+ * designee holds `cla-manager-designee` until the CCLA is signed (EasyCLA then removes it), each on
+ * one `project|organization` scope per CLA Group. That scope is the only record of either role
+ * readable with the caller's own token, so it is how Self Serve finds the companies whose EasyCLA
+ * tab a caller without a `b2b_org` grant may open. `cla-signatory` and `company-admin` never qualify.
  */
-export const ORG_CLA_MANAGER_ROLE = 'cla-manager';
+export const ORG_CLA_LENS_ENTRY_ROLES: readonly string[] = [ORG_CLA_MANAGER_ROLE, ORG_CLA_MANAGER_DESIGNEE_ROLE];
 
 /** The ACS scope type that pairs a project with a company; its `ID` is `[projectSfid, companySfid]`. */
 export const ORG_CLA_MANAGER_SCOPE_TYPE = 'project|organization';

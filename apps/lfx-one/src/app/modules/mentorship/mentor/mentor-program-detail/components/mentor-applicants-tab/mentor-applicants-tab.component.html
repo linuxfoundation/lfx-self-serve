@@ -62,6 +62,8 @@
               [initials]="row.initials"
               [avatarStyleClass]="row.avatarStyleClass"
               [avatarUrl]="row.avatarUrl"
+              [href]="row.userId | mentorshipPublicUrl: 'mentees'"
+              [linkTestId]="'mentorship-mentor-applicant-link-' + row.id"
               [noteLabel]="row.noteLabel"
               [hasNote]="row.hasNote"
               [noteTestId]="'mentorship-mentor-applicant-note-' + row.id"
@@ -132,6 +134,20 @@
                   styleClass="whitespace-nowrap !py-2"
                   (onClick)="toggleTasksExpanded(row.id)"
                   [attr.data-testid]="'mentorship-mentor-applicant-view-tasks-' + row.id" />
+              }
+              @if (row.contactUrl) {
+                <!-- A new tab, as on the admin Current Mentees tab, so the table stays in place. -->
+                <lfx-button
+                  [icon]="contactIcon"
+                  severity="primary"
+                  size="small"
+                  [outlined]="true"
+                  [href]="row.contactUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  [tooltip]="contactLabel"
+                  [ariaLabel]="contactLabel + ': ' + row.name"
+                  [attr.data-testid]="'mentorship-mentor-applicant-contact-' + row.id" />
               }
             </div>
           </td>

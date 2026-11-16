@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -10,6 +11,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { dropOrgScopeFromUrl } from '@shared/utils/org-scope-url.util';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { OrgOverviewFoundationsAndProjectsComponent } from '../components/org-overview-foundations-and-projects/org-overview-foundations-and-projects.component';
@@ -67,4 +69,10 @@ export class OrgOverviewComponent {
   protected readonly pageState = this.emptyState.pageState;
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId: Signal<string | null> = this.orgRoleGrantsService.correlationId;
+
+  public constructor() {
+    // The Overview always counts the default organization scope (the Insights organization, or every related one for an
+    // account without it): there is no picker here, so a `?orgScope=` in the address is dropped (lfx-self-serve-ops#1219).
+    dropOrgScopeFromUrl(inject(ActivatedRoute), inject(Router));
+  }
 }

@@ -143,6 +143,12 @@ export const VALID_EVENT_SORT_ORDERS: readonly string[] = ['ASC', 'DESC'];
 export const DEFAULT_EVENTS_PAGE_SIZE = 10;
 export const MAX_EVENTS_PAGE_SIZE = 100;
 
+/** Snowflake tables the event request lists read. Interpolated into SQL, so never derive one from request input. */
+export const EVENT_REQUEST_SOURCE_TABLES = {
+  VISA_LETTERS: 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS',
+  TRAVEL_FUNDING: 'ANALYTICS.PLATINUM_LFX_ONE.TRAVEL_FUND_REQUESTS',
+} as const;
+
 export const EMPTY_MY_EVENTS_RESPONSE: MyEventsResponse = { data: [], total: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE, offset: 0 };
 export const EMPTY_EVENTS_RESPONSE: EventsResponse = { data: [], total: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE, offset: 0 };
 export const EMPTY_ORGANIZATIONS_RESPONSE: MyEventOrganizationsResponse = { data: [] };

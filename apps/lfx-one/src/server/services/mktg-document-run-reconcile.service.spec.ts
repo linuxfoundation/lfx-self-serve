@@ -12,6 +12,7 @@ import {
   MKTG_STARTED_RUN_DISCOVERY_LIMIT,
   MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
+  MKTG_ONE_OFF_STOPPED_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
@@ -33,6 +34,8 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-os-agents.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/member-360.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-one-off.constants')),
 }));
 vi.mock('@lfx-one/shared/utils', async () => vi.importActual('../../../../../packages/shared/src/utils/mktg-document-store.utils'));
 vi.mock('./mktg-document-comments.service', () => ({
@@ -104,7 +107,14 @@ vi.mock('./object-store.service', () => ({
       flows.max = Math.max(flows.max, flows.active);
       await Promise.resolve();
       flows.active--;
-      return objects.get(key) ?? null;
+      const object = objects.get(key);
+      return object ? { ...object, metadata: { ...object.metadata }, etag: hash(object.body) } : null;
+    }
+    public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      const object = objects.get(key);
+      if (!object || input.ifMatch !== hash(object.body)) return false;
+      objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date() });
+      return true;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string) {
       return [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
@@ -132,7 +142,7 @@ vi.mock('./object-store.service', () => ({
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { logger } from './logger.service';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError } from '../errors';
-import type { MktgDocumentRunCoverage, MktgGenerationAttribution, ObjectStoreListEntry } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentRunCoverage, MktgGenerationAttribution, ObjectStoreListEntry, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
 
 const req = {} as Request;
 const project = 'synthetic-project';
@@ -225,7 +235,12 @@ describe('MktgDocumentRunService', () => {
       'started-at': '2026-10-19T12:00:00.000Z',
       'retry-at': '2026-10-19T12:02:00.000Z',
     });
-    expect(stored().body).toBe(body);
+    expect(hash(stored().body)).not.toBe(hash(body));
+    expect(JSON.parse(stored().body)).toMatchObject({
+      startedAt: JSON.parse(body).startedAt,
+      creatorSubject: JSON.parse(body).creatorSubject,
+      attemptId: 'turn-new',
+    });
     flows.result.mockResolvedValue(ready(type.agentKey));
     expect((await service.reconcile(req, project))[0].state).toBe('writing'); // Prior receipt cannot finish the renewed turn.
     flows.result.mockResolvedValue({
@@ -263,12 +278,13 @@ describe('MktgDocumentRunService', () => {
     }
   );
 
-  it.each(['failed', 'refused'])('records a %s reply immediately without storing its text in size-limited metadata', async (status) => {
+  it.each(['failed', 'refused'])('marks a %s result immediately while hiding its reply from an unknown creator', async (status) => {
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic refusal <b>plain text</b> '.repeat(300);
     flows.result.mockResolvedValue({ status, failureText: reply, reply });
     const runs = await service.reconcile(req, project);
-    expect(runs[0]).toMatchObject({ state: 'failed', failureText: reply });
+    // No subject is attached to req: unknown creators must not receive prose.
+    expect(runs[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
     expect(JSON.stringify(stored().metadata)).not.toContain(reply);
     await service.retry(req, project, types[0].agentKey, 'living', hash(session));
     expect(stored().metadata['state']).toBe('writing');
@@ -312,11 +328,11 @@ describe('MktgDocumentRunService', () => {
     expect(stored().metadata['state']).toBe('completed');
   });
 
-  it('never re-queries failed runs on list reads, bounds reply metadata, and refreshes the full reply only on detail', async () => {
+  it('never re-queries failed list reads, bounds metadata and keeps unknown-reader detail copy fixed', async () => {
     await service.start(req, project, types[0].agentKey, session);
     const reply = 'Synthetic plain reply. '.repeat(300);
     flows.result.mockResolvedValue({ status: 'failed', failureText: reply });
-    expect((await service.reconcile(req, project))[0].failureText).toBe(reply);
+    expect((await service.reconcile(req, project))[0].failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
     expect(Buffer.byteLength(JSON.stringify(stored().metadata))).toBeLessThan(2048);
     vi.advanceTimersByTime(3000);
     flows.result.mockClear();
@@ -327,7 +343,35 @@ describe('MktgDocumentRunService', () => {
     expect(flows.result).not.toHaveBeenCalled();
     expect(flows.head).not.toHaveBeenCalled();
     expect(flows.get).not.toHaveBeenCalled();
-    expect((await service.refreshFailure(req, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(reply);
+    expect((await service.refreshFailure(req, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+  });
+
+  it.each(['failed', 'refused'])('keeps a %s reply and full-detail refresh available only to its authenticated creator', async (status) => {
+    const creator = { oidc: { user: { sub: 'synthetic-creator' } } } as unknown as Request;
+    const visitor = { oidc: { user: { sub: 'synthetic-visitor' } } } as unknown as Request;
+    const reply = 'Synthetic creator-only reply. '.repeat(300);
+    await service.start(creator, project, types[0].agentKey, session);
+    flows.result.mockResolvedValue({ status, failureText: reply, reply });
+    expect((await service.reconcile(creator, project))[0]).toMatchObject({ state: 'failed', failureText: reply });
+    expect(stored().metadata['state']).toBe('failed');
+    expect(Buffer.byteLength(JSON.stringify(stored().metadata))).toBeLessThan(2048);
+    expect((await service.reconcile(visitor, project))[0]).toMatchObject({ state: 'failed', failureText: MKTG_ONE_OFF_STOPPED_MESSAGE });
+    expect((await service.refreshFailure(creator, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(reply);
+    expect((await service.refreshFailure(visitor, project, types[0].agentKey, 'living', hash(session)))?.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+    vi.advanceTimersByTime(3000);
+    await service.reconcile(visitor, project); // Prime a stable, viewer-neutral terminal entry.
+    flows.result.mockClear();
+    flows.head.mockClear();
+    flows.get.mockClear();
+    for (const reader of [creator, visitor, creator, visitor]) {
+      const progress = (await service.reconcile(reader, project))[0];
+      if (reader === creator) expect(progress.failureText).toContain('Synthetic creator-only reply.');
+      else expect(progress.failureText).toBe(MKTG_ONE_OFF_STOPPED_MESSAGE);
+      expect(JSON.stringify(progress)).not.toContain('synthetic-creator');
+    }
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(flows.head).not.toHaveBeenCalled();
+    expect(flows.get).not.toHaveBeenCalled();
   });
 
   it.each(types)('passes $agentKey creator attribution separately from the visiting writer', async (type) => {

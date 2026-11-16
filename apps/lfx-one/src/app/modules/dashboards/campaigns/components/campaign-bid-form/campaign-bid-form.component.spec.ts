@@ -5,13 +5,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CAMPAIGN_BID_OUTCOME_UNCONFIRMED, CAMPAIGN_BID_STRATEGY_NOTE } from '@lfx-one/shared/constants';
 import { CampaignBidChange } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from './campaign-bid-form.component';
 
 describe('CampaignBidFormComponent', () => {
   let fixture: ComponentFixture<CampaignBidFormComponent>;
-  let submitted: ReturnType<typeof vi.fn>;
+  let submitted: Mock;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({

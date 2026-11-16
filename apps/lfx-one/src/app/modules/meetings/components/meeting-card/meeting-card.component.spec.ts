@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ApplicationRef, Component, input, output, signal } from '@angular/core';
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter, Router } from '@angular/router';
+import { provideRouter, Router, RouterLink } from '@angular/router';
 import {
   Meeting,
   MeetingAttachment,
@@ -95,6 +95,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: vi.fn(),
+            rememberRemovedRegistrants: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getMeetingDetail,
             getMeeting,
@@ -441,7 +442,9 @@ describe('MeetingCardComponent — invitee panels', () => {
     organizer: false,
   } as unknown as Meeting;
 
-  async function render(meeting: Meeting): Promise<HTMLElement> {
+  let renderedFixture: ComponentFixture<MeetingCardComponent>;
+
+  async function render(meeting: Meeting, inputs: Record<string, unknown> = {}): Promise<HTMLElement> {
     // The card's animate-on-scroll directive needs IntersectionObserver, which jsdom lacks.
     vi.stubGlobal(
       'IntersectionObserver',
@@ -483,6 +486,7 @@ describe('MeetingCardComponent — invitee panels', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: vi.fn(),
+            rememberRemovedRegistrants: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
             getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
@@ -499,6 +503,8 @@ describe('MeetingCardComponent — invitee panels', () => {
 
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
+    Object.entries(inputs).forEach(([name, value]) => fixture.componentRef.setInput(name, value));
+    renderedFixture = fixture;
     fixture.detectChanges();
     for (const block of await fixture.getDeferBlocks()) {
       await block.render(DeferBlockState.Complete);
@@ -528,6 +534,25 @@ describe('MeetingCardComponent — invitee panels', () => {
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
 
+  describe('the sub-project line', () => {
+    const projectLine = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-project-name"]')?.textContent?.trim();
+
+    it('names the project of a meeting rolled up from a sub-project', async () => {
+      const card = await render({ ...INVITED, project_uid: 'child', project_name: 'TraderX' } as Meeting, { contextProjectUid: 'foundation' });
+
+      expect(projectLine(card)).toBe('TraderX');
+    });
+
+    it.each([
+      ['the list is the meeting own project', { contextProjectUid: 'child' }],
+      ['the list has no project context', {}],
+    ])('shows no project line when %s', async (_label, inputs) => {
+      const card = await render({ ...INVITED, project_uid: 'child', project_name: 'TraderX' } as Meeting, inputs);
+
+      expect(card.querySelector('[data-testid="meeting-project"]')).toBeNull();
+    });
+  });
+
   describe('the associated group line', () => {
     const groupNames = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-groups-names"]')?.textContent?.trim();
 
@@ -550,6 +575,53 @@ describe('MeetingCardComponent — invitee panels', () => {
       } as Meeting);
 
       expect(groupNames(card)).toBe('Technical Steering Committee, Security Working Group');
+    });
+
+    it('links each group name to its group details page', async () => {
+      const card = await render({
+        ...INVITED,
+        project_slug: 'synthetic-project',
+        is_foundation: false,
+        committees: [
+          { uid: 'group-1', name: 'Technical Steering Committee' },
+          { uid: 'group-2', name: 'Security Working Group' },
+        ],
+      } as Meeting);
+
+      const first = card.querySelector('[data-testid="meeting-group-link-group-1"]') as HTMLAnchorElement;
+      const second = card.querySelector('[data-testid="meeting-group-link-group-2"]') as HTMLAnchorElement;
+      expect(first.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(first.getAttribute('href')).toContain('/group-1');
+      expect(first.getAttribute('href')).toContain('project=synthetic-project');
+      expect(second.getAttribute('href')).toContain('/group-2');
+    });
+
+    it('shows the group the card is already on as plain text, not a link to itself', async () => {
+      const card = await render(
+        {
+          ...INVITED,
+          committees: [
+            { uid: 'group-1', name: 'Technical Steering Committee' },
+            { uid: 'group-2', name: 'Security Working Group' },
+          ],
+        } as Meeting,
+        { currentGroupUid: 'group-1' }
+      );
+
+      expect(card.querySelector('[data-testid="meeting-group-link-group-1"]')).toBeNull();
+      expect(card.querySelector('[data-testid="meeting-group-text-group-1"]')?.textContent?.trim()).toBe('Technical Steering Committee');
+      expect(card.querySelector('[data-testid="meeting-group-link-group-2"]')).not.toBeNull();
+    });
+
+    it('passes the back state it is given so the group page returns to the meetings list', async () => {
+      const state = { backLabel: 'Meetings', backPath: '/meetings', fromMeLens: true };
+      const card = await render({ ...INVITED, committees: [{ uid: 'group-1', name: 'Technical Steering Committee' }] } as Meeting, {
+        groupLinkState: state,
+      });
+
+      const link = renderedFixture.debugElement.query(By.css('[data-testid="meeting-group-link-group-1"]')).injector.get(RouterLink);
+      expect(link.state).toEqual(state);
+      expect(card).toBeTruthy();
     });
 
     it('leaves a group with no resolved name out instead of showing a blank', async () => {
@@ -632,6 +704,7 @@ describe('MeetingCardComponent — remove myself', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
+            rememberRemovedRegistrants: vi.fn(),
             clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
             removeMyMeetingRegistration,
             resendMyMeetingInvitation,
@@ -1401,6 +1474,7 @@ describe('MeetingCardComponent — summary modal read-only', () => {
             attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             attachmentChanges: signal(new Map()),
             markRegistrationRemoved: vi.fn(),
+            rememberRemovedRegistrants: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
             getPastMeetingSummary: vi.fn().mockReturnValue(of(summary)),

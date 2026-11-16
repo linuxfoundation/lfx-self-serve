@@ -55,10 +55,11 @@ export class MembersRenewalsComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav count, renewals in the window; `null` while a foundation reads or when its read fails. */
-  public readonly countChange = output<number | null>();
-  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
-  public readonly settled = output<void>();
+  /**
+   * Fires once the section settles; its height changes, moving every anchor below. `false` once renewals are due;
+   * a window with none gives no verdict, keeping its own note and the window pills to widen it.
+   */
+  public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -144,8 +145,6 @@ export class MembersRenewalsComponent {
 
     // Latches on the first non-empty slug so an unresolved foundation holds the skeleton.
     let foundationSeen = false;
-    // The count covers the whole window, so only a new foundation or window blanks it; paging keeps it.
-    let countScope: string | null = null;
 
     return toSignal(
       toObservable(this.query).pipe(
@@ -154,10 +153,6 @@ export class MembersRenewalsComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          if (`${query.foundationSlug}|${query.window}` !== countScope) {
-            countScope = `${query.foundationSlug}|${query.window}`;
-            this.countChange.emit(null);
-          }
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -169,16 +164,15 @@ export class MembersRenewalsComponent {
               return of(HEALTH_METRICS_MEMBERS_RENEWALS_UNMEASURED);
             }),
             tap((response) => {
-              // A clamped page fires a follow-up read, so this one neither settles, reports a count nor ends the skeleton.
+              // A clamped page fires a follow-up read, so this one neither settles nor ends the skeleton.
               if (this.clampPage(response)) return;
 
               this.responseSlug.set(query.foundationSlug);
               this.responseWindow.set(query.window);
 
               this.loading.set(!foundationSeen);
-              this.countChange.emit(query.foundationSlug && !this.loadFailed() ? response.summary.renewalCount : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
-              if (foundationSeen) this.settled.emit();
+              if (foundationSeen) this.settled.emit(!this.loadFailed() && response.totalRecords === 0 && response.summary.renewalCount === 0 ? null : false);
             })
           )
         )

@@ -78,7 +78,13 @@
         <ng-template #body let-row>
           <tr [attr.data-testid]="'mentorship-past-mentee-row-' + row.id">
             <td class="px-4 py-3 max-w-[46%]">
-              <lfx-mentorship-person-cell [name]="row.name" [initials]="row.initials" [avatarStyleClass]="row.avatarStyleClass" [avatarUrl]="row.avatarUrl" />
+              <lfx-mentorship-person-cell
+                [name]="row.name"
+                [initials]="row.initials"
+                [avatarStyleClass]="row.avatarStyleClass"
+                [avatarUrl]="row.avatarUrl"
+                [href]="programPublished() ? (row.userId | mentorshipPublicUrl: 'mentees') : null"
+                [linkTestId]="'mentorship-past-mentee-link-' + row.id" />
             </td>
             <td class="px-4 py-3 max-w-[27%]">
               <!-- Focusable, with the tooltip on focus too, so keyboard users can read a cut-off term. -->

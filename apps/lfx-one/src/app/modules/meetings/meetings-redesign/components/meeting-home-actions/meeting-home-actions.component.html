@@ -1,0 +1,68 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-button
+  variant="tertiary"
+  icon="fa-light fa-ellipsis"
+  ariaLabel="More actions"
+  iconOnly
+  [menu]="actionsMenu"
+  menuAlign="end"
+  [loading]="resending() || removing() || checkingEdit()"
+  data-testid="meetings-home-row-actions-trigger" />
+
+<ng-template #actionsMenu>
+  <lfx-ui-menu ariaLabel="Meeting actions" data-testid="meetings-home-row-actions-menu">
+    @if (canEdit()) {
+      <lfx-ui-menu-item icon="fa-light fa-pen" (triggered)="editMeeting()" data-testid="meetings-home-row-actions-edit">Edit Meeting</lfx-ui-menu-item>
+    }
+    <lfx-ui-menu-item icon="fa-light fa-link" (triggered)="copyLink()" data-testid="meetings-home-row-actions-copy-link">Copy Link</lfx-ui-menu-item>
+    @if (canResend()) {
+      <lfx-ui-menu-item icon="fa-light fa-paper-plane" (triggered)="resendInvite()" data-testid="meetings-home-row-actions-resend"
+        >Resend Invite</lfx-ui-menu-item
+      >
+    }
+    @if (canRemove()) {
+      <lfx-ui-menu-item icon="fa-light fa-user-minus" (triggered)="confirmRemove()" data-testid="meetings-home-row-actions-remove"
+        >Remove Myself</lfx-ui-menu-item
+      >
+    }
+    @if (canDelete()) {
+      <lfx-ui-menu-separator />
+      <lfx-ui-menu-item variant="danger" icon="fa-light fa-trash" (triggered)="deleteMeeting()" data-testid="meetings-home-row-actions-delete"
+        >Delete Meeting</lfx-ui-menu-item
+      >
+    }
+  </lfx-ui-menu>
+</ng-template>
+
+<ng-template #removeDialog let-ref="dialogRef">
+  <lfx-ui-modal heading="Remove Yourself" data-testid="meetings-home-row-actions-remove-dialog">
+    <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+    <lfx-meeting-dialog-context [row]="row()" data-testid="meetings-home-row-actions-remove-info" />
+    <!-- Below the meeting, per the design; the subtitle id makes question and notes the alertdialog's description. -->
+    <div [id]="ref.id + '-subtitle'" class="flex flex-col gap-[8px]" data-testid="meetings-home-row-actions-remove-description">
+      <p class="text-[14px] leading-[1.6] text-gray-700" data-testid="meetings-home-row-actions-remove-message">{{ removalQuestion() }}</p>
+      @if (removalNotes().length) {
+        <ul class="flex list-disc flex-col gap-[4px] pl-[20px] text-[14px] leading-[20px] text-gray-700" data-testid="meetings-home-row-actions-remove-notes">
+          @for (note of removalNotes(); track note) {
+            <li>{{ note }}</li>
+          }
+        </ul>
+      }
+    </div>
+    <ng-container modalActions>
+      <lfx-ui-button data-autofocus variant="secondary" [disabled]="removing()" (click)="ref.close()" data-testid="meetings-home-row-actions-remove-cancel"
+        >Cancel</lfx-ui-button
+      >
+      <lfx-ui-button
+        variant="danger"
+        icon="fa-light fa-user-minus"
+        [loading]="removing()"
+        (click)="remove()"
+        data-testid="meetings-home-row-actions-remove-confirm"
+        >Remove Me</lfx-ui-button
+      >
+    </ng-container>
+  </lfx-ui-modal>
+</ng-template>

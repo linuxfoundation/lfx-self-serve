@@ -5,11 +5,13 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentee, overview, applications, status, history]
 last_generated: 2026-10-26
-last_updated: 2026-10-26
+last_updated: 2026-10-30
 intercom_collection: Mentorship
 ---
 
 The **Overview** tab of **My Mentorship** is where every application you have made is listed, along with its status and your progress through its tasks.
+
+![The mentee overview, with an application under review and its prerequisite tasks](/images/docs/mentorship/mentee-overview.png)
 
 ## Before you begin
 

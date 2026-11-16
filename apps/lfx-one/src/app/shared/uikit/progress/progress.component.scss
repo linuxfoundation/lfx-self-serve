@@ -1,0 +1,9 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The library's slow standard ease on the fill, only when motion is allowed.
+@media (prefers-reduced-motion: no-preference) {
+  .progress-fill {
+    transition: width var(--ui-duration-slow) var(--ui-ease-standard);
+  }
+}

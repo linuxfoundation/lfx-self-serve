@@ -12,6 +12,7 @@ import type {
   CreateInsightsTokenResponse,
   InsightsToken,
   InsightsTokenEligibility,
+  InsightsTokenExpiration,
   PatServiceCreateResponse,
   PatServiceListResponse,
   PatServiceToken,
@@ -73,8 +74,11 @@ export class InsightsTokensService {
     return tokens;
   }
 
-  /** Issues a token for a flag-enabled user. The plaintext secret is returned exactly once by the PAT service. */
-  public async createToken(req: Request, name: string): Promise<CreateInsightsTokenResponse> {
+  /**
+   * Issues a token for a flag-enabled user. The plaintext secret is returned exactly once by the PAT service. Without an
+   * expiration the PAT service issues a token that never expires.
+   */
+  public async createToken(req: Request, name: string, expiration?: InsightsTokenExpiration): Promise<CreateInsightsTokenResponse> {
     await this.assertAccess(req, 'create_insights_token', '/tokens');
 
     let response: PatServiceCreateResponse;
@@ -85,7 +89,7 @@ export class InsightsTokensService {
         '/tokens',
         'POST',
         { v: '1' },
-        { name, audience: INSIGHTS_TOKEN_AUDIENCE }
+        { name, audience: INSIGHTS_TOKEN_AUDIENCE, ...(expiration ? { expiration } : {}) }
       );
     } catch (error) {
       throw withoutPatRefusalText(error);
@@ -142,6 +146,7 @@ export class InsightsTokensService {
       lookupId: token.lookup_id,
       createdAt: token.created_at,
       lastUsedAt: token.last_used_at ?? null,
+      expiresAt: token.expires_at ?? null,
     };
   }
 }

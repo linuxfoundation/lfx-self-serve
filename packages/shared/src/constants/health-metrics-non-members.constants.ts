@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
+import type { HealthMetricsL2Blank, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsNonMembersConversion,
@@ -13,35 +15,45 @@ import type {
 
 /**
  * The three Non-Members sections in render order. `key` is the section's URL fragment and the
- * scroll-spy allowlist; the DOM id is `sec-non-<key>`. Footnotes land with each section's data.
+ * scroll-spy allowlist; the DOM id is `sec-non-<key>`.
  */
 export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
   {
     key: 'orgs',
+    empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Company participation',
     heading: 'Company participation',
     description:
       'Organizations engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'people',
+    empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'People',
     heading: 'People',
     description: 'The individuals behind those organizations — the actual contact to reach out to. A company is a lead; a person is a conversation.',
-    footnote: [],
-    footnoteCaution: false,
   },
   {
     key: 'conversion',
+    empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
     description: 'What the pipeline is worth if the warmest organizations convert. Framed as upside — this section carries no risk badges, only opportunity.',
-    footnote: [],
-    footnoteCaution: false,
   },
-] as const;
+] as const satisfies readonly HealthMetricsL2Section[];
+
+/** The tab's blank card, shown in place of every section when none has data for the period. */
+export const HEALTH_METRICS_NON_MEMBERS_BLANK: HealthMetricsL2Blank = {
+  icon: 'fa-light fa-buildings',
+  noun: 'non-member',
+  lead: 'Organizations show here once they take part in foundation activities without a membership.',
+  reasons: [
+    'No code, event, meeting or training activity is recorded yet',
+    'New activity can take 24–48 hours to appear',
+    'Members are listed in the Members tab instead',
+  ],
+  pastActivity: 'non-member activity',
+};
 
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_NON_MEMBERS_SECTION_ID_PREFIX = 'sec-non-';
@@ -91,12 +103,8 @@ export const HEALTH_METRICS_NON_MEMBERS_ORGS_SEARCH_DEBOUNCE_MS = 200;
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE =
   'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.';
 
-/** Under the People table: each person's organization comes from the same unvalidated match. */
-export const HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE =
-  "People are matched to organizations by the same process, so treat each person's organization as provisional too.";
-
-/** Both tables' last-activity dates ignore the period; the footnotes say so instead of the headers. */
-export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged / Last attended are all-time, not limited to the selected period.';
+/** Last-activity dates ignore the period; the Organizations caution note says so instead of the headers. */
+export const HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE = 'Last engaged is all-time, not limited to the selected period.';
 
 /** Fewer active organizations than this is too few to rank by fit, so Company participation flags it. */
 export const HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD = 5;

@@ -65,17 +65,22 @@ import {
 import {
   MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_SINGULAR_TEMPLATE,
   MENTORSHIP_ADMIN_GRADUATE_TASK_WARNING_TEMPLATE,
+  MENTORSHIP_ADMIN_PATH,
   MENTORSHIP_APPLICANT_TASK_DUE_PREREQUISITE_LABEL,
   MENTORSHIP_APPLICANT_TASK_STATUS_BADGE_CLASSES,
   MENTORSHIP_APPLICANT_TASK_STATUS_LABELS,
+  MENTORSHIP_FOUNDATION_PROGRAMS_PATH,
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_DETAIL_TABS,
+  MENTORSHIP_PROJECT_PROGRAMS_PATH,
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
   MENTORSHIP_SKILL_MAX_LENGTH,
   MENTORSHIP_SKILLS_LIMIT_MESSAGE,
   MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE,
+  MENTORSHIP_TASK_FILE_VIEW_TYPES,
   MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
@@ -99,6 +104,7 @@ import type {
   MentorshipPrerequisite,
   MentorshipProgramMentee,
   MentorshipProgramTerm,
+  MentorshipPublicPage,
   MentorshipRegisterFailureOptions,
   MentorshipRegisterSubmitFailure,
   MentorshipRowAction,
@@ -111,6 +117,7 @@ import type {
   MentorshipProgramMentor,
   MentorshipProgramStatus,
   MentorshipProgramTermRow,
+  MentorshipUpstreamReasonMessage,
 } from '../interfaces/mentorship-admin.interface';
 import type {
   MentorshipMentorProfileDetails,
@@ -126,6 +133,7 @@ import type {
   MentorshipMentorRegisterForm,
   MentorshipMentorRegisterRequest,
 } from '../interfaces/mentorship-mentor.interface';
+import type { Lens } from '../interfaces/lens.interface';
 import type { MentorshipLfxProfileFields } from '../interfaces/mentorship-lfx-profile-card.interface';
 import type {
   MentorshipMenteeApplication,
@@ -152,6 +160,7 @@ import type {
   MentorshipMenteeUpdatableTaskStatus,
 } from '../interfaces/mentorship-mentee.interface';
 import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
+import { isMailtoSafeEmail } from './email.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -220,15 +229,40 @@ export function isMentorshipHttpUrl(value: string): boolean {
 }
 
 /**
- * The mentorship site's program listing at `base`, or one program's page when `programId` is given.
+ * The mentorship site's `page` listing at `base`, or one entry's public page when `id` is given.
  * A trailing `/` on `base` is dropped, so the join never doubles it.
  */
-export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+export function buildMentorshipPublicUrl(base: string, page: MentorshipPublicPage, id?: string): string {
   // A loop rather than a `/\/+$/` replace, which backtracks polynomially on a long run of slashes.
   let end = base.length;
   while (end > 0 && base[end - 1] === '/') end--;
-  const programs = `${base.slice(0, end)}/programs`;
-  return programId ? `${programs}/${encodeURIComponent(programId)}` : programs;
+  const listing = `${base.slice(0, end)}/${page}`;
+  return id ? `${listing}/${encodeURIComponent(id)}` : listing;
+}
+
+/** The mentorship site's program listing at `base`, or one program's page when `programId` is given. */
+export function buildMentorshipProgramsUrl(base: string, programId?: string): string {
+  return buildMentorshipPublicUrl(base, 'programs', programId);
+}
+
+/**
+ * Where a lens keeps its admin program list, program pages and wizard: the Project or Foundation lens's Mentorship Programs
+ * (lfx-mentorship#398), or the Me lens's Admin for every other lens.
+ */
+export function getMentorshipAdminBasePath(lens: Lens | undefined): string {
+  if (lens === 'project') return MENTORSHIP_PROJECT_PROGRAMS_PATH;
+  if (lens === 'foundation') return MENTORSHIP_FOUNDATION_PROGRAMS_PATH;
+  return MENTORSHIP_ADMIN_PATH;
+}
+
+/**
+ * The `?project=` a lens's Mentorship Programs navigation carries, so every list, program and wizard URL names its project
+ * or foundation (lfx-mentorship#398). Set from the lens context rather than kept from the current URL: an in-place project
+ * switch rewrites `?project=` with `Location.replaceState`, so the router's copy is stale. `{}` on the Me lens, or before
+ * the lens resolves its project.
+ */
+export function getMentorshipLensQueryParams(lens: Lens | undefined, slug: string | undefined): Record<string, string> {
+  return (lens === 'project' || lens === 'foundation') && slug ? { project: slug } : {};
 }
 
 /** The admin program-detail tabs a program shows: a pending program has no mentees or mentors yet, so only Terms. */
@@ -922,6 +956,16 @@ export function mentorshipMenteeApplyBlockedState(
 }
 
 /**
+ * The copy of the first entry whose `match` the mentorship service's error text contains, ignoring case, or
+ * `undefined` when there is no text or no entry matches.
+ */
+export function mentorshipUpstreamReasonMessage(entries: readonly MentorshipUpstreamReasonMessage[], upstreamMessage?: string | null): string | undefined {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  if (!message) return undefined;
+  return entries.find((entry) => message.includes(entry.match.toLowerCase()))?.message;
+}
+
+/**
  * Copies whichever apply-link ids are present. The register redirect uses this
  * so a refresh of the register page keeps `programId` and `programTermId` in
  * the address bar even when only one of them arrived.
@@ -1405,6 +1449,14 @@ export function mentorshipRowActions<T extends string>(actions: readonly T[], la
 }
 
 /**
+ * The Contact Mentee `mailto:` link for a mentee's address, or null when the address is not safe
+ * to put in one, so a row with no usable address offers no Contact Mentee.
+ */
+export function mentorshipContactMenteeUrl(email: string | null | undefined): string | null {
+  return isMailtoSafeEmail(email) ? `mailto:${email}` : null;
+}
+
+/**
  * The reviewer-note line for a row. A draft edited this session wins over the note the
  * row arrived with, whitespace alone counts as no note, and an absent note falls back
  * to the "Add note" prompt. Shared so the tabs cannot disagree on what a note is.
@@ -1528,6 +1580,20 @@ export function hasMentorshipTaskFileExtension(fileName: string): boolean {
 }
 
 /**
+ * The type a downloaded task file is opened as in a browser tab, or null when browsers cannot show it (DOC, DOCX, or
+ * anything unknown). A specific response type decides; a missing or generic one leaves it to the file name's extension.
+ * Only the map's own keys match, so a type such as `constructor` cannot pick up an inherited value.
+ */
+export function mentorshipTaskFileViewType(contentType: string | null | undefined, fileName: string | null | undefined): string | null {
+  const viewTypeOf = (key: string): string | null => (Object.hasOwn(MENTORSHIP_TASK_FILE_VIEW_TYPES, key) ? MENTORSHIP_TASK_FILE_VIEW_TYPES[key] : null);
+  const type = (contentType ?? '').split(';')[0].trim().toLowerCase();
+  if (type && type !== MENTORSHIP_TASK_FILE_GENERIC_CONTENT_TYPE) return viewTypeOf(type);
+  const dot = fileName?.lastIndexOf('.') ?? -1;
+  if (!fileName || dot === -1) return null;
+  return viewTypeOf(fileName.slice(dot).toLowerCase());
+}
+
+/**
  * A task file's name made safe to write into the multipart `Content-Disposition` the BFF sends upstream: path
  * separators, quotes and control characters become `_`, and a run of dots becomes one, so the result passes
  * `isSafeUploadFileName`. Upstream cleans the name further, to `[A-Za-z0-9._-]`, so nothing a mentee picked is refused here.
@@ -1630,6 +1696,7 @@ export function buildMentorshipMenteeApplicationView(
   const totalCount = tasks.length;
   return {
     id: app.id,
+    programId: app.programId,
     programName: app.programName,
     projectName: app.projectName,
     termName: app.term.name,
@@ -1643,7 +1710,6 @@ export function buildMentorshipMenteeApplicationView(
     totalCount,
     progressPercent: totalCount > 0 ? Math.round((submittedCount / totalCount) * 100) : 0,
     lastUpdatedOn: latestIsoInstant([app.updatedOn, ...(app.tasks ?? []).map((task) => task.updatedOn)]),
-    decisionExpectedDate: isMentorshipMenteeAccepted(app) ? null : (app.decisionExpectedDate ?? null),
     tasks: tasks
       .map((task) =>
         buildMentorshipMenteeTaskView(
@@ -1683,6 +1749,7 @@ export function buildMentorshipMenteeOverview(applications: readonly MentorshipM
     if (outcome) {
       past.push({
         id: app.id,
+        programId: app.programId,
         programName: app.programName,
         projectName: app.projectName,
         termName: app.term.name,

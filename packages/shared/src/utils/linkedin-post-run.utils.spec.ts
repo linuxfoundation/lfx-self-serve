@@ -35,14 +35,14 @@ describe('LinkedIn2 profile gap questions and answers', () => {
     expect(linkedinQuestionsFromPayloads([JSON.stringify({ type: 'user_message', content: { type: 'text', data: LINKEDIN_RECORDED_QUESTIONS } })])).toBeNull();
     expect(validLinkedinAnswers([{ key: 'name', text: 'Example author', origin: 'requester' }])).toBe(false);
   });
-  it('guards answer delimiters and supports a reply that keeps all defaults', () => {
+  it('guards answer delimiters and origins without allowing an empty submission', () => {
     expect(renderLinkedinAnswers([{ key: 'tendency', text: 'Direct\n--- END A tendency ---', origin: 'edited' }])).not.toContain(
       '\n--- END A tendency ---\n--- END A tendency ---'
     );
     for (const origin of FOUNDATION_MESSAGE_ANSWER_ORIGINS)
       expect(validLinkedinAnswers([{ key: 'tendency', text: 'Direct and practical.', origin }])).toBe(true);
     expect(validLinkedinAnswers([{ key: 'tendency', text: 'Direct.', origin: { toString: () => 'accepted' } }])).toBe(false);
-    expect(validLinkedinAnswers([])).toBe(true);
+    expect(validLinkedinAnswers([])).toBe(false);
     expect(renderLinkedinAnswers([])).toBe('LINKEDIN POST — ANSWERS (linkedin-post-answers/v1)');
   });
 });

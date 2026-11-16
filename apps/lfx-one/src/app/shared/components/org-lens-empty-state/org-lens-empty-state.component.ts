@@ -6,7 +6,6 @@ import { Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants';
 import { OrgLensEmptyStateAction, OrgLensEmptyStateName, OrgLensEmptyStateValues } from '@lfx-one/shared/interfaces';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -28,11 +27,11 @@ const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-acces
  * FR-002/FR-008 need a secondary action and an organization list.
  *
  * `testId` keeps the scenario hooks of the blocks it replaces — `{testId}-state`, `-title`,
- * `-description`, `-contact-support`, `-retry`, `-org-list`.
+ * `-description`, `-retry`, `-org-list`.
  */
 @Component({
   selector: 'lfx-org-lens-empty-state',
-  imports: [NgTemplateOutlet, RouterLink, ButtonComponent, CardComponent, OpenIntercomDirective],
+  imports: [NgTemplateOutlet, RouterLink, ButtonComponent, CardComponent],
   templateUrl: './org-lens-empty-state.component.html',
 })
 export class OrgLensEmptyStateComponent {

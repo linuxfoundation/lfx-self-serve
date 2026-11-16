@@ -3,11 +3,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { execute, proxyRequest, cacheValues } = vi.hoisted(() => ({
+const { execute, proxyRequest, cacheValues, resolveOrgScope } = vi.hoisted(() => ({
   execute: vi.fn(),
   proxyRequest: vi.fn(),
   cacheValues: new Map<string, string>(),
+  resolveOrgScope: vi.fn(),
 }));
+
+// The organization scope (lfx-self-serve-ops#1219) resolves to `all` (an account without an Insights organization)
+// unless a test says otherwise, so the scope row read never touches the cache the projects tests inspect.
+vi.mock('../helpers/org-scope.helper', () => ({ resolveOrgScope }));
 
 vi.mock('./snowflake.service', () => ({
   SnowflakeService: class {
@@ -57,6 +62,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
   // `valkey.service`'s own key builders need these.
   const orgSelector = await import('../../../../../packages/shared/src/utils/org-selector.utils');
   return {
+    ...(await import('../../../../../packages/shared/src/utils/org-lens-time-range.utils')),
     normalizeHealthScoreCategoryV2: insights.normalizeHealthScoreCategoryV2,
     ...compactCache,
     ...orgSelector,
@@ -78,6 +84,8 @@ beforeEach(() => {
   vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
   cacheValues.clear();
   ValkeyService.resetInstance();
+  resolveOrgScope.mockReset();
+  resolveOrgScope.mockResolvedValue('all');
 });
 
 afterEach(() => {
@@ -334,6 +342,11 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     return { PROJECT_SLUG: slug, PARTICIPANT_ID: id, INVOLVEMENT_ROLE: role, PARTICIPANT_NAME: name, PARTICIPANT_AVATAR_URL: avatar };
   }
 
+  /** A maintainer roles row, keyed on the catalog's lowercased Insights slug. */
+  function maintainer(slug: string, id: string, name: string | null, avatar: string | null) {
+    return { INSIGHTS_PROJECT_SLUG: slug, MEMBER_ID: id, MAINTAINER_NAME: name, MAINTAINER_AVATAR_URL: avatar };
+  }
+
   function storedValue(): CompactOrgLensProjectsCache {
     return JSON.parse([...cacheValues.values()][0]) as CompactOrgLensProjectsCache;
   }
@@ -341,13 +354,13 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
   beforeEach(() => {
     execute.mockReset();
     execute.mockImplementation(async (sql: string) => {
+      // First: the roles read joins ORG_LENS_PROJECT_PEOPLE for avatars, so it matches that check too.
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [maintainer('k8s', 'p-1', 'Ada Lovelace', 'https://avatars.example.com/ada.png')] };
+      }
       if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
         return {
-          rows: [
-            person('k8s', 'p-1', 'maintainer', 'Ada Lovelace', 'https://avatars.example.com/ada.png'),
-            person('k8s', 'p-2', 'contributor', null, null),
-            person('etcd', 'p-1', 'participant', 'Ada Lovelace', 'https://avatars.example.com/ada.png'),
-          ],
+          rows: [person('k8s', 'p-2', 'contributor', null, null), person('etcd', 'p-1', 'participant', 'Ada Lovelace', 'https://avatars.example.com/ada.png')],
         };
       }
       if (sql.includes('ORG_LENS_PROJECTS')) {
@@ -380,7 +393,7 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
     // The serialized comparison additionally pins key ORDER: `decodeProjectsResponse` deliberately
     // rebuilds each project in `mapProject`'s field order and appends `noActivityYet` last, exactly
-    // as `fetchNoActivityProjects` does. Reordering either list breaks this — deliberately, since a
+    // as `mapNoActivityProject` does. Reordering either list breaks this — deliberately, since a
     // warm and a cold cache must put the same bytes on the wire.
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
     expect(fromMiss.projects.map((project) => project.noActivityYet)).toEqual([undefined, undefined, true]);
@@ -429,10 +442,8 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // so joining the triple with one is ambiguous: these two people join to the same string and a
     // delimiter-keyed dictionary would store one and hand it back for both.
     execute.mockImplementation(async (sql: string) => {
-      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
-        return {
-          rows: [person('k8s', 'p-1', 'maintainer', 'a\u0000b', 'c'), person('k8s', 'p-1', 'maintainer', 'a', 'b\u0000c')],
-        };
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [maintainer('k8s', 'p-1', 'a\u0000b', 'c'), maintainer('k8s', 'p-1', 'a', 'b\u0000c')] };
       }
       if (sql.includes('ORG_LENS_PROJECTS')) {
         return { rows: [projectsRow()] };
@@ -546,8 +557,11 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // uncached path and make one such person a permanent miss for the org.
     execute.mockReset();
     execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [] };
+      }
       if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
-        return { rows: [person('k8s', null, 'maintainer', null, null)] };
+        return { rows: [person('k8s', null, 'contributor', null, null)] };
       }
       if (sql.includes('ORG_LENS_PROJECTS')) {
         return { rows: [projectsRow()] };
@@ -568,11 +582,249 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     // change, so the guard has to reject the shape too — decoding one would read `projects.k`/
     // `projects.r` off an array and serve an empty page for the whole TTL.
     const legacy = { orgSlug: 'acme', orgName: ORG_NAME, dataUpdatedAt: '2026-01-01T00:00:00.000Z', projects: [{ slug: 'k8s', name: 'Kubernetes' }] };
-    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v7:${encodeURIComponent(ORG_NAME)}|__top__`)!, JSON.stringify(legacy));
+    cacheValues.set(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all:exclude`)!, JSON.stringify(legacy));
 
     const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(response.projects.map((project) => project.slug)).toEqual(['k8s', 'etcd']);
     expect(execute).toHaveBeenCalled();
+  });
+});
+
+describe('OrgLensProjectsService.getProjects maintainers (lfx-self-serve#4482)', () => {
+  const service = new OrgLensProjectsService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return {
+          rows: [
+            { INSIGHTS_PROJECT_SLUG: 'k8s', MEMBER_ID: 'm-1', MAINTAINER_NAME: 'Ada Lovelace', MAINTAINER_AVATAR_URL: null },
+            { INSIGHTS_PROJECT_SLUG: 'etcd', MEMBER_ID: 'm-2', MAINTAINER_NAME: null, MAINTAINER_AVATAR_URL: 'https://avatars.example.com/m-2.png' },
+          ],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) {
+        return { rows: [projectsRow({ PROJECT_SLUG: 'K8s' }), projectsRow({ PROJECT_ID: 'proj-2', PROJECT_SLUG: 'etcd', PROJECT_NAME: 'etcd' })] };
+      }
+      return { rows: [] };
+    });
+  });
+
+  it('lists the maintainer roles overlapping the past 2 years per project, matched on the lowercased Insights slug', async () => {
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.maintainerRolesUnavailable).toBeUndefined();
+    expect(response.projects.map((project) => project.maintainers)).toEqual([
+      [{ id: 'm-1', name: 'Ada Lovelace', avatarUrl: '' }],
+      [{ id: 'm-2', name: 'Unknown maintainer', avatarUrl: 'https://avatars.example.com/m-2.png' }],
+    ]);
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(sql).toContain('r.INSIGHTS_PROJECT_SLUG IN (?, ?)');
+    expect(sql).toContain('r.ROLE_START_DATE <= CURRENT_DATE() AND (r.ROLE_END_DATE IS NULL OR r.ROLE_END_DATE >= DATEADD(day, 0 - ?, CURRENT_DATE()))');
+    expect(binds).toEqual([ACCOUNT_ID, 'k8s', 'etcd', 730]);
+  });
+
+  it('matches avatars on the lowercased project-people slug and names an unnamed maintainer neutrally', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return { rows: [{ INSIGHTS_PROJECT_SLUG: 'k8s', MEMBER_ID: 'm-1', MAINTAINER_NAME: null, MAINTAINER_AVATAR_URL: null }] };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow({ PROJECT_SLUG: 'K8s' })] };
+      return { rows: [] };
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects[0]?.maintainers).toEqual([{ id: 'm-1', name: 'Unknown maintainer', avatarUrl: '' }]);
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(sql).toContain('AND LOWER(pp.PROJECT_SLUG) = r.INSIGHTS_PROJECT_SLUG');
+    expect(binds).toEqual([ACCOUNT_ID, 'k8s', 730]);
+  });
+
+  it('flags maintainer roles as unavailable, and stores nothing, when the roles table is missing', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        throw new Error("SQL compilation error:\nObject 'ANALYTICS.PLATINUM_LFX_ONE.ORG_MAINTAINER_ROLES' does not exist or not authorized.");
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow()] };
+      return { rows: [] };
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.maintainerRolesUnavailable).toBe(true);
+    expect(response.projects.map((project) => project.maintainers)).toEqual([[]]);
+    expect(cacheValues.size).toBe(0);
+  });
+
+  it('lists the maintainer roles on a requested project hydrated from the catalog for want of activity rows', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) {
+        return {
+          rows: [
+            { INSIGHTS_PROJECT_SLUG: 'k8s', MEMBER_ID: 'm-1', MAINTAINER_NAME: 'Ada Lovelace', MAINTAINER_AVATAR_URL: null },
+            { INSIGHTS_PROJECT_SLUG: 'ghost', MEMBER_ID: 'm-3', MAINTAINER_NAME: 'Grace Hopper', MAINTAINER_AVATAR_URL: null },
+          ],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow({ PROJECT_SLUG: 'K8s' })] };
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) return { rows: [] };
+      // The onboarded catalog hydrates the requested slug the account has no activity row for.
+      return { rows: [projectsRow({ PROJECT_ID: 'proj-3', PROJECT_SLUG: 'Ghost', PROJECT_NAME: 'Ghost' })] };
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, ['K8s', ' Ghost ']);
+
+    expect(response.projects.map((project) => [project.slug, project.noActivityYet, project.maintainers])).toEqual([
+      ['K8s', undefined, [{ id: 'm-1', name: 'Ada Lovelace', avatarUrl: '' }]],
+      ['Ghost', true, [{ id: 'm-3', name: 'Grace Hopper', avatarUrl: '' }]],
+    ]);
+    const [sql, binds] = execute.mock.calls.find(([query]) => String(query).includes('ORG_MAINTAINER_ROLES'))!;
+    expect(sql).toContain('r.INSIGHTS_PROJECT_SLUG IN (?, ?)');
+    expect(binds).toEqual([ACCOUNT_ID, 'k8s', 'ghost', 730]);
+  });
+
+  it('no longer reads maintainers from the project people table', async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    const [peopleSql] = execute.mock.calls.find(
+      ([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES')
+    )!;
+    expect(peopleSql).toContain("AND INVOLVEMENT_ROLE <> 'maintainer'");
+  });
+});
+
+describe('OrgLensProjectsService.getProjects organization scope (lfx-self-serve-ops#1219)', () => {
+  const service = new OrgLensProjectsService();
+
+  const peopleSql = (): string =>
+    String(execute.mock.calls.find(([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES'))![0]);
+
+  beforeEach(() => {
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, _accountId: string, scope: string) => scope);
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) return { rows: [] };
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) return { rows: [] };
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow()] };
+      return { rows: [] };
+    });
+  });
+
+  it('lists only Insights-scoped contributors under insights, participants unscoped, under a key ending in the scope', async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights', 'include');
+
+    expect(resolveOrgScope).toHaveBeenLastCalledWith(expect.anything(), ACCOUNT_ID, 'insights');
+
+    expect(peopleSql()).toContain("AND INVOLVEMENT_ROLE <> 'maintainer' AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE))\n");
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:insights:include`)!)).toBe(true);
+  });
+
+  it("reads today's people SQL under all", async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include');
+
+    expect(peopleSql()).toContain("AND INVOLVEMENT_ROLE <> 'maintainer'\n");
+    expect(peopleSql()).not.toContain('IS_INSIGHTS_SCOPE');
+    expect(resolveOrgScope).toHaveBeenLastCalledWith(expect.anything(), ACCOUNT_ID, 'all');
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all:include`)!)).toBe(true);
+  });
+
+  it('serves all to an account without an Insights organization', async () => {
+    resolveOrgScope.mockResolvedValue('all');
+
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights', 'include');
+
+    expect(peopleSql()).not.toContain('IS_INSIGHTS_SCOPE');
+    expect(cacheValues.has(buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:all:include`)!)).toBe(true);
+  });
+});
+
+describe('OrgLensProjectsService.getProjects team members (lfx-self-serve-ops#1246)', () => {
+  const service = new OrgLensProjectsService();
+  const TEAM_MEMBER_GATE = "AND (INVOLVEMENT_ROLE <> 'contributor' OR NOT COALESCE(IS_CDP_TEAM_MEMBER, FALSE))";
+
+  const peopleCalls = (): unknown[][] =>
+    execute.mock.calls.filter(([query]) => String(query).includes('ORG_LENS_PROJECT_PEOPLE') && !String(query).includes('ORG_MAINTAINER_ROLES'));
+  const keyFor = (scope: string, teamMembers: string): string =>
+    buildOrgCacheKey(ACCOUNT_ID, `projects:v8:${encodeURIComponent(ORG_NAME)}|__top__:${scope}:${teamMembers}`)!;
+
+  beforeEach(() => {
+    resolveOrgScope.mockImplementation(async (_snowflake: unknown, _accountId: string, scope: string) => scope);
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_MAINTAINER_ROLES')) return { rows: [] };
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
+        // A team member's contributor row is left out by the gate, as the warehouse would.
+        const rows = [
+          { PROJECT_SLUG: 'k8s', PARTICIPANT_ID: 'p-1', INVOLVEMENT_ROLE: 'contributor', PARTICIPANT_NAME: 'Ada', PARTICIPANT_AVATAR_URL: null },
+          { PROJECT_SLUG: 'k8s', PARTICIPANT_ID: 'p-team', INVOLVEMENT_ROLE: 'contributor', PARTICIPANT_NAME: 'Team', PARTICIPANT_AVATAR_URL: null },
+          { PROJECT_SLUG: 'k8s', PARTICIPANT_ID: 'p-team', INVOLVEMENT_ROLE: 'participant', PARTICIPANT_NAME: 'Team', PARTICIPANT_AVATAR_URL: null },
+        ];
+        return {
+          rows: sql.includes('IS_CDP_TEAM_MEMBER') ? rows.filter((row) => !(row.PARTICIPANT_ID === 'p-team' && row.INVOLVEMENT_ROLE === 'contributor')) : rows,
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) return { rows: [projectsRow({ PROJECT_SLUG: 'k8s' })] };
+      return { rows: [] };
+    });
+  });
+
+  it('leaves team members out of the contributors by default, keeping them as participants, under a key ending in exclude', async () => {
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all');
+
+    const [sql, , options] = peopleCalls()[0];
+    expect(String(sql)).toContain(`AND INVOLVEMENT_ROLE <> 'maintainer' ${TEAM_MEMBER_GATE}\n`);
+    expect(options).toEqual({ expectInvalidIdentifier: 'IS_CDP_TEAM_MEMBER' });
+    expect(response.projects[0]?.contributors.map((person) => person.id)).toEqual(['p-1']);
+    expect(response.projects[0]?.participants.map((person) => person.id)).toEqual(['p-team']);
+    expect(response.teamMembersUnavailable).toBeUndefined();
+    expect(cacheValues.has(keyFor('all', 'exclude'))).toBe(true);
+  });
+
+  it('applies both contributor gates under insights and exclude', async () => {
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'insights', 'exclude');
+
+    expect(String(peopleCalls()[0][0])).toContain(
+      `AND INVOLVEMENT_ROLE <> 'maintainer' AND (INVOLVEMENT_ROLE <> 'contributor' OR COALESCE(IS_INSIGHTS_SCOPE, FALSE)) ${TEAM_MEMBER_GATE}\n`
+    );
+  });
+
+  it('counts team members under include, without the flag in the SQL, under its own key', async () => {
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include');
+
+    const [sql, , options] = peopleCalls()[0];
+    expect(String(sql)).not.toContain('IS_CDP_TEAM_MEMBER');
+    expect(options).toBeUndefined();
+    expect(response.projects[0]?.contributors.map((person) => person.id)).toEqual(['p-1', 'p-team']);
+    expect(cacheValues.has(keyFor('all', 'include'))).toBe(true);
+    expect(cacheValues.has(keyFor('all', 'exclude'))).toBe(false);
+  });
+
+  it('serves each pick from its own cache entry', async () => {
+    const excluded = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'exclude');
+    const included = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include');
+    const reads = execute.mock.calls.length;
+
+    expect((await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'exclude')).projects[0]?.contributors).toEqual(excluded.projects[0]?.contributors);
+    expect((await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'include')).projects[0]?.contributors).toEqual(included.projects[0]?.contributors);
+    expect(execute.mock.calls.length).toBe(reads);
+  });
+
+  it('falls back to include, flags it and stores nothing while the team-member flag is not in the warehouse', async () => {
+    const people = execute.getMockImplementation()!;
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('IS_CDP_TEAM_MEMBER')) {
+        throw new Error("SQL compilation error: error line 9 at position 70\ninvalid identifier 'IS_CDP_TEAM_MEMBER'");
+      }
+      return people(sql);
+    });
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null, 'all', 'exclude');
+
+    expect(response.teamMembersUnavailable).toBe(true);
+    expect(response.projects[0]?.contributors.map((person) => person.id)).toEqual(['p-1', 'p-team']);
+    expect(cacheValues.size).toBe(0);
   });
 });

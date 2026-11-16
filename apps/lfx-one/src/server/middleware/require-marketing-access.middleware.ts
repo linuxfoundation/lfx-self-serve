@@ -220,10 +220,13 @@ export const requireNorthStarAccess = createMarketingAccessMiddleware('marketing
 export const requireCampaignManager = createMarketingAccessMiddleware('campaign_manager', ['project', 'foundationSlug'], 'require_campaign_manager');
 
 /**
- * Google account monitor only: its required project does not scope the shared account. With marketing
- * FGA enabled, ROOT writers and ROOT `global_marketing_ops` may reach the controller without an
- * additional project grant. Other callers retain the ordinary project check and the controller's
- * shared-account refusal. Flag-off keeps the existing ED-only baseline. Never use for project writes.
+ * Google account monitor only. With marketing FGA enabled, ROOT writers and ROOT `global_marketing_ops`
+ * may reach the controller without an additional project grant, for the legacy (monitor cutover off)
+ * arm, which reads the shared account across foundations and which the controller keeps root-only.
+ * Other callers get the ordinary `requireCampaignManager` project check. On the campaign-service arm
+ * the controller adds no root gate: campaign-service answers only the project's `campaign_manager`
+ * holders, and a ROOT caller admitted here without that role gets its refusal as a 403 naming the role
+ * (#4837). Flag-off keeps the existing ED-only baseline. Never use for project writes.
  */
 export async function requireGoogleMonitorAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -238,4 +241,45 @@ export async function requireGoogleMonitorAccess(req: Request, res: Response, ne
   } catch (error) {
     next(error);
   }
+}
+
+/**
+ * The guard of a Google Ads account read whose controller makes a strict check of `global_marketing_ops`
+ * on the project, the one relation campaign-service answers the read on. With marketing FGA on, that check
+ * is the whole gate: it is narrower than `campaign_manager` (`executive_director` or `global_marketing_ops`),
+ * which also admits ROOT writers the controller refuses anyway. Running `requireCampaignManager` first would
+ * answer an access-check outage with its uncoded `MARKETING_ACCESS_REQUIRED` 403, because its project check
+ * is not strict, so the picker could never tell an outage (the controller's coded 503) from a refusal.
+ * Flag-off keeps the ED-only baseline, then the controller's own check.
+ */
+async function deferToControllerMarketingOpsCheck(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (isServerFeatureEnabled(ServerFeatureFlag.MarketingOpsFga)) {
+    next();
+    return;
+  }
+  await requireCampaignManager(req, res, next);
+}
+
+/**
+ * Google conversion-action list only (#5239; lfx-v2-campaign-service#486): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireGoogleConversionActionsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
+ * Google user-list read only (#5244; lfx-v2-campaign-service#508): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireGoogleUserListsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
+ * Google Ads Audience read only (#5244; lfx-v2-campaign-service#504): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireGoogleAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
 }

@@ -3,7 +3,7 @@
 
 <div class="@container mx-auto flex max-w-screen-2xl flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="mktg-kit-page">
   <lfx-mktg-kit-header [projectName]="kit.projectName()" [withDescription]="true">
-    <dl class="grid min-w-0 grid-cols-2 gap-3 @[980px]:grid-cols-4" data-testid="mktg-kit-summary">
+    <dl class="grid min-w-0 grid-cols-2 gap-3" [class]="showComingSoon ? '@[980px]:grid-cols-4' : '@[980px]:grid-cols-3'" data-testid="mktg-kit-summary">
       <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
         <dt class="text-xs text-gray-500">Kit level</dt>
         <dd class="text-xl font-bold" data-testid="mktg-kit-level">{{ kit.summary().level ?? '—' }}</dd>
@@ -15,7 +15,7 @@
         <dt class="text-xs text-gray-500">Core floor</dt>
         <dd class="text-xl font-bold" data-testid="mktg-kit-core-floor">
           @if (kit.documents()) {
-            {{ kit.summary().coreFloor }} of {{ familyCount }}
+            {{ kit.summary().coreFloor }} of {{ familyCount() }}
           } @else {
             —
           }
@@ -31,18 +31,25 @@
           }
         </dd>
       </div>
-      <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
-        <dt class="text-xs text-gray-500">Open requests</dt>
-        <dd class="flex flex-wrap items-center gap-2">
-          <span class="text-xl font-bold">—</span><span class="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">Coming soon</span>
-        </dd>
-      </div>
+      @if (showComingSoon) {
+        <div class="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <dt class="text-xs text-gray-500">Open requests</dt>
+          <dd class="flex flex-wrap items-center gap-2">
+            <span class="text-xl font-bold">—</span><span class="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">Coming soon</span>
+          </dd>
+        </div>
+      }
     </dl>
   </lfx-mktg-kit-header>
   <div class="flex flex-wrap items-end justify-between gap-3">
     <lfx-mktg-kit-tabs class="min-w-0 flex-1" />
     <div class="flex flex-wrap gap-2 pb-2" role="group" aria-label="Filter assets by state" data-testid="mktg-kit-filters">
-      <lfx-filter-pills [options]="filters" [selectedFilter]="selectedFilter()" (filterChange)="selectFilter($event)" />
+      <!-- No quiet pill input exists: scope the override to this screen, retaining the shared control and its behaviour. -->
+      <lfx-filter-pills
+        class="[&_button[aria-pressed=true]]:!bg-blue-100 [&_button[aria-pressed=true]]:!font-medium [&_button[aria-pressed=true]]:!text-blue-700"
+        [options]="filters"
+        [selectedFilter]="selectedFilter()"
+        (filterChange)="selectFilter($event)" />
     </div>
   </div>
   @if (kit.loading()) {
@@ -67,25 +74,47 @@
       <lfx-button label="Try again" [outlined]="true" (onClick)="kit.retry()" data-testid="mktg-kit-error-retry" />
     </div>
   } @else if (kit.documents()) {
+    @if (nextStep(); as step) {
+      <!-- Exact board spacing and typography; the app's 14px root otherwise undershoots these sizes. -->
+      <section
+        class="flex flex-wrap items-center justify-between gap-[21px] rounded-[10.5px] border border-blue-300 bg-white px-[17.5px] py-[14px]"
+        aria-label="Next step"
+        data-testid="mktg-kit-next-step">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <h2 class="text-[12px] font-semibold uppercase tracking-[0.1em] text-blue-700">Next step</h2>
+          <p class="text-[15.75px] font-semibold leading-[1.4] text-gray-900">{{ step.sentence }}</p>
+          <p class="text-[12.25px] text-gray-500">{{ step.hint }}</p>
+        </div>
+        <lfx-button
+          [label]="step.header.label"
+          [routerLink]="step.commands"
+          [queryParams]="step.queryParams"
+          (onClick)="$event.stopPropagation()"
+          data-testid="mktg-kit-next-step-action" />
+      </section>
+    }
     <!-- Main board: 1280/1440px windows leave ~876/1036px hosts; thresholds reserve ~60px headroom. -->
     <div class="grid grid-cols-1 gap-4 @[700px]:grid-cols-2 @[980px]:grid-cols-3" data-testid="mktg-kit-families">
       @for (card of cards(); track card.family.id) {
         <article
-          class="relative flex min-w-0 flex-col gap-3 rounded-xl border bg-white p-5 transition-shadow hover:border-blue-400 hover:shadow-md has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-blue-600"
+          class="relative flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
+          [class]="card.live ? 'transition-shadow hover:border-blue-400 hover:shadow-md has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-blue-600' : ''"
           [class.border-dashed]="!card.live"
-          [class.border-blue-600]="$first"
-          [class.border-gray-200]="!$first"
           [attr.data-testid]="'mktg-kit-family-' + card.family.id">
           <div class="flex flex-wrap items-start justify-between gap-2">
             <h2 class="text-lg font-bold">
-              <a
-                [attr.data-testid]="'mktg-kit-family-link-' + card.family.id"
-                [routerLink]="['families', card.family.id]"
-                [queryParams]="kit.projectQueryParams()"
-                queryParamsHandling="merge"
-                class="text-gray-900 after:absolute after:inset-0 after:rounded-xl after:content-[''] hover:text-blue-700 focus-visible:outline-none"
-                >{{ card.family.name }}</a
-              >
+              @if (card.live) {
+                <a
+                  [attr.data-testid]="'mktg-kit-family-link-' + card.family.id"
+                  [routerLink]="['families', card.family.id]"
+                  [queryParams]="kit.projectQueryParams()"
+                  queryParamsHandling="merge"
+                  class="text-gray-900 after:absolute after:inset-0 after:rounded-xl after:content-[''] hover:text-blue-700 focus-visible:outline-none"
+                  >{{ card.family.name }}</a
+                >
+              } @else {
+                <span class="text-gray-900">{{ card.family.name }}</span>
+              }
             </h2>
             <div class="flex shrink-0 flex-wrap items-center gap-1">
               <span
@@ -109,8 +138,21 @@
           }
           @for (row of card.rows; track row.asset.id) {
             <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 text-sm" [attr.data-testid]="'mktg-kit-asset-' + row.asset.id">
-              <span>{{ row.asset.label }}</span
-              ><lfx-mktg-kit-status [row]="row" />
+              <span>{{ row.asset.label }}</span>
+              @if (row.run?.link; as link) {
+                <span class="relative z-10 flex flex-wrap items-baseline gap-2 text-xs text-gray-500" data-testid="mktg-kit-run-status">
+                  <span>{{ row.run?.caption }}</span>
+                  <a
+                    class="text-blue-700 hover:underline"
+                    data-testid="mktg-kit-run-status-link"
+                    [routerLink]="link.commands"
+                    [queryParams]="link.queryParams"
+                    >{{ row.run?.label }}</a
+                  >
+                </span>
+              } @else {
+                <lfx-mktg-kit-status [row]="row" />
+              }
             </div>
           } @empty {
             @if (card.live && selectedFilter() !== 'all') {

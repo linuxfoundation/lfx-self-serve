@@ -307,6 +307,38 @@ export class ComposerGuestsComponent {
     }
   }
 
+  /**
+   * Flips a guest's Meeting Host flag in place.
+   * @description A saved guest becomes `'modified'`, which `setGuests` turns into an update on save; a guest
+   * that was never saved stays `'new'` and carries the flag into its create. Matched by the same
+   * `uid`/`tempId` identity the remove handler uses, so a keyless row can't flip another keyless row.
+   */
+  protected onToggleHost(guest: MeetingRegistrantWithState): void {
+    const key = guest.uid || guest.tempId || null;
+    const host = !guest.host;
+
+    this.formService.updateGuests((current) =>
+      current.map((candidate) => {
+        const isTarget = key === null ? candidate === guest : (candidate.uid || candidate.tempId) === key;
+
+        if (!isTarget) {
+          return candidate;
+        }
+
+        return { ...candidate, host, state: candidate.state === 'new' ? 'new' : 'modified' };
+      })
+    );
+
+    // Undo restores the list as it was before the removals, so it would take this host change back with it.
+    // `guestListSignature` leaves `host` out, so the batch would still look current.
+    this.removalBatch.set(null);
+
+    void this.liveAnnouncer.announce(
+      `${this.guestLabel(guest)} ${host ? 'is now a meeting host' : 'is no longer a meeting host'}. Save the meeting to apply.`,
+      'polite'
+    );
+  }
+
   protected onRemoveGuest(guest: MeetingRegistrantWithState): void {
     const label = this.guestLabel(guest);
     // When editing, Undo appears above the list; focus goes to a neighbouring row, so say Undo is there.
@@ -438,6 +470,10 @@ export class ComposerGuestsComponent {
           // user to count rows to find out which guest they are about to drop — the email is what
           // identifies the row on screen in that case, so it identifies the button too.
           removeLabel: `Remove ${displayName || guest.email || 'guest'}`,
+          hostLabel: guest.host
+            ? `Remove ${displayName || guest.email || 'guest'} as meeting host`
+            : `Make ${displayName || guest.email || 'guest'} a meeting host`,
+          hostTooltip: guest.host ? 'Remove host' : 'Make host',
           scopeLabel: this.scopeLabel(guest),
           // Editing one occurrence, only guests invited to it alone can go: upstream can't drop a series
           // guest from a single occurrence, so those rows are read-only.

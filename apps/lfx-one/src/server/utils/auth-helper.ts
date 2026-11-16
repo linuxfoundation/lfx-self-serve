@@ -404,5 +404,4 @@ export function clearImpersonationSession(req: Request): void {
   delete req.appSession['impersonationExpiresAt'];
   delete req.appSession['impersonationUser'];
   delete req.appSession['impersonator'];
-  delete req.appSession['impersonationPersonaContext'];
 }

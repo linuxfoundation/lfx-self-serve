@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { environment } from '@environments/environment';
 import {
   MentorshipTaskCreateRequest,
   MentorshipNoteRequest,
@@ -10,6 +11,7 @@ import {
   MentorshipTaskDialogAssignee,
   MentorshipTaskFormValue,
 } from '@lfx-one/shared/interfaces';
+import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +25,7 @@ describe('MentorMenteesTabComponent', () => {
   const mentee = (overrides: Partial<MentorshipProgramMentee> = {}): MentorshipProgramMentee => ({
     id: 'mnt_1',
     name: 'Alex Rivera',
+    userId: '6f1c2d3e-4a5b-4c6d-8e7f-901234567890',
     email: 'alex.rivera@example.com',
     status: 'accepted',
     termName: 'Fall 2026',
@@ -106,10 +109,15 @@ describe('MentorMenteesTabComponent', () => {
       (row.getAttribute('data-testid') ?? '').replace('mentorship-mentor-mentee-row-', '')
     );
 
+  it("links the mentee's name to the public mentee page", () => {
+    const link = element().querySelector('[data-testid="mentorship-mentor-mentee-link-mnt_1"]');
+    expect(link?.getAttribute('href')).toBe(buildMentorshipPublicUrl(environment.urls.mentorship, 'mentees', '6f1c2d3e-4a5b-4c6d-8e7f-901234567890'));
+  });
+
   it('renders the header card, group-create action, and mentee columns', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-heading"]')?.textContent?.trim()).toBe('Current Mentees');
     expect(element().querySelector('[data-testid="mentorship-mentor-mentees-create-group-task"]')).not.toBeNull();
-    expect(headerLabels()).toEqual(['Mentee', 'Term', 'Progress', 'Status', 'Task']);
+    expect(headerLabels()).toEqual(['Mentee', 'Term', 'Progress', 'Status', 'Actions']);
     expect(element().querySelector('table')?.getAttribute('aria-label')).toBe('Current mentees');
   });
 
@@ -185,6 +193,21 @@ describe('MentorMenteesTabComponent', () => {
 
   it('offers no task create on a graduated mentee', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-mentee-create-task-mnt_2"]')).toBeNull();
+  });
+
+  it('offers Contact Mentee as a mailto: link on accepted and graduated mentees, in a new tab', () => {
+    for (const id of ['mnt_1', 'mnt_2']) {
+      expect(element().querySelector(`[data-testid="mentorship-mentor-mentee-contact-${id}"] a`)?.getAttribute('href')).toBe('mailto:alex.rivera@example.com');
+    }
+    const link = element().querySelector('[data-testid="mentorship-mentor-mentee-contact-mnt_1"] a');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('aria-label')).toBe('Contact Mentee: Alex Rivera');
+  });
+
+  it('drops Contact Mentee when the address is not safe to put in a mailto: link', () => {
+    setup([mentee({ email: 'alex@example.com%0D%0ABcc:other@example.com' })]);
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-mentee-contact-mnt_1"]')).toBeNull();
   });
 
   it('opens group create with every accepted mentee preselected', () => {
