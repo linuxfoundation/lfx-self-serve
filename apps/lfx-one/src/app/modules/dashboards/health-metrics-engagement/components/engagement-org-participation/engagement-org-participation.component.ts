@@ -100,7 +100,7 @@ export class EngagementOrgParticipationComponent {
   });
   protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.size, (this.page() + 1) * this.size));
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  /** No rows at all means an empty scope; rows with null caption counts still render. */
+  /** No rows at all means an empty scope; rows with null scope counts still render. */
   protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
   /** The foundation has no participating company; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.scopeEmpty());

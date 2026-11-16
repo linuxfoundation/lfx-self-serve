@@ -326,7 +326,7 @@ export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
- * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * Its counts are `null` because nothing was measured — zeroes here would report a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOrgParticipation = {
@@ -345,7 +345,7 @@ export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP = 5000;
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
- * Its count is `null` because nothing was measured — a zero here would caption a scope the
+ * Its count is `null` because nothing was measured — a zero here would report a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngagementNonMemberParticipation = {
@@ -364,7 +364,7 @@ export const HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP = 20000;
 
 /**
  * The representatives table's cuts, all three scoped to the people invited in the selected period —
- * the population the view's own caption counts. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
+ * the population the view's own scope count covers. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
  * and "Lapsed" is `IS_LAPSED_<period>`, so neither cut is a client-side date comparison.
  */
 export const HEALTH_METRICS_ENGAGEMENT_REP_FILTERS = [
@@ -378,7 +378,7 @@ export const HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL = 'Unresolved i
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
- * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * Its counts are `null` because nothing was measured — zeroes here would report a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED: HealthMetricsEngagementRepresentatives = {

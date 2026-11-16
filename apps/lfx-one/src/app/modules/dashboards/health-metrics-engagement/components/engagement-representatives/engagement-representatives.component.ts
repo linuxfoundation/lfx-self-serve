@@ -15,6 +15,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsEngagementRepRowView,
+  formatHealthMetricsEngagementRepLastAttended,
   filterHealthMetricsEngagementRepRows,
   parseHealthMetricsEngagementRepFilter,
   selectHealthMetricsEngagementRepCounts,
@@ -90,6 +91,7 @@ export class EngagementRepresentativesComponent {
     computation: () => 0,
   });
 
+  private readonly lastAttendedByRow: Signal<Map<HealthMetricsEngagementRepRow, string>> = this.initLastAttendedByRow();
   private readonly rowViewsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> = this.initRowViewsByRow();
   protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
   protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.size, (this.page() + 1) * this.size));
@@ -132,14 +134,19 @@ export class EngagementRepresentativesComponent {
     this.filter.set('all');
   }
 
-  // Keyed off the response alone because these labels are all-time: `formatIsoDateLabel` builds a
-  // fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
-  // Built once per response and period rather than per keystroke: the date label builds an `Intl` formatter per call.
+  // Keyed off the response alone because the date is all-time: `formatIsoDateLabel` builds a
+  // fresh `Intl` formatter per call, and a period change must not pay for one per loaded row.
+  private initLastAttendedByRow(): Signal<Map<HealthMetricsEngagementRepRow, string>> {
+    return computed(() => new Map(this.response().rows.map((row) => [row, formatHealthMetricsEngagementRepLastAttended(row)])));
+  }
+
+  // Built once per response and period rather than per keystroke, reusing the response's dates.
   private initRowViewsByRow(): Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> {
     return computed(() => {
       const range = this.chrome.selectedRange();
+      const dates = this.lastAttendedByRow();
       return new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>(
-        this.response().rows.map((row) => [row, buildHealthMetricsEngagementRepRowView(row, range)])
+        this.response().rows.map((row) => [row, buildHealthMetricsEngagementRepRowView(row, range, dates.get(row))])
       );
     });
   }
@@ -190,7 +197,7 @@ export class EngagementRepresentativesComponent {
             }),
             tap((response) => {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
-              // the table cannot caption an unread scope as "no rows".
+              // the table cannot read an unread scope as "no rows".
               this.loading.set(!foundationSeen);
               // No foundation means no read happened, so there is no measured count to report.
               this.countsChange.emit(
@@ -229,7 +236,7 @@ export class EngagementRepresentativesComponent {
   }
 }
 
-/** No representative invited in the period, as the unfiltered table shows it; unmeasured counts only caption the rows. */
+/** No representative invited in the period, as the unfiltered table shows it; unmeasured counts only feed the note. */
 function isEmptyScope(response: HealthMetricsEngagementRepresentatives, range: HealthMetricsRange): boolean {
   return filterHealthMetricsEngagementRepRows(response.rows, 'all', '', range).length === 0;
 }

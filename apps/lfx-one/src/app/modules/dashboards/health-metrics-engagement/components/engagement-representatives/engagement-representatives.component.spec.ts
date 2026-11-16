@@ -23,7 +23,6 @@ function repRow(overrides: Partial<HealthMetricsEngagementRepRow> = {}): HealthM
     personName: 'Dana Fields',
     identityUnresolved: false,
     accountName: 'Acme Motors',
-    membershipTier: 'Gold',
     jobTitle: 'Head of OSPO',
     committeeName: 'Technical Steering Committee',
     lastAttendedDate: '2026-08-14',
@@ -167,7 +166,8 @@ describe('EngagementRepresentativesComponent', () => {
 
     const badge = query('engagement-representatives-row-r-never-never') as HTMLElement;
     expect(badge.tagName).toBe('LFX-UI-BADGE');
-    expect(badge.textContent?.trim()).toBe('0 / 6');
+    expect(badge.textContent?.trim()).toBe('0 / 6 — never attended');
+    expect(badge.querySelector('.sr-only')?.textContent).toBe(' — never attended');
     const never = (query('engagement-representatives-row-r-never') as HTMLElement).querySelectorAll('td');
     expect(never[3].querySelector('[data-testid="health-metrics-cell-text"]')?.className).toContain('text-gray-400');
     expect(never[3].textContent?.trim()).toBe('—');

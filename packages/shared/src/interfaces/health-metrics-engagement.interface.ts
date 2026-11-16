@@ -368,8 +368,6 @@ export interface HealthMetricsEngagementNonMemberPeriod {
 export interface HealthMetricsEngagementNonMemberRow {
   accountId: string;
   accountName: string;
-  /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
-  membershipStatus: string;
   /** The account's logo from the account mapping; empty shows the name's first letter. */
   logoUrl: string;
   periods: HealthMetricsEngagementNonMemberPeriod[];
@@ -384,7 +382,7 @@ export interface HealthMetricsEngagementNonMemberRowView {
   people: string;
 }
 
-/** The `#nonmem` caption for one period: organizations that attended a meeting in it. */
+/** The `#nonmem` scope count for one period: companies that attended a meeting in it. */
 export interface HealthMetricsEngagementNonMemberPeriodCounts {
   range: HealthMetricsRange;
   orgs: number;
@@ -433,9 +431,8 @@ export interface HealthMetricsEngagementRepRow {
   personName: string;
   /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
   identityUnresolved: boolean;
-  /** The row's organization, shown under the name with its tier; not a second identity. */
+  /** The row's company, shown under the name with the job title; not a second identity. */
   accountName: string;
-  membershipTier: string | null;
   jobTitle: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
@@ -460,8 +457,8 @@ export interface HealthMetricsEngagementRepRowView {
   lastAttendedLabel: string;
 }
 
-/** Scope counts for one period. Unlike the org caption, this view's scope counts are
- * period-suffixed, so the caption and the sub-nav note follow the pill. */
+/** Scope counts for one period. Unlike the org counts, this view's are period-suffixed, so the
+ * sub-nav note follows the period. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;
@@ -479,7 +476,7 @@ export interface HealthMetricsEngagementRepresentatives {
  * period all resolve client-side, so none of them reaches the wire. */
 export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
-  /** Absent or `null` reads the all-projects rows and deduped captions. The client no longer sends
+  /** Absent or `null` reads the all-projects rows and deduped counts. The client no longer sends
    * it; the server keeps the optional filter. */
   projectSlug?: string | null;
 }

@@ -64,7 +64,10 @@
             <td><lfx-health-metrics-cell [text]="view.committeeName" /></td>
             <td>
               @if (view.neverAttended) {
-                <lfx-ui-badge tone="danger" [attr.data-testid]="'engagement-representatives-row-' + view.key + '-never'">{{ view.attendedLabel }}</lfx-ui-badge>
+                <!-- The badge's colour carries "never attended", so screen readers get it in words. -->
+                <lfx-ui-badge tone="danger" [attr.data-testid]="'engagement-representatives-row-' + view.key + '-never'"
+                  >{{ view.attendedLabel }}<span class="sr-only"> — never attended</span></lfx-ui-badge
+                >
               } @else {
                 <lfx-health-metrics-cell [text]="view.attendedLabel" />
               }

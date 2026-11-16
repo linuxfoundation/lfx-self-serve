@@ -55,11 +55,8 @@ import {
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
   selectHealthMetricsEngagementGroupPeriod,
-  selectHealthMetricsEngagementNonMemberCounts,
-  selectHealthMetricsEngagementNonMemberPeriod,
   selectHealthMetricsEngagementParticipationPeriod,
   selectHealthMetricsEngagementRepCounts,
-  selectHealthMetricsEngagementRepPeriod,
   filterHealthMetricsEngagementNonMemberRows,
 } from './health-metrics-engagement.utils';
 
@@ -486,7 +483,6 @@ describe('non-member participation rules', () => {
     return {
       accountId: name.toLowerCase().replace(/\s+/g, '-'),
       accountName: name,
-      membershipStatus: 'Non-member',
       logoUrl: '',
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
@@ -511,10 +507,10 @@ describe('non-member participation rules', () => {
   it('selects the period the pill asks for, falling back to the newest period held', () => {
     const row = nonMemberRow('Acme Motors', 1);
 
-    expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR')?.meetingsAttended).toBe(8);
+    expect(buildHealthMetricsEngagementNonMemberRowView(row, 'COMPLETED_YEAR').meetings).toBe('8');
     // A period the read never returned falls back rather than blanking every cell in the row.
-    expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR_3')?.range).toBe('YTD');
-    expect(selectHealthMetricsEngagementNonMemberPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
+    expect(buildHealthMetricsEngagementNonMemberRowView(row, 'COMPLETED_YEAR_3').meetings).toBe('12');
+    expect(buildHealthMetricsEngagementNonMemberRowView({ ...row, periods: [] }, 'YTD')).toMatchObject({ meetings: '—', people: '—' });
   });
 
   it('filters and ranks by the selected period, so the period pill re-cuts rather than re-reads', () => {
@@ -553,17 +549,6 @@ describe('non-member participation rules', () => {
       'Acme Motors',
     ]);
   });
-
-  it('selects the caption count for the selected period, and none when the view reported none', () => {
-    const counts = [
-      { range: 'COMPLETED_YEAR' as const, orgs: 33 },
-      { range: 'YTD' as const, orgs: 19 },
-    ];
-
-    expect(selectHealthMetricsEngagementNonMemberCounts(counts, 'YTD')).toEqual({ range: 'YTD', orgs: 19 });
-    expect(selectHealthMetricsEngagementNonMemberCounts(counts, 'COMPLETED_YEAR')?.orgs).toBe(33);
-    expect(selectHealthMetricsEngagementNonMemberCounts(null, 'YTD')).toBeNull();
-  });
 });
 
 describe('representatives rules', () => {
@@ -573,7 +558,6 @@ describe('representatives rules', () => {
       personName,
       identityUnresolved: false,
       accountName,
-      membershipTier: null,
       jobTitle: null,
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
@@ -589,10 +573,10 @@ describe('representatives rules', () => {
   it('selects the period the pill asks for, falling back to the newest period held', () => {
     const row = repRow('Dana Fields', 'Acme Motors');
 
-    expect(selectHealthMetricsEngagementRepPeriod(row, 'COMPLETED_YEAR')?.meetingsAttended).toBe(0);
+    expect(buildHealthMetricsEngagementRepRowView(row, 'COMPLETED_YEAR').attendedLabel).toBe('0 / 4');
     // A period the read never returned falls back rather than blanking every cell in the row.
-    expect(selectHealthMetricsEngagementRepPeriod(row, 'COMPLETED_YEAR_3')?.range).toBe('YTD');
-    expect(selectHealthMetricsEngagementRepPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
+    expect(buildHealthMetricsEngagementRepRowView(row, 'COMPLETED_YEAR_3').attendedLabel).toBe('2 / 6');
+    expect(buildHealthMetricsEngagementRepRowView({ ...row, periods: [] }, 'YTD').attendedLabel).toBe('—');
   });
 
   // Unlike the org and non-member captions, this view counts its scope per period.
@@ -724,7 +708,6 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
     personName: 'Dana Fields',
     identityUnresolved: false,
     accountName: 'Acme Motors',
-    membershipTier: 'Gold',
     jobTitle: 'Head of OSPO',
     committeeName: 'Governing Board',
     lastAttendedDate: '2026-08-14',

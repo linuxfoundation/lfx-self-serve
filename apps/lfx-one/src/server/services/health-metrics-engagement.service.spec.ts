@@ -786,7 +786,6 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     return {
       ACCOUNT_ID: 'a-1',
       ACCOUNT_NAME: 'Acme Motors',
-      MEMBERSHIP_STATUS: 'Non-member',
       LOGO_URL: 'https://logo.example/acme.png',
       SCOPE_ORGS_COUNT_3RD_LAST_COMPLETED_YEAR: 41,
       SCOPE_ORGS_COUNT_PREV_COMPLETED_YEAR: 37,
@@ -831,14 +830,6 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
 
     expect(lastSql()).not.toContain('project_slug');
     expect(lastSql()).not.toContain('is_all_projects');
-  });
-
-  it('renders the view status as-is rather than re-deriving membership', async () => {
-    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ MEMBERSHIP_STATUS: 'Prospect' })] });
-
-    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
-
-    expect(response.rows[0]?.membershipStatus).toBe('Prospect');
   });
 
   // The unsuffixed count is all time; a `COUNT(*)` here would count rows, not active organizations.
@@ -983,7 +974,6 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       PERSON_DISPLAY_NAME: 'Dana Fields',
       IS_IDENTITY_UNRESOLVED: false,
       ACCOUNT_NAME: 'Acme Motors',
-      MEMBERSHIP_TIER: 'Gold',
       PERSON_JOB_TITLE: 'Head of OSPO',
       COMMITTEE_NAME: 'Technical Steering Committee',
       LAST_ATTENDED_DATE: new Date('2026-08-14T00:00:00.000Z'),
@@ -1013,12 +1003,11 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       personName: 'Dana Fields',
       identityUnresolved: false,
       accountName: 'Acme Motors',
-      membershipTier: 'Gold',
       jobTitle: 'Head of OSPO',
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
     });
-    expect(lastSql()).toContain('membership_tier, person_job_title, committee_name,');
+    expect(lastSql()).toContain('account_name, person_job_title, committee_name,');
     expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 });
   });
 

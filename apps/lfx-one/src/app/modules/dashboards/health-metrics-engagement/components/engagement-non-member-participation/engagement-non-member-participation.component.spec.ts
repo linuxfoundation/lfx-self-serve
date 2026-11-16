@@ -25,7 +25,6 @@ function nonMemberRow(overrides: Partial<HealthMetricsEngagementNonMemberRow> = 
   return {
     accountId: 'a-1',
     accountName: 'Acme Motors',
-    membershipStatus: 'Non-member',
     logoUrl: '',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsAttended: 3, distinctPeople: 1, sortRank: 4 },
