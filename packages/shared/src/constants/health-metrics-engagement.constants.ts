@@ -73,33 +73,23 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   {
     key: 'orgs',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
-    label: 'Organization participation',
-    heading: 'Organization participation',
-    description:
-      'Which member organizations actually turn up, and when they were last seen. Last engaged is the stronger churn signal — recency beats rate, and it is not surfaced anywhere in PCC today.',
+    label: 'Company participation',
+    heading: 'Company participation',
+    description: 'See which member companies show up, and which have gone quiet.',
   },
   {
     key: 'reps',
     empty: { icon: 'fa-light fa-chart-simple', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Representatives',
     heading: 'Representatives',
-    description: 'The people behind the organizations. A seat that is never filled is a paid benefit going unused — and an early churn signal.',
+    description: 'Who represents each member, and which seats sit empty.',
   },
   {
     key: 'nonmem',
     empty: { icon: 'fa-light fa-building', source: HEALTH_METRICS_L2_EMPTY_SOURCES.members },
     label: 'Non-member participation',
     heading: 'Non-member participation',
-    description:
-      'Organizations turning up to meetings without paying for membership. Showing up is a stronger buying signal than contributing code — they are already spending staff time.',
-    note: {
-      tone: 'caution',
-      parts: [
-        {
-          text: 'Organization matching is under validation — known members have previously appeared as non-members. Treat this list as provisional until the match is fixed.',
-        },
-      ],
-    },
+    description: 'Companies that join meetings without being members.',
   },
   {
     key: 'newsletters',
@@ -224,13 +214,12 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED: HealthMetric
   typeCounts: [],
 };
 
-/**
- * Tiers drawn as the blue pill in the org table, matched case-insensitively; every other tier is grey.
- * The blue is the Members tier pill's (`HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS`), duplicated
- * because the Members constants import this file.
- */
-export const HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS: readonly string[] = ['platinum', 'premier', 'founding'];
-export const HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS = { top: 'bg-blue-50 text-blue-700', other: 'bg-gray-100 text-gray-600' } as const;
+/** The warning the design puts above the Non-member participation table. */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_CAUTION =
+  'Company matching is under validation, known members have previously appeared as non-members. Treat this list as provisional.';
+
+/** The Membership cell's text for a company that is not a member. */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_LABEL = 'Non-member';
 
 /** Attendance-bar fill per tone — grey at zero, amber or red below the rule's threshold, blue otherwise. */
 export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetricsEngagementAttendanceTone, string> = {
@@ -346,7 +335,7 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS = 6;
 export const HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS = 200;
 
 /** Client-side page size for the org table — the whole foundation arrives in one read. */
-export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 10;
 
 /**
  * Sanity cap on that one read, an order of magnitude above the largest foundation's org count.
@@ -362,7 +351,7 @@ export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
- * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * Its counts are `null` because nothing was measured — zeroes here would report a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOrgParticipation = {
@@ -371,7 +360,7 @@ export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOr
 };
 
 /** Client-side page size for the non-member table — the whole foundation arrives in one read. */
-export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE = 25;
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE = 10;
 
 /**
  * Sanity cap on that one read, an order of magnitude above the largest foundation's non-member
@@ -381,7 +370,7 @@ export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP = 5000;
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
- * Its count is `null` because nothing was measured — a zero here would caption a scope the
+ * Its count is `null` because nothing was measured — a zero here would report a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngagementNonMemberParticipation = {
@@ -390,7 +379,7 @@ export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngag
 };
 
 /** Client-side page size for the representatives table — the whole foundation arrives in one read. */
-export const HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE = 25;
+export const HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE = 10;
 
 /**
  * Sanity cap on that one read. Higher than the org and non-member caps because this view's grain is
@@ -400,7 +389,7 @@ export const HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP = 20000;
 
 /**
  * The representatives table's cuts, all three scoped to the people invited in the selected period —
- * the population the view's own caption counts. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
+ * the population the view's own scope count covers. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
  * and "Lapsed" is `IS_LAPSED_<period>`, so neither cut is a client-side date comparison.
  */
 export const HEALTH_METRICS_ENGAGEMENT_REP_FILTERS = [
@@ -414,7 +403,7 @@ export const HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL = 'Unresolved i
 
 /**
  * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
- * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * Its counts are `null` because nothing was measured — zeroes here would report a scope the
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED: HealthMetricsEngagementRepresentatives = {

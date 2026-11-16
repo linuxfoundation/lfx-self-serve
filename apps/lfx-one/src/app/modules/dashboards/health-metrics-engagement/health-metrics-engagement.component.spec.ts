@@ -9,6 +9,8 @@ import { HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS, HEALTH_METRICS_ENGAGEMENT_SECT
 import { UserService } from '@services/user.service';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +55,7 @@ class AttendanceTrendStubComponent {
 // Same stand-in for Organization participation.
 @Component({ selector: 'lfx-engagement-org-participation', template: '' })
 class OrgParticipationStubComponent {
+  public readonly filter = model<string>('all');
   public readonly countsChange = output<HealthMetricsEngagementOrgNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
@@ -61,6 +64,7 @@ class OrgParticipationStubComponent {
 // Same stand-in for Representatives.
 @Component({ selector: 'lfx-engagement-representatives', template: '' })
 class RepresentativesStubComponent {
+  public readonly filter = model<string>('all');
   public readonly countsChange = output<HealthMetricsEngagementRepNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
@@ -161,7 +165,7 @@ describe('HealthMetricsEngagementComponent', () => {
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable(), snapshot: { queryParamMap: convertToParamMap({}) } } },
+        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable(), snapshot: { queryParamMap: convertToParamMap({ repFilter: 'never' }) } } },
       ],
     })
       .overrideComponent(HealthMetricsEngagementComponent, {
@@ -180,6 +184,8 @@ describe('HealthMetricsEngagementComponent', () => {
             RepresentativesStubComponent,
             UiOptionComponent,
             UiSelectComponent,
+            UiSwitchComponent,
+            UiSwitchOptionComponent,
           ],
         },
       })
@@ -223,12 +229,33 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(fixture.componentInstance['groupType']()).toBe('all');
   });
 
-  // The design drops every plain footnote; only the non-member caution is left, as a warning note.
-  it('carries a note on the non-member section only, as a caution', () => {
-    const noted = HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => 'note' in section).map((section) => [section.key, section.note.tone]);
+  // The design drops every footnote; the non-member caution moves above its table, inside that section.
+  it('carries no section note', () => {
+    expect(HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => 'note' in section)).toEqual([]);
+  });
 
-    expect(noted).toEqual([['nonmem', 'caution']]);
-    expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
+  it('puts the activity and representative switches in their section headers, bound into each section', () => {
+    const orgSwitch = fixture.nativeElement.querySelector('[data-testid="engagement-controls-orgs"] [data-testid="engagement-org-participation-filter"]');
+    const repSwitch = fixture.nativeElement.querySelector('[data-testid="engagement-controls-reps"] [data-testid="engagement-representatives-filter"]');
+    expect(orgSwitch?.textContent).toContain('No activity in 180 days');
+    expect(repSwitch?.textContent).toContain('Never attended');
+    expect(repSwitch?.textContent).toContain('Lapsed');
+
+    const org = fixture.debugElement.query(By.directive(OrgParticipationStubComponent)).componentInstance as OrgParticipationStubComponent;
+    const reps = fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
+    // The page reads the URL's cut on arrival and binds it in.
+    expect(reps.filter()).toBe('never');
+    expect(org.filter()).toBe('all');
+
+    const page = fixture.componentInstance as unknown as { onOrgFilterChange: (value: string | null) => void };
+    page.onOrgFilterChange('lapsed');
+    fixture.detectChanges();
+    expect(org.filter()).toBe('lapsed');
+
+    // A section's Reset filters writes back through the two-way binding.
+    reps.filter.set('all');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['repFilter']()).toBe('all');
   });
 
   it('starts with the first section active and no note before any section reports', () => {
