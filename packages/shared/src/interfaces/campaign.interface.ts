@@ -6840,6 +6840,13 @@ export interface CampaignListResult {
    */
   linkedInTargetingEditEnabled: boolean;
   /**
+   * Whether the LinkedIn section may offer a daily cap beside a lifetime budget, sent as
+   * `linkedInConfig.dailyCapUsd` (#5774). `cutoverOwnsCreate()` and nothing else, like
+   * `linkedInTargetingEditEnabled`: only campaign-service sends the cap, and the legacy creator would
+   * drop it and spend uncapped.
+   */
+  linkedInDailyCapEnabled: boolean;
+  /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
    *

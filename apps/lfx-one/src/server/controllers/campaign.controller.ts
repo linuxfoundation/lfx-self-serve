@@ -357,6 +357,7 @@ import {
   canCreateWithFinerGoogleGeo,
   canCreateWithGoogleCriteria,
   canEditLinkedInTargeting,
+  canSetLinkedInDailyCap,
   canSearchGoogleGeoTargets,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1370,7 +1371,7 @@ export class CampaignController {
       // legacy creator would serve, and held to campaign-service's own rules otherwise
       // (`linkedin.ValidateDailyCap`), so the operator gets this field's sentence instead of a
       // generic refusal. See `linkedInDailyCapRefusal`.
-      const linkedInDailyCapRefusal = this.linkedInDailyCapRefusal(body, cutoverOn);
+      const linkedInDailyCapRefusal = this.linkedInDailyCapRefusal(body);
       if (linkedInDailyCapRefusal !== null) {
         next(
           ServiceValidationError.forField(LINKEDIN_DAILY_CAP_FIELD, linkedInDailyCapRefusal, {
@@ -6284,17 +6285,18 @@ export class CampaignController {
    * acceptable.
    *
    * - Only campaign-service creates a capped campaign (linuxfoundation/lfx-v2-campaign-service#607);
-   *   the legacy creator would drop the field and spend without the cap, so the cutover must be on.
+   *   the legacy creator would drop the field and spend without the cap (`canSetLinkedInDailyCap`).
+   *   The Implement tab hides the field on such a deployment, so this is the backstop.
    * - The rest mirrors `linkedin.ValidateDailyCap`: a JSON number, beside `lifetimeBudget: true`, at
    *   least LinkedIn's $10 daily minimum, and no more than `budgetUsd`, each at two-decimal wire
    *   precision. campaign-service repeats every check.
    *
    * Messages never echo a caller value.
    */
-  private linkedInDailyCapRefusal(body: CampaignCreateRequest, cutoverOn: boolean): string | null {
+  private linkedInDailyCapRefusal(body: CampaignCreateRequest): string | null {
     const config: unknown = body?.linkedInConfig;
     if (config === null || typeof config !== 'object' || !('dailyCapUsd' in config)) return null;
-    if (!cutoverOn) {
+    if (!canSetLinkedInDailyCap()) {
       return 'LinkedIn daily caps are not enabled on this deployment; remove the daily cap to create the campaign';
     }
     const { dailyCapUsd, lifetimeBudget, budgetUsd } = config as Record<string, unknown>;

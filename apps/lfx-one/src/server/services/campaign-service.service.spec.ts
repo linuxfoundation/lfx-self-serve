@@ -4804,6 +4804,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      linkedInDailyCapEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5357,6 +5358,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAssetUploadEnabled: false,
       linkedInAssetUploadEnabled: false,
       linkedInTargetingEditEnabled: false,
+      linkedInDailyCapEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

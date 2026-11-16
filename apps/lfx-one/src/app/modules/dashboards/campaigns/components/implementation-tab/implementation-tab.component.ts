@@ -790,6 +790,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInTargetingEditAvailable = computed<boolean>(() => this.linkedInTargetingEditEnabled() === true);
 
   /**
+   * Whether the LinkedIn section may offer a daily cap beside a lifetime budget
+   * (`CampaignListResult.linkedInDailyCapEnabled`, #5774). `null` (unknown) hides the field, so the
+   * form never sends a cap the deployment would refuse; the BFF refuses one anyway.
+   */
+  public readonly linkedInDailyCapEnabled = input<boolean | null>(null);
+
+  /** @see linkedInDailyCapEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInDailyCapAvailable = computed<boolean>(() => this.linkedInDailyCapEnabled() === true);
+
+  /**
    * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
    * attached to the campaign as an image ad extension. `null` (unknown) withholds it, as for Meta.
    * There is no pasted-URL path, so this one capability is the whole of the image control.
@@ -3472,6 +3482,10 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
   /** Why the daily cap (#5774) cannot be sent, or null; see `initLinkedInDailyCapError`. */
   protected readonly linkedInDailyCapError: Signal<string | null> = this.initLinkedInDailyCapError();
+  /** The hint, plus the error while there is one, so the reason is read when the field is focused. */
+  protected readonly linkedInDailyCapDescribedBy = computed(() =>
+    this.linkedInDailyCapError() === null ? 'implementation-linkedin-daily-cap-hint' : 'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
+  );
   /** Whether any variant's intro text or headline is one campaign-service would refuse or cut. */
   protected readonly linkedInVariantTextInvalid = computed(() =>
     this.linkedInVariantViews().some((view) => view.introTextError !== '' || view.headlineError !== '')
@@ -8207,10 +8221,10 @@ export class ImplementationTabComponent implements OnInit {
     return edit ? { targetingProfileEdit: edit } : {};
   }
 
-  /** `{ dailyCapUsd }` when a cap is set beside a lifetime budget (#5774), else nothing. */
+  /** `{ dailyCapUsd }` when a cap is set beside a lifetime budget on a deployment that offers it (#5774), else nothing. */
   private linkedInDailyCapField(): { dailyCapUsd?: number } {
     const cap = this.linkedInDailyCapUsd();
-    return this.linkedInLifetimeBudget() && cap !== null ? { dailyCapUsd: cap } : {};
+    return this.linkedInDailyCapAvailable() && this.linkedInLifetimeBudget() && cap !== null ? { dailyCapUsd: cap } : {};
   }
 
   private loadLinkedInAccounts(): void {
@@ -9970,7 +9984,8 @@ export class ImplementationTabComponent implements OnInit {
   private initLinkedInDailyCapError(): Signal<string | null> {
     return computed((): string | null => {
       const cap = this.linkedInDailyCapUsd();
-      if (cap === null || !this.linkedInLifetimeBudget()) return null;
+      // Not offered, or no lifetime budget: nothing is sent, so nothing can be wrong.
+      if (cap === null || !this.linkedInLifetimeBudget() || !this.linkedInDailyCapAvailable()) return null;
       if (!Number.isFinite(cap)) return 'Enter the daily cap in US dollars, or leave it empty for no cap.';
       const rounded = Math.round(cap * 100) / 100;
       if (rounded < LINKEDIN_MIN_DAILY_BUDGET_USD) return `The daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum.`;

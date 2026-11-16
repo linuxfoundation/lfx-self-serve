@@ -4021,7 +4021,7 @@
           </div>
 
           <!-- Daily cap beside a lifetime budget (#5774): offered only while the lifetime budget is on. -->
-          @if (linkedInLifetimeBudget()) {
+          @if (linkedInLifetimeBudget() && linkedInDailyCapAvailable()) {
             <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div class="flex flex-col gap-1">
                 <label for="implementation-linkedin-daily-cap" class="text-xs font-medium text-gray-700">Daily cap (USD, optional)</label>
@@ -4032,7 +4032,7 @@
                   (input)="onLinkedInDailyCapInput($event)"
                   min="10"
                   step="0.01"
-                  aria-describedby="implementation-linkedin-daily-cap-hint"
+                  [attr.aria-describedby]="linkedInDailyCapDescribedBy()"
                   [attr.aria-invalid]="linkedInDailyCapError() !== null"
                   class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   data-testid="implementation-linkedin-daily-cap" />
@@ -4040,7 +4040,9 @@
                   >Most LinkedIn spends in one day. At least $10 and no more than the lifetime budget. Leave it empty for no cap.</span
                 >
                 @if (linkedInDailyCapError(); as error) {
-                  <span class="text-xs text-red-600" role="alert" data-testid="implementation-linkedin-daily-cap-error">{{ error }}</span>
+                  <span id="implementation-linkedin-daily-cap-error" class="text-xs text-red-600" role="alert" data-testid="implementation-linkedin-daily-cap-error">{{
+                    error
+                  }}</span>
                 }
               </div>
             </div>

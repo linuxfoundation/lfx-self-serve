@@ -3225,7 +3225,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     linkedInVariants: () => unknown[];
     linkedInBudgetUsd: () => number;
     linkedInLifetimeBudget: () => boolean;
-    linkedInDailyCapUsd: () => number | null;
+    linkedInDailyCapUsd: { (): number | null; set(v: number | null): void };
     createBlockedReason: () => string | null;
     redditSubreddits: () => string[];
     redditInterests: () => string[];
@@ -3359,6 +3359,12 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   /** The daily cap field (#5774); null while the lifetime budget is off, which several tests assert on. */
   function linkedInDailyCapInput(f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null {
     return f.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap"]') as HTMLInputElement | null;
+  }
+
+  /** The deployment offers the daily cap (`linkedInDailyCapEnabled`); left unset, the field is withheld. */
+  function enableDailyCap(f: ComponentFixture<ImplementationTabComponent>): void {
+    f.componentRef.setInput('linkedInDailyCapEnabled', true);
+    f.detectChanges();
   }
 
   function typeLinkedInDailyCap(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
@@ -4269,6 +4275,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   /** Driven through the template's own bindings, like the budget pair above. */
   it('carries the linkedin daily cap through a tab round-trip and into the request', async () => {
     const first = await mount(null);
+    enableDailyCap(first.fixture);
     typeLinkedInBudget(first.fixture, 1000);
     toggleLinkedInLifetimeBudget(first.fixture, true);
     typeLinkedInDailyCap(first.fixture, '20');
@@ -4278,6 +4285,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(draft?.linkedInDailyCapUsd).toBe(20);
 
     const second = await mount(draft);
+    enableDailyCap(second.fixture);
     const c = at(second.fixture);
     c.selectedPlatforms.set(['linkedin-ads']);
     makeSubmittable(second.fixture);
@@ -4294,6 +4302,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
   it('shows the daily cap only beside a lifetime budget, and drops it when the lifetime budget is turned off', async () => {
     const { fixture } = await mount(null);
+    enableDailyCap(fixture);
     toggleLinkedInLifetimeBudget(fixture, false);
     expect(linkedInDailyCapInput(fixture)).toBeNull();
 
@@ -4315,6 +4324,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
   it('treats an emptied daily cap as no cap', async () => {
     const { fixture } = await mount(null);
+    enableDailyCap(fixture);
     typeLinkedInBudget(fixture, 1000);
     toggleLinkedInLifetimeBudget(fixture, true);
     typeLinkedInDailyCap(fixture, '20');
@@ -4328,6 +4338,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     ['above the lifetime budget', '1500', "can't be more than the lifetime budget"],
   ])('blocks Create, with the reason under the field, for a daily cap %s', async (_name, value, message) => {
     const { fixture } = await mount(null);
+    enableDailyCap(fixture);
     const c = at(fixture);
     c.selectedPlatforms.set(['linkedin-ads']);
     makeSubmittable(fixture);
@@ -4340,9 +4351,39 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(error?.textContent).toContain(message);
     expect(c.createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
 
+    expect(linkedInDailyCapInput(fixture)?.getAttribute('aria-describedby')).toBe(
+      'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
+    );
+
     typeLinkedInDailyCap(fixture, '20');
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]')).toBeNull();
+    expect(linkedInDailyCapInput(fixture)?.getAttribute('aria-describedby')).toBe('implementation-linkedin-daily-cap-hint');
     expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it.each([
+    ['unknown (null)', null],
+    ['off', false],
+  ])('withholds the daily cap, and sends none, while the deployment capability is %s', async (_name, enabled) => {
+    const { fixture } = await mount(null);
+    if (enabled !== null) {
+      fixture.componentRef.setInput('linkedInDailyCapEnabled', enabled);
+      fixture.detectChanges();
+    }
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    expect(linkedInDailyCapInput(fixture)).toBeNull();
+
+    // A cap restored from a draft written while the capability was on is not sent either.
+    const c = at(fixture);
+    c.linkedInDailyCapUsd.set(20);
+    c.selectedPlatforms.set(['linkedin-ads']);
+    makeSubmittable(fixture);
+    c.campaignForm.controls['linkedInGeoTargets'].setValue([{ urn: 'urn:li:geo:103644278', label: 'United States' }]);
+    fixture.detectChanges();
+    expect(c.createBlockedReason()).not.toBe('LinkedIn Ads: fix the daily cap.');
+    c.submit();
+    expect('dailyCapUsd' in sentConfig('linkedInConfig')).toBe(false);
   });
 
   // === Handler emission, which naming the field in `emitDraft` does not give you ===
