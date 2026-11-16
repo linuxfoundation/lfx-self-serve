@@ -79,9 +79,9 @@ function errorResponse(status: number): Response {
   return new Response('{}', { status });
 }
 
-/** A trusted second-page URL that still carries the email's recipient filter, so `stubFetch` can route it. */
-function secondPageUrl(email: string): string {
-  return `${API_URL}/organizations/org-1/badges?filter=${encodeURIComponent(`recipient_email::${email}|state::accepted,pending`)}&page=2`;
+/** A trusted page URL that still carries the email's recipient filter, so `stubFetch` can route it. */
+function pageUrl(email: string, page = 2): string {
+  return `${API_URL}/organizations/org-1/badges?filter=${encodeURIComponent(`recipient_email::${email}|state::accepted,pending`)}&page=${page}`;
 }
 
 /** Answer successive requests for one email with the given responses, cycling back to the first. */
@@ -191,7 +191,7 @@ describe('CredlyService.getBadgesForEmails', () => {
   it('rejects with 502 CREDLY_UNAVAILABLE when the only email fails partway through pagination', async () => {
     const fetchMock = stubFetch({
       [PRIMARY_EMAIL]: sequence(
-        () => okResponse([buildEntry()], secondPageUrl(PRIMARY_EMAIL)),
+        () => okResponse([buildEntry()], pageUrl(PRIMARY_EMAIL)),
         () => errorResponse(500)
       ),
     });
@@ -206,7 +206,7 @@ describe('CredlyService.getBadgesForEmails', () => {
   it('keeps earlier pages of an email that fails partway through pagination, without caching', async () => {
     const fetchMock = stubFetch({
       [PRIMARY_EMAIL]: sequence(
-        () => okResponse([buildEntry()], secondPageUrl(PRIMARY_EMAIL)),
+        () => okResponse([buildEntry()], pageUrl(PRIMARY_EMAIL)),
         () => errorResponse(500)
       ),
       [SECONDARY_EMAIL]: () => okResponse([buildEntry({ id: 'badge-3', recipient_email: SECONDARY_EMAIL, issued_at_date: '2026-03-01' })]),
@@ -226,6 +226,76 @@ describe('CredlyService.getBadgesForEmails', () => {
 
     await service.getBadgesForEmails(req, [PRIMARY_EMAIL, SECONDARY_EMAIL]);
     expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it('rejects with 502 CREDLY_UNAVAILABLE without caching when every email reaches the pagination cap', async () => {
+    const fetchMock = stubFetch(
+      Object.fromEntries(
+        [PRIMARY_EMAIL, SECONDARY_EMAIL].map((email) => [
+          email,
+          sequence(...Array.from({ length: 20 }, (_, page) => () => okResponse([buildEntry()], pageUrl(email, page + 2)))),
+        ])
+      )
+    );
+    const service = new CredlyService();
+
+    await expect(service.getBadgesForEmails(req, [PRIMARY_EMAIL, SECONDARY_EMAIL])).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CREDLY_UNAVAILABLE',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(40);
+
+    await expect(service.getBadgesForEmails(req, [PRIMARY_EMAIL, SECONDARY_EMAIL])).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'CREDLY_UNAVAILABLE',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(80);
+  });
+
+  it('returns all collected badges without caching when one email reaches the pagination cap', async () => {
+    const entries = Array.from({ length: 20 }, (_, page) => buildEntry({ id: `badge-${page + 1}` }));
+    const fetchMock = stubFetch({
+      [PRIMARY_EMAIL]: sequence(...entries.map((entry, page) => () => okResponse([entry], pageUrl(PRIMARY_EMAIL, page + 2)))),
+      [SECONDARY_EMAIL]: () => okResponse([buildEntry({ id: 'badge-secondary', recipient_email: SECONDARY_EMAIL })]),
+    });
+    const service = new CredlyService();
+
+    const badges = await service.getBadgesForEmails(req, [PRIMARY_EMAIL, SECONDARY_EMAIL]);
+
+    expect(badges.map((badge) => badge.id)).toEqual(['badge-secondary', ...entries.map((entry) => entry.id)]);
+    expect(fetchMock).toHaveBeenCalledTimes(21);
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'fetch_badges_for_email',
+      'Reached max pagination limit',
+      expect.objectContaining({ pages_fetched: 20, entries_collected: 20 })
+    );
+    expect(logger.warning).toHaveBeenCalledWith(
+      req,
+      'get_badges_for_emails',
+      'Partial Credly failure; returning collected badges without caching',
+      expect.objectContaining({ email_count: 2, failed_count: 1, badge_count: 21 })
+    );
+
+    await expect(service.getBadgesForEmails(req, [PRIMARY_EMAIL, SECONDARY_EMAIL])).resolves.toEqual(badges);
+    expect(fetchMock).toHaveBeenCalledTimes(42);
+  });
+
+  it('caches a complete lookup that finishes on the twentieth page', async () => {
+    const entries = Array.from({ length: 20 }, (_, page) => buildEntry({ id: `badge-${page + 1}` }));
+    const fetchMock = stubFetch({
+      [PRIMARY_EMAIL]: sequence(...entries.map((entry, page) => () => okResponse([entry], page < 19 ? pageUrl(PRIMARY_EMAIL, page + 2) : null))),
+    });
+    const service = new CredlyService();
+
+    const badges = await service.getBadgesForEmails(req, [PRIMARY_EMAIL]);
+
+    expect(badges.map((badge) => badge.id)).toEqual(entries.map((entry) => entry.id));
+    expect(fetchMock).toHaveBeenCalledTimes(20);
+    expect(logger.warning).not.toHaveBeenCalled();
+
+    await expect(service.getBadgesForEmails(req, [PRIMARY_EMAIL])).resolves.toEqual(badges);
+    expect(fetchMock).toHaveBeenCalledTimes(20);
   });
 
   it('drops entries missing required fields and logs the dropped count', async () => {

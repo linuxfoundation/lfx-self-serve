@@ -165,7 +165,7 @@ export class CredlyService {
   /**
    * Fetch all pages of badges for a single email address from the Credly API.
    * Follows `next_page_url` until all pages are collected, with a max page cap.
-   * On a non-OK response or thrown error, returns the entries collected so far with `failed: true`.
+   * On a non-OK response, thrown error, or page cap, returns collected entries with `failed: true`.
    */
   private async fetchBadgesForEmail(req: Request, email: string): Promise<CredlyEmailFetchResult> {
     const filter = `recipient_email::${email}|state::accepted,pending`;
@@ -208,6 +208,7 @@ export class CredlyService {
       }
 
       if (nextUrl && page >= CredlyService.maxPaginationPages) {
+        failed = true;
         logger.warning(req, 'fetch_badges_for_email', 'Reached max pagination limit', {
           email: maskedEmail,
           pages_fetched: page,
