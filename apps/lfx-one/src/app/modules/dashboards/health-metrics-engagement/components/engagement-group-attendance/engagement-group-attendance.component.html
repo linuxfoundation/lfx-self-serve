@@ -46,8 +46,9 @@
           <td>
             <lfx-health-metrics-cell [text]="view.name" [description]="view.kind.label" [descriptionIcon]="view.kind.icon" />
           </td>
-          <td>{{ view.meetings }}</td>
-          <td [class.text-gray-400]="view.lastMetLabel === '—'">{{ view.lastMetLabel }}</td>
+          <!-- The shared cell greys a "—", as the design's dashes are. -->
+          <td><lfx-health-metrics-cell [text]="view.meetings" /></td>
+          <td><lfx-health-metrics-cell [text]="view.lastMetLabel" /></td>
           <td>
             @if (view.dormant) {
               <!-- Focusable for its tooltip, so it carries a role; its name is the label and the tooltip describes it. -->

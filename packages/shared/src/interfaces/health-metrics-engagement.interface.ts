@@ -75,8 +75,8 @@ export interface HealthMetricsEngagementGroupPeriod {
   dormant: boolean;
 }
 
-/** A row of the Group attendance table. `periods` is ordered oldest → current and doubles as the
- * sparkline series. */
+/** A row of the Group attendance table. `periods` is ordered oldest → current and carries every period, so a
+ * period change re-renders without a second read. */
 export interface HealthMetricsEngagementGroupRow {
   committeeId: string;
   committeeName: string;

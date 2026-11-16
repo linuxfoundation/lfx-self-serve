@@ -31,6 +31,7 @@ export class HealthMetricsMetricsRowComponent {
   protected readonly leadClasses: Record<NonNullable<HealthMetricsMetricItem['descriptionLeadTone']>, string> = {
     up: 'text-emerald-600',
     down: 'text-red-600',
+    flat: 'text-gray-400',
   };
   protected readonly itemClasses: Signal<string[]> = this.initItemClasses();
 

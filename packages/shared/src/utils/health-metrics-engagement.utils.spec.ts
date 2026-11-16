@@ -376,6 +376,13 @@ describe('participation period selection and delta formatting', () => {
     ]);
   });
 
+  // A change that rounds to zero is not movement, so it reads grey rather than as a rise.
+  it('greys a change that rounds away', () => {
+    const flat = { ...participationRow, periods: participationRow.periods.map((period) => ({ ...period, attendanceChangePp: 0.0004 })) };
+
+    expect(buildHealthMetricsEngagementParticipationMetrics(flat, 'YTD')[0]).toMatchObject({ descriptionLead: '+0.0pp', descriptionLeadTone: 'flat' });
+  });
+
   it('leaves the change out when there is no prior period, and dashes an unread total', () => {
     expect(buildHealthMetricsEngagementParticipationMetrics(participationRow, 'COMPLETED_YEAR_3')[0]).toEqual({
       key: 'attendance',

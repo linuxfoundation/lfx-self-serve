@@ -69,7 +69,7 @@
                 }
               </lfx-health-metrics-cell>
             </td>
-            <td>{{ view.meetings }}</td>
+            <td><lfx-health-metrics-cell [text]="view.meetings" /></td>
             <td>
               <lfx-health-metrics-value-bar [value]="view.attendanceLabel" [pct]="view.attendancePct" [fillRule]="view.fillRule" [barWidthPx]="160" />
             </td>

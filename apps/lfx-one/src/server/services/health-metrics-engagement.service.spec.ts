@@ -255,7 +255,7 @@ describe('HealthMetricsEngagementService', () => {
     expect(sql).toContain('LEFT JOIN page ON TRUE');
     expect(sql).toContain('TRUE AS is_page_row');
     expect(sql).not.toContain('OVER()');
-    // Every period's columns ship regardless of the selected one — the sparkline spans all four.
+    // Every period's columns ship regardless of the selected one, so the row carries all four.
     expect(sql).toContain('attendance_pct_ytd');
     expect(sql).toContain('attendance_pct_3rd_last_completed_year');
   });

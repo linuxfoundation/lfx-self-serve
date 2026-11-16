@@ -5,6 +5,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
@@ -265,7 +266,7 @@ export class HealthMetricsEngagementService {
       `${typeCondition ? `COUNT_IF(${typeCondition})` : 'COUNT(*)'} AS total_records`,
     ];
 
-    const size = clampInteger(query.size, 1, 100, 25);
+    const size = clampInteger(query.size, 1, 100, HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 

@@ -7,6 +7,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS,
@@ -133,16 +134,14 @@ export function parseHealthMetricsEngagementGroupType(value: string | null): Hea
 
 /** What a group is, from the view's type label; a governance group is the board or one of its oversight committees. */
 export function resolveHealthMetricsEngagementGroupKind(row: HealthMetricsEngagementGroupRow): HealthMetricsEngagementGroupKind {
-  switch (row.groupTypeLabel) {
-    case 'Governance':
-      return row.meetingTypeGroup === 'Board' ? HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.board : HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.oversight;
-    case 'Working groups':
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.workingGroup;
-    case 'SIG / TAG':
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.sigTag;
-    default:
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.other;
-  }
+  // Read off the filter cuts' own labels, so the kinds cannot drift from the view's values.
+  const label = row.groupTypeLabel ?? '';
+  const labels = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS;
+  const kinds = HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS;
+  if (labels.gov?.includes(label)) return row.meetingTypeGroup === 'Board' ? kinds.board : kinds.oversight;
+  if (labels.wg?.includes(label)) return kinds.workingGroup;
+  if (labels.sigtag?.includes(label)) return kinds.sigTag;
+  return kinds.other;
 }
 
 /** One Group attendance row for the selected period. A group that held no meetings shows "—" rather than 0. */
@@ -232,7 +231,7 @@ export function buildHealthMetricsEngagementParticipationMetrics(
   if (change !== null) {
     attendance.descriptionLead = formatHealthMetricsEngagementPpDelta(change);
     attendance.description = 'vs previous period';
-    if (direction !== 'neutral') attendance.descriptionLeadTone = direction;
+    attendance.descriptionLeadTone = direction === 'neutral' ? 'flat' : direction;
   }
 
   return [
