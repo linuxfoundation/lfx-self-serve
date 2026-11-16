@@ -13,12 +13,16 @@ import { authenticatedMatchGuard } from './authenticated-match.guard';
 
 /** The page the server rendered for a `/meetings/:id` URL; read once by the browser's first match. */
 export const MEETING_PAGE_REDESIGN_KEY = makeStateKey<MeetingPageRedesignDecision>('meetingPageRedesign');
+/** The flag's anonymous answer for a signed-out visitor, kept for every later navigation of the visit. */
+export const MEETING_PAGE_ANONYMOUS_FLAG_KEY = makeStateKey<boolean>('meetingPageAnonymousFlag');
 
 /**
  * CanMatch guard choosing the redesigned `/meetings/:id` page over the legacy one, which follows it unguarded; it pairs
  * `/meetings/not-found` the same way.
- * @description Matches only for a signed-in viewer with `MEETINGS_REDESIGN_FLAG` on and no `?password=` or `?action=`
- * in the URL; the page itself sends anything else it can't serve back here with `MEETING_PAGE_LEGACY_STATE`.
+ * @description Matches when `MEETINGS_REDESIGN_FLAG` is on for the viewer, signed in or not, and the URL has no `?action=`;
+ * the page itself sends anything else it can't serve back here with `MEETING_PAGE_LEGACY_STATE`. A signed-out visitor
+ * gets the flag's anonymous evaluation, so only a rollout to everyone reaches them; the browser keeps the server's answer
+ * for their later navigations, and without one they keep the legacy page.
  * The server decides from `ServerRequestContext.flags` and hands the decision over in TransferState, so hydration
  * never swaps pages; later client navigations ask `FeatureFlagService`. A non-production QA override reaches the
  * server through a cookie mirrored from local storage.
@@ -26,12 +30,14 @@ export const MEETING_PAGE_REDESIGN_KEY = makeStateKey<MeetingPageRedesignDecisio
 export const meetingPageRedesignGuard: CanMatchFn = async (route, segments) => {
   const id = segments[1]?.path ?? '';
   const transferState = inject(TransferState);
-  const eligible = isEligible(inject(Router), route, id) && (authenticatedMatchGuard(route, segments) as boolean);
+  const eligible = isEligible(inject(Router), route, id);
+  const signedIn = authenticatedMatchGuard(route, segments) as boolean;
 
   if (!isPlatformBrowser(inject(PLATFORM_ID))) {
     const context = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
     const flag = readCookieOverride(inject(REQUEST, { optional: true })) ?? context?.flags?.meetingsRedesign ?? false;
     const enabled = eligible && flag;
+    if (!signedIn) transferState.set(MEETING_PAGE_ANONYMOUS_FLAG_KEY, flag);
     // A server-side redirect to not-found keeps the decision for the URL the browser will hydrate.
     if (id !== 'not-found' || !transferState.hasKey(MEETING_PAGE_REDESIGN_KEY)) {
       transferState.set(MEETING_PAGE_REDESIGN_KEY, { id, enabled });
@@ -47,13 +53,15 @@ export const meetingPageRedesignGuard: CanMatchFn = async (route, segments) => {
       return decided.enabled;
     }
   }
+  // LaunchDarkly never gets ready for a signed-out visitor in the browser, so without the server's answer they keep the legacy page.
+  if (!signedIn) return eligible && transferState.get(MEETING_PAGE_ANONYMOUS_FLAG_KEY, false);
   return eligible && (await resolveFlag(inject(FeatureFlagService)));
 };
 
 function isEligible(router: Router, route: Route, id: string): boolean {
   const navigation = router.getCurrentNavigation();
   const params = navigation?.extractedUrl.queryParamMap;
-  return !navigation?.extras.state?.[MEETING_PAGE_LEGACY_STATE] && !params?.has('password') && !params?.has('action') && !showsLegacyPage(router, route, id);
+  return !navigation?.extras.state?.[MEETING_PAGE_LEGACY_STATE] && !params?.has('action') && !showsLegacyPage(router, route, id);
 }
 
 // The legacy page rewrites its own query params; those navigations must keep it rather than remount this route.

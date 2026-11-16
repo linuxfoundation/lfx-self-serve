@@ -6,7 +6,6 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { MEETING_PAGE_GUEST_FORM_STATE, MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -68,7 +67,10 @@ describe('MeetingPageDetailsComponent', () => {
     return fixture.debugElement.query(By.css('lfx-meeting-details-body')).injector.get(MeetingDetailsSource);
   };
 
+  const urlPassword = signal<string | null>(null);
+
   beforeEach(() => {
+    urlPassword.set(null);
     navigateByUrl = vi.fn().mockResolvedValue(true);
     openDialog = vi.fn();
     navigate = vi.fn().mockResolvedValue(true);
@@ -88,10 +90,20 @@ describe('MeetingPageDetailsComponent', () => {
         { provide: MeetingPageRowHost, useValue: { row } },
         {
           provide: MeetingPageDataService,
-          useValue: { clock: signal(Date.parse('2026-01-01T00:00:00Z')), refresh, claimJoinOnLoad, reloadOnNextLoad: vi.fn() },
+          useValue: {
+            clock: signal(Date.parse('2026-01-01T00:00:00Z')),
+            refresh,
+            claimJoinOnLoad,
+            reloadOnNextLoad: vi.fn(),
+            loadedViaPastMeetingId: signal(false),
+            liveMeetingFullAccess: signal(true),
+            liveMeetingCanJoin: signal(false),
+            pastMeetingFullAccess: signal(true),
+            urlPassword,
+          },
         },
         { provide: MeetingService, useValue: { getMeetingDetail, getMeetingRsvpForCurrentUser } },
-        { provide: UserService, useValue: { confirmedMeetingRsvps: () => confirmed() } },
+        { provide: UserService, useValue: { authenticated: signal(true), confirmedMeetingRsvps: () => confirmed() } },
       ],
     });
     TestBed.overrideComponent(MeetingPageDetailsComponent, {
@@ -113,6 +125,7 @@ describe('MeetingPageDetailsComponent', () => {
     expect(page.now().toISOString()).toBe('2026-01-01T00:00:00.000Z');
     expect(page.hostRef).toBeNull();
     expect(page.upcomingRows()).toEqual([]);
+    expect(page.fullAccess).toBe(true);
   });
 
   it('opens a past row at its {id}-{ms} page', () => {
@@ -128,6 +141,14 @@ describe('MeetingPageDetailsComponent', () => {
     expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse(start)}`);
   });
 
+  it('keeps the passcode from the address bar when opening another date of a series', () => {
+    urlPassword.set('secret');
+    const start = '2030-01-08T10:00:00.000Z';
+    source().open({ ...PAST_ROW, meeting: { id: '123' } as Meeting, occurrenceId: 'occ-2', startTime: start });
+
+    expect(navigateByUrl).toHaveBeenCalledWith(`/meetings/123?occurrence=${Date.parse(start)}&password=secret`);
+  });
+
   it('gives another past date picked in place its own page', () => {
     const fixture = TestBed.createComponent(MeetingPageDetailsComponent);
     TestBed.tick();
@@ -141,16 +162,12 @@ describe('MeetingPageDetailsComponent', () => {
     fixture.destroy();
   });
 
-  it('lets Join open Zoom on load as the page allows, and joins with another email on the legacy page', () => {
+  it('lets Join open Zoom on load as the page allows, takes guest details in place and passes the server join answer', () => {
     const page = source();
 
     expect(page.claimJoinOnLoad?.()).toBe(true);
-    page.joinWithOtherEmail?.();
-    expect(navigateByUrl).toHaveBeenCalledWith('/meetings/123', {
-      skipLocationChange: true,
-      onSameUrlNavigation: 'reload',
-      state: { [MEETING_PAGE_LEGACY_STATE]: true, [MEETING_PAGE_GUEST_FORM_STATE]: true },
-    });
+    expect(page.guestJoinInPlace).toBe(true);
+    expect(page.canJoin?.()).toBe(false);
   });
 
   it('flips an upcoming date to ended in place instead of opening its past record', () => {

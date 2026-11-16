@@ -25,6 +25,8 @@ export class HealthMetricsValueBarComponent {
   public readonly fillRule = input<HealthMetricsBarFillRule>(HEALTH_METRICS_VALUE_BAR_FILL);
   /** One fill for every share, in place of the rule. */
   public readonly fillClass = input<string>('');
+  /** The bar's track width; the design widens it past the default 62px in a roomier column. */
+  public readonly barWidthPx = input<number>(62);
 
   protected readonly dash = HEALTH_METRICS_TABLE_DASH;
   protected readonly width: Signal<number | null> = computed(() => clampHealthMetricsPct(this.pct()));

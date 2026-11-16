@@ -7,6 +7,8 @@ import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { BehaviorSubject } from 'rxjs';
@@ -29,6 +31,7 @@ import type {
 // in HttpClient and the analytics read.
 @Component({ selector: 'lfx-engagement-group-attendance', template: '' })
 class GroupAttendanceStubComponent {
+  public readonly groupType = model<string>('all');
   public readonly countsChange = output<HealthMetricsEngagementGroupNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
@@ -179,6 +182,8 @@ describe('HealthMetricsEngagementComponent', () => {
             NonMemberParticipationStubComponent,
             OrgParticipationStubComponent,
             RepresentativesStubComponent,
+            UiOptionComponent,
+            UiSelectComponent,
             UiSwitchComponent,
             UiSwitchOptionComponent,
           ],
@@ -204,6 +209,24 @@ describe('HealthMetricsEngagementComponent', () => {
       expect(element.getAttribute('id')).toBe(`sec-eng-${section.key}`);
       expect(element.textContent).toContain(section.heading);
     }
+  });
+
+  it('puts the Group type select in the Group attendance header and binds its type into the section', async () => {
+    const controls = fixture.nativeElement.querySelector('[data-testid="engagement-controls-committees"]');
+    const select = controls?.querySelector('[data-testid="engagement-group-attendance-type"]');
+    expect(select).not.toBeNull();
+    expect(select.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Group type');
+
+    const page = fixture.componentInstance as unknown as { onGroupTypeChange: (value: string | null) => void };
+    const stub = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
+    page.onGroupTypeChange('wg');
+    fixture.detectChanges();
+    expect(stub.groupType()).toBe('wg');
+
+    // The section's Reset filters writes back through the two-way binding.
+    stub.groupType.set('all');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['groupType']()).toBe('all');
   });
 
   // The design drops every footnote; the non-member caution moves above its table, inside that section.

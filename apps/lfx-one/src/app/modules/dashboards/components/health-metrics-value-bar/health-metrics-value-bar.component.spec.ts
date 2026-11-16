@@ -27,6 +27,13 @@ describe('HealthMetricsValueBarComponent', () => {
     expect(query('health-metrics-value-bar-value')?.className).toContain('min-w-[40px]');
     expect(query('health-metrics-value-bar-fill')?.style.width).toBe('64%');
     expect(query('health-metrics-value-bar-fill')?.className).toContain('bg-blue-500');
+    expect(query('health-metrics-value-bar-fill')?.parentElement?.style.width).toBe('62px');
+  });
+
+  it('widens the bar when the cell asks for it', async () => {
+    await render({ value: '64%', pct: 64, barWidthPx: 160 });
+
+    expect(query('health-metrics-value-bar-fill')?.parentElement?.style.width).toBe('160px');
   });
 
   it.each([

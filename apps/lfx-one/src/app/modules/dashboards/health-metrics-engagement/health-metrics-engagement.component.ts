@@ -6,13 +6,21 @@ import { ActivatedRoute } from '@angular/router';
 import {
   HEALTH_METRICS_ENGAGEMENT_BLANK,
   HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementSubNavItems, parseHealthMetricsEngagementOrgFilter, parseHealthMetricsEngagementRepFilter } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEngagementSubNavItems,
+  parseHealthMetricsEngagementGroupType,
+  parseHealthMetricsEngagementOrgFilter,
+  parseHealthMetricsEngagementRepFilter,
+} from '@lfx-one/shared/utils';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 
@@ -30,6 +38,7 @@ import { EngagementRepresentativesComponent } from './components/engagement-repr
 
 import type {
   HealthMetricsEngagementGroupNoteCounts,
+  HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgNoteCounts,
   HealthMetricsEngagementRepFilter,
@@ -56,6 +65,8 @@ import type {
     HealthMetricsL2SectionControlsDirective,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
+    UiOptionComponent,
+    UiSelectComponent,
     UiSwitchComponent,
     UiSwitchOptionComponent,
   ],
@@ -68,6 +79,12 @@ export class HealthMetricsEngagementComponent {
   protected readonly idPrefix = HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX;
   protected readonly dataSections = HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_ENGAGEMENT_BLANK;
+  protected readonly groupTypes = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS;
+
+  /** Group attendance's cut, set from the header select and that section's Reset filters; Group attendance keeps it in the URL. */
+  protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(
+    parseHealthMetricsEngagementGroupType(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupType))
+  );
   protected readonly orgFilters = HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS;
   protected readonly repFilters = HEALTH_METRICS_ENGAGEMENT_REP_FILTERS;
 
@@ -92,6 +109,10 @@ export class HealthMetricsEngagementComponent {
       neverAttendedReps: this.repCounts()?.neverAttendedReps ?? 0,
     })
   );
+
+  protected onGroupTypeChange(value: string | null): void {
+    this.groupType.set(parseHealthMetricsEngagementGroupType(value));
+  }
 
   protected onOrgFilterChange(value: string | null): void {
     this.orgFilter.set(parseHealthMetricsEngagementOrgFilter(value));
