@@ -80,6 +80,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
   MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
 
+  /** Domain + schema-version segment for the per-login mentorship user refresh marker, shared across replicas so each login refreshes the user's mentorship record once. */
+  MENTORSHIP_USER_SYNC_NAMESPACE: 'mentorship-user-sync:v1',
+
   /**
    * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
    * Its locked region chains `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) +
