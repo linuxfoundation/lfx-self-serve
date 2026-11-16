@@ -456,7 +456,7 @@ export class OrgSelectorComponent {
     if (!this.accountContextService.selectRollUp(rootUid)) {
       return;
     }
-    // #4133: a new roll-up pick lands on the family's overview, not the page it was made from. Unlike
+    // #4133: a new roll-up pick lands on the family's Memberships page, not the page it was made from. Unlike
     // an organization switch, the roll-up does not support every page — Org Profile is single-org
     // by definition (#4125) — so carrying the current page across can land on one that has no
     // roll-up rendering at all.

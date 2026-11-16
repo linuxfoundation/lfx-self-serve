@@ -113,7 +113,7 @@ export class LensService {
    * Hybrid personas merge foundation + project into the 'Projects' entry — clicking it returns to the
    * last viewed nav lens so a previously selected foundation isn't reset to the project lens.
    *
-   * Org Lens lands on the selected organization's overview, the address its menu links use (`orgLensLandingLink`). The
+   * Org Lens lands on the selection's home page — an organization's overview, a roll-up's Memberships — as its menu links address it (`orgLensLandingLink`). The
    * bare `/org` redirects to the legacy `/org/overview`, which only the first default selection rewrites — so with an
    * organization already selected the menu's Dashboard item never matched the page.
    */

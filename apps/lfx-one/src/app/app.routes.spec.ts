@@ -3,13 +3,14 @@
 
 import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter, Router, UrlSegment } from '@angular/router';
+import { ActivatedRoute, provideRouter, RedirectFunction, Router, UrlSegment } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_TABS, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { describe, expect, it, vi } from 'vitest';
 
 import { routes } from './app.routes';
+import { OrgRollUpUnavailableComponent } from './modules/dashboards/org/org-rollup-unavailable/org-rollup-unavailable.component';
 import { HealthMetricsTrainingComponent } from './modules/dashboards/health-metrics-training/health-metrics-training.component';
 import { MyNewsletterFoundationsComponent } from './modules/newsletters/my-newsletter-foundations/my-newsletter-foundations.component';
 import { MyNewslettersComponent } from './modules/newsletters/my-newsletters/my-newsletters.component';
@@ -20,6 +21,7 @@ import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -255,4 +257,48 @@ describe('My Meetups routes', () => {
       }
     );
   }
+});
+
+// #4133: a family roll-up renders Memberships only, so every other page is preceded by the
+// roll-up-unavailable page — on both mounts, so a legacy address is covered as well.
+describe('Org Lens roll-up routes', () => {
+  const org = shellRoute.children!.find((route) => route.path === 'org')!;
+  const addressed = org.children!.find((route) => route.path === `:${ORG_SEGMENT_PARAM}`)!;
+  const gates = (children: Route[]): Route[] => children.filter((route) => route.canMatch?.includes(orgRollUpUnavailablePageGuard));
+
+  it.each([
+    ['legacy', org.children!],
+    ['addressed', addressed.children!],
+  ])('declares the unavailable page ahead of every page a roll-up cannot render yet (%s mount)', (_mount, children) => {
+    expect(gates(children).map((gate) => gate.path)).toEqual([
+      'overview',
+      'memberships/:foundationSlug',
+      'projects',
+      'projects/:projectSlug',
+      'roi',
+      'people',
+      'contributions',
+      'events',
+      'training',
+      'meetings',
+      'groups',
+    ]);
+    for (const gate of gates(children)) {
+      expect(children[children.indexOf(gate) + 1].path).toBe(gate.path);
+    }
+  });
+
+  it('lazy-loads the unavailable page for every address under a gated page', async () => {
+    const events = gates(addressed.children!).find((gate) => gate.path === 'events')!;
+
+    expect(events.children?.map((child) => child.path)).toEqual(['**']);
+    expect(await events.children?.[0].loadComponent?.()).toBe(OrgRollUpUnavailableComponent);
+  });
+
+  it("sends a bare roll-up address to its Memberships page and an organization's to its overview", () => {
+    const redirect = addressed.children!.find((route) => route.path === '')!.redirectTo as RedirectFunction;
+
+    expect(redirect({ params: { [ORG_SEGMENT_PARAM]: 'family-0014100000RootAAAA' } } as never)).toBe('memberships');
+    expect(redirect({ params: { [ORG_SEGMENT_PARAM]: 'acme-inc' } } as never)).toBe('overview');
+  });
 });

@@ -7,10 +7,13 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  ORG_LENS_ROLL_UP_HOME_PAGE,
+  ORG_LENS_ROLL_UP_PAGES,
   ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
@@ -34,6 +37,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
+import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
@@ -50,6 +54,8 @@ import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
+const loadOrgRollUpUnavailablePage = () =>
+  import('./modules/dashboards/org/org-rollup-unavailable/org-rollup-unavailable.component').then((m) => m.OrgRollUpUnavailableComponent);
 
 /**
  * Org Lens page routes, EasyCLA included (its DR-004 exemption ended with lfx-self-serve#2743: the
@@ -59,10 +65,10 @@ const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/or
  * `/org/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
-  return [
+  return withRollUpUnavailablePages([
     {
       path: 'easycla',
-      // A corporate CLA belongs to one company, so the roll-up redirects to its own overview (#4415).
+      // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
       canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
@@ -250,11 +256,33 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
-      // Single-organization by definition, so the roll-up redirects to its own overview (#4415).
+      // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
       canActivate: [orgRollUpSingleOrgPageGuard],
       loadComponent: loadOrgProfilePage,
     },
-  ];
+  ]);
+}
+
+/**
+ * Declares the roll-up-unavailable page ahead of every page route that cannot render a family roll-up
+ * yet, so on a roll-up that page never loads (#4133). Skips the roll-up pages (`ORG_LENS_ROLL_UP_PAGES`),
+ * the single-organization pages, which send a roll-up home through `orgRollUpSingleOrgPageGuard`, and
+ * redirects, which render nothing.
+ */
+function withRollUpUnavailablePages(pages: Routes): Routes {
+  return pages.flatMap((page) =>
+    !page.path || page.redirectTo || ORG_LENS_ROLL_UP_PAGES[page.path] === true || page.canActivate?.includes(orgRollUpSingleOrgPageGuard)
+      ? [page]
+      : [
+          {
+            path: page.path,
+            canMatch: [orgRollUpUnavailablePageGuard],
+            data: page.data,
+            children: [{ path: '**', loadComponent: loadOrgRollUpUnavailablePage }],
+          },
+          page,
+        ]
+  );
 }
 
 export const routes: Routes = [
@@ -477,7 +505,7 @@ export const routes: Routes = [
               {
                 path: '',
                 pathMatch: 'full',
-                redirectTo: 'overview',
+                redirectTo: ({ params }) => (isOrgRollUpSegment(params[ORG_SEGMENT_PARAM]) ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview'),
               },
               ...orgLensPageRoutes(),
             ],

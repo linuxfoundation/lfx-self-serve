@@ -109,7 +109,12 @@ describe('OrgLensEmptyStateComponent', () => {
         expect(action.label, `${state}: "${action.label}" must not point at support (#5447)`).not.toMatch(/support/i);
         if (action.route) {
           // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview.
-          const allowed = state === 'not-found-staff' ? ['/org/overview'] : ['/profile/attributions', '/profile/settings'];
+          const allowed =
+            state === 'not-found-staff'
+              ? ['/org/overview']
+              : state === 'roll-up-unavailable'
+                ? ['/org/memberships']
+                : ['/profile/attributions', '/profile/settings'];
           expect(allowed, `${state}: route ${action.route.join('/')} is not an allowed destination (#5447)`).toContain(action.route.join('/'));
         }
         if (action.href) {
@@ -221,7 +226,7 @@ describe('OrgLensEmptyStateComponent', () => {
       'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects'
     );
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
-    expect(others).toHaveLength(8);
+    expect(others).toHaveLength(9);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
       expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Organization Lens shows');
