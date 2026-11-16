@@ -4,8 +4,9 @@
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, Observable, of, startWith, switchMap, take, timeout } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
@@ -140,6 +141,20 @@ export class OrgLensEmployerAffiliationService {
     return probe.status === 'answered' && !!probe.affiliation.employerName && probe.affiliation.membership === 'non-member';
   });
 
+  /**
+   * A *checked* "this caller's employer IS an LF member", from this probe rather than #4225's verdict.
+   *
+   * The two are refreshed separately after a work-history edit, and this one usually lands first, so
+   * rule 6 has to accept either. Without it a caller who has just affiliated with a member company
+   * falls past rule 6 (whose verdict is still the pre-edit one) and past rule 7 (this probe says
+   * `member`, not `non-member`) into `no-organization` — told to add the affiliation they have just
+   * added, which is the loop #4314 exists to close.
+   */
+  public readonly affiliatedToMember: Signal<boolean> = computed(() => {
+    const probe = this.probe();
+    return probe.status === 'answered' && !!probe.affiliation.employerName && probe.affiliation.membership === 'member';
+  });
+
   /** Re-ask the question — the shared Retry's employer half. */
   public refresh(): void {
     this.refreshCount.update((count) => count + 1);
@@ -147,6 +162,11 @@ export class OrgLensEmployerAffiliationService {
 
   private fetch(): Observable<AffiliationProbe> {
     return this.http.get<OrgLensEmployerAffiliation>('/api/profile/employer-affiliation').pipe(
+      // `settled` holds the page on its skeleton until this answers, so an answer that never comes —
+      // a hung warehouse read, a dropped socket — would strand every grant-less caller there with no
+      // Retry to reach. Bounded by the same budget #4225 gives its sibling lookup; a timeout is a
+      // failed lookup, which renders `could-not-load` and its Retry rather than a silent skeleton.
+      timeout(ORG_AFFILIATION_LOOKUP_TIMEOUT_MS),
       map((affiliation): AffiliationProbe => ({ status: 'answered', affiliation })),
       catchError((error) => {
         console.warn('[OrgLensEmployerAffiliationService] employer affiliation lookup failed', error);

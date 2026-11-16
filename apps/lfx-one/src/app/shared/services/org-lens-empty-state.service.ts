@@ -292,7 +292,10 @@ export class OrgLensEmptyStateService {
       // asked first — it rides the role-grants response the page already waits for, and a caller
       // whose employer is a member is by definition not one of #4314's. Both are false whenever the
       // server could not establish them, so an outage or an older server keeps today's wording.
-      if (this.roleGrants.affiliatedToMember()) {
+      // Either source may carry the member answer: after a work-history edit they are refreshed
+      // separately and the probe usually lands first, so reading only #4225's verdict here would drop
+      // a freshly-affiliated member employee into `no-organization` until the grants refresh caught up.
+      if (this.roleGrants.affiliatedToMember() || this.employerAffiliation.affiliatedToMember()) {
         return 'affiliated-no-grant';
       }
       if (this.employerAffiliation.affiliatedToNonMember()) {

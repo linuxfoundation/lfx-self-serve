@@ -70,6 +70,7 @@ function setup(): Harness {
         useValue: {
           pending: signal(false),
           affiliatedToNonMember: signal(false),
+          affiliatedToMember: signal(false),
           employerName: signal(null),
           lookupFailed: signal(false),
           refresh: vi.fn(),

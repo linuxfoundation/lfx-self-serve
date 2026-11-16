@@ -46,7 +46,7 @@ function experience(organization: string, endDate?: string): WorkExperienceEntry
   return { id: `we-${organization}`, organization, jobTitle: 'Engineer', startDate: 'Jan 2020', endDate, source: 'manual' };
 }
 
-function rows(...values: { ACCOUNT_ID: string; ACCOUNT_NAME: string; ACTIVE_MEMBERSHIP_COUNT: number }[]): { rows: typeof values } {
+function rows(...values: { ACCOUNT_ID: string; ACCOUNT_NAME: string; IS_MEMBER: boolean | null }[]): { rows: typeof values } {
   return { rows: values };
 }
 
@@ -70,7 +70,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('reports a current employer with no active memberships as a non-member', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Delta Harbour')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-1', ACCOUNT_NAME: 'Delta Harbour', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-1', ACCOUNT_NAME: 'Delta Harbour', IS_MEMBER: false }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'Delta Harbour',
@@ -81,7 +81,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('reports an employer with active memberships as a member', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Vendor Corp')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-2', ACCOUNT_NAME: 'Vendor Corp', ACTIVE_MEMBERSHIP_COUNT: 3 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-2', ACCOUNT_NAME: 'Vendor Corp', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'member' });
   });
@@ -112,7 +112,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('asks about the current employer, not a past one', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Former Employer', 'Dec 2023'), experience('Current Employer')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Current Employer', ACTIVE_MEMBERSHIP_COUNT: 1 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Current Employer', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ employerName: 'Current Employer' });
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['CURRENTEMPLOYER']);
@@ -133,7 +133,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   // one, so the response must not carry it back.
   it('never returns a Salesforce account id', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Delta Harbour')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-1', ACCOUNT_NAME: 'Delta Harbour', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-1', ACCOUNT_NAME: 'Delta Harbour', IS_MEMBER: false }));
 
     const affiliation = await service.getEmployerAffiliation(REQ, 'lfid');
 
@@ -145,10 +145,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   it('reports a member when any current employer holds a membership, whichever entry comes first', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Delta Harbour'), experience('Beta Coastal')]);
     execute.mockResolvedValue(
-      rows(
-        { ACCOUNT_ID: 'acc-bc', ACCOUNT_NAME: 'Beta Coastal', ACTIVE_MEMBERSHIP_COUNT: 4 },
-        { ACCOUNT_ID: 'acc-dh', ACCOUNT_NAME: 'Delta Harbour', ACTIVE_MEMBERSHIP_COUNT: 0 }
-      )
+      rows({ ACCOUNT_ID: 'acc-bc', ACCOUNT_NAME: 'Beta Coastal', IS_MEMBER: true }, { ACCOUNT_ID: 'acc-dh', ACCOUNT_NAME: 'Delta Harbour', IS_MEMBER: false })
     );
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
@@ -160,7 +157,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('asks about every current employer in one query', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Alpha'), experience('Beta'), experience('Gone', 'Dec 2023')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-a', ACCOUNT_NAME: 'Alpha', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-a', ACCOUNT_NAME: 'Alpha', IS_MEMBER: false }));
 
     // Alpha resolved and holds nothing, Beta matched no account — one unchecked employer is enough
     // for the whole answer to be unresolved.
@@ -175,8 +172,8 @@ describe('OrgLensEmployerAffiliationService', () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Delta Harbour'), experience('Corner Shop Ltd')]);
     execute.mockResolvedValue(
       rows(
-        { ACCOUNT_ID: 'acc-dh', ACCOUNT_NAME: 'Delta Harbour', ACTIVE_MEMBERSHIP_COUNT: 0 },
-        { ACCOUNT_ID: 'acc-cs', ACCOUNT_NAME: 'Corner Shop Ltd', ACTIVE_MEMBERSHIP_COUNT: 0 }
+        { ACCOUNT_ID: 'acc-dh', ACCOUNT_NAME: 'Delta Harbour', IS_MEMBER: false },
+        { ACCOUNT_ID: 'acc-cs', ACCOUNT_NAME: 'Corner Shop Ltd', IS_MEMBER: false }
       )
     );
 
@@ -188,7 +185,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('asks once per distinct current employer', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Acme'), experience(' acme ')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-4', ACCOUNT_NAME: 'Acme', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-4', ACCOUNT_NAME: 'Acme', IS_MEMBER: false }));
 
     await service.getEmployerAffiliation(REQ, 'lfid');
 
@@ -199,7 +196,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   // Salesforce spelling on one answer and the profile spelling on another.
   it('reports the profile spelling, not the matched account name', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('delta harbour'), experience('beta coastal')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-bc', ACCOUNT_NAME: 'Beta Coastal, Inc.', ACTIVE_MEMBERSHIP_COUNT: 4 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-bc', ACCOUNT_NAME: 'Beta Coastal, Inc.', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toEqual({
       employerName: 'beta coastal',
@@ -209,7 +206,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('keeps the profile spelling for the non-member answer too', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('delta harbour')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-dh', ACCOUNT_NAME: 'Delta Harbour S.A.', ACTIVE_MEMBERSHIP_COUNT: 0 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-dh', ACCOUNT_NAME: 'Delta Harbour S.A.', IS_MEMBER: false }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
       employerName: 'delta harbour',
@@ -220,7 +217,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   // is the one part of a company name routinely written on one side and omitted on the other.
   it('matches a member account whose name carries a legal-form suffix the profile omits', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Acme')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme, LLC', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme, LLC', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
       membership: 'member',
@@ -229,7 +226,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('matches when the profile carries the legal form and the account does not', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Acme Inc.')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme', ACTIVE_MEMBERSHIP_COUNT: 1 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-acme', ACCOUNT_NAME: 'Acme', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'member' });
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['ACME']);
@@ -272,7 +269,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   // would hide the suffix and miss the member account.
   it('matches a slash-written legal form the profile omits', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Nordic Freight')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-nf', ACCOUNT_NAME: 'Nordic Freight A/S', ACTIVE_MEMBERSHIP_COUNT: 1 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-nf', ACCOUNT_NAME: 'Nordic Freight A/S', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'member' });
     expect(execute).toHaveBeenCalledWith(expect.anything(), ['NORDICFREIGHT']);
@@ -303,7 +300,7 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   it('still asks about the resolvable employers alongside a non-Latin one', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('架空会社'), experience('Beta Coastal')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-bc', ACCOUNT_NAME: 'Beta Coastal', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-bc', ACCOUNT_NAME: 'Beta Coastal', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
       employerName: 'Beta Coastal',
@@ -318,7 +315,7 @@ describe('OrgLensEmployerAffiliationService', () => {
     const employers = Array.from({ length: 12 }, (_, index) => experience(`Employer ${index}`));
     getWorkExperiencesForKnownUser.mockResolvedValue(employers);
     execute.mockResolvedValue(
-      rows(...Array.from({ length: 10 }, (_, index) => ({ ACCOUNT_ID: `acc-${index}`, ACCOUNT_NAME: `Employer ${index}`, ACTIVE_MEMBERSHIP_COUNT: 0 })))
+      rows(...Array.from({ length: 10 }, (_, index) => ({ ACCOUNT_ID: `acc-${index}`, ACCOUNT_NAME: `Employer ${index}`, IS_MEMBER: false })))
     );
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'unresolved' });
@@ -329,7 +326,7 @@ describe('OrgLensEmployerAffiliationService', () => {
   it('still answers member when an employer past the cap is the only one queried as a member', async () => {
     const employers = Array.from({ length: 12 }, (_, index) => experience(`Employer ${index}`));
     getWorkExperiencesForKnownUser.mockResolvedValue(employers);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Employer 3', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-3', ACCOUNT_NAME: 'Employer 3', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({
       employerName: 'Employer 3',
@@ -337,12 +334,20 @@ describe('OrgLensEmployerAffiliationService', () => {
     });
   });
 
+  // The model can answer NULL; that is "no verdict", which may not be read as a member.
+  it('treats a null membership verdict as not a member', async () => {
+    getWorkExperiencesForKnownUser.mockResolvedValue([experience('Delta Harbour')]);
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-n', ACCOUNT_NAME: 'Delta Harbour', IS_MEMBER: null }));
+
+    await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'non-member' });
+  });
+
   // Duplicate account names must not let an empty row downgrade a member company.
   it('orders a duplicated company name so the account holding memberships answers', async () => {
     getWorkExperiencesForKnownUser.mockResolvedValue([experience('Acme')]);
-    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-4', ACCOUNT_NAME: 'Acme', ACTIVE_MEMBERSHIP_COUNT: 2 }));
+    execute.mockResolvedValue(rows({ ACCOUNT_ID: 'acc-4', ACCOUNT_NAME: 'Acme', IS_MEMBER: true }));
 
     await expect(service.getEmployerAffiliation(REQ, 'lfid')).resolves.toMatchObject({ membership: 'member' });
-    expect(execute.mock.calls[0][0]).toContain('ORDER BY ACTIVE_MEMBERSHIP_COUNT DESC');
+    expect(execute.mock.calls[0][0]).toContain('ORDER BY IS_MEMBER DESC NULLS LAST');
   });
 });

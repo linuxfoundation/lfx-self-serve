@@ -4,9 +4,10 @@
 import { HttpClient } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { OrgLensEmployerAffiliation } from '@lfx-one/shared/interfaces';
 import { Observable, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { OrgLensEmployerAffiliationService } from './org-lens-employer-affiliation.service';
@@ -103,6 +104,35 @@ describe('OrgLensEmployerAffiliationService', () => {
 
   beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // `settled` holds the page on its skeleton until this answers, so a lookup that never returns would
+  // strand every grant-less caller there with no Retry in reach.
+  it('gives up on a lookup that never answers, so the page reaches could-not-load', () => {
+    vi.useFakeTimers();
+    h = setup();
+    expect(h.service.pending()).toBe(true);
+
+    vi.advanceTimersByTime(ORG_AFFILIATION_LOOKUP_TIMEOUT_MS + 1);
+    flush();
+
+    expect(h.service.pending()).toBe(false);
+    expect(h.service.lookupFailed()).toBe(true);
+    expect(h.service.affiliatedToNonMember()).toBe(false);
+  });
+
+  // The probe's own member answer, which rule 6 reads alongside #4225's verdict.
+  it('reports a member employer as a member, not as a non-member', () => {
+    h = setup();
+
+    h.answers[0].next(affiliation({ employerName: 'Beta Coastal', membership: 'member' }));
+
+    expect(h.service.affiliatedToMember()).toBe(true);
+    expect(h.service.affiliatedToNonMember()).toBe(false);
   });
 
   it('asks only once the grants lookup has answered and the caller holds nothing', () => {

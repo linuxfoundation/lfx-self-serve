@@ -104,7 +104,7 @@ export class OrgLensEmployerAffiliationService {
     const matched = new Set(rows.map((row) => employerMatchKey(row.ACCOUNT_NAME)));
     // A member anywhere in the set settles it: the state exists for someone with no LF-member
     // employer at all, and a day job plus a foundation role is one person, not two answers.
-    const member = rows.find((row) => row.ACTIVE_MEMBERSHIP_COUNT > 0) ?? null;
+    const member = rows.find((row) => row.IS_MEMBER === true) ?? null;
     // "Non-member" may only be stated once every current employer has actually been checked. A name
     // with no queryable key was never asked about, one past the `IN` cap was never asked about, and a
     // queried name that matched nothing means the match failed, not that the company holds no
@@ -171,25 +171,27 @@ export class OrgLensEmployerAffiliationService {
   }
 
   /**
-   * The accounts these {@link employerMatchKey} keys resolve to, with each one's active-membership
-   * count. The account side is reduced to the same key in SQL, so "Acme" finds "Acme LLC". `ORDER BY` puts the accounts
-   * that hold memberships first, so neither a duplicated company name nor a second current employer
-   * can leave a member company behind a non-member row.
+   * The accounts these {@link employerMatchKey} keys resolve to, with dbt's own membership verdict.
+   * The account side is reduced to the same key in SQL, so "Acme" finds "Acme LLC". `ORDER BY` puts
+   * the member accounts first, so neither a duplicated company name nor a second current employer can
+   * leave a member company behind a non-member row.
+   *
+   * `IS_MEMBER` is selected, never recomputed: what counts as a membership is a modeled definition and
+   * belongs in dbt (`docs/reviews/shared-and-sql-checklist.md` §10). This is the same flag #4225 reads
+   * through `getOrgLensAccountContextByCdevOrgId`, so the two routes to rule 6/7 cannot disagree about
+   * what "member" means. The view is membership-grain, so one account can return several rows.
    */
   private async fetchEmployerMembershipRows(matchKeys: string[]): Promise<OrgLensEmployerMembershipWarehouseRow[]> {
     const schema = resolveLfxOnePlatinumSchema();
     const placeholders = matchKeys.map(() => '?').join(', ');
     const query = `
-      SELECT
+      SELECT DISTINCT
         c.ACCOUNT_ID AS ACCOUNT_ID,
         c.ACCOUNT_NAME AS ACCOUNT_NAME,
-        COUNT(m.FOUNDATION_ID) AS ACTIVE_MEMBERSHIP_COUNT
+        c.IS_MEMBER AS IS_MEMBER
       FROM ${schema}.ORG_LENS_ACCOUNT_CONTEXT c
-      LEFT JOIN ${schema}.ORG_LENS_MEMBERSHIPS_SUMMARY m
-        ON m.ACCOUNT_ID = c.ACCOUNT_ID
       WHERE ${matchKeyExpression('c.ACCOUNT_NAME')} IN (${placeholders})
-      GROUP BY c.ACCOUNT_ID, c.ACCOUNT_NAME
-      ORDER BY ACTIVE_MEMBERSHIP_COUNT DESC
+      ORDER BY IS_MEMBER DESC NULLS LAST
     `;
 
     const result = await this.snowflakeService.execute<OrgLensEmployerMembershipWarehouseRow>(query, matchKeys);

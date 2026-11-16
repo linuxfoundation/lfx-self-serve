@@ -50,6 +50,8 @@ interface Harness {
   affiliationPending: WritableSignal<boolean>;
   /** #4314 — a resolved "affiliated with a company that holds no active LF membership". */
   affiliatedToNonMember: WritableSignal<boolean>;
+  /** #4314 — the same probe's *member* answer, which rule 6 accepts alongside #4225's verdict. */
+  probeSaysMember: WritableSignal<boolean>;
   /** #4314 — the caller's own employer name. */
   affiliationEmployerName: WritableSignal<string | null>;
   /** #4314 — the employer lookup did not land, so "no membership" is unknown. */
@@ -97,6 +99,7 @@ function setup(): Harness {
   const affiliatedToMember = signal(false);
   const affiliationPending = signal(false);
   const affiliatedToNonMember = signal(false);
+  const probeSaysMember = signal(false);
   const affiliationEmployerName = signal<string | null>(null);
   const affiliationLookupFailed = signal(false);
   const refreshAffiliation: Mock<() => void> = vi.fn();
@@ -164,6 +167,7 @@ function setup(): Harness {
         useValue: {
           pending: affiliationPending,
           affiliatedToNonMember,
+          affiliatedToMember: probeSaysMember,
           employerName: affiliationEmployerName,
           lookupFailed: affiliationLookupFailed,
           refresh: refreshAffiliation,
@@ -203,6 +207,7 @@ function setup(): Harness {
     claOnlyUids,
     claLookupFailed,
     affiliatedToMember,
+    probeSaysMember,
     affiliationPending,
     affiliatedToNonMember,
     affiliationEmployerName,
@@ -489,6 +494,16 @@ describe('OrgLensEmptyStateService.pageState', () => {
     h.affiliatedToMember.set(false);
 
     expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('no-organization');
+  });
+
+  // After a work-history edit the probe usually answers before the cache-bypassed grants refresh, so
+  // rule 6 must take the member answer from whichever source has it. Otherwise someone who has just
+  // affiliated with a member company is told to add an affiliation — the loop #4314 closes.
+  it('renders affiliated-no-grant when only the probe has the member answer yet', () => {
+    h.affiliatedToMember.set(false);
+    h.probeSaysMember.set(true);
+
+    expect(h.service.pageState()).toBe<OrgLensEmptyStateName>('affiliated-no-grant');
   });
 
   // Rule 6 before 7: the member answer rides the role-grants response the page already waits for, and

@@ -10,5 +10,6 @@
 export interface OrgLensEmployerMembershipWarehouseRow {
   ACCOUNT_ID: string;
   ACCOUNT_NAME: string;
-  ACTIVE_MEMBERSHIP_COUNT: number;
+  /** dbt's modeled membership verdict for the account; `null` when the model has no verdict. */
+  IS_MEMBER: boolean | null;
 }
