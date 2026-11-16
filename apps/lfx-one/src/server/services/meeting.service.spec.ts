@@ -2518,11 +2518,23 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(true);
   });
 
-  it('still forces show_meeting_attendees off on a restricted meeting saved without an explicit opt-in', async () => {
+  // #5438: the stored value is the organizer's choice on an invite-only meeting, so a partial update
+  // must not silently clear it.
+  it("keeps a restricted meeting's stored choice when the update makes none", async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
     await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBeUndefined();
+  });
+
+  it('forwards an explicit false on a restricted meeting', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, restricted: true, show_meeting_attendees: false });
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);

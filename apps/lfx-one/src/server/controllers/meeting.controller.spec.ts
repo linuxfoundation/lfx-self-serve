@@ -1028,17 +1028,24 @@ describe('MeetingController', () => {
         expect(res.json).toHaveBeenCalledWith([registrant]);
       });
 
-      it.each([
-        ['a Board meeting', { meeting_type: 'Board' }],
-        ['a restricted meeting', { restricted: true }],
-      ])('returns no roster to an invitee of %s that still carries a legacy opt-in', async (_label, lock) => {
-        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], ...lock });
+      it('returns no roster to an invitee of a Board meeting that still carries a legacy opt-in', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], meeting_type: 'Board' });
         const res = buildRes();
 
         await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
         expect(res.json).toHaveBeenCalledWith([]);
         expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+      });
+
+      // #5438: an invite-only meeting can opt in from the composer, so the roster honours it.
+      it('returns the roster to an invitee of a restricted meeting that shares its attendees', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], restricted: true });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([registrant]);
       });
 
       it('returns the roster to an organizer even when the meeting hides its attendees', async () => {

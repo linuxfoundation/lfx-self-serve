@@ -2097,10 +2097,9 @@ export class MeetingComposerFormService {
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
-      // Read through the default (pre-v2) lock, not the composer's: a restricted meeting saved before the
-      // composer existed opens with sharing off, so a stale stored `true` is never re-saved as a choice.
-      // A v2 opt-in on a restricted meeting reads the same way and has to be switched on again per edit.
-      show_meeting_attendees: getSavedAttendeeVisibility(meeting) ?? false,
+      // Read through the composer lock, the rule this form writes with: a restricted (invite-only) meeting
+      // reopens with the organizer's stored choice, and only a Board meeting reads as undecided (off).
+      show_meeting_attendees: getSavedAttendeeVisibility(meeting, COMPOSER_ATTENDEE_LOCK) ?? false,
       zoom_ai_enabled: meeting.ai_summary_enabled || false,
       require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,

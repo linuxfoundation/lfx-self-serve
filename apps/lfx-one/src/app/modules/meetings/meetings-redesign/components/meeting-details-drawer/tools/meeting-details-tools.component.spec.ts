@@ -304,11 +304,13 @@ describe('MeetingDetailsToolsComponent', () => {
       expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
     });
 
-    it('hides the counts on a restricted meeting, where sharing is locked off', async () => {
+    // #5438: an invite-only meeting can opt in from the composer, so its guests see the counts.
+    it('shows the counts on a restricted meeting that shares its guests', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([registrant('reg-a', 'accepted')]));
       await renderGuest({ show_meeting_attendees: true, restricted: true });
 
-      expect(find('meeting-details-rsvp')).toBeNull();
-      expect(meetingService['getMyMeetingRegistrants']).not.toHaveBeenCalled();
+      expect(meetingService['getMyMeetingRegistrants']).toHaveBeenCalled();
+      expect(find('meeting-details-rsvp')).not.toBeNull();
     });
 
     it('hides the counts once the date has ended', async () => {
