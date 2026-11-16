@@ -613,6 +613,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       LAST_ENGAGED_DATE: new Date('2026-08-14T00:00:00.000Z'),
       DAYS_SINCE_LAST_ENGAGED: 39,
       IS_LAPSED_180D: false,
+      LOGO_URL: 'https://logo.example/acme.png',
       SCOPE_ORGS_COUNT: 136,
       SCOPE_LAPSED_ORGS_COUNT: 54,
       SCOPE_MEETINGS_HELD_COUNT_YTD: 30,
@@ -647,9 +648,21 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     const response = await service.getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null });
 
     expect(lastBinds()).toEqual(['acme', null, null]);
-    expect(lastSql()).toContain('WHERE foundation_slug = ? AND ((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)');
+    expect(lastSql()).toContain('WHERE v.foundation_slug = ? AND ((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)');
     expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
     expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsTotal: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank: 1 });
+  });
+
+  // The mapping has one row per account, so the left join adds the logo without adding or dropping orgs.
+  it('joins each company to its logo, and reads no logo as empty', async () => {
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null });
+
+    expect(lastSql()).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = v.account_id');
+    expect(lastSql()).toContain('v.account_id, v.account_name, v.membership_tier, v.is_member,');
+    expect(response.rows[0]?.logoUrl).toBe('https://logo.example/acme.png');
+
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ LOGO_URL: null })] });
+    expect((await service.getOrgParticipation(req, { foundationSlug: 'acme', projectSlug: null })).rows[0]?.logoUrl).toBe('');
   });
 
   it('keeps the view tier as-is, because this view is not member-only', async () => {
@@ -709,7 +722,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     expect(lastSql()).toContain('ORDER BY LEAST(');
     expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
     // Two accounts can share a name, and a tie at the cap boundary would drop a different org per read.
-    expect(lastSql()).toContain('account_name ASC NULLS LAST, account_id ASC NULLS LAST');
+    expect(lastSql()).toContain('v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST');
   });
 
   it('truncates to the cap and says so out loud when the scope overruns it', async () => {
@@ -774,6 +787,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
       ACCOUNT_ID: 'a-1',
       ACCOUNT_NAME: 'Acme Motors',
       MEMBERSHIP_STATUS: 'Non-member',
+      LOGO_URL: 'https://logo.example/acme.png',
       SCOPE_ORGS_COUNT_3RD_LAST_COMPLETED_YEAR: 41,
       SCOPE_ORGS_COUNT_PREV_COMPLETED_YEAR: 37,
       SCOPE_ORGS_COUNT_LAST_COMPLETED_YEAR: 33,
@@ -876,7 +890,19 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     expect(lastSql()).toContain('ORDER BY LEAST(');
     expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
     // Two accounts can share a name, and a tie at the cap boundary would drop a different org per read.
-    expect(lastSql()).toContain('account_name ASC NULLS LAST, account_id ASC NULLS LAST');
+    expect(lastSql()).toContain('v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST');
+  });
+
+  it('joins each company to its logo, and reads no logo as empty', async () => {
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).toContain(
+      'LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = v.account_id WHERE v.foundation_slug = ?'
+    );
+    expect(response.rows[0]?.logoUrl).toBe('https://logo.example/acme.png');
+
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ LOGO_URL: null })] });
+    expect((await service.getNonMemberParticipation(req, { foundationSlug: 'acme' })).rows[0]?.logoUrl).toBe('');
   });
 
   it('truncates to the cap and says so out loud when the scope overruns it', async () => {
@@ -958,6 +984,7 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       IS_IDENTITY_UNRESOLVED: false,
       ACCOUNT_NAME: 'Acme Motors',
       MEMBERSHIP_TIER: 'Gold',
+      PERSON_JOB_TITLE: 'Head of OSPO',
       COMMITTEE_NAME: 'Technical Steering Committee',
       LAST_ATTENDED_DATE: new Date('2026-08-14T00:00:00.000Z'),
       ...periods,
@@ -987,9 +1014,11 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       identityUnresolved: false,
       accountName: 'Acme Motors',
       membershipTier: 'Gold',
+      jobTitle: 'Head of OSPO',
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
     });
+    expect(lastSql()).toContain('membership_tier, person_job_title, committee_name,');
     expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 });
   });
 

@@ -78,6 +78,8 @@ const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETIN
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
+/** One row per Salesforce account, so a left join on `account_id` adds its logo without adding rows. */
+const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
 
 /** The summary's per-period columns this section reads, each suffixed by period. */
 const NEWSLETTER_SUMMARY_COLUMNS = [
@@ -149,6 +151,7 @@ interface OrgParticipationRow {
   LAST_ENGAGED_DATE: Date | string | null;
   DAYS_SINCE_LAST_ENGAGED: number | null;
   IS_LAPSED_180D: boolean | null;
+  LOGO_URL: string | null;
   SCOPE_ORGS_COUNT: number | null;
   SCOPE_LAPSED_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
@@ -158,6 +161,7 @@ interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_STATUS: string | null;
+  LOGO_URL: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -167,6 +171,7 @@ interface RepresentativesRow {
   IS_IDENTITY_UNRESOLVED: boolean | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_TIER: string | null;
+  PERSON_JOB_TITLE: string | null;
   COMMITTEE_NAME: string | null;
   LAST_ATTENDED_DATE: Date | string | null;
   [periodColumn: string]: unknown;
@@ -467,22 +472,25 @@ export class HealthMetricsEngagementService {
 
     // The caption counts are denormalized onto every row and cover the whole scope, so they are
     // read off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    // The mapping shares `account_id`, `account_name` and `is_member`, so the view's own columns are qualified.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        membership_tier,
-        is_member,
-        last_engaged_date,
-        days_since_last_engaged,
-        is_lapsed_180d,
-        scope_orgs_count,
-        scope_lapsed_orgs_count,
+        v.account_id,
+        v.account_name,
+        v.membership_tier,
+        v.is_member,
+        v.last_engaged_date,
+        v.days_since_last_engaged,
+        v.is_lapsed_180d,
+        v.scope_orgs_count,
+        v.scope_lapsed_orgs_count,
+        logos.logo_url,
         ${periodColumns}
-      FROM ${ORG_PARTICIPATION_VIEW}
-      WHERE foundation_slug = ?
+      FROM ${ORG_PARTICIPATION_VIEW} v
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = v.account_id
+      WHERE v.foundation_slug = ?
         AND ${PROJECT_SCOPE_PREDICATE}
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
@@ -529,15 +537,18 @@ export class HealthMetricsEngagementService {
 
     // `scope_orgs_count_<period>` is denormalized onto every row and covers the whole scope, so it is
     // read off a row rather than counted here — the unsuffixed column is all time, not a period caption.
+    // The mapping shares `account_id` and `account_name`, so the view's own columns are qualified.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        membership_status,
+        v.account_id,
+        v.account_name,
+        v.membership_status,
+        logos.logo_url,
         ${periodColumns}
-      FROM ${NON_MEMBER_PARTICIPATION_VIEW}
-      WHERE foundation_slug = ?
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      FROM ${NON_MEMBER_PARTICIPATION_VIEW} v
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = v.account_id
+      WHERE v.foundation_slug = ?
+      ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}
     `;
 
@@ -584,6 +595,7 @@ export class HealthMetricsEngagementService {
         is_identity_unresolved,
         account_name,
         membership_tier,
+        person_job_title,
         committee_name,
         last_attended_date,
         ${periodColumns}
@@ -827,6 +839,7 @@ function mapOrgRow(row: OrgParticipationRow): HealthMetricsEngagementOrgRow {
     lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
     daysSinceLastEngaged: toNullableNumber(row.DAYS_SINCE_LAST_ENGAGED),
     lapsed: row.IS_LAPSED_180D === true,
+    logoUrl: row.LOGO_URL ?? '',
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapOrgPeriod(row, range)),
   };
 }
@@ -871,6 +884,7 @@ function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagemen
     // Rendered as the view reports it; the organization-matching gap the footnote warns about is a
     // data problem upstream, not something to paper over by rewriting the status here.
     membershipStatus: row.MEMBERSHIP_STATUS ?? '',
+    logoUrl: row.LOGO_URL ?? '',
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapNonMemberPeriod(row, range)),
   };
 }
@@ -974,6 +988,7 @@ function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
     identityUnresolved: row.IS_IDENTITY_UNRESOLVED === true,
     accountName: row.ACCOUNT_NAME ?? '',
     membershipTier: row.MEMBERSHIP_TIER,
+    jobTitle: row.PERSON_JOB_TITLE,
     committeeName: row.COMMITTEE_NAME ?? '',
     lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapRepPeriod(row, range)),

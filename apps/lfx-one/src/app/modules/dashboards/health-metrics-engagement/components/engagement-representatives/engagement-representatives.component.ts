@@ -2,56 +2,50 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
-  HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsEngagementRepLabels,
+  buildHealthMetricsEngagementRepRowView,
   filterHealthMetricsEngagementRepRows,
-  formatHealthMetricsEngagementRatio,
+  parseHealthMetricsEngagementRepFilter,
   selectHealthMetricsEngagementRepCounts,
-  selectHealthMetricsEngagementRepPeriod,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { catchError, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { TablePageEvent } from 'primeng/table';
-
 import type {
-  FilterPillOption,
   HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepNoteCounts,
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepRow,
-  HealthMetricsEngagementRepRowLabels,
   HealthMetricsEngagementRepRowView,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsRange,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#reps` — the people behind the organizations, longest-absent first. The read carries all four
- * periods, so the period pill, the search box and the three cuts project the loaded rows rather
- * than re-reading.
+ * `#reps` — the people behind the member companies, longest-absent first. The read carries all four
+ * periods, so the period, the search and the three cuts project the loaded rows rather than re-reading.
  */
 @Component({
   selector: 'lfx-engagement-representatives',
-  imports: [EmptyStateComponent, FilterPillsComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsCellComponent, TableComponent, UiBadgeComponent, UiPaginationComponent, UiSearchInputComponent],
   templateUrl: './engagement-representatives.component.html',
 })
 export class EngagementRepresentativesComponent {
@@ -72,24 +66,18 @@ export class EngagementRepresentativesComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
-  protected readonly filterOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_REP_FILTERS.map((filter) => ({
-    id: filter.key,
-    label: filter.label,
-  }));
+  /** The header's switch lives in the page's section controls, so the page owns the cut. */
+  public readonly filter = model<HealthMetricsEngagementRepFilter>('all');
 
-  protected readonly searchForm = new FormGroup({ search: new FormControl<string>('', { nonNullable: true }) });
-
-  private readonly initialParams = this.route.snapshot.queryParamMap;
-
-  protected readonly filter = signal<HealthMetricsEngagementRepFilter>(this.parseInitialFilter());
-  protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE);
+  protected readonly size = HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE;
+  protected readonly searchText = signal<string>('');
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  // Debounced: the filter runs over the whole loaded scope, so an undebounced keystroke re-filters
-  // every representative the foundation has.
-  protected readonly search = toSignal(this.searchForm.controls.search.valueChanges.pipe(debounceTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS)), {
+  // Debounced, as the cut runs over the whole loaded scope; `skip(1)` drops the empty start the signal already holds,
+  // so the debounce never runs on a value nobody typed.
+  protected readonly search = toSignal(toObservable(this.searchText).pipe(skip(1), debounceTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS)), {
     initialValue: '',
   });
 
@@ -97,16 +85,15 @@ export class EngagementRepresentativesComponent {
   protected readonly response: Signal<HealthMetricsEngagementRepresentatives> = this.initResponse();
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
-  protected readonly first = linkedSignal<string, number>({
+  protected readonly page = linkedSignal<string, number>({
     source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
     computation: () => 0,
   });
 
-  private readonly rowLabelsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowLabels>> = this.initRowLabelsByRow();
   private readonly rowViewsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> = this.initRowViewsByRow();
   protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
+  protected readonly pageRows = computed(() => this.rowViews().slice(this.page() * this.size, (this.page() + 1) * this.size));
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  protected readonly countLabel: Signal<string> = this.initCountLabel();
   /** The whole foundation's scope is empty when the read carried no rows at all — a filtered cut
    * with zero matches over a non-empty scope is a real measured zero. */
   /** No representative was invited in the period; the shell shows the section's empty state instead. */
@@ -126,7 +113,7 @@ export class EngagementRepresentativesComponent {
       // A link elsewhere on the tab (e.g. "Never attended") can set the filter after this section loaded.
       this.route.queryParamMap
         .pipe(
-          map((params) => this.toFilter(params.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter) ?? 'all')),
+          map((params) => parseHealthMetricsEngagementRepFilter(params.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter))),
           distinctUntilChanged(),
           skip(1),
           takeUntilDestroyed()
@@ -140,53 +127,23 @@ export class EngagementRepresentativesComponent {
     }
   }
 
-  protected onFilterChange(key: string): void {
-    this.filter.set(this.toFilter(key));
-  }
-
-  protected onTablePage(event: TablePageEvent): void {
-    this.size.set(event.rows ?? this.size());
-    this.first.set(event.first ?? 0);
+  protected onResetFilters(): void {
+    this.searchText.set('');
+    this.filter.set('all');
   }
 
   // Keyed off the response alone because these labels are all-time: `formatIsoDateLabel` builds a
   // fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
-  private initRowLabelsByRow(): Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowLabels>> {
-    return computed(
-      () =>
-        new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowLabels>(
-          this.response().rows.map((row) => [row, buildHealthMetricsEngagementRepLabels(row)])
-        )
-    );
-  }
-
-  // Resolved once per response and period rather than per cell or per keystroke, so a keystroke
-  // only filters rows whose labels are already built.
+  // Built once per response and period rather than per keystroke: the date label builds an `Intl` formatter per call.
   private initRowViewsByRow(): Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> {
     return computed(() => {
       const range = this.chrome.selectedRange();
-      const rowLabels = this.rowLabelsByRow();
-
       return new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>(
-        this.response().rows.map((row) => {
-          const period = selectHealthMetricsEngagementRepPeriod(row, range);
-          const labels = rowLabels.get(row) ?? buildHealthMetricsEngagementRepLabels(row);
-
-          return [
-            row,
-            {
-              row,
-              period,
-              attendedLabel: formatHealthMetricsEngagementRatio(period?.meetingsAttended ?? null, period?.meetingsInvited ?? null),
-              ...labels,
-            },
-          ];
-        })
+        this.response().rows.map((row) => [row, buildHealthMetricsEngagementRepRowView(row, range)])
       );
     });
   }
 
-  // The cut narrows rows the labels are already resolved for, so a keystroke only filters.
   private initRowViews(): Signal<HealthMetricsEngagementRepRowView[]> {
     return computed(() => {
       const views = this.rowViewsByRow();
@@ -194,19 +151,6 @@ export class EngagementRepresentativesComponent {
       return filterHealthMetricsEngagementRepRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
         .map((row) => views.get(row))
         .filter((view) => view !== undefined);
-    });
-  }
-
-  /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
-  private initCountLabel(): Signal<string> {
-    return computed(() => {
-      const counts = selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange());
-      if (!counts) return '—';
-
-      // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-      const reps = `${counts.reps.toLocaleString('en-US')} ${counts.reps === 1 ? 'representative' : 'representatives'}`;
-      // The never-attended part drops at zero, as in the design.
-      return counts.neverAttendedReps > 0 ? `${reps} · ${counts.neverAttendedReps.toLocaleString('en-US')} never attended` : reps;
     });
   }
 
@@ -282,15 +226,6 @@ export class EngagementRepresentativesComponent {
       preserveFragment: true,
       replaceUrl: true,
     });
-  }
-
-  private parseInitialFilter(): HealthMetricsEngagementRepFilter {
-    return this.toFilter(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter) ?? 'all');
-  }
-
-  private toFilter(key: string): HealthMetricsEngagementRepFilter {
-    const match = HEALTH_METRICS_ENGAGEMENT_REP_FILTERS.find((filter) => filter.key === key);
-    return match ? match.key : 'all';
   }
 }
 

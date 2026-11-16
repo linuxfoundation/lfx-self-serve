@@ -13,7 +13,6 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-  HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
 import {
@@ -34,7 +33,11 @@ import {
   buildHealthMetricsEngagementAttendanceTrendPoints,
   buildHealthMetricsEngagementAttendanceTrendSummary,
   buildHealthMetricsEngagementGroupTrend,
-  buildHealthMetricsEngagementRepLabels,
+  buildHealthMetricsEngagementNonMemberRowView,
+  buildHealthMetricsEngagementOrgRowView,
+  buildHealthMetricsEngagementRepRowView,
+  parseHealthMetricsEngagementOrgFilter,
+  parseHealthMetricsEngagementRepFilter,
   buildHealthMetricsEngagementSparkBars,
   buildHealthMetricsEngagementSubNavItems,
   filterHealthMetricsEngagementOrgRows,
@@ -51,7 +54,6 @@ import {
   formatHealthMetricsEngagementRatio,
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
-  resolveHealthMetricsEngagementOrgTierPillClass,
   selectHealthMetricsEngagementGroupPeriod,
   selectHealthMetricsEngagementNonMemberCounts,
   selectHealthMetricsEngagementNonMemberPeriod,
@@ -376,6 +378,7 @@ describe('organization participation rules', () => {
       lastEngagedDate: '2026-08-14',
       daysSinceLastEngaged: 39,
       lapsed: false,
+      logoUrl: '',
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
         {
@@ -394,12 +397,51 @@ describe('organization participation rules', () => {
     };
   }
 
-  it('pills the top tiers blue in any case, and every other tier grey', () => {
-    expect(resolveHealthMetricsEngagementOrgTierPillClass('Platinum')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top);
-    expect(resolveHealthMetricsEngagementOrgTierPillClass('PREMIER')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top);
-    expect(resolveHealthMetricsEngagementOrgTierPillClass(' founding ')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top);
-    expect(resolveHealthMetricsEngagementOrgTierPillClass('Silver')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.other);
-    expect(resolveHealthMetricsEngagementOrgTierPillClass('Non-Member')).toBe(HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.other);
+  it('builds a member row with its tier icon, its attended share and a bar coloured by the attendance rule', () => {
+    expect(
+      buildHealthMetricsEngagementOrgRowView(orgRow('Acme Motors', 1, { membershipTier: 'GOLD', logoUrl: 'https://logo.example/acme.png' }), 'YTD')
+    ).toEqual({
+      key: 'acme motors',
+      name: 'Acme Motors',
+      logoUrl: 'https://logo.example/acme.png',
+      membership: 'Gold',
+      isMember: true,
+      tier: 'gold',
+      attendedLabel: '21 of 27 (78%)',
+      attendedPct: 78,
+      attendedFillClass: 'bg-blue-500',
+      avgRepsLabel: '1.8',
+      lastEngagedLabel: 'Aug 14, 2026',
+    });
+    expect(buildHealthMetricsEngagementOrgRowView(orgRow('Acme Motors', 1), 'COMPLETED_YEAR')).toMatchObject({
+      attendedPct: 33,
+      attendedFillClass: 'bg-amber-500',
+    });
+  });
+
+  it('reads a non-member as "Non-member" with no tier, and a tier outside the four as its own name', () => {
+    expect(buildHealthMetricsEngagementOrgRowView(orgRow('Vendor Corp', 1, { membershipTier: 'Non-Member', isMember: false }), 'YTD')).toMatchObject({
+      membership: 'Non-member',
+      tier: null,
+    });
+    expect(buildHealthMetricsEngagementOrgRowView(orgRow('Vendor Corp', 1, { membershipTier: 'Associate' }), 'YTD')).toMatchObject({
+      membership: 'Associate',
+      tier: null,
+    });
+    expect(buildHealthMetricsEngagementOrgRowView(orgRow('Vendor Corp', 1, { membershipTier: ' ' }), 'YTD').membership).toBe('—');
+  });
+
+  it('dashes Meetings attended with no bar when no meeting concerned the company', () => {
+    const quiet = orgRow('Quiet Co', 1);
+    quiet.periods[1] = { ...quiet.periods[1], meetingsTotal: 0, attendedCount: 0, attendancePct: null, avgReps: null };
+
+    expect(buildHealthMetricsEngagementOrgRowView({ ...quiet, lastEngagedDate: null }, 'YTD')).toMatchObject({
+      attendedLabel: '—',
+      attendedPct: null,
+      attendedFillClass: '',
+      avgRepsLabel: '—',
+      lastEngagedLabel: '—',
+    });
   });
 
   // `null` is "attended nothing this period", which is not the same as averaging zero reps.
@@ -445,6 +487,7 @@ describe('non-member participation rules', () => {
       accountId: name.toLowerCase().replace(/\s+/g, '-'),
       accountName: name,
       membershipStatus: 'Non-member',
+      logoUrl: '',
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
         { range: 'COMPLETED_YEAR', meetingsAttended: 8, distinctPeople: 3, sortRank: sortRank === null ? null : 10 - sortRank },
@@ -452,6 +495,18 @@ describe('non-member participation rules', () => {
       ],
     };
   }
+
+  it('builds a row with its logo, meetings and people for the selected period', () => {
+    expect(
+      buildHealthMetricsEngagementNonMemberRowView({ ...nonMemberRow('Vendor Corp', 1), logoUrl: 'https://logo.example/v.png' }, 'COMPLETED_YEAR')
+    ).toEqual({
+      key: 'vendor-corp',
+      name: 'Vendor Corp',
+      logoUrl: 'https://logo.example/v.png',
+      meetings: '8',
+      people: '3',
+    });
+  });
 
   it('selects the period the pill asks for, falling back to the newest period held', () => {
     const row = nonMemberRow('Acme Motors', 1);
@@ -519,6 +574,7 @@ describe('representatives rules', () => {
       identityUnresolved: false,
       accountName,
       membershipTier: null,
+      jobTitle: null,
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
@@ -643,37 +699,78 @@ describe('representatives rules', () => {
   });
 });
 
-describe('buildHealthMetricsEngagementRepLabels', () => {
+describe('company and representative filters from the URL', () => {
+  it.each([
+    ['lapsed', 'lapsed'],
+    ['never', 'all'],
+    [null, 'all'],
+  ])('reads the company filter %s as %s', (value, expected) => {
+    expect(parseHealthMetricsEngagementOrgFilter(value)).toBe(expected);
+  });
+
+  it.each([
+    ['never', 'never'],
+    ['lapsed', 'lapsed'],
+    ['toString', 'all'],
+    [null, 'all'],
+  ])('reads the representative filter %s as %s', (value, expected) => {
+    expect(parseHealthMetricsEngagementRepFilter(value)).toBe(expected);
+  });
+});
+
+describe('buildHealthMetricsEngagementRepRowView', () => {
   const base: HealthMetricsEngagementRepRow = {
     key: 'rep-1',
     personName: 'Dana Fields',
     identityUnresolved: false,
     accountName: 'Acme Motors',
     membershipTier: 'Gold',
+    jobTitle: 'Head of OSPO',
     committeeName: 'Governing Board',
     lastAttendedDate: '2026-08-14',
-    periods: [],
+    periods: [
+      { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 },
+      { range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: true, sortRank: 2 },
+    ],
   };
 
-  it('joins the organization with its tier', () => {
-    expect(buildHealthMetricsEngagementRepLabels(base)).toEqual({
+  it('puts the company and job title under the name, and shows the attended count and last date', () => {
+    expect(buildHealthMetricsEngagementRepRowView(base, 'YTD')).toEqual({
+      key: 'rep-1',
       displayName: 'Dana Fields',
-      orgLabel: 'Acme Motors · Gold',
+      unresolved: false,
+      description: 'Acme Motors・Head of OSPO',
+      committeeName: 'Governing Board',
+      attendedLabel: '2 / 6',
+      neverAttended: false,
       lastAttendedLabel: 'Aug 14, 2026',
     });
-    expect(buildHealthMetricsEngagementRepLabels({ ...base, membershipTier: null }).orgLabel).toBe('Acme Motors');
   });
 
-  it('drops the missing pieces rather than printing them, and renders an unresolved identity as such', () => {
-    const labels = buildHealthMetricsEngagementRepLabels({
-      ...base,
-      identityUnresolved: true,
-      accountName: '',
-      membershipTier: ' ',
-      lastAttendedDate: null,
-    });
+  it('shows the company alone without a job title', () => {
+    expect(buildHealthMetricsEngagementRepRowView({ ...base, jobTitle: ' ' }, 'YTD').description).toBe('Acme Motors');
+  });
 
-    expect(labels).toEqual({ displayName: 'Unresolved identity', orgLabel: '—', lastAttendedLabel: '—' });
+  // A never-attended rep has no date to show, whatever the view carries.
+  it('flags a rep who never attended and dashes their last attended date', () => {
+    expect(buildHealthMetricsEngagementRepRowView(base, 'COMPLETED_YEAR')).toMatchObject({
+      attendedLabel: '0 / 4',
+      neverAttended: true,
+      lastAttendedLabel: '—',
+    });
+  });
+
+  it('reads an unresolved identity as such, with the company alone under it', () => {
+    expect(buildHealthMetricsEngagementRepRowView({ ...base, identityUnresolved: true }, 'YTD')).toMatchObject({
+      displayName: 'Unresolved identity',
+      unresolved: true,
+      description: 'Acme Motors',
+    });
+    expect(buildHealthMetricsEngagementRepRowView({ ...base, personName: ' ', accountName: '', lastAttendedDate: null }, 'YTD')).toMatchObject({
+      unresolved: true,
+      description: '',
+      lastAttendedLabel: '—',
+    });
   });
 });
 
