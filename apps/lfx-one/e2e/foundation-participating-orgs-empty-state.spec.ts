@@ -13,7 +13,7 @@
  * Coverage:
  *   F1  Summary `null` (no activity in the window): `foundation-participating-orgs-empty` and its copy
  *   F2  Summary with counts, list with no rows: the table's `foundation-participating-orgs-no-match` message
- *   F3  A row's company name carries its full text as a `title`
+ *   F3  A row's company name shows its full text in a tooltip, reachable by keyboard focus
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -107,7 +107,7 @@ test.describe('Foundation Lens Participating Companies empty states', () => {
     await expect(page.getByTestId('foundation-participating-orgs-no-match-clear')).toBeVisible();
   });
 
-  test('F3: a row keeps the full company name as a title', async ({ page }) => {
+  test('F3: a row shows the full company name in a tooltip on focus', async ({ page }) => {
     await stubPage(
       page,
       { summary: summaryWithActivity() },
@@ -132,8 +132,9 @@ test.describe('Foundation Lens Participating Companies empty states', () => {
     );
     await gotoParticipatingCompanies(page);
 
-    await expect(page.getByTestId('foundation-participating-orgs-row-synthetic-company-name')).toHaveAttribute('title', SYNTHETIC_ORG_NAME, {
-      timeout: PAGE_LOAD_TIMEOUT,
-    });
+    const name = page.getByTestId('foundation-participating-orgs-row-synthetic-company-name');
+    await expect(name).toHaveAttribute('tabindex', '0', { timeout: PAGE_LOAD_TIMEOUT });
+    await name.focus();
+    await expect(page.getByRole('tooltip').filter({ hasText: SYNTHETIC_ORG_NAME })).toBeVisible();
   });
 });

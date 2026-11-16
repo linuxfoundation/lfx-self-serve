@@ -125,7 +125,8 @@ export class FoundationParticipatingOrgsComponent {
   private readonly summaryErrorStatus = signal<number | null>(null);
   private readonly pageLoadingState = signal(true);
   private readonly pageErrorStatus = signal<number | null>(null);
-  protected readonly summaryLoading = this.summaryLoadingState.asReadonly();
+  // Also true while a foundation switch has no answer yet, so the stat cards show a skeleton, never zeros, for the new foundation.
+  protected readonly summaryLoading = computed(() => this.summaryLoadingState() || this.switching());
   protected readonly pageLoading = this.pageLoadingState.asReadonly();
 
   private readonly foundation = computed(() => this.projectContextService.selectedFoundation());
