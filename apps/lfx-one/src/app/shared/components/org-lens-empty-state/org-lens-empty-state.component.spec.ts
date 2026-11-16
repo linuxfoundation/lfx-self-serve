@@ -99,6 +99,12 @@ describe('OrgLensEmptyStateComponent', () => {
   // and LFX Insights. A support action — or any control that opens the support messenger — fails here.
   it('offers no support action in any registry state', () => {
     const allowedKinds = new Set<string | undefined>([undefined, 'retry', 'reset-filters', 'org-list']);
+    // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview and the
+    // roll-up state's way to Memberships (the page swaps in the roll-up's own address through `primaryRoute`).
+    const allowedRoutes: Partial<Record<OrgLensEmptyStateName, string[]>> = {
+      'not-found-staff': ['/org/overview'],
+      'roll-up-unavailable': ['/org/memberships'],
+    };
     for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY)) {
       expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
       for (const action of [copy.primary, copy.secondary]) {
@@ -108,13 +114,7 @@ describe('OrgLensEmptyStateComponent', () => {
         expect(allowedKinds.has(action.action), `${state}: action kind "${action.action}" is not allowed (#5447)`).toBe(true);
         expect(action.label, `${state}: "${action.label}" must not point at support (#5447)`).not.toMatch(/support/i);
         if (action.route) {
-          // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview.
-          const allowed =
-            state === 'not-found-staff'
-              ? ['/org/overview']
-              : state === 'roll-up-unavailable'
-                ? ['/org/memberships']
-                : ['/profile/attributions', '/profile/settings'];
+          const allowed = allowedRoutes[state as OrgLensEmptyStateName] ?? ['/profile/attributions', '/profile/settings'];
           expect(allowed, `${state}: route ${action.route.join('/')} is not an allowed destination (#5447)`).toContain(action.route.join('/'));
         }
         if (action.href) {
@@ -166,6 +166,25 @@ describe('OrgLensEmptyStateComponent', () => {
     fixture.detectChanges();
 
     expect(byTestId(fixture, 'retry')?.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it("replaces a route primary's registry route with the caller's primaryRoute, and leaves other primaries alone", () => {
+    const routed = TestBed.createComponent(OrgLensEmptyStateComponent);
+    routed.componentRef.setInput('state', 'roll-up-unavailable');
+    routed.componentRef.setInput('testId', TEST_ID);
+    routed.componentRef.setInput('primaryRoute', ['/org', 'family-0014100000RootAAAA', 'memberships']);
+    routed.detectChanges();
+
+    expect(byTestId(routed, 'primary')?.querySelector('a')?.getAttribute('href')).toBe('/org/family-0014100000RootAAAA/memberships');
+
+    const retry = TestBed.createComponent(OrgLensEmptyStateComponent);
+    retry.componentRef.setInput('state', 'could-not-load');
+    retry.componentRef.setInput('testId', TEST_ID);
+    retry.componentRef.setInput('primaryRoute', ['/org', 'family-0014100000RootAAAA', 'memberships']);
+    retry.detectChanges();
+
+    expect(byTestId(retry, 'retry')).not.toBeNull();
+    expect(byTestId(retry, 'primary')).toBeNull();
   });
 
   // Staff reach any organization through switcher search, so their not-found state lists none.

@@ -121,7 +121,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason:
       "This page doesn't combine your organizations yet. Open Memberships for the combined view, or pick a single organization in the selector to see this page.",
     icon: 'fa-light fa-layer-group',
-    // The legacy form: the org list re-addresses it to the selected roll-up, `/org/family-{id}/memberships`.
+    // The legacy form names no organization; the page passes the roll-up's own address as `primaryRoute`.
     primary: { label: 'Go to Memberships', route: ['/org', ORG_LENS_ROLL_UP_HOME_PAGE] },
   },
 };

@@ -17,8 +17,9 @@ import { AccountContextService } from '../services/account-context.service';
  * A CanMatch, not a CanActivate: it has to run before the page is chosen. That is also before
  * `orgPathParamGuard` has adopted `/org/family-{id}/…`, so the URL being recognized is the authority, as
  * in `orgLensFlagGuard`. The path guard still runs on the parent afterwards, and still moves a caller
- * who may not hold that roll-up to an organization in its family. Only the legacy `/org/{page}` names
- * no organization; there the restored selection decides.
+ * who may not hold that roll-up to an organization in its family. Only the legacy `/org/{page}` and bare
+ * `/org` name no organization; there the restored selection decides. Bare `/org` counts because a
+ * redirect leaves the URL being recognized untouched, so a page reached from it still reads `/org`.
  */
 export const orgRollUpUnavailablePageGuard: CanMatchFn = () => {
   const segments =
@@ -31,5 +32,5 @@ export const orgRollUpUnavailablePageGuard: CanMatchFn = () => {
   if (segments[1] !== undefined && isOrgRollUpSegment(normalizeOrgSegment(segments[1]))) {
     return true;
   }
-  return ORG_LENS_PAGE_SEGMENTS[segments[1]] === true && inject(AccountContextService).isRollUp();
+  return (segments.length === 1 || ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) && inject(AccountContextService).isRollUp();
 };

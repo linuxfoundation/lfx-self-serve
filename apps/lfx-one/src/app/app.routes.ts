@@ -13,7 +13,8 @@ import {
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
-import { isOrgRollUpSegment } from '@lfx-one/shared/utils';
+import { isOrgRollUpSegment, normalizeOrgSegment } from '@lfx-one/shared/utils';
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
@@ -52,6 +53,7 @@ import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-m
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
+import { AccountContextService } from './shared/services/account-context.service';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 const loadOrgRollUpUnavailablePage = () =>
@@ -276,7 +278,9 @@ function withRollUpUnavailablePages(pages: Routes): Routes {
       : [
           {
             path: page.path,
-            canMatch: [orgRollUpUnavailablePageGuard],
+            // The page's own match guards first: a page this caller may not match (`roi` is staff-only) must not
+            // be revealed by its roll-up stand-in.
+            canMatch: [...(page.canMatch ?? []), orgRollUpUnavailablePageGuard],
             data: page.data,
             children: [{ path: '**', loadComponent: loadOrgRollUpUnavailablePage }],
           },
@@ -484,9 +488,12 @@ export const routes: Routes = [
         data: { lens: 'org' },
         children: [
           {
+            // Bare `/org` names no organization, so the restored selection picks the home page: a roll-up's
+            // is Memberships. Decided here because the unavailable-page guard reads the URL being recognized,
+            // which after this redirect is still `/org`, not `/org/overview` (#4133).
             path: '',
             pathMatch: 'full',
-            redirectTo: 'overview',
+            redirectTo: () => (inject(AccountContextService).isRollUp() ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview'),
           },
           // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
@@ -505,7 +512,8 @@ export const routes: Routes = [
               {
                 path: '',
                 pathMatch: 'full',
-                redirectTo: ({ params }) => (isOrgRollUpSegment(params[ORG_SEGMENT_PARAM]) ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview'),
+                redirectTo: ({ params }) =>
+                  isOrgRollUpSegment(normalizeOrgSegment(params[ORG_SEGMENT_PARAM] ?? '')) ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview',
               },
               ...orgLensPageRoutes(),
             ],

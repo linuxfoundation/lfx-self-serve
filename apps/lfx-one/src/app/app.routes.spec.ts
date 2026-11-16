@@ -21,12 +21,14 @@ import { authGuard } from './shared/guards/auth.guard';
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
+import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
 import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-match.guard';
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
+import { AccountContextService } from './shared/services/account-context.service';
 import { LensService } from './shared/services/lens.service';
 
 import type { Route } from '@angular/router';
@@ -288,6 +290,18 @@ describe('Org Lens roll-up routes', () => {
     }
   });
 
+  // A page's own match guards run on its stand-in first, so a page the caller may not match is never disclosed.
+  it.each([
+    ['legacy', org.children!],
+    ['addressed', addressed.children!],
+  ])("runs each page's own match guards ahead of the roll-up guard (%s mount)", (_mount, children) => {
+    for (const gate of gates(children)) {
+      const page = children[children.indexOf(gate) + 1];
+      expect(gate.canMatch).toEqual([...(page.canMatch ?? []), orgRollUpUnavailablePageGuard]);
+    }
+    expect(gates(children).find((gate) => gate.path === 'roi')?.canMatch).toEqual([orgLensLfStaffOnlyGuard, orgRollUpUnavailablePageGuard]);
+  });
+
   it('lazy-loads the unavailable page for every address under a gated page', async () => {
     const events = gates(addressed.children!).find((gate) => gate.path === 'events')!;
 
@@ -300,5 +314,61 @@ describe('Org Lens roll-up routes', () => {
 
     expect(redirect({ params: { [ORG_SEGMENT_PARAM]: 'family-0014100000RootAAAA' } } as never)).toBe('memberships');
     expect(redirect({ params: { [ORG_SEGMENT_PARAM]: 'acme-inc' } } as never)).toBe('overview');
+  });
+
+  // The segment is normalized first, as the guards do, so a differently cased or padded roll-up key still lands home.
+  it.each([['FAMILY-0014100000RootAAAA'], ['Family-0014100000RootAAAA'], [' family-0014100000RootAAAA ']])(
+    'sends a non-canonical roll-up address (%j) to its Memberships page',
+    (segment) => {
+      const redirect = addressed.children!.find((route) => route.path === '')!.redirectTo as RedirectFunction;
+
+      expect(redirect({ params: { [ORG_SEGMENT_PARAM]: segment } } as never)).toBe('memberships');
+    }
+  );
+
+  describe('bare /org', () => {
+    const legacyHome = org.children!.find((route) => route.path === '')!;
+    const overviewGate = gates(org.children!).find((gate) => gate.path === 'overview')!;
+    const sentinel = (page: string): Route[] => [{ path: '**', component: RouteSentinelComponent, data: { page } }];
+
+    // Keeps the production redirect and the production overview gate; only the lazy pages are sentinels.
+    async function visitBareOrg(isRollUp: boolean, home: Route = legacyHome): Promise<string | undefined> {
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: AccountContextService, useValue: { isRollUp: signal(isRollUp) } },
+          provideRouter([
+            {
+              path: 'org',
+              children: [
+                home,
+                { ...overviewGate, children: sentinel('Roll-up unavailable') },
+                { path: 'overview', children: sentinel('Overview') },
+                { path: 'memberships', children: sentinel('Memberships') },
+              ],
+            },
+          ]),
+        ],
+      });
+      const harness = await RouterTestingHarness.create();
+      await harness.navigateByUrl('/org');
+      return harness.routeNativeElement?.textContent?.trim();
+    }
+
+    it("sends a cookie-restored roll-up to the roll-up's Memberships page", async () => {
+      expect(await visitBareOrg(true)).toBe('Memberships');
+      expect(TestBed.inject(Router).url).toBe('/org/memberships');
+    });
+
+    it('sends an organization to its overview', async () => {
+      expect(await visitBareOrg(false)).toBe('Overview');
+      expect(TestBed.inject(Router).url).toBe('/org/overview');
+    });
+
+    // Belt and braces: were bare `/org` ever redirected to the overview on a roll-up, the gate still catches it,
+    // although the URL being recognized is `/org`.
+    it('still gates the overview when a bare-address redirect lands there on a roll-up', async () => {
+      expect(await visitBareOrg(true, { path: '', pathMatch: 'full', redirectTo: 'overview' })).toBe('Roll-up unavailable');
+      expect(TestBed.inject(Router).url).toBe('/org/overview');
+    });
   });
 });

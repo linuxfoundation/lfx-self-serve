@@ -53,6 +53,20 @@ describe('orgRollUpUnavailablePageGuard', () => {
     expect(run('/org/people')).toBe(true);
   });
 
+  // A redirect off bare `/org` leaves the URL being recognized as `/org`, so it is selection-based as well.
+  it('decides bare /org from the restored selection', () => {
+    expect(run('/org')).toBe(false);
+    isRollUp.set(true);
+    expect(run('/org')).toBe(true);
+  });
+
+  it.each([['/org/%20FAMILY-0014100000RootAAAA%20/people'], ['/org/Family-0014100000RootAAAA']])(
+    'normalizes the segment before the roll-up check (%s)',
+    (url) => {
+      expect(run(url)).toBe(true);
+    }
+  );
+
   it('never matches outside Org Lens', () => {
     isRollUp.set(true);
     expect(run('/meetings')).toBe(false);
