@@ -5,7 +5,6 @@ import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
-  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
@@ -13,6 +12,7 @@ import type {
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsBarFillRule } from './health-metrics-table.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -84,25 +84,32 @@ export interface HealthMetricsEngagementGroupRow {
   projectSlug: string | null;
   projectName: string | null;
   groupTypeLabel: string | null;
+  /** The view's `MEETING_TYPE_GROUP`, which tells a board apart from the other governance groups. */
+  meetingTypeGroup: string | null;
   /** ISO date of the group's last meeting, or `null` if it has never met. */
   lastMetDate: string | null;
   periods: HealthMetricsEngagementGroupPeriod[];
 }
 
-/** One bar of the group trend sparkline; `heightPx` is `null` for an unrated period's empty slot. */
-export interface HealthMetricsEngagementSparkBar {
-  heightPx: number | null;
-  /** The current period, drawn in the strong colour. */
-  last: boolean;
+/** The kind of group a row is, shown under its name with an icon. */
+export interface HealthMetricsEngagementGroupKind {
+  label: string;
+  icon: string;
 }
 
-/** One table row with its selected-period numbers and sparkline series already resolved. */
+/** One Group attendance row, ready to render for the selected period. */
 export interface HealthMetricsEngagementGroupRowView {
-  row: HealthMetricsEngagementGroupRow;
-  period: HealthMetricsEngagementGroupPeriod | null;
-  trend: (number | null)[];
+  key: string;
+  name: string;
+  kind: HealthMetricsEngagementGroupKind;
+  /** The period's meeting count, or "—" when the group held none. */
+  meetings: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastMetLabel: string;
+  dormant: boolean;
+  /** The rounded attendance, e.g. `42%`; the bar reads "—" when `attendancePct` is `null`. */
+  attendanceLabel: string;
+  attendancePct: number | null;
 }
 
 /** `#committees` scope counts, aggregated over the whole project scope, not the page or the selected
@@ -145,9 +152,6 @@ export interface HealthMetricsEngagementGroupQuery {
   page: number;
   size: number;
 }
-
-/** Which measure the participation segment shows: the attendance share or the raw meeting volume. */
-export type HealthMetricsEngagementParticipationMode = (typeof HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES)[number]['key'];
 
 /**
  * A participation row's level in the view's own hierarchy. `all` is the foundation-wide roll-up the
@@ -262,11 +266,21 @@ export interface HealthMetricsEngagementAttendanceTrendSummaryView {
   lowConfidenceNote: string;
 }
 
-/** One participation table row with its selected-period numbers resolved. */
+/** One Meeting participation row, ready to render for the selected period. */
 export interface HealthMetricsEngagementParticipationRowView {
-  row: HealthMetricsEngagementParticipationRow;
-  period: HealthMetricsEngagementParticipationPeriod | null;
-  attendanceRule: HealthMetricsEngagementAttendanceRule;
+  key: string;
+  /** The meeting type's short name, e.g. `Board`. */
+  name: string;
+  icon: string;
+  /** The governance row's pointer to Members; empty on every other row. */
+  description: string;
+  /** Rows whose detail is on the Members tab; the others scroll to Group attendance. */
+  governance: boolean;
+  meetings: string;
+  /** The rounded attendance, e.g. `42%`; the bar reads "—" when `attendancePct` is `null`. */
+  attendanceLabel: string;
+  attendancePct: number | null;
+  fillRule: HealthMetricsBarFillRule;
 }
 
 /** Which cut of the org table is showing: everyone, or only orgs lapsed past the dormancy window. */
@@ -473,7 +487,6 @@ export interface HealthMetricsEngagementQueryParams {
   groupType?: HealthMetricsEngagementGroupTypeFilter | null;
   groupPage?: number | null;
   orgFilter?: HealthMetricsEngagementOrgFilter | null;
-  partMode?: HealthMetricsEngagementParticipationMode | null;
   repFilter?: HealthMetricsEngagementRepFilter | null;
   nlMode?: HealthMetricsEngagementNewsletterMode | null;
   nlFilter?: HealthMetricsEngagementRecipientFilter | null;

@@ -9,13 +9,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
+  HEALTH_METRICS_ENGAGEMENT_BOARD_BAR_FILL,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
+import { HEALTH_METRICS_VALUE_BAR_FILL } from '../constants/health-metrics-table.constants';
 import {
   HealthMetricsEngagementAttendanceMonth,
   HealthMetricsEngagementGroupRow,
@@ -33,9 +36,10 @@ import {
 import {
   buildHealthMetricsEngagementAttendanceTrendPoints,
   buildHealthMetricsEngagementAttendanceTrendSummary,
-  buildHealthMetricsEngagementGroupTrend,
+  buildHealthMetricsEngagementGroupRowView,
+  buildHealthMetricsEngagementParticipationMetrics,
+  buildHealthMetricsEngagementParticipationRowView,
   buildHealthMetricsEngagementRepLabels,
-  buildHealthMetricsEngagementSparkBars,
   buildHealthMetricsEngagementSubNavItems,
   filterHealthMetricsEngagementOrgRows,
   filterHealthMetricsEngagementRepRows,
@@ -51,6 +55,8 @@ import {
   formatHealthMetricsEngagementRatio,
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
+  resolveHealthMetricsEngagementGroupKind,
+  parseHealthMetricsEngagementGroupType,
   resolveHealthMetricsEngagementOrgTierPillClass,
   selectHealthMetricsEngagementGroupPeriod,
   selectHealthMetricsEngagementNonMemberCounts,
@@ -172,20 +178,21 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
   });
 });
 
-describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagementGroupTrend', () => {
+describe('group attendance rows', () => {
   const row: HealthMetricsEngagementGroupRow = {
     committeeId: 'c-1',
     committeeName: 'Technical Steering Committee',
     projectId: 'p-1',
     projectSlug: 'acme-core',
     projectName: 'Acme Core',
-    groupTypeLabel: 'Technical Steering Committee',
+    groupTypeLabel: 'Governance',
+    meetingTypeGroup: 'Technical',
     lastMetDate: '2026-08-14',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsHeld: 10, invitedCount: 100, attendedCount: 54, attendancePct: 0.54, dormant: false },
       { range: 'COMPLETED_YEAR_2', meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null, dormant: true },
       { range: 'COMPLETED_YEAR', meetingsHeld: 12, invitedCount: 120, attendedCount: 71, attendancePct: 0.59, dormant: false },
-      { range: 'YTD', meetingsHeld: 8, invitedCount: 80, attendedCount: 50, attendancePct: 0.62, dormant: false },
+      { range: 'YTD', meetingsHeld: 8, invitedCount: 80, attendedCount: 50, attendancePct: 0.625, dormant: false },
     ],
   };
 
@@ -201,59 +208,53 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
     expect(selectHealthMetricsEngagementGroupPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
   });
 
-  it('builds the sparkline oldest to current, keeping a null period null', () => {
-    expect(buildHealthMetricsEngagementGroupTrend(row)).toEqual([0.54, null, 0.59, 0.62]);
+  it.each([
+    ['wg', 'wg'],
+    ['gov', 'gov'],
+    ['toString', 'all'],
+    [null, 'all'],
+  ])('reads the group type %s from the URL as %s', (value, expected) => {
+    expect(parseHealthMetricsEngagementGroupType(value)).toBe(expected);
   });
 
-  // The table reads "No data" below the floor, so plotting the same period would contradict it.
-  it('nulls a period with too few meetings to rate', () => {
-    const periods = [...row.periods];
-    periods[3] = { ...periods[3], meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 };
-
-    expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
+  it.each([
+    ['Governance', 'Board', HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.board],
+    ['Governance', 'Technical', HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.oversight],
+    ['Governance', null, HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.oversight],
+    ['Working groups', 'Working Group', HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.workingGroup],
+    ['SIG / TAG', 'Other', HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.sigTag],
+    ['Other', 'Board', HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.other],
+    [null, null, HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.other],
+  ])('reads a %s group of meeting type %s as its kind', (groupTypeLabel, meetingTypeGroup, kind) => {
+    expect(resolveHealthMetricsEngagementGroupKind({ ...row, groupTypeLabel, meetingTypeGroup })).toBe(kind);
   });
 
-  it('nulls a period whose meeting count is unmeasured, not just below the floor', () => {
-    const periods = [...row.periods];
-    periods[3] = { ...periods[3], meetingsHeld: null };
-
-    expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
-  });
-});
-
-describe('buildHealthMetricsEngagementSparkBars', () => {
-  // The design's spark2: 3px floor plus up to 19px, scaled to the series' own range.
-  it('scales to the series own min-max, so a tight run still shows its movement', () => {
-    expect(buildHealthMetricsEngagementSparkBars([0.54, 0.58, 0.59, 0.62])).toEqual([
-      { heightPx: 3, last: false },
-      { heightPx: 12.5, last: false },
-      { heightPx: 14.9, last: false },
-      { heightPx: 22, last: true },
-    ]);
+  it('builds a measured row with its rounded rate, date and kind', () => {
+    expect(buildHealthMetricsEngagementGroupRowView(row, 'YTD')).toEqual({
+      key: 'c-1',
+      name: 'Technical Steering Committee',
+      kind: HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS.oversight,
+      meetings: '8',
+      lastMetLabel: 'Aug 14, 2026',
+      dormant: false,
+      attendanceLabel: '63%',
+      attendancePct: 63,
+    });
   });
 
-  it('keeps an unrated period as an empty slot, so later periods do not slide left', () => {
-    expect(buildHealthMetricsEngagementSparkBars([0.4, null, 0.8])).toEqual([
-      { heightPx: 3, last: false },
-      { heightPx: null, last: false },
-      { heightPx: 22, last: true },
-    ]);
+  it('shows a dash for no meetings, no rate and no last meeting', () => {
+    const view = buildHealthMetricsEngagementGroupRowView({ ...row, lastMetDate: null }, 'COMPLETED_YEAR_2');
+
+    expect(view).toMatchObject({ meetings: '—', lastMetLabel: '—', dormant: true, attendanceLabel: '—', attendancePct: null });
   });
 
-  it('highlights nothing when the current period is unrated', () => {
-    const bars = buildHealthMetricsEngagementSparkBars([0.4, 0.8, null]);
+  // Too few meetings to rate reads as no rate, not as a percentage built on one or two meetings.
+  it('drops the rate below the minimum meetings', () => {
+    const periods = row.periods.map((period) =>
+      period.range === 'YTD' ? { ...period, meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 } : period
+    );
 
-    expect(bars.map((bar) => bar.last)).toEqual([false, false, false]);
-    expect(bars[2]?.heightPx).toBeNull();
-  });
-
-  it('draws a flat series at the floor rather than dividing by a zero range', () => {
-    expect(buildHealthMetricsEngagementSparkBars([0.5, 0.5]).map((bar) => bar.heightPx)).toEqual([3, 3]);
-  });
-
-  it('returns no bars below two rated values, which cannot express a direction', () => {
-    expect(buildHealthMetricsEngagementSparkBars([0.5, null, null])).toEqual([]);
-    expect(buildHealthMetricsEngagementSparkBars([])).toEqual([]);
+    expect(buildHealthMetricsEngagementGroupRowView({ ...row, periods }, 'YTD')).toMatchObject({ meetings: '2', attendanceLabel: '—', attendancePct: null });
   });
 });
 
@@ -330,6 +331,58 @@ describe('participation period selection and delta formatting', () => {
 
   it('returns the requested period', () => {
     expect(selectHealthMetricsEngagementParticipationPeriod(participationRow, 'COMPLETED_YEAR')?.meetingsHeld).toBe(12);
+  });
+
+  it('names a row by its short meeting type, with its icon, Members pointer and board bar rule', () => {
+    expect(buildHealthMetricsEngagementParticipationRowView(participationRow, 'YTD')).toEqual({
+      key: 'Board',
+      name: 'Board',
+      icon: 'fa-light fa-user-check',
+      description: 'Board & voting-member attendance',
+      governance: true,
+      meetings: '7',
+      attendanceLabel: '86%',
+      attendancePct: 86,
+      fillRule: HEALTH_METRICS_ENGAGEMENT_BOARD_BAR_FILL,
+    });
+  });
+
+  it('gives a type the view adds later the Other icon and the default bar rule', () => {
+    const view = buildHealthMetricsEngagementParticipationRowView(
+      { ...participationRow, group: 'Outreach', label: 'Outreach groups', governance: false },
+      'YTD'
+    );
+
+    expect(view).toMatchObject({ name: 'Outreach', icon: 'fa-light fa-calendar-days', description: '', fillRule: HEALTH_METRICS_VALUE_BAR_FILL });
+  });
+
+  it('turns the board bar danger below 90%', () => {
+    expect(HEALTH_METRICS_ENGAGEMENT_BOARD_BAR_FILL.thresholds).toEqual([{ below: 90, fillClass: 'bg-red-500' }]);
+  });
+
+  it('builds the metrics row with the attendance change as a coloured lead', () => {
+    expect(buildHealthMetricsEngagementParticipationMetrics(participationRow, 'COMPLETED_YEAR')).toEqual([
+      {
+        key: 'attendance',
+        label: 'All-meeting attendance',
+        value: '80%',
+        descriptionLead: '−3.0pp',
+        description: 'vs previous period',
+        descriptionLeadTone: 'down',
+      },
+      { key: 'meetings', label: 'Meetings held', value: '12' },
+      { key: 'groups', label: 'Active groups', value: '7 / 8' },
+      { key: 'never', label: 'Never attended', value: '1' },
+    ]);
+  });
+
+  it('leaves the change out when there is no prior period, and dashes an unread total', () => {
+    expect(buildHealthMetricsEngagementParticipationMetrics(participationRow, 'COMPLETED_YEAR_3')[0]).toEqual({
+      key: 'attendance',
+      label: 'All-meeting attendance',
+      value: '80%',
+    });
+    expect(buildHealthMetricsEngagementParticipationMetrics(null, 'YTD').map((item) => item.value)).toEqual(['—', '—', '—', '—']);
   });
 
   it('falls back to the most recent period for a range the view has no columns for', () => {

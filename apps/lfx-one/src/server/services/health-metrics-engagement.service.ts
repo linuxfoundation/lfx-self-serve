@@ -123,6 +123,7 @@ interface GroupAttendanceRow {
   PROJECT_SLUG: string | null;
   PROJECT_NAME: string | null;
   GROUP_TYPE_LABEL: string | null;
+  MEETING_TYPE_GROUP: string | null;
   LAST_MET_DATE: Date | string | null;
   SCOPE_GROUPS: number | null;
   TOTAL_RECORDS: number | null;
@@ -294,6 +295,7 @@ export class HealthMetricsEngagementService {
           project_name,
           last_met_date,
           group_type_label,
+          meeting_type_group,
           ${periodColumns},
           sort_rank_${suffix} AS sort_rank,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
@@ -781,6 +783,7 @@ function mapGroupRow(row: GroupAttendanceRow): HealthMetricsEngagementGroupRow {
     projectSlug: row.PROJECT_SLUG,
     projectName: row.PROJECT_NAME,
     groupTypeLabel: row.GROUP_TYPE_LABEL,
+    meetingTypeGroup: row.MEETING_TYPE_GROUP,
     lastMetDate: toIsoDate(row.LAST_MET_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapGroupPeriod(row, range)),
   };

@@ -66,7 +66,8 @@ function warehouseRow(overrides: Record<string, unknown> = {}) {
     PROJECT_ID: 'p-1',
     PROJECT_SLUG: 'acme-core',
     PROJECT_NAME: 'Acme Core',
-    GROUP_TYPE_LABEL: 'Technical Steering Committee',
+    GROUP_TYPE_LABEL: 'Governance',
+    MEETING_TYPE_GROUP: 'Board',
     LAST_MET_DATE: new Date('2026-08-14T00:00:00.000Z'),
     SCOPE_GROUPS: 34,
     TOTAL_RECORDS: 34,
@@ -125,13 +126,16 @@ describe('HealthMetricsEngagementService', () => {
     loggerError.mockReset();
   });
 
-  it('maps every period onto the row, oldest first, so the sparkline needs no second read', async () => {
+  it('maps every period onto the row, oldest first', async () => {
     const response = await service.getGroupAttendance(req, query());
 
     expect(response.rows).toHaveLength(1);
     expect(response.rows[0]?.committeeId).toBe('c-1');
     expect(response.rows[0]?.projectId).toBe('p-1');
     expect(response.rows[0]?.lastMetDate).toBe('2026-08-14');
+    // The board split under Governance reads the view's meeting type group.
+    expect(response.rows[0]).toMatchObject({ groupTypeLabel: 'Governance', meetingTypeGroup: 'Board' });
+    expect(lastSql()).toContain('group_type_label, meeting_type_group,');
     expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
     expect(response.rows[0]?.periods.map((period) => period.attendancePct)).toEqual([0.54, 0.58, 0.59, 0.62]);
     expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsHeld: 8, invitedCount: 80, attendedCount: 50, dormant: false });
