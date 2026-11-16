@@ -312,7 +312,7 @@ describe('OrgProjectsComponent — health label', () => {
       fixture.detectChanges();
 
       expect(note()?.textContent).toContain('Maintainer data is currently unavailable');
-      // The Employees filter still works off contributors and participants.
+      // The Employees filter still works off contributors only.
       expect(component['employeeOptions']()).toEqual([]);
     } finally {
       responseExtra = {};
@@ -467,6 +467,14 @@ describe('OrgProjectsComponent — Employees filter', () => {
 
     expect(rowNames()).toEqual(expect.arrayContaining(['Alpha', 'Bravo', 'Charlie']));
     expect(component['totalRecords']()).toBe(3);
+  });
+
+  it('matches employees on code activity only, not event participation', async () => {
+    await open('/');
+    expect(component['employeeOptions']().map((o: { value: string }) => o.value)).toEqual(['p-known']);
+
+    await open('/?employees=p-other');
+    expect(rowNames()).toEqual([]);
   });
 
   it('opens a link with only an unknown employee on the explained empty state, with Export disabled', async () => {

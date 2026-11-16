@@ -70,7 +70,6 @@ import {
   GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
   GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CHANNELS_WITH_DEVICE_EXCLUSIONS_ONLY,
-  GOOGLE_CHANNELS_WITHOUT_TARGET_CPA,
   GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
@@ -698,17 +697,6 @@ describe('Google bidding catalogue', () => {
   it('keeps target roas off demand gen, as a strategy and as a target', () => {
     expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL['demand-gen']).not.toContain('target-roas');
     expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_ROAS]).toEqual(['demand-gen']);
-  });
-
-  /**
-   * Display's target CPA is withheld by LFX One, not refused by campaign-service's catalogue
-   * (linuxfoundation/lfx-v2-campaign-service#578): the catalogue keeps Target CPA on Display so the
-   * workaround comes out by deleting the one constant, and the constant names Display alone, since
-   * Search and Performance Max take the folded form and Demand Gen takes the standalone one.
-   */
-  it('withholds a target cpa on display alone, leaving the catalogue as upstream has it', () => {
-    expect([...GOOGLE_CHANNELS_WITHOUT_TARGET_CPA]).toEqual(['display']);
-    expect(GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL.display).toContain('target-cpa');
   });
 
   /**

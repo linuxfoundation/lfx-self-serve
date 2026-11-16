@@ -102,8 +102,11 @@ export const NAV_TOOLTIP_RAIL_OFFSET_PX = 10;
 /** Below this viewport width (px) a non-touch desktop keeps the navbar collapsed to its rail; it can only peek open. */
 export const NAVBAR_NARROW_MAX_WIDTH_PX = 1200;
 
-/** `localStorage` key holding the viewer's docked-collapsed navbar preference. */
+/** `sessionStorage` key holding the viewer's docked-collapsed navbar preference (also cleared from `localStorage`, its old home). */
 export const NAVBAR_COLLAPSED_STORAGE_KEY = 'lfx-navbar-collapsed';
+
+/** `sessionStorage` mark a page leaves on `pagehide`: the tab's next load is a return (reload, redirect, Back/Forward), not a fresh tab. */
+export const NAVBAR_LEFT_PAGE_STORAGE_KEY = 'lfx-navbar-left-page';
 
 /** `localStorage` key holding the viewer's desktop sidebar theme (`dark` or `light`). */
 export const NAVBAR_THEME_STORAGE_KEY = 'lfx-navbar-theme';
