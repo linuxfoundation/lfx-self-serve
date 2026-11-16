@@ -232,7 +232,8 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(badge.tagName).toBe('LFX-UI-BADGE');
     expect(badge.textContent?.trim()).toBe('Dormant');
     expect(badge.getAttribute('tabindex')).toBe('0');
-    expect(badge.getAttribute('aria-label')).toBe('Dormant: This group has not held a meeting in the selected period, so there is no attendance to measure.');
+    // The name is the label alone; the tooltip supplies the explanation as the description, so it is read once.
+    expect(badge.getAttribute('aria-label')).toBe('Dormant');
     expect(row.querySelector('[data-testid="health-metrics-value-bar-fill"]')).toBeNull();
     expect(row.textContent).not.toContain('No meetings this period');
   });

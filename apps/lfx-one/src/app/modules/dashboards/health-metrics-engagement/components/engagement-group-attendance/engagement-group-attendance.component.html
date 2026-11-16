@@ -51,13 +51,13 @@
           <td><lfx-health-metrics-cell [text]="view.lastMetLabel" /></td>
           <td>
             @if (view.dormant) {
-              <!-- Focusable for its tooltip, so it carries a role; its name is the label and the tooltip describes it. -->
+              <!-- Focusable for its tooltip, so it carries a role; its name is the label and the tooltip describes it, once. -->
               <lfx-ui-badge
                 tone="danger"
                 role="img"
                 tabindex="0"
                 class="cursor-help focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-                [attr.aria-label]="dormantTip.title + ': ' + dormantTip.text"
+                [attr.aria-label]="dormantTip.title"
                 [lfxUiTooltipTitle]="dormantTip.title"
                 [lfxUiTooltip]="dormantTip.text"
                 [attr.data-testid]="'engagement-group-attendance-dormant-' + view.key"
