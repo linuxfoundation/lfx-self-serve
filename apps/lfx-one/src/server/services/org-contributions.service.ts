@@ -24,7 +24,7 @@ import type {
   OrgLensOrgScope,
   SnowflakeQueryOptions,
 } from '@lfx-one/shared/interfaces';
-import { orgLensTimeRangeDays } from '@lfx-one/shared/utils';
+import { orgLensTimeRangeDays, parseGithubUsername } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { toIsoTimestamp } from '../helpers/date-format.helper';
@@ -759,18 +759,6 @@ function mapCommitRow(row: ContributionsCommitRow): OrgContributionCommitRow {
     message: row.COMMIT_MESSAGE ?? '',
     commitUrl: row.COMMIT_URL,
   };
-}
-
-function parseGithubUsername(value: string | null): string | null {
-  if (!value) {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed.includes('/')) {
-    return trimmed.replace(/^@/, '') || null;
-  }
-  const match = trimmed.match(/github\.com\/([^/?#]+)/i);
-  return match?.[1] ?? null;
 }
 
 function emptyResponse(accountId: string, dateRange: OrgLensTimeRange): OrgContributionsResponse {
