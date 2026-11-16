@@ -578,6 +578,17 @@ export class CommitteeSettingsTabComponent {
     this.refreshMl$.next();
   }
 
+  // Mirrors openSyncPreviewDialog's own onClose handling (#5786) — the Auto Sync drawer card now owns
+  // the Sync Now dialog itself, but a reverse sync (mailing list → committee) still changes committee
+  // membership, so the same refresh/committeeUpdated behavior applies regardless of which entry point
+  // opened the dialog.
+  public onSyncApplied(result: MailingListSyncPreviewDialogResult): void {
+    this.refreshMl$.next();
+    if (result.committeeChanged) {
+      this.committeeUpdated.emit();
+    }
+  }
+
   // Re-fires the refresh that failed in initAssociatedMailingLists' catchError — the only recovery
   // path once refreshingMl is latched true with no successful refresh to clear it (#4899 review).
   public retryMlRefresh(): void {
