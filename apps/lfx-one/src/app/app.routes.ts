@@ -428,8 +428,9 @@ export const routes: Routes = [
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
       // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
-      // and LF staff only (as Health Metrics). The guard checks the role only; the BFF additionally scopes an ED to
-      // projects under a foundation they direct (403 renders the no-access state) and requires project `viewer`.
+      // and LF staff only (as Health Metrics). The guard checks the role only; the sidebar entry is hidden unless the
+      // ED's scope covers the active project, and the BFF scopes an ED to projects under a foundation they direct
+      // (a direct URL outside that scope gets a 403 and the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
         title: 'Participating Companies',
