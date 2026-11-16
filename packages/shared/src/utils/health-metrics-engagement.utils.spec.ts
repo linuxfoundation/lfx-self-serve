@@ -1060,7 +1060,7 @@ describe('buildHealthMetricsEngagementNewsletterChart', () => {
   });
   const points = [point('a', 'Jan', 41.2, 5.1, 12.4, 1400, 577), point('b', 'Feb', 47.9, 6.0, 12.5, 1458, 698)];
 
-  it('plots the rates to the peak open rate rounded up to the next 10%, click-to-open dashed', () => {
+  it('plots the rates to the peak rate rounded up to the next 10%, click-to-open dashed', () => {
     const { chart, legend } = buildHealthMetricsEngagementNewsletterChart(points, 'rates');
 
     expect(chart.yTicks).toEqual(['50%', '38%', '25%', '13%', '0%']);
@@ -1095,6 +1095,13 @@ describe('buildHealthMetricsEngagementNewsletterChart', () => {
     expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 100, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('100%');
     // 0.3 * 100 is 30.000000000000004 in JavaScript; the axis still tops out at 30%.
     expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 0.3 * 100, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('30%');
+  });
+
+  it('raises the rate axis to a click-to-open rate above the open rate, so its line is drawn at its value', () => {
+    const { chart } = buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 20, 8, 40, 10, 2), point('b', 'Feb', 20, 12, 60, 10, 2)], 'rates');
+
+    expect(chart.yTicks[0]).toBe('60%');
+    expect(chart.paths.find((path) => path.key === 'cto')?.d).toBe('M0.0 66.7 L600.0 0.0');
   });
 
   it('plots the audience to a round ceiling over its peak, with counts in the popup', () => {
