@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, mentor, applicants, tasks, review, notes]
 last_generated: 2026-10-26
-last_updated: 2026-11-02
+last_updated: 2026-11-10
 intercom_collection: Mentorship
 ---
 
@@ -56,7 +56,7 @@ To change a task, expand the mentee's row with **View Tasks** and use **Edit Tas
 2. Filter with the pills — **Awaiting Review** (the default), **Approved** or **All**.
 3. Read the task card: who submitted or completed which task, the term, when it was last updated, and the task description.
 4. If the mentee uploaded a file, select **View Submission** to open it in a new tab, or **Download Submission** to save it.
-5. On a submitted task, select **Approve** or **Request Changes**.
+5. On a submitted task, select **Approve**, or select **Request Changes**, enter a reason, and select **Request Changes** in the dialog.
 
 PDF and plain-text files open in the browser. A DOC or DOCX file cannot be shown there, so **View Submission** (or the eye icon on Applicants and Mentees) downloads it instead and says so.
 
@@ -64,7 +64,7 @@ This tab is for reviewing only — you cannot create or edit a task here.
 
 Approving a task locks it for the mentee: from then on only a mentor can change it. It moves under **Approved**.
 
-**Request Changes** sends the task back to the mentee as **To Do**. The mentee is not emailed and sees no reason, so tell them directly what to change.
+**Request Changes** asks for a reason: what the mentee should change before they submit the task again. The reason is required. The task goes back to the mentee as **To Do**, and the mentee is emailed the reason. The reason is not saved on the task, so the email is the only place the mentee sees it. Select **Cancel** to close the dialog without sending the task back.
 
 ## Applicant task status
 
