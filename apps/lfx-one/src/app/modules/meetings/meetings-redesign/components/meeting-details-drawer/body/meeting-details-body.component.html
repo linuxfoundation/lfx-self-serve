@@ -68,17 +68,30 @@
           <lfx-ui-badge variant="outline" data-testid="meeting-details-type"><i [class]="type.icon" aria-hidden="true"></i>{{ type.label }}</lfx-ui-badge>
         }
         @for (group of groups(); track group.uid) {
-          <!-- A long group name truncates; the tooltip keeps it whole. -->
-          <lfx-ui-badge
-            class="max-w-full"
-            variant="outline"
-            interactive
-            [attr.aria-label]="'View group: ' + group.name"
-            [lfxUiTooltip]="group.name ?? ''"
-            (activated)="openGroup(group.uid)"
-            data-testid="meeting-details-group"
-            ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group.name }}</span></lfx-ui-badge
-          >
+          <!-- A long group name truncates; the tooltip keeps it whole. Signed out it is no link, but still focusable for the tooltip. -->
+          @if (context.signedIn()) {
+            <lfx-ui-badge
+              class="max-w-full"
+              variant="outline"
+              interactive
+              [attr.aria-label]="'View group: ' + group.name"
+              [lfxUiTooltip]="group.name ?? ''"
+              (activated)="openGroup(group.uid)"
+              data-testid="meeting-details-group"
+              ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group.name }}</span></lfx-ui-badge
+            >
+          } @else {
+            <lfx-ui-badge
+              class="max-w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              variant="outline"
+              role="img"
+              tabindex="0"
+              [attr.aria-label]="group.name"
+              [lfxUiTooltip]="group.name ?? ''"
+              data-testid="meeting-details-group"
+              ><i class="fa-light fa-users" aria-hidden="true"></i><span class="min-w-0 truncate">{{ group.name }}</span></lfx-ui-badge
+            >
+          }
         }
         @for (feature of features(); track feature.setting) {
           <lfx-ui-badge variant="outline" [attr.data-testid]="'meeting-details-feature-' + feature.setting"

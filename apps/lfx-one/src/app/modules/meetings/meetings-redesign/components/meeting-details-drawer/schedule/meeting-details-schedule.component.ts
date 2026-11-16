@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
@@ -17,8 +19,9 @@ import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiNoteComponent } from '@shared/uikit/note/note.component';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
-import { take } from 'rxjs';
+import { filter, take } from 'rxjs';
 
 import { MeetingsHomeJoinService } from '../../../services/meetings-home-join.service';
 import { MeetingDateTileComponent } from '../../meeting-date-tile/meeting-date-tile.component';
@@ -30,7 +33,8 @@ import { MeetingDetailsRegisterModalComponent } from '../register/meeting-detail
 /**
  * Top of the meeting details drawer's card: the shown date, the viewer's RSVP, Join and Register.
  * @description Join opens the meeting's early-join time (default `DEFAULT_EARLY_JOIN_TIME`) before the start and stays open until 40 minutes after the end.
- * RSVP and Register show before that window only, as on the meeting page.
+ * RSVP and Register show before that window only, as on the meeting page. A page whose join window was open when it
+ * loaded opens Zoom once by itself, as the legacy meeting page does.
  */
 @Component({
   selector: 'lfx-meeting-details-schedule',
@@ -45,6 +49,7 @@ export class MeetingDetailsScheduleComponent {
   private readonly joinService = inject(MeetingsHomeJoinService);
   private readonly source = inject(MeetingDetailsSource);
   private readonly modal = inject(UiModalService);
+  private readonly toast = inject(UiToastService);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly context = inject(MeetingDetailsContext);
 
@@ -70,6 +75,12 @@ export class MeetingDetailsScheduleComponent {
   });
   protected readonly rsvpRow: Signal<MeetingHomeRow> = this.initRsvpRow();
   protected readonly canRegister: Signal<boolean> = this.initCanRegister();
+  /** A page joins with another email in place, where the drawer links to the meeting page. */
+  protected readonly joinWithOtherEmail = this.source.joinWithOtherEmail;
+
+  public constructor() {
+    this.openJoinOnLoad();
+  }
 
   protected register(): void {
     const meeting = this.context.meeting();
@@ -117,5 +128,37 @@ export class MeetingDetailsScheduleComponent {
         meeting.visibility === MeetingVisibility.PUBLIC
       );
     });
+  }
+
+  /** Opens the join link once it loads, when the host allows it for this load; a blocked popup leaves Join to the viewer. */
+  private openJoinOnLoad(): void {
+    if (!this.source.claimJoinOnLoad || !isPlatformBrowser(inject(PLATFORM_ID))) return;
+    toObservable(this.joinLink)
+      .pipe(
+        // The claim holds nothing back until the page allows it, so a link that loads first is not the only try.
+        filter((link) => !!link.url && this.canJoin() && !!this.source.claimJoinOnLoad?.()),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((link) => {
+        // With noopener a successful open may still return null, so only a closed window counts as blocked.
+        const opened = window.open(link.url ?? '', '_blank', 'noopener,noreferrer');
+        if (opened?.closed) {
+          this.toast.show({
+            variant: 'warning',
+            position: 'bottom-center',
+            message: 'Popup Blocked',
+            description: 'Your browser blocked the meeting window. Please click the "Join Meeting" button to open it manually.',
+            duration: 5000,
+          });
+          return;
+        }
+        this.toast.show({
+          variant: 'success',
+          message: 'Meeting Opened',
+          description: "The meeting has been opened in a new tab. If you don't see it, check if popups are blocked.",
+          duration: 3000,
+        });
+      });
   }
 }

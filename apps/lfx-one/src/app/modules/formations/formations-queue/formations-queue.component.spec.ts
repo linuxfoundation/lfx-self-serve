@@ -15,7 +15,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import { emptyPipelineCounts } from '@lfx-one/shared/utils';
 import type { FormationsQueueResponse, ProjectApplication, ProjectContext } from '@lfx-one/shared/interfaces';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { map, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { FormationsQueueComponent } from './formations-queue.component';
@@ -36,7 +36,7 @@ describe('FormationsQueueComponent — foundation scoping (GH-2367)', () => {
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
+        { provide: ProjectApplicationService, useValue: { getAccessState: () => of({ isFormationTeam: false, isLfStaff: false }) } },
       ],
     }).compileComponents();
 
@@ -99,7 +99,7 @@ describe('FormationsQueueComponent — "In formation" tile subLine (GH-2366, GH-
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(response)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>(null) } },
-        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
+        { provide: ProjectApplicationService, useValue: { getAccessState: () => of({ isFormationTeam: false, isLfStaff: false }) } },
       ],
     }).compileComponents();
 
@@ -147,7 +147,7 @@ describe('FormationsQueueComponent — health tiles (#2782)', () => {
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(response)) } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>(null) } },
-        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
+        { provide: ProjectApplicationService, useValue: { getAccessState: () => of({ isFormationTeam: false, isLfStaff: false }) } },
       ],
     }).compileComponents();
 
@@ -214,12 +214,13 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
   const render = async (options: {
     slug: string | null;
     isFormationTeam: boolean | Observable<boolean>;
+    isLfStaff?: boolean;
     tab?: string;
     queue?: ProjectApplication[] | Observable<ProjectApplication[]>;
   }): Promise<ComponentFixture<FormationsQueueComponent>> => {
     TestBed.resetTestingModule();
     getFormationsQueue = vi.fn(() => of(createEmptyFormationsQueueResponse()));
-    getFormationPipeline = vi.fn(() => of({ rows: [], counts: emptyPipelineCounts() }));
+    getFormationPipeline = vi.fn(() => of({ rows: [], counts: emptyPipelineCounts(), viewer: 'formation_team' as const }));
     await TestBed.configureTestingModule({
       imports: [FormationsQueueComponent],
       providers: [
@@ -250,8 +251,9 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
     }).compileComponents();
 
     applicationService = TestBed.inject(ProjectApplicationService);
-    vi.spyOn(applicationService, 'getAccess').mockReturnValue(
-      typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam
+    const isFormationTeam$ = typeof options.isFormationTeam === 'boolean' ? of(options.isFormationTeam) : options.isFormationTeam;
+    vi.spyOn(applicationService, 'getAccessState').mockReturnValue(
+      isFormationTeam$.pipe(map((isFormationTeam) => ({ isFormationTeam, isLfStaff: options.isLfStaff === true })))
     );
     const queue = options.queue ?? [];
     getApplications = vi.spyOn(applicationService, 'getApplications').mockReturnValue(Array.isArray(queue) ? of(queue) : queue);
@@ -412,7 +414,7 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       const fixture = await render({ slug: 'tlf', isFormationTeam: of(false) });
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const real = TestBed.inject(ProjectApplicationService);
-      vi.mocked(real.getAccess).mockRestore();
+      vi.mocked(real.getAccessState).mockRestore();
       const http = TestBed.inject(HttpTestingController);
       const failing = TestBed.createComponent(FormationsQueueComponent);
       getFormationsQueue.mockClear();
@@ -434,7 +436,9 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       fixture.componentInstance['onPageTabChange']('formations');
       expect(navigate).toHaveBeenLastCalledWith(
         [],
-        expect.objectContaining({ queryParams: { tab: 'formations', stage: null, foundation: null, type: null, q: null, sort: null, dir: null } })
+        expect.objectContaining({
+          queryParams: { tab: 'formations', stage: null, foundation: null, type: null, q: null, sort: null, dir: null, tat: null, tech: null, ind: null },
+        })
       );
 
       fixture.componentInstance['onPageTabChange']('pipeline');
@@ -459,6 +463,62 @@ describe('FormationsQueueComponent — Project proposals tab (#3037)', () => {
       expect(query(fixture, 'formations-queue-page-tabs-pipeline')).toBeNull();
       expect(getFormationPipeline).not.toHaveBeenCalled();
       expect(getFormationsQueue).toHaveBeenCalled();
+    });
+
+    describe('LF staff outside the formation team (#5544)', () => {
+      it('shows the Pipeline tab by default, with the Formations tab and no Project proposals tab', async () => {
+        const fixture = await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true });
+        expect(query(fixture, 'formations-queue-pipeline')).not.toBeNull();
+        expect(query(fixture, 'formations-queue-page-tabs-pipeline')?.getAttribute('aria-selected')).toBe('true');
+        expect(query(fixture, 'formations-queue-page-tabs-formations')).not.toBeNull();
+        expect(query(fixture, 'formations-queue-page-tabs-proposals')).toBeNull();
+        expect(getFormationPipeline).toHaveBeenCalled();
+      });
+
+      it("lands on Pipeline for ?tab=proposals, which stays the formation team's, and reads no staff queue", async () => {
+        const fixture = await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true, tab: 'proposals' });
+        expect(query(fixture, 'formations-queue-proposals')).toBeNull();
+        expect(query(fixture, 'formations-queue-pipeline')).not.toBeNull();
+        expect(getApplications).not.toHaveBeenCalled();
+      });
+
+      it('rewrites an ignored ?tab=proposals to the Pipeline tab in the address bar, replacing the history entry', async () => {
+        const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+        try {
+          await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true, tab: 'proposals' });
+          expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+        } finally {
+          navigate.mockRestore();
+        }
+      });
+
+      it('leaves the address alone for the formation team on ?tab=proposals, and for staff on the default tab', async () => {
+        const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+        try {
+          await render({ slug: 'tlf', isFormationTeam: true, isLfStaff: true, tab: 'proposals' });
+          await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true });
+          expect(navigate).not.toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { tab: null } }));
+        } finally {
+          navigate.mockRestore();
+        }
+      });
+
+      it('still opens ?tab=formations', async () => {
+        const fixture = await render({ slug: 'tlf', isFormationTeam: false, isLfStaff: true, tab: 'formations' });
+        expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+        expect(getFormationsQueue).toHaveBeenCalled();
+      });
+
+      it('leaves any other foundation unchanged', async () => {
+        const fixture = await render({ slug: 'cncf', isFormationTeam: false, isLfStaff: true });
+        expect(query(fixture, 'formations-queue-pipeline')).toBeNull();
+        expect(query(fixture, 'formations-queue-page-tabs-pipeline')).toBeNull();
+      });
+
+      it('keeps all three tabs for a formation-team member who is also staff', async () => {
+        const fixture = await render({ slug: 'tlf', isFormationTeam: true, isLfStaff: true });
+        expect(query(fixture, 'formations-queue-page-tabs-proposals')).not.toBeNull();
+      });
     });
 
     it('leaves the page unchanged on any other foundation', async () => {
@@ -488,7 +548,7 @@ describe('FormationsQueueComponent — "Propose a project" button (#5187)', () =
         provideRouter([]),
         { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(createEmptyFormationsQueueResponse())) } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        { provide: ProjectApplicationService, useValue: { getAccess: () => of(false) } },
+        { provide: ProjectApplicationService, useValue: { getAccessState: () => of({ isFormationTeam: false, isLfStaff: false }) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(FormationsQueueComponent);

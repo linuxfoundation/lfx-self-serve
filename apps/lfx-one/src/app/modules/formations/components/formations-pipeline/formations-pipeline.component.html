@@ -12,22 +12,30 @@
       }
     </div>
   } @else {
+    @if (isStaffView() && !loading()) {
+      <p class="text-sm text-gray-500" data-testid="formations-pipeline-staff-note">{{ copy.staffNote }}</p>
+    }
     <!-- The stat strip is a desktop affordance; the phone list is led by the stage pills. -->
     <div class="hidden min-[600px]:block" data-testid="formations-pipeline-stats">
-      <lfx-stat-card-grid [cards]="statCards()" [loading]="loading()" [columns]="5" (actionClick)="onStatAction($event)" />
+      <lfx-stat-card-grid [cards]="statCards()" [loading]="loading()" [columns]="statColumns()" (actionClick)="onStatAction($event)" />
     </div>
 
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="formations-pipeline-card">
       <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-200">
         <div class="max-w-full overflow-x-auto min-[600px]:hidden" data-testid="formations-pipeline-pills-phone">
-          <lfx-filter-pills [options]="pillOptions()" [selectedFilter]="stage()" variant="track" ariaLabel="Stage" (filterChange)="onStageChange($event)" />
+          <lfx-filter-pills
+            [options]="pillOptions()"
+            [selectedFilter]="selectedStage()"
+            variant="track"
+            ariaLabel="Stage"
+            (filterChange)="onStageChange($event)" />
         </div>
         <div class="hidden min-[600px]:block" data-testid="formations-pipeline-pills">
-          <lfx-filter-pills [options]="pillOptions()" [selectedFilter]="stage()" ariaLabel="Stage" (filterChange)="onStageChange($event)" />
+          <lfx-filter-pills [options]="pillOptions()" [selectedFilter]="selectedStage()" ariaLabel="Stage" (filterChange)="onStageChange($event)" />
         </div>
 
         <div class="flex flex-wrap items-center gap-3">
-          <div class="w-full min-[600px]:w-56 max-[599px]:[&_.p-select]:min-h-11">
+          <div class="w-full min-[600px]:w-56 max-[599px]:[&_.p-select]:min-h-11" (focusin)="onFoundationSelectOpen()">
             <lfx-select
               [form]="filterForm"
               control="foundation"
@@ -49,6 +57,24 @@
               size="small"
               data-testid="formations-pipeline-foundation-kind" />
           </div>
+          @for (key of classificationKeys; track key) {
+            <div class="w-full min-[600px]:w-52 max-[599px]:[&_.p-multiselect]:min-h-11">
+              <lfx-multi-select
+                [form]="filterForm"
+                [control]="key"
+                [options]="classificationOptions()[key]"
+                [placeholder]="classificationLabels[key]"
+                [ariaLabel]="classificationLabels[key]"
+                [showToggleAll]="false"
+                [filter]="true"
+                [filterPlaceHolder]="classificationPlaceholders[key]"
+                [panelStyleClass]="classificationPanelClasses[key]"
+                [matchTriggerWidth]="true"
+                styleClass="w-full"
+                size="small"
+                [attr.data-testid]="'formations-pipeline-classification-' + key" />
+            </div>
+          }
           <div class="w-full min-[600px]:w-64">
             <lfx-input-text
               [form]="filterForm"

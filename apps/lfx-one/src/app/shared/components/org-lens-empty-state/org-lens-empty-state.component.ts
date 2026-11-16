@@ -43,6 +43,12 @@ export class OrgLensEmptyStateComponent {
   public readonly testId = input.required<string>();
   /** True while the Retry this state offers is in flight — the control shows a spinner and cannot be re-fired. */
   public readonly retrying = input(false);
+  /**
+   * Router commands that replace a route primary's registry route, for a destination only the caller can
+   * address — the current selection's own page, which the environment-agnostic registry cannot name.
+   * Ignored when the primary is not a route.
+   */
+  public readonly primaryRoute = input<string[] | undefined>(undefined);
 
   public readonly retry = output<void>();
   public readonly resetFilters = output<void>();

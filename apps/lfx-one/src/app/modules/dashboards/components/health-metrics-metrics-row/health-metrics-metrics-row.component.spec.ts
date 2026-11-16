@@ -60,6 +60,13 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(el('row')).toBeNull();
   });
 
+  it('spans the only item on phones', async () => {
+    await render([metric('a')]);
+
+    expect(classes('row-a')).toContain('max-[640px]:col-span-full');
+    expect(classes('row-a')).toContain('pl-0');
+  });
+
   it('does not span an even last item', async () => {
     await render([metric('a'), metric('b'), metric('c'), metric('d')]);
 
@@ -111,6 +118,12 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect(description.textContent?.replace(/\s+/g, ' ').trim()).toBe('+4% vs {Month}');
     expect(description.className).toContain('text-gray-400');
     expect(description.querySelector('.text-emerald-600')?.textContent).toBe('+4%');
+  });
+
+  it('greys a flat lead', async () => {
+    await render([metric('a', { description: 'vs previous period', descriptionLead: '+0.0pp', descriptionLeadTone: 'flat' })]);
+
+    expect((el('row-a-description') as HTMLElement).querySelector('.text-gray-400')?.textContent).toBe('+0.0pp');
   });
 
   it('draws the mini bar at its width with its caption', async () => {

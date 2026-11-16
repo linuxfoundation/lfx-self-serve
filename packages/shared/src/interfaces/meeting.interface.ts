@@ -2451,3 +2451,75 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/**
+ * Options for a project-scoped meetings query.
+ * @description With `includeSubProjects`, a foundation or parent project's meetings also include
+ * those of every project beneath it (GH-5566); the server resolves the tree under the caller's own
+ * access. Off by default, so callers that need one project's meetings only are unaffected.
+ * `pageSize` asks for larger pages, for feeds that walk every page (the dashboard calendar and stat
+ * tiles), so a rolled-up foundation does not hit their page cap.
+ */
+export interface MeetingProjectQueryOptions {
+  includeSubProjects?: boolean;
+  pageSize?: number;
+  /** With `includeSubProjects`: limit the roll-up to these project UIDs (each must be in the tree). */
+  projectUids?: string[];
+  /** With `includeSubProjects` and no `projectUids`: only the root's own meetings, the dashboard's default view. */
+  rootOnly?: boolean;
+  /** With `includeSubProjects`: only meetings of this group (committee UID). */
+  committeeUid?: string | null;
+  /** With `includeSubProjects`: only meetings of groups with this category. */
+  groupType?: string | null;
+}
+
+/**
+ * Filters a roll-up meetings query narrows its project tree by (GH-5566).
+ * @description Parsed server-side from `project_uids`, `committee_uid` and `group_type`; all combine.
+ */
+export interface MeetingRollupFilters {
+  projectUids?: string[];
+  committeeUid?: string;
+  groupType?: string;
+}
+
+/** A project offered by the roll-up Project filter. */
+export interface MeetingRollupProjectOption {
+  uid: string;
+  name: string;
+  slug: string;
+}
+
+/** A group offered by the roll-up Group filter; `category` also feeds the Group type filter. */
+export interface MeetingRollupGroupOption {
+  uid: string;
+  name: string;
+  category: string | null;
+  project_uid: string;
+}
+
+/** Options for the roll-up filters of a foundation or parent project's meetings list. */
+export interface MeetingRollupFilterOptions {
+  projects: MeetingRollupProjectOption[];
+  groups: MeetingRollupGroupOption[];
+  /**
+   * Whether `projects` lists the whole tree: the walk missed no branch and every resolved project's details
+   * loaded. Only then does checking every listed project mean "all projects"; otherwise it stays a subset.
+   */
+  complete: boolean;
+}
+
+/**
+ * A user's saved project selection for one roll-up root (GH-5566).
+ * @description `null` when nothing is saved, so the page shows only the root's own meetings; an empty
+ * list is a saved choice of all projects.
+ */
+export interface MeetingRollupProjectsPreference {
+  project_uids: string[] | null;
+}
+
+/** Saves a user's project selection for one roll-up root; an empty list records all projects. */
+export interface MeetingRollupProjectsPreferenceRequest {
+  root_project_uid: string;
+  project_uids: string[];
+}

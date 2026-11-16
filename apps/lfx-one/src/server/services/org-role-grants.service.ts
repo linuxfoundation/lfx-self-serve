@@ -153,7 +153,11 @@ export class OrgRoleGrantsService {
   }
 
   public async getRollUpSet(req: Request, username: string, bypassCache = false): Promise<OrgRollUpSetResponse> {
-    const { resolved, orgDocByUid, familyRoots, degraded, upstreamFailed } = await this.getAccessAwareOrgs(req, username, bypassCache);
+    return this.toRollUpSet(await this.getAccessAwareOrgs(req, username, bypassCache));
+  }
+
+  /** Builds the roll-up set from a roster already loaded, for a caller that also needs the roster itself. */
+  public toRollUpSet({ resolved, orgDocByUid, familyRoots, degraded, upstreamFailed }: AccessAwareOrgsResult): OrgRollUpSetResponse {
     return {
       families: OrgRoleGrantsService.buildRollUpFamilies(resolved, orgDocByUid, familyRoots),
       degraded: degraded || upstreamFailed,

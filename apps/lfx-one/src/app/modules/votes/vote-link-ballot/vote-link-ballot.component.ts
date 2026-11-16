@@ -9,9 +9,16 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import { PollStatus } from '@lfx-one/shared/enums';
-import { VOTE_LINK_NOT_AWAITING_RESPONSE, VOTE_LINK_NOT_RESPONDED, VOTE_LINK_TOKEN_FRAGMENT_PARAM } from '@lfx-one/shared/constants';
+import {
+  VOTE_BALLOT_FINAL_NOTICE,
+  VOTE_BALLOT_FINAL_STATE,
+  VOTE_CHANGE_NOT_ALLOWED,
+  VOTE_LINK_NOT_AWAITING_RESPONSE,
+  VOTE_LINK_NOT_RESPONDED,
+  VOTE_LINK_TOKEN_FRAGMENT_PARAM,
+} from '@lfx-one/shared/constants';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot, VoteLinkResponseRequest, VoteLinkState } from '@lfx-one/shared/interfaces';
-import { buildVoteAnswerSummary, normalizePollStatus } from '@lfx-one/shared/utils';
+import { buildVoteAnswerSummary, canChangeSubmittedBallot, isVoteChangeAllowed, normalizePollStatus } from '@lfx-one/shared/utils';
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { VoteService } from '@services/vote.service';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
@@ -62,6 +69,8 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   /** Submit with PUT (the ballot exists) or POST (first submission). */
   protected readonly updateMode = signal<boolean>(false);
   protected readonly abstainedLast = signal<boolean>(false);
+  /** Set when a rejected submission confirms the ballot is final, whatever the loaded ballot said (#4723). */
+  private readonly changeBlocked = signal<boolean>(false);
   /** Public branding for the ballot's project; null while loading, when the ballot names no project, or on any miss. */
   protected readonly project = signal<PublicProjectSummary | null>(null);
   /** What the voter just submitted, kept in memory only to recap it on the thank-you screen. */
@@ -76,7 +85,38 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   protected readonly showStandaloneMark = computed(() => !this.showHeader() && this.state() !== 'submitted' && this.state() !== 'updated');
   protected readonly statusLabel = computed(() => (this.state() === 'ready' ? 'Open' : ''));
 
-  protected readonly showUpdatePrompt = computed(() => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing());
+  protected readonly finalStateText = VOTE_BALLOT_FINAL_STATE;
+  /** Vote-setting fallback for first submissions and POST→PUT recovery; a finality rejection always blocks changes (#4723). */
+  protected readonly changeAllowed = computed(() => isVoteChangeAllowed(this.ballot()) && !this.changeBlocked());
+  /** Whether the submitted ballot can change: ITX's answer when reported, otherwise derived from the vote and observed submission (#4723). */
+  protected readonly canChange = computed(() => {
+    const ballot = this.ballot();
+    if (!ballot || this.changeBlocked()) return false;
+    return canChangeSubmittedBallot({
+      canChangeVote: ballot.ballot?.can_change_vote,
+      allowVoteChange: ballot.allow_vote_change,
+      status: ballot.status,
+      submitted: !!ballot.ballot?.already_voted || this.state() === 'submitted' || this.state() === 'updated',
+      voterRemoved: !!ballot.ballot?.voter_removed,
+    });
+  });
+  protected readonly showUpdatePrompt = computed(
+    () => this.state() === 'ready' && !!this.ballot()?.ballot.already_voted && !this.editing() && this.canChange()
+  );
+  /** A submitted ballot that can no longer be changed renders as final, in place of the update prompt and the form. */
+  protected readonly showFinal = computed(
+    () => this.state() === 'ready' && (this.changeBlocked() || (!!this.ballot()?.ballot.already_voted && !this.canChange()))
+  );
+  /** Pre-submit notice on a first submission when the vote makes submitted ballots final. */
+  protected readonly finalNotice = computed(() => {
+    const ballot = this.ballot();
+    return ballot && !ballot.ballot?.already_voted && !this.changeAllowed() ? VOTE_BALLOT_FINAL_NOTICE : null;
+  });
+  /** The final box already says the ballot is final; don't repeat that sentence as an inline error above it. */
+  protected readonly inlineError = computed(() => {
+    const message = this.errorMessage();
+    return this.showFinal() && message === VOTE_BALLOT_FINAL_STATE ? null : message;
+  });
 
   public ngOnInit(): void {
     // The page is token-mode only; the referrer must never carry this URL anywhere.
@@ -107,7 +147,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
 
   protected onSubmit(submission: VoteBallotSubmission): void {
     const token = this.token();
-    if (!token || this.submitting()) return;
+    if (!token || this.submitting() || this.changeBlocked()) return;
 
     const body: VoteLinkResponseRequest = {
       vote_token: token,
@@ -136,6 +176,14 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
           const message = this.errorText(err);
           if (mayRetry && err instanceof HttpErrorResponse && err.status === 400) {
             if (!update && message.includes(VOTE_LINK_NOT_AWAITING_RESPONSE)) {
+              // The ballot was already submitted elsewhere. Only a vote that allows changes may turn this into an
+              // update; otherwise lock immediately and reload the submitted ballot (#4723).
+              if (!this.changeAllowed()) {
+                this.changeBlocked.set(true);
+                this.submitting.set(false);
+                this.reloadBallot();
+                return;
+              }
               this.updateMode.set(true);
               this.send(body, true, false);
               return;
@@ -192,6 +240,12 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     }
     if (err.status === 404) {
       this.state.set('invalid');
+    } else if (err.status === 409 && message.includes(VOTE_CHANGE_NOT_ALLOWED)) {
+      // The vote makes submitted ballots final: drop the edit, say so, and reload into the final state (#4723).
+      this.changeBlocked.set(true);
+      this.editing.set(false);
+      this.errorMessage.set(VOTE_BALLOT_FINAL_STATE);
+      this.reloadBallot();
     } else if (err.status === 400 && message.includes('ended')) {
       this.state.set('ended');
     } else if (err.status === 400 && message.includes('removed')) {
@@ -204,6 +258,12 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
       this.state.set(this.state() === 'loading' ? 'error' : 'ready');
       this.errorMessage.set('Something went wrong. Please try again.');
     }
+  }
+
+  /** Re-reads the ballot for the current token without resetting the page. */
+  private reloadBallot(): void {
+    const token = this.token();
+    if (token) this.loadBallot(token);
   }
 
   private errorText(err: unknown): string {
@@ -222,6 +282,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     this.submitting.set(false);
     this.errorMessage.set(null);
     this.abstainedLast.set(false);
+    this.changeBlocked.set(false);
     this.token.set(null);
 
     const token = this.consumeFragmentToken();

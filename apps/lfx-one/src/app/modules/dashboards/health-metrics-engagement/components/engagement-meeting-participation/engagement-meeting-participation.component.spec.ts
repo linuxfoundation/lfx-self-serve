@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -91,13 +91,16 @@ describe('EngagementMeetingParticipationComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let verdicts: boolean[];
 
+  function query(testId: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
   function text(testId: string): string {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`)?.textContent.replace(/\s+/g, ' ').trim() ?? '';
   }
 
   async function render(
     payload: HealthMetricsEngagementMeetingParticipation = response(),
-    queryParams: Record<string, string> = {},
     onSection?: (key: unknown) => void,
     lifecycle?: string[]
   ): Promise<void> {
@@ -112,8 +115,6 @@ describe('EngagementMeetingParticipationComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementMeetingParticipation } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        // The mode pill reads its initial value off the URL, and writes it back.
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       ],
     }).compileComponents();
 
@@ -136,120 +137,64 @@ describe('EngagementMeetingParticipationComponent', () => {
     verdicts = [];
   });
 
-  it('reads the selected foundation and period, and renders the roll-up the view computed', async () => {
+  it('reads the selected foundation and period, and renders the roll-up as the metrics row', async () => {
     await render();
 
     expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD' });
-    expect(text('engagement-meeting-participation-hero')).toContain('70%');
-    expect(text('engagement-meeting-participation-hero')).toContain('All-meeting attendance');
-    expect(text('engagement-meeting-participation-delta')).toBe('+4.0pp vs prior period');
-    expect(text('engagement-meeting-participation-count')).toBe('12 meetings in period');
-    expect(text('engagement-meeting-participation-secondary')).toBe('12');
+    expect(text('engagement-meeting-participation-metrics-attendance-label')).toBe('All-meeting attendance');
+    expect(text('engagement-meeting-participation-metrics-attendance-value')).toBe('70%');
+    expect(text('engagement-meeting-participation-metrics-attendance-description')).toBe('+4.0pp vs previous period');
+    expect(text('engagement-meeting-participation-metrics-meetings-value')).toBe('12');
+    expect(text('engagement-meeting-participation-metrics-groups-value')).toBe('6 / 8');
+    expect(text('engagement-meeting-participation-metrics-never-value')).toBe('3');
     expect(verdicts).toEqual([false]);
   });
 
-  // The hero must read the view's own `all` row: summing the type rows double-counts a meeting
-  // that belongs to more than one group.
-  it('takes the hero from the roll-up row rather than the type rows', async () => {
+  // The design keeps every value in neutral-900, Never attended included, and drops the old click-throughs.
+  it('shows the metrics as plain values, colouring only the attendance change', async () => {
     await render();
 
-    expect(text('engagement-meeting-participation-active-groups-value')).toBe('6 / 8');
-    expect(text('engagement-meeting-participation-never-attended-value')).toBe('3');
+    expect(query('engagement-meeting-participation-metrics-never-value')?.className).toContain('text-gray-900');
+    expect(query('engagement-meeting-participation-metrics-attendance-description')?.querySelector('.text-emerald-600')?.textContent).toBe('+4.0pp');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-metrics"] button')).toBeNull();
+    expect(fixture.nativeElement.querySelector('lfx-filter-pills')).toBeNull();
   });
 
-  it('lays the hero out as the design does: delta inline, side stats as columns, never attended in red', async () => {
-    await render();
-
-    const hero = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]');
-    expect(hero.querySelector('[data-testid="engagement-meeting-participation-delta"] .sr-only').textContent).toBe(' vs prior period');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-side"]').classList).toContain('flex-wrap');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').textContent).toContain('Active groups');
-    // Labels use gray-500, a shade darker than the design's gray-400, so the 11.5px text clears WCAG AA contrast.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"] span').classList).toContain('text-gray-500');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]').classList).toContain('text-red-600');
-  });
-
-  it('keeps Never attended in ink when nobody has missed every meeting', async () => {
+  it('takes the metrics from the roll-up row rather than the type rows', async () => {
     const total = participationRow();
-    total.periods = total.periods.map((period) => ({ ...period, neverAttended: 0 }));
+    total.periods[3] = { ...total.periods[3], attendancePct: 0.41 };
     await render(response({ total }));
 
-    const value = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]');
-    expect(value.classList).toContain('text-gray-900');
-    expect(value.classList).not.toContain('text-red-600');
+    expect(text('engagement-meeting-participation-metrics-attendance-value')).toBe('41%');
   });
 
-  it('swaps the hero and the side row in meetings mode', async () => {
+  it('draws each meeting type with its icon tile, its count and a 160px attendance bar', async () => {
     await render();
 
-    fixture.componentInstance['onModeChange']('meetings');
-    fixture.detectChanges();
-
-    expect(text('engagement-meeting-participation-hero')).toContain('Meetings held');
-    expect(text('engagement-meeting-participation-hero')).toContain('12');
-    // The design shows no delta for meetings held.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-delta"]')).toBeNull();
-    expect(text('engagement-meeting-participation-secondary')).toBe('70%');
+    const marketing = query('engagement-meeting-participation-row-Marketing') as HTMLElement;
+    const cells = marketing.querySelectorAll('td');
+    expect(cells[0].textContent?.trim()).toBe('Marketing');
+    expect(cells[0].querySelector('[data-testid="health-metrics-cell-icon"] i')?.className).toContain('fa-chart-line-up');
+    expect(cells[1].textContent?.trim()).toBe('12');
+    expect(cells[2].textContent).toContain('70%');
+    const fill = cells[2].querySelector('[data-testid="health-metrics-value-bar-fill"]') as HTMLElement;
+    expect(fill.parentElement?.style.width).toBe('160px');
+    expect(fill.className).toContain('bg-blue-500');
   });
 
-  // The design's meetings mode keeps three columns: a blank middle one, and the count drawn as a bar.
-  it('keeps three columns in meetings mode, with a count bar scaled to the busiest type row', async () => {
-    const base = participationRow();
-    const withYtdMeetings = (meetingsHeld: number) => base.periods.map((period) => (period.range === 'YTD' ? { ...period, meetingsHeld } : period));
-    await render(
-      response({
-        // The roll-up's own count is larger than any type row, and must not set the scale.
-        total: participationRow({ periods: withYtdMeetings(40) }),
-        rows: [
-          participationRow({ level: 'group', group: 'Board', label: 'Board', governance: true, periods: withYtdMeetings(6) }),
-          participationRow({ level: 'group', group: 'Marketing', label: 'Marketing', periods: withYtdMeetings(24) }),
-        ],
-      })
-    );
-
-    fixture.componentInstance['onModeChange']('meetings');
-    fixture.detectChanges();
-
-    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-meeting-participation-table"] th')) as HTMLElement[];
-    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Meeting type', '', 'Meetings held']);
-
-    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]') as HTMLElement;
-    const cells = Array.from(board.querySelectorAll('td')) as HTMLElement[];
-    expect(cells).toHaveLength(3);
-    expect(cells[1].textContent?.trim()).toBe('');
-    expect(cells[2].querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('6');
-    const boardFill = cells[2].querySelector('[data-testid="engagement-attendance-bar-track"] > div') as HTMLElement;
-    expect(boardFill.style.width).toBe('25%');
-    expect(boardFill.className).toContain('bg-blue-500');
-
-    const marketing = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]') as HTMLElement;
-    expect((marketing.querySelector('[data-testid="engagement-attendance-bar-track"] > div') as HTMLElement).style.width).toBe('100%');
-  });
-
-  it('keeps the meetings count and attendance bar columns in attendance mode', async () => {
+  it('names the board row by its short type, points it at Members and holds it to the board rule', async () => {
     await render();
 
-    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-meeting-participation-table"] th')) as HTMLElement[];
-    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Meeting type', 'Meetings', 'Attendance']);
-    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]') as HTMLElement;
-    expect(board.querySelectorAll('td')[1].textContent?.trim()).toBe('12');
-    expect(board.querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('70%');
+    const board = query('engagement-meeting-participation-row-Board') as HTMLElement;
+    expect(board.querySelector('[data-testid="health-metrics-cell-text"]')?.textContent).toBe('Board');
+    expect(board.querySelector('[data-testid="health-metrics-cell-description"]')?.textContent?.trim()).toBe('Board & voting-member attendance');
+    expect(board.querySelector('[data-testid="health-metrics-cell-description"] .fa-angle-right')).not.toBeNull();
+    // 70% passes the general rule but sits below the board's 90%.
+    expect(board.querySelector('[data-testid="health-metrics-value-bar-fill"]')?.className).toContain('bg-red-500');
+    expect(query('engagement-meeting-participation-row-Marketing')?.querySelector('[data-testid="health-metrics-cell-description"]')).toBeNull();
   });
 
-  // A board must sit near full attendance, so 70% is red there while it is fine for any other type.
-  it('holds the Board row to the board rule and every other type to the general one', async () => {
-    await render();
-
-    const fill = (label: string): HTMLElement =>
-      fixture.nativeElement.querySelector(
-        `[data-testid="engagement-meeting-participation-row-${label}"] [data-testid="engagement-attendance-bar-track"] > div`
-      ) as HTMLElement;
-    expect(fill('Board').classList).toContain('bg-red-500');
-    expect(fill('Marketing').classList).toContain('bg-blue-500');
-  });
-
-  // The server can emit a present roll-up row whose cells are all unmeasured; none may read as zero.
-  it('renders every cell of an unmeasured roll-up as an em dash, in both modes', async () => {
+  it('renders every metric of an unmeasured roll-up as an em dash, with no change line', async () => {
     const base = participationRow();
     const total = participationRow({
       totalGroups: null,
@@ -265,26 +210,10 @@ describe('EngagementMeetingParticipationComponent', () => {
     });
     await render(response({ total }));
 
-    expect(text('engagement-meeting-participation-count')).toBe('Meetings in period not available yet');
-    expect(text('engagement-meeting-participation-hero')).toContain('—');
-    expect(text('engagement-meeting-participation-secondary')).toBe('—');
-    expect(text('engagement-meeting-participation-delta')).toBe('— vs prior period');
-    expect(text('engagement-meeting-participation-active-groups-value')).toBe('—');
-    expect(text('engagement-meeting-participation-never-attended-value')).toBe('—');
-
-    fixture.componentInstance['onModeChange']('meetings');
-    fixture.detectChanges();
-
-    expect(text('engagement-meeting-participation-hero')).toContain('—');
-    expect(text('engagement-meeting-participation-secondary')).toBe('—');
-  });
-
-  it('renders one row per meeting type, flagging the governance cut as Members detail', async () => {
-    await render();
-
-    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]');
-    expect(board.textContent).toContain('governance');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').textContent).not.toContain('governance');
+    for (const key of ['attendance', 'meetings', 'groups', 'never']) {
+      expect(text(`engagement-meeting-participation-metrics-${key}-value`)).toBe('—');
+    }
+    expect(query('engagement-meeting-participation-metrics-attendance-description')).toBeNull();
   });
 
   it('re-reads when the period changes, since the response carries every period per row', async () => {
@@ -297,51 +226,35 @@ describe('EngagementMeetingParticipationComponent', () => {
     fixture.detectChanges();
 
     expect(getEngagementMeetingParticipation).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
-    expect(text('engagement-meeting-participation-hero')).toContain('65%');
+    expect(text('engagement-meeting-participation-metrics-attendance-value')).toBe('65%');
   });
 
-  // Under three meetings the rate is not reportable, and the banner has to say so next to it.
-  it('warns when the period holds too few meetings to rate', async () => {
+  // Under three meetings the rate is not reportable, and the note has to say so next to it.
+  it('warns in a small warning note when the period holds too few meetings to rate', async () => {
     const thin = participationRow();
     thin.periods[3] = { ...thin.periods[3], meetingsHeld: 2 };
     await render(response({ total: thin, rows: [] }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-low-confidence"]')).not.toBeNull();
-    expect(text('engagement-meeting-participation-hero')).toContain('No data');
+    const note = query('engagement-meeting-participation-low-confidence');
+    expect(note?.tagName).toBe('LFX-UI-NOTE');
+    expect(note?.textContent).toContain('Too few meetings in this period to report an attendance rate with confidence.');
+    expect(text('engagement-meeting-participation-metrics-attendance-value')).toBe('No data');
   });
 
-  it('cross-links the hero counts, landing Never attended on its filter', async () => {
-    const picked: unknown[] = [];
-    await render(response(), {}, (key) => picked.push(key));
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-
-    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').click();
-    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended"]').click();
-
-    expect(navigate).toHaveBeenCalledWith(
-      [],
-      expect.objectContaining({ queryParams: { repFilter: 'never' }, queryParamsHandling: 'merge', preserveFragment: true, replaceUrl: true })
-    );
-    await vi.waitFor(() => expect(picked).toEqual(['committees', 'reps']));
-  });
-
-  it('links the governance name to Members board attendance, clearing a cohort the URL carries', async () => {
+  it('links the board row to Members board attendance, clearing a cohort the URL carries', async () => {
     await render();
 
-    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board-link"]');
+    const link = query('engagement-meeting-participation-row-Board-link') as HTMLAnchorElement;
     expect(link.tagName).toBe('A');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').getAttribute('tabindex')).toBeNull();
-    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
-    expect(link.classList).toContain('!text-gray-900');
-    expect(link.classList).toContain('!no-underline');
+    expect(link.getAttribute('aria-label')).toBe('Board: Board & voting-member attendance');
   });
 
-  it('opens Members board attendance from anywhere on the governance row', async () => {
+  it('opens Members board attendance from anywhere on the board row', async () => {
     await render();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').click();
+    query('engagement-meeting-participation-row-Board')?.click();
 
     expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], {
       fragment: 'board',
@@ -352,12 +265,11 @@ describe('EngagementMeetingParticipationComponent', () => {
 
   it('scrolls any other meeting type to Group attendance, once per click on the row or its name button', async () => {
     const picked: unknown[] = [];
-    await render(response(), {}, (key) => picked.push(key));
+    await render(response(), (key) => picked.push(key));
 
-    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
-    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]');
+    query('engagement-meeting-participation-row-Marketing')?.click();
+    const button = query('engagement-meeting-participation-row-Marketing-link') as HTMLButtonElement;
     expect(button.tagName).toBe('BUTTON');
-    expect(button.className).not.toContain('underline');
     button.click();
 
     expect(picked).toEqual(['committees', 'committees']);
@@ -367,7 +279,7 @@ describe('EngagementMeetingParticipationComponent', () => {
   // `reading`, so both halves have to fire — and pair up — for each read.
   it('brackets every read with reading then settled, so the container can re-anchor above it', async () => {
     const lifecycle: string[] = [];
-    await render(response(), {}, undefined, lifecycle);
+    await render(response(), undefined, lifecycle);
 
     expect(lifecycle).toEqual(['reading', 'settled']);
 
@@ -388,17 +300,17 @@ describe('EngagementMeetingParticipationComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-error"]')).not.toBeNull();
+    expect(query('engagement-meeting-participation-error')).not.toBeNull();
     expect(verdicts).toEqual([false, false]);
-    expect(text('engagement-meeting-participation-count')).toBe('—');
+    expect(query('engagement-meeting-participation-metrics')).toBeNull();
   });
 
   it('settles empty, with no body, for a foundation the view has no roll-up row for', async () => {
     await render(response({ total: null, rows: [] }));
 
     expect(verdicts).toEqual([true]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-table"]')).toBeNull();
+    expect(query('engagement-meeting-participation-metrics')).toBeNull();
+    expect(query('engagement-meeting-participation-table')).toBeNull();
   });
 
   it('settles empty, with no body, for a period whose roll-up held no meetings', async () => {
@@ -407,8 +319,8 @@ describe('EngagementMeetingParticipationComponent', () => {
     await render(response({ total }));
 
     expect(verdicts).toEqual([true]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).toBeNull();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-table"]')).toBeNull();
+    expect(query('engagement-meeting-participation-metrics')).toBeNull();
+    expect(query('engagement-meeting-participation-table')).toBeNull();
   });
 
   // A count the view never filled in is unmeasured, not zero, so it keeps the body.
@@ -418,7 +330,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     await render(response({ total }));
 
     expect(verdicts).toEqual([false]);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]')).not.toBeNull();
+    expect(query('engagement-meeting-participation-metrics')).not.toBeNull();
   });
 
   // An unresolved foundation is not a foundation with no meetings, and the two must not look alike.
@@ -427,37 +339,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     await render();
 
     expect(getEngagementMeetingParticipation).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-loading"]')).not.toBeNull();
+    expect(query('engagement-meeting-participation-loading')).not.toBeNull();
     expect(verdicts).toEqual([]);
-  });
-
-  // The URL is the only carrier of the mode across a reload or a shared link.
-  it('starts in the mode the URL carries', async () => {
-    await render(response(), { partMode: 'meetings' });
-
-    expect(text('engagement-meeting-participation-hero')).toContain('Meetings held');
-  });
-
-  it('falls back to attendance for a mode it cannot honour', async () => {
-    await render(response(), { partMode: 'sideways' });
-
-    expect(text('engagement-meeting-participation-hero')).toContain('All-meeting attendance');
-  });
-
-  it('writes the mode back to the URL, dropping it at its default', async () => {
-    await render();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-
-    fixture.componentInstance['onModeChange']('meetings');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { partMode: 'meetings' }, preserveFragment: true, replaceUrl: true }));
-
-    fixture.componentInstance['onModeChange']('attendance');
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { partMode: null } }));
   });
 });

@@ -74,6 +74,7 @@ import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import {
   avatarColorClass,
+  foldForSearch,
   orgCodeFilterValues,
   orgCommitFiltersFor,
   orgCommitFiltersUrlMatches,
@@ -421,7 +422,7 @@ export class ContributorsComponent {
 
   private initFilteredContributors(): OrgContributorRow[] {
     const values = this.filterValues();
-    const q = (values.search ?? '').trim().toLowerCase();
+    const q = foldForSearch(values.search);
     const foundationId = values.foundation ?? '';
     const projectId = values.project ?? '';
 
@@ -438,11 +439,7 @@ export class ContributorsComponent {
 
     return this.response().contributors.filter((row) => {
       if (personKeysScoped && !personKeysScoped.has(row.personKey)) return false;
-      if (q) {
-        const inName = row.displayName.toLowerCase().includes(q);
-        const inTitle = (row.title ?? '').toLowerCase().includes(q);
-        if (!inName && !inTitle) return false;
-      }
+      if (q && ![row.displayName, row.title].some((field) => foldForSearch(field).includes(q))) return false;
       return true;
     });
   }
@@ -510,7 +507,7 @@ export class ContributorsComponent {
 
   private initIsFiltering(): boolean {
     const values = this.filterValues();
-    const hasSearch = (values.search ?? '').trim().length > 0;
+    const hasSearch = foldForSearch(values.search).length > 0;
     const hasFoundation = !!(values.foundation ?? '');
     const hasProject = !!(values.project ?? '');
     const hasTimeFilter = this.timeRange() !== ORG_LENS_DEFAULT_TIME_RANGE;

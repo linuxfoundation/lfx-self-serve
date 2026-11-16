@@ -376,6 +376,54 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       );
     });
 
+    const setMonitor = (extra: Record<string, unknown>, campaigns: unknown[] = [{ ...base, fetchFailed: false, conversionsMeasured: true }]): void => {
+      fixture.detectChanges();
+      const instance = fixture.componentInstance as unknown as { monitorData: { set(v: unknown): void } };
+      instance.monitorData.set({
+        pulledAt: '2026-08-30T00:00:00.000Z',
+        dateRange: { mode: 'last_30_days' },
+        campaigns,
+        accountTotals: { budgetDay: 100, impressions: 1000, clicks: 40, spend: 25, conversions: 12.5, conversionsMeasured: true },
+        actionItems: [],
+        ...extra,
+      });
+      fixture.detectChanges();
+    };
+    const accountNote = (): string | null => fixture.nativeElement.querySelector('[data-testid="google-recorded-account-note"]')?.textContent?.trim() ?? null;
+
+    it('names the account campaign-service read when the project has no connection of its own (#5622)', () => {
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'recorded_campaigns' });
+      expect(accountNote()).toBe(
+        "Read from Google Ads account 8666746580, the account this project's campaigns were created under. This project has no Google Ads account bound of its own."
+      );
+    });
+
+    it("shows no account note when the account is the project's own connection", () => {
+      setMonitor({ accountId: '8666746580', googleAccountOrigin: 'connection' });
+      expect(accountNote()).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-kpis"]')).not.toBeNull();
+    });
+
+    it("shows the read's own explanation in the empty state when it gave one (#5622)", () => {
+      setMonitor(
+        {
+          googleAccountOrigin: 'recorded_campaigns',
+          message: 'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.',
+        },
+        []
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
+        'This project has no Google Ads account bound of its own and no campaigns recorded yet, so there is no account to read.'
+      );
+    });
+
+    it('keeps the default empty-state text when the read gave no explanation', () => {
+      setMonitor({}, []);
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-empty-message"]')?.textContent?.trim()).toBe(
+        'No active campaigns found for the selected date range.'
+      );
+    });
+
     it('keeps the dollar sign and no currency note on the legacy read', () => {
       renderRow({});
       expect(fixture.nativeElement.querySelector('[data-testid="google-currency-note"]')).toBeNull();

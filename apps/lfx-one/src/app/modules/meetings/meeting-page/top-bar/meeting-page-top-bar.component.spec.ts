@@ -26,6 +26,7 @@ const ROW = {
 describe('MeetingPageTopBarComponent', () => {
   let setLens: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
+  const authenticated = signal(true);
 
   const render = (): { el: HTMLElement; component: MeetingPageTopBarComponent } => {
     const fixture = TestBed.createComponent(MeetingPageTopBarComponent);
@@ -38,13 +39,17 @@ describe('MeetingPageTopBarComponent', () => {
   beforeEach(() => {
     setLens = vi.fn();
     open = vi.fn();
+    authenticated.set(true);
     TestBed.configureTestingModule({
       imports: [MeetingPageTopBarComponent],
       providers: [
         provideRouter([]),
         { provide: LensService, useValue: { setLens } },
         { provide: IntercomService, useValue: { shutdown: vi.fn() } },
-        { provide: UserService, useValue: { user: signal({ name: 'Pat Viewer', email: 'pat.viewer@example.org' }), effectiveAvatarUrl: signal('') } },
+        {
+          provide: UserService,
+          useValue: { authenticated, user: signal({ name: 'Pat Viewer', email: 'pat.viewer@example.org' }), effectiveAvatarUrl: signal('') },
+        },
       ],
     });
     TestBed.overrideComponent(MeetingPageTopBarComponent, { set: { providers: [{ provide: OpenIntercomDirective, useValue: { open } }] } });
@@ -87,5 +92,21 @@ describe('MeetingPageTopBarComponent', () => {
     (component as unknown as { openSupport(): void }).openSupport();
 
     expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers a signed-out visitor Sign in and Create LFX account, both back to this page', () => {
+    authenticated.set(false);
+    vi.spyOn(TestBed.inject(Router), 'url', 'get').mockReturnValue('/meetings/123?password=secret');
+    const { el, component } = render();
+    const view = component as unknown as { signIn(): void; signInUrl(): string };
+    const signIn = vi.spyOn(view, 'signIn').mockImplementation(() => undefined);
+
+    expect(el.querySelector('[data-testid="meeting-page-account"]')).toBeNull();
+    expect(el.querySelector('[data-testid="meeting-page-signed-out"]')?.textContent).toContain('Sign in with your LFX account to join meetings');
+    (el.querySelector('[data-testid="meeting-page-sign-in"] button') as HTMLButtonElement).click();
+    (el.querySelector('[data-testid="meeting-page-create-account"] button') as HTMLButtonElement).click();
+
+    expect(signIn).toHaveBeenCalledTimes(2);
+    expect(view.signInUrl()).toBe('/login?returnTo=%2Fmeetings%2F123%3Fpassword%3Dsecret');
   });
 });

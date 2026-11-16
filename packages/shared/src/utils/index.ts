@@ -139,6 +139,7 @@ export * from './health-metrics-l2.utils';
 export * from './health-metrics-members.utils';
 export * from './health-metrics-non-members.utils';
 export * from './health-metrics-overview.utils';
+export * from './health-metrics-table.utils';
 export * from './health-metrics-training.utils';
 export * from './org-training-stats.utils';
 export * from './gw-embed.utils';

@@ -674,6 +674,21 @@ describe('ProjectContextService — menuContext', () => {
     expect(service.menuCanWrite()).toBe(true);
     expect(service.activeProjectStage()).toBe('Active');
     expect(service.canWrite()).toBe(false);
+    // menuProject is the previewed context's record, not the page's.
+    expect(service.menuProject()?.stage).toBe('Formation - Exploratory');
+    expect(service.activeProject()?.stage).toBe('Active');
+  });
+
+  it('menuProject is the active project when nothing is previewed', () => {
+    const service = setup('project', 'project');
+    service.setRouteLensKind('project');
+    const getProject = TestBed.inject(ProjectService).getProject as ReturnType<typeof vi.fn>;
+    getProject.mockReturnValue(of(project('Active')));
+    TestBed.inject(UserService).authenticated.set(true);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProject()?.stage).toBe('Active');
+    expect(service.menuProject()).toBe(service.activeProject());
   });
 
   it("shows the previewed Foundation lens's slot from a Me page", () => {

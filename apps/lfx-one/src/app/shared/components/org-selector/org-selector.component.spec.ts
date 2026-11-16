@@ -5,10 +5,11 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ROLLUP_ACCOUNT_NAME } from '@lfx-one/shared/constants';
-import { Account, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
+import { Account, DisplayOrgItem, OrgItem, OrgRollUpFamily } from '@lfx-one/shared/interfaces';
 import { isOrgRollUpSegment, orgRollUpAccount } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { LensService } from '@services/lens.service';
+import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -41,6 +42,7 @@ describe('OrgSelectorComponent.selectItem', () => {
   let resetAndReload: ReturnType<typeof vi.fn>;
   let refreshList: ReturnType<typeof vi.fn>;
   let previewingMenuLens: WritableSignal<boolean>;
+  let noteAddressed: ReturnType<typeof vi.fn>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -56,12 +58,14 @@ describe('OrgSelectorComponent.selectItem', () => {
     resetAndReload = vi.fn();
     refreshList = vi.fn();
     previewingMenuLens = signal(false);
+    noteAddressed = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
       imports: [OrgSelectorComponent],
       providers: [
         provideNoopAnimations(),
+        { provide: OrgClaOnlyAccessService, useValue: { noteAddressed, isClaOnly: () => false } },
         {
           provide: AccountContextService,
           useValue: {
@@ -92,6 +96,7 @@ describe('OrgSelectorComponent.selectItem', () => {
           useValue: {
             items: signal<OrgItem[]>([rowA, rowB]),
             loading: signal(false),
+            claOnlyPending: signal(false),
             hasMore: signal(false),
             upstreamFailed: signal(false),
             searchTerm: () => signal(''),
@@ -142,6 +147,29 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
     expect(selected).toHaveBeenCalledWith(rowB);
+  });
+
+  // M3: the path guard skips the resolver for the selection it already holds, so the pick carries the row's answer.
+  it('records a CLA-only row as CLA-only before the switch navigates', () => {
+    pick({ ...rowB, slug: null, claOnly: true });
+
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, true);
+    expect(noteAddressed.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  it('clears any CLA-only note when the picked row is not CLA-only', () => {
+    pick(rowB);
+
+    expect(noteAddressed).toHaveBeenCalledWith(UID_B, false);
+  });
+
+  // The same-organization pick returns before switching, and the path guard will not resolve it either.
+  it('records a re-pick of the selected CLA-only row without re-selecting it', () => {
+    pick({ ...rowA, slug: null, claOnly: true });
+
+    expect(noteAddressed).toHaveBeenCalledWith(UID_A, true);
+    expect(setAccount).not.toHaveBeenCalled();
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on. The pick is still
@@ -243,6 +271,9 @@ describe('OrgSelectorComponent navbar card', () => {
   interface NavbarCardView {
     isSingleOrg(): boolean;
     navbarRoleTooltip(): string;
+    selectedRoleLabel(): string;
+    selectedRoleTooltip(): string;
+    displayedItems(): DisplayOrgItem[];
   }
 
   interface CardSetup {
@@ -251,9 +282,19 @@ describe('OrgSelectorComponent navbar card', () => {
     hasMore?: boolean;
     writers?: string[];
     inheritedWriters?: string[];
+    claManagerOrgs?: string[];
+    claOnlyPending?: boolean;
   }
 
-  const createCard = async ({ items = [rowA], isStaff = false, hasMore = false, writers = [], inheritedWriters = [] }: CardSetup): Promise<NavbarCardView> => {
+  const createCard = async ({
+    items = [rowA],
+    isStaff = false,
+    hasMore = false,
+    writers = [],
+    inheritedWriters = [],
+    claManagerOrgs = [],
+    claOnlyPending = false,
+  }: CardSetup): Promise<NavbarCardView> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgSelectorComponent],
@@ -286,6 +327,7 @@ describe('OrgSelectorComponent navbar card', () => {
           useValue: {
             items: signal(items),
             loading: signal(false),
+            claOnlyPending: signal(claOnlyPending),
             hasMore: signal(hasMore),
             upstreamFailed: signal(false),
             searchTerm: () => signal(''),
@@ -303,6 +345,8 @@ describe('OrgSelectorComponent navbar card', () => {
             inheritedWriterSet: signal(new Set(inheritedWriters)),
             inheritedAuditorSet: signal(new Set<string>()),
             parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
+            claManagerOrgSet: signal(new Set(claManagerOrgs)),
+            claManagerLookupFailed: signal(false),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
@@ -326,6 +370,10 @@ describe('OrgSelectorComponent navbar card', () => {
     expect((await createCard({ isStaff: true })).isSingleOrg()).toBe(false);
   });
 
+  it('keeps the panel while the deferred CLA-only rows are still on their way', async () => {
+    expect((await createCard({ claOnlyPending: true })).isSingleOrg()).toBe(false);
+  });
+
   it('keeps the panel when the one listed organization is not the selected one', async () => {
     expect((await createCard({ items: [rowB] })).isSingleOrg()).toBe(false);
   });
@@ -339,6 +387,58 @@ describe('OrgSelectorComponent navbar card', () => {
   it('marks a direct role as direct only when the viewer also holds inherited access', async () => {
     expect((await createCard({ writers: [UID_A] })).navbarRoleTooltip()).not.toContain('Granted directly');
     expect((await createCard({ writers: [UID_A], inheritedWriters: [UID_PARENT] })).navbarRoleTooltip()).toContain('Granted directly');
+  });
+  describe('a CLA-only organization (#5557)', () => {
+    const claOnlyB: OrgItem = { ...rowB, slug: null, claOnly: true };
+    const CLA_ONLY_TOOLTIP = 'You are a CLA Manager or initial CLA Manager designee for this organization. Only its EasyCLA page opens.';
+
+    it('labels a CLA-only row listed after a held one, and keeps the panel openable', async () => {
+      const card = await createCard({ items: [rowA, claOnlyB], writers: [UID_A] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([
+        [UID_A, 'Org Admin Editor', ''],
+        [UID_B, 'CLA Manager', CLA_ONLY_TOOLTIP],
+      ]);
+      expect(card.isSingleOrg()).toBe(false);
+    });
+
+    it('labels the card when the selection is a CLA-only organization', async () => {
+      const card = await createCard({ items: [rowB, { ...rowA, claOnly: true }], claManagerOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('CLA Manager');
+      expect(card.selectedRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+      expect(card.navbarRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+    });
+
+    // A search sends no selected_uid, so the selected row is absent from the filtered list.
+    it('keeps the CLA-only label while a search excludes the selected organization', async () => {
+      const card = await createCard({ items: [rowB], claManagerOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('CLA Manager');
+      expect(card.navbarRoleTooltip()).toBe(CLA_ONLY_TOOLTIP);
+    });
+
+    it('labels a selection recorded as CLA-only when the role-grants lookup did not list it', async () => {
+      const card = await createCard({ items: [rowB] });
+      TestBed.inject(OrgClaOnlyAccessService).noteAddressed(UID_A, true);
+
+      expect(card.selectedRoleLabel()).toBe('CLA Manager');
+    });
+
+    it('leaves the card unlabelled when only another row is CLA-only', async () => {
+      const card = await createCard({ items: [rowA, claOnlyB], claManagerOrgs: [UID_B] });
+
+      expect(card.selectedRoleLabel()).not.toBe('CLA Manager');
+      expect(card.selectedRoleTooltip()).not.toBe(CLA_ONLY_TOOLTIP);
+      expect(card.navbarRoleTooltip()).not.toBe(CLA_ONLY_TOOLTIP);
+    });
+
+    it('lets a held grant win over a CLA-only flag on the same row', async () => {
+      const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A], claManagerOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Org Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Org Admin Editor');
+    });
   });
 });
 
@@ -394,6 +494,8 @@ describe('OrgSelectorComponent family roll-ups', () => {
     familiesIncomplete?: boolean;
     /** The families answer for the current grants has not landed (or was incomplete). */
     familiesUnsettled?: boolean;
+    /** The deferred CLA-only rows are still on their way. */
+    claOnlyPending?: boolean;
   }): Promise<RollUpView> => {
     selectRollUpSpy.mockReset().mockReturnValue(opts.accepted ?? true);
     navigateSpy.mockReset();
@@ -435,6 +537,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
           useValue: {
             items: signal(opts.items ?? [rowA, rowB]),
             loading: signal(false),
+            claOnlyPending: signal(opts.claOnlyPending ?? false),
             loaded: signal(true),
             hasMore: signal(false),
             upstreamFailed: signal(false),
@@ -684,6 +787,11 @@ describe('OrgSelectorComponent family roll-ups', () => {
     it('ends the retry for an organization selection once the list has loaded', async () => {
       const view = await create({ families: [], familiesUnsettled: true });
       expect(await runInitialFocus(view)).toBe(false);
+    });
+
+    it('keeps the retry armed while the deferred CLA-only rows, which may hold the selection, are on their way', async () => {
+      const view = await create({ families: [], claOnlyPending: true });
+      expect(await runInitialFocus(view)).toBe(true);
     });
   });
 });

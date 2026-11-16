@@ -30,7 +30,7 @@ import { VotesDashboardComponent } from './votes-dashboard.component';
 class StubVoteCastDrawerComponent {
   public readonly voteId = input<string | null>(null);
   public readonly listVote = input<Vote | null>(null);
-  public readonly readOnly = input<boolean>(false);
+  public readonly changeMode = input<boolean>(false);
   public readonly visible = model<boolean>(false);
   public readonly voteSubmitted = output<string>();
 }
@@ -1079,20 +1079,20 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawer()?.visible()).toBe(true);
       expect(drawer()?.voteId()).toBe('soon');
       expect(drawer()?.listVote()?.uid).toBe('soon');
-      expect(drawer()?.readOnly()).toBe(false);
+      expect(drawer()?.changeMode()).toBe(false);
     });
 
-    it('opens the cast drawer in read-only review mode for an active vote the viewer already voted on (#4331)', async () => {
+    it('opens the cast drawer in change-review mode for an active vote the viewer already voted on (#4723)', async () => {
       table.viewVote.emit('responded');
       await settle();
 
       expect(navigate).not.toHaveBeenCalled();
       expect(drawer()?.visible()).toBe(true);
       expect(drawer()?.voteId()).toBe('responded');
-      expect(drawer()?.readOnly()).toBe(true);
+      expect(drawer()?.changeMode()).toBe(true);
     });
 
-    it.each(['missing row', 'failed refresh'])('keeps review locked after a %s', async (scenario) => {
+    it.each(['missing row', 'failed refresh'])('keeps the recorded-ballot mode after a %s', async (scenario) => {
       table.viewVote.emit('responded');
       await settle();
       getMyVotes.mockReturnValueOnce(
@@ -1104,7 +1104,7 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(drawer()?.visible()).toBe(true);
       expect(drawer()?.voteId()).toBe('responded');
       expect(drawer()?.listVote()).toBeNull();
-      expect(drawer()?.readOnly()).toBe(true);
+      expect(drawer()?.changeMode()).toBe(true);
     });
 
     it('clears review mode on close and opens a first ballot editable', async () => {
@@ -1112,13 +1112,13 @@ describe('VotesDashboardComponent personal summary', () => {
       await settle();
       drawer()!.visible.set(false);
       await settle();
-      expect(dashboard['castDrawerReadOnly']()).toBe(false);
+      expect(dashboard['castDrawerReviewMode']()).toBe(false);
 
       table.viewVote.emit('soon');
       await settle();
       expect(drawer()?.visible()).toBe(true);
       expect(drawer()?.voteId()).toBe('soon');
-      expect(drawer()?.readOnly()).toBe(false);
+      expect(drawer()?.changeMode()).toBe(false);
     });
 
     it('keeps a submitted ballot voted when reviewed (#4331)', async () => {
@@ -1126,7 +1126,7 @@ describe('VotesDashboardComponent personal summary', () => {
       table.viewVote.emit('responded');
       await settle();
       expect(getMyVotes).toHaveBeenCalledTimes(loadsBeforeReview);
-      expect(drawer()?.readOnly()).toBe(true);
+      expect(drawer()?.changeMode()).toBe(true);
 
       expect(element('votes-your-vote-responded')?.getAttribute('aria-label')).toBe('Voted');
       expect(element('votes-cast-responded')?.textContent).toContain('Review');
@@ -1163,10 +1163,10 @@ describe('VotesDashboardComponent personal summary', () => {
       await settle();
       element('votes-cast-soon')!.querySelector<HTMLButtonElement>('button')!.click();
       await settle();
-      // Review on the just-voted row reopens the drawer to review the locked ballot (#4331), rather than navigating.
+      // Review on the just-voted row reopens the drawer to review or update the recorded ballot (#4723), rather than navigating.
       expect(navigate).not.toHaveBeenCalled();
       expect(drawer()?.visible()).toBe(true);
-      expect(drawer()?.readOnly()).toBe(true);
+      expect(drawer()?.changeMode()).toBe(true);
       expect(feed.find((item) => item.uid === 'soon')?.response_status).toBe(VoteResponseStatus.AWAITING_RESPONSE);
     });
 

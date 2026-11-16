@@ -19,6 +19,7 @@ const service = {
   listMine: vi.fn(),
   listQueue: vi.fn(),
   isFormationTeamMember: vi.fn(),
+  isLfStaffMember: vi.fn(),
   isFormationTeamMemberStrict: vi.fn(),
   create: vi.fn(),
   revise: vi.fn(),
@@ -120,10 +121,14 @@ describe('reads', () => {
     expect(service.listMine).not.toHaveBeenCalled();
   });
 
-  it('GET /access reports formation-team membership', async () => {
+  it('GET /access reports formation-team and LF-staff membership independently (#5544)', async () => {
     service.isFormationTeamMember.mockResolvedValue(true);
-    const res = await send('GET', '/access');
-    expect(await res.json()).toEqual({ is_formation_team: true });
+    service.isLfStaffMember.mockResolvedValue(false);
+    expect(await (await send('GET', '/access')).json()).toEqual({ is_formation_team: true, is_lf_staff: false });
+
+    service.isFormationTeamMember.mockResolvedValue(false);
+    service.isLfStaffMember.mockResolvedValue(true);
+    expect(await (await send('GET', '/access')).json()).toEqual({ is_formation_team: false, is_lf_staff: true });
   });
 });
 

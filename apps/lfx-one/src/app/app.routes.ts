@@ -7,10 +7,14 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  ORG_LENS_ROLL_UP_HOME_PAGE,
+  ORG_LENS_ROLL_UP_PAGES,
   ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
+import { isOrgRollUpSegment, normalizeOrgSegment } from '@lfx-one/shared/utils';
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
@@ -35,6 +39,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
+import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
@@ -49,8 +54,11 @@ import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-m
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
+import { AccountContextService } from './shared/services/account-context.service';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
+const loadOrgRollUpUnavailablePage = () =>
+  import('./modules/dashboards/org/org-rollup-unavailable/org-rollup-unavailable.component').then((m) => m.OrgRollUpUnavailableComponent);
 
 /**
  * Org Lens page routes, EasyCLA included (its DR-004 exemption ended with lfx-self-serve#2743: the
@@ -60,10 +68,10 @@ const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/or
  * `/org/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
-  return [
+  return withRollUpUnavailablePages([
     {
       path: 'easycla',
-      // A corporate CLA belongs to one company, so the roll-up redirects to its own overview (#4415).
+      // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
       canActivate: [orgRollUpSingleOrgPageGuard],
       data: {
         lens: 'org',
@@ -251,11 +259,35 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your organization.', icon: 'fa-light fa-file' },
-      // Single-organization by definition, so the roll-up redirects to its own overview (#4415).
+      // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
       canActivate: [orgRollUpSingleOrgPageGuard],
       loadComponent: loadOrgProfilePage,
     },
-  ];
+  ]);
+}
+
+/**
+ * Declares the roll-up-unavailable page ahead of every page route that cannot render a family roll-up
+ * yet, so on a roll-up that page never loads (#4133). Skips the roll-up pages (`ORG_LENS_ROLL_UP_PAGES`),
+ * the single-organization pages, which send a roll-up home through `orgRollUpSingleOrgPageGuard`, and
+ * redirects, which render nothing.
+ */
+function withRollUpUnavailablePages(pages: Routes): Routes {
+  return pages.flatMap((page) =>
+    !page.path || page.redirectTo || ORG_LENS_ROLL_UP_PAGES[page.path] === true || page.canActivate?.includes(orgRollUpSingleOrgPageGuard)
+      ? [page]
+      : [
+          {
+            path: page.path,
+            // The page's own match guards first: a page this caller may not match (`roi` is staff-only) must not
+            // be revealed by its roll-up stand-in.
+            canMatch: [...(page.canMatch ?? []), orgRollUpUnavailablePageGuard],
+            data: page.data,
+            children: [{ path: '**', loadComponent: loadOrgRollUpUnavailablePage }],
+          },
+          page,
+        ]
+  );
 }
 
 export const routes: Routes = [
@@ -440,16 +472,18 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Participating Organizations (#2091) — companies contributing code to the project, split by parent-foundation
-      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). The BFF enforces
-      // project `viewer` on every read.
+      // membership. Project-only (no foundation counterpart, so not in LENS_REDIRECT_RESOURCES). Executive directors
+      // and LF staff only (as Health Metrics). The guard checks the role only; the sidebar entry is hidden unless the
+      // ED's scope covers the active project, and the BFF scopes an ED to projects under a foundation they direct
+      // (a direct URL outside that scope gets a 403 and the no-access state) and requires project `viewer`.
       {
         path: 'project/participating-orgs',
-        title: 'Participating Organizations',
-        data: { lens: 'project' },
+        title: 'Participating Companies',
+        data: { lens: 'project', accessDeniedRedirect: '/project/overview' },
         // As on project/overview: a `?project=` change on this same route must re-run
         // projectQueryParamGuard, which seeds the project context the page reads its slug from.
         runGuardsAndResolvers: 'paramsOrQueryParamsChange',
-        canActivate: [projectQueryParamGuard],
+        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/participating-orgs/participating-orgs.component').then((m) => m.ParticipatingOrgsComponent),
       },
       // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
@@ -468,9 +502,12 @@ export const routes: Routes = [
         data: { lens: 'org' },
         children: [
           {
+            // Bare `/org` names no organization, so the restored selection picks the home page: a roll-up's
+            // is Memberships. Decided here because the unavailable-page guard reads the URL being recognized,
+            // which after this redirect is still `/org`, not `/org/overview` (#4133).
             path: '',
             pathMatch: 'full',
-            redirectTo: 'overview',
+            redirectTo: () => (inject(AccountContextService).isRollUp() ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview'),
           },
           // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
@@ -489,7 +526,8 @@ export const routes: Routes = [
               {
                 path: '',
                 pathMatch: 'full',
-                redirectTo: 'overview',
+                redirectTo: ({ params }) =>
+                  isOrgRollUpSegment(normalizeOrgSegment(params[ORG_SEGMENT_PARAM] ?? '')) ? ORG_LENS_ROLL_UP_HOME_PAGE : 'overview',
               },
               ...orgLensPageRoutes(),
             ],
@@ -975,6 +1013,13 @@ export const routes: Routes = [
     canActivate: [authGuard, votePresenterGuard],
     data: { preload: false },
     loadComponent: () => import('./modules/votes/vote-presenter/vote-presenter.component').then((m) => m.VotePresenterComponent),
+  },
+  // Paired like `meetings/:id` below: the redesigned not-found page when `meetingPageRedesignGuard` matches, else the legacy one.
+  {
+    path: 'meetings/not-found',
+    title: 'Meeting Not Found',
+    canMatch: [meetingPageRedesignGuard],
+    loadComponent: () => import('./modules/meetings/meeting-page/not-found/meeting-page-not-found.component').then((m) => m.MeetingPageNotFoundComponent),
   },
   {
     path: 'meetings/not-found',

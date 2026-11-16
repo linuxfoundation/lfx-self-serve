@@ -58,7 +58,7 @@
           severity="primary"
           [text]="true"
           [styleClass]="ctaStyleClass"
-          [routerLink]="action.route"
+          [routerLink]="primaryRoute() ?? action.route"
           [attr.data-testid]="testId() + '-primary'"></lfx-button>
       } @else if (action.href) {
         <lfx-button

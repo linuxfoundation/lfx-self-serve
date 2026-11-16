@@ -31,6 +31,7 @@ import {
   SendVoteReminderRequest,
   SendVoteReminderResponse,
   SendVoteSummaryResponse,
+  UpdateMyVoteResponseRequest,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
@@ -630,6 +631,11 @@ export class VoteService {
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
+  }
+
+  /** Changes the caller's own submitted ballot (#4723); the BFF resolves which ballot from the caller's identity. */
+  public updateMyResponse(voteUid: string, body: UpdateMyVoteResponseRequest): Observable<void> {
+    return this.http.put<void>(`/api/votes/${encodeURIComponent(voteUid)}/my-response`, body).pipe(take(1));
   }
 
   /**

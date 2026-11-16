@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_TEAM_NAME } from '@lfx-one/shared/constants';
+import { FORMATION_TEAM_NAME, LF_STAFF_TEAM_ID } from '@lfx-one/shared/constants';
 
 import type { Request } from 'express';
 
@@ -16,4 +16,13 @@ import type { AccessCheckService } from '../services/access-check.service';
  */
 export async function checkFormationTeamMembership(accessCheckService: AccessCheckService, req: Request): Promise<boolean> {
   return accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+}
+
+/**
+ * Whether the caller is a `member` of `team:lf-staff` (#5544) — the same caller-scoped, fail-closed check as
+ * {@link checkFormationTeamMembership}, and the same team `PersonaDetectionService.checkLFStaff` reads for `isLFStaff`.
+ * `lf-contractor` is a different team and does not count. Only the read-only Pipeline view is keyed on it.
+ */
+export async function checkLfStaffMembership(accessCheckService: AccessCheckService, req: Request): Promise<boolean> {
+  return accessCheckService.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
 }

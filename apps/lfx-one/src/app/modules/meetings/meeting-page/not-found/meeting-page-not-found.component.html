@@ -1,0 +1,43 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- A fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX. -->
+<lfx-impersonation-banner />
+
+<div
+  class="flex min-h-screen flex-col bg-white"
+  [class]="userService.impersonating() ? 'pt-[36px] [--mp-offset:36px]' : '[--mp-offset:0px]'"
+  data-testid="meeting-page-not-found">
+  <lfx-meeting-page-top-bar />
+
+  <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+  <main class="mx-auto my-[48px] flex w-full max-w-[560px] flex-auto flex-col px-[16px] sm:my-[80px] sm:px-[32px]">
+    <lfx-ui-empty-state
+      heading="Meeting Not Found"
+      description="We couldn't find the meeting you're looking for. This might happen for several reasons."
+      icon="fa-light fa-calendar-xmark"
+      [headingLevel]="1">
+      <div class="flex w-full flex-col items-center gap-[24px]">
+        <div class="flex w-full flex-col gap-[8px] rounded-[8px] bg-gray-50 p-[16px] text-left" data-testid="meeting-page-not-found-reasons">
+          <h2 class="text-[13px] font-medium leading-[18px] text-gray-700">Possible reasons:</h2>
+          <ul class="flex flex-col gap-[6px] text-[13px] leading-[18px] text-gray-600">
+            <li>The meeting link has expired or is no longer valid</li>
+            <li>The meeting has been deleted or cancelled</li>
+            <li>You may need the correct password to access this meeting</li>
+            <li>The meeting URL may contain a typo</li>
+          </ul>
+        </div>
+        <div class="flex flex-col items-stretch gap-[8px] sm:flex-row sm:items-center">
+          <lfx-ui-button variant="secondary-accent" icon="fa-light fa-calendar" (click)="openMyMeetings()" data-testid="meeting-page-not-found-my-meetings"
+            >Go to my meetings</lfx-ui-button
+          >
+          <lfx-ui-button variant="secondary" icon="fa-light fa-life-ring" lfxOpenIntercom data-testid="meeting-page-not-found-support"
+            >Contact Support</lfx-ui-button
+          >
+        </div>
+      </div>
+    </lfx-ui-empty-state>
+  </main>
+
+  <lfx-meeting-page-footer />
+</div>

@@ -534,6 +534,25 @@ describe('MeetingCardComponent — invitee panels', () => {
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
 
+  describe('the sub-project line', () => {
+    const projectLine = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-project-name"]')?.textContent?.trim();
+
+    it('names the project of a meeting rolled up from a sub-project', async () => {
+      const card = await render({ ...INVITED, project_uid: 'child', project_name: 'TraderX' } as Meeting, { contextProjectUid: 'foundation' });
+
+      expect(projectLine(card)).toBe('TraderX');
+    });
+
+    it.each([
+      ['the list is the meeting own project', { contextProjectUid: 'child' }],
+      ['the list has no project context', {}],
+    ])('shows no project line when %s', async (_label, inputs) => {
+      const card = await render({ ...INVITED, project_uid: 'child', project_name: 'TraderX' } as Meeting, inputs);
+
+      expect(card.querySelector('[data-testid="meeting-project"]')).toBeNull();
+    });
+  });
+
   describe('the associated group line', () => {
     const groupNames = (card: HTMLElement): string | undefined => card.querySelector('[data-testid="meeting-groups-names"]')?.textContent?.trim();
 

@@ -14,6 +14,7 @@ import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { IndexedVoteResponseStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState, VoteVoterStatus } from '../enums';
 import type {
+  IndexedPollAnswer,
   MyVoteBallot,
   MyVoteResponse,
   PollAnswer,
@@ -44,6 +45,7 @@ import {
   buildVoteVoterChoiceFilterOptions,
   buildVoteVoterChoiceSummaries,
   buildVoteVoterRowView,
+  canChangeSubmittedBallot,
   canVoterFetchVoteResults,
   buildVoteSummarySendNotice,
   compareVotesByRecency,
@@ -58,6 +60,7 @@ import {
   isRankedPollType,
   isVoteAwaitingMyBallot,
   isVoteBallotReviewable,
+  isVoteChangeAllowed,
   isVoteClosingSoon,
   mapFiltersToEligibility,
   mapMyBallotToCastForm,
@@ -67,6 +70,7 @@ import {
   matchesVoteVoterChoice,
   mergeCommentResults,
   partitionVoteSummaryRecipients,
+  rankedAnswerChoices,
   resolveVoterResultsState,
   sortVoteVotersForDisplay,
   votePermalinkPath,
@@ -86,6 +90,7 @@ function formValue(overrides: Partial<VoteFormValue> = {}): VoteFormValue {
     close_time: '11:59 PM',
     timezone: 'UTC',
     allow_abstain: false,
+    allow_vote_change: true,
     questions: [{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }],
     commentPrompts: [],
     ...overrides,
@@ -194,6 +199,41 @@ describe('isVoteBallotReviewable (#4331)', () => {
   });
 });
 
+describe('isVoteChangeAllowed (#4723)', () => {
+  it.each([
+    ['allowed', { allow_vote_change: true }, true],
+    ['locked', { allow_vote_change: false }, false],
+    ['legacy (field absent)', {}, true],
+    ['no vote loaded yet', null, true],
+  ])('is %s → %s', (_label, vote, expected) => {
+    expect(isVoteChangeAllowed(vote)).toBe(expected);
+  });
+});
+
+describe('canChangeSubmittedBallot (#4723)', () => {
+  const base = { allowVoteChange: true, status: 'active', submitted: true, voterRemoved: false };
+
+  it.each([
+    ['ITX true wins over a locked vote', { ...base, allowVoteChange: false, canChangeVote: true }, true],
+    ['ITX false wins over an allowed active vote', { ...base, canChangeVote: false }, false],
+  ])('%s', (_label, input, expected) => {
+    expect(canChangeSubmittedBallot(input)).toBe(expected);
+  });
+
+  it.each([
+    ['allowed, active and submitted', base, true],
+    ['legacy vote without the setting', { ...base, allowVoteChange: undefined }, true],
+    ['status in another case', { ...base, status: 'ACTIVE' }, true],
+    ['locked vote', { ...base, allowVoteChange: false }, false],
+    ['ended vote', { ...base, status: 'ended' }, false],
+    ['missing status', { ...base, status: undefined }, false],
+    ['no submitted ballot', { ...base, submitted: false }, false],
+    ['removed voter', { ...base, voterRemoved: true }, false],
+  ])('falls back when ITX omits can_change_vote: %s', (_label, input, expected) => {
+    expect(canChangeSubmittedBallot(input)).toBe(expected);
+  });
+});
+
 // All four builders must always emit allow_abstain explicitly: ITX updatePoll rebuilds the
 // DynamoDB item via PutItem full-replace, so omitting the field would silently reset an
 // enabled flag to false on any edit.
@@ -215,6 +255,13 @@ for (const [name, build] of voteRequestBuilders) {
 
       expect(request.allow_abstain).toBe(false);
       expect('allow_abstain' in request).toBe(true);
+    });
+
+    it.each([true, false])('always emits allow_vote_change: %s (full-replace safe)', (allowVoteChange) => {
+      const request = build(formValue({ allow_vote_change: allowVoteChange }), 'project-uid');
+
+      expect(request.allow_vote_change).toBe(allowVoteChange);
+      expect('allow_vote_change' in request).toBe(true);
     });
 
     it.each([
@@ -328,6 +375,14 @@ describe('mapVoteToFormValue', () => {
     expect(mapVoteToFormValue(vote()).allow_abstain).toBe(false);
   });
 
+  it('maps allow_vote_change: false explicitly', () => {
+    expect(mapVoteToFormValue(vote({ allow_vote_change: false })).allow_vote_change).toBe(false);
+  });
+
+  it('defaults allow_vote_change to true when the vote predates the field', () => {
+    expect(mapVoteToFormValue(vote()).allow_vote_change).toBe(true);
+  });
+
   it.each([
     ['form', mapVoteToFormValue],
     ['clone form', mapVoteToCloneFormValue],
@@ -401,6 +456,10 @@ describe('mapVoteToCloneFormValue', () => {
   it('prefixes the title with "Copy of "', () => {
     const form = mapVoteToCloneFormValue(vote({ name: 'Board election' }), NOW);
     expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('carries the source vote allow_vote_change: false into the clone', () => {
+    expect(mapVoteToCloneFormValue(vote({ allow_vote_change: false }), NOW).allow_vote_change).toBe(false);
   });
 
   it('does not double-prefix when cloning an already-cloned vote', () => {
@@ -2416,5 +2475,55 @@ describe('computeParticipationSegments', () => {
     expect(computeParticipationSegments(stats(5, 9), 0)).toEqual({ voted: 100, abstained: 0 });
     expect(computeParticipationSegments(stats(5, 2), 7)).toEqual({ voted: 0, abstained: 40 });
     expect(computeParticipationSegments(stats(5, 2), -3)).toEqual({ voted: 40, abstained: 0 });
+  });
+});
+
+describe('rankedAnswerChoices', () => {
+  it('prefers nonempty ranked choices and sorts without mutating their recorded array', () => {
+    const ranked: UserChoice[] = [
+      { choice_id: 'c-b', choice_text: 'Second', choice_rank: 2 },
+      { choice_id: 'c-a', choice_text: 'First', choice_rank: 1 },
+    ];
+    const answer: PollAnswer = {
+      question_id: 'q1',
+      prompt: 'Rank candidates',
+      type: 'multiple_choice',
+      ranked_user_choice: ranked,
+      user_choice: [{ choice_id: 'c-other', choice_text: 'Unused fallback' }],
+    };
+
+    expect(rankedAnswerChoices(answer).map((choice) => choice.choice_id)).toEqual(['c-a', 'c-b']);
+    expect(ranked.map((choice) => choice.choice_id)).toEqual(['c-b', 'c-a']);
+  });
+
+  it.each([[], undefined])('falls back to user_choice when ranked_user_choice is %s', (rankedUserChoice) => {
+    const answer: IndexedPollAnswer = {
+      question_id: 'q1',
+      prompt: 'Rank candidates',
+      type: 'multiple_choice',
+      ranked_user_choice: rankedUserChoice,
+      user_choice: [
+        { choice_id: 'c-b', choice_text: 'Second', choice_rank: 2 },
+        { choice_id: 'c-a', choice_text: 'First', choice_rank: 1 },
+      ],
+    };
+
+    expect(rankedAnswerChoices(answer).map((choice) => choice.choice_id)).toEqual(['c-a', 'c-b']);
+    expect(answer.user_choice?.map((choice) => choice.choice_id)).toEqual(['c-b', 'c-a']);
+  });
+
+  it('preserves array order when saved preferences omit ranks', () => {
+    const choices: UserChoice[] = [
+      { choice_id: 'c-b', choice_text: 'First' },
+      { choice_id: 'c-a', choice_text: 'Second' },
+    ];
+    const answer: IndexedPollAnswer = { question_id: 'q1', prompt: 'Rank candidates', type: 'multiple_choice', user_choice: choices };
+
+    expect(rankedAnswerChoices(answer)).toEqual(choices);
+    expect(rankedAnswerChoices(answer)).not.toBe(choices);
+  });
+
+  it('returns no preferences when neither answer array is populated', () => {
+    expect(rankedAnswerChoices({ question_id: 'q1', prompt: 'Rank candidates', type: 'multiple_choice' })).toEqual([]);
   });
 });

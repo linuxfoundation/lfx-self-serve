@@ -80,6 +80,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
   MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
 
+  /** Domain + schema-version segment for the per-login mentorship user refresh marker, shared across replicas so each login refreshes the user's mentorship record once. */
+  MENTORSHIP_USER_SYNC_NAMESPACE: 'mentorship-user-sync:v1',
+
   /**
    * TTL (ms) for `rejectIdentity`'s side of the per-user meeting-invite-email lock (LFXV2 #2241).
    * Its locked region chains `getMeetingInviteEmail` (`NATS_CONFIG.REQUEST_TIMEOUT`, 5s) +
@@ -172,6 +175,15 @@ export const VALKEY_CACHE = {
 
   /** Freshness window for the per-user Org Lens caches (seats, key-contacts, access-list, people directory). */
   ORG_LENS_PERUSER_TTL_SECONDS: 30,
+
+  /** Domain + schema-version segment for the per-user meetings roll-up scope (GH-5566): the project UIDs under a foundation or parent project that the caller can see. */
+  MEETING_ROLLUP_SCOPE_NAMESPACE: 'meeting-rollup-scope:v1',
+
+  /** Domain + schema-version segment for the per-user meetings roll-up groups (GH-5566): the groups in that project tree the caller can see, which back the Group and Group type filters. Shares the scope's TTL. */
+  MEETING_ROLLUP_GROUPS_NAMESPACE: 'meeting-rollup-groups:v1',
+
+  /** Freshness window for the meetings roll-up scope. Long enough that one dashboard load (list, counts, paged calendar feeds, Load More) reuses one tree walk and pages against the same scope; short enough that a new sub-project shows up within minutes. */
+  MEETING_ROLLUP_SCOPE_TTL_SECONDS: 300,
 
   /**
    * Freshness window for the Org Lens Groups aggregate (15 minutes). Deliberately shorter than the

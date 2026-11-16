@@ -178,11 +178,12 @@ export class MentorshipMentorService {
   }
 
   /**
-   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task. Failures propagate as the
-   * raw `HttpErrorResponse`; a 409 means the task is no longer awaiting review.
+   * Approves (`complete`) or requests changes on (`incomplete`) a mentee's submitted task; a request for changes
+   * carries the reason the mentee is emailed. Failures propagate as the raw `HttpErrorResponse`; a 409 means the task
+   * is no longer awaiting review.
    */
-  public reviewMenteeTask(taskId: string, status: MentorshipMentorTaskReviewDecision): Observable<void> {
-    const body: MentorshipMentorTaskReviewUpdate = { status };
+  public reviewMenteeTask(taskId: string, status: MentorshipMentorTaskReviewDecision, reason?: string): Observable<void> {
+    const body: MentorshipMentorTaskReviewUpdate = reason ? { status, reason } : { status };
     return this.http.patch<void>(`/api/mentorship/mentor/tasks/${encodeURIComponent(taskId)}/review`, body).pipe(take(1));
   }
 

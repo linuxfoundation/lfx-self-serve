@@ -63,6 +63,22 @@ export const ORG_EASYCLA_PAGE_SEGMENT = 'easycla';
  */
 export const ORG_ROLLUP_SEGMENT_PREFIX = 'family-';
 
+export const ORG_LENS_ROLL_UP_READ_METHODS: readonly string[] = ['GET', 'HEAD'];
+
+/** Where a family roll-up lands: picked in the switcher, entering Org Lens, or sent off a single-organization page (#4133). */
+export const ORG_LENS_ROLL_UP_HOME_PAGE = 'memberships';
+
+/**
+ * Org Lens routes that render a family roll-up, as `app.routes.ts` declares their paths. Every other
+ * page shows the roll-up-unavailable empty state on a roll-up instead of loading, so a page joins this
+ * map in the PR that teaches it the roll-up (#4125). Profile, EasyCLA and the donations pages are not
+ * listed either: they redirect a roll-up home, because they cover one organization by definition.
+ * Membership test as `ORG_LENS_PAGE_SEGMENTS`: `=== true`.
+ */
+export const ORG_LENS_ROLL_UP_PAGES: Readonly<Record<string, true>> = {
+  memberships: true,
+};
+
 /**
  * A family roll-up segment, capturing the family's top account id. The id is matched exactly as an
  * SFID is (`ORG_ACCOUNT_ID_PATTERN`): Salesforce ids are case-sensitive, so the prefix is the only

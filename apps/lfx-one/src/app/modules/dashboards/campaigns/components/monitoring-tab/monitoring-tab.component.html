@@ -209,7 +209,7 @@
         class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12"
         data-testid="monitoring-empty">
         <i class="fa-light fa-chart-mixed text-3xl text-gray-400" aria-hidden="true"></i>
-        <p class="text-sm text-gray-500">No active campaigns found for the selected date range.</p>
+        <p class="text-sm text-gray-500" data-testid="monitoring-empty-message">{{ googleEmptyMessage() }}</p>
       </div>
     } @else {
       <!-- KPI Strip -->
@@ -250,6 +250,9 @@
         </div>
         @if (googleTotalsNote(); as note) {
           <p class="text-xs text-gray-500" data-testid="google-totals-note">{{ note }}</p>
+        }
+        @if (googleRecordedAccountNote(); as accountNote) {
+          <p class="text-xs text-gray-500" data-testid="google-recorded-account-note">{{ accountNote }}</p>
         }
         @if (googleCurrencyNote()) {
           <!-- campaign-service reported the connected account's Google amounts unconverted and named no currency. -->

@@ -4,7 +4,7 @@ description: How to find, filter, accept, and share your LFX credentialing badge
 audience: [all]
 product_area: Badges
 tags: [badges, credentials, view, filters, share]
-last_updated: 2026-10-29
+last_updated: 2026-11-16
 intercom_collection: Badges
 ---
 
@@ -71,7 +71,7 @@ Badges are shown 12 per page. A line above the cards reads "Showing X to Y of Z 
 
 - While badges load, the page shows "Loading badges…" with placeholder cards.
 - If no badges match your category, visibility, or status selection (or you have no badges), the page shows **No badges found** with the message "No badges match the selected filter. Try selecting a different category."
-- If LFX One cannot load the Badges page data, the page shows **Unable to load badges** with the message "Something went wrong while fetching your badges. Please try again later." A temporary Credly problem can instead show **No badges found** or an incomplete list. Wait and reload later (see the [Badges FAQ](../faq/#why-don-t-i-see-a-badge-i-expected-to-receive) for cache timing).
+- If LFX One cannot load the Badges page data, the page shows **Unable to load badges** with the message "Something went wrong while fetching your badges. Please try again later." The page also shows this when Credly cannot be reached. If only some of your email addresses could be checked, you may briefly see an incomplete list, and reloading the page fetches fresh results (see the [Badges FAQ](../faq/#why-don-t-i-see-a-badge-i-expected-to-receive) for cache timing).
 
 ## Related
 

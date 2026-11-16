@@ -186,6 +186,9 @@ export class MeetingCardComponent implements OnInit {
   public readonly groupLinkState = input<GroupLinkState | null>(null);
   // The group whose page the card is already on (its own Meetings tab); that group shows as plain text instead of a link to itself.
   public readonly currentGroupUid = input<string>('');
+  // The project whose meetings list the card is on. A meeting from another project (a sub-project rolled
+  // up into a foundation's list) is labelled with its own project name; empty means no label.
+  public readonly contextProjectUid = input<string>('');
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   /** Set when the drawer is opened from "Invite people", so it opens on the Add Guest form. */
@@ -260,6 +263,12 @@ export class MeetingCardComponent implements OnInit {
   // when present (cadence changed at/after it — LFXV2-2112), otherwise the series rule.
   public readonly displayRecurrence: Signal<MeetingRecurrence | null> = computed(() => resolveOccurrenceRecurrence(this.meeting(), this.currentOccurrence()));
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
+  public readonly subProjectName: Signal<string | null> = computed(() => {
+    const contextUid = this.contextProjectUid();
+    const meeting = this.meeting();
+    if (!contextUid || !meeting.project_uid || meeting.project_uid === contextUid) return null;
+    return meeting.project_name?.trim() || null;
+  });
   public readonly meetingDuration: Signal<number> = computed(() => this.occurrence()?.duration || this.meeting().duration);
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;

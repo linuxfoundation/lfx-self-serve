@@ -3,6 +3,7 @@
 
 import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AppService } from '@services/app.service';
@@ -14,6 +15,7 @@ import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.comp
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { HealthMetricsTruncationTipDirective } from '../components/health-metrics-truncation-tip/health-metrics-truncation-tip.directive';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
 import { HealthMetricsGateComponent } from './health-metrics-gate.component';
 
@@ -51,6 +53,7 @@ describe('HealthMetricsGateComponent', () => {
             RouterOutlet,
             FooterStubComponent,
             LegacyStubComponent,
+            HealthMetricsTruncationTipDirective,
             UiOptionComponent,
             UiSelectComponent,
             UiSwitchComponent,
@@ -110,6 +113,13 @@ describe('HealthMetricsGateComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="legacy-stub"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('router-outlet')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tabs"]')).not.toBeNull();
+  });
+
+  it('puts the full-text tooltip for cut-off text on the page column', async () => {
+    await render(signal(true));
+
+    const tip = fixture.debugElement.query(By.directive(HealthMetricsTruncationTipDirective));
+    expect(tip?.attributes['data-testid']).toBe('health-metrics-page');
   });
 
   it('swaps pages reactively when the flag signal changes after render', async () => {

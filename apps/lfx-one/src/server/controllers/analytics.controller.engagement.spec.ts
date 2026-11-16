@@ -108,7 +108,7 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       groupType: 'all',
       range: 'YTD',
       page: 1,
-      size: 25,
+      size: 10,
     });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });

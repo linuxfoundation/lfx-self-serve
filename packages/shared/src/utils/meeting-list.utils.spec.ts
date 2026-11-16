@@ -25,6 +25,7 @@ import {
   getMeetingHomeRowOrganizers,
   getMeetingHomeRowProject,
   getMeetingHomeRowType,
+  getMeetingPageCancelledLink,
   getMeetingProjectUrl,
   getMeetingRecurrenceLabel,
   getMeetingRecurrenceTooltip,
@@ -34,7 +35,9 @@ import {
   groupMeetingsByDayBucket,
   isMeetingHomeRowPendingRsvp,
   isMeetingPendingRsvp,
+  toCancelledSeriesHomeRow,
   toPastMeetingHomeRow,
+  toUpcomingMeetingHomeRow,
 } from './meeting-list.utils';
 
 // Thursday, Oct 1 2026, 09:00 in the runner's local zone; buckets are local-calendar based.
@@ -266,6 +269,28 @@ describe('expandMeetingOccurrences', () => {
       const responses = expandMeetingOccurrences([meeting], NOW).map((item) => (item.myRsvp === undefined ? 'unknown' : (item.myRsvp?.response_type ?? null)));
       expect(responses).toEqual([null, 'unknown', 'accepted', 'unknown']);
     });
+  });
+});
+
+describe('toUpcomingMeetingHomeRow', () => {
+  it('builds one date of a series as the list does, keyed by the series and the date', () => {
+    const occurrence: MeetingOccurrence = { occurrence_id: seconds(local(10, 9)), start_time: local(10, 9).toISOString(), duration: 30, title: 'Date title' };
+    const meeting = buildMeeting({ recurrence: WEEKLY, occurrences: [occurrence], my_rsvp: null });
+
+    expect(toUpcomingMeetingHomeRow(meeting, occurrence)).toMatchObject({
+      key: `m-1:${occurrence.occurrence_id}`,
+      occurrence,
+      title: 'Date title',
+      occurrenceId: occurrence.occurrence_id,
+      startTime: occurrence.start_time,
+      durationMinutes: 30,
+      myRsvp: null,
+    });
+  });
+
+  it('keys a one-time meeting by its id and returns null without a valid start', () => {
+    expect(toUpcomingMeetingHomeRow(buildMeeting(), null)?.key).toBe('m-1');
+    expect(toUpcomingMeetingHomeRow(buildMeeting({ start_time: 'nope' }), null)).toBeNull();
   });
 });
 
@@ -788,5 +813,60 @@ describe('getMeetingRsvpToastMessage', () => {
 
   it('names no dates for a one-time meeting', () => {
     expect(getMeetingRsvpToastMessage({ response_type: 'accepted', scope: 'all' }, false)).toBe('Meeting RSVP set to “Going”');
+  });
+});
+
+describe('getMeetingPageCancelledLink', () => {
+  const DAY = 86_400_000;
+  const inDays = (days: number): Date => new Date(Date.now() + days * DAY);
+  const cancelledAt = (days: number): MeetingOccurrence => ({ ...occurrence(inDays(days)), status: 'cancel' });
+  const series = (occurrences: MeetingOccurrence[], overrides: Partial<Meeting> = {}): Meeting =>
+    buildMeeting({ id: 'mtg-1', title: 'Synthetic series', start_time: inDays(2).toISOString(), recurrence: WEEKLY, occurrences, ...overrides });
+
+  it('names a cancelled ?occurrence= date', () => {
+    const cancelled = cancelledAt(9);
+
+    expect(getMeetingPageCancelledLink(series([occurrence(inDays(2)), cancelled]), Date.parse(cancelled.start_time))).toEqual({
+      kind: 'occurrence',
+      cancelledStart: cancelled.start_time,
+    });
+  });
+
+  it('treats a date listed in cancelled_occurrences as cancelled', () => {
+    const listed = occurrence(inDays(9));
+    const meeting = series([occurrence(inDays(2)), listed], { cancelled_occurrences: [listed.occurrence_id] });
+
+    expect(getMeetingPageCancelledLink(meeting, Date.parse(listed.start_time))?.kind).toBe('occurrence');
+  });
+
+  it('names the series when every date is cancelled', () => {
+    expect(getMeetingPageCancelledLink(series([cancelledAt(2), cancelledAt(9)]), null)).toEqual({ kind: 'series', cancelledStart: null });
+  });
+
+  it('is null for a running date, no ?occurrence=, or a one-time meeting', () => {
+    const running = occurrence(inDays(2));
+    const meeting = series([running, occurrence(inDays(9))]);
+
+    expect(getMeetingPageCancelledLink(meeting, Date.parse(running.start_time))).toBeNull();
+    expect(getMeetingPageCancelledLink(meeting, null)).toBeNull();
+    expect(getMeetingPageCancelledLink(buildMeeting({ occurrences: [cancelledAt(2)] }), null)).toBeNull();
+  });
+});
+
+describe('toCancelledSeriesHomeRow', () => {
+  it('shows the series fields', () => {
+    const meeting = buildMeeting({ title: 'Synthetic series', recurrence: WEEKLY });
+
+    expect(toCancelledSeriesHomeRow(meeting)).toMatchObject({
+      key: meeting.id,
+      title: 'Synthetic series',
+      occurrence: null,
+      occurrenceId: null,
+      startTime: meeting.start_time,
+    });
+  });
+
+  it('is null without a valid start', () => {
+    expect(toCancelledSeriesHomeRow(buildMeeting({ start_time: '' }))).toBeNull();
   });
 });

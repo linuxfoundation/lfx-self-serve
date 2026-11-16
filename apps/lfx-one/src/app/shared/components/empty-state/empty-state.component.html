@@ -3,8 +3,8 @@
 
 @if (variant() === 'compact') {
   <!-- Pixel sizes follow the Health Metrics design; the 14px root makes the rem scale undershoot them. -->
-  <div class="flex min-h-[200px] flex-col items-center justify-center gap-[6px] px-[16px] py-[8px] text-center" data-testid="empty-state-compact">
-    <span class="mb-[4px] flex h-[44px] w-[44px] items-center justify-center rounded-[12px] border border-gray-200 bg-white shadow-sm" aria-hidden="true">
+  <div class="flex min-h-[180px] flex-col items-center justify-center gap-[8px] px-[16px] py-[8px] text-center" data-testid="empty-state-compact">
+    <span class="flex h-[44px] w-[44px] items-center justify-center rounded-[12px] border border-gray-200 bg-white shadow-sm" aria-hidden="true">
       <i [class]="icon() + ' text-[18px] text-gray-600'"></i>
     </span>
     <h3 class="m-0 text-[14px] font-semibold text-gray-900">{{ title() }}</h3>
@@ -12,6 +12,17 @@
       <p class="m-0 max-w-[420px] text-pretty text-[13px] leading-[1.5] text-gray-500">{{ subtitle() }}</p>
     }
     <ng-container [ngTemplateOutlet]="projected" />
+    @if (resettable()) {
+      <lfx-ui-button
+        class="mt-[8px]"
+        variant="tertiary-accent"
+        size="large"
+        icon="fa-light fa-arrow-rotate-left"
+        (click)="resetFilters.emit()"
+        data-testid="empty-state-reset-filters"
+        >Reset filters</lfx-ui-button
+      >
+    }
   </div>
 } @else if (withCard()) {
   <lfx-card>

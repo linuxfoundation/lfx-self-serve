@@ -9,6 +9,7 @@ import {
   foldForSearch,
   formatTag,
   joinAsSentenceList,
+  nameSearchKeys,
   sanitizePlainText,
   slugify,
   splitIntoParagraphs,
@@ -53,6 +54,82 @@ describe('foldForSearch', () => {
   it('folds null and undefined to an empty string', () => {
     expect(foldForSearch(null)).toBe('');
     expect(foldForSearch(undefined)).toBe('');
+  });
+});
+
+describe('nameSearchKeys', () => {
+  it('matches a two-part CJK name in either order', () => {
+    expect(nameSearchKeys('明华 李', null, null)).toEqual(['明华李', '李明华']);
+  });
+
+  it('matches a two-part Latin name in either order', () => {
+    expect(nameSearchKeys('Ada Lovelace', 'Ada', 'Lovelace')).toEqual(['adalovelace', 'lovelaceada']);
+  });
+
+  it('gives one key per rotation of a three-part name, folded', () => {
+    expect(nameSearchKeys('Juan Carlos Pérez', null, null)).toEqual(['juancarlosperez', 'carlosperezjuan', 'perezjuancarlos']);
+  });
+
+  it('preserves Greek final sigma in spaced and compact rotations', () => {
+    const keys = nameSearchKeys('ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', null, null);
+    for (const parts of [
+      ['ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣ'],
+      ['ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣ', 'ΝΙΚΟΣ'],
+      ['ΠΑΠΑΣ', 'ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣ'],
+    ]) {
+      for (const separator of [' ', '', '\u3000', '\u200b']) {
+        const query = parts.join(separator);
+        expect(keys.some((key) => key.includes(foldForSearch(query)))).toBe(true);
+      }
+    }
+  });
+
+  it.each([
+    'ΝΙΚΟΣ\u200BΝΙΚΟΛΑΟΣ ΠΑΠΑΣ',
+    'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ\u200BΠΑΠΑΣ',
+    'ΝΙΚΟΣ\u200DΝΙΚΟΛΑΟΣ ΠΑΠΑΣ',
+    'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ\u200DΠΑΠΑΣ',
+    'ΝΙΚΟΣ\u00ADΝΙΚΟΛΑΟΣ ΠΑΠΑΣ',
+    'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ\u00ADΠΑΠΑΣ',
+  ])('preserves an exact Greek display name with mixed separators: %s', (name) => {
+    expect(nameSearchKeys(name, null, null)).toContain(foldForSearch(name));
+  });
+
+  it('preserves spaced and compact Greek name orders when only the stored parts provide the full name', () => {
+    const keys = nameSearchKeys('ΝΙΚΟΣ', ' ΝΙΚΟΣ ', 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ');
+    for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ ΝΙΚΟΣ', 'ΝΙΚΟΛΑΟΣΠΑΠΑΣΝΙΚΟΣ']) {
+      expect(keys.some((key) => key.includes(foldForSearch(query)))).toBe(true);
+    }
+  });
+
+  it('splits on ideographic and zero-width spaces like foldForSearch removes them', () => {
+    expect(nameSearchKeys('明华　李', null, null)).toEqual(['明华李', '李明华']);
+    expect(nameSearchKeys('明华​李', null, null)).toEqual(['明华李', '李明华']);
+  });
+
+  it('adds both orders of the stored parts for an incomplete display name', () => {
+    expect(nameSearchKeys('Mei', 'Mei', 'Chen')).toEqual(['mei', 'chenmei', 'meichen']);
+    expect(nameSearchKeys('Chen', 'Mei', 'Chen')).toEqual(['chen', 'chenmei', 'meichen']);
+    expect(nameSearchKeys(null, 'Mei', 'Chen')).toEqual(['chenmei', 'meichen']);
+    const keys = nameSearchKeys('Mei', 'Mei', 'Chen');
+    for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
+      expect(keys.some((key) => key.includes(foldForSearch(query)))).toBe(true);
+    }
+  });
+
+  it('skips the pair when either part is missing', () => {
+    expect(nameSearchKeys('Mei', 'Mei', null)).toEqual(['mei']);
+    expect(nameSearchKeys('Mei', ' ', 'Chen')).toEqual(['mei']);
+  });
+
+  it('returns no keys for a missing or blank name', () => {
+    expect(nameSearchKeys(null, null, null)).toEqual([]);
+    expect(nameSearchKeys(undefined, undefined, undefined)).toEqual([]);
+    expect(nameSearchKeys('  ', null, null)).toEqual([]);
+  });
+
+  it('collapses duplicate keys', () => {
+    expect(nameSearchKeys('Lee Lee', 'Lee', 'Lee')).toEqual(['leelee']);
   });
 });
 

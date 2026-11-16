@@ -4,7 +4,7 @@
 import type { OrgCommitFilters, OrgCountUnit, OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
-import type { OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
+import type { OrgKeyContactRole, OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -193,6 +193,15 @@ export interface OrgAllEmployeeCompanyEmailOption {
   value: OrgAllEmployeeCompanyEmailFilter;
 }
 
+/** The All Employees Key Contact filter: every row, rows holding any role, rows holding none, or rows holding one canonical role. */
+export type OrgAllEmployeeKeyContactFilter = 'all' | 'any' | 'none' | OrgKeyContactRole;
+
+/** Dropdown option for the Key Contact filter. */
+export interface OrgAllEmployeeKeyContactOption {
+  label: string;
+  value: OrgAllEmployeeKeyContactFilter;
+}
+
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */
 export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   initials: string;
@@ -209,6 +218,11 @@ export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   keyContactRolesTooltip: string;
   /** Precomputed `<tr>` class list — keeps the template free of conditional class bindings on every cell. */
   rowClass: string;
+  /**
+   * `foldForSearch` keys the search box matches against, built once per row: the name in either order (`nameSearchKeys`),
+   * title, email and LF username (lfx-self-serve#5687).
+   */
+  searchKeys: string[];
 }
 
 /** Account-level engagement totals for the 5 stat cards above the table. */

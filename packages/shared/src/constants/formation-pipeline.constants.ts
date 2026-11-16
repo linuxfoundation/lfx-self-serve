@@ -5,6 +5,7 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { StatCardItem } from '../interfaces/stat-card.interface';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type {
+  FormationPipelineClassificationKey,
   FormationPipelineFoundationKind,
   FormationPipelineFoundationKindFilter,
   FormationPipelineSort,
@@ -72,6 +73,13 @@ export const FORMATION_PIPELINE_STAGE_SEVERITY: Record<FormationPipelineStage, T
 /** The live pipeline: what the formation team is actively working. The default view; Disengaged, Confidential and Archived are opt-in. */
 export const FORMATION_PIPELINE_LIVE_STAGES: readonly FormationPipelineStage[] = ['prospect', 'exploratory', 'engaged', 'on_hold'];
 
+/**
+ * Stages LF staff outside the formation team never see (#5544). `global_auditor` is withheld on exactly these two upstream
+ * (lfx-v2-project-service `global_grants.go`); the BFF drops them from rows, counts and the CSV whatever the caller can
+ * read, so a direct grant on a Draft project does not bring it into the staff view.
+ */
+export const FORMATION_PIPELINE_STAFF_HIDDEN_STAGES: readonly FormationPipelineStage[] = ['prospect', 'confidential'];
+
 /** The stage selection the page opens on. */
 export const FORMATION_PIPELINE_DEFAULT_STAGE: FormationPipelineStageFilter = 'in_pipeline';
 
@@ -126,7 +134,48 @@ export const FORMATION_PIPELINE_QUERY_PARAMS = {
   search: 'q',
   sort: 'sort',
   direction: 'dir',
+  technicalActivityType: 'tat',
+  technology: 'tech',
+  industry: 'ind',
 } as const;
+
+/** The classification fields, in filter and CSV order. */
+export const FORMATION_PIPELINE_CLASSIFICATION_KEYS: readonly FormationPipelineClassificationKey[] = ['technical_activity_type', 'technology', 'industry'];
+
+/** Label of each classification filter and CSV column. */
+export const FORMATION_PIPELINE_CLASSIFICATION_LABELS: Record<FormationPipelineClassificationKey, string> = {
+  technical_activity_type: 'Technical activity type',
+  technology: 'Technology',
+  industry: 'Industry',
+};
+
+/** Placeholder of each classification select's search box. */
+export const FORMATION_PIPELINE_CLASSIFICATION_FILTER_PLACEHOLDERS: Record<FormationPipelineClassificationKey, string> = {
+  technical_activity_type: 'Search technical activity type',
+  technology: 'Search technology',
+  industry: 'Search industry',
+};
+
+/** Unique overlay class of each classification select. `lfx-multi-select` finds the body-appended panel by it to size the panel to its trigger (`matchTriggerWidth`), so each key needs its own. */
+export const FORMATION_PIPELINE_CLASSIFICATION_PANEL_CLASSES: Record<FormationPipelineClassificationKey, string> = {
+  technical_activity_type: 'formations-pipeline-tat-panel',
+  technology: 'formations-pipeline-technology-panel',
+  industry: 'formations-pipeline-industry-panel',
+};
+
+/** URL query param of each classification filter; repeated once per selected value (`?tat=A&tat=B`), so a value may hold any character. */
+export const FORMATION_PIPELINE_CLASSIFICATION_PARAMS: Record<FormationPipelineClassificationKey, string> = {
+  technical_activity_type: FORMATION_PIPELINE_QUERY_PARAMS.technicalActivityType,
+  technology: FORMATION_PIPELINE_QUERY_PARAMS.technology,
+  industry: FORMATION_PIPELINE_QUERY_PARAMS.industry,
+};
+
+/** Bounds on what a link may carry per classification filter (values and length of each); anything past them is dropped when the URL is read. */
+export const FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUES = 50;
+export const FORMATION_PIPELINE_CLASSIFICATION_MAX_VALUE_LENGTH = 100;
+
+/** Joins a row's classification values in one CSV cell. */
+export const FORMATION_PIPELINE_CLASSIFICATION_CSV_SEPARATOR = '; ';
 
 /** What a foundation (project) uid may look like: query-service `parent`'s uid segment. Read by the BFF's `foundation_uid` validation and by the Pipeline's URL parser, so the two cannot drift. */
 export const FOUNDATION_UID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -157,7 +206,8 @@ export const FORMATION_PIPELINE_COPY = {
   filteredEmptyTitle: 'No projects match',
   filteredEmptySubtitle: 'Try a different stage, foundation, foundation type or search.',
   errorMessage: "Couldn't load the pipeline. Try again.",
-  forbiddenMessage: 'Only the formation team can see the pipeline.',
+  staffNote: 'Draft projects are visible to the formation team only.',
+  forbiddenMessage: 'Only the formation team and LF staff can see the pipeline.',
   retry: 'Retry',
   loading: 'Loading the pipeline…',
   noPm: 'No PM yet',

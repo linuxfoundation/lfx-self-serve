@@ -22,7 +22,8 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 /**
  * Sticky top bar of the standalone meeting page: the LF logo, the meeting's compact date, title and project once the page's
  * h1 scrolls under the bar, My Meetings and the account menu.
- * @description Signed-in only, like the page. The bar sticks below the impersonation banner through `--mp-offset`.
+ * @description A signed-out visitor gets Sign in and Create LFX account instead of the account menu. The bar sticks below
+ * the impersonation banner through `--mp-offset`.
  */
 @Component({
   selector: 'lfx-meeting-page-top-bar',
@@ -80,6 +81,15 @@ export class MeetingPageTopBarComponent {
       onScroll();
       destroyRef.onDestroy(() => window.removeEventListener('scroll', onScroll));
     });
+  }
+
+  /** Signs in and comes back here; the LF sign-in page also creates accounts. */
+  protected signIn(): void {
+    window.location.assign(this.signInUrl());
+  }
+
+  protected signInUrl(): string {
+    return `/login?returnTo=${encodeURIComponent(this.router.url)}`;
   }
 
   protected openMyMeetings(): void {

@@ -9,6 +9,8 @@ import type {
   OrgAllEmployeeCompanyEmailFilter,
   OrgAllEmployeeCompanyEmailOption,
   OrgAllEmployeeEmploymentFilter,
+  OrgAllEmployeeKeyContactFilter,
+  OrgAllEmployeeKeyContactOption,
   OrgAllEmployeeEmploymentOption,
   OrgAllEmployeesResponse,
   OrgAllEmployeeStats,
@@ -107,6 +109,28 @@ export const DEFAULT_ORG_ALL_EMPLOYEE_COMPANY_EMAIL: OrgAllEmployeeCompanyEmailF
 
 /** Most LF usernames bound in one All Employees Company email filter read of the LF-account views. */
 export const ORG_LF_USERNAME_EMAIL_STATUS_BATCH_SIZE = 500;
+
+/**
+ * Key Contact filter options for the All Employees table: everyone, anyone holding a role, anyone holding none, then each
+ * of the nine canonical roles. A role string outside the nine is matched only by `any`.
+ */
+export const ORG_ALL_EMPLOYEE_KEY_CONTACT_OPTIONS: readonly OrgAllEmployeeKeyContactOption[] = [
+  { label: 'All key contact roles', value: 'all' },
+  { label: 'Any key contact role', value: 'any' },
+  { label: 'Not a key contact', value: 'none' },
+  { label: 'Representative/Voting Contact', value: 'Representative/Voting Contact' },
+  { label: 'Authorized Signatory', value: 'Authorized Signatory' },
+  { label: 'Billing Contact', value: 'Billing Contact' },
+  { label: 'Marketing Contact', value: 'Marketing Contact' },
+  { label: 'Technical Contact', value: 'Technical Contact' },
+  { label: 'PO Contact', value: 'PO Contact' },
+  { label: 'PR Contact', value: 'PR Contact' },
+  { label: 'Legal Contact', value: 'Legal Contact' },
+  { label: 'Event Sponsorship Contact', value: 'Event Sponsorship Contact' },
+] as const;
+
+/** Default Key Contact filter on All Employees; the URL drops `?keyContact=` when it is active. */
+export const DEFAULT_ORG_ALL_EMPLOYEE_KEY_CONTACT: OrgAllEmployeeKeyContactFilter = 'all';
 
 /** Most key-contact record ids one drawer company-email lookup takes (`by-key-contact/company-emails?ids=`). */
 export const ORG_KEY_CONTACT_EMAIL_LOOKUP_MAX_IDS = 50;
