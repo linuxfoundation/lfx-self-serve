@@ -46,11 +46,21 @@ export interface HealthMetricsLineChartDotView {
   color: string;
 }
 
-/** One x position's hover and focus target, centred on it and as wide as the spacing between positions. */
+/** One x label, in % of the plot; the first and last sit flush with the plot's edges, as a spread row does. */
+export interface HealthMetricsLineChartTickView {
+  key: string;
+  label: string;
+  leftPct: number;
+  align: 'start' | 'center' | 'end';
+}
+
+/** One x position's hover and focus target: centred on it, 1/N of the plot wide, and cut off at the plot's edges. */
 export interface HealthMetricsLineChartColumnView {
   key: string;
   leftPct: number;
   widthPct: number;
+  /** Where the point sits across the column, in %, for the hover guide and the popup. */
+  pointOffsetPct: number;
   tip: HealthMetricsChartTipView;
   /** The column's accessible name: the popup's title and rows on one line. */
   ariaLabel: string;
@@ -69,6 +79,9 @@ export interface HealthMetricsLineChartView {
   paths: HealthMetricsLineChartPathView[];
   dots: HealthMetricsLineChartDotView[];
   columns: HealthMetricsLineChartColumnView[];
-  xLabels: string[];
+  /** One label per point. */
+  ticks: HealthMetricsLineChartTickView[];
+  /** The first point of each run of equal labels, for a plot too narrow to label every point. */
+  monthTicks: HealthMetricsLineChartTickView[];
   ariaLabel: string;
 }

@@ -59,13 +59,14 @@ describe('buildHealthMetricsLineChart', () => {
     expect(chart.baseY).toBe(200);
   });
 
-  it('gives each x position a centred column with its popup and an accessible name', () => {
+  it('gives each x position a column centred on it and cut off at the plot edges, with its popup and an accessible name', () => {
     const columns = buildHealthMetricsLineChart(input()).columns;
 
-    expect(columns.map((column) => [column.leftPct, column.widthPct])).toEqual([
-      [0, 100 / 3],
-      [50, 100 / 3],
-      [100, 100 / 3],
+    const round = (value: number): number => Math.round(value * 100) / 100;
+    expect(columns.map((column) => [column.leftPct, column.widthPct, column.pointOffsetPct].map(round))).toEqual([
+      [0, 16.67, 0],
+      [33.33, 33.33, 50],
+      [83.33, 16.67, 100],
     ]);
     expect(columns[0].tip.title).toBe('One · Jan 4, 2026');
     expect(columns[0].ariaLabel).toBe('One · Jan 4, 2026, Open rate 40%');
@@ -75,7 +76,19 @@ describe('buildHealthMetricsLineChart', () => {
     const chart = buildHealthMetricsLineChart(input({ xLabels: ['Jan'], series: [{ key: 'a', label: 'A', color: '#000', values: [150] }], tips: [] }));
 
     expect(chart.paths[0].d).toBe('M300.0 0.0');
-    expect(chart.columns[0]).toMatchObject({ leftPct: 50, widthPct: 100, tip: { title: 'Jan', rows: [] } });
+    expect(chart.columns[0]).toMatchObject({ leftPct: 0, widthPct: 100, pointOffsetPct: 50, tip: { title: 'Jan', rows: [] } });
+    expect(chart.ticks).toEqual([{ key: '0', label: 'Jan', leftPct: 50, align: 'center' }]);
+  });
+
+  it('places a label per point, the ends flush with the plot, and keeps the first of each run of equal labels for a narrow plot', () => {
+    const chart = buildHealthMetricsLineChart(input({ xLabels: ['Jan', 'Jan', 'Feb'] }));
+
+    expect(chart.ticks.map((tick) => [tick.label, tick.leftPct, tick.align])).toEqual([
+      ['Jan', 0, 'start'],
+      ['Jan', 50, 'center'],
+      ['Feb', 100, 'end'],
+    ]);
+    expect(chart.monthTicks.map((tick) => tick.key)).toEqual(['0', '2']);
   });
 });
 
@@ -86,6 +99,7 @@ describe('healthMetricsLineChartCountCeiling', () => {
     [101, 160],
     [10, 10],
     [3, 4],
+    [2, 4],
     [0, 4],
     [Number.NaN, 4],
   ])('rounds a peak of %s up to %s, so each quarter is a round step', (peak, ceiling) => {

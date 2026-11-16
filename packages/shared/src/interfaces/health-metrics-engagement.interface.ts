@@ -609,7 +609,7 @@ export interface HealthMetricsEngagementRecipient {
   rank: number;
   name: string | null;
   organization: string | null;
-  /** `Delivered` or `Failed`, as the view reports it. */
+  /** `Delivered`, `Failed` or `Pending`, as the view reports it; a pending one counts as not opened. */
   deliveryStatus: string | null;
   /** `opened`, `not-opened` or `failed`. A recipient who clicked without a recorded open is `not-opened`. */
   segment: string | null;
@@ -640,6 +640,8 @@ export interface HealthMetricsEngagementNewsletterRecipients {
 export interface HealthMetricsEngagementRecipientRowView {
   rank: number;
   nameLabel: string;
+  /** The avatar's name, empty without one so the avatar shows its glyph rather than the "—" the text shows. */
+  avatarName: string;
   /** The recipient's company, under the name; empty without one. */
   description: string;
   deliveryLabel: string;

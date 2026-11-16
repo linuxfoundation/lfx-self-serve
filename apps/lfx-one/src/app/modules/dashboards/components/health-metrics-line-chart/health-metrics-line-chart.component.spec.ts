@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { buildHealthMetricsLineChart } from '@lfx-one/shared/utils';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsLineChartComponent } from './health-metrics-line-chart.component';
 
@@ -39,9 +39,13 @@ describe('HealthMetricsLineChartComponent', () => {
     fixture.detectChanges();
   });
 
-  it('labels the y axis top to bottom and the x axis left to right', () => {
+  it('labels the y axis top to bottom, and the x axis by month until it is measured, the ends flush with the plot', () => {
     expect(Array.from(query('chart-y')?.querySelectorAll('span') ?? []).map((span) => span.textContent)).toEqual(['60%', '45%', '30%', '15%', '0%']);
-    expect(Array.from(query('chart-x')?.querySelectorAll('span') ?? []).map((span) => span.textContent)).toEqual(['Jan', 'Feb', 'Mar', 'Apr']);
+    const ticks = Array.from(query('chart-x')?.querySelectorAll('span') ?? []) as HTMLElement[];
+    expect(ticks.map((span) => span.textContent)).toEqual(['Jan', 'Feb', 'Mar', 'Apr']);
+    expect(ticks[0].className).not.toContain('translate');
+    expect(ticks[1].className).toContain('-translate-x-1/2');
+    expect(ticks[3].className).toContain('-translate-x-full');
   });
 
   it('draws each series, dashing the derived one, and fills under the first filled series with a unique gradient', () => {
@@ -65,17 +69,70 @@ describe('HealthMetricsLineChartComponent', () => {
     query('chart-column-0')?.dispatchEvent(new Event('mouseenter'));
     fixture.detectChanges();
     expect(query('chart-tip')?.textContent).toContain('One');
-    expect(query('chart-tip')?.className).toContain('left-[calc(50%+12px)]');
+    // The first column is cut off at the plot's left edge, so its point sits at the column's own left.
+    expect(query('chart-column-0')?.style.left).toBe('0%');
+    expect(query('chart-guide-0')?.style.left).toBe('0%');
+    expect(query('chart-tip')?.style.left).toBe('calc(0% + 12px)');
 
     query('chart-column-0')?.dispatchEvent(new Event('mouseleave'));
     query('chart-column-3')?.dispatchEvent(new Event('focus'));
     fixture.detectChanges();
     expect(query('chart-tip')?.textContent).toContain('Four');
-    expect(query('chart-tip')?.className).toContain('right-[calc(50%+12px)]');
+    expect(query('chart-tip')?.style.right).toBe('calc(0% + 12px)');
 
     query('chart-column-3')?.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
     expect(query('chart-tip')).toBeNull();
+  });
+
+  describe('once the plot is measured', () => {
+    let width = 0;
+
+    // Reports the width it is given on observe, as a browser does on first layout.
+    class FakeResizeObserver {
+      public constructor(private readonly callback: ResizeObserverCallback) {}
+      public observe(): void {
+        this.callback([{ contentRect: { width } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+      }
+      public disconnect(): void {
+        width = 0;
+      }
+    }
+
+    afterEach(() => vi.unstubAllGlobals());
+
+    async function measure(plotWidth: number, labels: string[]): Promise<string[]> {
+      width = plotWidth;
+      vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+      fixture = TestBed.createComponent(HealthMetricsLineChartComponent);
+      fixture.componentRef.setInput(
+        'chart',
+        buildHealthMetricsLineChart({
+          xLabels: labels,
+          series: [{ key: 'a', label: 'A', color: '#009AFF', values: labels.map(() => 10) }],
+          max: 20,
+          formatTick: String,
+          tips: [],
+          ariaLabel: 'Chart',
+        })
+      );
+      fixture.componentRef.setInput('testId', 'chart');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return Array.from(query('chart-x')?.querySelectorAll('span') ?? []).map((span) => span.textContent ?? '');
+    }
+
+    it('labels every point when they sit at least 28px apart, repeats and all', async () => {
+      expect(await measure(600, ['Jan', 'Jan', 'Feb', 'Feb'])).toEqual(['Jan', 'Jan', 'Feb', 'Feb']);
+    });
+
+    it('falls back to the first of each month, dropping any that would crowd the one before', async () => {
+      const weekly = ['Jan', 'Jan', 'Jan', 'Jan', 'Feb', 'Feb', 'Feb', 'Feb', 'Mar', 'Mar', 'Mar', 'Mar'];
+      expect(await measure(300, weekly)).toEqual(['Jan', 'Feb', 'Mar']);
+      // At 60px wide the months sit about 22px apart, so every other one goes.
+      expect(await measure(60, weekly)).toEqual(['Jan', 'Mar']);
+    });
   });
 
   it('closes the popup on Escape', () => {

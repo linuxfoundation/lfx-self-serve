@@ -616,16 +616,17 @@ export function buildHealthMetricsEngagementRecipientMetrics(recipients: readonl
  */
 export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetricsEngagementRecipient, now: Date): HealthMetricsEngagementRecipientRowView {
   const failed = isFailedRecipient(recipient);
-  const pending = !failed && recipient.deliveryStatus?.trim().toLowerCase() === 'pending';
+  const pending = isPendingRecipient(recipient);
   const opened = !pending && recipient.segment === 'opened';
   const age = (prefix: string, iso: string | null): string => {
-    const short = failed ? '' : formatHealthMetricsShortAge(iso, now);
+    const short = failed || pending ? '' : formatHealthMetricsShortAge(iso, now);
     return short ? `${prefix} ${short}` : '';
   };
 
   return {
     rank: recipient.rank,
     nameLabel: recipient.name?.trim() || HEALTH_METRICS_TABLE_DASH,
+    avatarName: recipient.name?.trim() ?? '',
     description: recipient.organization?.trim() ?? '',
     deliveryLabel: recipientDeliveryLabel(failed, pending),
     deliveryTone: recipientDeliveryTone(failed, pending),
@@ -741,12 +742,19 @@ function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, fil
   // The row and the cuts share one failure rule, so a row reading "Failed" is never counted under an engagement cut.
   if (filter === 'failed') return isFailedRecipient(recipient);
   if (isFailedRecipient(recipient)) return false;
+  // A pending delivery has not landed yet, so it counts as not opened whatever the view segments it as.
+  if (isPendingRecipient(recipient)) return filter === 'not-opened';
   return filter === 'clicked' ? recipient.clicked : recipient.segment === filter;
 }
 
 /** Failed by either the view's segment or its delivery status. */
 function isFailedRecipient(recipient: HealthMetricsEngagementRecipient): boolean {
   return recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
+}
+
+/** Sent but not yet delivered; never also failed. */
+function isPendingRecipient(recipient: HealthMetricsEngagementRecipient): boolean {
+  return !isFailedRecipient(recipient) && recipient.deliveryStatus?.trim().toLowerCase() === 'pending';
 }
 
 /** No tag for a failed delivery, which the row shows as "—". */

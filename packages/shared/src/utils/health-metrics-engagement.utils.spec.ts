@@ -990,7 +990,7 @@ describe('buildHealthMetricsEngagementNewsletterChart', () => {
       ['cto', true],
     ]);
     expect(chart.area?.color).toBe('#009AFF');
-    expect(chart.xLabels).toEqual(['Jan', 'Feb']);
+    expect(chart.ticks.map((tick) => tick.label)).toEqual(['Jan', 'Feb']);
     expect(chart.ariaLabel).toBe('Open, click and click-to-open rate by newsletter');
     expect(legend.map((item) => [item.label, item.color])).toEqual([
       ['Open rate', '#009AFF'],
@@ -1110,14 +1110,26 @@ describe('newsletter recipient rules', () => {
     });
   });
 
-  // A pending delivery has not landed, so it has no open yet and reads as not opened.
-  it('badges a pending delivery neutral and reads it as not opened', () => {
-    expect(buildHealthMetricsEngagementRecipientRow({ ...recipients[0], deliveryStatus: 'Pending' }, now)).toMatchObject({
+  // A pending delivery has not landed, so it reads and counts as not opened, whatever the view segments it as.
+  it('badges a pending delivery neutral and reads and counts it as not opened', () => {
+    const pending = { ...recipients[0], deliveryStatus: 'Pending' };
+
+    expect(buildHealthMetricsEngagementRecipientRow(pending, now)).toMatchObject({
       deliveryLabel: 'Pending',
       deliveryTone: 'neutral',
       engagementLabel: 'Not opened',
       engagementTone: 'neutral',
+      opensDescription: '',
+      clicksDescription: '',
     });
+    expect(filterHealthMetricsEngagementRecipients([pending], 'opened', '')).toEqual([]);
+    expect(filterHealthMetricsEngagementRecipients([pending], 'clicked', '')).toEqual([]);
+    expect(filterHealthMetricsEngagementRecipients([pending], 'not-opened', '')).toEqual([pending]);
+  });
+
+  it('gives a nameless recipient an empty avatar name, so the avatar shows its glyph', () => {
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[2], now)).toMatchObject({ nameLabel: '—', avatarName: '' });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now).avatarName).toBe('Recipient Alpha');
   });
 
   it('builds the status counts as a metrics row, each with its dot and tooltip', () => {

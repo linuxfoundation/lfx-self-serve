@@ -8,7 +8,11 @@ import {
 } from '../constants/health-metrics-line-chart.constants';
 
 import type { HealthMetricsChartTipView } from '../interfaces/health-metrics-l2.interface';
-import type { HealthMetricsLineChartInput, HealthMetricsLineChartView } from '../interfaces/health-metrics-line-chart.interface';
+import type {
+  HealthMetricsLineChartInput,
+  HealthMetricsLineChartTickView,
+  HealthMetricsLineChartView,
+} from '../interfaces/health-metrics-line-chart.interface';
 
 /**
  * The design's `line2` chart: straight segments between the points, a soft fill under the first filled series, 8px
@@ -35,6 +39,12 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
     return d.trim();
   };
 
+  const ticks = input.xLabels.map((label, index) => ({
+    key: String(index),
+    label,
+    leftPct: (x(index) / width) * 100,
+    align: lineChartTickAlign(index, count),
+  }));
   const filled = input.series.find((series) => series.fill);
   const filledIndexes = filled ? filled.values.flatMap((value, index) => (value === null ? [] : [index])) : [];
   const first = filledIndexes[0];
@@ -61,9 +71,22 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
       ),
     columns: input.xLabels.map((label, index) => {
       const tip = input.tips[index] ?? { title: label, rows: [] };
-      return { key: String(index), leftPct: (x(index) / width) * 100, widthPct: 100 / Math.max(count, 1), tip, ariaLabel: lineChartTipLabel(tip) };
+      // Cut off at the plot's edges, so an end column never covers the y labels or the card beside the chart.
+      const centre = (x(index) / width) * 100;
+      const half = 50 / Math.max(count, 1);
+      const left = Math.max(0, centre - half);
+      const columnWidth = Math.min(100, centre + half) - left;
+      return {
+        key: String(index),
+        leftPct: left,
+        widthPct: columnWidth,
+        pointOffsetPct: ((centre - left) / columnWidth) * 100,
+        tip,
+        ariaLabel: lineChartTipLabel(tip),
+      };
     }),
-    xLabels: [...input.xLabels],
+    ticks,
+    monthTicks: ticks.filter((tick, index) => index === 0 || tick.label !== ticks[index - 1].label),
     ariaLabel: input.ariaLabel,
   };
 }
@@ -73,12 +96,20 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
  * times a power of ten). A chart with nothing above zero still gets an axis of 4.
  */
 export function healthMetricsLineChartCountCeiling(peak: number): number {
-  if (!Number.isFinite(peak) || peak <= 0) return 4;
+  // Never below 4, so a tiny peak still labels its quarters with whole, distinct numbers.
+  if (!Number.isFinite(peak) || peak <= 4) return 4;
 
   const quarter = peak / 4;
   const magnitude = 10 ** Math.floor(Math.log10(quarter));
   const step = HEALTH_METRICS_LINE_CHART_QUARTER_STEPS.find((candidate) => candidate * magnitude >= quarter) ?? 10;
   return step * magnitude * 4;
+}
+
+/** A spread row's alignment: the first label starts at the left edge, the last ends at the right, the rest centre on their point. */
+function lineChartTickAlign(index: number, count: number): HealthMetricsLineChartTickView['align'] {
+  if (count === 1) return 'center';
+  if (index === 0) return 'start';
+  return index === count - 1 ? 'end' : 'center';
 }
 
 /** "Title, Label value, Label value": the popup as one line, for the column's accessible name. */

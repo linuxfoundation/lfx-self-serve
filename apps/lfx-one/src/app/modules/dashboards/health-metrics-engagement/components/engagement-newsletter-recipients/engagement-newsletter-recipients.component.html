@@ -74,7 +74,7 @@
         <ng-template #body let-row>
           <tr [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank">
             <td>
-              <lfx-health-metrics-cell [text]="row.nameLabel" [lead]="{ kind: 'person', name: row.nameLabel, photoUrl: '' }" [description]="row.description" />
+              <lfx-health-metrics-cell [text]="row.nameLabel" [lead]="{ kind: 'person', name: row.avatarName, photoUrl: '' }" [description]="row.description" />
             </td>
             <td>
               <lfx-ui-badge [tone]="row.deliveryTone" [attr.data-testid]="'engagement-newsletter-recipients-row-' + row.rank + '-delivery'">{{
