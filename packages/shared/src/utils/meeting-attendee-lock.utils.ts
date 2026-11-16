@@ -93,6 +93,28 @@ export function getSavedAttendeeVisibility(
 }
 
 /**
+ * Whether the pre-v2 wizard should leave the stored attendee visibility untouched on save.
+ * @description The wizard locks the toggle off for every restricted meeting, so it can neither show
+ * nor change an opt-in made in the meeting v2 composer, where only Board locks. Sending its forced
+ * `false` would clear that opt-in whenever someone without the v2 flag edits the meeting for any
+ * other reason (#5438). It omits the field instead, and the BFF keeps the stored value.
+ *
+ * Only an edit of a meeting that was already restricted and stays restricted qualifies, and only
+ * while the composer rule would leave it unlocked: switching to Board still writes `false`, and
+ * turning `restricted` on in this edit still writes the `false` the organizer was shown.
+ */
+export function shouldPreserveStoredAttendeeVisibility(
+  existing: Pick<Meeting, 'restricted'> | null | undefined,
+  meetingType: string | null | undefined,
+  restricted: boolean | string | null | undefined
+): boolean {
+  if (!existing || !isShowMeetingAttendeesLocked(null, existing.restricted)) {
+    return false;
+  }
+  return isShowMeetingAttendeesLocked(meetingType, restricted) && !isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK);
+}
+
+/**
  * Whether the meeting's guest list may be shown to invitees who are not organizers.
  * @description Reads the stored flag through the composer lock (`allowRestricted`), the same rule
  * the BFF enforces on write: a restricted (invite-only) meeting shares its list when the organizer
