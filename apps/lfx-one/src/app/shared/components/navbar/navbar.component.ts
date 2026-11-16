@@ -447,7 +447,7 @@ export class NavbarComponent extends NavMenuBase {
       return;
     }
     this.lensService.commitMenuLens();
-    void this.router.navigate(this.orgLensNavigation.orgLensLink('overview'));
+    void this.router.navigate(this.orgLensNavigation.orgLensLink(this.orgLensNavigation.orgLensHomePage()));
   }
 
   protected openChangelogDrawer(): void {

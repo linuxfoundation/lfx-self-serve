@@ -3,13 +3,13 @@
 
 import { inject } from '@angular/core';
 import { ActivatedRouteSnapshot, CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_EASYCLA_PAGE_SEGMENT, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_PAGE_SEGMENT, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_LENS_ROLL_UP_HOME_PAGE, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 
 import { AccountContextService } from '../services/account-context.service';
 
 /**
  * Keeps a page that is single-organization *by definition* off a family roll-up, sending it to
- * that roll-up's own overview instead (#4125).
+ * that roll-up's home page, Memberships, instead (#4125, #4133).
  *
  * Three pages qualify. Organization Profile edits one `b2b_org` record, EasyCLA is about a
  * corporate CLA, which belongs to one company, and Crowdfunding Donations reads
@@ -23,9 +23,9 @@ import { AccountContextService } from '../services/account-context.service';
  * bookmarked address, and a cookie that restores the roll-up under a legacy address, arrive the
  * same way; EasyCLA's own requests need a concrete organization for the same reason.
  *
- * Deliberately NOT a general "this page has no roll-up rendering" gate: the other Org Lens pages
- * are untaught only until #4135–#4137 teach them, and a list of those here would have to be
- * unpicked page by page as they land. This guard is for the permanent exception.
+ * Not the gate for a page that has no roll-up rendering *yet*: that is `orgRollUpUnavailablePageGuard`,
+ * which keeps the address and shows an empty state, and which a page leaves by joining
+ * `ORG_LENS_ROLL_UP_PAGES`. This guard is for the permanent exception.
  *
  * Runs on the server too. The selection is restored from the cookie before the first guard, so a
  * roll-up SSR render of `/org/profile` redirects rather than rendering a page it cannot fill.
@@ -53,7 +53,7 @@ export const orgRollUpSingleOrgPageGuard: CanActivateFn = (route: ActivatedRoute
   if (isLegacyEasyclaReturn(route)) {
     return true;
   }
-  return inject(Router).createUrlTree(['/org', accountContext.selectedAccount().uid, 'overview']);
+  return inject(Router).createUrlTree(['/org', accountContext.selectedAccount().uid, ORG_LENS_ROLL_UP_HOME_PAGE]);
 };
 
 /**
