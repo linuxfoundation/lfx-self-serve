@@ -509,6 +509,38 @@ describe('OrgMembershipsComponent', () => {
       expect(has(fixture, 'memberships-expired-table')).toBe(true);
     });
 
+    it('drops a pending company-filtered Expired response after switching to another organization and back', async () => {
+      const expired: OrgExpiredMembershipsResponse = { accountId: ROLL_UP, memberships: [], organizations: [PARENT_ORG, SUBSIDIARY_ORG] };
+      const { fixture, getExpiredMemberships, selectedAccount } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+      const rollUpAccount = selectedAccount();
+      const requests: Subject<OrgExpiredMembershipsResponse>[] = [];
+      getExpiredMemberships.mockImplementation(() => {
+        const request = new Subject<OrgExpiredMembershipsResponse>();
+        requests.push(request);
+        return request;
+      });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      requests[0].next(expired);
+      (fixture.componentInstance as unknown as { companyFilterForm: FormGroup }).companyFilterForm.controls['expiredCompany'].setValue(PARENT_ORG.accountId);
+      expect(requests).toHaveLength(2);
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-active"]') as HTMLButtonElement).click();
+      selectedAccount.set({ accountId: 'acc-2', accountName: 'Other Co', membershipTier: '', uid: 'org-uid-2', slug: 'other' });
+      await settleActiveFetch(fixture);
+      selectedAccount.set(rollUpAccount);
+      await settleActiveFetch(fixture);
+      requests[1].next({ ...expired, memberships: [] });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(requests).toHaveLength(3);
+      expect(getExpiredMemberships).toHaveBeenLastCalledWith(ROLL_UP, undefined, undefined);
+    });
+
     it('shows no Company column or filter, and the single-organization card labels, for a single organization', async () => {
       const { fixture } = await render([membershipRow(3)]);
       await settleActiveFetch(fixture);

@@ -200,6 +200,8 @@ export class OrgMembershipsComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(([orgUid, tab]) => {
         if (this.lastOrgUid && this.lastOrgUid !== orgUid) {
+          // Invalidates any pending Expired request, so a round trip back to this org can't land its stale response.
+          this.expiredRequestId++;
           this.expiredData.set(null);
           this.discoverData.set(null);
           this.companyFilterForm.controls.company.setValue('');
