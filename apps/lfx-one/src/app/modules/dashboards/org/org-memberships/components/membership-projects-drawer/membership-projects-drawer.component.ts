@@ -138,7 +138,7 @@ export class MembershipProjectsDrawerComponent {
 
   // A family roll-up key is not a valid project-detail segment, so roll-up links go to the row's own organization.
   private projectLink(project: string): string[] {
-    if (this.accountContext.isRollUp()) return ['/org', this.orgUid(), 'projects', project];
+    if (this.accountContext.isRollUp()) return ['/company', this.orgUid(), 'projects', project];
     return this.orgLens.orgLensLink('projects', project);
   }
 

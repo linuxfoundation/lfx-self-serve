@@ -23,6 +23,7 @@ describe('OrgLensNavigationService', () => {
   /** Derived exactly as `AccountContextService` derives it (slug, else SFID; reserved names fall back). */
   let selectedUrlSegment: Signal<string | null>;
   let isAddressedSelection: WritableSignal<boolean>;
+  let isRollUp: WritableSignal<boolean>;
   let service: OrgLensNavigationService;
   let router: Router;
   let navigate: MockInstance<Router['navigate']>;
@@ -32,9 +33,10 @@ describe('OrgLensNavigationService', () => {
     selectedAccount = signal<Account>(acme);
     selectedUrlSegment = computed(() => orgUrlSegment(selectedAccount()));
     isAddressedSelection = signal(false);
+    isRollUp = signal(false);
     currentUrl = '/';
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment, isAddressedSelection } }],
+      providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment, isAddressedSelection, isRollUp } }],
     });
     router = TestBed.inject(Router);
     Object.defineProperty(router, 'url', { get: () => currentUrl });
@@ -77,6 +79,14 @@ describe('OrgLensNavigationService', () => {
     it('lands on the legacy overview while nothing is selected', () => {
       selectedAccount.set(placeholder);
       expect(service.orgLensLandingLink()).toEqual(['/company', 'overview']);
+    });
+
+    // #4133: Memberships is the one page a roll-up renders, so entering Org Lens on one lands there.
+    it('lands a family roll-up on its Memberships page', () => {
+      selectedAccount.set({ ...placeholder, uid: 'family-0014100000RootAAAA', accountId: 'family-0014100000RootAAAA' });
+      isAddressedSelection.set(true);
+      isRollUp.set(true);
+      expect(service.orgLensLandingLink()).toEqual(['/company', 'family-0014100000RootAAAA', 'memberships']);
     });
   });
 
@@ -216,14 +226,14 @@ describe('OrgLensNavigationService', () => {
     it.each([['/company'], ['/company/people'], ['/company/easycla/abc-123']])('replaces an address that names no organization (%s)', (url) => {
       currentUrl = url;
       service.navigateToRollUpHome('0014100000RootAAAA');
-      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/overview');
+      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/memberships');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
     it.each([['/company/acme-inc/projects'], ['/company/not-found']])('pushes from an address Back should return to (%s)', (url) => {
       currentUrl = url;
       service.navigateToRollUpHome('0014100000RootAAAA');
-      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/overview');
+      expect(navigatedTo()).toBe('/company/family-0014100000RootAAAA/memberships');
       expect(navigate.mock.calls[0][1]?.replaceUrl).toBeFalsy();
     });
 

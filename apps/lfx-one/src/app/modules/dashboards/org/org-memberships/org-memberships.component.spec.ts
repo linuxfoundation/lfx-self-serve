@@ -467,7 +467,7 @@ describe('OrgMembershipsComponent', () => {
       const hrefs = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="memberships-active-row-link-cncf"]') as NodeListOf<HTMLAnchorElement>).map(
         (a) => (a as HTMLAnchorElement).getAttribute('href')
       );
-      expect(hrefs).toEqual([`/org/${PARENT_ORG.accountId}/memberships/cncf`, `/org/${SUBSIDIARY_ORG.accountId}/memberships/cncf`]);
+      expect(hrefs).toEqual([`/company/${PARENT_ORG.accountId}/memberships/cncf`, `/company/${SUBSIDIARY_ORG.accountId}/memberships/cncf`]);
     });
 
     it('opens the Org Projects panel for the row’s own organization', async () => {
@@ -493,7 +493,9 @@ describe('OrgMembershipsComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
 
-      expect(document.querySelector('[data-testid="membership-project-k8s"] a')?.getAttribute('href')).toBe(`/org/${SUBSIDIARY_ORG.accountId}/projects/k8s`);
+      expect(document.querySelector('[data-testid="membership-project-k8s"] a')?.getAttribute('href')).toBe(
+        `/company/${SUBSIDIARY_ORG.accountId}/projects/k8s`
+      );
     });
 
     it('keeps the loaded expired table when an older request for the same company fails after company A → B → A', async () => {

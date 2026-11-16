@@ -158,7 +158,10 @@ const createNavbarFixture = async (
       },
       { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       { provide: LensService, useValue: createLensServiceFake(lens, lenses) },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn((page: string) => ['/company', 'acme', page]) } },
+      {
+        provide: OrgLensNavigationService,
+        useValue: { orgLensLink: vi.fn((page: string) => ['/company', 'acme', page]), orgLensHomePage: vi.fn(() => 'overview') },
+      },
       {
         provide: UserService,
         useValue: {
@@ -533,6 +536,17 @@ describe('NavbarComponent', () => {
 
       expect(lensService.activeLens()).toBe('org');
       expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/company', 'acme', 'overview']);
+    });
+
+    // #4133: a roll-up picked in a previewed Org Lens keeps the selector's landing, its Memberships page.
+    it('lands a roll-up picked in a previewed Org Lens on its home page', async () => {
+      const navbar = await createNavbar([], [], {}, { lens: 'me', mobile: true, lenses: [ALL_LENSES.me, ALL_LENSES.org] });
+      vi.mocked(TestBed.inject(OrgLensNavigationService).orgLensHomePage).mockReturnValue('memberships');
+      navbar.switchLens('org');
+
+      navbar.onOrgSelected();
+
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/company', 'acme', 'memberships']);
     });
 
     it('only closes the drawer on an organization pick without a preview, leaving the address to the selector', async () => {

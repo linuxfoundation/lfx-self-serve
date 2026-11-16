@@ -21,6 +21,7 @@
 
 import { OrgLensEmptyStateCopy, OrgLensEmptyStateName, OrgLensSectionErrorOutcome } from '../interfaces/org-lens-empty-state.interface';
 import { LINKS_CONFIG } from './links.config';
+import { ORG_LENS_ROLL_UP_HOME_PAGE } from './org-lens-url.constants';
 
 /** In-app route of the LFX profile attributions page (FR-006 primary) — environment-agnostic. */
 export const ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE = ['/profile', 'attributions'];
@@ -114,6 +115,14 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     reason: 'We could not confirm your access to this company right now. This is a temporary problem — nothing has changed about your permissions.',
     icon: 'fa-light fa-rotate-right',
     primary: { label: 'Retry', action: 'retry' },
+  },
+  'roll-up-unavailable': {
+    headline: 'This page is not available for a roll-up yet',
+    reason:
+      "This page doesn't combine your organizations yet. Open Memberships for the combined view, or pick a single organization in the selector to see this page.",
+    icon: 'fa-light fa-layer-group',
+    // The legacy form names no organization; the page passes the roll-up's own address as `primaryRoute`.
+    primary: { label: 'Go to Memberships', route: ['/company', ORG_LENS_ROLL_UP_HOME_PAGE] },
   },
 };
 

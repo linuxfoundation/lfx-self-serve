@@ -42,9 +42,9 @@ describe('orgRollUpSingleOrgPageGuard', () => {
   const run = (opts: Parameters<typeof snapshot>[0]): boolean | UrlTree =>
     TestBed.runInInjectionContext(() => orgRollUpSingleOrgPageGuard(snapshot(opts), {} as never) as boolean | UrlTree);
 
-  const redirectsToRollUpOverview = (result: boolean | UrlTree): void => {
+  const redirectsToRollUpHome = (result: boolean | UrlTree): void => {
     expect(result).toBeInstanceOf(UrlTree);
-    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe(`/company/${FAMILY_SEGMENT}/overview`);
+    expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe(`/company/${FAMILY_SEGMENT}/memberships`);
   };
 
   it('lets a concrete organization through', () => {
@@ -59,9 +59,9 @@ describe('orgRollUpSingleOrgPageGuard', () => {
     ['legacy EasyCLA with no return', { page: 'easycla' as const }],
     ['addressed Donations', { page: 'donations' as const, addressed: true }],
     ['legacy Donations, parameter or not', { page: 'donations' as const, queryParams: { company: '0014100000AaaAAAAA' } }],
-  ])('redirects %s to the roll-up overview', (_label, opts) => {
+  ])("redirects %s to the roll-up's Memberships page", (_label, opts) => {
     isRollUp.set(true);
-    redirectsToRollUpOverview(run(opts));
+    redirectsToRollUpHome(run(opts));
   });
 
   /**
@@ -97,6 +97,6 @@ describe('orgRollUpSingleOrgPageGuard', () => {
     ['a return whose organization is empty', { page: 'easycla' as const, queryParams: { company: '   ', signed: '1' } }],
   ])('still redirects %s', (_label, opts) => {
     isRollUp.set(true);
-    redirectsToRollUpOverview(run(opts));
+    redirectsToRollUpHome(run(opts));
   });
 });
