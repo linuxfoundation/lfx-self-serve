@@ -245,7 +245,9 @@ describe('MeetingDetailsContext', () => {
   it('reloads the participants now and after 1s, and the past list behind the drawer', () => {
     vi.useFakeTimers();
     const refreshUserPastMeetings = vi.fn();
-    TestBed.overrideProvider(UserService, { useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings, confirmedMeetingRsvps: () => [] } });
+    TestBed.overrideProvider(UserService, {
+      useValue: { authenticated, refreshUserMeetings: vi.fn(), refreshUserPastMeetings, confirmedMeetingRsvps: () => [] },
+    });
     const context = create(buildRow(PAST as unknown as Meeting));
 
     context.refreshParticipants();
@@ -258,7 +260,13 @@ describe('MeetingDetailsContext', () => {
   it('keeps a saved answer after a feed refresh retires it, and takes a newer copy of the same answer', () => {
     const confirmed = signal<MeetingRsvp[]>([]);
     TestBed.overrideProvider(UserService, {
-      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
     });
     const context = create(buildRow(MEETING));
     const saved = { id: 'rsvp-1', registrant_id: 'reg-1', response_type: 'accepted', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
@@ -277,7 +285,13 @@ describe('MeetingDetailsContext', () => {
   it('keeps a write saved after a retirement even when its acknowledgement is older than the kept copy', () => {
     const confirmed = signal<MeetingRsvp[]>([]);
     TestBed.overrideProvider(UserService, {
-      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
     });
     const context = create(buildRow(MEETING));
     const saved = { id: 'rsvp-1', registrant_id: 'reg-1', response_type: 'accepted', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
@@ -295,7 +309,13 @@ describe('MeetingDetailsContext', () => {
   it('drops answers from other registrations once a newer all-dates answer covers them', () => {
     const confirmed = signal<MeetingRsvp[]>([]);
     TestBed.overrideProvider(UserService, {
-      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
     });
     const context = create(buildRow(MEETING));
     const single = { id: 'rsvp-a', registrant_id: 'reg-a', response_type: 'accepted', scope: 'single', modified_at: '2049-12-01T10:00:00Z' } as MeetingRsvp;
@@ -313,6 +333,7 @@ describe('MeetingDetailsContext', () => {
     const ended = new Set<string>();
     TestBed.overrideProvider(UserService, {
       useValue: {
+        authenticated,
         refreshUserMeetings: vi.fn(),
         refreshUserPastMeetings: vi.fn(),
         confirmedMeetingRsvps: () => confirmed(),
@@ -337,6 +358,7 @@ describe('MeetingDetailsContext', () => {
     const confirmed = signal<MeetingRsvp[]>([]);
     TestBed.overrideProvider(UserService, {
       useValue: {
+        authenticated,
         refreshUserMeetings: vi.fn(),
         refreshUserPastMeetings: vi.fn(),
         confirmedMeetingRsvps: () => confirmed(),
@@ -356,7 +378,13 @@ describe('MeetingDetailsContext', () => {
   it('keeps recovered history at its own timestamp beside a newer retired single-date answer', () => {
     const confirmed = signal<MeetingRsvp[]>([]);
     TestBed.overrideProvider(UserService, {
-      useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn(), confirmedMeetingRsvps: () => confirmed(), isMeetingRsvpCurrent: () => true },
+      useValue: {
+        authenticated,
+        refreshUserMeetings: vi.fn(),
+        refreshUserPastMeetings: vi.fn(),
+        confirmedMeetingRsvps: () => confirmed(),
+        isMeetingRsvpCurrent: () => true,
+      },
     });
     const context = create(buildRow(MEETING));
     const single = { id: 'rsvp-s', registrant_id: 'reg-a', response_type: 'declined', scope: 'single', modified_at: '2049-12-01T11:00:00Z' } as MeetingRsvp;
