@@ -100,7 +100,7 @@ export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus
   importing: { label: 'Adding…', severity: 'info' },
   added: { label: 'Added', severity: 'success' },
   failed: { label: 'Failed', severity: 'danger' },
-  waiting: { label: 'Waiting to resume', severity: 'warn' },
+  waiting: { label: 'Pending', severity: 'secondary' },
   not_submitted: { label: 'Not yet submitted', severity: 'secondary' },
 };
 

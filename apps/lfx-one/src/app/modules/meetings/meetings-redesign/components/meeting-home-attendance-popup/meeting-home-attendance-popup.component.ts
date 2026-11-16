@@ -12,6 +12,7 @@ import {
   Component,
   computed,
   DestroyRef,
+  ElementRef,
   inject,
   input,
   Signal,
@@ -63,6 +64,7 @@ export class MeetingHomeAttendancePopupComponent {
   protected readonly open = signal(false);
   protected readonly loading = signal(false);
   private readonly connectedOverlay = viewChild(CdkConnectedOverlay);
+  private readonly trigger = viewChild.required<ElementRef<HTMLElement>>('trigger');
   private readonly cache = signal<Record<string, readonly (MeetingRegistrant | PastMeetingParticipant)[]>>({});
 
   protected readonly people: Signal<readonly (MeetingRegistrant | PastMeetingParticipant)[] | null> = computed(() => this.cache()[this.row().key] ?? null);
@@ -80,6 +82,8 @@ export class MeetingHomeAttendancePopupComponent {
   private requestKey: string | null = null;
   // Keyboard focus keeps the popup open when the pointer leaves, as a scroll under a still pointer does.
   private keyboardFocused = false;
+  // Focus handed back to the trigger from the popup, which must not reopen it.
+  private quietFocus = false;
 
   public constructor() {
     // Re-place the popup once the grid replaces the spinner, and on any scroll, as the list scrolls in its own column.
@@ -112,7 +116,29 @@ export class MeetingHomeAttendancePopupComponent {
 
   protected viewAll(): void {
     this.close();
+    // The drawer hands focus back to whatever had it when it opened, and View all leaves with the popup.
+    this.focusTrigger();
     this.details.open(this.row(), 'attendance', { tab: 'guests' });
+  }
+
+  /** Tab from the trigger moves into the open popup, which the overlay renders outside the page's tab order. */
+  protected onTriggerTab(event: Event): void {
+    const first = this.tabbables()[0];
+    if (!this.visible() || !first) return;
+    event.preventDefault();
+    // Focus inside keeps it open when the pointer leaves, as after a click.
+    this.keyboardFocused = true;
+    first.focus();
+  }
+
+  /** Tabbing past either end of the popup goes back to the trigger; forward also closes it, so the next Tab moves on. */
+  protected onPanelTab(event: Event): void {
+    const tabbables = this.tabbables();
+    const back = (event as KeyboardEvent).shiftKey;
+    if (event.target !== (back ? tabbables[0] : tabbables[tabbables.length - 1])) return;
+    event.preventDefault();
+    if (!back) this.close();
+    this.focusTrigger();
   }
 
   protected cancelHide(): void {
@@ -139,9 +165,11 @@ export class MeetingHomeAttendancePopupComponent {
   }
 
   protected onFocus(): void {
+    if (this.quietFocus) return;
     const modality = this.inputModality.mostRecentModality;
     this.keyboardFocused = modality !== 'mouse' && modality !== 'touch';
-    this.show();
+    // A click opens it on its own; focus restored after a pointer close of the drawer must not.
+    if (this.keyboardFocused) this.show();
   }
 
   // Focus moving between the block and the popup keeps it open.
@@ -155,7 +183,9 @@ export class MeetingHomeAttendancePopupComponent {
   protected onOverlayKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Escape' || hasModifierKey(event)) return;
     event.preventDefault();
+    const inside = !!this.connectedOverlay()?.overlayRef?.overlayElement.contains(this.document.activeElement);
     this.close();
+    if (inside) this.focusTrigger();
   }
 
   // The trigger is a button, so its name carries the visible text.
@@ -165,6 +195,17 @@ export class MeetingHomeAttendancePopupComponent {
       const parts = label === ariaLabel ? [label] : [label, ariaLabel];
       return [...parts, ...(poor ? ['This meeting was poorly attended'] : [])].join('. ');
     });
+  }
+
+  private focusTrigger(): void {
+    this.quietFocus = true;
+    this.trigger().nativeElement.focus();
+    this.quietFocus = false;
+  }
+
+  private tabbables(): HTMLElement[] {
+    const panel = this.document.getElementById(this.panelId);
+    return panel ? Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]')) : [];
   }
 
   private cancelShow(): void {
