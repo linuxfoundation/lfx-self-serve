@@ -1,10 +1,10 @@
 ---
-title: LinkedIn targeting and ad variants
-description: See and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+title: LinkedIn budget, targeting and ad variants
+description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
-tags: [campaigns, paid marketing, linkedin ads, sponsored content, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
-last_updated: 2026-11-13
+tags: [campaigns, paid marketing, linkedin ads, sponsored content, budget, daily cap, lifetime budget, targeting, member groups, skills, ad variants, intro text, headline, images, implement]
+last_updated: 2026-11-16
 intercom_collection: Dashboards
 ---
 
@@ -15,6 +15,16 @@ When you create a LinkedIn campaign from the **Campaigns** page in the Foundatio
 1. Open **Campaigns** in the Foundation lens and choose **Paid Marketing**.
 2. Open the **Implement** tab for a brief that includes LinkedIn Ads.
 3. In the **LinkedIn Sponsored Content** section, scroll to **Ad variants**. The heading shows how many variants there are, out of the most you can have.
+
+## Budget
+
+The **LinkedIn Budget (USD)** box sets how much the campaign may spend. Leave **Lifetime budget** off and it is a daily budget (at least $10). Turn it on and it is the total for the whole campaign (at least $100).
+
+With **Lifetime budget** on, you can also set an optional **Daily cap (USD)**: the most LinkedIn spends on any one day. For example, a $1,000 lifetime budget with a $20 daily cap. The cap must be at least $10 and no more than the lifetime budget. Leave it empty for no cap.
+
+If the cap is under $10 or over the lifetime budget, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the daily cap." Turning **Lifetime budget** off removes the cap.
+
+After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. A new lifetime budget below the daily cap is refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
 
 ## Edit a variant
 
