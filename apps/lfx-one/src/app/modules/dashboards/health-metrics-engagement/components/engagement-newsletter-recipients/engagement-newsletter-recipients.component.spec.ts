@@ -183,6 +183,16 @@ describe('EngagementNewsletterRecipientsComponent', () => {
     expect(rowRanks()).toHaveLength(3);
   });
 
+  // A page picked against the previous read must not leave a shorter one blank.
+  it('shows the last page that has rows when the page is past the end of the loaded rows', async () => {
+    await render({ ...RECIPIENTS, recipients: Array.from({ length: 13 }, (_, index) => recipient({ rank: index + 1 })) });
+
+    fixture.componentInstance['page'].set(5);
+    fixture.detectChanges();
+
+    expect(rowRanks()).toHaveLength(3);
+  });
+
   it('warns that the counts cover only the loaded recipients when the read was capped', async () => {
     await render({ ...RECIPIENTS, truncated: true });
 

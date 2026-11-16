@@ -101,9 +101,12 @@ export class EngagementNewsletterPerformanceComponent {
   protected readonly chart: Signal<HealthMetricsEngagementNewsletterChartView> = computed(() =>
     buildHealthMetricsEngagementNewsletterChart(this.points(), this.mode())
   );
-  protected readonly pageRows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() =>
-    this.view().rows.slice(this.page() * this.size, (this.page() + 1) * this.size)
-  );
+  // Kept inside the loaded rows, so a page picked before a smaller read lands never leaves the table blank.
+  protected readonly pageRows: Signal<HealthMetricsEngagementNewsletterRowView[]> = computed(() => {
+    const rows = this.view().rows;
+    const page = Math.min(this.page(), Math.max(0, Math.ceil(rows.length / this.size) - 1));
+    return rows.slice(page * this.size, (page + 1) * this.size);
+  });
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
