@@ -93,7 +93,7 @@ import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
-import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
+import { openProjectIcalSubscribeDialog } from '@app/modules/committees/utils/ical-subscribe.util';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -259,11 +259,8 @@ export class MeetingJoinComponent implements OnInit {
   protected readonly stickyBarAction: Signal<'resend' | 'subscribe' | null> = this.initStickyBarAction();
   // The phone bar carries Resend Invite, so the page's own copy is hidden below `sm:` (like the inline Join) to avoid two.
   protected readonly stickyBarOffersResend: Signal<boolean> = computed(() => this.showStickyBar() && this.stickyBarAction() === 'resend');
-  // The project's public calendar feed, built the way the meetings dashboard's iCal Subscribe does.
-  protected readonly projectCalendarFeedUrl: Signal<string> = computed(() => {
-    const projectUid = this.project()?.uid || this.meeting()?.project_uid;
-    return projectUid ? `${environment.urls.home}/public/api/projects/${encodeURIComponent(projectUid)}/calendar.ics` : '';
-  });
+  // The project whose public calendar feed Subscribe opens.
+  protected readonly calendarProjectUid: Signal<string> = computed(() => this.project()?.uid || this.meeting()?.project_uid || '');
   // The bar yields to full-screen overlays (the guests drawer covers the viewport) and the materials drawer.
   protected readonly stickyBarSuppressed: Signal<boolean> = computed(() => this.showRegistrants() || this.materialsDrawerVisible());
   // "Join opens 11:50 AM", in the viewer's zone; the date is added when the window opens on a different day. Waits for the zone
@@ -637,19 +634,11 @@ export class MeetingJoinComponent implements OnInit {
 
   /** Opens the same iCal subscribe dialog the meetings dashboard uses, so the calendar stays in sync (webcal) instead of importing a snapshot. */
   public onSubscribeCalendar(): void {
-    const feedUrl = this.projectCalendarFeedUrl();
-    if (!feedUrl) {
+    const projectUid = this.calendarProjectUid();
+    if (!projectUid) {
       return;
     }
-    const name = this.project()?.name || 'Project';
-    this.dialogService.open(IcalSubscribeDialogComponent, {
-      header: `Subscribe — ${name}`,
-      width: '480px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: { feedUrl, name },
-    });
+    openProjectIcalSubscribeDialog(this.dialogService, projectUid, this.project()?.name || 'Project');
   }
 
   public handleCopyLink(): void {
@@ -1017,7 +1006,7 @@ export class MeetingJoinComponent implements OnInit {
       }
       // The project feed lists public meetings only (private ones are not in it), restricted or not, so it is offered for those alone.
       const inPublicFeed = this.meeting()?.visibility === 'public';
-      return inPublicFeed && this.projectCalendarFeedUrl() ? 'subscribe' : null;
+      return inPublicFeed && this.calendarProjectUid() ? 'subscribe' : null;
     });
   }
 

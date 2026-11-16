@@ -3,7 +3,7 @@
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { CacheCodec, CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
+import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils/org-selector.utils';
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 
@@ -666,6 +666,12 @@ export function buildUserCacheKey(namespace: string, username: string): string |
 export function buildMeetingInviteLockCacheKey(username: string): string | null {
   if (!isFilterSafeUsername(username)) return null;
   return `${keyPrefix()}:${VALKEY_CACHE.MEETING_INVITE_LOCK_NAMESPACE}:${username}`;
+}
+
+/** Per-login mentorship user refresh marker key; null when the login id isn't filter-safe, so the caller falls back to its per-replica marker. */
+export function buildMentorshipUserSyncKey(loginId: string): string | null {
+  if (!isFilterSafeIdentifier(loginId)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.MENTORSHIP_USER_SYNC_NAMESPACE}:${loginId}`;
 }
 
 /**
