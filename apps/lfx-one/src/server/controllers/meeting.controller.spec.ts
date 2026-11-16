@@ -973,12 +973,35 @@ describe('MeetingController', () => {
       generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
     });
 
-    it('enriches committee metadata for a registrant of the meeting', async () => {
+    it('enriches committee metadata for an organizer of the meeting', async () => {
       const res = buildRes();
 
       await controller.getMyMeetingRegistrants(buildReq(), res, next);
 
       expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC', committee_uid: V2_COMMITTEE_UID })]);
+    });
+
+    // Group attribution is committee membership (role, voting status, appointment), not the guest list,
+    // so a guest of a meeting that shares its list gets the plain roster, as on `getMeetingRegistrants`.
+    it.each([
+      ['an open meeting', {}],
+      ['an invite-only meeting', { restricted: true }],
+    ])('returns the plain roster without committee lookups to a guest of %s that shares its list', async (_label, access) => {
+      meetingSvc.getMeetingById.mockResolvedValue({
+        uid: MEETING_ID,
+        organizer: false,
+        show_meeting_attendees: true,
+        committees: [{ uid: V2_COMMITTEE_UID }],
+        ...access,
+      });
+      const res = buildRes();
+
+      await controller.getMyMeetingRegistrants(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([registrant]);
+      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeMembers).not.toHaveBeenCalled();
     });
 
     // Card avatar previews only draw a few faces, so they skip the committee fan-out and accept a

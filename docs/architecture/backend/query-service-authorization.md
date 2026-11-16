@@ -122,6 +122,10 @@ can view the meeting list the guests. Both endpoints first call
 username, like the `invited` flag) pass only when
 `show_meeting_attendees` is on and the meeting isn't Board (`isMeetingAttendeeListShared`; a restricted meeting shares when the organizer opted in, #5438). Everyone else gets `[]`. `my-meeting-registrants` applies the same
 rule. Invitees still see the invited count, from `registrant_count` on the public meeting response.
+Group attribution (each guest's committee, role, voting status and appointment) is committee
+membership rather than the guest list, so both endpoints add it for organizers only: the tolerant
+listing through `assertCommitteeAttributionAllowed`, and `my-meeting-registrants` through the
+access-checked `meeting.organizer`. A guest of a meeting that shares its list gets the plain roster.
 
 `GET /api/past-meetings/:uid/participants` has the same viewer filter, so it calls
 `MeetingService.canViewPastMeetingParticipants`: organizers pass, and so does anyone on the participant
