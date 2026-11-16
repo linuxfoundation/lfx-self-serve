@@ -457,6 +457,7 @@ import {
   linkedInVariantTextError,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
+  roundUsdToCentsLikeGo,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -4930,10 +4931,18 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
-  /** Empty is no cap; anything else is kept as typed and judged by `linkedInDailyCapError`. */
+  /**
+   * Empty is no cap; anything else is kept as typed and judged by `linkedInDailyCapError`. A number
+   * input the browser cannot parse (`1e`) also reads as `''`, so `validity.badInput` is checked first:
+   * that entry is kept as NaN, which the error refuses, rather than silently becoming "no cap".
+   */
   protected onLinkedInDailyCapInput(event: Event): void {
     const input = event.target as HTMLInputElement;
-    this.linkedInDailyCapUsd.set(input.value.trim() === '' ? null : input.valueAsNumber);
+    if (input.validity?.badInput) {
+      this.linkedInDailyCapUsd.set(Number.NaN);
+    } else {
+      this.linkedInDailyCapUsd.set(input.value.trim() === '' ? null : input.valueAsNumber);
+    }
     this.emitDraft();
   }
 
@@ -9989,9 +9998,10 @@ export class ImplementationTabComponent implements OnInit {
       // Not offered, or no lifetime budget: nothing is sent, so nothing can be wrong.
       if (cap === null || !this.linkedInLifetimeBudget() || !this.linkedInDailyCapAvailable()) return null;
       if (!Number.isFinite(cap)) return 'Enter the daily cap in US dollars, or leave it empty for no cap.';
-      const rounded = Math.round(cap * 100) / 100;
+      // Rounded exactly as campaign-service rounds both amounts, ties to the even cent.
+      const rounded = roundUsdToCentsLikeGo(cap);
       if (rounded < LINKEDIN_MIN_DAILY_BUDGET_USD) return `The daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum.`;
-      const total = Math.round(this.linkedInBudgetUsd() * 100) / 100;
+      const total = roundUsdToCentsLikeGo(this.linkedInBudgetUsd());
       if (rounded > total) return "The daily cap can't be more than the lifetime budget.";
       return null;
     });

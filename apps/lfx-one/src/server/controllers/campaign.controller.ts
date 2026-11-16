@@ -9,7 +9,7 @@ import { emailLinkDestinations, hasVisibleHtmlText, sanitizeDisplayText, stripRe
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
-import { resolveLinkedInTargetingProfileId } from '@lfx-one/shared/utils/campaign-linkedin.utils';
+import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import {
   googleAdScheduleRefusal,
   googleAdsDevicesOn,
@@ -6306,11 +6306,12 @@ export class CampaignController {
     if (lifetimeBudget !== true) {
       return 'a daily cap applies only to a lifetime budget; with a daily budget, the budget is already the daily amount';
     }
-    const cap = Math.round(dailyCapUsd * 100) / 100;
+    // Both amounts rounded exactly as campaign-service rounds them (`roundUsdToCentsLikeGo`).
+    const cap = roundUsdToCentsLikeGo(dailyCapUsd);
     if (cap < LINKEDIN_MIN_DAILY_BUDGET_USD) {
       return `the daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum`;
     }
-    if (typeof budgetUsd === 'number' && Number.isFinite(budgetUsd) && budgetUsd > 0 && cap > Math.round(budgetUsd * 100) / 100) {
+    if (typeof budgetUsd === 'number' && Number.isFinite(budgetUsd) && budgetUsd > 0 && cap > roundUsdToCentsLikeGo(budgetUsd)) {
       return "the daily cap can't be more than the lifetime budget";
     }
     return null;

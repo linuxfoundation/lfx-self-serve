@@ -4322,6 +4322,33 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect('dailyCapUsd' in sentConfig('linkedInConfig')).toBe(false);
   });
 
+  it('refuses an entry the browser cannot parse instead of reading it as no cap', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 1000);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    // A number input holding `1e` reports value '' with validity.badInput; jsdom does not model it.
+    const input = linkedInDailyCapInput(fixture) as HTMLInputElement;
+    Object.defineProperty(input, 'validity', { configurable: true, value: { badInput: true } });
+    typeLinkedInDailyCap(fixture, '');
+
+    expect(at(fixture).linkedInDailyCapUsd()).toBeNaN();
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain('Enter the daily cap in US dollars');
+    expect(at(fixture).createBlockedReason()).toBe('LinkedIn Ads: fix the daily cap.');
+  });
+
+  it('judges a half-cent lifetime budget as campaign-service rounds it', async () => {
+    const { fixture } = await mount(null);
+    enableDailyCap(fixture);
+    typeLinkedInBudget(fixture, 100.125);
+    toggleLinkedInLifetimeBudget(fixture, true);
+    typeLinkedInDailyCap(fixture, '100.13');
+
+    const error = fixture.nativeElement.querySelector('[data-testid="implementation-linkedin-daily-cap-error"]') as HTMLElement | null;
+    expect(error?.textContent).toContain("can't be more than the lifetime budget");
+  });
+
   it('treats an emptied daily cap as no cap', async () => {
     const { fixture } = await mount(null);
     enableDailyCap(fixture);
