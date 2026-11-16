@@ -58,9 +58,11 @@
   <!-- Step: Connect (email only) -->
   @if (step() === 'connect') {
     @if (codeSent()) {
-      <p class="text-sm text-slate-600">{{ verificationSentMessage }}</p>
+      <p class="text-sm text-slate-600">
+        Check <strong>{{ form.controls.email.value }}</strong> for a 6-digit verification code. {{ verificationInstructions }}
+      </p>
     } @else {
-      <p class="text-sm text-slate-600">Enter your email address. If it can be added to your account, we'll send you a verification code.</p>
+      <p class="text-sm text-slate-600">Enter your email address to confirm you own it before we check whether it can be linked to your account.</p>
     }
 
     <div class="flex flex-col gap-4">
@@ -77,7 +79,7 @@
           styleClass="text-sm"
           data-testid="add-account-email" />
         @if (!codeSent()) {
-          <p class="text-xs text-slate-500">Codes are sent only to addresses that can be added to your account.</p>
+          <p class="text-xs text-slate-500">Verifying your email doesn’t automatically link it to your account.</p>
         }
       </div>
 
@@ -117,15 +119,16 @@
           @if (verificationError()) {
             <p class="text-center text-sm text-red-600" role="alert" data-testid="add-account-otp-error">
               @if (showSupportLink()) {
-                This email is already linked to an LFX account. If you believe this is an error,
+                You’ve verified this email address, but it’s already linked to an LFX account.
                 <button
                   type="button"
                   lfxOpenIntercom
                   [intercomMessage]="linkedSupportMessage()"
                   class="font-medium underline"
                   data-testid="add-account-linked-support-button">
-                  contact support</button
-                >.
+                  Contact support
+                </button>
+                for help with next steps.
               } @else {
                 {{ verificationError() }}
               }
