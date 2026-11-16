@@ -268,6 +268,7 @@ import {
   ISO_CALENDAR_DATE_PATTERN,
   KEYWORD_ACTION_PLATFORMS,
   LINKEDIN_ADS_MONITOR_ACCOUNT_ID_PATTERN,
+  LINKEDIN_DAILY_CAP_FIELD,
   LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_LIFETIME_BUDGET_USD,
   LINKEDIN_TARGETING_PROFILE_EDIT_FIELD,
@@ -1363,6 +1364,21 @@ export class CampaignController {
             return;
           }
         }
+      }
+
+      // A LinkedIn daily cap beside a lifetime budget (#5774), refused rather than dropped when the
+      // legacy creator would serve, and held to campaign-service's own rules otherwise
+      // (`linkedin.ValidateDailyCap`), so the operator gets this field's sentence instead of a
+      // generic refusal. See `linkedInDailyCapRefusal`.
+      const linkedInDailyCapRefusal = this.linkedInDailyCapRefusal(body, cutoverOn);
+      if (linkedInDailyCapRefusal !== null) {
+        next(
+          ServiceValidationError.forField(LINKEDIN_DAILY_CAP_FIELD, linkedInDailyCapRefusal, {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
       }
 
       // Google Ads resolves every country code against a CURATED map before its first mutate and
@@ -6259,6 +6275,41 @@ export class CampaignController {
       if (!Array.isArray(value)) continue;
       const index = value.findIndex((entry: unknown) => entry !== null && typeof entry === 'object' && 'imageAssetId' in entry);
       if (index !== -1) return `${field}[${index}].imageAssetId`;
+    }
+    return null;
+  }
+
+  /**
+   * Why `linkedInConfig.dailyCapUsd` (#5774) cannot be forwarded, or `null` when it is absent or
+   * acceptable.
+   *
+   * - Only campaign-service creates a capped campaign (linuxfoundation/lfx-v2-campaign-service#607);
+   *   the legacy creator would drop the field and spend without the cap, so the cutover must be on.
+   * - The rest mirrors `linkedin.ValidateDailyCap`: a JSON number, beside `lifetimeBudget: true`, at
+   *   least LinkedIn's $10 daily minimum, and no more than `budgetUsd`, each at two-decimal wire
+   *   precision. campaign-service repeats every check.
+   *
+   * Messages never echo a caller value.
+   */
+  private linkedInDailyCapRefusal(body: CampaignCreateRequest, cutoverOn: boolean): string | null {
+    const config: unknown = body?.linkedInConfig;
+    if (config === null || typeof config !== 'object' || !('dailyCapUsd' in config)) return null;
+    if (!cutoverOn) {
+      return 'LinkedIn daily caps are not enabled on this deployment; remove the daily cap to create the campaign';
+    }
+    const { dailyCapUsd, lifetimeBudget, budgetUsd } = config as Record<string, unknown>;
+    if (typeof dailyCapUsd !== 'number' || !Number.isFinite(dailyCapUsd)) {
+      return 'the daily cap must be a number of US dollars';
+    }
+    if (lifetimeBudget !== true) {
+      return 'a daily cap applies only to a lifetime budget; with a daily budget, the budget is already the daily amount';
+    }
+    const cap = Math.round(dailyCapUsd * 100) / 100;
+    if (cap < LINKEDIN_MIN_DAILY_BUDGET_USD) {
+      return `the daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum`;
+    }
+    if (typeof budgetUsd === 'number' && Number.isFinite(budgetUsd) && budgetUsd > 0 && cap > Math.round(budgetUsd * 100) / 100) {
+      return "the daily cap can't be more than the lifetime budget";
     }
     return null;
   }

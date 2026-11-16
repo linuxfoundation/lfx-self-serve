@@ -1275,6 +1275,8 @@ export interface CampaignImplementationDraft {
    */
   linkedInBudgetUsd?: number;
   linkedInLifetimeBudget?: boolean;
+  /** The optional daily cap beside a LinkedIn lifetime budget (#5774); null or absent is no cap. */
+  linkedInDailyCapUsd?: number | null;
   /**
    * The Reddit budget (LFXV2-3315, which named exactly this field).
    *
@@ -2080,6 +2082,13 @@ export interface LinkedInCampaignCreateRequest {
   hsToken?: string;
   budgetUsd: number;
   lifetimeBudget: boolean;
+  /**
+   * Optional daily spending cap, in USD, beside a LIFETIME budget (#5774): campaign-service sends it
+   * as the campaign's dailyBudget next to its totalBudget (linuxfoundation/lfx-v2-campaign-service#607).
+   * Omitted means no cap. Only with `lifetimeBudget: true`; at least LinkedIn's $10 daily minimum and
+   * no more than `budgetUsd`.
+   */
+  dailyCapUsd?: number;
   startDate: string;
   endDate: string;
   geoTargets: LinkedInGeoTarget[];
