@@ -313,7 +313,10 @@
                       <div class="flex min-w-0 flex-col">
                         <span
                           class="line-clamp-2 break-words text-sm font-medium text-gray-900"
-                          [attr.title]="row.name"
+                          tabindex="0"
+                          [pTooltip]="row.name"
+                          tooltipPosition="top"
+                          tooltipEvent="both"
                           [attr.data-testid]="'foundation-participating-orgs-row-' + row.participantKey + '-name'"
                           >{{ row.name }}</span
                         >

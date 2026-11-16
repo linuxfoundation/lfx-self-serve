@@ -691,7 +691,7 @@ export class SidebarNavService {
           },
         ];
 
-        // Dark-launched (#5697): the page runs on demo data until the warehouse model exists.
+        // Dark-launched (#5697): the page reads live PROJECT_PARTICIPATING_ORGS figures from the warehouse, so the flag is the only gate before it is generally available.
         if (this.isFoundationParticipatingOrgsEnabled()) {
           metricsItems.push({
             label: 'Participating companies',

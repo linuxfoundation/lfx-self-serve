@@ -3,7 +3,7 @@
 
 import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, linkedSignal, type Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -93,6 +93,7 @@ import { FoundationParticipatingOrgsService } from './services/foundation-partic
 export class FoundationParticipatingOrgsComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dataService = inject(FoundationParticipatingOrgsService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly rangeOptions = [...FOUNDATION_PARTICIPATING_ORGS_RANGE_OPTIONS];
   protected readonly maxSearchLength = FOUNDATION_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH;
@@ -175,7 +176,12 @@ export class FoundationParticipatingOrgsComponent {
 
   protected readonly viewState: Signal<FoundationParticipatingOrgsViewState> = computed(() => this.initViewState());
   protected readonly rows: Signal<FoundationParticipatingOrgRowVm[]> = computed(() => this.page().rows.map(decorateFoundationOrgRow));
-  protected readonly showSkeleton = computed(() => this.pageLoading() && this.page().rows.length === 0);
+  /** True from a foundation change until both reads for the new foundation have answered, so nothing of the last foundation (empty, error, tiers) stands in for it. */
+  protected readonly switching = computed(() => {
+    const slug = this.slug();
+    return slug.length > 0 && (this.summaryState().slug !== slug || this.pageState().slug !== slug);
+  });
+  protected readonly showSkeleton = computed(() => (this.pageLoading() || this.switching()) && this.page().rows.length === 0);
   protected readonly refreshing = computed(() => this.pageLoading() && this.page().rows.length > 0);
   protected readonly totalRecords = computed(() => this.page().totalRecords);
   protected readonly rangeLabel = computed(() => FOUNDATION_PARTICIPATING_ORGS_RANGE_LABELS[this.range()]);
@@ -187,10 +193,18 @@ export class FoundationParticipatingOrgsComponent {
   protected readonly dataLine = computed(() => this.initDataLine());
   protected readonly subtitle = computed(() => this.initSubtitle());
   /** Tier classes the foundation holds, from its roster; the last known list stays while a new summary loads. */
-  protected readonly tierOptions = linkedSignal<FoundationParticipatingOrgsSummary | null, { label: MembershipTierClass; value: MembershipTierClass }[]>({
-    source: () => this.summary(),
-    computation: (summary, previous) => (summary ? summary.availableTiers.map((tier) => ({ label: tier, value: tier })) : (previous?.value ?? [])),
+  // The list is kept only for the same foundation: another foundation's tiers must never be offered (or stay selected) for this one.
+  private readonly tierOptionsState = linkedSignal<
+    { slug: string; summary: FoundationParticipatingOrgsSummary | null },
+    { slug: string; options: { label: MembershipTierClass; value: MembershipTierClass }[] }
+  >({
+    source: () => ({ slug: this.slug(), summary: this.summary() }),
+    computation: ({ slug, summary }, previous) => {
+      if (summary) return { slug, options: summary.availableTiers.map((tier) => ({ label: tier, value: tier })) };
+      return { slug, options: previous?.value.slug === slug ? previous.value.options : [] };
+    },
   });
+  protected readonly tierOptions = computed(() => this.tierOptionsState().options);
   protected readonly tiles: Signal<StatCardItem[]> = computed(() => this.initTiles());
   protected readonly tabs: Signal<FilterPillOption[]> = computed(() => this.initTabs());
   protected readonly exportMenu: Signal<MenuItem[]> = computed(() => this.initExportMenu());
@@ -487,6 +501,8 @@ export class FoundationParticipatingOrgsComponent {
 
   /** A 403 on either read is the viewer lacking access to the foundation; any other failure (503 included) is retryable. */
   private initViewState(): FoundationParticipatingOrgsViewState {
+    // A foundation just switched to has answered nothing yet; the last one's error or empty result is not its state.
+    if (this.switching()) return 'ready';
     const statuses = [this.summaryErrorStatus(), this.pageErrorStatus()];
     if (statuses.includes(403)) return 'forbidden';
     if (statuses.some((status) => status !== null)) return 'error';
@@ -605,7 +621,7 @@ export class FoundationParticipatingOrgsComponent {
     this.patchBreakdown(key, { status: 'loading', data: null });
     this.dataService
       .getBreakdown(slug, range, key)
-      .pipe(take(1))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         // A response for a foundation or range the page has since left must not land in the new scope's cache.
         next: (data) => {
