@@ -1082,6 +1082,81 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       }
     });
 
+    describe('searching by name order and LF username (lfx-self-serve#5687)', () => {
+      const search = async (term: string): Promise<string[]> => {
+        const input = el().querySelector<HTMLInputElement>('[data-test="org-people-all-employees-search-input"]');
+        if (!input) throw new Error('All Employees search input is missing');
+        input.value = term;
+        input.dispatchEvent(new Event('input'));
+        await settle();
+        return rowKeys().sort();
+      };
+
+      beforeEach(async () => {
+        await mount('browser', '/?employment=current');
+        snowflake$.next(
+          response(
+            [
+              // Given name first, family name last, as the warehouse stores it.
+              row('p-cjk', '\u660E\u534E \u674E', { commitsCount: 1 }),
+              row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
+              row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
+              row('p-greek', 'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', { firstName: 'ΝΙΚΟΣ', lastName: 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', commitsCount: 1 }),
+              row('p-greek-mixed', 'ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ', { commitsCount: 1 }),
+              // Ignore legacy GitHub metadata from an older server; only the person's existing searchable fields match.
+              Object.assign(row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', commitsCount: 0, eventsCount: 1 }), {
+                githubUsernames: ['example-gh-user'],
+              }),
+              row('p-other', 'Alan Turing', { commitsCount: 1 }),
+            ],
+            7
+          )
+        );
+        snowflake$.complete();
+        former$.next(response([], 0));
+        former$.complete();
+        await settle();
+      });
+
+      it('finds a name searched family name first, with or without a space', async () => {
+        expect(await search('\u674E\u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+        expect(await search('\u674E \u660E\u534E')).toEqual(['org-people-all-employees-row-p-cjk']);
+      });
+
+      it('finds a three-part name from any starting part, ignoring accents and spaces', async () => {
+        expect(await search('p\u00E9rez juan carlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+        expect(await search('perezjuancarlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+      });
+
+      it('finds both stored-name orders when the display name contains only the given name', async () => {
+        for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-stored-parts']);
+        }
+      });
+
+      it('finds spaced and compact Greek names in original and rotated order', async () => {
+        for (const query of ['ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', 'ΝΙΚΟΣΝΙΚΟΛΑΟΣΠΑΠΑΣ', 'ΠΑΠΑΣ ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ', 'ΠΑΠΑΣΝΙΚΟΣΝΙΚΟΛΑΟΣ']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-greek']);
+        }
+      });
+
+      it('finds an exact Greek display name with mixed separators and no stored name parts', async () => {
+        expect(await search('ΑΝΔΡΕΑΣ\u200BΝΙΚΟΛΑΟΣ ΓΕΩΡΓΙΟΣ')).toEqual(['org-people-all-employees-row-p-greek-mixed']);
+      });
+
+      it('does not search GitHub usernames even when a legacy response includes them', async () => {
+        expect(await search('example-gh-user')).toEqual([]);
+        expect(await search('EXAMPLE-GH')).toEqual([]);
+        expect(await search('msomerville')).toEqual(['org-people-all-employees-row-p-github']);
+      });
+
+      it('still applies the other filters to an LF username match', async () => {
+        fixture.componentInstance['filterForm'].controls.activity.setValue('code');
+
+        expect(await search('msomerville')).toEqual([]);
+      });
+    });
+
     it('never joins a key contact on username: the key-contact row and the former row both stay, under "All"', async () => {
       await mount('browser', '/?employment=all');
       await answerCurrent();

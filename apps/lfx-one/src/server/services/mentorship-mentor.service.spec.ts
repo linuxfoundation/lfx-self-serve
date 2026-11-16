@@ -1168,6 +1168,16 @@ describe('MentorshipMentorService.reviewMenteeTask', () => {
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', REVIEW_PATH, 'PATCH', undefined, { status });
   });
 
+  it('sends the reason with a request for changes', async () => {
+    proxyRequest.mockResolvedValueOnce(task('submitted')).mockResolvedValueOnce(task('incomplete'));
+
+    await expect(service.reviewMenteeTask(buildReq(), TASK_ID, 'incomplete', 'Add tests.')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', REVIEW_PATH, 'PATCH', undefined, {
+      status: 'incomplete',
+      reason: 'Add tests.',
+    });
+  });
+
   it.each([
     ['complete', 'complete'],
     ['incomplete', 'in_progress'],

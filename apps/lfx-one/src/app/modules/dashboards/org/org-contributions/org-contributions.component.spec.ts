@@ -147,6 +147,42 @@ describe('OrgContributionsComponent', () => {
     );
   });
 
+  it('keeps GitHub-handle search and the linked Username column on the Commits tab', async () => {
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      totalRecords: 1,
+      commits: [
+        {
+          commitSha: 'abc123',
+          contributorId: 'member-one',
+          personKey: 'person-one',
+          projectName: 'Widgets',
+          committerName: 'Mary Somerville',
+          committerAvatarUrl: null,
+          committerTitle: null,
+          username: 'example-gh-user',
+          source: 'github',
+          committedTs: '2026-10-01T00:00:00Z',
+          message: 'Fix widget',
+          commitUrl: 'https://github.com/example/widgets/commit/abc123',
+        },
+      ],
+    };
+    const { fixture, getContributions } = await render(null, { queryParams: { view: 'commits' }, response });
+
+    fixture.componentInstance['filterForm'].controls.search.setValue('example-gh-user');
+    await pastDebounce(fixture);
+    fixture.detectChanges();
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ view: 'commits', search: 'example-gh-user' }));
+    const el = fixture.nativeElement as HTMLElement;
+    expect(Array.from(el.querySelectorAll('th')).some((header) => header.textContent?.includes('Username'))).toBe(true);
+    const handle = el.querySelector<HTMLAnchorElement>('a[href="https://github.com/example-gh-user"]');
+    expect(handle?.textContent?.trim()).toBe('@example-gh-user');
+    expect(handle?.getAttribute('aria-label')).toBe('Open example-gh-user on GitHub');
+  });
+
   it('trims an over-cap filter selection (e.g. keyboard select-all past selectionLimit) to the cap in the form itself', async () => {
     const { fixture } = await render(null);
     const { projects, employees } = fixture.componentInstance['filterForm'].controls;

@@ -5,9 +5,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MentorshipMentorTaskReviewRequest, MentorshipProgramMentee } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MentorshipTaskFileService } from '../../../../services/mentorship-task-file.service';
+import { TaskChangesDialogComponent } from '../task-changes-dialog/task-changes-dialog.component';
 import { MentorTasksTabComponent } from './mentor-tasks-tab.component';
 
 describe('MentorTasksTabComponent', () => {
@@ -54,14 +57,25 @@ describe('MentorTasksTabComponent', () => {
   let fixture: ComponentFixture<MentorTasksTabComponent>;
   let download: ReturnType<typeof vi.fn>;
   let view: ReturnType<typeof vi.fn>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
 
-  const setup = (mentees: MentorshipProgramMentee[] = [mentee()]): void => {
+  /**
+   * `onClose` is what the Request Changes dialog closes with (`undefined` when dismissed); `null` stands for
+   * `DialogService.open` refusing to open a dialog.
+   */
+  const setup = (mentees: MentorshipProgramMentee[] = [mentee()], onClose: Observable<string | undefined> | null = of('Add tests.')): void => {
     download = vi.fn();
     view = vi.fn();
+    dialogOpen = vi.fn(() => (onClose ? { onClose } : null));
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MentorTasksTabComponent],
-      providers: [provideNoopAnimations(), MessageService, { provide: MentorshipTaskFileService, useValue: { download, view } }],
+      providers: [
+        provideNoopAnimations(),
+        MessageService,
+        { provide: MentorshipTaskFileService, useValue: { download, view } },
+        { provide: DialogService, useValue: { open: dialogOpen } },
+      ],
     });
 
     fixture = TestBed.createComponent(MentorTasksTabComponent);
@@ -157,12 +171,37 @@ describe('MentorTasksTabComponent', () => {
     button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
     button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.click();
 
-    // The row id is unique across mentees; the request carries the upstream task id.
+    // The row id is unique across mentees; the request carries the upstream task id, and changes carry the reason.
     expect(requests).toEqual([
       { taskId: 'tsk_awaiting', status: 'complete' },
-      { taskId: 'tsk_awaiting', status: 'incomplete' },
+      { taskId: 'tsk_awaiting', status: 'incomplete', reason: 'Add tests.' },
     ]);
     expect(addSpy).not.toHaveBeenCalled();
+  });
+
+  it('opens the Request Changes dialog for the mentee and task, and approves without one', () => {
+    button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
+    expect(dialogOpen).not.toHaveBeenCalled();
+
+    button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.click();
+
+    expect(dialogOpen).toHaveBeenCalledWith(
+      TaskChangesDialogComponent,
+      expect.objectContaining({ header: 'Request Changes', data: { menteeName: 'Hana Suzuki', taskName: 'Backpressure design note' } })
+    );
+  });
+
+  it.each([
+    ['dismissed', of(undefined)],
+    ['refused by the dialog service', null],
+  ])('requests no changes when the dialog is %s', (_label, onClose) => {
+    setup([mentee()], onClose);
+    const requests: MentorshipMentorTaskReviewRequest[] = [];
+    fixture.componentInstance.reviewRequested.subscribe((request) => requests.push(request));
+
+    button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.click();
+
+    expect(requests).toEqual([]);
   });
 
   it('disables both review buttons, and emits nothing, while the page is reviewing the task', () => {
@@ -174,7 +213,9 @@ describe('MentorTasksTabComponent', () => {
     expect(button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.disabled).toBe(true);
     expect(button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.disabled).toBe(true);
     button('mentorship-mentor-task-approve-mnt_1__tsk_awaiting')?.click();
+    button('mentorship-mentor-task-request-changes-mnt_1__tsk_awaiting')?.click();
     expect(requests).toEqual([]);
+    expect(dialogOpen).not.toHaveBeenCalled();
 
     fixture.componentRef.setInput('reviewingTaskIds', []);
     fixture.detectChanges();
