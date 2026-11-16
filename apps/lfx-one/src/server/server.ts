@@ -15,12 +15,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
-import { MENTORSHIP_SESSION_SYNCED_KEY } from './constants';
 import { ProfileController } from './controllers/profile.controller';
 import { logAiModelConfig } from './helpers/ai-model.helper';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { attachGwDrainGuard, gwMountPath, isGwProxyPath } from './helpers/gw-api.helper';
 import { buildGwRuntimeConfig } from './helpers/gw-runtime-config.helper';
+import { withMentorshipLoginId } from './helpers/mentorship-api.helper';
 import { applySsrCacheHeaders } from './helpers/ssr-cache-headers.helper';
 import { resolveStoredDisplayName } from './helpers/ssr-display-name.helper';
 import { resolveSsrFlags } from './helpers/ssr-flags.helper';
@@ -306,9 +306,9 @@ const authConfig: ConfigParams = {
   routes: {
     login: false,
   },
-  // A login keeps a same-user session's custom keys, so this clears the mentorship refresh flag: the next mentorship request
-  // refreshes the user's mentorship record from their current identity (see proxyMentorshipRequest).
-  afterCallback: (_req, _res, session) => ({ ...session, [MENTORSHIP_SESSION_SYNCED_KEY]: false }),
+  // Each login gets a new mentorship login id, so its first mentorship request refreshes the user's mentorship record from
+  // their current identity (see proxyMentorshipRequest). A same-user login would otherwise keep the session's custom keys.
+  afterCallback: (_req, _res, session) => withMentorshipLoginId(session),
   ...(sessionStoreEnabled && {
     session: {
       store: sessionStoreService,

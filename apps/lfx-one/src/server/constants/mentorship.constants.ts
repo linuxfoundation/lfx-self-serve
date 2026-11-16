@@ -22,10 +22,22 @@ import {
 export const MENTORSHIP_BOOTSTRAP_PATH = '/mentorship/v1/me';
 
 /**
- * `req.appSession` key set once `PUT /mentorship/v1/me` has refreshed the caller's mentorship record in this session. Every
- * login sets it back to `false`, so the next mentorship request refreshes the record again.
+ * `req.appSession` key holding a random id for the current login, set by `afterCallback` in `server.ts` on every login and never
+ * written afterwards. The mentorship refresh marker is keyed by it, so each login refreshes the mentorship record once.
  */
-export const MENTORSHIP_SESSION_SYNCED_KEY = 'mentorshipUserSynced';
+export const MENTORSHIP_SESSION_LOGIN_ID_KEY = 'mentorshipLoginId';
+
+/**
+ * How long a refresh claim blocks another refresh for the same login: long enough to cover an in-flight `PUT /me` (the API
+ * client's 30s timeout), and the backoff before a failed refresh is tried again.
+ */
+export const MENTORSHIP_USER_SYNC_RETRY_MS = 60_000;
+
+/** How long a completed refresh is remembered: express-openid-connect's default absolute session duration, 7 days. */
+export const MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/** Most logins the per-replica fallback remembers while Valkey is unavailable; the oldest is dropped first. */
+export const MENTORSHIP_USER_SYNC_MEMORY_MAX_ENTRIES = 10_000;
 
 /**
  * The `error` the mentorship service returns with a 401 when the signed-in user has no local

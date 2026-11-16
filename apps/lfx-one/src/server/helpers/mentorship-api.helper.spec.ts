@@ -2,7 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// A Valkey shared by every replica: entries with an expiry, and a switch to make it unavailable.
+const sharedValkey = vi.hoisted(() => {
+  const entries = new Map<string, { value: unknown; expiresAt: number }>();
+  const state = { available: true };
+  const live = (key: string) => {
+    const entry = entries.get(key);
+    return entry && entry.expiresAt > Date.now() ? entry : undefined;
+  };
+  return { entries, state, live };
+});
+
+vi.mock('../services/valkey.service', () => ({
+  buildMentorshipUserSyncKey: (loginId: string) => `test:mentorship-user-sync:${loginId}`,
+  valkeyService: {
+    acquireLock: async (key: string, ttlMs: number) => {
+      if (!sharedValkey.state.available) return { status: 'unavailable' };
+      if (sharedValkey.live(key)) return { status: 'contended' };
+      sharedValkey.entries.set(key, { value: 'lock-token', expiresAt: Date.now() + ttlMs });
+      return { status: 'acquired', token: 'lock-token' };
+    },
+    setJson: async (key: string, value: unknown, ttlSeconds: number) => {
+      if (!sharedValkey.state.available) return false;
+      sharedValkey.entries.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
+      return true;
+    },
+  },
+}));
 
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -17,7 +45,7 @@ vi.mock('../services/logger.service', () => ({
 
 const { MicroserviceError } = await import('../errors');
 const { logger } = await import('../services/logger.service');
-const { listAllMentorshipPages, proxyMentorshipRequest, readMentorshipPages } = await import('./mentorship-api.helper');
+const { listAllMentorshipPages, proxyMentorshipRequest, readMentorshipPages, withMentorshipLoginId } = await import('./mentorship-api.helper');
 
 type Proxy = Parameters<typeof proxyMentorshipRequest>[0];
 
@@ -141,71 +169,137 @@ describe('proxyMentorshipRequest', () => {
   });
 });
 
-describe('proxyMentorshipRequest per-session refresh', () => {
+describe('withMentorshipLoginId', () => {
+  it('starts a new login: keeps the session and sets a fresh login id each time', () => {
+    const session = { id_token: 'id', access_token: 'access', impersonationUser: 'kept' };
+
+    const first = withMentorshipLoginId(session);
+    const second = withMentorshipLoginId(first);
+
+    expect(first).toMatchObject(session);
+    expect(first.mentorshipLoginId).toEqual(expect.any(String));
+    expect(second.mentorshipLoginId).not.toBe(first.mentorshipLoginId);
+    expect(session).not.toHaveProperty('mentorshipLoginId');
+  });
+});
+
+describe('proxyMentorshipRequest per-login refresh', () => {
+  const retryMs = 60_000;
   let proxyRequest: ReturnType<typeof vi.fn>;
   let proxy: Proxy;
+  let logins = 0;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    proxyRequest = vi.fn();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    sharedValkey.entries.clear();
+    sharedValkey.state.available = true;
+    proxyRequest = vi.fn((_req: Request, _service: string, calledPath: string) => Promise.resolve(calledPath === path ? { data: [] } : {}));
     proxy = { proxyRequest } as unknown as Proxy;
   });
 
-  function sessionReq(session: Record<string, unknown>, extra: Record<string, unknown> = {}): Request {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A new login id: the replica fallback remembers logins for the whole module, so tests never share one. */
+  function newLogin(): string {
+    return `login-${++logins}`;
+  }
+
+  /** A request carrying its own copy of the login's session, as each request reads the session separately. */
+  function requestFor(loginId: string | undefined, extra: Record<string, unknown> = {}): Request {
+    const session = loginId ? { mentorshipLoginId: loginId } : {};
     return { ...req, appSession: session, oidc: { user: { sub: 'auth0|alice' } }, ...extra } as unknown as Request;
   }
 
-  it('refreshes the mentorship user with PUT /me before the first request of a session, then marks the session', async () => {
-    const session: Record<string, unknown> = { mentorshipUserSynced: false };
-    proxyRequest.mockResolvedValueOnce({}).mockResolvedValueOnce({ data: [] });
+  function refreshes(): number {
+    return proxyRequest.mock.calls.filter((call) => call[2] === '/mentorship/v1/me' && call[3] === 'PUT').length;
+  }
 
-    await expect(proxyMentorshipRequest(proxy, sessionReq(session), path)).resolves.toEqual({ data: [] });
+  it('refreshes once before the first request of a login, and not for a later request with its own session copy', async () => {
+    const loginId = newLogin();
+    const first = requestFor(loginId);
 
-    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
-    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', path, 'GET', undefined, undefined);
-    expect(session['mentorshipUserSynced']).toBe(true);
+    await expect(proxyMentorshipRequest(proxy, first, path)).resolves.toEqual({ data: [] });
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    expect(proxyRequest).toHaveBeenNthCalledWith(1, first, 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
+    expect(refreshes()).toBe(1);
+    expect(first.appSession).toEqual({ mentorshipLoginId: loginId });
+    expect(sharedValkey.live(`test:mentorship-user-sync:${loginId}`)?.value).toBe(true);
   });
 
-  it('does not refresh again once the session is marked', async () => {
-    proxyRequest.mockResolvedValueOnce({ data: [] });
+  it('refreshes again for a new login', async () => {
+    await proxyMentorshipRequest(proxy, requestFor(newLogin()), path);
+    await proxyMentorshipRequest(proxy, requestFor(newLogin()), path);
 
-    await proxyMentorshipRequest(proxy, sessionReq({ mentorshipUserSynced: true }), path);
-
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', path, 'GET', undefined, undefined);
+    expect(refreshes()).toBe(2);
   });
 
-  it('does not refresh while impersonating', async () => {
-    const session: Record<string, unknown> = {};
-    proxyRequest.mockResolvedValueOnce({ data: [] });
+  it('shares one PUT /me between parallel requests on one replica', async () => {
+    const loginId = newLogin();
 
-    await proxyMentorshipRequest(proxy, sessionReq(session, { impersonationActive: true }), path);
+    await Promise.all([proxyMentorshipRequest(proxy, requestFor(loginId), path), proxyMentorshipRequest(proxy, requestFor(loginId), path)]);
 
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
-    expect(session['mentorshipUserSynced']).toBeUndefined();
+    expect(refreshes()).toBe(1);
   });
 
-  it('still sends the request when the refresh fails, and leaves the session unmarked so the next request retries', async () => {
-    const session: Record<string, unknown> = {};
+  it('refreshes once across replicas, including while another replica is still refreshing', async () => {
+    vi.resetModules();
+    const otherReplica = await import('./mentorship-api.helper');
+    const loginId = newLogin();
+    let finishRefresh: (value: unknown) => void = () => undefined;
+    proxyRequest.mockImplementationOnce(() => new Promise((resolve) => (finishRefresh = resolve)));
+
+    const refreshing = proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    await vi.waitFor(() => expect(refreshes()).toBe(1));
+    await expect(otherReplica.proxyMentorshipRequest(proxy, requestFor(loginId), path)).resolves.toEqual({ data: [] });
+    finishRefresh({});
+    await refreshing;
+    await otherReplica.proxyMentorshipRequest(proxy, requestFor(loginId), path);
+
+    expect(refreshes()).toBe(1);
+  });
+
+  it('still sends the request when the refresh fails, and retries only after the backoff', async () => {
+    const loginId = newLogin();
     const refreshError = MicroserviceError.fromMicroserviceResponse(503, 'Service Unavailable', {}, 'LFX_V2_SERVICE', '/mentorship/v1/me');
-    proxyRequest.mockRejectedValueOnce(refreshError).mockResolvedValueOnce({ data: [] });
+    proxyRequest.mockRejectedValueOnce(refreshError);
 
-    await expect(proxyMentorshipRequest(proxy, sessionReq(session), path)).resolves.toEqual({ data: [] });
+    await expect(proxyMentorshipRequest(proxy, requestFor(loginId), path)).resolves.toEqual({ data: [] });
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    expect(refreshes()).toBe(1);
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_session_sync', expect.any(String), {
+      err: refreshError,
+      retry_after_ms: retryMs,
+    });
 
-    expect(session['mentorshipUserSynced']).toBeUndefined();
-    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'mentorship_session_sync', expect.any(String), { err: refreshError });
+    vi.setSystemTime(Date.now() + retryMs + 1);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    expect(refreshes()).toBe(2);
   });
 
-  it('shares one PUT /me between parallel requests of the same user', async () => {
-    const sessionA: Record<string, unknown> = {};
-    const sessionB: Record<string, unknown> = {};
-    proxyRequest.mockImplementation((_req: Request, _service: string, calledPath: string) => Promise.resolve(calledPath === path ? { data: [] } : {}));
+  it('falls back to this replica while Valkey is unavailable, with the same once-per-login and backoff rules', async () => {
+    sharedValkey.state.available = false;
+    const loginId = newLogin();
+    proxyRequest.mockRejectedValueOnce(MicroserviceError.fromMicroserviceResponse(503, 'Service Unavailable', {}, 'LFX_V2_SERVICE', '/mentorship/v1/me'));
 
-    await Promise.all([proxyMentorshipRequest(proxy, sessionReq(sessionA), path), proxyMentorshipRequest(proxy, sessionReq(sessionB), path)]);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    expect(refreshes()).toBe(1);
 
-    expect(proxyRequest.mock.calls.filter((call) => call[3] === 'PUT')).toHaveLength(1);
-    expect(sessionA['mentorshipUserSynced']).toBe(true);
-    expect(sessionB['mentorshipUserSynced']).toBe(true);
+    vi.setSystemTime(Date.now() + retryMs + 1);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    await proxyMentorshipRequest(proxy, requestFor(loginId), path);
+    expect(refreshes()).toBe(2);
+  });
+
+  it('does not refresh while impersonating, or for a session without a login id', async () => {
+    await proxyMentorshipRequest(proxy, requestFor(newLogin(), { impersonationActive: true }), path);
+    await proxyMentorshipRequest(proxy, requestFor(undefined), path);
+
+    expect(refreshes()).toBe(0);
   });
 });
 

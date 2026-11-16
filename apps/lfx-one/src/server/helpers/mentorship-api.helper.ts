@@ -3,6 +3,7 @@
 
 import { ApiRequestOptions, MentorshipUpstreamListResponse, MentorshipUpstreamUser } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils/string.utils';
+import { randomUUID } from 'crypto';
 import { Request } from 'express';
 
 import {
@@ -10,11 +11,15 @@ import {
   MENTORSHIP_LIST_MAX_PAGES,
   MENTORSHIP_LIST_PAGE_SIZE,
   MENTORSHIP_NOT_PROVISIONED_ERROR,
-  MENTORSHIP_SESSION_SYNCED_KEY,
+  MENTORSHIP_SESSION_LOGIN_ID_KEY,
+  MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS,
+  MENTORSHIP_USER_SYNC_MEMORY_MAX_ENTRIES,
+  MENTORSHIP_USER_SYNC_RETRY_MS,
 } from '../constants';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import type { MicroserviceProxyService } from '../services/microservice-proxy.service';
+import { buildMentorshipUserSyncKey, valkeyService } from '../services/valkey.service';
 import { isImpersonating } from '../utils/auth-helper';
 
 /**
@@ -40,45 +45,101 @@ export function isMentorshipNotProvisionedError(error: unknown): boolean {
   return error instanceof MicroserviceError && error.statusCode === 401 && error.errorBody?.error === MENTORSHIP_NOT_PROVISIONED_ERROR;
 }
 
-/** In-flight session syncs by user `sub`, so the parallel mentorship requests of one page load share a single `PUT /me`. */
-const sessionSyncs = new Map<string, Promise<unknown>>();
+/** In-flight refreshes on this replica by login id, so the parallel mentorship requests of one page load share one `PUT /me`. */
+const inFlightSyncs = new Map<string, Promise<void>>();
+
+/** This replica's refresh markers by login id, used only while Valkey is unavailable: when each stops blocking a refresh (epoch ms). */
+const replicaSyncMarkers = new Map<string, number>();
+
+/** A claim on a login's refresh; `complete` records it as done for the rest of the login. */
+interface MentorshipSyncClaim {
+  complete(): Promise<void>;
+}
 
 /**
- * Refreshes the caller's mentorship record with `PUT /mentorship/v1/me` once per login session: upstream then stores the
- * caller's current email, name and avatar. Login resets the session flag (`afterCallback` in `server.ts`). Runs only for a
- * signed-in session and never while impersonating, which is read-only. A failure is logged and leaves the flag unset, so the
- * next mentorship request tries again; it never fails the request it runs for.
+ * Starts a new login for the mentorship refresh: `afterCallback` in `server.ts` returns the session with a fresh login id, so the
+ * login's first mentorship request refreshes the record. It is never written afterwards, so a request that saves an older copy
+ * of the session cannot undo it.
  */
-async function syncMentorshipUserOncePerSession(proxy: MicroserviceProxyService, req: Request): Promise<void> {
-  const session = req.appSession;
-  if (!session || session[MENTORSHIP_SESSION_SYNCED_KEY] === true || isImpersonating(req)) return;
+export function withMentorshipLoginId<T extends object>(session: T): T & Record<typeof MENTORSHIP_SESSION_LOGIN_ID_KEY, string> {
+  return { ...session, [MENTORSHIP_SESSION_LOGIN_ID_KEY]: randomUUID() };
+}
 
-  const sub: unknown = req.oidc?.user?.['sub'];
-  const key = typeof sub === 'string' && sub ? sub : undefined;
-  let sync = key ? sessionSyncs.get(key) : undefined;
+/**
+ * Refreshes the caller's mentorship record with `PUT /mentorship/v1/me` once per login: upstream then stores the caller's
+ * current email, name and avatar. The marker is kept in Valkey, keyed by the login id, so every replica sees it and no session
+ * write can erase it. Runs only for a session with a login id (one signed in before this change gets one at its next login),
+ * and never while impersonating, which is read-only. A failure is logged and never fails the request it runs for; the claim
+ * then expires after `MENTORSHIP_USER_SYNC_RETRY_MS`, so a later request tries again without retrying on every request.
+ */
+async function syncMentorshipUserOncePerLogin(proxy: MicroserviceProxyService, req: Request): Promise<void> {
+  const loginId: unknown = req.appSession?.[MENTORSHIP_SESSION_LOGIN_ID_KEY];
+  if (typeof loginId !== 'string' || !loginId || isImpersonating(req)) return;
+
+  let sync = inFlightSyncs.get(loginId);
   if (!sync) {
+    sync = refreshMentorshipUser(proxy, req, loginId).finally(() => inFlightSyncs.delete(loginId));
+    inFlightSyncs.set(loginId, sync);
+  }
+  await sync;
+}
+
+async function refreshMentorshipUser(proxy: MicroserviceProxyService, req: Request, loginId: string): Promise<void> {
+  const claim = await claimMentorshipSync(loginId);
+  if (!claim) return;
+  try {
     // Upstream decodes a JSON body and rejects an empty one; it fills every field from the token.
-    sync = proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
-    if (key) {
-      sessionSyncs.set(key, sync);
-      void sync.then(
-        () => sessionSyncs.delete(key),
-        () => sessionSyncs.delete(key)
-      );
+    await proxy.proxyRequest<unknown>(req, 'LFX_V2_SERVICE', MENTORSHIP_BOOTSTRAP_PATH, 'PUT', undefined, {});
+  } catch (error) {
+    logger.warning(req, 'mentorship_session_sync', 'Mentorship user refresh failed; a later mentorship request retries it', {
+      err: error,
+      retry_after_ms: MENTORSHIP_USER_SYNC_RETRY_MS,
+    });
+    return;
+  }
+  await claim.complete();
+}
+
+/**
+ * Claims the login's refresh across replicas with an atomic `SET NX` that lasts `MENTORSHIP_USER_SYNC_RETRY_MS`, or returns
+ * null when the login is already refreshed, being refreshed, or backing off after a failure. While Valkey is unavailable the
+ * claim falls back to this replica's markers.
+ */
+async function claimMentorshipSync(loginId: string): Promise<MentorshipSyncClaim | null> {
+  const key = buildMentorshipUserSyncKey(loginId);
+  if (key) {
+    const lock = await valkeyService.acquireLock(key, MENTORSHIP_USER_SYNC_RETRY_MS);
+    if (lock.status === 'contended') return null;
+    if (lock.status === 'acquired') {
+      return {
+        complete: async () => {
+          await valkeyService.setJson(key, true, MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS);
+        },
+      };
     }
   }
 
-  try {
-    await sync;
-    session[MENTORSHIP_SESSION_SYNCED_KEY] = true;
-  } catch (error) {
-    logger.warning(req, 'mentorship_session_sync', 'Mentorship user refresh failed; retrying on the next mentorship request', { err: error });
+  const blockedUntil = replicaSyncMarkers.get(loginId);
+  if (blockedUntil !== undefined && blockedUntil > Date.now()) return null;
+  rememberReplicaSync(loginId, Date.now() + MENTORSHIP_USER_SYNC_RETRY_MS);
+  return {
+    complete: async () => rememberReplicaSync(loginId, Date.now() + MENTORSHIP_USER_SYNC_DONE_TTL_SECONDS * 1000),
+  };
+}
+
+function rememberReplicaSync(loginId: string, blockedUntil: number): void {
+  // Re-inserted so the map stays in write order and the first key is the one to drop.
+  replicaSyncMarkers.delete(loginId);
+  replicaSyncMarkers.set(loginId, blockedUntil);
+  if (replicaSyncMarkers.size > MENTORSHIP_USER_SYNC_MEMORY_MAX_ENTRIES) {
+    const oldest = replicaSyncMarkers.keys().next().value;
+    if (oldest !== undefined) replicaSyncMarkers.delete(oldest);
   }
 }
 
 /**
- * Calls the mentorship service with the caller's own token. Once per login session it first refreshes the caller's record
- * (`syncMentorshipUserOncePerSession`), which also provisions a first-time user. Without a local record, upstream answers
+ * Calls the mentorship service with the caller's own token. Once per login it first refreshes the caller's record
+ * (`syncMentorshipUserOncePerLogin`), which also provisions a first-time user. Without a local record, upstream answers
  * every authenticated route with a 401, so if that refresh did not run (no session, or it failed) or the record was removed
  * since, this provisions the user on that one 401 and retries the original request once; any other error, or a second
  * failure, propagates.
@@ -111,7 +172,7 @@ export async function proxyMentorshipRequest<T>(
     return proxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', path, method, query, data);
   };
 
-  await syncMentorshipUserOncePerSession(proxy, req);
+  await syncMentorshipUserOncePerLogin(proxy, req);
 
   try {
     return await send();
