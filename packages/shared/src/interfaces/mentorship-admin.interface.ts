@@ -135,9 +135,13 @@ export interface MentorshipAdminMentorStatusUpdate {
   status: MentorshipAdminMentorUpdateStatus;
 }
 
-/** Body of `POST /api/mentorship/admin/programs/:programId/mentors`: the LFID of the picked candidate, invited as a mentor. */
+/**
+ * Body of `POST /api/mentorship/admin/programs/:programId/mentors`, with exactly one field set: the LFID of the picked
+ * candidate, or an email address no LF account uses yet, which upstream invites by email.
+ */
 export interface MentorshipAdminMentorInviteRequest {
-  lfid: string;
+  lfid?: string;
+  email?: string;
 }
 
 /** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
@@ -153,6 +157,8 @@ export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
   /** ISO `YYYY-MM-DD` date the mentor was added or asked to join. */
   invitedOn?: string;
   profileCreated?: boolean;
+  /** True for an invitation sent by email to someone with no LF account yet; the row shows only its email. */
+  accountPending?: boolean;
 }
 
 /** Term lifecycle on the admin program-detail Terms tab. */
@@ -270,6 +276,15 @@ export interface MentorshipAdminDeclinePendingResponse {
   declinedCount: number;
 }
 
+/**
+ * Data of the Mentors tab's invite-by-email dialog: the address no LF account uses and the program it is invited to.
+ * The dialog closes with `true` on Send invite, or nothing when cancelled or dismissed.
+ */
+export interface MentorshipEmailInviteDialogData {
+  email: string;
+  programName: string;
+}
+
 /** Data of the Accept dialog: the mentee being accepted. The dialog closes with the chosen attendance type, or nothing when dismissed. */
 export interface MentorshipAcceptDialogData {
   personName: string;
@@ -384,6 +399,8 @@ export interface MentorshipUpstreamMemberManagementRow {
   created_on: string;
   updated_on: string;
   profile_created: boolean;
+  /** True for an invitation sent by email to someone with no LF account yet; its `user_id` is empty. */
+  pending_account?: boolean;
 }
 
 /** One row of upstream `GET /mentorship/v1/programs/{id}/mentor-candidates`. `name` and `avatar_url` may be missing. */

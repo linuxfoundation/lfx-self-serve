@@ -768,6 +768,17 @@ describe('MentorshipAdminService.inviteProgramMentor', () => {
     expect(spy.mock.calls[0][5]).toEqual({ lfid: 'ada', member_type: 'mentor' });
   });
 
+  it('posts an email in the body only, with no LFID, and never in the path', async () => {
+    const spy = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockResolvedValue({ id: 'mem_2', status: 'invited' } as never);
+
+    const memberId = await service.inviteProgramMentor(buildReq(), PROGRAM_ID, { email: 'new.mentor@example.org' });
+
+    expect(memberId).toBe('mem_2');
+    expect(spy.mock.calls[0][2]).toBe(`${PROGRAM_PATH}/members`);
+    expect(spy.mock.calls[0][4]).toBeUndefined();
+    expect(spy.mock.calls[0][5]).toEqual({ email: 'new.mentor@example.org', member_type: 'mentor' });
+  });
+
   it.each([409, 422, 503])('passes an upstream %s on', async (status) => {
     vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest').mockRejectedValue(new MicroserviceError('Upstream', status, 'UPSTREAM'));
 

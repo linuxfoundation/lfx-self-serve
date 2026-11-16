@@ -17,9 +17,10 @@ describe('MentorInviteComponent', () => {
   let fixture: ComponentFixture<MentorInviteComponent>;
   let respondToMentorInvite: ReturnType<typeof vi.fn>;
 
-  const build = (options: { link?: string | null; respond?: Observable<void>; queryParamMap?: Observable<ParamMap> } = {}): void => {
-    const { link = token, respond = of(undefined), queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })) } = options;
+  const build = (options: { link?: string | null; respond?: Observable<void>; queryParamMap?: Observable<ParamMap>; hasProfile?: boolean } = {}): void => {
+    const { link = token, respond = of(undefined), queryParamMap = of(convertToParamMap(link === null ? {} : { token: link })), hasProfile = true } = options;
     respondToMentorInvite = vi.fn(() => respond);
+    const hasMentorProfile = vi.fn(() => of({ hasProfile }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -27,7 +28,7 @@ describe('MentorInviteComponent', () => {
       providers: [
         provideNoopAnimations(),
         provideRouter([]),
-        { provide: MentorshipMentorService, useValue: { respondToMentorInvite } },
+        { provide: MentorshipMentorService, useValue: { respondToMentorInvite, hasMentorProfile } },
         { provide: ActivatedRoute, useValue: { queryParamMap } },
       ],
     });
@@ -48,6 +49,23 @@ describe('MentorInviteComponent', () => {
 
     expect(byTestId('mentorship-mentor-invite-title')?.textContent).toContain("You've been invited to mentor");
     expect(respondToMentorInvite).not.toHaveBeenCalled();
+  });
+
+  it('points someone with no mentor profile to create one, without blocking the answer', () => {
+    build({ hasProfile: false });
+
+    const hint = byTestId('mentorship-mentor-invite-profile-hint');
+    expect(hint?.textContent).toContain("You don't have a mentor profile yet.");
+    expect(hint?.querySelector('a')?.getAttribute('href')).toBe('/mentorship/mentor');
+
+    click('mentorship-mentor-invite-accept-button');
+    expect(respondToMentorInvite).toHaveBeenCalledWith(token, 'accept');
+  });
+
+  it('shows no profile hint to someone who has a mentor profile', () => {
+    build();
+
+    expect(byTestId('mentorship-mentor-invite-profile-hint')).toBeNull();
   });
 
   it.each([

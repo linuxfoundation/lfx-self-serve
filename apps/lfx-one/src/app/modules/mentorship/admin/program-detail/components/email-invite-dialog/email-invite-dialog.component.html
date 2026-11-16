@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="mentorship-mentors-email-invite-dialog">
+  <p class="text-sm text-gray-600">
+    <span class="break-all font-semibold text-gray-900">{{ data.email }}</span> doesn’t have an LF account yet. We’ll email them an invite to mentor
+    <span class="font-semibold text-gray-900">{{ data.programName }}</span
+    >.
+  </p>
+
+  <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="mentorship-mentors-email-invite-steps">
+    <p class="text-sm font-medium text-gray-700">{{ stepsHeading }}</p>
+    <ol class="flex list-inside list-decimal flex-col gap-1 text-sm text-gray-700">
+      @for (step of steps; track step) {
+        <li>{{ step }}</li>
+      }
+    </ol>
+  </div>
+
+  <p class="text-xs text-gray-500">{{ listNote }}</p>
+
+  <div class="flex items-center justify-end gap-2">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      size="small"
+      [outlined]="true"
+      (onClick)="onCancel()"
+      data-testid="mentorship-mentors-email-invite-cancel" />
+    <lfx-button
+      [label]="sendLabel"
+      icon="fa-light fa-paper-plane"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      (onClick)="onSend()"
+      data-testid="mentorship-mentors-email-invite-send" />
+  </div>
+</div>

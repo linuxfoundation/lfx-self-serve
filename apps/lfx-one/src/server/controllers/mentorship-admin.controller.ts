@@ -7,6 +7,7 @@ import {
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH,
+  MENTORSHIP_ADMIN_MENTOR_INVITE_EMAIL_MAX_LENGTH,
   MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH,
   MENTORSHIP_ADMIN_MENTEE_STATUS_FILTERS,
   MENTORSHIP_ADMIN_MENTEE_TABS,
@@ -33,7 +34,7 @@ import {
   MentorshipAttendanceType,
   MentorshipProgramVisibilityAction,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isUuid, isValidEmail } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, MicroserviceError, ServiceValidationError } from '../errors';
@@ -411,7 +412,7 @@ export class MentorshipAdminController {
     }
   }
 
-  // POST /api/mentorship/admin/programs/:programId/mentors — body { lfid } -> 204
+  // POST /api/mentorship/admin/programs/:programId/mentors — body { lfid } or { email } -> 204
   public async inviteProgramMentor(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'invite_mentorship_admin_program_mentor';
     const startTime = logger.startOperation(req, operation);
@@ -669,11 +670,24 @@ export class MentorshipAdminController {
     return search;
   }
 
-  /** `lfid` must be a non-blank string; only the LFID is forwarded, never an email or a user id. */
+  /**
+   * Exactly one of `lfid` (a picked candidate) or `email` (an address no LF account uses yet, invited by email) must be
+   * set; a user id is never forwarded. The email travels in the body only, so it never reaches a logged URL.
+   */
   private parseMentorInvite(body: unknown, operation: string): MentorshipAdminMentorInviteRequest {
     const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
     const lfid = typeof raw['lfid'] === 'string' ? raw['lfid'].trim() : '';
-    if (!lfid || lfid.length > MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH) {
+    const email = typeof raw['email'] === 'string' ? raw['email'].trim() : '';
+    if (!lfid === !email) {
+      throw ServiceValidationError.forField('lfid', 'Send exactly one of lfid or email.', { operation });
+    }
+    if (email) {
+      if (email.length > MENTORSHIP_ADMIN_MENTOR_INVITE_EMAIL_MAX_LENGTH || !isValidEmail(email)) {
+        throw ServiceValidationError.forField('email', 'email must be a valid email address.', { operation });
+      }
+      return { email };
+    }
+    if (lfid.length > MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH) {
       throw ServiceValidationError.forField('lfid', `lfid must be 1 to ${MENTORSHIP_ADMIN_MENTOR_INVITE_LFID_MAX_LENGTH} characters.`, { operation });
     }
     return { lfid };

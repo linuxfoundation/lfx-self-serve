@@ -485,6 +485,40 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS: readonly Mentorship
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE =
   'No one matches that search. Name search only finds people already in Mentorship; try their exact LF username or full email address.';
 
+/** Heading of the search panel when a full-email search finds no one: no LF account uses the address. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE = 'No LF account uses this email';
+
+/** Under "Invite {email}" in the search panel: what inviting the address by email does. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_HINT = "They'll get an email to join LFX and accept";
+
+/** Header of the dialog that confirms an invitation by email. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_DIALOG_HEADER = 'Invite by email';
+
+/** Heading of the steps the invited address must take, in the invite-by-email dialog. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_HEADING = "What they'll need to do";
+
+/** The steps the invitation email lists, in order; the dialog shows the same ones. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS: readonly string[] = [
+  'Create an LF account with this email',
+  'Set up a mentor profile',
+  'Accept the invitation',
+];
+
+/** Under the steps in the invite-by-email dialog: where the invitation shows until it is accepted. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_LIST_NOTE = 'They’ll show as “Invited” in the Mentors list until they accept.';
+
+/** Confirm button of the invite-by-email dialog. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_SEND_LABEL = 'Send invite';
+
+/** Shown once an invitation is sent to an email address with no LF account. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE = 'Invitation sent. They need to create an LF account with this email address to accept it.';
+
+/** Under the address of a Mentors tab row invited by email: the invitee has no LF account yet. */
+export const MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL = 'Awaiting LF account';
+
+/** Longest email address the BFF forwards on an invite. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_EMAIL_MAX_LENGTH = 254;
+
 /** Shown, without a request, when a pasted search is longer than `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH`. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE = 'That search is too long. Use at most 254 characters.';
 

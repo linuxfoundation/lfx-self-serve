@@ -6,7 +6,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import {
+  MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL,
   MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE,
@@ -15,6 +17,7 @@ import {
   MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS,
@@ -28,11 +31,13 @@ import {
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
   MentorshipAdminMentorStatusUpdate,
+  MentorshipEmailInviteDialogData,
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,6 +65,9 @@ describe('MentorsTabComponent', () => {
   let updateProgramMentor: ReturnType<typeof vi.fn<(programId: string, memberId: string, body: MentorshipAdminMentorStatusUpdate) => Observable<void>>>;
   let getMentorCandidates: ReturnType<typeof vi.fn<(programId: string, search: string) => Observable<MentorshipAdminMentorCandidatesResponse>>>;
   let inviteProgramMentor: ReturnType<typeof vi.fn<(programId: string, body: MentorshipAdminMentorInviteRequest) => Observable<void>>>;
+  /** What the invite-by-email dialog closes with: `true` is Send invite, `undefined` a cancel or dismiss. */
+  let emailDialogResult: boolean | undefined;
+  let dialogOpen: ReturnType<typeof vi.fn>;
 
   /** Runs the effects that start a read, then renders what it wrote. */
   const settle = (): void => {
@@ -71,6 +79,8 @@ describe('MentorsTabComponent', () => {
     getProgramMentors = vi.fn().mockReturnValue(of(firstPage()));
     updateProgramMentor = vi.fn().mockReturnValue(of(undefined));
     inviteProgramMentor = vi.fn().mockReturnValue(of(undefined));
+    emailDialogResult = true;
+    dialogOpen = vi.fn(() => ({ onClose: of(emailDialogResult) }));
     getMentorCandidates = vi.fn().mockReturnValue(
       of({
         data: [
@@ -86,6 +96,7 @@ describe('MentorsTabComponent', () => {
       providers: [
         provideNoopAnimations(),
         MessageService,
+        { provide: DialogService, useValue: { open: dialogOpen } },
         { provide: MentorshipAdminService, useValue: { getProgramMentors, updateProgramMentor, getMentorCandidates, inviteProgramMentor } },
       ],
     });
@@ -222,7 +233,7 @@ describe('MentorsTabComponent', () => {
     });
 
     it.each([
-      ['alice@example.org', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
+      ['alice@example.org', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE],
       ['alice', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
       ['Priya', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
       ['Alice Example', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
@@ -247,6 +258,37 @@ describe('MentorsTabComponent', () => {
 
       expect(fixture.componentInstance['candidateOptions']()).toEqual([]);
       expect(fixture.componentInstance['candidatesEmptyMessage']()).toBe(message);
+    });
+
+    it('offers to invite a full email that no LF account uses, and nothing else', () => {
+      getMentorCandidates.mockReturnValue(of({ data: [] }));
+
+      search(' new.mentor@example.org ');
+      expect(fixture.componentInstance['emailInvitee']()).toBe('new.mentor@example.org');
+
+      search('alice');
+      expect(fixture.componentInstance['emailInvitee']()).toBeNull();
+    });
+
+    it('drops the email offer once the field value changes: a pick, the clear button, or leaving with unmatched text', () => {
+      const invitee = fixture.componentInstance['form'].controls.invitee;
+      getMentorCandidates.mockReturnValue(of({ data: [] }));
+      search('new.mentor@example.org');
+      expect(fixture.componentInstance['emailInvitee']()).toBe('new.mentor@example.org');
+
+      invitee.setValue(null);
+
+      expect(fixture.componentInstance['emailInvitee']()).toBeNull();
+    });
+
+    it('does not offer an email invite when the email finds an account or the search fails', () => {
+      getMentorCandidates.mockReturnValue(of({ data: [{ lfid: 'priya', name: 'Priya Natarajan' }] }));
+      search('priya@example.org');
+      expect(fixture.componentInstance['emailInvitee']()).toBeNull();
+
+      getMentorCandidates.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      search('nobody@example.org');
+      expect(fixture.componentInstance['emailInvitee']()).toBeNull();
     });
 
     it('enables Invite only once a candidate is picked, not for typed text', () => {
@@ -380,6 +422,107 @@ describe('MentorsTabComponent', () => {
 
       expect(inviteProgramMentor).toHaveBeenCalledTimes(1);
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', summary: 'Please wait' });
+    });
+  });
+
+  describe('invite by email', () => {
+    const toasts = () => vi.spyOn(TestBed.inject(MessageService), 'add');
+    const offerEmail = (): void => {
+      getMentorCandidates.mockReturnValue(of({ data: [] }));
+      fixture.componentInstance['onCandidateSearch']({ originalEvent: new Event('input'), query: 'new.mentor@example.org' });
+    };
+
+    it('sends only the email, clears the offer, toasts, reloads the page and has the parent refresh the counts', () => {
+      const toast = toasts();
+      const refresh = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', refresh);
+      const reads = getProgramMentors.mock.calls.length;
+      offerEmail();
+
+      fixture.componentInstance['onInviteByEmail']();
+      settle();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      expect(inviteProgramMentor).toHaveBeenCalledWith('prog_1', { email: 'new.mentor@example.org' });
+      expect(fixture.componentInstance['emailInvitee']()).toBeNull();
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE });
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(getProgramMentors.mock.calls.length).toBe(reads + 1);
+    });
+
+    it('confirms in a dialog that names the address and the program', () => {
+      fixture.componentRef.setInput('programName', 'GridFlow');
+      offerEmail();
+
+      fixture.componentInstance['onInviteByEmail']();
+
+      const config = dialogOpen.mock.calls[0][1] as { header: string; data: MentorshipEmailInviteDialogData };
+      expect(config.header).toBe('Invite by email');
+      expect(config.data).toEqual({ email: 'new.mentor@example.org', programName: 'GridFlow' });
+    });
+
+    it('sends nothing when the dialog is cancelled, and keeps the offer', () => {
+      emailDialogResult = undefined;
+      offerEmail();
+
+      fixture.componentInstance['onInviteByEmail']();
+
+      expect(inviteProgramMentor).not.toHaveBeenCalled();
+      expect(fixture.componentInstance['emailInvitee']()).toBe('new.mentor@example.org');
+    });
+
+    it('sends nothing with no email on offer', () => {
+      fixture.componentInstance['onInviteByEmail']();
+
+      expect(dialogOpen).not.toHaveBeenCalled();
+      expect(inviteProgramMentor).not.toHaveBeenCalled();
+    });
+
+    it('opens the dialog on Enter only while the field still shows the offered address', () => {
+      const enter = (value: string): KeyboardEvent => {
+        const input = document.createElement('input');
+        input.value = value;
+        const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+        Object.defineProperty(event, 'target', { value: input });
+        fixture.componentInstance['onInviteeEnter'](event);
+        return event;
+      };
+
+      expect(enter('new.mentor@example.org').defaultPrevented).toBe(false);
+      offerEmail();
+      expect(enter('new.mentor@example.o').defaultPrevented).toBe(false);
+      expect(dialogOpen).not.toHaveBeenCalled();
+
+      expect(enter(' new.mentor@example.org ').defaultPrevented).toBe(true);
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the offer when the invite fails, so the admin can retry', () => {
+      inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      const toast = toasts();
+      offerEmail();
+
+      fixture.componentInstance['onInviteByEmail']();
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE });
+      expect(fixture.componentInstance['emailInvitee']()).toBe('new.mentor@example.org');
+    });
+
+    it('marks a row invited by email as awaiting an LF account', () => {
+      getProgramMentors.mockReturnValue(
+        of({
+          data: [mentor({ id: 'mem_7', name: 'new.mentor@example.org', status: 'invited', profileCreated: false, userId: undefined, accountPending: true })],
+          total: 1,
+        })
+      );
+      fixture.componentInstance['onRetry']();
+      settle();
+
+      expect(element().querySelector('[data-testid="mentorship-mentor-account-pending-mem_7"]')?.textContent).toContain(
+        MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL
+      );
+      expect(element().querySelector('[data-testid="mentorship-mentor-account-pending-mem_1"]')).toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_7"]')).toBeNull();
     });
   });
 

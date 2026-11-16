@@ -10,12 +10,15 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
+import { UiKeyboardInputComponent } from '@shared/uikit/keyboard-input/keyboard-input.component';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { TableComponent } from '@components/table/table.component';
 import {
   MENTORSHIP_ADMIN_DECISION_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE,
   MENTORSHIP_ADMIN_MANAGEMENT_PAGE_SIZE,
+  MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL,
+  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT,
   MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH,
@@ -28,6 +31,9 @@ import {
   MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS,
   MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE,
+  MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_DIALOG_HEADER,
+  MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_HINT,
+  MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE,
   MENTORSHIP_ADMIN_MENTEES_SEARCH_DEBOUNCE_MS,
   MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE,
@@ -46,22 +52,33 @@ import {
   FilterOption,
   MentorshipAdminMentorAction,
   MentorshipAdminMentorCandidate,
+  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorStatus,
+  MentorshipEmailInviteDialogData,
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
-import { formatIsoDateLabel, mentorshipPersonAvatarClass, mentorshipPersonInitials, mentorshipUpstreamReasonMessage } from '@lfx-one/shared/utils';
+import {
+  formatIsoDateLabel,
+  isValidEmail,
+  mentorshipPersonAvatarClass,
+  mentorshipPersonInitials,
+  mentorshipUpstreamReasonMessage,
+} from '@lfx-one/shared/utils';
 import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { AutoCompleteCompleteEvent } from 'primeng/autocomplete';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Subject, switchMap, take, tap } from 'rxjs';
+
+import { EmailInviteDialogComponent } from '../email-invite-dialog/email-invite-dialog.component';
 
 /**
  * Mentors tab — the program's mentors and their invitation status, one server page at a time. The toolbar pairs a
  * search and status filter (both go upstream) with an invitee search that asks upstream for matching LF accounts by
  * name, LF username or full email (shown by name and LFID, never email) + an Invite button that invites the picked
- * candidate by LFID. Rows expose Approve / Decline / Revoke invite / Remove, gated by the mentor's status; each confirms, writes through
+ * candidate by LFID. A full email no LF account uses can be invited by email instead. Rows expose Approve / Decline / Revoke invite / Remove, gated by the mentor's status; each confirms, writes through
  * the BFF, then reloads the page and has the parent refresh the tab counts.
  */
 @Component({
@@ -75,6 +92,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
     InputTextComponent,
     SelectComponent,
     TableComponent,
+    UiKeyboardInputComponent,
     MentorshipPublicUrlPipe,
   ],
   providers: [ConfirmationService],
@@ -86,6 +104,7 @@ export class MentorsTabComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
 
   public readonly programId = input.required<string>();
   /**
@@ -93,6 +112,8 @@ export class MentorsTabComponent {
    * published program, so names link only then.
    */
   public readonly programPublished = input(false);
+  /** The program's name, which the invite-by-email dialog names. */
+  public readonly programName = input('');
   /**
    * Has the parent program page read its tab counts again. A callback rather than an output, as on Current Mentees:
    * a write that lands after a tab switch destroyed this tab must still refresh the parent's counts.
@@ -103,6 +124,8 @@ export class MentorsTabComponent {
   protected readonly loadErrorMessage = MENTORSHIP_ADMIN_MENTORS_LOAD_ERROR_MESSAGE;
   protected readonly candidateMinSearchLength = MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH;
   protected readonly candidateHelpText = MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT;
+  protected readonly emailInviteHint = MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_HINT;
+  protected readonly accountPendingLabel = MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL;
 
   protected readonly statusOptions: FilterOption<MentorshipAdminMentorStatus | null>[] = [
     { label: MENTORSHIP_ALL_STATUSES_OPTION_LABEL, value: null },
@@ -121,6 +144,12 @@ export class MentorsTabComponent {
   protected readonly total = signal(0);
   protected readonly loading = signal(true);
   protected readonly loadFailed = signal(false);
+  /**
+   * The full email address the last search found no LF account for, which can be invited by email instead; null after
+   * any other answer, and once the field's value changes (a pick, the clear (×) button, or leaving the field, which
+   * clears typed text it could not match). The search panel offers it.
+   */
+  protected readonly emailInvitee = signal<string | null>(null);
   private readonly mentors = signal<MentorshipProgramMentor[]>([]);
 
   private readonly search = signal('');
@@ -148,6 +177,7 @@ export class MentorsTabComponent {
     this.initFilters();
     this.initPageReads();
     this.initCandidateSearch();
+    this.initEmailInviteeReset();
   }
 
   protected onLazyLoad(event: { first?: number | null }): void {
@@ -163,35 +193,49 @@ export class MentorsTabComponent {
     this.candidateSearch$.next(event.query.trim());
   }
 
-  /**
-   * Invites the picked candidate by LFID. Like a row action it is never cancelled by the tab going away, and shares the
-   * one-write-at-a-time guard. On success the field clears, the page reloads to show the invited row and the parent
-   * refreshes the counts.
-   */
+  /** Invites the picked candidate by LFID. */
   protected onInviteMentor(): void {
     const invitee = this.form.controls.invitee.value;
     if (!this.isCandidate(invitee)) return;
-    if (this.writeInFlight()) {
-      this.showToast('info', 'Please wait', MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, 3000);
-      return;
-    }
-    this.writeInFlight.set(true);
-    this.mentorshipAdminService
-      .inviteProgramMentor(this.programId(), { lfid: invitee.lfid })
-      .pipe(take(1))
-      .subscribe({
-        next: () => {
-          this.writeInFlight.set(false);
-          this.form.controls.invitee.reset(null);
-          this.showToast('success', 'Success', MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE, 3000);
-          this.countsRefresh()();
-          this.reloadPage();
-        },
-        error: (err: unknown) => {
-          this.writeInFlight.set(false);
-          this.onInviteError(err);
-        },
-      });
+    this.sendInvite({ lfid: invitee.lfid }, MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE);
+  }
+
+  /**
+   * Confirms, in a dialog that lists what the invitee must do, an invitation to the searched email address that no LF
+   * account uses; Send invite has upstream email it those steps.
+   */
+  protected onInviteByEmail(): void {
+    const email = this.emailInvitee();
+    if (!email) return;
+    const data: MentorshipEmailInviteDialogData = { email, programName: this.programName() };
+    // `open()` returns null while a dialog of the same component is still open, as a quick second Enter can do.
+    const dialogRef: DynamicDialogRef | null = this.dialogService.open(EmailInviteDialogComponent, {
+      header: MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_DIALOG_HEADER,
+      width: '32rem',
+      style: { maxWidth: '90vw' },
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data,
+    });
+    if (!dialogRef) return;
+
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((send: boolean | undefined) => {
+      if (send === true) this.sendInvite({ email }, MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE);
+    });
+  }
+
+  /**
+   * Enter in the invite search opens the invite-by-email dialog while the panel offers it. The autocomplete handles
+   * Enter first (it closes its panel) and lets the key reach here; with no email on offer Enter does nothing more.
+   */
+  protected onInviteeEnter(event: Event): void {
+    const email = this.emailInvitee();
+    // The offer can outlive an edit too short to search again, so Enter acts only while the field still shows the address.
+    const typed = ((event.target as HTMLInputElement | null)?.value ?? '').trim();
+    if (!email || typed !== email) return;
+    event.preventDefault();
+    this.onInviteByEmail();
   }
 
   /** Always confirms; the write runs only on accept. */
@@ -290,6 +334,36 @@ export class MentorsTabComponent {
         ...MENTORSHIP_ADMIN_MENTOR_ACTION_APPEARANCE[action.key],
       })),
     };
+  }
+
+  /**
+   * Sends one invite. Like a row action it is never cancelled by the tab going away, and shares the one-write-at-a-time
+   * guard. On success the field and the email offer clear, the page reloads to show the invited row and the parent
+   * refreshes the counts.
+   */
+  private sendInvite(body: MentorshipAdminMentorInviteRequest, successMessage: string): void {
+    if (this.writeInFlight()) {
+      this.showToast('info', 'Please wait', MENTORSHIP_ADMIN_DECISION_IN_FLIGHT_MESSAGE, 3000);
+      return;
+    }
+    this.writeInFlight.set(true);
+    this.mentorshipAdminService
+      .inviteProgramMentor(this.programId(), body)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.writeInFlight.set(false);
+          this.form.controls.invitee.reset(null);
+          this.emailInvitee.set(null);
+          this.showToast('success', 'Success', successMessage, 3000);
+          this.countsRefresh()();
+          this.reloadPage();
+        },
+        error: (err: unknown) => {
+          this.writeInFlight.set(false);
+          this.onInviteError(err);
+        },
+      });
   }
 
   /**
@@ -414,14 +488,23 @@ export class MentorsTabComponent {
       )
       .subscribe(({ search, data, error }) => {
         this.candidatesEmptyMessage.set(this.candidatesEmptyMessageFor(search, error));
+        this.emailInvitee.set(!error && data.length === 0 && this.isInvitableEmail(search) ? search : null);
         this.candidates.set(data);
       });
   }
 
   /**
+   * Drops the email offer whenever the field's value changes. With `forceSelection` typing leaves the value alone (a new
+   * search sets the offer again), so a change is a pick, the clear (×) button, or leaving the field with unmatched text.
+   */
+  private initEmailInviteeReset(): void {
+    this.form.controls.invitee.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.emailInvitee.set(null));
+  }
+
+  /**
    * A search too long to send says so (the BFF would refuse it with a 400). Otherwise a 400 is an unpublished program, a
-   * 503 the account lookup being down, and any other failure is generic. With no failure, only a full email gets the
-   * account-creation hint: a single word can be a name or an LF username of someone who already has an account.
+   * 503 the account lookup being down, and any other failure is generic. With no failure, only a full email points to
+   * inviting by email: a single word can be a name or an LF username of someone who already has an account.
    */
   private candidatesEmptyMessageFor(search: string, error: unknown): string {
     if (Array.from(search).length > MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH) return MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE;
@@ -430,8 +513,11 @@ export class MentorsTabComponent {
       if (status === 400) return MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE;
       return status === 503 ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE;
     }
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(search)
-      ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE
-      : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE;
+    return this.isInvitableEmail(search) ? MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE : MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE;
+  }
+
+  /** A full email address short enough for the BFF to forward on an invite. */
+  private isInvitableEmail(search: string): boolean {
+    return search.length <= MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH && isValidEmail(search);
   }
 }

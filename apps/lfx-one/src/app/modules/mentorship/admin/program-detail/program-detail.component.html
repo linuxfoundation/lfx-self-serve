@@ -42,7 +42,11 @@
             <lfx-mentorship-past-mentees-tab [programId]="programPage.program.id" [terms]="terms()" [programPublished]="programPublished()" />
           }
           @case ('mentors') {
-            <lfx-mentorship-mentors-tab [programId]="programPage.program.id" [programPublished]="programPublished()" [countsRefresh]="countsRefresh" />
+            <lfx-mentorship-mentors-tab
+              [programId]="programPage.program.id"
+              [programName]="programPage.program.name"
+              [programPublished]="programPublished()"
+              [countsRefresh]="countsRefresh" />
           }
           @case ('terms') {
             <lfx-mentorship-terms-tab [programId]="programPage.program.id" [countsRefresh]="countsRefresh" />
