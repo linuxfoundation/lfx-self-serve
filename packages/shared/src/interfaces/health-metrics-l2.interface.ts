@@ -152,6 +152,7 @@ export interface HealthMetricsMetricItem {
   description?: string;
   /** Coloured lead before the description, such as `+{N}%`. */
   descriptionLead?: string;
-  descriptionLeadTone?: 'up' | 'down';
+  /** `flat` greys a change too small to show, which is not movement. */
+  descriptionLeadTone?: 'up' | 'down' | 'flat';
   bar?: HealthMetricsMetricBar;
 }

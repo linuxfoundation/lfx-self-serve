@@ -18,8 +18,22 @@
       (settled)="shell.sectionSettled('participation', $event)" />
   </ng-template>
 
+  <ng-template lfxHealthMetricsL2SectionControls="committees">
+    <lfx-ui-select
+      size="small"
+      ariaLabel="Group type"
+      [value]="groupType()"
+      (valueChange)="onGroupTypeChange($event)"
+      data-testid="engagement-group-attendance-type">
+      @for (type of groupTypes; track type.key) {
+        <lfx-ui-option [value]="type.key" [label]="type.label" />
+      }
+    </lfx-ui-select>
+  </ng-template>
+
   <ng-template lfxHealthMetricsL2Section="committees">
     <lfx-engagement-group-attendance
+      [(groupType)]="groupType"
       (countsChange)="groupCounts.set($event)"
       (reading)="shell.sectionReading('committees')"
       (settled)="shell.sectionSettled('committees', $event)" />

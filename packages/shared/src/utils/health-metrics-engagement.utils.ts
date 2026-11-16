@@ -5,20 +5,25 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS,
   HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_BAR_FILLS,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ICONS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
-  HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX,
-  HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
 import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
 
@@ -29,8 +34,11 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementAttendanceTrendPointView,
   HealthMetricsEngagementAttendanceTrendSummaryView,
+  HealthMetricsEngagementGroupKind,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementGroupRowView,
+  HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementNewsletter,
   HealthMetricsEngagementNewsletterKpiView,
   HealthMetricsEngagementNewsletterPerformance,
@@ -53,12 +61,12 @@ import type {
   HealthMetricsEngagementRepRowLabels,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementParticipationRowView,
   HealthMetricsEngagementSectionKey,
-  HealthMetricsEngagementSparkBar,
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
 } from '../interfaces/health-metrics-engagement.interface';
-import type { HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsL2Range, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
@@ -119,33 +127,39 @@ export function selectHealthMetricsEngagementGroupPeriod(
   return selectPeriod(row.periods, range);
 }
 
-/**
- * Sparkline series, oldest → current. A period stays `null` when it had no invited population or
- * too few meetings to rate, matching `formatHealthMetricsEngagementAttendance` — the chart leaves
- * that slot empty rather than drawing a bar the table itself refuses to state.
- */
-export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagementGroupRow): (number | null)[] {
-  return row.periods.map((period) =>
-    period.meetingsHeld === null || period.meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE ? null : period.attendancePct
-  );
+/** A group-type cut from the URL; anything unknown reads as every type. */
+export function parseHealthMetricsEngagementGroupType(value: string | null): HealthMetricsEngagementGroupTypeFilter {
+  return HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.find((filter) => filter.key === value)?.key ?? 'all';
 }
 
-/**
- * The design's `spark2` bars, oldest → current, scaled to the rated values' own min-max so a tight run
- * still shows its movement. A `null` period keeps its slot with no bar; empty below two rated values.
- */
-export function buildHealthMetricsEngagementSparkBars(series: readonly (number | null)[]): HealthMetricsEngagementSparkBar[] {
-  const values = series.filter((value): value is number => value !== null);
-  if (values.length < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) return [];
+/** What a group is, from the view's type label; a governance group is the board or one of its oversight committees. */
+export function resolveHealthMetricsEngagementGroupKind(row: HealthMetricsEngagementGroupRow): HealthMetricsEngagementGroupKind {
+  // Read off the filter cuts' own labels, so the kinds cannot drift from the view's values.
+  const label = row.groupTypeLabel ?? '';
+  const labels = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS;
+  const kinds = HEALTH_METRICS_ENGAGEMENT_GROUP_KINDS;
+  if (labels.gov?.includes(label)) return row.meetingTypeGroup === 'Board' ? kinds.board : kinds.oversight;
+  if (labels.wg?.includes(label)) return kinds.workingGroup;
+  if (labels.sigtag?.includes(label)) return kinds.sigTag;
+  return kinds.other;
+}
 
-  const min = Math.min(...values);
-  const span = Math.max(...values) - min || 1;
-  const heightOf = (value: number): number =>
-    Number((HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX + ((value - min) / span) * HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX).toFixed(1));
-  return series.map((value, index) => ({
-    heightPx: value === null ? null : heightOf(value),
-    last: value !== null && index === series.length - 1,
-  }));
+/** One Group attendance row for the selected period. A group that held no meetings shows "—" rather than 0. */
+export function buildHealthMetricsEngagementGroupRowView(row: HealthMetricsEngagementGroupRow, range: HealthMetricsRange): HealthMetricsEngagementGroupRowView {
+  const period = selectPeriod(row.periods, range);
+  const meetings = period?.meetingsHeld ?? null;
+  const pct = ratedAttendancePct(period?.attendancePct ?? null, meetings);
+
+  return {
+    key: row.committeeId,
+    name: row.committeeName,
+    kind: resolveHealthMetricsEngagementGroupKind(row),
+    meetings: meetings ? formatHealthMetricsEngagementCount(meetings) : HEALTH_METRICS_TABLE_DASH,
+    lastMetLabel: row.lastMetDate ? formatIsoDateLabel(row.lastMetDate) : HEALTH_METRICS_TABLE_DASH,
+    dormant: period?.dormant ?? false,
+    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
+    attendancePct: pct,
+  };
 }
 
 /** Sub-nav entries per the design's `counts()`; a note is dropped at zero. */
@@ -173,6 +187,59 @@ export function selectHealthMetricsEngagementParticipationPeriod(
   range: HealthMetricsRange
 ): HealthMetricsEngagementParticipationPeriod | null {
   return selectPeriod(row.periods, range);
+}
+
+/** One Meeting participation row for the selected period, named by its short meeting type as the design does. */
+export function buildHealthMetricsEngagementParticipationRowView(
+  row: HealthMetricsEngagementParticipationRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementParticipationRowView {
+  const period = selectPeriod(row.periods, range);
+  const group = row.group ?? '';
+  const pct = ratedAttendancePct(period?.attendancePct ?? null, period?.meetingsHeld ?? null);
+  // Own keys only: a type named like an Object.prototype member must not pick up a non-icon.
+  const icons = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ICONS;
+  const fills = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_BAR_FILLS;
+
+  return {
+    key: group || row.label,
+    name: group || row.label,
+    icon: Object.hasOwn(icons, group) ? icons[group] : icons['Other'],
+    description: row.governance ? HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION : '',
+    governance: row.governance,
+    meetings: formatHealthMetricsEngagementCount(period?.meetingsHeld ?? null),
+    attendanceLabel: pct === null ? HEALTH_METRICS_TABLE_DASH : `${pct}%`,
+    attendancePct: pct,
+    fillRule: Object.hasOwn(fills, group) ? fills[group] : HEALTH_METRICS_VALUE_BAR_FILL,
+  };
+}
+
+/** The Meeting participation metrics row: attendance with its change, meetings held, active groups and never attended. */
+export function buildHealthMetricsEngagementParticipationMetrics(
+  total: HealthMetricsEngagementParticipationRow | null,
+  range: HealthMetricsRange
+): HealthMetricsMetricItem[] {
+  const period = total ? selectPeriod(total.periods, range) : null;
+  const change = period?.attendanceChangePp ?? null;
+  const direction = resolveHealthMetricsEngagementDeltaDirection(change);
+  const attendance: HealthMetricsMetricItem = {
+    key: 'attendance',
+    label: 'All-meeting attendance',
+    value: period ? formatHealthMetricsEngagementAttendance(period.attendancePct, period.meetingsHeld) : HEALTH_METRICS_TABLE_DASH,
+  };
+  // No prior period, no comparison: the line is left out rather than claiming a change of "—".
+  if (change !== null) {
+    attendance.descriptionLead = formatHealthMetricsEngagementPpDelta(change);
+    attendance.description = 'vs previous period';
+    attendance.descriptionLeadTone = direction === 'neutral' ? 'flat' : direction;
+  }
+
+  return [
+    attendance,
+    { key: 'meetings', label: 'Meetings held', value: formatHealthMetricsEngagementCount(period?.meetingsHeld ?? null) },
+    { key: 'groups', label: 'Active groups', value: formatHealthMetricsEngagementRatio(period?.activeGroups ?? null, total?.totalGroups ?? null) },
+    { key: 'never', label: 'Never attended', value: formatHealthMetricsEngagementCount(period?.neverAttended ?? null) },
+  ];
 }
 
 /**
@@ -509,6 +576,12 @@ export function formatHealthMetricsRelativeTime(iso: string | null, now: Date): 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */
 function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly T[], range: HealthMetricsRange): T | null {
   return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
+}
+
+/** The whole percent a bar shows, or `null` with no invited population or too few meetings to rate. */
+function ratedAttendancePct(fraction: number | null, meetingsHeld: number | null): number | null {
+  if (fraction === null || meetingsHeld === null || meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE) return null;
+  return Math.round(fraction * 100);
 }
 
 /** The one decimal the delta label prints; the direction resolver reads the same value. */

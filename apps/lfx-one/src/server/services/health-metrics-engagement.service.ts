@@ -5,6 +5,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
@@ -123,6 +124,7 @@ interface GroupAttendanceRow {
   PROJECT_SLUG: string | null;
   PROJECT_NAME: string | null;
   GROUP_TYPE_LABEL: string | null;
+  MEETING_TYPE_GROUP: string | null;
   LAST_MET_DATE: Date | string | null;
   SCOPE_GROUPS: number | null;
   TOTAL_RECORDS: number | null;
@@ -264,7 +266,7 @@ export class HealthMetricsEngagementService {
       `${typeCondition ? `COUNT_IF(${typeCondition})` : 'COUNT(*)'} AS total_records`,
     ];
 
-    const size = clampInteger(query.size, 1, 100, 25);
+    const size = clampInteger(query.size, 1, 100, HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 
@@ -294,6 +296,7 @@ export class HealthMetricsEngagementService {
           project_name,
           last_met_date,
           group_type_label,
+          meeting_type_group,
           ${periodColumns},
           sort_rank_${suffix} AS sort_rank,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
@@ -781,6 +784,7 @@ function mapGroupRow(row: GroupAttendanceRow): HealthMetricsEngagementGroupRow {
     projectSlug: row.PROJECT_SLUG,
     projectName: row.PROJECT_NAME,
     groupTypeLabel: row.GROUP_TYPE_LABEL,
+    meetingTypeGroup: row.MEETING_TYPE_GROUP,
     lastMetDate: toIsoDate(row.LAST_MET_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapGroupPeriod(row, range)),
   };
