@@ -504,7 +504,8 @@ describe('AddAccountDialogComponent — email verification outcome (#4253, #4328
 
       expect(component.codeSent()).toBe(false);
       expect(normalizedText(root)).toContain('Enter your email address to confirm you own it before we check whether it can be linked to your account.');
-      expect(normalizedText(root)).toContain('Verifying your email doesn’t automatically link it to your account.');
+      expect(normalizedText(root)).toContain('Verifying your email doesn’t guarantee it can be linked to your account.');
+      expect(normalizedText(root)).not.toContain('automatically link');
       expect(normalizedText(root)).not.toContain('already linked');
 
       response$.next({ success: true, message: EMAIL_VERIFICATION_SENT_MESSAGE });
