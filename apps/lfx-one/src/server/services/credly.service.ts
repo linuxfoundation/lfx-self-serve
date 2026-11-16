@@ -3,10 +3,11 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { Badge, CredlyApiResponse, CredlyBadgeEntry, CredlyCachedBadges } from '@lfx-one/shared/interfaces';
+import { Badge, CredlyApiResponse, CredlyBadgeEntry, CredlyCachedBadges, CredlyEmailFetchResult } from '@lfx-one/shared/interfaces';
 import { compareBadgesByIssuedDateDesc, isValidBadge, mapCredlyBadgeToBadge } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { logger } from './logger.service';
 
 export class CredlyService {
@@ -57,13 +58,18 @@ export class CredlyService {
   /**
    * Fetch badges for one or more email addresses from the Credly API.
    * Queries all emails in parallel, deduplicates by badge ID, and maps to our Badge interface.
+   * Throws when Credly is unconfigured or every email lookup fails; a partial failure returns
+   * the collected badges without caching them so the next request retries Credly.
    */
   public async getBadgesForEmails(req: Request, emails: string[]): Promise<Badge[]> {
     if (!this.apiUrl || !this.orgId || !this.authToken) {
       logger.warning(req, 'get_badges_for_emails', 'Credly API not configured — missing CREDLY_API_URL, CREDLY_ORG_ID, or CREDLY_API_TOKEN', {
         email_count: emails.length,
       });
-      return [];
+      throw new MicroserviceError('Badges are temporarily unavailable', 503, 'CREDLY_NOT_CONFIGURED', {
+        operation: 'get_badges_for_emails',
+        service: 'credly',
+      });
     }
 
     if (emails.length === 0) {
@@ -93,9 +99,21 @@ export class CredlyService {
     }
 
     const allEntries: CredlyBadgeEntry[] = [];
+    let failedCount = 0;
     for (const batch of batches) {
       const batchResults = await Promise.all(batch.map((email) => this.fetchBadgesForEmail(req, email)));
-      allEntries.push(...batchResults.flat());
+      for (const result of batchResults) {
+        allEntries.push(...result.entries);
+        if (result.failed) failedCount++;
+      }
+    }
+
+    // Every lookup failed — surface an error instead of an indistinguishable empty list
+    if (failedCount === normalizedEmails.length) {
+      throw new MicroserviceError('Unable to load badges from Credly', 502, 'CREDLY_UNAVAILABLE', {
+        operation: 'get_badges_for_emails',
+        service: 'credly',
+      });
     }
 
     // Deduplicate by badge ID (a user with multiple emails may have the same badge issued to each)
@@ -106,14 +124,33 @@ export class CredlyService {
       return true;
     });
 
-    const badges = unique.filter(isValidBadge).map(mapCredlyBadgeToBadge).sort(compareBadgesByIssuedDateDesc);
+    const validEntries = unique.filter(isValidBadge);
+    const droppedCount = unique.length - validEntries.length;
+    if (droppedCount > 0) {
+      logger.warning(req, 'get_badges_for_emails', 'Dropped Credly badge entries missing required fields', {
+        deduplicated_count: unique.length,
+        valid_count: validEntries.length,
+        dropped_count: droppedCount,
+      });
+    }
 
-    this.evictExpiredCacheEntries();
-    const ttl = badges.some((b) => b.isPending) ? CredlyService.pendingCacheTtlMs : this.cacheTtlMs;
-    this.badgeCache.set(cacheKey, {
-      badges,
-      expiresAt: Date.now() + ttl,
-    });
+    const badges = validEntries.map(mapCredlyBadgeToBadge).sort(compareBadgesByIssuedDateDesc);
+
+    // Only cache complete results — a partial failure must not hide badges for the full TTL
+    if (failedCount === 0) {
+      this.evictExpiredCacheEntries();
+      const ttl = badges.some((b) => b.isPending) ? CredlyService.pendingCacheTtlMs : this.cacheTtlMs;
+      this.badgeCache.set(cacheKey, {
+        badges,
+        expiresAt: Date.now() + ttl,
+      });
+    } else {
+      logger.warning(req, 'get_badges_for_emails', 'Partial Credly failure; returning collected badges without caching', {
+        email_count: normalizedEmails.length,
+        failed_count: failedCount,
+        badge_count: badges.length,
+      });
+    }
 
     logger.debug(req, 'get_badges_for_emails', 'Fetched badges for user emails', {
       email_count: normalizedEmails.length,
@@ -128,9 +165,9 @@ export class CredlyService {
   /**
    * Fetch all pages of badges for a single email address from the Credly API.
    * Follows `next_page_url` until all pages are collected, with a max page cap.
-   * Returns an empty array on failure (graceful degradation).
+   * On a non-OK response, thrown error, or page cap, returns collected entries with `failed: true`.
    */
-  private async fetchBadgesForEmail(req: Request, email: string): Promise<CredlyBadgeEntry[]> {
+  private async fetchBadgesForEmail(req: Request, email: string): Promise<CredlyEmailFetchResult> {
     const filter = `recipient_email::${email}|state::accepted,pending`;
     const authHeader = `Basic ${Buffer.from(`${this.authToken}:`).toString('base64')}`;
     const maskedEmail = this.maskEmail(email);
@@ -138,6 +175,7 @@ export class CredlyService {
     const allEntries: CredlyBadgeEntry[] = [];
     let nextUrl: string | null = `${this.apiUrl}/organizations/${this.orgId}/badges?filter=${encodeURIComponent(filter)}`;
     let page = 0;
+    let failed = false;
 
     try {
       while (nextUrl && page < CredlyService.maxPaginationPages) {
@@ -157,6 +195,7 @@ export class CredlyService {
             email: maskedEmail,
             status: response.status,
           });
+          failed = true;
           break;
         }
 
@@ -169,6 +208,7 @@ export class CredlyService {
       }
 
       if (nextUrl && page >= CredlyService.maxPaginationPages) {
+        failed = true;
         logger.warning(req, 'fetch_badges_for_email', 'Reached max pagination limit', {
           email: maskedEmail,
           pages_fetched: page,
@@ -176,13 +216,13 @@ export class CredlyService {
         });
       }
 
-      return allEntries;
+      return { entries: allEntries, failed };
     } catch (error) {
       logger.warning(req, 'fetch_badges_for_email', 'Failed to fetch badges from Credly', {
         email: maskedEmail,
         err: error instanceof Error ? error : new Error(String(error)),
       });
-      return allEntries; // return whatever was collected before the error
+      return { entries: allEntries, failed: true }; // keep whatever was collected before the error
     }
   }
 
