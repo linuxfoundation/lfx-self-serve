@@ -173,6 +173,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-user meetings roll-up scope (GH-5566): the project UIDs under a foundation or parent project that the caller can see. */
   MEETING_ROLLUP_SCOPE_NAMESPACE: 'meeting-rollup-scope:v1',
 
+  /** Domain + schema-version segment for the per-user meetings roll-up groups (GH-5566): the groups in that project tree the caller can see, which back the Group and Group type filters. Shares the scope's TTL. */
+  MEETING_ROLLUP_GROUPS_NAMESPACE: 'meeting-rollup-groups:v1',
+
   /** Freshness window for the meetings roll-up scope. Long enough that one dashboard load (list, counts, paged calendar feeds, Load More) reuses one tree walk and pages against the same scope; short enough that a new sub-project shows up within minutes. */
   MEETING_ROLLUP_SCOPE_TTL_SECONDS: 300,
 

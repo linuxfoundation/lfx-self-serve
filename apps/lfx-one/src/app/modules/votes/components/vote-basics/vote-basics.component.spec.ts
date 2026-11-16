@@ -41,6 +41,7 @@ function buildForm(): FormGroup {
       close_time: new FormControl<string>('11:59 PM', { nonNullable: true, validators: [Validators.required, validTimeFormat()] }),
       timezone: new FormControl<string>('Pacific/Honolulu', { nonNullable: true, validators: [Validators.required] }),
       allow_abstain: new FormControl<boolean>(false, { nonNullable: true }),
+      allow_vote_change: new FormControl<boolean>(true, { nonNullable: true }),
     },
     { validators: voteDeadlineValidator() }
   );
@@ -88,6 +89,19 @@ describe('VoteBasicsComponent — stale close_date on timezone switch', () => {
     // NOW is Sep 15 in Honolulu — minDate carries the selected zone's current day in host-local fields.
     const minDate = fixture.componentInstance.minDate();
     expect([minDate.getFullYear(), minDate.getMonth(), minDate.getDate()]).toEqual([2026, 8, 15]);
+  });
+
+  it('renders the allow vote change select bound to its default Yes (#4723)', async () => {
+    await fixture.whenStable();
+
+    const select = fixture.nativeElement.querySelector('[data-testid="vote-allow-vote-change-select"]');
+    expect(select).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('label[for="allow-vote-change"]')?.textContent?.trim()).toBe('Allow voters to change their vote');
+    expect(fixture.componentInstance.allowVoteChangeOptions.map((o) => [o.label, o.value])).toEqual([
+      ['Yes', true],
+      ['No', false],
+    ]);
+    expect(form.get('allow_vote_change')?.value).toBe(true);
   });
 
   it('advances the minDate floor when an unrelated edit lands after midnight in the selected zone', async () => {

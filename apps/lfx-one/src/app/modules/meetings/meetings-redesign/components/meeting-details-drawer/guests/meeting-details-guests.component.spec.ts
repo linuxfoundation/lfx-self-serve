@@ -159,6 +159,7 @@ describe('MeetingDetailsGuestsComponent', () => {
             hosts,
             guestCount,
             removedRegistrantUids: removedUids,
+            savedRsvps: confirmedRsvps,
             listedSelfRegistrantUids,
             pastMeetingId: signal('synthetic-past-id'),
             participantsVersion,
@@ -652,8 +653,60 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(meetingService['deleteMeetingRegistrants']).not.toHaveBeenCalled();
     });
 
+    it('reports the reason a rejected host change gives', async () => {
+      meetingService['getChangedFields'] = vi.fn(() => ({}));
+      meetingService['updateMeetingRegistrants'] = vi.fn(() =>
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'Hosts must have a Zoom account.' } }))
+      );
+      await render();
+      component()['toggleHost'](cy);
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Hosts must have a Zoom account.' }));
+    });
+
+    it('reports the reason a rejected removal gives', async () => {
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() =>
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: {
+                successes: [],
+                failures: [{ input: 'r-3', error: { message: 'Committee members cannot be removed.' } }],
+                summary: { total: 1, successful: 0, failed: 1 },
+              },
+            })
+        )
+      );
+      await render();
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Committee members cannot be removed.' }));
+    });
+
+    it('keeps the fallback when every removal failed on an upstream server error', async () => {
+      const failure = { message: 'upstream exploded', details: { statusCode: 503 } };
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() =>
+        throwError(
+          () =>
+            new HttpErrorResponse({
+              status: 400,
+              error: { successes: [], failures: [{ input: 'r-3', error: failure }], summary: { total: 1, successful: 0, failed: 1 } },
+            })
+        )
+      );
+      await render();
+      confirmWith(true);
+      component()['confirmRemove'](cy);
+      await fixture.whenStable();
+
+      expect(toastShow).toHaveBeenCalledWith(expect.objectContaining({ variant: 'error', description: 'Failed to remove guest. Please try again.' }));
+    });
+
     it('keeps the row when the removal fails', async () => {
-      meetingService['deleteMeetingRegistrants'] = vi.fn(() => throwError(() => new Error('boom')));
+      meetingService['deleteMeetingRegistrants'] = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 503 })));
       await render();
       confirmWith(true);
       component()['confirmRemove'](cy);

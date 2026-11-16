@@ -49,6 +49,15 @@ describe('OrgClaOnlyAccessService', () => {
     expect(service.isClaOnly(null)).toBe(false);
   });
 
+  it('never narrows an organization the grants hold, even when the server set names it', () => {
+    writerSet.set(new Set([UID]));
+    expect(service.isClaOnly(UID)).toBe(false);
+
+    writerSet.set(new Set());
+    inheritedAuditorSet.set(new Set([UID]));
+    expect(service.isClaOnly(UID)).toBe(false);
+  });
+
   it('reports a failed CLA-manager lookup', () => {
     expect(service.lookupFailed()).toBe(false);
 

@@ -187,7 +187,18 @@ describe('SidebarNavService', () => {
             isRollUp: () => selectedOrgUid()?.startsWith('family-') ?? false,
           },
         },
-        { provide: OrgRoleGrantsService, useValue: { writerSet: orgWriterSet, claManagerOrgSet } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(false),
+            writerSet: orgWriterSet,
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set<string>()),
+            inheritedAuditorSet: signal(new Set<string>()),
+            claManagerOrgSet,
+            claManagerLookupFailed: signal(false),
+          },
+        },
       ],
     });
   });

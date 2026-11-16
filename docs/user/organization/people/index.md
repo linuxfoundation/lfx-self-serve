@@ -167,13 +167,15 @@ Select a row on either tab to expand it and see each event, course or certificat
 
 You filter a People tab with the search box and menus above its table. Which menus a tab has depends on the tab. **All Employees** and **Contributors** have the most:
 
-1. Type in the search box to find a person. On **All Employees**, **Search by name, title, email or username...** matches a person's name, job title, email or LF username, and ignores case, accents and spaces, so `jose ramirez` finds **José Ramírez**. On **Contributors**, **Search contributors...** finds a person by name or job title.
+1. Type in the search box to find a person. On **All Employees**, **Search by name, title, email or username...** matches a person's name, job title, email or LF username, and ignores case, accents and spaces, so `jose ramirez` finds **José Ramírez**. On **Contributors**, **Search contributors...**, and on **Event Attendees**, **Search event attendees...**, find a person by name or job title, and also ignore case, accents and spaces.
 2. Open the foundation menu, which starts on **All Foundations**, and select a foundation. On **Contributors**, also pick a project in the menu that starts on **Any project**.
 3. On **All Employees**, pick an activity: **All Activity**, **Board & Committee**, **Code contributions** (or **Commits**, when you count commits), **Events** or **Training**.
 4. Select a time range: **Past 30 days**, **Past 90 days**, **Past 365 days**, **Past 2 years** or **All time**. **Past 2 years** is the default.
 5. Select a project type: **LF and non-LF projects** (the default), **LF projects** or **Non-LF projects**. LF projects are Linux Foundation (LF) projects.
 6. Select **More filters** to show the code count, **Employment**, **Company email** (All Employees only), **Key Contact** (All Employees only), **Team members** and **Organization scope**. The link counts how many of them are set to something other than their default, such as **More filters (1)**.
 7. On **All Employees** and **Contributors**, select **Clear filters** to put every filter back to its default, the time range included. It shows once a filter is changed.
+
+On **All Employees**, **Contributors** and **Event Attendees**, a search made only of spaces or invisible formatting characters acts like an empty search. It does not narrow the list or, by itself, show **Clear filters** where that button is available. Other filters still apply.
 
 **Employment** offers **Current employees**, **Former employees** and **All employees** (the default). On **All Employees** under **Current employees**, the **Code Contributors** card leaves out people who have since left. With **All employees** it shows the same number as the **Contributors** tab's **Contributors** card for the same time range, project type, organization scope and team members choice.
 

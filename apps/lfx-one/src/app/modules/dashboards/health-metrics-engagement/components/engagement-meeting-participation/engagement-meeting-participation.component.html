@@ -102,15 +102,15 @@
       <lfx-table styleClass="hm-table" [value]="rowViews()" [paginator]="false" data-testid="engagement-meeting-participation-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Meeting type</span></th>
+            <th scope="col">Meeting type</th>
             <!-- Meetings mode keeps three columns as the design does: the count moves into the bar, so this one is blank. -->
             <th scope="col">
               @if (attendanceMode()) {
-                <span class="text-[12px] font-normal text-gray-500">Meetings</span>
+                Meetings
               }
             </th>
             <th scope="col" class="w-[170px]">
-              <span class="text-[12px] font-normal text-gray-500">{{ attendanceMode() ? 'Attendance' : 'Meetings held' }}</span>
+              {{ attendanceMode() ? 'Attendance' : 'Meetings held' }}
             </th>
           </tr>
         </ng-template>

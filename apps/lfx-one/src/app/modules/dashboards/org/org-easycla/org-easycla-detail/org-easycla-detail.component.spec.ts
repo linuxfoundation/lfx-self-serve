@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, signal, TransferState } from '@angular/core';
+import { computed, signal, TransferState, untracked } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -2980,9 +2980,16 @@ describe('OrgEasyclaDetailComponent', () => {
       queryParamMap.next(convertToParamMap(query));
 
       const items = signal(held.map(catalogueItem));
+      const navGeneration = signal(1);
+      // A first page landing is what replaces the list, so the landed generation follows `items`.
+      const firstPageLandedGeneration = computed(() => {
+        items();
+        return untracked(navGeneration);
+      });
       // Left unanswered when the case wants to observe the page mid-adoption; `landAdoption` is
       // what answers it.
       const resetAndReload = vi.fn(() => {
+        navGeneration.update((g) => g + 1);
         if (adoptionLandsLater) return;
         items.set((heldAfterReload ?? held).map(catalogueItem));
       });
@@ -3014,7 +3021,10 @@ describe('OrgEasyclaDetailComponent', () => {
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          {
+            provide: OrgNavigationService,
+            useValue: { items, loaded: navLoaded, claOnlyPending: signal(false), generation: navGeneration, firstPageLandedGeneration, resetAndReload },
+          },
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           {
             provide: OrgLensClaService,

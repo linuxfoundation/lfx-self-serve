@@ -128,8 +128,8 @@ export class VotesDashboardComponent {
   // Me-lens cast drawer (#4330): opened in place for an active vote still awaiting the viewer's ballot.
   protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly castDrawerVoteId = signal<string | null>(null);
-  // Capture the mode per open session; a missing/refreshed list row must never unlock a submitted ballot.
-  protected readonly castDrawerReadOnly = signal<boolean>(false);
+  // Capture the mode per open session; a missing/refreshed list row must never turn review into a first submission.
+  protected readonly castDrawerReviewMode = signal<boolean>(false);
   /** Accepted ballots stay submitted for this dashboard's lifetime, even if a later indexed read still lags. */
   private readonly submittedVoteIds = signal<ReadonlySet<string>>(new Set());
 
@@ -193,7 +193,7 @@ export class VotesDashboardComponent {
         filter((visible) => !visible),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.castDrawerReadOnly.set(false));
+      .subscribe(() => this.castDrawerReviewMode.set(false));
 
     toObservable(this.isMeLens)
       .pipe(
@@ -258,8 +258,8 @@ export class VotesDashboardComponent {
 
   /**
    * The table's Vote/Review button, title and row click all land here. In the Me lens, an active vote opens the cast
-   * drawer on the list — empty while it still awaits the viewer's ballot (#4330), read-only with their recorded ballot
-   * once they have voted (#4331). It is looked up synchronously in myVotes(), since castDrawerVote() hasn't re-derived
+   * drawer on the list — empty while it still awaits the viewer's ballot (#4330), prefilled with their recorded ballot
+   * once they have voted, editable only when the saved ballot permits changes (#4723). It is looked up synchronously in myVotes(), since castDrawerVote() hasn't re-derived
    * yet. Ended votes, and every vote in the Project/Foundation lens, navigate to the vote page, which opens the cast
    * drawer itself for a voter awaiting a ballot.
    */
@@ -268,7 +268,7 @@ export class VotesDashboardComponent {
       const vote = this.myVotes().find((v) => v.uid === voteId);
       if (vote && (isVoteAwaitingMyBallot(vote) || isVoteBallotReviewable(vote))) {
         this.castDrawerVoteId.set(voteId);
-        this.castDrawerReadOnly.set(isVoteBallotReviewable(vote));
+        this.castDrawerReviewMode.set(isVoteBallotReviewable(vote));
         this.castDrawerVisible.set(true);
         return;
       }

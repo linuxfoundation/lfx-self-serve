@@ -31,7 +31,7 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-09
+last_updated: 2026-11-12
 intercom_collection: Organization
 ---
 
@@ -105,7 +105,7 @@ You can change a corporate CLA (CCLA) only when you are a CLA Manager named on t
 
 ## Why can't I see my company in the Organization lens?
 
-Your company appears in the Organization lens only when you have a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. If you have an admin or viewer role on any organization, the organization switcher lists only the organizations where you have that role, and leaves out companies where your only role is CLA Manager or initial CLA Manager designee. Whether a company is a Linux Foundation member does not by itself decide whether it appears. A CLA Manager, or an initial CLA Manager designee, with no other Organization lens role sees **EasyCLA** and nothing else in the sidebar. See [Why is an organization missing from the switcher?](../choose-an-organization/#why-is-an-organization-missing-from-the-switcher) and [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
+Your company appears in the Organization lens only when you have a role on it, such as an admin or viewer role, or a CLA Manager or initial CLA Manager designee role. The organization switcher lists the organizations where you have an admin or viewer role first, then the companies where your only role is CLA Manager or initial CLA Manager designee, labelled **CLA Manager**. Whether a company is a Linux Foundation member does not by itself decide whether it appears. On a company where your only role is CLA Manager or initial CLA Manager designee, the sidebar shows **EasyCLA** and nothing else. See [Why is an organization missing from the switcher?](../choose-an-organization/#why-is-an-organization-missing-from-the-switcher) and [Where do I find EasyCLA?](../easycla/#where-do-i-find-easycla).
 
 ## What does "View only" mean on a corporate CLA?
 

@@ -3281,15 +3281,25 @@ export class CampaignServiceClient {
   }
 
   /**
-   * The Google Ads account monitor (`monitor-google-ads-account`). Read through the project's OWN
-   * connection only, as the Meta monitor below is, so a project without one gets a 404. Unlike Meta,
-   * upstream returns only the campaigns campaign-service recorded for the project, and refuses with a
-   * 409 when one of them was created under a different customer than `accountId`.
+   * The Google Ads account monitor (`monitor-google-ads-account`). Upstream returns only the campaigns
+   * campaign-service recorded for the project, and refuses with a 409 `campaign_account_mismatch` when
+   * one of them was created under a different customer than the one read.
+   *
+   * `accountId` UNDEFINED omits `account_id` (#5622, campaign-service #592): upstream then reads the
+   * customer the project's campaigns were created under, through the project's own row when it is
+   * configured for that customer and otherwise the LF system account, and returns it as `account_id`
+   * (empty, with no campaigns, when the project has none). campaign-service before 1.0.36 requires
+   * `account_id` and answers its omission with a 400 `missing_field`.
    *
    * `days` is sent as given: upstream REJECTS a value outside 7–90 rather than clamping, so the
    * caller clamps (the controller does).
    */
-  public async getGoogleAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
+  public async getGoogleAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string | undefined,
+    days: number
+  ): Promise<CampaignServiceAccountMonitor> {
     return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
   }
 
@@ -3552,10 +3562,11 @@ export class CampaignServiceClient {
     req: Request,
     provider: CampaignServiceMonitorProvider,
     projectSlug: string,
-    accountId: string,
+    accountId: string | undefined,
     days: number
   ): Promise<CampaignServiceAccountMonitor> {
-    if (projectSlug === '' || accountId === '') {
+    // Only Google Ads may omit the account (#5622); every other monitor reads a named account.
+    if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads')) {
       throw ServiceValidationError.forField(
         projectSlug === '' ? 'project' : 'accountKey',
         'An account monitor read requires both the project and the account it reads.',
@@ -3568,7 +3579,7 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}/account-monitor`,
       'GET',
-      { account_id: accountId, days }
+      accountId === undefined ? { days } : { account_id: accountId, days }
     );
   }
 
