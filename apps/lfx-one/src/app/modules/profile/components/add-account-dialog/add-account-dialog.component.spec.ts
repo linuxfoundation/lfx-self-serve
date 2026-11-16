@@ -40,7 +40,7 @@ import { AddAccountDialogComponent } from './add-account-dialog.component';
  */
 describe('AddAccountDialogComponent — email verification outcome (#4253, #4328)', () => {
   const email = 'owned@example.test';
-  const conflictCopy = 'You’ve verified this email address, but it’s already linked to an LFX account. Contact support for help with next steps.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<AddAccountDialogComponent>;
 
   function setup(

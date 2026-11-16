@@ -42,7 +42,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
     icon: 'fa-light fa-envelope',
     state: 'unverified',
   } as unknown as ConnectedIdentityFull;
-  const conflictCopy = 'You’ve verified this email address, but it’s already linked to an LFX account. Contact support for help with next steps.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<VerifyIdentityDialogComponent>;
 
   function setup(
