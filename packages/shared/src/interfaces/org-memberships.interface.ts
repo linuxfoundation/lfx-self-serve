@@ -446,6 +446,8 @@ export interface ExpiredMembershipRow extends OrgExpiredMembership {
   tierEndFormatted: string;
   renewUrl: string;
   activeSiblingsLabel: string | null;
+  /** Roll-up only: pre-fills the Contact Us chat with the row's company and foundation. */
+  supportMessage: string | undefined;
 }
 
 export interface DiscoverOpportunityRow extends OrgDiscoverOpportunity {

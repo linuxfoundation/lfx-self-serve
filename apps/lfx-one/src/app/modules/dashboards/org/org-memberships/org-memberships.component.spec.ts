@@ -4,6 +4,7 @@
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import type {
@@ -20,6 +21,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
 import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -381,6 +383,35 @@ describe('OrgMembershipsComponent', () => {
       const icons = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="memberships-expired-active-sibling-info-"]') as NodeListOf<HTMLElement>);
       expect(icons.map((icon) => icon.getAttribute('data-testid'))).toEqual([`memberships-expired-active-sibling-info-lfn-${PARENT_ORG.accountId}`]);
       expect(icons[0].getAttribute('aria-label')).toBe("Parent Co's membership in LF Networking has expired. Still active through Subsidiary Co.");
+    });
+
+    it("pre-fills Contact Us with the row's company and foundation", async () => {
+      const expired: OrgExpiredMembershipsResponse = {
+        accountId: ROLL_UP,
+        memberships: [
+          {
+            foundationId: 'lfn',
+            foundationName: 'LF Networking',
+            foundationSlug: 'lfn',
+            foundationLogo: null,
+            membershipTier: 'Silver Membership',
+            tierStartDate: '2024-01-01',
+            tierEndDate: '2025-01-01',
+            expirationDate: '2025-01-01',
+            actionType: 'contact',
+            organization: SUBSIDIARY_ORG,
+          },
+        ],
+        organizations: [PARENT_ORG, SUBSIDIARY_ORG],
+      };
+      const { fixture } = await render([], DEFAULT_PROJECTS, { rollUp: { response: rollUpResponse(), expired } });
+
+      (fixture.nativeElement.querySelector('[data-testid="memberships-tab-expired"]') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const contactUs = fixture.debugElement.query(By.css('[data-testid="org-memberships-expired-contact-us-button"]'));
+      expect(contactUs.injector.get(OpenIntercomDirective).intercomMessage()).toBe("Hi, I need help with Subsidiary Co's expired LF Networking membership.");
     });
 
     it('offers no Discover tab', async () => {

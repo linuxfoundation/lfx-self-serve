@@ -328,6 +328,7 @@ export class OrgMembershipsComponent {
       tierEndFormatted: this.formatDateFull(m.tierEndDate),
       renewUrl: this.buildEnrollmentUrl(m.foundationSlug),
       activeSiblingsLabel: this.activeSiblingsLabel(m),
+      supportMessage: m.organization ? `Hi, I need help with ${m.organization.name}'s expired ${m.foundationName} membership.` : undefined,
     }));
   }
 
