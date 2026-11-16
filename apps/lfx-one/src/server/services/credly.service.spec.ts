@@ -20,7 +20,7 @@ import { logger } from './logger.service';
 const API_URL = 'https://credly.example/v1';
 const PRIMARY_EMAIL = 'user@example.com';
 const SECONDARY_EMAIL = 'alt@acme.example';
-const CREDLY_ENV_KEYS = ['CREDLY_API_URL', 'CREDLY_ORG_ID', 'CREDLY_API_TOKEN'] as const;
+const CREDLY_ENV_KEYS = ['CREDLY_API_URL', 'CREDLY_ORG_ID', 'CREDLY_API_TOKEN', 'CREDLY_CACHE_TTL_MS'] as const;
 
 const req = {} as Request;
 
@@ -111,6 +111,7 @@ describe('CredlyService.getBadgesForEmails', () => {
     process.env['CREDLY_API_URL'] = API_URL;
     process.env['CREDLY_ORG_ID'] = 'org-1';
     process.env['CREDLY_API_TOKEN'] = 'test-token';
+    process.env['CREDLY_CACHE_TTL_MS'] = '60000';
   });
 
   afterEach(() => {
