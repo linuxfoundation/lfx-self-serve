@@ -61,7 +61,7 @@ export function foldForSearch(value: string | null | undefined): string {
 /**
  * The {@link foldForSearch} keys a person's name matches in either order (linuxfoundation/lfx-self-serve#5687): the name
  * itself, every rotation of its space-separated parts (`明华 李` -> `李明华`, `Juan Carlos Pérez` -> `perezjuancarlos` and
- * `carlosperezjuan`), and `lastName` + `firstName` when both are present, for names whose parts are stored separately.
+ * `carlosperezjuan`), and both orders of `firstName` and `lastName` when present, for names whose parts are stored separately.
  * Folding removes the spaces, so a query matches with or without one between the parts. Empty keys are dropped and
  * duplicates collapsed.
  */
@@ -74,7 +74,7 @@ export function nameSearchKeys(name: string | null | undefined, firstName: strin
   const first = foldForSearch(firstName);
   const last = foldForSearch(lastName);
   if (first && last) {
-    keys.push(last + first);
+    keys.push(last + first, first + last);
   }
   return [...new Set(keys.filter(Boolean))];
 }

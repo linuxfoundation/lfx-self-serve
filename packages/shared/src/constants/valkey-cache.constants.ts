@@ -50,7 +50,7 @@ export const VALKEY_CACHE = {
    * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
    * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
    * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
-   * `org-people-dir:v9`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * `org-people-dir:v10`. `v2`: merge-only fields are stripped before the write and the validator asserts
    * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
    * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
    * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
@@ -62,7 +62,7 @@ export const VALKEY_CACHE = {
    * `githubUsernames` for All Employees search, bumped for the same rolling-deploy reason. `v9` (#5687): handles
    * come from retained account history, not just selected-window code; old entries must not hide those identities.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v9',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v10',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -388,6 +388,6 @@ export const VALKEY_CACHE = {
     // adds a `githubUsernames` array. `v9` enriches eligible rows from retained identity history rather than
     // only in-window code. The existing cap carries over unmeasured; oversized entries skip storage safely.
     // The cap is keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
-    'org-people-dir:v9': 6 * 1_048_576,
+    'org-people-dir:v10': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

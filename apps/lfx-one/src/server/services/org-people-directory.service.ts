@@ -380,7 +380,9 @@ export class OrgPeopleDirectoryService {
     }
 
     const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
-    return { directory, complete: stored !== null && !stored.githubUsernamesUnavailable && formerUsernames !== null };
+    // The merge can add eligible people after the stored activity gate; their LF identity, never an email, links history.
+    const githubComplete = !range || (!stored?.githubUsernamesUnavailable && (await this.peopleService.enrichLiveGithubUsernames(accountId, directory.rows)));
+    return { directory, complete: stored !== null && githubComplete && formerUsernames !== null };
   }
 
   /**

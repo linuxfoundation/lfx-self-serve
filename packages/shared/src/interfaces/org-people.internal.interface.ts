@@ -81,6 +81,8 @@ export type OrgPeopleIdentityRow = Pick<OrgPeopleAllRow, 'PERSON_KEY' | 'LFID' |
 export interface OrgPersonGithubIdentityRow {
   PERSON_KEY: string;
   GITHUB_USERNAME: string;
+  /** Normalized LF username only when it resolves to exactly one LF person; never inferred from an address. */
+  LF_USERNAME: string | null;
 }
 
 /** One person's code in a range, project scope and organization scope, summed over their People → Contributors project rows (lfx-self-serve#4735). */

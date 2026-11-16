@@ -1100,11 +1100,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
               // Given name first, family name last, as the warehouse stores it.
               row('p-cjk', '\u660E\u534E \u674E', { commitsCount: 1 }),
               row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
+              row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
               // A handle that appears nowhere in the name, email or LF username, on someone whose only activity is an event.
               row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', githubUsernames: ['example-gh-user'], commitsCount: 0, eventsCount: 1 }),
               row('p-other', 'Alan Turing', { commitsCount: 1 }),
             ],
-            4
+            5
           )
         );
         snowflake$.complete();
@@ -1121,6 +1122,12 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       it('finds a three-part name from any starting part, ignoring accents and spaces', async () => {
         expect(await search('p\u00E9rez juan carlos')).toEqual(['org-people-all-employees-row-p-three-part']);
         expect(await search('perezjuancarlos')).toEqual(['org-people-all-employees-row-p-three-part']);
+      });
+
+      it('finds both stored-name orders when the display name contains only the given name', async () => {
+        for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
+          expect(await search(query)).toEqual(['org-people-all-employees-row-p-stored-parts']);
+        }
       });
 
       it('finds someone by a GitHub username their name, email and LF username do not contain', async () => {

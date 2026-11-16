@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 
 import type {
   CompactOrgAllEmployeesRawCache,
+  OrgAllEmployeeRowInternal,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
   OrgLensTimeRange,
@@ -1630,6 +1631,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
         database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = '${formerKey}'`);
         addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', '', 'Left User', 6);
         database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
+        for (const [key, handle] of [
+          [formerKey, 'former-only'],
+          ['cdp:left-user', 'SharedHandle'],
+          ['cdp:member-left', 'sharedhandle'],
+        ]) {
+          database.prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ? WHERE PERSON_KEY = ?').run(handle, key);
+        }
 
         const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
 
@@ -1638,6 +1646,12 @@ describe('OrgLensPeopleService person-key company emails', () => {
           [unclassifiedKey, false, true],
         ]);
         expect(response.stats.codeContributors).toBe(2);
+        expect(
+          response.rows
+            .find((row) => row.personKey === formerKey)
+            ?.githubUsernames?.map((handle) => handle.toLowerCase())
+            .sort()
+        ).toEqual(['former-only', 'sharedhandle']);
       });
 
       it('lists once, as former, someone whose stale former row lacks the username their unclassified row has, taking it', async () => {
@@ -1831,7 +1845,7 @@ describe('OrgLensPeopleService person-key company emails', () => {
           'people-contributors:v5:30d:all:all',
           'people-contributors:v5:all:all:all',
           'people-contributors:v5:all:lf:all',
-          'people-github-identities:v1',
+          'people-github-identities:v2',
           'people-former:v4:30d:all',
           'people-former:v4:all:all',
           'people-unclassified:v2:30d:all',
@@ -1931,6 +1945,61 @@ describe('OrgLensPeopleService person-key company emails', () => {
         .prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ? WHERE PERSON_KEY = ? AND PROJECT_ID = ?')
         .run(value, key, `project-${foundationId}`);
     }
+
+    it('enriches live-only rows by unique LF identity, not email or activity, with account-isolated cold and warm handles', async () => {
+      addDailyCode(ACCOUNT, personKey, '2020-01-01', 'foundation-two', 'Foundation Two');
+      setGithubUsername(personKey, 'historical-handle');
+      addLfUser(personKey, ' MixedUser ');
+      addLfUser(personKey, 'mixeduser');
+      addLfUser(personKey, 'ambiguous');
+      addLfUser('different-person', ' AMBIGUOUS ');
+      addDailyCode('account-other', personKey, '2020-01-01', 'foundation-other', 'Foundation Other');
+      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = 'foreign-handle' WHERE ACCOUNT_ID = 'account-other'`);
+      const rows: Pick<OrgAllEmployeeRowInternal, 'personKey' | 'lfUsername' | 'githubUsernames' | 'accessBadge'>[] = [
+        { personKey: 'live-linked', lfUsername: ' MIXEDUSER ' },
+        { personKey: 'live-ambiguous', lfUsername: 'ambiguous' },
+        { personKey: 'live-unknown', lfUsername: 'unknown' },
+        { personKey: 'live-email-only', lfUsername: null },
+        { personKey: 'stored-key', lfUsername: 'mixeduser', githubUsernames: ['stored-handle'] },
+        { personKey: 'live-invited', lfUsername: 'mixeduser', accessBadge: 'invited' },
+      ];
+      const keys = rows.map((row) => row.personKey);
+
+      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
+      expect(rows.map((row) => row.personKey)).toEqual(keys);
+      expect(rows.map((row) => row.githubUsernames)).toEqual([['historical-handle'], [], [], undefined, ['stored-handle'], undefined]);
+      const reads = execute.mock.calls.length;
+      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
+      expect(execute).toHaveBeenCalledTimes(reads);
+      expect(await service.enrichLiveGithubUsernames('account-other', rows)).toBe(true);
+      expect(rows[0].githubUsernames).toEqual(['foreign-handle']);
+    });
+
+    it('does not read identities when no eligible live-only row has a verified username', async () => {
+      expect(
+        await service.enrichLiveGithubUsernames(ACCOUNT, [
+          { personKey: 'stored-key', lfUsername: 'mixeduser' },
+          { personKey: 'live-email-only', lfUsername: null },
+          { personKey: 'live-invited', lfUsername: 'mixeduser', accessBadge: 'invited' },
+        ])
+      ).toBe(true);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('keeps live-only identities intact on a lookup outage and recovers without caching failure', async () => {
+      addDailyCode(ACCOUNT, personKey, '2020-01-01', 'foundation-two', 'Foundation Two');
+      setGithubUsername(personKey, 'recovered-live-handle');
+      addLfUser(personKey, 'mixeduser');
+      const rows: Pick<OrgAllEmployeeRowInternal, 'personKey' | 'lfUsername' | 'githubUsernames'>[] = [{ personKey: 'live-linked', lfUsername: 'mixeduser' }];
+      const warehouse = execute.getMockImplementation()!;
+      execute.mockRejectedValueOnce(new Error('identity lookup unavailable'));
+      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(false);
+      expect(rows).toEqual([{ personKey: 'live-linked', lfUsername: 'mixeduser' }]);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(false);
+      execute.mockImplementation(warehouse);
+      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
+      expect(rows[0].githubUsernames).toEqual(['recovered-live-handle']);
+    });
 
     it.each(['all', '730d'] as const)("puts the handles of a current employee's code in range %s on their row", async (range) => {
       addRangeRow(ACCOUNT, personKey, range, false, 'recent', 'Recent Person', 'recent@company.example', 3);
@@ -2041,7 +2110,14 @@ describe('OrgLensPeopleService person-key company emails', () => {
     it('rejects malformed cached identity rows and refetches only the account-bound identities', async () => {
       addRangeRow(ACCOUNT, personKey, '730d', false, 'linked', 'Linked Person', null, 1);
       setGithubUsername(personKey, 'verified-handle');
-      cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v1')!, JSON.stringify([{ PERSON_KEY: personKey, GITHUB_USERNAME: ['invalid'] }]));
+      for (const row of [
+        { PERSON_KEY: personKey, GITHUB_USERNAME: ['invalid'], LF_USERNAME: null },
+        { PERSON_KEY: personKey, GITHUB_USERNAME: 'injected-handle', LF_USERNAME: 42 },
+        { PERSON_KEY: personKey, GITHUB_USERNAME: 'legacy-handle' },
+      ]) {
+        cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!, JSON.stringify([row]));
+        expect((await service.getAllEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['verified-handle']);
+      }
       expect((await service.getAllEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['verified-handle']);
     });
 
@@ -2065,13 +2141,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
         expect(result).not.toHaveProperty('githubUsernamesUnavailable');
         expect(result.rows[0]).not.toHaveProperty('githubUsernames');
       }
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v1')!)).toBe(false);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(false);
       execute.mockImplementation(warehouse);
       const recovered = await service.getAllEmployeesInternal(ACCOUNT, '730d', 'all');
       expect(recovered).not.toHaveProperty('githubUsernamesUnavailable');
       expect(recovered.rows[0]?.githubUsernames).toEqual(['current-handle']);
       expect((await service.getFormerEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['former-handle']);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v1')!)).toBe(true);
+      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(true);
     });
   });
 

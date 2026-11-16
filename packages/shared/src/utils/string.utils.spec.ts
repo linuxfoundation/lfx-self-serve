@@ -75,8 +75,14 @@ describe('nameSearchKeys', () => {
     expect(nameSearchKeys('明华​李', null, null)).toEqual(['明华李', '李明华']);
   });
 
-  it('adds the family name + given name pair for a single-part name', () => {
-    expect(nameSearchKeys('Mei', 'Mei', 'Chen')).toEqual(['mei', 'chenmei']);
+  it('adds both orders of the stored parts for an incomplete display name', () => {
+    expect(nameSearchKeys('Mei', 'Mei', 'Chen')).toEqual(['mei', 'chenmei', 'meichen']);
+    expect(nameSearchKeys('Chen', 'Mei', 'Chen')).toEqual(['chen', 'chenmei', 'meichen']);
+    expect(nameSearchKeys(null, 'Mei', 'Chen')).toEqual(['chenmei', 'meichen']);
+    const keys = nameSearchKeys('Mei', 'Mei', 'Chen');
+    for (const query of ['Mei Chen', 'meichen', 'Chen Mei', 'chenmei']) {
+      expect(keys.some((key) => key.includes(foldForSearch(query)))).toBe(true);
+    }
   });
 
   it('skips the pair when either part is missing', () => {
