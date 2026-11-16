@@ -119,9 +119,9 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
   'roll-up-unavailable': {
     headline: 'This page is not available for a roll-up yet',
     reason:
-      "This page doesn't combine your organizations yet. Open Memberships for the combined view, or pick a single organization in the selector to see this page.",
+      "This page doesn't combine your companies yet. Open Memberships for the combined view, or pick a single company in the selector to see this page.",
     icon: 'fa-light fa-layer-group',
-    // The legacy form names no organization; the page passes the roll-up's own address as `primaryRoute`.
+    // The legacy form names no company; the page passes the roll-up's own address as `primaryRoute`.
     primary: { label: 'Go to Memberships', route: ['/company', ORG_LENS_ROLL_UP_HOME_PAGE] },
   },
 };
