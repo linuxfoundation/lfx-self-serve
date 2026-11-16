@@ -122,11 +122,6 @@ export interface OrgAllEmployeeRow {
    * that carry no verified identity (key contacts, pending invites), which then fall back to email.
    */
   lfUsername: string | null;
-  /**
-   * GitHub usernames linked to the person's code in the account's retained history, independent of activity filters (lfx-self-serve#5687) — not the LF
-   * username, which is their Linux Foundation account. Searchable only, never shown. Absent when they have none.
-   */
-  githubUsernames?: string[];
   cdpMemberId: string | null;
   name: string;
   /** Given name. Populated directly by live sources; for Snowflake-only rows it is a best-effort split of `name`. */
@@ -225,7 +220,7 @@ export interface OrgAllEmployeeRowVm extends OrgAllEmployeeRow {
   rowClass: string;
   /**
    * `foldForSearch` keys the search box matches against, built once per row: the name in either order (`nameSearchKeys`),
-   * title, email, LF username and GitHub usernames (lfx-self-serve#5687).
+   * title, email and LF username (lfx-self-serve#5687).
    */
   searchKeys: string[];
 }

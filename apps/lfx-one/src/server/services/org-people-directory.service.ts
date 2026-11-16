@@ -94,8 +94,6 @@ function isValidDirectoryCell(key: keyof OrgAllEmployeeCountedRow, value: unknow
       return typeof value === 'number';
     case 'isFormer':
       return value === true || isColumnarAbsent(value);
-    case 'githubUsernames':
-      return isStringArray(value) || isColumnarAbsent(value);
     default:
       return true;
   }
@@ -257,8 +255,6 @@ export class OrgPeopleDirectoryService {
    * list the former ones as current for the whole TTL. A ranged request whose organization scope cannot be resolved
    * is served the live sources the same way, uncached and outside the coalesced entry: no stored code counts are read
    * or cached under a guessed scope.
-   * An identity-enrichment outage keeps all eligible stored rows/counts but also skips the directory cache, so
-   * the next request can recover missing search handles rather than reusing an incomplete entry.
    */
   public async getLive(
     req: Request,
@@ -380,9 +376,7 @@ export class OrgPeopleDirectoryService {
     }
 
     const directory = this.merge(req, accountId, base, seats, keyContacts, access, lfEngagement, formerUsernames);
-    // The merge can add eligible people after the stored activity gate; their LF identity, never an email, links history.
-    const githubComplete = !range || (!stored?.githubUsernamesUnavailable && (await this.peopleService.enrichLiveGithubUsernames(accountId, directory.rows)));
-    return { directory, complete: stored !== null && githubComplete && formerUsernames !== null };
+    return { directory, complete: stored !== null && formerUsernames !== null };
   }
 
   /**

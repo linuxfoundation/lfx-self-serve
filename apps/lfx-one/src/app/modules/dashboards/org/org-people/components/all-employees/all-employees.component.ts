@@ -883,13 +883,10 @@ export class AllEmployeesComponent {
 
   /**
    * The folded keys the search box matches (lfx-self-serve#5687), built once per row rather than per keystroke: the name in
-   * either order, title, email, LF username and GitHub usernames.
+   * either order, title, email and LF username.
    */
   private static searchKeysOf(row: OrgAllEmployeeRow): string[] {
-    return [
-      ...nameSearchKeys(row.name, row.firstName, row.lastName),
-      ...[row.title, row.email, row.lfUsername, ...(row.githubUsernames ?? [])].map(foldForSearch),
-    ].filter(Boolean);
+    return [...nameSearchKeys(row.name, row.firstName, row.lastName), ...[row.title, row.email, row.lfUsername].map(foldForSearch)].filter(Boolean);
   }
 
   private static keyContactRolePillsOf(row: OrgAllEmployeeRow): OrgKeyContactRolePillVm[] {

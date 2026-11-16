@@ -1082,7 +1082,7 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
       }
     });
 
-    describe('searching by name order and GitHub username (lfx-self-serve#5687)', () => {
+    describe('searching by name order and LF username (lfx-self-serve#5687)', () => {
       const search = async (term: string): Promise<string[]> => {
         const input = el().querySelector<HTMLInputElement>('[data-test="org-people-all-employees-search-input"]');
         if (!input) throw new Error('All Employees search input is missing');
@@ -1102,8 +1102,10 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
               row('p-three-part', 'Juan Carlos P\u00E9rez', { commitsCount: 1 }),
               row('p-stored-parts', 'Mei', { firstName: 'Mei', lastName: 'Chen', commitsCount: 1 }),
               row('p-greek', 'ΝΙΚΟΣ ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', { firstName: 'ΝΙΚΟΣ', lastName: 'ΝΙΚΟΛΑΟΣ ΠΑΠΑΣ', commitsCount: 1 }),
-              // A handle that appears nowhere in the name, email or LF username, on someone whose only activity is an event.
-              row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', githubUsernames: ['example-gh-user'], commitsCount: 0, eventsCount: 1 }),
+              // Ignore legacy GitHub metadata from an older server; only the person's existing searchable fields match.
+              Object.assign(row('p-github', 'Mary Somerville', { lfUsername: 'msomerville', commitsCount: 0, eventsCount: 1 }), {
+                githubUsernames: ['example-gh-user'],
+              }),
               row('p-other', 'Alan Turing', { commitsCount: 1 }),
             ],
             6
@@ -1137,15 +1139,16 @@ describe('AllEmployeesComponent — Snowflake and live merge in parallel', () =>
         }
       });
 
-      it('finds someone by a GitHub username their name, email and LF username do not contain', async () => {
-        expect(await search('example-gh-user')).toEqual(['org-people-all-employees-row-p-github']);
-        expect(await search('EXAMPLE-GH')).toEqual(['org-people-all-employees-row-p-github']);
+      it('does not search GitHub usernames even when a legacy response includes them', async () => {
+        expect(await search('example-gh-user')).toEqual([]);
+        expect(await search('EXAMPLE-GH')).toEqual([]);
+        expect(await search('msomerville')).toEqual(['org-people-all-employees-row-p-github']);
       });
 
-      it('still applies the other filters to a GitHub username match', async () => {
+      it('still applies the other filters to an LF username match', async () => {
         fixture.componentInstance['filterForm'].controls.activity.setValue('code');
 
-        expect(await search('example-gh-user')).toEqual([]);
+        expect(await search('msomerville')).toEqual([]);
       });
     });
 

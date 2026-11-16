@@ -50,7 +50,7 @@ export const VALKEY_CACHE = {
    * Domain + schema-version segment for the per-user org People directory cache. Each entry is keyed by
    * one scope — `roster` (the unranged ORG_PEOPLE_ALL roster the reassign pickers read) or
    * `{range}:{projectScope}` — placed before the principal, so the redacted key and the cache family stay
-   * `org-people-dir:v10`. `v2`: merge-only fields are stripped before the write and the validator asserts
+   * `org-people-dir:v7`. `v2`: merge-only fields are stripped before the write and the validator asserts
    * their absence. `v3` (GH-1906): `rows` are stored columnar. `v4` (lfx-self-serve#4163): keyed by time
    * range. `v5` (lfx-self-serve#4164): keyed by project scope too, rows carry every code count and no tiles
    * are stored — the commit scope and metric pick the count after the read. A write that invalidates the
@@ -58,12 +58,9 @@ export const VALKEY_CACHE = {
    * access-only principal who is a former employee in that range, so the current view never lists them.
    * `v7` (#4401): rows carry `keyContactRoles`. The shape guard already rejects a `v6` entry, but sharing
    * one key space across a rolling deploy would have old and new pods each reject and overwrite the
-   * other's entry, so the directory mostly misses until the rollout ends. `v8` (#5687): rows carry
-   * `githubUsernames` for All Employees search, bumped for the same rolling-deploy reason. `v9` (#5687): handles
-   * come from retained account history, not just selected-window code; old entries must not hide those identities.
-   * `v10` (#5687): live-only rows receive retained handles through their verified LF username.
+   * other's entry, so the directory mostly misses until the rollout ends.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v10',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v7',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -385,11 +382,8 @@ export const VALKEY_CACHE = {
     // 2.51 MiB plus the live-only rows on the Past 2 years all-projects default (lfx-self-serve#4694, prod, 2026-10-29).
     // 4.3 MiB × 1.25 rounds up to 6 MiB. `v6` adds one mostly-absent `isFormer` cell per row (~7 bytes), well
     // inside the headroom. `v7` (#4401) adds a short, usually-empty `keyContactRoles` array per row —
-    // only the minority of people holding a key-contact role carry any — likewise inside it. `v8` (#5687)
-    // adds a `githubUsernames` array. `v9` enriches eligible rows from retained identity history rather than
-    // only in-window code. `v10` includes handles on live-only rows through verified LF usernames.
-    // The existing cap carries over unmeasured; oversized entries skip storage safely.
-    // The cap is keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
-    'org-people-dir:v10': 6 * 1_048_576,
+    // only the minority of people holding a key-contact role carry any — likewise inside it. The cap is
+    // keyed by namespace, so it has to move with each bump or large orgs drop to the 1 MiB default.
+    'org-people-dir:v7': 6 * 1_048_576,
   } as Readonly<Record<string, number>>,
 } as const;

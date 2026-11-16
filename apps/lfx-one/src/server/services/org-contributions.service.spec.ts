@@ -72,6 +72,39 @@ beforeEach(() => {
   service = new OrgContributionsService();
 });
 
+describe('OrgContributionsService — GitHub username search', () => {
+  it('keeps the handle searchable on Commits and returns it for the Username column', async () => {
+    execute.mockImplementation(async (sql: string) => ({
+      rows: sql.includes('commit_message,')
+        ? [
+            {
+              COMMIT_SHA: 'abc123',
+              MEMBER_ID: 'member-one',
+              PERSON_KEY: 'person-one',
+              PROJECT_NAME: 'Widgets',
+              MEMBER_DISPLAY_NAME: 'Mary Somerville',
+              MEMBER_LOGO: null,
+              GITHUB_USERNAME: 'example-gh-user',
+              SOURCE: 'github',
+              ACTIVITY_TS: '2026-10-01T00:00:00Z',
+              COMMIT_MESSAGE: 'Fix widget',
+              COMMIT_URL: 'https://github.com/example/widgets/commit/abc123',
+            },
+          ]
+        : [],
+    }));
+
+    const response = await service.getContributions(ACCOUNT, query({ view: 'commits', search: 'example-gh-user' }));
+    const { sql, binds } = feedCall();
+
+    for (const column of ['commit_message', 'project_name', 'member_display_name', 'github_username']) {
+      expect(sql).toContain(`${column} ILIKE ?`);
+    }
+    expect(binds.filter((value) => value === '%example-gh-user%')).toHaveLength(4);
+    expect(response.commits[0]).toMatchObject({ committerName: 'Mary Somerville', username: 'example-gh-user' });
+  });
+});
+
 describe('OrgContributionsService — commit filters', () => {
   it.each([
     ['all', null],

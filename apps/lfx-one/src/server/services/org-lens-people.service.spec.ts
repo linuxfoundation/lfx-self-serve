@@ -5,7 +5,6 @@ import { createRequire } from 'node:module';
 
 import type {
   CompactOrgAllEmployeesRawCache,
-  OrgAllEmployeeRowInternal,
   OrgAllEmployeesResponse,
   OrgCommitFilters,
   OrgLensTimeRange,
@@ -34,7 +33,6 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // stub would make the round-trip assertions below vacuous.
   ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-commit-filters.utils')),
-  ...(await import('../../../../../packages/shared/src/utils/github-url.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-people.constants')),
@@ -348,7 +346,7 @@ beforeEach(() => {
       ACCOUNT_ID TEXT, PERSON_KEY TEXT, PROJECT_ID TEXT, ACTIVITY_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT, IS_LF_PROJECT INTEGER,
       LFID TEXT, LF_USERNAME TEXT, CDP_MEMBER_ID TEXT, DISPLAY_NAME TEXT, TITLE TEXT, PROJECT_NAME TEXT, PROJECT_SLUG TEXT, FOUNDATION_SLUG TEXT,
       DAILY_COMMITS INTEGER, DAILY_MERGED_COMMITS INTEGER, DAILY_SCOPE_COMMITS INTEGER, DAILY_SCOPE_MERGED_COMMITS INTEGER, DAILY_CODE_ACTIVITIES INTEGER,
-      IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0, GITHUB_USERNAME TEXT
+      IS_CDP_TEAM_MEMBER INTEGER DEFAULT 0
     )
   `);
   // People with code but no employment row (lfx-self-serve#4730); empty unless a test adds someone.
@@ -1631,13 +1629,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
         database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = '${formerKey}'`);
         addUnclassifiedRow(ACCOUNT, 'cdp:member-left', '365d', '', 'Left User', 6);
         database.exec(`UPDATE ORG_PEOPLE_UNCLASSIFIED_CONTRIBUTORS SET CDP_MEMBER_ID = 'member-left' WHERE PERSON_KEY = 'cdp:member-left'`);
-        for (const [key, handle] of [
-          [formerKey, 'former-only'],
-          ['cdp:left-user', 'SharedHandle'],
-          ['cdp:member-left', 'sharedhandle'],
-        ]) {
-          database.prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ? WHERE PERSON_KEY = ?').run(handle, key);
-        }
 
         const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
 
@@ -1646,12 +1637,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
           [unclassifiedKey, false, true],
         ]);
         expect(response.stats.codeContributors).toBe(2);
-        expect(
-          response.rows
-            .find((row) => row.personKey === formerKey)
-            ?.githubUsernames?.map((handle) => handle.toLowerCase())
-            .sort()
-        ).toEqual(['former-only', 'sharedhandle']);
       });
 
       it('lists once, as former, someone whose stale former row lacks the username their unclassified row has, taking it', async () => {
@@ -1845,7 +1830,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
           'people-contributors:v5:30d:all:all',
           'people-contributors:v5:all:all:all',
           'people-contributors:v5:all:lf:all',
-          'people-github-identities:v2',
           'people-former:v4:30d:all',
           'people-former:v4:all:all',
           'people-unclassified:v2:30d:all',
@@ -1931,245 +1915,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
       expect(current.stats.codeContributors + offRoster.stats.codeContributors).toBe(2);
       // The off-roster read classifies against the roster entry the page lists, not a separate classification read.
       expect((execute.mock.calls as [string][]).some(([query]) => query.includes("IFF(IS_FORMER, 'former', 'current')"))).toBe(false);
-    });
-  });
-
-  describe('GitHub usernames for All Employees search (lfx-self-serve#5687)', () => {
-    beforeEach(() => {
-      database.exec(TRAINING_FOUNDATION_COLUMNS);
-    });
-
-    /** Sets the warehouse `github_username` on every code day of `key`'s project in `foundationId`. */
-    function setGithubUsername(key: string, value: string | null, foundationId = 'foundation-two'): void {
-      database
-        .prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ? WHERE PERSON_KEY = ? AND PROJECT_ID = ?')
-        .run(value, key, `project-${foundationId}`);
-    }
-
-    it('enriches live-only rows by unique LF identity, not email or activity, with account-isolated cold and warm handles', async () => {
-      addDailyCode(ACCOUNT, personKey, '2020-01-01', 'foundation-two', 'Foundation Two');
-      setGithubUsername(personKey, 'historical-handle');
-      addLfUser(personKey, ' MixedUser ');
-      addLfUser(personKey, 'mixeduser');
-      addLfUser(personKey, 'ambiguous');
-      addLfUser('different-person', ' AMBIGUOUS ');
-      addDailyCode('account-other', personKey, '2020-01-01', 'foundation-other', 'Foundation Other');
-      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = 'foreign-handle' WHERE ACCOUNT_ID = 'account-other'`);
-      const rows: Pick<OrgAllEmployeeRowInternal, 'personKey' | 'lfUsername' | 'githubUsernames' | 'accessBadge'>[] = [
-        { personKey: 'live-linked', lfUsername: ' MIXEDUSER ' },
-        { personKey: 'live-ambiguous', lfUsername: 'ambiguous' },
-        { personKey: 'live-unknown', lfUsername: 'unknown' },
-        { personKey: 'live-email-only', lfUsername: null },
-        { personKey: 'stored-key', lfUsername: 'mixeduser', githubUsernames: ['stored-handle'] },
-        { personKey: 'live-invited', lfUsername: 'mixeduser', accessBadge: 'invited' },
-      ];
-      const keys = rows.map((row) => row.personKey);
-
-      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
-      expect(rows.map((row) => row.personKey)).toEqual(keys);
-      expect(rows.map((row) => row.githubUsernames)).toEqual([['historical-handle'], [], [], undefined, ['stored-handle'], undefined]);
-      const reads = execute.mock.calls.length;
-      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
-      expect(execute).toHaveBeenCalledTimes(reads);
-      expect(await service.enrichLiveGithubUsernames('account-other', rows)).toBe(true);
-      expect(rows[0].githubUsernames).toEqual(['foreign-handle']);
-    });
-
-    it('does not read identities when no eligible live-only row has a verified username', async () => {
-      expect(
-        await service.enrichLiveGithubUsernames(ACCOUNT, [
-          { personKey: 'stored-key', lfUsername: 'mixeduser' },
-          { personKey: 'live-email-only', lfUsername: null },
-          { personKey: 'live-invited', lfUsername: 'mixeduser', accessBadge: 'invited' },
-        ])
-      ).toBe(true);
-      expect(execute).not.toHaveBeenCalled();
-    });
-
-    it('keeps live-only identities intact on a lookup outage and recovers without caching failure', async () => {
-      addDailyCode(ACCOUNT, personKey, '2020-01-01', 'foundation-two', 'Foundation Two');
-      setGithubUsername(personKey, 'recovered-live-handle');
-      addLfUser(personKey, 'mixeduser');
-      const rows: Pick<OrgAllEmployeeRowInternal, 'personKey' | 'lfUsername' | 'githubUsernames'>[] = [{ personKey: 'live-linked', lfUsername: 'mixeduser' }];
-      const warehouse = execute.getMockImplementation()!;
-      execute.mockRejectedValueOnce(new Error('identity lookup unavailable'));
-      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(false);
-      expect(rows).toEqual([{ personKey: 'live-linked', lfUsername: 'mixeduser' }]);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(false);
-      execute.mockImplementation(warehouse);
-      expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
-      expect(rows[0].githubUsernames).toEqual(['recovered-live-handle']);
-    });
-
-    it.each(['ORG_PEOPLE_LF_USERNAMES', 'ORG_PEOPLE_CONTRIBUTORS_DAILY'])(
-      'leaves %s lookup failures uncached while exempting only the optional view',
-      async (missing) => {
-        addDailyCode(ACCOUNT, personKey, '2020-01-01', 'foundation-two', 'Foundation Two');
-        setGithubUsername(personKey, 'recovered-live-handle');
-        addLfUser(personKey, 'mixeduser');
-        const rows: Pick<OrgAllEmployeeRowInternal, 'personKey' | 'lfUsername' | 'githubUsernames'>[] = [{ personKey: 'live-linked', lfUsername: 'mixeduser' }];
-        const warehouse = execute.getMockImplementation()!;
-        execute.mockRejectedValueOnce(new Error(`SQL compilation error: Object 'ANALYTICS.PLATINUM_LFX_ONE.${missing}' does not exist or not authorized.`));
-
-        expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(false);
-        expect(execute).toHaveBeenLastCalledWith(expect.stringContaining('WITH github_identities'), [ACCOUNT], {
-          expectMissingObject: 'ORG_PEOPLE_LF_USERNAMES',
-        });
-        expect(rows).toEqual([{ personKey: 'live-linked', lfUsername: 'mixeduser' }]);
-        expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(false);
-        execute.mockImplementation(warehouse);
-        expect(await service.enrichLiveGithubUsernames(ACCOUNT, rows)).toBe(true);
-        expect(rows[0].githubUsernames).toEqual(['recovered-live-handle']);
-      }
-    );
-
-    it.each(['all', '730d'] as const)("puts the handles of a current employee's code in range %s on their row", async (range) => {
-      addRangeRow(ACCOUNT, personKey, range, false, 'recent', 'Recent Person', 'recent@company.example', 3);
-      setGithubUsername(personKey, '@example-gh-user');
-
-      const response = await service.getAllEmployees(ACCOUNT, range, FILTERS);
-
-      expect(response.rows.map((row) => [row.personKey, row.githubUsernames])).toEqual([[personKey, ['example-gh-user']]]);
-    });
-
-    it('parses URL and @ values, dedupes them across projects ignoring case and drops masked emails', async () => {
-      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
-      addCodeDay(ACCOUNT, personKey, '365d', { commits: 1, merged: 1, code: 1 }, ['foundation-three', 'Foundation Three']);
-      addCodeDay(ACCOUNT, personKey, '365d', { commits: 1, merged: 1, code: 1 }, ['foundation-four', 'Foundation Four']);
-      setGithubUsername(personKey, 'https://github.com/Example-GH-User');
-      setGithubUsername(personKey, '@example-gh-user', 'foundation-three');
-      setGithubUsername(personKey, 'recent@...', 'foundation-four');
-
-      const [row] = (await service.getAllEmployees(ACCOUNT, '365d', FILTERS)).rows;
-
-      // One handle either way: which casing is kept depends on row order, and search folds case.
-      expect(row?.githubUsernames?.map((handle) => handle.toLowerCase())).toEqual(['example-gh-user']);
-    });
-
-    it('leaves githubUsernames off the row of someone without a linked handle in retained history', async () => {
-      addRangeRow(ACCOUNT, personKey, '365d', false, 'recent', 'Recent Person', 'recent@company.example', 3);
-      addRangeRow(ACCOUNT, 'person-events', '365d', false, 'events', 'Events Only', 'events@company.example', 0);
-      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = 'person-events'`);
-
-      const response = await service.getAllEmployees(ACCOUNT, '365d', FILTERS);
-
-      expect(response.rows.map((row) => row.personKey).sort()).toEqual(['person-events', personKey].sort());
-      for (const row of response.rows) expect(row).not.toHaveProperty('githubUsernames');
-    });
-
-    it('puts the handles on former and unclassified rows', async () => {
-      addRangeRow(ACCOUNT, 'person-former', '365d', true, 'leftuser', 'Left User', null, 4);
-      addUnclassifiedRow(ACCOUNT, 'cdp:member-seven', '365d', 'noroster', 'No Roster', 3);
-      setGithubUsername('person-former', 'example-gh-former');
-      setGithubUsername('cdp:member-seven', 'github.com/example-gh-unclassified', 'foundation-three');
-
-      const response = await service.getFormerEmployees(ACCOUNT, '365d', FILTERS, 'include');
-
-      expect(response.rows.map((row) => [row.personKey, row.githubUsernames])).toEqual([
-        ['person-former', ['example-gh-former']],
-        ['cdp:member-seven', ['example-gh-unclassified']],
-      ]);
-    });
-
-    it.each(['all', '730d'] as const)('keeps historical handles on recent event attendees in %s without adding people or foreign identities', async (range) => {
-      addRangeRow(ACCOUNT, personKey, range, false, 'events', 'Event Person', 'events@company.example', 0);
-      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = '${personKey}'`);
-      addCodeDay(ACCOUNT, personKey, 'all', { commits: 2, merged: 1, code: 3 });
-      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET ACTIVITY_DATE = '2020-01-01'`);
-      setGithubUsername(personKey, 'historical-event-handle');
-      addDailyCode('account-other', personKey, '2020-01-01', 'foundation-other', 'Foundation Other');
-      database.exec(`UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = 'foreign-handle' WHERE ACCOUNT_ID = 'account-other'`);
-      addDailyCode(ACCOUNT, 'not-on-selected-roster', '2020-01-01', 'foundation-two', 'Foundation Two');
-      setGithubUsername('not-on-selected-roster', 'excluded-handle');
-
-      const cold = await service.getAllEmployees(ACCOUNT, range, FILTERS);
-      expect(cold.rows.map((row) => [row.personKey, row.githubUsernames])).toEqual([[personKey, ['historical-event-handle']]]);
-      expect(cold.rows[0]?.commitsCount).toBe(range === 'all' ? 2 : 0);
-      expect(cold.rows[0]?.eventsCount).toBe(1);
-      const reads = execute.mock.calls.length;
-      expect(await service.getAllEmployees(ACCOUNT, range, FILTERS)).toEqual(cold);
-      expect(execute).toHaveBeenCalledTimes(reads);
-      const identityReads = (execute.mock.calls as [string, string[]][]).filter(([query]) => query.includes('SELECT DISTINCT person_key, github_username'));
-      expect(identityReads).toHaveLength(1);
-      expect(identityReads[0]?.[1]).toEqual([ACCOUNT]);
-    });
-
-    it('keeps linked handles when project and organization scopes exclude their code, without counting that code', async () => {
-      addRangeRow(ACCOUNT, personKey, '730d', false, 'events', 'Event Person', null, 0, { projectScope: 'lf' });
-      database.exec(`UPDATE ORG_PEOPLE_ALL_RANGES SET EVENTS_COUNT = 1 WHERE PERSON_KEY = '${personKey}'`);
-      addCodeDay(ACCOUNT, personKey, '30d', { commits: 4, merged: 2, code: 5 }, undefined, 0);
-      setGithubUsername(personKey, 'non-lf-identity');
-      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_CODE_ACTIVITIES INTEGER DEFAULT 0');
-      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_SCOPE_COMMITS INTEGER DEFAULT 0');
-      database.exec('ALTER TABLE ORG_PEOPLE_CONTRIBUTORS_DAILY ADD COLUMN INSIGHTS_DAILY_SCOPE_MERGED_COMMITS INTEGER DEFAULT 0');
-      resolveOrgScope.mockImplementation(async (_snowflake: unknown, _account: string, scope: string) => scope);
-
-      const result = await service.getAllEmployees(ACCOUNT, '730d', { ...FILTERS, projectScope: 'lf' }, 'include', 'insights');
-      expect(result.rows.map((row) => [row.personKey, row.commitsCount, row.githubUsernames])).toEqual([[personKey, 0, ['non-lf-identity']]]);
-      expect(result.stats.codeContributors).toBe(0);
-    });
-
-    it.each(['all', '730d'] as const)('preserves both same-project daily identities in %s without duplicating code counts, cold and warm', async (range) => {
-      addRangeRow(ACCOUNT, personKey, range, false, 'linked', 'Linked Person', null, 3);
-      setGithubUsername(personKey, 'alpha-handle');
-      addCodeDay(ACCOUNT, personKey, '30d', { commits: 2, merged: 1, code: 4 });
-      database
-        .prepare('UPDATE ORG_PEOPLE_CONTRIBUTORS_DAILY SET GITHUB_USERNAME = ?, CDP_MEMBER_ID = ? WHERE ACTIVITY_DATE = ?')
-        .run('zeta-handle', 'member-second-identity', daysAgo(RANGE_DAY['30d']));
-
-      const cold = await service.getAllEmployees(ACCOUNT, range, FILTERS);
-      expect(cold.rows.map((row) => [row.githubUsernames, row.commitsCount, row.codeActivitiesCount])).toEqual([[['alpha-handle', 'zeta-handle'], 5, 7]]);
-      expect(cold.stats.codeContributors).toBe(1);
-      const contributors = new OrgPeopleContributorsService();
-      const projects = await contributors.readPersonProjectRows(ACCOUNT, range, 'all', 'all');
-      expect(projects).toHaveLength(1);
-      expect(projects[0]?.COMMITS).toBe(5);
-      const reads = execute.mock.calls.length;
-      expect(await service.getAllEmployees(ACCOUNT, range, FILTERS)).toEqual(cold);
-      expect(execute).toHaveBeenCalledTimes(reads);
-    });
-
-    it('rejects malformed cached identity rows and refetches only the account-bound identities', async () => {
-      addRangeRow(ACCOUNT, personKey, '730d', false, 'linked', 'Linked Person', null, 1);
-      setGithubUsername(personKey, 'verified-handle');
-      for (const row of [
-        { PERSON_KEY: personKey, GITHUB_USERNAME: ['invalid'], LF_USERNAME: null },
-        { PERSON_KEY: personKey, GITHUB_USERNAME: 'injected-handle', LF_USERNAME: 42 },
-        { PERSON_KEY: personKey, GITHUB_USERNAME: 'legacy-handle' },
-      ]) {
-        cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!, JSON.stringify([row]));
-        expect((await service.getAllEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['verified-handle']);
-      }
-      expect((await service.getAllEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['verified-handle']);
-    });
-
-    it('preserves current and former rows on an identity outage, without caching failure, and recovers handles', async () => {
-      addRangeRow(ACCOUNT, personKey, '730d', false, 'linked', 'Linked Person', null, 1);
-      addRangeRow(ACCOUNT, 'person-former', '730d', true, 'former', 'Former Person', null, 2);
-      setGithubUsername(personKey, 'current-handle');
-      setGithubUsername('person-former', 'former-handle');
-      const warehouse = execute.getMockImplementation()!;
-      execute.mockImplementation(async (query: string, binds: string[]) => {
-        if (query.includes('SELECT DISTINCT person_key, github_username')) throw new Error('identity lookup unavailable');
-        return warehouse(query, binds);
-      });
-      const internal = await service.getAllEmployeesInternal(ACCOUNT, '730d', 'all');
-      expect(internal.githubUsernamesUnavailable).toBe(true);
-      const current = await service.getAllEmployees(ACCOUNT, '730d', FILTERS);
-      const former = await service.getFormerEmployees(ACCOUNT, '730d', FILTERS);
-      expect(current.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([[personKey, 1]]);
-      expect(former.rows.map((row) => [row.personKey, row.commitsCount])).toEqual([['person-former', 2]]);
-      for (const result of [current, former]) {
-        expect(result).not.toHaveProperty('githubUsernamesUnavailable');
-        expect(result.rows[0]).not.toHaveProperty('githubUsernames');
-      }
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(false);
-      execute.mockImplementation(warehouse);
-      const recovered = await service.getAllEmployeesInternal(ACCOUNT, '730d', 'all');
-      expect(recovered).not.toHaveProperty('githubUsernamesUnavailable');
-      expect(recovered.rows[0]?.githubUsernames).toEqual(['current-handle']);
-      expect((await service.getFormerEmployees(ACCOUNT, '730d', FILTERS)).rows[0]?.githubUsernames).toEqual(['former-handle']);
-      expect(cacheValues.has(buildOrgCacheKey(ACCOUNT, 'people-github-identities:v2')!)).toBe(true);
     });
   });
 
@@ -2769,7 +2514,6 @@ function liveCodeRow(personKey: string, foundationId: string, commits: number, m
 function mockWarehouse(roster: Record<string, unknown>[], foundations: Record<string, unknown>[], live: Record<string, unknown>[]): void {
   execute.mockImplementation(async (query: string) => {
     if (query.includes('GROUP BY person_key, project_id')) return { rows: live };
-    if (query.includes('SELECT DISTINCT person_key, github_username')) return { rows: [] };
     return { rows: query.includes('ORDER BY NAME') ? roster : foundations };
   });
 }
@@ -2801,7 +2545,7 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
 
     const wire = await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include');
 
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(3);
     expect(wire.rows).toHaveLength(1);
     expect(wire.rows[0]).not.toHaveProperty('emails');
     expect(wire.rows[0]).not.toHaveProperty('mergedFrom');
@@ -2809,7 +2553,7 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
 
     // The internal accessor serves the same cached raw rows; merge-only fields survive for the live merge.
     const internal = await service.getAllEmployeesInternal(ACCOUNT, '365d', 'all');
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(3);
     expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
   });
 });
@@ -2875,7 +2619,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     // fixes and a decode must not perturb.
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(3);
     // Tiles are counted over the projected rows, so a cache hit recomputes the same numbers.
     expect((await service.getAllEmployees(ACCOUNT, '365d', FILTERS, 'include')).stats).toEqual({
       activeInOss: 2,
@@ -2884,7 +2628,7 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
       eventAttendees: 1,
       trainees: 1,
     });
-    expect(execute).toHaveBeenCalledTimes(4);
+    expect(execute).toHaveBeenCalledTimes(3);
     // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it — the
     // column is stored verbatim, so a decode that normalized it would show up here.
     expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
@@ -2941,8 +2685,8 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
 
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
-    // The roster, live code and historical GitHub identity entries.
-    expect(cacheValues.size).toBe(3);
+    // The roster entry and the live code entry.
+    expect(cacheValues.size).toBe(2);
   });
 
   it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {
