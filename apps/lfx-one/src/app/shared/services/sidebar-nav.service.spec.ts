@@ -50,6 +50,7 @@ describe('SidebarNavService', () => {
   const formationOverviewAllowedSlug = signal<string | null>(null);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
+  const personaProjects = signal<Record<string, { projectUid: string; projectSlug: string; projectName: string | null }[]>>({});
   const isAuditor = signal(false);
   const gatewazeEmbedEnabled = signal(false);
   const canWrite = signal(false);
@@ -58,6 +59,7 @@ describe('SidebarNavService', () => {
   const claManagerOrgSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
+  const activeProject = signal<{ uid: string; parent_uid?: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
   const personaLoaded = signal(true);
   const personaLookupFailed = signal(false);
@@ -79,10 +81,17 @@ describe('SidebarNavService', () => {
   const sectionItems = (items: SidebarMenuItem[], label: string): SidebarMenuItem[] =>
     items.find((item) => item.isSection && item.label === label)?.items ?? [];
 
+  /** Makes the active project one the executive director directs, so the Participating companies entry shows. */
+  const grantParticipatingOrgs = (): void => {
+    selectedProject.set({ uid: 'p-uid', slug: 'p-slug' } as never);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'p-uid', projectSlug: 'p-slug', projectName: 'P' }] });
+  };
+
   beforeEach(() => {
     activeLens.set('foundation');
     menuLensPreview.set(null);
     selectedProject.set(null);
+    activeProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
     cfOrgDonationsEnabled.set(false);
@@ -97,6 +106,7 @@ describe('SidebarNavService', () => {
     formationOverviewAllowedSlug.set(null);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
+    personaProjects.set({});
     isAuditor.set(false);
     gatewazeEmbedEnabled.set(false);
     canWrite.set(false);
@@ -140,6 +150,7 @@ describe('SidebarNavService', () => {
             isLFStaff: lfStaff,
             canViewExecutiveDashboards: hasFullFoundationAccess,
             currentPersona,
+            personaProjects,
             grantsByScope,
             marketingGrantSlug: signal(null),
             isMarketingAuditor: signal(false),
@@ -156,6 +167,7 @@ describe('SidebarNavService', () => {
           useValue: {
             selectedFoundation,
             selectedProject,
+            menuProject: activeProject,
             menuCanWrite: canWrite,
             menuProjectStage: activeProjectStage,
             menuProjectStageResolved: activeProjectStageResolved,
@@ -265,6 +277,7 @@ describe('SidebarNavService', () => {
 
   it('keeps the project-lens Marketing OS entry after Participating companies and before Governance', () => {
     activeLens.set('project');
+    grantParticipatingOrgs();
     mktgOsEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
@@ -284,6 +297,7 @@ describe('SidebarNavService', () => {
 
   it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers', () => {
     const service = TestBed.inject(SidebarNavService);
+    grantParticipatingOrgs();
 
     for (const lens of ['project', 'foundation'] as const) {
       activeLens.set(lens);
@@ -336,10 +350,11 @@ describe('SidebarNavService', () => {
     }
   });
 
-  it('shows Participating companies right after Documents on the project lens for executive directors and LF staff (non-writers too), and not on the foundation lens', () => {
+  it('shows Participating companies right after Documents for an ED whose scope covers the active project, and not on the foundation lens', () => {
     const service = TestBed.inject(SidebarNavService);
     activeLens.set('project');
     canWrite.set(false);
+    grantParticipatingOrgs();
 
     const items = service.sidebarItems();
     const itemLabels = labels(items);
@@ -352,12 +367,70 @@ describe('SidebarNavService', () => {
     expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
-  it('hides Participating companies on the project lens from users who are not executive directors or LF staff', () => {
-    const service = TestBed.inject(SidebarNavService);
+  it('shows Participating companies to LF staff on any project', () => {
     activeLens.set('project');
-    hasFullFoundationAccess.set(false);
+    lfStaff.set(true);
+    selectedProject.set({ uid: 'other', slug: 'other' } as never);
 
-    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
+  it('shows Participating companies when the stored selection carries the parent foundation uid', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'child', slug: 'child', parent_uid: 'f-uid' } as never);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
+  it('shows Participating companies when only the slug matches, case-insensitively (as the BFF gate does)', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'p-uid', slug: 'p-slug' } as never);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'other-uid', projectSlug: 'P-Slug', projectName: 'P' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
+  it('does not throw when the selection has no uid and no project record has been fetched', () => {
+    activeLens.set('project');
+    selectedProject.set({ slug: 'p-slug' } as never);
+    activeProject.set(null);
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+  });
+
+  it('ignores a fetched record that describes a different project (stale during a switch or a foundation preview)', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'child', slug: 'child' } as never);
+    activeProject.set({ uid: 'previous', parent_uid: 'f-uid' });
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+  });
+
+  it('shows Participating companies when only the fetched project record carries the parent foundation uid', () => {
+    activeLens.set('project');
+    selectedProject.set({ uid: 'child', slug: 'child' } as never);
+    activeProject.set({ uid: 'child', parent_uid: 'f-uid' });
+    personaProjects.set({ 'executive-director': [{ projectUid: 'f-uid', projectSlug: 'f', projectName: 'F' }] });
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeDefined();
+  });
+
+  it.each([
+    [
+      'an ED who directs a different foundation',
+      () => personaProjects.set({ 'executive-director': [{ projectUid: 'x', projectSlug: 'x', projectName: 'X' }] }),
+    ],
+    ['an ED persona with no scoped projects (e.g. a root writer)', () => personaProjects.set({})],
+    ['a non-ED, non-staff user', () => currentPersona.set('contributor')],
+  ])('hides Participating companies from %s', (_label, setup) => {
+    activeLens.set('project');
+    grantParticipatingOrgs();
+    setup();
+
+    expect(findByLink(TestBed.inject(SidebarNavService).sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
   it('keeps the full project-lens nav without Formation when the flag is off, even for a Formation-stage project', () => {

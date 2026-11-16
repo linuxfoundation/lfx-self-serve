@@ -21,6 +21,8 @@ export abstract class MeetingDetailsSource {
   public abstract readonly upcomingRows: Signal<MeetingHomeRow[]>;
   /** The dialog the details live in, closed by flows that leave them; null when they are not in one. */
   public abstract readonly hostRef: DialogRef | null;
+  /** Opens the subscription to the meeting's project calendar; the drawer offers none. */
+  public readonly subscribeToCalendar?: (meeting: Meeting) => void;
   /** Moves on from a date just cancelled; the drawer closes instead. */
   public readonly occurrenceCancelled?: (meeting: Meeting, occurrence: MeetingOccurrence) => void;
   /** True once, when Join may open Zoom by itself as the page loads; the drawer never does. */

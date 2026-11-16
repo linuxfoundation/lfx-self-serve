@@ -4,12 +4,14 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Provider, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
+import { openProjectIcalSubscribeDialog } from '@app/modules/committees/utils/ical-subscribe.util';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MEETING_PAGE_GUEST_FORM_STATE, MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
 import { Meeting, MeetingHomeRow, MeetingOccurrence, MeetingRsvp } from '@lfx-one/shared/interfaces';
 import { getActiveOccurrences, getPastMeetingResourceId, isPastMeetingCalendarRow, isSameOccurrenceId, selectApplicableRsvp } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { catchError, distinctUntilChanged, filter, of, skip, take } from 'rxjs';
 
 import { MeetingDetailsBodyComponent } from '../../meetings-redesign/components/meeting-details-drawer/body/meeting-details-body.component';
@@ -28,14 +30,21 @@ export abstract class MeetingPageRowHost {
 /**
  * The meeting details on the standalone page, for the host's row; the page re-creates it for each row it shows.
  * @description Provides what `MeetingDetailsBodyComponent` needs, with a page source: no dialog, no list behind it,
- * another date opens at its own `/meetings/...` URL, Join may open Zoom as the page loads, and after a cancel or an edit the page shows the date as it now stands at `?occurrence=`.
+ * another date opens at its own `/meetings/...` URL, the ⋯ menu offers the project calendar, Join may open Zoom as the page loads, and after a cancel or an edit the page shows the date as it now stands at `?occurrence=`.
  */
 @Component({
   selector: 'lfx-meeting-page-details',
   imports: [MeetingDetailsBodyComponent],
   templateUrl: './meeting-page-details.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [MeetingDetailsContext, MeetingDetailsArtifactsService, MeetingsHomeEditService, MeetingsHomeDeleteService, provideMeetingPageSource()],
+  providers: [
+    MeetingDetailsContext,
+    MeetingDetailsArtifactsService,
+    MeetingsHomeEditService,
+    MeetingsHomeDeleteService,
+    DialogService,
+    provideMeetingPageSource(),
+  ],
 })
 export class MeetingPageDetailsComponent {
   private readonly context = inject(MeetingDetailsContext);
@@ -106,6 +115,7 @@ function provideMeetingPageSource(): Provider {
       const pageData = inject(MeetingPageDataService);
       const router = inject(Router);
       const route = inject(ActivatedRoute);
+      const dialogService = inject(DialogService);
       return {
         row,
         tab: 'agenda',
@@ -114,6 +124,7 @@ function provideMeetingPageSource(): Provider {
         hostRef: null,
         open: (row) => void router.navigateByUrl(meetingPageUrl(row)),
         applySummaryChange: () => undefined,
+        subscribeToCalendar: (meeting) => openProjectCalendar(dialogService, meeting),
         occurrenceCancelled: (meeting, occurrence) => showOccurrence(router, route, pageData, meeting.id, nextOccurrenceStart(meeting, occurrence)),
         claimJoinOnLoad: () => pageData.claimJoinOnLoad(),
         // The legacy page holds the guest form that joins with another email address.
@@ -174,4 +185,10 @@ function meetingPageUrl(row: MeetingHomeRow): string {
   }
   const path = `/meetings/${encodeURIComponent(row.meeting.id)}`;
   return row.occurrenceId ? `${path}?occurrence=${Date.parse(row.startTime)}` : path;
+}
+
+/** The project's calendar feed in the dialog the legacy page and the meetings dashboard use. */
+function openProjectCalendar(dialogService: DialogService, meeting: Meeting): void {
+  if (!meeting.project_uid) return;
+  openProjectIcalSubscribeDialog(dialogService, meeting.project_uid, meeting.project_name || 'Project');
 }
