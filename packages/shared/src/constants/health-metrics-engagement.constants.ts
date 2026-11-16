@@ -105,7 +105,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     empty: { icon: 'fa-light fa-envelope-open-text', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter, snapshot: true },
     label: 'Newsletter recipient engagement',
     heading: 'Newsletter recipient engagement',
-    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and organizations surface first.',
+    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and companies surface first.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
