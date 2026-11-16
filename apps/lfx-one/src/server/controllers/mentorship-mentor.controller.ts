@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX } from '@lfx-one/shared/constants';
 import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
 import { isMentorshipMentorInviteToken, isMentorshipMentorTaskReviewDecision, isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
@@ -234,10 +235,12 @@ export class MentorshipMentorController {
     }
   }
 
-  // PATCH /api/mentorship/mentor/tasks/:taskId/review  { status: 'complete' | 'incomplete' } -> 204
-  // Auth: logged-in user required (401 otherwise). `complete` approves a submitted task and `incomplete` requests
-  // changes; there is no comment, since upstream has no field for one. A task that is no longer submitted is
-  // refused with a 409 `TASK_NOT_SUBMITTED`. Upstream's 403 (not a mentor of the program) and 404 pass through.
+  // PATCH /api/mentorship/mentor/tasks/:taskId/review  { status: 'complete' | 'incomplete', reason?: string } -> 204
+  // Auth: logged-in user required (401 otherwise). `complete` approves a submitted task and takes no reason;
+  // `incomplete` requests changes and needs a reason of at most MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX characters
+  // once trimmed, which upstream emails to the mentee. Anything else is a 400. A task that is no longer submitted is
+  // refused with a 409 `TASK_NOT_SUBMITTED`. Upstream's 403 (not a mentor of the program) and 404 pass through. The
+  // reason is never logged.
   public async reviewMenteeTask(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'review_mentorship_mentee_task');
 
@@ -257,7 +260,9 @@ export class MentorshipMentorController {
         throw ServiceValidationError.forField('status', 'status must be one of: complete, incomplete', { operation: 'review_mentorship_mentee_task' });
       }
 
-      await this.mentorService.reviewMenteeTask(req, taskId, status);
+      const reason = this.parseTaskReviewReason(req.body?.reason, status === 'incomplete');
+
+      await this.mentorService.reviewMenteeTask(req, taskId, status, reason);
       logger.success(req, 'review_mentorship_mentee_task', startTime, { taskId, status });
       res.status(204).send();
     } catch (error) {
@@ -349,5 +354,24 @@ export class MentorshipMentorController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** A request for changes needs a reason, trimmed and within the limit; an approval takes none. */
+  private parseTaskReviewReason(value: unknown, changesRequested: boolean): string | undefined {
+    const operation = 'review_mentorship_mentee_task';
+    if (!changesRequested) {
+      if (value !== undefined && value !== null) {
+        throw ServiceValidationError.forField('reason', 'reason is only accepted with status incomplete', { operation });
+      }
+      return undefined;
+    }
+    const reason = parseTrimmedString(value);
+    if (!reason) {
+      throw ServiceValidationError.forField('reason', 'reason is required when requesting changes', { operation });
+    }
+    if (reason.length > MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX) {
+      throw ServiceValidationError.forField('reason', `reason must be at most ${MENTORSHIP_MENTOR_TASK_CHANGES_REASON_MAX} characters`, { operation });
+    }
+    return reason;
   }
 }
