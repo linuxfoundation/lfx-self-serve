@@ -152,7 +152,11 @@ describe('CampaignController LinkedIn daily cap (#5774)', () => {
     ['under the daily minimum', { budgetUsd: 1000, lifetimeBudget: true, dailyCapUsd: 9.99 }, 'at least $10'],
     ['above the lifetime budget', { budgetUsd: 1000, lifetimeBudget: true, dailyCapUsd: 1500 }, "can't be more than the lifetime budget"],
     // campaign-service rounds the total 100.125 to 100.12 (ties to even), so 100.13 is above it.
-    ['above a half-cent total once rounded as upstream rounds it', { budgetUsd: 100.125, lifetimeBudget: true, dailyCapUsd: 100.13 }, "can't be more than the lifetime budget"],
+    [
+      'above a half-cent total once rounded as upstream rounds it',
+      { budgetUsd: 100.125, lifetimeBudget: true, dailyCapUsd: 100.13 },
+      "can't be more than the lifetime budget",
+    ],
   ])('refuses a cap that is %s before anything is created', async (_name, config, message) => {
     const { next } = await create({ ...config, targetingProfile: 'cloud-native' });
 
