@@ -222,6 +222,7 @@
       <lfx-mailing-list-sync-settings
         [mailingList]="ml"
         (updated)="applySyncSettingsUpdate($event)"
+        (syncApplied)="refreshData()"
         data-testid="mailing-list-view-sync-settings"></lfx-mailing-list-sync-settings>
 
       <!-- Members Section -->
