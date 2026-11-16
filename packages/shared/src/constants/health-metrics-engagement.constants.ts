@@ -16,6 +16,7 @@ import type {
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementQueryParams,
+  HealthMetricsEngagementRecipientFilter,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
@@ -96,8 +97,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     empty: { icon: 'fa-light fa-paper-plane', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter },
     label: 'Newsletter performance',
     heading: 'Newsletter performance',
-    description:
-      'Every newsletter sent to this foundation’s audience. Open rate shows reach; click-to-open rate shows how compelling the content was to the people who opened it.',
+    description: 'How many people open and click each newsletter.',
   },
   {
     key: 'recipients',
@@ -105,7 +105,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
     empty: { icon: 'fa-light fa-envelope-open-text', source: HEALTH_METRICS_L2_EMPTY_SOURCES.newsletter, snapshot: true },
     label: 'Newsletter recipient engagement',
     heading: 'Newsletter recipient engagement',
-    description: 'Who opened and clicked the latest newsletter, ranked by clicks, so the most engaged people and companies surface first.',
+    description: 'Who read and clicked the latest newsletter.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -421,7 +421,7 @@ export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_MODES = [
 export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_ROW_CAP = 1000;
 
 /** Rows per page in the Newsletter performance table. */
-export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE = 25;
+export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_PAGE_SIZE = 10;
 
 /** Nothing measured: the pre-hydration render, no foundation selected, and the client's placeholder after a failed read. */
 export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_UNMEASURED: HealthMetricsEngagementNewsletterPerformance = {
@@ -439,7 +439,7 @@ export const HEALTH_METRICS_NEWSLETTER_VIEWS = {
 
 /** The design's recipient cuts; `clicked` cuts across segments, since a click can come without a recorded open. */
 export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS = [
-  { key: 'all', label: 'All' },
+  { key: 'all', label: 'All status' },
   { key: 'opened', label: 'Opened' },
   { key: 'clicked', label: 'Clicked' },
   { key: 'not-opened', label: 'Not opened' },
@@ -450,15 +450,25 @@ export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_FILTERS = [
 export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_ROW_CAP = 20_000;
 
 /** Rows per page in the recipient table. */
-export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_PAGE_SIZE = 25;
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_PAGE_SIZE = 10;
 
-/** The design's tags: delivery in green or red, an open in blue, not opened in grey. */
-export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS = {
-  delivered: 'bg-emerald-50 text-emerald-700',
-  failed: 'bg-red-50 text-red-700',
-  opened: 'bg-blue-50 text-blue-700',
-  notOpened: 'bg-gray-100 text-gray-600',
-} as const;
+/** The recipient status counts, each with its dot and header tooltip; the counts cover the loaded recipients. */
+export const HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS = [
+  {
+    key: 'opened',
+    label: 'Opened',
+    dotClass: 'bg-blue-500',
+    tip: 'Recipients who opened the newsletter at least once. Some mail clients block tracking, so this is a floor.',
+  },
+  { key: 'clicked', label: 'Clicked', dotClass: 'bg-violet-500', tip: 'Recipients who clicked at least one link in the newsletter.' },
+  { key: 'not-opened', label: 'Not opened', dotClass: 'bg-gray-400', tip: 'Recipients who received the newsletter but have no recorded open.' },
+  {
+    key: 'failed',
+    label: 'Failed',
+    dotClass: 'bg-red-500',
+    tip: 'Recipients the newsletter could not be delivered to, for example because of a bounced or invalid address.',
+  },
+] as const satisfies readonly { key: HealthMetricsEngagementRecipientFilter; label: string; dotClass: string; tip: string }[];
 
 /** No newsletter: the pre-hydration render, no foundation selected, and the client's placeholder after a failed read. */
 export const HEALTH_METRICS_ENGAGEMENT_NEWSLETTER_RECIPIENTS_UNMEASURED: HealthMetricsEngagementNewsletterRecipients = {

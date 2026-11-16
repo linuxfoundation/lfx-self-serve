@@ -16,17 +16,19 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_BAR_FILLS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_DESCRIPTION,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ICONS,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
-  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
 import { MONTH_NAMES } from '../constants/calendar.constants';
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_LINE_CHART_COLORS } from '../constants/health-metrics-line-chart.constants';
 import { HEALTH_METRICS_MEMBERS_RESERVED_TIER_LABELS, HEALTH_METRICS_MEMBERS_RESERVED_TIERS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_TABLE_DASH, HEALTH_METRICS_VALUE_BAR_FILL } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { buildHealthMetricsLineChart, healthMetricsLineChartCountCeiling } from './health-metrics-line-chart.utils';
 import { formatHealthMetricsNewsletterGrowthSince } from './health-metrics-overview.utils';
 import { healthMetricsBarFillClass } from './health-metrics-table.utils';
 
@@ -43,7 +45,8 @@ import type {
   HealthMetricsEngagementGroupRowView,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementNewsletter,
-  HealthMetricsEngagementNewsletterKpiView,
+  HealthMetricsEngagementNewsletterChartView,
+  HealthMetricsEngagementNewsletterMode,
   HealthMetricsEngagementNewsletterPerformance,
   HealthMetricsEngagementNewsletterPointView,
   HealthMetricsEngagementNewsletterRowView,
@@ -56,6 +59,7 @@ import type {
   HealthMetricsEngagementRecipient,
   HealthMetricsEngagementRecipientFilter,
   HealthMetricsEngagementRecipientRowView,
+  HealthMetricsEngagementRecipientTone,
   HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementRepRow,
@@ -69,6 +73,7 @@ import type {
 } from '../interfaces/health-metrics-engagement.interface';
 import type { HealthMetricsMembersReservedTier } from '../interfaces/health-metrics-members.interface';
 import type { HealthMetricsL2Range, HealthMetricsMetricItem } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsLineChartSeries } from '../interfaces/health-metrics-line-chart.interface';
 
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
@@ -540,27 +545,92 @@ export function buildHealthMetricsEngagementNewsletterView(
   const chronological = [...newsletters].sort((a, b) => (a.sentDate ?? '').localeCompare(b.sentDate ?? '') || a.key.localeCompare(b.key));
   const growth = period?.subscribersGrowth ?? null;
   const growthPct = growth === null ? 0 : Math.round(growth * 100);
+  const subscribers: HealthMetricsMetricItem = {
+    key: 'subscribers',
+    label: 'Subscribers',
+    value: formatHealthMetricsEngagementCount(period?.subscribers ?? null),
+  };
+  // No line when growth rounds to 0%; the baseline month names when the growth counts from.
+  if (growthPct !== 0) {
+    subscribers.descriptionLead = `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%`;
+    subscribers.descriptionLeadTone = growthPct > 0 ? 'up' : 'down';
+    subscribers.description = formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, year).trim();
+  }
+  const delivered = formatNewsletterRate(period?.avgDeliveryRate ?? null);
+  const clickToOpen = formatNewsletterRate(period?.avgClickToOpenRate ?? null);
 
   return {
     isEmpty: !performance.measured || !period?.newslettersSent,
-    headline: {
-      ...newsletterKpi('subscribers', 'Subscribers', formatHealthMetricsEngagementCount(period?.subscribers ?? null)),
-      delta:
-        growthPct === 0
-          ? null
-          : `${growthPct > 0 ? '+' : '−'}${Math.abs(growthPct)}%${formatHealthMetricsNewsletterGrowthSince(period?.growthBaselineDate ?? null, year)}`,
-      deltaDirection: newsletterDirection(growthPct),
-    },
-    side: [
-      newsletterKpi('sent', 'Newsletters sent', formatHealthMetricsEngagementCount(period?.newslettersSent ?? null)),
-      newsletterKpi('open', 'Avg. open rate', formatNewsletterRate(period?.avgOpenRate ?? null)),
-      newsletterKpi('click', 'Avg. click rate', formatNewsletterRate(period?.avgClickRate ?? null, 1)),
-      newsletterKpi('cto', 'Click-to-open rate', formatNewsletterRate(period?.avgClickToOpenRate ?? null)),
-      newsletterKpi('delivery', 'Delivery rate', formatNewsletterRate(period?.avgDeliveryRate ?? null)),
+    metrics: [
+      subscribers,
+      {
+        key: 'sent',
+        label: 'Newsletters sent',
+        value: formatHealthMetricsEngagementCount(period?.newslettersSent ?? null),
+        ...(delivered === HEALTH_METRICS_TABLE_DASH ? {} : { description: `${delivered} delivered` }),
+      },
+      { key: 'open', label: 'Avg. open rate', value: formatNewsletterRate(period?.avgOpenRate ?? null) },
+      {
+        key: 'click',
+        label: 'Avg. click rate',
+        value: formatNewsletterRate(period?.avgClickRate ?? null, 1),
+        ...(clickToOpen === HEALTH_METRICS_TABLE_DASH ? {} : { description: `${clickToOpen} of opens` }),
+      },
     ],
     rows: newsletters.map(buildNewsletterRow),
     audiencePoints: chronological.map(buildNewsletterPoint),
     ratePoints: chronological.filter((newsletter) => newsletter.hasEngagementData).map(buildNewsletterPoint),
+  };
+}
+
+/**
+ * The newsletter chart, one point per newsletter in send order. Rates run to the highest plotted rate rounded up to the
+ * next 10%, between 10% and 100%, with click-to-open dashed; the audience runs to a round ceiling over its peak.
+ */
+export function buildHealthMetricsEngagementNewsletterChart(
+  points: readonly HealthMetricsEngagementNewsletterPointView[],
+  mode: HealthMetricsEngagementNewsletterMode
+): HealthMetricsEngagementNewsletterChartView {
+  const colors = HEALTH_METRICS_LINE_CHART_COLORS;
+  const audience = mode === 'audience';
+  const series: HealthMetricsLineChartSeries[] = audience
+    ? [
+        { key: 'recipients', label: 'Recipients', color: colors.accent, values: points.map((point) => point.recipients), fill: true },
+        { key: 'opens', label: 'Unique opens', color: colors.feature, values: points.map((point) => point.uniqueOpens) },
+      ]
+    : [
+        { key: 'open', label: 'Open rate', color: colors.accent, values: points.map((point) => point.openPct), fill: true },
+        { key: 'click', label: 'Click rate', color: colors.feature, values: points.map((point) => point.clickPct) },
+        { key: 'cto', label: 'Click-to-open rate', color: colors.success, values: points.map((point) => point.clickToOpenPct), dashed: true },
+      ];
+  const format = (value: number | null): string =>
+    audience ? formatHealthMetricsEngagementCount(value === null ? null : Math.round(value)) : formatNewsletterPct(value);
+  const max = audience
+    ? healthMetricsLineChartCountCeiling(Math.max(0, ...points.flatMap((point) => [point.recipients ?? 0, point.uniqueOpens ?? 0])))
+    : // Peak over every plotted rate, so no line sits above the axis; rounded first so float noise never adds a band.
+      Math.min(
+        100,
+        Math.max(
+          10,
+          Math.ceil(
+            Math.round(Math.max(0, ...points.flatMap((point) => [point.openPct ?? 0, point.clickPct ?? 0, point.clickToOpenPct ?? 0])) * 1000) / 10_000
+          ) * 10
+        )
+      );
+
+  return {
+    chart: buildHealthMetricsLineChart({
+      xLabels: points.map((point) => point.tick),
+      series,
+      max,
+      formatTick: format,
+      tips: points.map((point, index) => ({
+        title: point.title,
+        rows: series.map((line) => ({ label: line.label, value: format(line.values[index] ?? null), color: line.color, separated: false, inline: true })),
+      })),
+      ariaLabel: audience ? 'Recipients and unique opens by newsletter' : 'Open, click and click-to-open rate by newsletter',
+    }),
+    legend: series.map((line) => ({ key: line.key, label: line.label, color: line.color })),
   };
 }
 
@@ -590,40 +660,60 @@ export function countHealthMetricsEngagementRecipients(
   return counts;
 }
 
-/** One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a stray open time. */
+/** The recipient status counts as a metrics row: opened, clicked, not opened and failed, over the loaded recipients. */
+export function buildHealthMetricsEngagementRecipientMetrics(recipients: readonly HealthMetricsEngagementRecipient[]): HealthMetricsMetricItem[] {
+  const counts = countHealthMetricsEngagementRecipients(recipients);
+  return HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS.map((metric) => ({
+    key: metric.key,
+    label: metric.label,
+    value: formatHealthMetricsEngagementCount(counts[metric.key]),
+    dotClass: metric.dotClass,
+    tip: metric.tip,
+  }));
+}
+
+/**
+ * One recipient's cells. A failed delivery reads "—" for every engagement cell, even where the view still carries a
+ * stray open time; a pending one is not yet delivered and has no open, so it reads as not opened.
+ */
 export function buildHealthMetricsEngagementRecipientRow(recipient: HealthMetricsEngagementRecipient, now: Date): HealthMetricsEngagementRecipientRowView {
   const failed = isFailedRecipient(recipient);
-  const opened = recipient.segment === 'opened';
-  const tags = HEALTH_METRICS_ENGAGEMENT_RECIPIENT_TAG_CLASS;
+  const pending = isPendingRecipient(recipient);
+  const opened = !pending && recipient.segment === 'opened';
+  const age = (prefix: string, iso: string | null): string => {
+    const short = failed || pending ? '' : formatHealthMetricsShortAge(iso, now);
+    return short ? `${prefix} ${short}` : '';
+  };
 
   return {
     rank: recipient.rank,
-    nameLabel: recipient.name?.trim() || '—',
-    organizationLabel: recipient.organization?.trim() || '—',
-    deliveryLabel: failed ? 'Failed' : 'Delivered',
-    deliveryClass: failed ? tags.failed : tags.delivered,
+    nameLabel: recipient.name?.trim() || HEALTH_METRICS_TABLE_DASH,
+    avatarName: recipient.name?.trim() ?? '',
+    description: recipient.organization?.trim() ?? '',
+    deliveryLabel: recipientDeliveryLabel(failed, pending),
+    deliveryTone: recipientDeliveryTone(failed, pending),
     engagementLabel: recipientEngagementLabel(failed, opened),
-    engagementClass: opened ? tags.opened : tags.notOpened,
-    opensLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.opens),
-    lastOpenedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastOpenedAt, now),
-    clicksLabel: failed ? '—' : formatHealthMetricsEngagementCount(recipient.clicks),
-    lastClickedLabel: failed ? '—' : formatHealthMetricsRelativeTime(recipient.lastClickedAt, now),
+    engagementTone: opened ? 'accent' : 'neutral',
+    opensLabel: failed ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsEngagementCount(recipient.opens),
+    opensDescription: age('Last opened', recipient.lastOpenedAt),
+    clicksLabel: failed ? HEALTH_METRICS_TABLE_DASH : formatHealthMetricsEngagementCount(recipient.clicks),
+    clicksDescription: age('Last clicked', recipient.lastClickedAt),
   };
 }
 
-/** "12 hr ago" for a recent ISO time, as the design words it; the date itself past 30 days, and "—" for none. */
-export function formatHealthMetricsRelativeTime(iso: string | null, now: Date): string {
+/** How long ago an ISO time was, in the design's short units: "5m", "3h", "2d", "3w" or "4mo"; empty without a time. */
+export function formatHealthMetricsShortAge(iso: string | null, now: Date): string {
   const time = iso ? Date.parse(iso) : NaN;
-  if (Number.isNaN(time)) return '—';
+  if (Number.isNaN(time)) return '';
 
-  const minutes = Math.max(0, Math.floor((now.getTime() - time) / 60_000));
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  const minutes = Math.max(1, Math.floor((now.getTime() - time) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} hr ago`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days <= 30) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-  return formatIsoDateLabel(new Date(time).toISOString().slice(0, 10));
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+  return `${Math.floor(days / 30)}mo`;
 }
 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */
@@ -661,13 +751,9 @@ function formatRatedMonth(month: HealthMetricsEngagementAttendanceMonth | undefi
   return month ? formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld) : '—';
 }
 
-function newsletterKpi(key: string, label: string, value: string): HealthMetricsEngagementNewsletterKpiView {
-  return { key, label, value, delta: null, deltaDirection: 'neutral' };
-}
-
-function newsletterDirection(value: number): HealthMetricsEngagementNewsletterKpiView['deltaDirection'] {
-  if (value === 0) return 'neutral';
-  return value > 0 ? 'up' : 'down';
+/** A 0–100 percentage, whole; "—" when there is none. */
+function formatNewsletterPct(value: number | null): string {
+  return value === null ? HEALTH_METRICS_TABLE_DASH : `${Math.round(value)}%`;
 }
 
 /** A 0–1 rate as a percentage, whole unless `digits` asks for more. */
@@ -689,7 +775,7 @@ function buildNewsletterRow(newsletter: HealthMetricsEngagementNewsletter): Heal
     uniqueOpensLabel: formatHealthMetricsEngagementCount(engaged ? newsletter.uniqueOpens : null),
     totalOpensLabel: total(newsletter.totalOpens),
     openRateLabel: formatNewsletterRate(engaged ? newsletter.openRate : null),
-    openRateWidthPct: engaged && newsletter.openRate !== null ? Math.min(100, Math.max(0, newsletter.openRate * 100)) : 0,
+    openRatePct: engaged && newsletter.openRate !== null ? Math.min(100, Math.max(0, newsletter.openRate * 100)) : null,
     uniqueClicksLabel: formatHealthMetricsEngagementCount(engaged ? newsletter.uniqueClicks : null),
     totalClicksLabel: total(newsletter.totalClicks),
     clickRateLabel: formatNewsletterRate(engaged ? newsletter.clickRate : null),
@@ -718,6 +804,8 @@ function matchesRecipientFilter(recipient: HealthMetricsEngagementRecipient, fil
   // The row and the cuts share one failure rule, so a row reading "Failed" is never counted under an engagement cut.
   if (filter === 'failed') return isFailedRecipient(recipient);
   if (isFailedRecipient(recipient)) return false;
+  // A pending delivery has not landed yet, so it counts as not opened whatever the view segments it as.
+  if (isPendingRecipient(recipient)) return filter === 'not-opened';
   return filter === 'clicked' ? recipient.clicked : recipient.segment === filter;
 }
 
@@ -726,8 +814,23 @@ function isFailedRecipient(recipient: HealthMetricsEngagementRecipient): boolean
   return recipient.segment === 'failed' || recipient.deliveryStatus === 'Failed';
 }
 
+/** Sent but not yet delivered; never also failed. */
+function isPendingRecipient(recipient: HealthMetricsEngagementRecipient): boolean {
+  return !isFailedRecipient(recipient) && recipient.deliveryStatus?.trim().toLowerCase() === 'pending';
+}
+
 /** No tag for a failed delivery, which the row shows as "—". */
 function recipientEngagementLabel(failed: boolean, opened: boolean): string {
   if (failed) return '';
   return opened ? 'Opened' : 'Not opened';
+}
+
+function recipientDeliveryLabel(failed: boolean, pending: boolean): string {
+  if (failed) return 'Failed';
+  return pending ? 'Pending' : 'Delivered';
+}
+
+function recipientDeliveryTone(failed: boolean, pending: boolean): HealthMetricsEngagementRecipientTone {
+  if (failed) return 'danger';
+  return pending ? 'neutral' : 'success';
 }
