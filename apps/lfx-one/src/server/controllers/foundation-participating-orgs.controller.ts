@@ -134,11 +134,10 @@ export class FoundationParticipatingOrgsController {
       logger.success(req, operation, startTime, { slug: filters.foundationSlug, kind, result_count: dataRows.length, truncated });
       res.setHeader('Cache-Control', 'private, no-store');
       const date = new Date().toISOString().slice(0, 10);
+      // A project-scoped summary holds that project's figures, so the file name carries the scope instead of leaving it to be guessed.
+      const scope = filters.projectSlug ? `${filters.foundationSlug}-${filters.projectSlug}` : filters.foundationSlug;
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-      res.setHeader(
-        'Content-Disposition',
-        contentDispositionAttachment(`participating-companies-${filters.foundationSlug}-${kind}-${filters.range}-${date}.csv`)
-      );
+      res.setHeader('Content-Disposition', contentDispositionAttachment(`participating-companies-${scope}-${kind}-${filters.range}-${date}.csv`));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       if (truncated) res.setHeader(FOUNDATION_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER, 'true');
       // The byte order mark lets Excel read company names as UTF-8.
@@ -149,7 +148,7 @@ export class FoundationParticipatingOrgsController {
   }
 }
 
-/** One row per company, with foundation totals. */
+/** One row per company, with its foundation totals, or with that project's figures when the export is scoped to one project (the file name then says which). */
 function summaryRows(items: FoundationCompanyActivity[]): (string | number)[][] {
   return items.map(({ row }) => [
     row.name,
