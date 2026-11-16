@@ -30,6 +30,7 @@ function stored(overrides: Partial<Project> = {}): Project {
 /** The drawer keeps its form state in protected signals; tests drive them the way the bound uikit controls do. */
 interface DrawerState {
   stage: { (): string | null; set(value: string | null): void };
+  stageOptions(): { value: string; label: string; disabled: boolean }[];
   legalEntityType: { set(value: string | null): void };
   legalEntityName: { set(value: string): void };
   dissolutionDate: { set(value: string): void };
@@ -90,6 +91,20 @@ describe('FormationRecordEditDrawerComponent', () => {
     expect(getProjectRecord).toHaveBeenCalledWith('proj-1');
     expect(state().stage()).toBe('Formation - Engaged');
     expect(query('[data-testid="formation-record-edit-loading"]')).toBeNull();
+  });
+
+  // #5619: the formation team calls a v2 `Prospect` "Draft"; the stored value never changes.
+  it('shows a stored Prospect stage as Draft while keeping its value', async () => {
+    await render({ project: stored({ stage: 'Prospect' }) });
+
+    expect(state().stage()).toBe('Prospect');
+    expect(state().stageOptions()[0]).toEqual({ value: 'Prospect', label: 'Draft', disabled: true });
+    expect(
+      state()
+        .stageOptions()
+        .slice(1)
+        .every((option) => option.label === option.value)
+    ).toBe(true);
   });
 
   it('sends only the fields that changed', async () => {

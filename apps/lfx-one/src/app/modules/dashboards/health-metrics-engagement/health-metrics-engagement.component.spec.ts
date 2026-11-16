@@ -198,10 +198,11 @@ describe('HealthMetricsEngagementComponent', () => {
     }
   });
 
-  it('marks the caution footnote on the non-member section only', () => {
-    const cautioned = HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => section.footnoteCaution).map((section) => section.key);
+  // The design drops every plain footnote; only the non-member caution is left, as a warning note.
+  it('carries a note on the non-member section only, as a caution', () => {
+    const noted = HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => 'note' in section).map((section) => [section.key, section.note.tone]);
 
-    expect(cautioned).toEqual(['nonmem']);
+    expect(noted).toEqual([['nonmem', 'caution']]);
     expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
   });
 

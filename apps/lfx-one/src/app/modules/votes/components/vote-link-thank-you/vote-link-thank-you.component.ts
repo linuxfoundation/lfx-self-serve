@@ -27,4 +27,6 @@ export class VoteLinkThankYouComponent {
   /** Pseudo-anonymous votes never echo the answers back. */
   public readonly secret = input<boolean>(false);
   public readonly answers = input<VoteAnswerSummaryLine[]>([]);
+  /** False when the vote makes submitted ballots final (#4723): the deadline line then says the vote is final. */
+  public readonly canChange = input<boolean>(true);
 }

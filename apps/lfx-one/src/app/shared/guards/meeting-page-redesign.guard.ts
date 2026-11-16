@@ -15,7 +15,8 @@ import { authenticatedMatchGuard } from './authenticated-match.guard';
 export const MEETING_PAGE_REDESIGN_KEY = makeStateKey<MeetingPageRedesignDecision>('meetingPageRedesign');
 
 /**
- * CanMatch guard choosing the redesigned `/meetings/:id` page over the legacy one, which follows it unguarded.
+ * CanMatch guard choosing the redesigned `/meetings/:id` page over the legacy one, which follows it unguarded; it pairs
+ * `/meetings/not-found` the same way.
  * @description Matches only for a signed-in viewer with `MEETINGS_REDESIGN_FLAG` on and no `?password=` or `?action=`
  * in the URL; the page itself sends anything else it can't serve back here with `MEETING_PAGE_LEGACY_STATE`.
  * The server decides from `ServerRequestContext.flags` and hands the decision over in TransferState, so hydration
@@ -31,7 +32,10 @@ export const meetingPageRedesignGuard: CanMatchFn = async (route, segments) => {
     const context = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
     const flag = readCookieOverride(inject(REQUEST, { optional: true })) ?? context?.flags?.meetingsRedesign ?? false;
     const enabled = eligible && flag;
-    transferState.set(MEETING_PAGE_REDESIGN_KEY, { id, enabled });
+    // A server-side redirect to not-found keeps the decision for the URL the browser will hydrate.
+    if (id !== 'not-found' || !transferState.hasKey(MEETING_PAGE_REDESIGN_KEY)) {
+      transferState.set(MEETING_PAGE_REDESIGN_KEY, { id, enabled });
+    }
     return enabled;
   }
 

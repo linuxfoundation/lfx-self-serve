@@ -38,6 +38,13 @@ export interface MeetingHomeRow {
   myRsvp?: MeetingRsvp | null;
 }
 
+/** What a meeting link names that was cancelled: one date (`?occurrence=`), or every date of the series. */
+export interface MeetingPageCancelledLink {
+  kind: 'occurrence' | 'series';
+  /** Start of the cancelled date the link named; null for a whole series. */
+  cancelledStart: string | null;
+}
+
 /** Next meeting card's join state: before the join window, inside it before the start, or under way. */
 export type MeetingHomeJoinState = 'early' | 'soon' | 'live';
 

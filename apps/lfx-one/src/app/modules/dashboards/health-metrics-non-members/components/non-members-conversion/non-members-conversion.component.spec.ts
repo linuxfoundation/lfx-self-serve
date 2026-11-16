@@ -93,7 +93,7 @@ describe('NonMembersConversionComponent', () => {
     expect(query('non-members-conversion-loading')).toBeNull();
   });
 
-  it('renders the qualified pipeline, side stats, summary and footnote', async () => {
+  it('renders the qualified pipeline, side stats and summary', async () => {
     await render();
 
     expect(text('non-members-conversion-pipeline-value')).toBe('$50K');
@@ -101,9 +101,6 @@ describe('NonMembersConversionComponent', () => {
     expect(text('non-members-conversion-side-high-fit-value')).toBe('2');
     expect(text('non-members-conversion-side-new-value')).toBe('37');
     expect(text('non-members-conversion-summary')).toBe('412 organizations tracked');
-    expect(text('non-members-conversion-footnote')).toBe(
-      'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The fit score is a model change, sequenced after the matching fix.'
-    );
   });
 
   it('shows the pipeline as a plain hero: no card, no tint, ink value', async () => {
@@ -159,7 +156,6 @@ describe('NonMembersConversionComponent', () => {
     expect(verdicts).toEqual([true]);
     expect(query('non-members-conversion-hero')).toBeNull();
     expect(query('non-members-conversion-warmest')).toBeNull();
-    expect(query('non-members-conversion-footnote')).toBeNull();
   });
 
   it('shows the error state and still settles when the read fails', async () => {

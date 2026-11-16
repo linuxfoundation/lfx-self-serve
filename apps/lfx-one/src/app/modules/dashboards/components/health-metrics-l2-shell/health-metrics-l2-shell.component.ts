@@ -33,7 +33,9 @@ import {
   UrlTree,
 } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
+import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS, HEALTH_METRICS_PROVISIONAL_BADGE } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsL2BlankView,
   buildHealthMetricsL2EmptyCopy,
@@ -48,6 +50,7 @@ import { HealthMetricsChromeService } from '../../health-metrics-gate/health-met
 import { HealthMetricsBlankCardComponent } from '../health-metrics-blank-card/health-metrics-blank-card.component';
 import { HealthMetricsFootnoteComponent } from '../health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
+import { HealthMetricsL2SectionControlsDirective } from './health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
 import type {
@@ -74,7 +77,15 @@ import type {
  */
 @Component({
   selector: 'lfx-health-metrics-l2-shell',
-  imports: [EmptyStateComponent, HealthMetricsBlankCardComponent, HealthMetricsFootnoteComponent, HealthMetricsL2SubNavComponent, NgTemplateOutlet],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsBlankCardComponent,
+    HealthMetricsFootnoteComponent,
+    HealthMetricsL2SubNavComponent,
+    NgTemplateOutlet,
+    UiBadgeComponent,
+    UiTooltipDirective,
+  ],
   templateUrl: './health-metrics-l2-shell.component.html',
 })
 export class HealthMetricsL2ShellComponent implements OnInit {
@@ -106,6 +117,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private readonly startSentinel = viewChild<ElementRef<HTMLElement>>('startSentinel');
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');
   private readonly bodies = contentChildren(HealthMetricsL2SectionDirective);
+  private readonly controls = contentChildren(HealthMetricsL2SectionControlsDirective);
 
   // Held until the sections exist, then again until every async section has settled: a deep link
   // re-scrolls once per read that lands, because each one moves the anchors below it.
@@ -117,6 +129,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   // Ids resolved once per input rather than per render — the template only reads fields.
   protected readonly sectionViews = computed<HealthMetricsL2SectionView[]>(() => buildHealthMetricsL2SectionViews(this.sections(), this.idPrefix()));
   protected readonly bodyByKey = computed(() => new Map<string, TemplateRef<unknown>>(this.bodies().map((body) => [body.key(), body.template])));
+  protected readonly controlsByKey = computed(
+    () => new Map<string, TemplateRef<unknown>>(this.controls().map((controls) => [controls.key(), controls.template]))
+  );
+  protected readonly provisionalBadge = HEALTH_METRICS_PROVISIONAL_BADGE;
 
   /** Read key → whether its last settle found nothing for the period; `null` gives no verdict. Absent while reading. */
   private readonly readEmpty = signal<ReadonlyMap<string, boolean | null>>(new Map());

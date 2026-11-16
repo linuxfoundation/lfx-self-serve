@@ -47,6 +47,7 @@ export class VoteReviewComponent {
   public readonly closeDate: Signal<string> = this.initCloseDate();
   public readonly closeTimezoneName: Signal<string> = this.initCloseTimezoneName();
   public readonly allowAbstain: Signal<boolean> = this.initAllowAbstain();
+  public readonly allowVoteChange: Signal<boolean> = this.initAllowVoteChange();
   public readonly questions: Signal<VoteReviewQuestion[]> = this.initQuestions();
   public readonly commentPrompts: Signal<VoteReviewCommentPrompt[]> = this.initCommentPrompts();
 
@@ -135,6 +136,14 @@ export class VoteReviewComponent {
     return computed(() => {
       this.formValue();
       return !!this.form().get('allow_abstain')?.value;
+    });
+  }
+
+  private initAllowVoteChange(): Signal<boolean> {
+    return computed(() => {
+      this.formValue();
+      // Absent means allowed, matching the form default and legacy votes (#4723).
+      return this.form().get('allow_vote_change')?.value !== false;
     });
   }
 

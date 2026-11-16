@@ -29,17 +29,19 @@ export interface ClaOnlyOrgList {
 }
 
 /**
- * Whether the selector and role grants list CLA-only organizations for this caller: only when Org
- * Lens resolved no organization at all and the caller is not staff. A caller with any grant is
- * answered by Org Lens alone and never costs the user-service call; a CLA Manager of a further
- * company is not listed for them, though a deep link to it still opens its EasyCLA tab.
+ * Whether the caller holds no Org Lens grant at all, so CLA-only organizations are their whole list.
  *
  * `rosterAnswered` is false when the roster never loaded or the staff check failed. Either leaves
  * "no grant, not staff" unproven, so the caller keeps the normal outage handling instead of being
  * classified CLA-only.
  */
 export function claOnlyEntryApplies(isStaff: boolean, grantedOrgCount: number, rosterAnswered: boolean): boolean {
-  return rosterAnswered && !isStaff && grantedOrgCount === 0;
+  return claOnlyListApplies(isStaff, rosterAnswered) && grantedOrgCount === 0;
+}
+
+/** Whether CLA-only organizations are listed at all: for any non-staff caller whose roster answered, after the organizations they hold. */
+export function claOnlyListApplies(isStaff: boolean, rosterAnswered: boolean): boolean {
+  return rosterAnswered && !isStaff;
 }
 
 /**
@@ -63,9 +65,11 @@ export class OrgClaOnlyOrgsService {
 
   /**
    * The caller's CLA-only organizations, added outside the cached grant computation so the grant
-   * cache never holds an ACS answer. Asked only when Org Lens granted nothing; an unreadable scope
-   * list is logged and answered as none with `claManagerLookup: 'failed'`, leaving the grant arrays —
-   * the authoritative part — intact, so the client shows an outage rather than "no organizations".
+   * cache never holds an ACS answer. Asked only when Org Lens granted nothing, so a grant holder's
+   * bootstrap never waits on it — their CLA-only rows come from the selector's deferred request. An
+   * unreadable scope list is logged and answered as none with `claManagerLookup: 'failed'`, leaving
+   * the grant arrays — the authoritative part — intact, so the client shows an outage rather than
+   * "no organizations".
    */
   public async getRoleGrantClaManagerOrgs(req: Request, grants: RoleGrantsResponse): Promise<Pick<RoleGrantsResponse, 'claManagerOrgs' | 'claManagerLookup'>> {
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
@@ -87,10 +91,10 @@ export class OrgClaOnlyOrgsService {
    * lookup drops that row and reports `failed`, so one outage does not hide the rest. At most
    * `ORG_CLA_ONLY_ORGS_MAX` lookups are made.
    */
-  public async listOrgs(req: Request): Promise<ClaOnlyOrgList> {
+  public async listOrgs(req: Request, held: ReadonlySet<string> = new Set()): Promise<ClaOnlyOrgList> {
     let uids: string[];
     try {
-      uids = await this.getOrgUids(req);
+      uids = (await this.getOrgUids(req)).filter((uid) => !held.has(uid));
     } catch (error) {
       logger.warning(req, 'list_cla_only_orgs', 'CLA manager scopes lookup failed; listing no CLA-only organizations', {
         err: error instanceof Error ? error.message : String(error),

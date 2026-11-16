@@ -49,10 +49,10 @@
       <lfx-table styleClass="hm-table" [rowHover]="false" [value]="view().rows" data-testid="events-registrations-growth-table">
         <ng-template #header>
           <tr>
-            <th scope="col"><span class="text-[12px] font-normal text-gray-500">Year</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Total</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">In-person</span></th>
-            <th scope="col" class="text-right"><span class="text-[12px] font-normal text-gray-500">Virtual</span></th>
+            <th scope="col">Year</th>
+            <th scope="col" class="text-right">Total</th>
+            <th scope="col" class="text-right">In-person</th>
+            <th scope="col" class="text-right">Virtual</th>
           </tr>
         </ng-template>
 
@@ -80,15 +80,5 @@
         </ng-template>
       </lfx-table>
     </div>
-
-    @if (view().hasPartialYear) {
-      <lfx-health-metrics-footnote data-testid="events-registrations-growth-footnote">
-        The current year is partial — it sits against complete years, so it will always look short until December. Use the
-        <button type="button" class="text-blue-600 hover:underline" (click)="onViewForecast()" data-testid="events-registrations-growth-forecast-link">
-          registration forecast &rarr;
-        </button>
-        to compare like with like.
-      </lfx-health-metrics-footnote>
-    }
   }
 </div>

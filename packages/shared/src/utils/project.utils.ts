@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DRAFT_STAGE_SENTINEL, PROJECT_FORMATION_STAGE_LABELS } from '../constants/project-formation.constants';
+import { DRAFT_STAGE_SENTINEL, PROJECT_FORMATION_STAGE_LABELS, TEST_PROJECT_NAMES } from '../constants/project-formation.constants';
 import { ProjectFunding } from '../enums/project-funding.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { EnrichedPersonaProject, LensItem, Project, ProjectContext, WriterSummary } from '../interfaces';
@@ -34,8 +34,13 @@ export function isFoundationProject(project: EnrichedPersonaProject): boolean {
   return project.isFoundation;
 }
 
-// PCC test-project override (lfx-pcc helper.ts) — kept in sync with hasHealthMetricDashboard.
-const FOUNDATION_NAME_OVERRIDES = new Set(['Test Project Group IT', 'Test Project IT']);
+// PCC test-project override (lfx-pcc helper.ts): these projects count as foundations by name. The names live in TEST_PROJECT_NAMES.
+const FOUNDATION_NAME_OVERRIDES = new Set<string>(TEST_PROJECT_NAMES);
+
+/** Whether a project name is one of the PCC test projects ({@link TEST_PROJECT_NAMES}). */
+export function isTestProjectName(name: string | null | undefined): boolean {
+  return !!name && FOUNDATION_NAME_OVERRIDES.has(name);
+}
 
 /**
  * Membership-funded foundation (Funding === 'Funded'), not an Internal Allocation.

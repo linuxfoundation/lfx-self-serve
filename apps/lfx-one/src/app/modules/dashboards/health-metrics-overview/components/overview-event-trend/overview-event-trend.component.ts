@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, linkedSignal } from '@angular/core';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
   HEALTH_METRICS_OVERVIEW_TREND_COLORS,
   HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS,
@@ -15,7 +14,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { HealthMetricsInfoTipComponent } from '../../../components/health-metrics-info-tip/health-metrics-info-tip.component';
 
 import type {
-  FilterPillOption,
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsOverviewCardStatus,
   HealthMetricsOverviewEvent,
@@ -28,13 +26,15 @@ import type {
 /**
  * The event dialog's Registration trend tab: the event's headline figures and this year's curve against last year's,
  * with the forecast for an upcoming event and none for a past one. It opens on the design's best fit, and a navigator
- * under the chart moves or resizes the visible span. Formats are never summed, so an event with both picks one. The
- * dialog reads the data, since its header shows the same forecast's days left.
+ * under the chart moves or resizes the visible span. Formats are never summed, so an event with both shows the one with
+ * the most registrations. The dialog reads the data, since its header shows the same forecast's days left.
  */
 @Component({
   selector: 'lfx-overview-event-trend',
-  imports: [FilterPillsComponent, HealthMetricsInfoTipComponent, SkeletonModule, UiButtonComponent],
+  imports: [HealthMetricsInfoTipComponent, SkeletonModule, UiButtonComponent],
   templateUrl: './overview-event-trend.component.html',
+  // On a phone the tab takes the dialog's height, and the chart fills what the metrics leave.
+  host: { class: 'flex min-h-0 flex-auto flex-col' },
 })
 export class OverviewEventTrendComponent {
   public readonly event = input.required<HealthMetricsOverviewEvent>();
@@ -46,14 +46,22 @@ export class OverviewEventTrendComponent {
   protected readonly colors = HEALTH_METRICS_OVERVIEW_TREND_COLORS;
   protected readonly windowDays = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
   protected readonly minSpan = HEALTH_METRICS_OVERVIEW_TREND_MIN_SPAN_DAYS;
-  protected readonly format = linkedSignal<string | null>(() => pickHealthMetricsEventsForecastFormat(this.reads()?.curve.formats ?? []));
-  protected readonly formatOptions = computed<FilterPillOption[]>(() => {
-    const formats = this.reads()?.curve.formats ?? [];
-    return formats.length > 1 ? formats.map((series) => ({ id: series.format, label: series.format })) : [];
-  });
+  /** Exact px, by metric: on a phone Current spans both rows on the left, with Predicted over Same point last year. */
+  protected readonly kpiItemClasses: readonly string[] = [
+    'pl-0 max-[640px]:col-start-1 max-[640px]:row-span-2 max-[640px]:row-start-1 max-[640px]:justify-between max-[640px]:py-[12px] max-[640px]:pl-0 max-[640px]:pr-[12px]',
+    'border-l border-gray-200 pl-[32px] max-[640px]:col-start-2 max-[640px]:row-start-2 max-[640px]:pb-[12px] max-[640px]:pl-[16px] max-[640px]:pr-0 max-[640px]:pt-[6px]',
+    'border-l border-gray-200 pl-[32px] max-[640px]:col-start-2 max-[640px]:row-start-1 max-[640px]:pb-[6px] max-[640px]:pl-[16px] max-[640px]:pr-0 max-[640px]:pt-[12px]',
+  ];
+  /** Current stays large on a phone, at 40px; the others drop to 16px. */
+  protected readonly kpiValueClasses: readonly string[] = [
+    'max-[640px]:text-[40px] max-[640px]:leading-[44px]',
+    'max-[640px]:text-[16px] max-[640px]:font-normal max-[640px]:leading-[22px]',
+    'max-[640px]:text-[16px] max-[640px]:font-normal max-[640px]:leading-[22px]',
+  ];
   protected readonly series = computed<HealthMetricsEventsForecastCurveSeries | null>(() => {
     const formats = this.reads()?.curve.formats ?? [];
-    return formats.find((candidate) => candidate.format === this.format()) ?? formats[0] ?? null;
+    const format = pickHealthMetricsEventsForecastFormat(formats);
+    return formats.find((candidate) => candidate.format === format) ?? formats[0] ?? null;
   });
   /** The span the reader picked; `null` is the best fit, and a new series starts from it again. */
   protected readonly zoom = linkedSignal<HealthMetricsEventsForecastCurveSeries | null, HealthMetricsOverviewTrendWindow | null>({

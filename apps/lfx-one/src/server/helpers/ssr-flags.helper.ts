@@ -9,14 +9,14 @@ import { LaunchDarklyServerService } from '../services/launchdarkly-server.servi
 
 /**
  * Evaluates the flags an SSR render needs before Angular picks a route.
- * @description Only `/meetings/:id` for a signed-in viewer asks LaunchDarkly; every other render gets none, and
+ * @description Only `/meetings/:id` (and `/meetings/not-found`) for a signed-in viewer asks LaunchDarkly; every other render gets none, and
  * anonymous visitors keep the default. `user` must already carry the impersonation override, so the context matches
  * the one `FeatureFlagService` builds in the browser from the same user.
  */
 export async function resolveSsrFlags(req: Request, user: User | null): Promise<ServerRequestFlags> {
   // The SSR handler is mounted at `/**`, which leaves `req.path` as `/`; the original URL keeps the route.
   const segments = new URL(req.originalUrl, 'http://ssr').pathname.split('/').filter(Boolean);
-  const meetingPage = segments.length === 2 && segments[0] === 'meetings' && !['not-found', 'create'].includes(segments[1]);
+  const meetingPage = segments.length === 2 && segments[0] === 'meetings' && segments[1] !== 'create';
   if (!meetingPage || !user) {
     return {};
   }

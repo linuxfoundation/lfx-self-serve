@@ -229,8 +229,10 @@ export class SidebarNavService {
         const writerItems = this.projectContextService.menuCanWrite() ? [this.projectInitiativesNavItem, ...mentorshipItems] : [];
         // Newsletters sits directly under Mailing Lists rather than in a Communications section of its own.
         const coreItems = this.canSeeNewsletters() ? this.withProjectNewslettersNavItem(this.projectLensItems) : this.projectLensItems;
-        // Participating Organizations (#2091) is shown to every project-lens viewer — the BFF enforces project `viewer`.
-        const items = [...coreItems, this.projectParticipatingOrgsNavItem, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
+        // Participating Organizations (#2091) is shown to executive directors and LF staff only, matching Health
+        // Metrics. This is a role check; the BFF also scopes an ED to foundations they direct and requires project `viewer`.
+        const participatingOrgsItems = this.personaService.canViewExecutiveDashboards() ? [this.projectParticipatingOrgsNavItem] : [];
+        const items = [...coreItems, ...participatingOrgsItems, ...writerItems, ...mktgOsItems, this.projectGovernanceSection];
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -821,7 +823,7 @@ export class SidebarNavService {
 
   // --- Project — Participating Organizations (#2091) ---
   private readonly projectParticipatingOrgsNavItem: SidebarMenuItem = {
-    label: 'Participating organizations',
+    label: 'Participating companies',
     icon: 'fa-light fa-building',
     routerLink: '/project/participating-orgs',
     testId: 'sidebar-project-participating-orgs',

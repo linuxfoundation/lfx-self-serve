@@ -2956,7 +2956,8 @@ export interface GoogleCreativeFieldSpec {
    * list as a select, the empty value sends nothing, and a value outside the list is refused before
    * the create. Every Google call to action is one: the Demand Gen video ad's takes a `CallToActionType`
    * from the short list campaign-service has probed (`demandGenVideoCallToActions`), and the responsive
-   * display ad's and Demand Gen image ad's take the text Google documents for them
+   * display ad's and Demand Gen image ad's take the text a 13 Nov 2026 validateOnly probe found Google
+   * accepts on each
    * (`GOOGLE_DISPLAY_CALLS_TO_ACTION`, `GOOGLE_DEMAND_GEN_IMAGE_CALLS_TO_ACTION`).
    */
   options?: readonly GoogleCreativeFieldOption[];
@@ -4689,11 +4690,27 @@ export interface CampaignMonitorResponse {
   actionItems: CampaignActionItem[];
   message?: string;
   /**
-   * Campaign-service path only: true when the amounts are the project's own connected account's,
-   * unconverted, in a currency nobody named — campaign-service sets no `currency` for Google. The
-   * legacy read is the LF's own USD account and leaves it unset.
+   * Campaign-service path only: true when the amounts are those of the account that was read (the
+   * project's own connection's, or the one its recorded campaigns were created under; see
+   * `googleAccountOrigin`), unconverted, in a currency nobody named — campaign-service sets no
+   * `currency` for Google. The legacy read is the LF's own USD account and leaves it unset.
    */
   amountsInAccountCurrency?: boolean;
+  /**
+   * Campaign-service path only: the Google Ads customer that was read. ABSENT on the legacy read, and
+   * on a campaign-service read that had no account to read (no campaigns recorded for the project).
+   */
+  accountId?: string;
+  /**
+   * Campaign-service path only: where the Google account that was read came from. `connection` is
+   * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
+   * with an account bound of its own and campaign-service read the customer its campaigns were
+   * created under, through the LF system account when needed (#5622, campaign-service #592).
+   *
+   * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
+   * client's account picker got its account; that marker is never set from this field.
+   */
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
 }
 
 // ---------------------------------------------------------------------------

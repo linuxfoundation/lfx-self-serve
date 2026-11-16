@@ -4,7 +4,7 @@
 import '@angular/compiler';
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ApplicationRef, computed, signal, TransferState } from '@angular/core';
+import { ApplicationRef, computed, signal, TransferState, untracked } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -1232,7 +1232,13 @@ describe('OrgEasyclaComponent', () => {
       const setAccount = vi.fn();
       const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
       const items = signal(catalogue.map(toCatalogueItem));
-      const resetAndReload = vi.fn();
+      const navGeneration = signal(1);
+      // A first page landing is what replaces the list, so the landed generation follows `items`.
+      const firstPageLandedGeneration = computed(() => {
+        items();
+        return untracked(navGeneration);
+      });
+      const resetAndReload = vi.fn(() => navGeneration.update((g) => g + 1));
       const navigate = vi.fn();
 
       selectedAccount.set(BETA_COASTAL);
@@ -1258,7 +1264,10 @@ describe('OrgEasyclaComponent', () => {
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
-          { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          {
+            provide: OrgNavigationService,
+            useValue: { items, loaded: navLoaded, claOnlyPending: signal(false), generation: navGeneration, firstPageLandedGeneration, resetAndReload },
+          },
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           {

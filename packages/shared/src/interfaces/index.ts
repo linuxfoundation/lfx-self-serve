@@ -222,6 +222,9 @@ export * from './health-metrics-overview.interface';
 // Health Metrics Training page interfaces
 export * from './health-metrics-training.interface';
 
+// Health Metrics shared table cells
+export * from './health-metrics-table.interface';
+
 // Multi-persona dashboard interfaces
 export * from './multi-persona-dashboard.interface';
 
@@ -331,6 +334,7 @@ export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
+export * from './org-memberships.internal.interface';
 
 // Newsletter interfaces
 export * from './newsletter.interface';

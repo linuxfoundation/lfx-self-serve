@@ -64,7 +64,16 @@
         @if (link.error; as error) {
           <lfx-ui-note variant="error" size="small" data-testid="meeting-details-schedule-join-error">
             {{ error }}.
-            @if (link.code === 'NOT_REGISTERED_FOR_MEETING' && meetingPageUrl(); as pageUrl) {
+            @if (link.code === 'NOT_REGISTERED_FOR_MEETING' && joinWithOtherEmail; as joinInPlace) {
+              <button
+                type="button"
+                class="font-medium text-blue-600 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+                (click)="joinInPlace()"
+                data-testid="meeting-details-schedule-join-other-email">
+                Click here
+              </button>
+              to join using a different email address.
+            } @else if (link.code === 'NOT_REGISTERED_FOR_MEETING' && meetingPageUrl(); as pageUrl) {
               <a
                 class="font-medium text-blue-600 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
                 data-dd-privacy="mask"

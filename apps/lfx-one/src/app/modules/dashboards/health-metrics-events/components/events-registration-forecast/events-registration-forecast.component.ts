@@ -12,7 +12,6 @@ import { TableComponent } from '@components/table/table.component';
 import {
   getYearForRange,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
-  HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE,
   HEALTH_METRICS_EVENTS_FORECAST_HIDDEN_LEGEND_LABELS,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
   HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
@@ -38,7 +37,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -59,7 +57,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-registration-forecast',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
   templateUrl: './events-registration-forecast.component.html',
 })
 export class EventsRegistrationForecastComponent {
@@ -81,8 +79,6 @@ export class EventsRegistrationForecastComponent {
   public readonly reading = output<void>();
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
-
-  protected readonly footnote = HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE;
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);

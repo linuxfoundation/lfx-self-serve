@@ -9,8 +9,29 @@ import type { UserInfo } from './project.interface';
 /** Short stage keys the pipeline API and UI use; one per non-`Active` {@link ProjectStage}. */
 export type FormationPipelineStage = 'prospect' | 'exploratory' | 'engaged' | 'on_hold' | 'disengaged' | 'confidential' | 'archived';
 
-/** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages: Draft, Exploratory, Engaged, On hold), or `all`. */
+/** Who the pipeline was built for: `formation_team` sees every stage, `staff` (LF staff outside the formation team) never sees Draft or Confidential projects. */
+export type FormationPipelineViewer = 'formation_team' | 'staff';
+
+/** Stage pill/stat-card selection: one stage, `in_pipeline` (the live stages the viewer sees: Draft, Exploratory, Engaged, On hold; staff never see Draft), or `all`. */
 export type FormationPipelineStageFilter = FormationPipelineStage | 'in_pipeline' | 'all';
+
+/** The PCC classification fields a Pipeline row carries and the three filters read (#5619 Part C). Each is a multi-value string array on the `project` index document. */
+export type FormationPipelineClassificationKey = 'technical_activity_type' | 'technology' | 'industry';
+
+/** The selected values of each classification filter; an empty array is "no filter" for that field. */
+export type FormationPipelineClassificationSelection = Record<FormationPipelineClassificationKey, string[]>;
+
+/** One option of a classification filter: a value present in the rows, and how many rows hold it. */
+export interface FormationPipelineClassificationOption {
+  value: string;
+  count: number;
+}
+
+/** Where a project sits by its DIRECT parent (#5619): `under_lf` has The Linux Foundation as its parent, `under_foundation` has any other parent (an existing foundation), `no_parent` has none. Not derived from `computeIsFoundation`. */
+export type FormationPipelineFoundationKind = 'under_lf' | 'under_foundation' | 'no_parent';
+
+/** Foundation-type selection: one kind, or `all`. */
+export type FormationPipelineFoundationKindFilter = FormationPipelineFoundationKind | 'all';
 
 /** Per-stage row counts plus the total, taken before any stage selection or UI search. */
 export type FormationPipelineCounts = Record<FormationPipelineStage, number> & { total: number };
@@ -32,6 +53,8 @@ export interface FormationPipelineRow {
   stage: FormationPipelineStage;
   /** The nearest foundation ancestor, or `null` when the project has none (top-level, or an ancestor query-service did not return). */
   parent: FormationPipelineParent | null;
+  /** Classified by the project's direct parent, not by `parent` (the nearest foundation), which is The Linux Foundation for a project directly under it. */
+  foundation_kind: FormationPipelineFoundationKind;
   announcement_date: string | null;
   formation_date: string | null;
   legal_entity_name: string | null;
@@ -39,6 +62,14 @@ export interface FormationPipelineRow {
   executive_director: FormationPipelinePerson | null;
   program_manager: FormationPipelinePerson | null;
   opportunity_owner: FormationPipelinePerson | null;
+  /** The project's Formation Lead (`project_settings.formation_lead`); `null` when unset or the field is not served yet. */
+  formation_lead: FormationPipelinePerson | null;
+  /** PCC technical activity types, e.g. "Open Standard / Specification" (#5619 Part C); `[]` when empty or missing upstream. */
+  technical_activity_type: string[];
+  /** PCC technology sectors; `[]` when empty or missing. */
+  technology: string[];
+  /** PCC industry sectors (v2 `industry`); `[]` when empty or missing. */
+  industry: string[];
   created_at: string | null;
   updated_at: string | null;
   /** True when a `formation` checklist document exists for the project, in any lifecycle (a frozen one counts). */
@@ -49,6 +80,8 @@ export interface FormationPipelineRow {
 export interface FormationPipelineResponse {
   rows: FormationPipelineRow[];
   counts: FormationPipelineCounts;
+  /** Which view the server built (#5544): the formation team's full pipeline, or LF staff's read-only view without Draft and Confidential projects. */
+  viewer: FormationPipelineViewer;
 }
 
 /** Query parameters of `GET /api/formations/pipeline`, after validation. */
@@ -59,13 +92,34 @@ export interface FormationPipelineQuery {
 }
 
 /** Columns the pipeline table can sort by. */
-export type FormationPipelineSortKey = 'project' | 'stage' | 'expected_launch' | 'formation_date' | 'legal_entity' | 'ed_pm' | 'opportunity_owner' | 'updated';
+export type FormationPipelineSortKey =
+  | 'project'
+  | 'stage'
+  | 'expected_launch'
+  | 'formation_lead'
+  | 'formation_date'
+  | 'legal_entity'
+  | 'ed_pm'
+  | 'opportunity_owner'
+  | 'updated';
 
 export type FormationPipelineSortDirection = 'asc' | 'desc';
 
 export interface FormationPipelineSort {
   key: FormationPipelineSortKey;
   direction: FormationPipelineSortDirection;
+}
+
+/** The Pipeline's filter and sort state as it lives in the URL (#5619): stage, foundation, foundation type, name search and sort. */
+export interface FormationPipelineUrlState {
+  stage: FormationPipelineStageFilter;
+  /** The chosen foundation's uid, or `null` for all foundations. */
+  foundationUid: string | null;
+  foundationKind: FormationPipelineFoundationKindFilter;
+  search: string;
+  /** The three classification multi-selects (#5619 Part C); each empty when its filter is off. */
+  classification: FormationPipelineClassificationSelection;
+  sort: FormationPipelineSort;
 }
 
 /** What the "Expected launch" cell shows for one date. */
@@ -93,6 +147,10 @@ export interface UpstreamPipelineProject {
   formation_date?: string;
   legal_entity_name?: string;
   legal_entity_type?: string;
+  /** Multi-value PCC classification arrays on the `project` index document (lfx-v2-project-service 0.10.4). Optional: a project without them may omit the key or send `null`. */
+  technical_activity_type?: string[] | null;
+  technology?: string[] | null;
+  industry?: string[] | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -104,6 +162,8 @@ export interface UpstreamPipelineSettings {
   executive_director?: UserInfo | null;
   program_manager?: UserInfo | null;
   opportunity_owner?: UserInfo | null;
+  /** Added by lfx-v2-project-service#184; present once the v1 sync and backfill (lfx-v1-sync-helper#216) have run. */
+  formation_lead?: UserInfo | null;
 }
 
 /** Page tabs of the LF-root Formations page: the pipeline, plus the existing formations and proposals tabs. */
@@ -125,6 +185,10 @@ export interface FormationPipelineTableRow extends FormationPipelineRow {
   legalEntityLabel: string;
   edLine: string;
   pmLine: string;
+  /** The lead's name (email or username when there is no name), or the "Not set" copy. */
+  formationLeadLabel: string;
+  /** The lead's email for the hover/focus tooltip; `''` when none. */
+  formationLeadEmail: string;
   ownerLabel: string;
   updatedLabel: string;
   link: FormationPipelineRowLink;

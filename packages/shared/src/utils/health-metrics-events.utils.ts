@@ -378,7 +378,7 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
 ): HealthMetricsEventsRegistrationsGrowthView {
   const byYear = new Map(growth.years.map((year) => [year.year, year]));
   const years = [...byYear.keys()];
-  if (years.length === 0) return { rows: [], yearCount: 0, hasPartialYear: false, pandemicNote: null };
+  if (years.length === 0) return { rows: [], yearCount: 0, pandemicNote: null };
 
   const first = Math.min(...years);
   const last = Math.max(...years);
@@ -389,7 +389,6 @@ export function buildHealthMetricsEventsRegistrationsGrowthView(
   return {
     rows,
     yearCount: rows.length,
-    hasPartialYear: rows.some((row) => row.isPartialYear),
     pandemicNote: formatRegistrationsGrowthPandemicNote(rows, metric),
   };
 }

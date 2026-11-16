@@ -30,9 +30,13 @@ describe('resolveSsrFlags', () => {
     expect(isFlagEnabled).toHaveBeenCalledWith(req, MEETINGS_REDESIGN_FLAG, false, { key: 'pat', name: 'Pat Viewer', email: 'pat@example.org' });
   });
 
-  it.each(['/meetings', '/meetings/not-found', '/meetings/create', '/meetings/123/details', '/groups/123'])('skips %s', async (path) => {
+  it.each(['/meetings', '/meetings/create', '/meetings/123/details', '/groups/123'])('skips %s', async (path) => {
     expect(await resolveSsrFlags(request(path), user)).toEqual({});
     expect(isFlagEnabled).not.toHaveBeenCalled();
+  });
+
+  it('evaluates the redesign flag for the meeting not-found page, which the redesign also pairs', async () => {
+    expect(await resolveSsrFlags(request('/meetings/not-found'), user)).toEqual({ meetingsRedesign: true });
   });
 
   it('skips anonymous visitors', async () => {

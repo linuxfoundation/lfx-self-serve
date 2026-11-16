@@ -29,6 +29,9 @@ export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
  */
 export const MEETING_REMOVAL_SOURCE_HEADER = 'x-lfx-removal-source';
 
+/** Request header that, sent as `'false'`, makes LF v1 services skip their Redis read cache for that request. */
+export const LFX_CACHE_BYPASS_HEADER = 'X-LFX-CACHE';
+
 /**
  * Maximum number of `filters_or` clauses per query-service request.
  * @description URL-length guard for batched lookups on `/query/resources`. When the caller has

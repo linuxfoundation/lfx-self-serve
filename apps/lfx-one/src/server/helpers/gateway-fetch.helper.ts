@@ -3,6 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
+import { LFX_CACHE_BYPASS_HEADER } from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import { API_GW_TIMEOUT_MS, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
@@ -47,6 +48,11 @@ export interface GatewayFetchOptions {
    * body is still a failure — other callers expect JSON.
    */
   acceptEmptyBody?: boolean;
+  /**
+   * Sends `X-LFX-CACHE: false` so the upstream skips its read cache. Use for reads that must see
+   * the caller's own recent writes rather than potentially stale cached responses (#5679).
+   */
+  bypassCache?: boolean;
 }
 
 /**
@@ -76,6 +82,7 @@ export async function fetchGatewayResponse(req: Request, url: string, options: G
       headers: {
         Authorization: `Bearer ${token}`,
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.bypassCache ? { [LFX_CACHE_BYPASS_HEADER]: 'false' } : {}),
       },
       ...(hasBody ? { body: JSON.stringify(options.body) } : {}),
       signal: AbortSignal.timeout(API_GW_TIMEOUT_MS),

@@ -4,7 +4,7 @@
 import type { OrgCommitFilters, OrgCountUnit, OrgProjectScope } from './org-commit-filters.interface';
 import type { OrgAccessBadgeState } from './org-lens-access.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
-import type { OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
+import type { OrgKeyContactRole, OrgKeyContactRolePillVm } from './org-people-key-contacts.interface';
 
 /** Tab identifier for the Org People page tab strip. */
 export type PeopleTabId = 'all' | 'board' | 'committee' | 'contacts' | 'contributors' | 'events' | 'training' | 'access';
@@ -191,6 +191,15 @@ export type OrgAllEmployeeCompanyEmailFilter = 'all' | OrgAllEmployeeCompanyEmai
 export interface OrgAllEmployeeCompanyEmailOption {
   label: string;
   value: OrgAllEmployeeCompanyEmailFilter;
+}
+
+/** The All Employees Key Contact filter: every row, rows holding any role, rows holding none, or rows holding one canonical role. */
+export type OrgAllEmployeeKeyContactFilter = 'all' | 'any' | 'none' | OrgKeyContactRole;
+
+/** Dropdown option for the Key Contact filter. */
+export interface OrgAllEmployeeKeyContactOption {
+  label: string;
+  value: OrgAllEmployeeKeyContactFilter;
 }
 
 /** Pre-decorated All Employees row — wire shape plus per-row derivatives baked once so the template stays method-free. */

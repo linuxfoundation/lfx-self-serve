@@ -19,8 +19,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
-import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
-
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   FilterPillOption,
@@ -29,7 +27,6 @@ import type {
   HealthMetricsEventsRegistrationsGrowthQuery,
   HealthMetricsEventsRegistrationsGrowthRowView,
   HealthMetricsEventsRegistrationsGrowthView,
-  HealthMetricsEventsSectionKey,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -38,7 +35,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-registrations-growth',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
   templateUrl: './events-registrations-growth.component.html',
 })
 export class EventsRegistrationsGrowthComponent {
@@ -50,8 +47,6 @@ export class EventsRegistrationsGrowthComponent {
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The cross-link to the forecast; the L2 shell owns scrolling, so a repeat click still lands. */
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
@@ -102,10 +97,6 @@ export class EventsRegistrationsGrowthComponent {
   protected onMetricChange(id: string): void {
     const option = HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS.find((candidate) => candidate.id === id);
     if (option) this.metric.set(option.id);
-  }
-
-  protected onViewForecast(): void {
-    this.sectionPicked.emit('forecast');
   }
 
   private initResponse(): Signal<HealthMetricsEventsRegistrationsGrowth> {

@@ -10,26 +10,30 @@
   [emptyCopy]="emptyCopy"
   testId="overview-training">
   @if (read.status() === 'ready' && view()?.isEmpty === false) {
-    <div overviewCardAction class="flex gap-[2px] rounded-full bg-gray-100 p-[2px]" role="group" aria-label="Measure" data-testid="overview-training-toggle">
+    <lfx-ui-switch
+      overviewCardAction
+      size="small"
+      ariaLabel="Measure"
+      [value]="metric()"
+      (valueChange)="onMetricChange($event)"
+      data-testid="overview-training-toggle">
       @for (option of metrics; track option.id) {
-        <button
-          type="button"
-          class="h-[26px] rounded-full border-0 px-[12px] text-[12px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-          [class]="metric() === option.id ? 'bg-white font-medium text-gray-900 shadow-sm shadow-gray-900/[0.08]' : 'bg-transparent font-normal text-gray-500'"
-          [attr.aria-pressed]="metric() === option.id"
-          [attr.data-testid]="'overview-training-toggle-' + option.id"
-          (click)="metric.set(option.id)">
-          {{ option.label }}
-        </button>
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'overview-training-toggle-' + option.id" />
       }
-    </div>
+    </lfx-ui-switch>
   }
 
   @if (view(); as view) {
     <div class="flex flex-wrap items-start gap-x-[40px] gap-y-[24px]">
       <div class="relative h-[194px] w-[212px] flex-none" data-testid="overview-training-arc">
         <svg width="212" height="194" viewBox="0 0 212 194" class="absolute inset-0" role="img" [attr.aria-label]="view.ariaLabel">
-          <path fill="none" stroke-width="8" stroke-linecap="round" [attr.stroke]="strokes.track" [attr.d]="view.trackPath"></path>
+          @if (view.noGoal) {
+            <!-- No goal: the track is an outline, a white stroke over a wider gray one. -->
+            <path fill="none" stroke-width="8" stroke-linecap="round" [attr.stroke]="strokes.outline" [attr.d]="view.trackPath"></path>
+            <path fill="none" stroke-width="6" stroke-linecap="round" [attr.stroke]="strokes.outlineFill" [attr.d]="view.trackPath"></path>
+          } @else {
+            <path fill="none" stroke-width="8" stroke-linecap="round" [attr.stroke]="strokes.track" [attr.d]="view.trackPath"></path>
+          }
           @if (view.progressPath) {
             <path fill="none" stroke-width="8" stroke-linecap="round" [attr.stroke]="strokes.progress" [attr.d]="view.progressPath"></path>
           }

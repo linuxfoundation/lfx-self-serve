@@ -1,0 +1,12 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the design's 40px value column and 62×6 bar. -->
+@if (width() !== null) {
+  <span class="min-w-[40px] whitespace-nowrap text-left text-[14px] font-normal text-gray-900" data-testid="health-metrics-value-bar-value">{{ value() }}</span>
+  <span class="h-[6px] w-[62px] flex-none overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
+    <span class="block h-full rounded-full" [class]="fill()" [style.width.%]="width()" data-testid="health-metrics-value-bar-fill"></span>
+  </span>
+} @else {
+  <span class="text-[14px] font-normal text-gray-400" data-testid="health-metrics-value-bar-value">{{ dash }}</span>
+}

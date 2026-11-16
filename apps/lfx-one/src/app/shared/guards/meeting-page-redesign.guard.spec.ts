@@ -110,6 +110,17 @@ describe('meetingPageRedesignGuard', () => {
       expect(getBooleanFlag).not.toHaveBeenCalled();
     });
 
+    it('keeps the decision for the hydrating URL when the server redirects to not-found', async () => {
+      configure('server', { auth, flags: { meetingsRedesign: true } });
+      expect(await runGuard()).toBe(true);
+
+      const notFound = [new UrlSegment('meetings', {}), new UrlSegment('not-found', {})];
+      const matched = await (TestBed.runInInjectionContext(() => meetingPageRedesignGuard({ path: 'meetings/not-found' }, notFound)) as Promise<boolean>);
+
+      expect(matched).toBe(true);
+      expect(TestBed.inject(TransferState).get(MEETING_PAGE_REDESIGN_KEY, null)).toEqual({ id: '123', enabled: true });
+    });
+
     it('defaults to the legacy page when the server did not evaluate the flag', async () => {
       configure('server', { auth });
 

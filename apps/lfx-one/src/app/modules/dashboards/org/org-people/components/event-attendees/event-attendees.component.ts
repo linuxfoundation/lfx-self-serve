@@ -40,7 +40,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@services/account-context.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
-import { avatarColorClass } from '@lfx-one/shared/utils';
+import { avatarColorClass, foldForSearch } from '@lfx-one/shared/utils';
 import { formatLongDateUtc } from '@shared/utils/date-format.util';
 import { readOrgEventsParticipation, syncOrgEventsParticipationWithUrl } from '@shared/utils/org-events-filters-url.util';
 import { readOrgLensTimeRange, syncOrgLensTimeRangeWithUrl } from '@shared/utils/org-lens-time-range-url.util';
@@ -228,7 +228,7 @@ export class EventAttendeesComponent {
 
   private initFilteredDetails(): OrgEventAttendeeDetailRow[] {
     const values = this.filterValues();
-    const q = (values.search ?? '').trim().toLowerCase();
+    const q = foldForSearch(values.search);
     const foundationId = this.offeredValue(values.foundation, this.foundationOptions());
     const eventId = this.offeredValue(values.event, this.eventOptions());
 
@@ -236,7 +236,7 @@ export class EventAttendeesComponent {
     return this.response().details.filter((row) => {
       if (foundationId && row.foundationId !== foundationId) return false;
       if (eventId && row.eventId !== eventId) return false;
-      if (q && !row.displayName.toLowerCase().includes(q) && !(row.jobTitle ?? '').toLowerCase().includes(q)) return false;
+      if (q && ![row.displayName, row.jobTitle].some((field) => foldForSearch(field).includes(q))) return false;
       return true;
     });
   }
@@ -356,7 +356,7 @@ export class EventAttendeesComponent {
   /** Search, foundation or event narrow the rows (not the server read), so the tiles follow the rows. */
   private initIsRowFiltering(): boolean {
     const values = this.filterValues();
-    const hasSearch = (values.search ?? '').trim().length > 0;
+    const hasSearch = foldForSearch(values.search).length > 0;
     return hasSearch || !!this.offeredValue(values.foundation, this.foundationOptions()) || !!this.offeredValue(values.event, this.eventOptions());
   }
 

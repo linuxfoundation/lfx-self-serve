@@ -279,3 +279,60 @@ describe('VoteBallotInlineComponent — mobile layout (#4148)', () => {
     expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['c2']);
   });
 });
+
+describe('VoteBallotInlineComponent — final notice (#4723)', () => {
+  let fixture: ComponentFixture<VoteBallotInlineComponent>;
+
+  const VOTE: Vote = {
+    uid: 'vote-1',
+    name: 'Test vote',
+    status: PollStatus.ACTIVE,
+    project_uid: 'project-1',
+    end_time: '2099-01-01T00:00:00Z',
+    poll_questions: [
+      {
+        question_id: 'q1',
+        prompt: 'Approve the budget?',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Yes' },
+          { choice_id: 'c2', choice_text: 'No' },
+        ],
+      },
+    ],
+  } as Vote;
+
+  async function notice(vote: Vote): Promise<HTMLElement | null> {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [VoteBallotInlineComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: BreakpointObserver, useValue: { observe: () => of({ matches: false, breakpoints: {} }), isMatched: () => false } },
+        { provide: VoteService, useValue: { submitMyResponse: vi.fn(() => of(undefined)) } },
+        { provide: UserService, useValue: { impersonating: signal(false) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteBallotInlineComponent);
+    fixture.componentRef.setInput('vote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.nativeElement.querySelector('[data-testid="dashboard-pending-actions-vote-final-notice"]');
+  }
+
+  it('warns before the first submission that a locked vote cannot be changed', async () => {
+    const el = await notice({ ...VOTE, allow_vote_change: false } as Vote);
+
+    expect(el?.textContent?.trim()).toBe("Once you submit, your vote can't be changed.");
+    expect(el?.getAttribute('role')).toBe('note');
+  });
+
+  it.each([
+    ['an allowed vote', true],
+    ['a legacy vote without the setting', undefined],
+  ])('shows no notice on %s', async (_label, allowVoteChange) => {
+    expect(await notice({ ...VOTE, allow_vote_change: allowVoteChange } as Vote)).toBeNull();
+  });
+});
