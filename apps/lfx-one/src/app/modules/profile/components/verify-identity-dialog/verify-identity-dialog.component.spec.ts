@@ -42,7 +42,7 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
     icon: 'fa-light fa-envelope',
     state: 'unverified',
   } as unknown as ConnectedIdentityFull;
-  const conflictCopy = 'This email is already linked to an LFX account. If you believe this is an error, contact support.';
+  const conflictCopy = EMAIL_ALREADY_LINKED_MESSAGE;
   let fixture: ComponentFixture<VerifyIdentityDialogComponent>;
 
   function setup(
@@ -450,8 +450,13 @@ describe('VerifyIdentityDialogComponent — email verification outcome (#4253, #
       expect(openMessenger).toHaveBeenLastCalledWith('test-app-id', expect.any(Function));
     });
 
-    it('words the code hint without promising a code or naming the address status', () => {
+    it('explains inbox ownership and the separate linking check without naming the address status (#5793)', () => {
       const { root } = setup(() => of<VerifyAndLinkEmailResponse>({ success: true }));
+      expect(normalizedText(root)).toContain(
+        'Check owned@example.test for a 6-digit verification code. Enter it to confirm you own this address. We’ll then check whether it can be linked to your account.'
+      );
+      expect(normalizedText(root)).not.toContain('If this address can be added');
+      expect(normalizedText(root)).not.toContain('already linked');
 
       const hint = normalizedText(root.querySelector('[data-testid="verify-otp-hint"]'));
       expect(hint).toContain(EMAIL_CODE_NOT_RECEIVED_HINT);
