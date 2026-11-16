@@ -246,10 +246,12 @@ export class MailingListSyncSettingsComponent {
     const committeeUid = this.committee()?.uid;
     if (!committeeUid) return;
     // sync_mode lives per-committee-entry inside ml.committees[] on the read model, not as a
-    // top-level field — ml.sync_mode silently resolves to undefined here, so the preview dialog
-    // must resolve it the same way getMailingListCommitteeSync's callers do elsewhere (greptile /
-    // copilot / lfx-one #5790 review).
-    const { syncMode } = getMailingListCommitteeSync(ml, committeeUid);
+    // top-level field, so a fresh load must resolve it via getMailingListCommitteeSync. But save()
+    // above emits only a top-level sync_mode patch and never updates the matching committees[]
+    // entry, so right after a save that nested lookup still reads the pre-save mode — prefer the
+    // just-saved top-level value when present, falling back to the nested lookup otherwise
+    // (cursor/greptile/copilot/lfx-one #5790 round 2 review).
+    const syncMode = ml.sync_mode ?? getMailingListCommitteeSync(ml, committeeUid).syncMode;
     const ref: DynamicDialogRef<MailingListSyncPreviewDialogComponent> | null = this.dialogService.open(MailingListSyncPreviewDialogComponent, {
       header: `Sync Now — ${ml.group_name}`,
       width: '800px',

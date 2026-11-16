@@ -1028,15 +1028,18 @@ export class CommitteeSettingsTabComponent {
         map(() => ({ uid, success: true })),
         catchError((err: { status?: number }) => of({ uid, success: false, status: err?.status }))
       );
-      // A list moving off a non-manual mode it currently holds on this committee frees up a slot for
-      // siblings — not just when it's moving to MANUAL, but also when it's switching directly to the
-      // *other* auto mode (e.g. ML→C to C→ML still releases the ML→C slot). That release must still
-      // run in the first phase so any newly-unblocked sibling's activation can't race it, even though
-      // this update's own payload already carries its new non-manual mode (greptile/lfx-one #5790).
-      const releasesCurrentAutoMode =
-        currentlyOnThisCommittee && !!currentSyncMode && currentSyncMode !== MailingListSyncMode.MANUAL && explicitSyncMode !== currentSyncMode;
+      // Only leaving AUTO_MAILING_LIST_TO_COMMITTEE needs release-phase priority: it's the single-slot
+      // direction (cToMlUid blocks ML→C for everyone else while one list holds it), so a sibling
+      // claiming that slot must run after this list gives it up, same as moving to MANUAL. Leaving
+      // AUTO_COMMITTEE_TO_MAILING_LIST straight into the other auto mode does NOT need this treatment:
+      // routing it into releaseUpdates put it in the same parallel forkJoin as a sibling's own Manual
+      // release, so this list's ML→C activation could be validated before that sibling's release lands
+      // and fail the mixed-direction check — the exact regression this round's fix must not reintroduce
+      // (cursor/greptile/copilot/lfx-one #5790 round 2 review).
+      const releasesMlToCSlot =
+        currentlyOnThisCommittee && currentSyncMode === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE && explicitSyncMode !== currentSyncMode;
 
-      if (releasesCurrentAutoMode) {
+      if (releasesMlToCSlot) {
         releaseUpdates.push({ uid, result$, releasesAutoSyncSlot: true });
       } else if (explicitSyncMode && explicitSyncMode !== MailingListSyncMode.MANUAL) {
         activateUpdates.push({ uid, result$ });

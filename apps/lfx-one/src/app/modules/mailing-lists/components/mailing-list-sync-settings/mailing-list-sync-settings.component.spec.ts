@@ -492,6 +492,26 @@ describe('MailingListSyncSettingsComponent', () => {
     );
   });
 
+  it('prefers the just-saved top-level sync_mode over a stale committees[] entry (cursor/greptile/copilot/lfx-one #5790 round 2 review)', async () => {
+    // save() patches only the top-level `sync_mode` and never touches `committees[]`, so right after
+    // a save the nested entry below is stale (still MANUAL) while the top-level field already carries
+    // the new mode. onSyncNow must prefer the top-level value here, not fall back to the stale nested one.
+    const justSaved: GroupsIOMailingList = {
+      ...baseList,
+      sync_mode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE,
+      committees: [{ uid: 'committee-1', name: 'Technical Steering Committee', sync_mode: MailingListSyncMode.MANUAL }],
+    };
+    await render(justSaved);
+    const openSpy = vi.spyOn(fixture.debugElement.injector.get(DialogService), 'open').mockReturnValue(null);
+
+    fixture.componentInstance['onSyncNow']();
+
+    expect(openSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: expect.objectContaining({ syncMode: MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE }) })
+    );
+  });
+
   it('does not open the Sync Now dialog when no committee is resolved', async () => {
     await render({ ...baseList, committees: [] });
     // DialogService is provided at the component level (see `providers: [DialogService]` on the
