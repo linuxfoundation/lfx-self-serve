@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, mentors, invite, approve, decline, requests]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-16
 intercom_collection: Mentorship
 ---
 
@@ -28,6 +28,8 @@ The **Mentors** tab is where you bring mentors onto a program and act on the req
 
    You see **Invitation sent.** They receive an email and answer it in LFX Self Serve. The invitation is sent straight away, with no confirmation step.
 
+   If they don't have an LF account yet, type their full email address instead. When no account uses it, the list under the search says **No LF account uses this email** and offers **Invite** with that address. Select it, or press **Enter**. An **Invite by email** dialog lists what they'll need to do: create an LF account with this email, set up a mentor profile, then accept the invitation. Select **Send invite**, or **Cancel** to send nothing. You see **Invitation sent. They need to create an LF account with this email address to accept it.** The email asks them to create an LF account with that address, create a mentor profile, then accept. Their row shows the email address with **Awaiting LF account** until they accept. Only an LF account that uses that address can accept the invitation.
+
 5. Use the row action. Which one a row offers depends on the mentor's status:
 
    | Status              | Row action                                             |
@@ -45,27 +47,29 @@ On an approved program (**Accepting**, **In Progress**, **Upcoming** or **Comple
 
 ## Mentor status
 
-| Status        | What it means                                 |
-| ------------- | --------------------------------------------- |
-| **Requested** | The mentor asked to join                      |
-| **Invited**   | You invited them; they have not answered      |
-| **Pending**   | Awaiting a decision                           |
-| **Approved**  | They mentor the program                       |
-| **Declined**  | Not approved, or they declined the invitation |
-| **Withdrawn** | The request or invitation was pulled          |
+| Status        | What it means                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Requested** | The mentor asked to join                                                                                                       |
+| **Invited**   | You invited them; they have not answered. Under an email invitation, **Awaiting LF account** means they have no LF account yet |
+| **Pending**   | Awaiting a decision                                                                                                            |
+| **Approved**  | They mentor the program                                                                                                        |
+| **Declined**  | Not approved, or they declined the invitation                                                                                  |
+| **Withdrawn** | The request or invitation was pulled                                                                                           |
 
 ## Troubleshooting
 
 | What you see                                                                                                     | What it means                                                                                                                     |
 | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | "We could not load the mentors. Try again."                                                                      | A transient failure reading the mentor list.                                                                                      |
-| "No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username." | No account uses that email address. Once they create one, invite them again.                                                      |
+| "No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username." | No LF account has that username. Check it, or invite them by their full email address.                                            |
+| "No LF account uses this email"                                                                                  | No account uses that email address. Select **Invite** under it to invite them anyway; they create an LF account when they accept. |
 | "This person's LF email address is already used by another Mentorship account, so they can't be invited."        | Their LF account's primary email address is already on a different Mentorship account, so the invitation can't be linked to them. |
 | "No one matches that search."                                                                                    | Name search only finds people already in Mentorship. Try their exact LF username or full email address.                           |
 | "Mentors can only be invited to a published program."                                                            | The program is not approved: it is not **Accepting**, **In Progress**, **Upcoming** or **Completed**.                             |
 | "This person is already on the program."                                                                         | They are already invited to, or a mentor of, the program.                                                                         |
 | "This mentor changed. The list has been refreshed."                                                              | The mentor's status moved on before your action was saved. Check it before acting again.                                          |
-| The mentor says their invitation link does not work                                                              | Invitation links are single use. Send a new invitation.                                                                           |
+| The mentor says their invitation link does not work                                                              | The invitation was already answered or revoked. Invite them again: inviting the same person or email address resends the email.   |
+| The mentor says the invitation is "for a different account"                                                      | For an email invitation, they signed in with an LF account that doesn't use the invited address. They need the account that does. |
 
 ## Related
 
