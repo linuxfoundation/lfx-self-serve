@@ -82,8 +82,6 @@ export interface FoundationParticipatingOrg {
   membershipTierClass: MembershipTierClass | null;
   /** Other LF membership data available (for example project-level membership), shown beside the foundation badge. */
   otherMemberships: string[];
-  /** Foundation projects where the company has commits or contributors in the range. */
-  projectsInvolved: number;
   commits: number;
   commitsChange: number | null;
   /** Unique people; a person active in several projects counts once. */
@@ -162,8 +160,6 @@ export interface FoundationParticipatingOrgRowVm {
   name: string;
   logoUrl: string | null;
   initial: string;
-  projectsInvolved: number;
-  projectsInvolvedLabel: string;
   membershipLabel: string | null;
   membershipBadgeClass: string | null;
   otherMemberships: string[];
@@ -233,8 +229,6 @@ export interface FoundationParticipatingOrgsSourceCompany {
   isMember: boolean;
   tier: MembershipTierClass | null;
   otherMemberships: string[];
-  /** Foundation projects where the company has commits or contributors in the range. */
-  projectsInvolved: number;
   commits: number;
   commitsChange: number | null;
   /** Unique people across the whole foundation; a person active in several projects counts once. */

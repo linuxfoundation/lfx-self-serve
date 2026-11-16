@@ -61,7 +61,6 @@ export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_SUMMARY_HEADER: readonly strin
   'Foundation membership',
   'Tier',
   'Other LF membership',
-  'Projects involved',
   'Commits',
   'Commits change',
   'Contributors',

@@ -14,7 +14,6 @@ export interface FoundationParticipatingOrgsCompanyRow {
   PARTICIPANT_LOGO_URL: string | null;
   IS_MEMBER: boolean | null;
   MEMBERSHIP_TIER_CLASS: string | null;
-  PROJECTS_INVOLVED: number | null;
   COMMITS: number | null;
   COMMITS_CHANGE: number | string | null;
   CONTRIBUTORS: number | null;

@@ -51,7 +51,6 @@ const companyRow = (overrides: Record<string, unknown> = {}) => ({
   PARTICIPANT_LOGO_URL: null,
   IS_MEMBER: true,
   MEMBERSHIP_TIER_CLASS: 'Gold',
-  PROJECTS_INVOLVED: 3,
   COMMITS: 120,
   COMMITS_CHANGE: '0.500000',
   CONTRIBUTORS: 9,
@@ -76,11 +75,11 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
 
       expect(execute).toHaveBeenCalledTimes(2);
       const [companiesSql, companiesBinds] = execute.mock.calls[0];
-      expect(companiesBinds).toEqual(['synthetic-foundation', '90d', 'synthetic-foundation', '90d']);
-      expect(placeholders(companiesSql)).toBe(4);
+      expect(companiesBinds).toEqual(['synthetic-foundation', '90d']);
+      expect(placeholders(companiesSql)).toBe(2);
       expect(companiesSql).toContain('project_id = foundation_id');
-      // A project with contributors but no commits still counts as one the company is involved in, as the breakdown lists it.
-      expect(companiesSql).toMatch(/project_id <> foundation_id\s+AND \(commits > 0 OR contributors > 0\)/);
+      // No per-company project count is computed: the table does not carry one.
+      expect(companiesSql).not.toMatch(/COUNT\(DISTINCT project_id\)/i);
       expect(companiesSql).toContain('PROJECT_PARTICIPATING_ORGS');
       const [projectsSql, projectsBinds] = execute.mock.calls[1];
       expect(projectsBinds).toEqual(['90d', 'synthetic-foundation']);
@@ -106,7 +105,6 @@ describe('FoundationParticipatingOrgsSnowflakeSource', () => {
             isMember: true,
             tier: 'Gold',
             otherMemberships: [],
-            projectsInvolved: 3,
             commits: 120,
             commitsChange: 0.5,
             contributors: 9,

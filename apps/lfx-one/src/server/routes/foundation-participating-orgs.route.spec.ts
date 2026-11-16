@@ -38,7 +38,6 @@ vi.mock('../services/foundation-participating-orgs.snowflake-source', () => ({
             isMember: false,
             tier: null,
             otherMemberships: [],
-            projectsInvolved: 1,
             commits: 3,
             commitsChange: null,
             contributors: 1,

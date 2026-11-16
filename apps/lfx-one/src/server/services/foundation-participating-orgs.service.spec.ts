@@ -32,7 +32,6 @@ function company(key: string, overrides: Partial<FoundationParticipatingOrgsSour
     isMember: false,
     tier: null,
     otherMemberships: [],
-    projectsInvolved: 1,
     commits: 0,
     commitsChange: null,
     contributors: 0,
@@ -65,15 +64,14 @@ const FOUNDATION: FoundationParticipatingOrgsSourceFoundation = {
       name: 'Alpha Inc',
       isMember: true,
       tier: 'Platinum',
-      projectsInvolved: 2,
       commits: 300,
       commitsChange: 0.5,
       contributors: 9,
       contributorsChange: 0.1,
     }),
     company('beta', { name: 'Beta LLC', isMember: true, tier: 'Gold', commits: 110, commitsChange: -0.2, contributors: 4, contributorsChange: null }),
-    company('gamma', { name: 'Gamma', projectsInvolved: 1, commits: 5, commitsChange: null, contributors: 2, contributorsChange: null }),
-    company('idle', { name: 'Idle Member', isMember: true, tier: 'Silver', projectsInvolved: 0 }),
+    company('gamma', { name: 'Gamma', commits: 5, commitsChange: null, contributors: 2, contributorsChange: null }),
+    company('idle', { name: 'Idle Member', isMember: true, tier: 'Silver' }),
   ],
 };
 
@@ -312,15 +310,6 @@ describe('FoundationParticipatingOrgsService', () => {
       getProjectLines.mockResolvedValueOnce([LINES[0], LINES[1], LINES[2]]);
       const { truncated } = await service.getExportRows(req, base, 'by-project', 2);
       expect(truncated).toBe(true);
-    });
-
-    it('says the file is cut when the cached roster promised more lines than the live read held', async () => {
-      // The roster says Alpha is in 5 projects, so the budget stops after it; the live read has fewer lines, and Beta and Gamma
-      // are left out of the read. They must not be written as empty companies with the file claiming to be complete.
-      getFoundation.mockResolvedValue({ ...FOUNDATION, companies: FOUNDATION.companies.map((c) => (c.key === 'alpha' ? { ...c, projectsInvolved: 5 } : c)) });
-      const { items, truncated } = await service.getExportRows(req, base, 'by-project', 4);
-      expect(truncated).toBe(true);
-      expect(items.every((item) => item.lines.length > 0)).toBe(true);
     });
   });
 });

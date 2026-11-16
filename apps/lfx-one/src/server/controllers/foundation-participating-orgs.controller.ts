@@ -156,7 +156,6 @@ function summaryRows(items: FoundationCompanyActivity[]): (string | number)[][] 
     row.isMember ? 'Member' : 'Non-Member',
     row.membershipTierClass ?? '',
     row.otherMemberships.join('; '),
-    row.projectsInvolved,
     row.commits,
     changeLabel(row.commitsChange),
     row.contributors,

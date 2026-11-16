@@ -28,8 +28,6 @@ export function decorateFoundationOrgRow(row: FoundationParticipatingOrg): Found
     name: row.name,
     logoUrl: row.logoUrl,
     initial: row.name.trim().charAt(0).toUpperCase() || '?',
-    projectsInvolved: row.projectsInvolved,
-    projectsInvolvedLabel: `${row.projectsInvolved} ${row.projectsInvolved === 1 ? 'project' : 'projects'} involved`,
     membershipLabel: row.isMember ? `${tier ?? ''} Member`.trim() : null,
     membershipBadgeClass: row.isMember
       ? ((tier && PROJECT_PARTICIPATING_ORGS_TIER_BADGE_CLASSES[tier]) ?? PROJECT_PARTICIPATING_ORGS_TIER_BADGE_DEFAULT_CLASS)

@@ -62,7 +62,6 @@ function company(overrides: Partial<FoundationParticipatingOrg> = {}): Foundatio
     isMember: true,
     membershipTierClass: 'Gold',
     otherMemberships: ['Project member'],
-    projectsInvolved: 12,
     commits: 1200,
     commitsChange: 0.2,
     contributors: 40,

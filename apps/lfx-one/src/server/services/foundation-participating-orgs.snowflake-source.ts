@@ -34,10 +34,9 @@ import { withFoundationParticipatingOrgsCache } from './valkey.service';
  * Cost: every read filters on `foundation_slug` and `time_range` and binds them. A foundation costs two queries per range
  * (companies, projects), shared-cached for an hour; a project scope or a company breakdown is one more.
  *
- * Two figures are defined here because the table does not carry them: "projects involved" (projects other than the foundation's
- * own where the company has commits or contributors; an intermediate parent counts beside its children, as its row is a
- * rollup) and the picker's per-range commits. Both belong in lf-dbt as modeled columns; until then they are an exception
- * to the checklist's no-business-logic-in-SQL rule that needs a maintainer's sign-off and an lf-dbt issue.
+ * One figure is defined here because the table does not carry it: the picker's per-range commits, which only order the project
+ * picker. It belongs in lf-dbt as a modeled column; until then it is an exception to the checklist's no-business-logic-in-SQL
+ * rule that needs a maintainer's sign-off and an lf-dbt issue. The page shows no per-company project count for the same reason.
  */
 export class FoundationParticipatingOrgsSnowflakeSource implements FoundationParticipatingOrgsDataSource {
   private readonly snowflakeService = SnowflakeService.getInstance();
@@ -90,27 +89,13 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
   ): Promise<FoundationParticipatingOrgsSourceFoundation | null> {
     const table = tableName();
     const companiesSql = `
-      WITH foundation AS (
-        SELECT foundation_name, as_of_date, participant_key, account_id, participant_name, participant_logo_url, is_member,
-               membership_tier_class, commits, commits_change, contributors, contributors_change
-        FROM ${table}
-        WHERE foundation_slug = ?
-          AND time_range = ?
-          AND project_id = foundation_id
-          AND participant_key IS NOT NULL
-      ),
-      involved AS (
-        SELECT participant_key, COUNT(DISTINCT project_id) AS projects_involved
-        FROM ${table}
-        WHERE foundation_slug = ?
-          AND time_range = ?
-          AND project_id <> foundation_id
-          AND (commits > 0 OR contributors > 0)
-        GROUP BY participant_key
-      )
-      SELECT f.*, COALESCE(i.projects_involved, 0) AS projects_involved
-      FROM foundation f
-      LEFT JOIN involved i ON i.participant_key = f.participant_key
+      SELECT foundation_name, as_of_date, participant_key, account_id, participant_name, participant_logo_url, is_member,
+             membership_tier_class, commits, commits_change, contributors, contributors_change
+      FROM ${table}
+      WHERE foundation_slug = ?
+        AND time_range = ?
+        AND project_id = foundation_id
+        AND participant_key IS NOT NULL
     `;
     // A project is known by its all-time activity, so a project quiet in this range is still a valid scope (it shows the empty
     // state); the range's commits only order the picker.
@@ -130,7 +115,7 @@ export class FoundationParticipatingOrgsSnowflakeSource implements FoundationPar
     `;
 
     const [companies, projects] = await Promise.all([
-      this.execute<FoundationParticipatingOrgsCompanyRow>(req, 'get_foundation_participating_orgs_roster', companiesSql, [slug, range, slug, range]),
+      this.execute<FoundationParticipatingOrgsCompanyRow>(req, 'get_foundation_participating_orgs_roster', companiesSql, [slug, range]),
       this.execute<FoundationParticipatingOrgsProjectRow>(req, 'get_foundation_participating_orgs_projects', projectsSql, [range, slug]),
     ]);
     if (companies.rows.length === 0 && projects.rows.length === 0) return null;
@@ -223,7 +208,6 @@ function mapCompany(row: FoundationParticipatingOrgsCompanyRow): FoundationParti
     tier: isMember ? ((row.MEMBERSHIP_TIER_CLASS as MembershipTierClass | null) ?? null) : null,
     // The warehouse model carries no other-membership data for this page.
     otherMemberships: [],
-    projectsInvolved: Number(row.PROJECTS_INVOLVED ?? 0),
     commits: Number(row.COMMITS ?? 0),
     commitsChange: toNullableNumber(row.COMMITS_CHANGE),
     contributors: Number(row.CONTRIBUTORS ?? 0),

@@ -29,7 +29,6 @@ function org(overrides: Partial<FoundationParticipatingOrg> = {}): FoundationPar
     isMember: false,
     membershipTierClass: null,
     otherMemberships: [],
-    projectsInvolved: 1,
     commits: 10,
     commitsChange: null,
     contributors: 2,

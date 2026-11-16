@@ -143,8 +143,9 @@ export class FoundationParticipatingOrgsService {
     let budget = 0;
     for (const row of rows) {
       companyKeys.push(row.participantKey);
-      // A project scope has one line per company; the foundation scope has one per project the company is in.
-      budget += filters.projectSlug ? 1 : Math.max(1, row.projectsInvolved);
+      // Each company holds at least one line, so this admits no more companies than the cap could hold; the live read's own limit and
+      // the ordering by position decide where the file stops.
+      budget += 1;
       if (budget > maxRows) break;
     }
     const read = filters.projectSlug
@@ -255,7 +256,6 @@ function toRow(
     isMember: company.isMember,
     membershipTierClass: company.tier,
     otherMemberships: company.otherMemberships,
-    projectsInvolved: company.projectsInvolved,
     commits: figures.commits,
     commitsChange: figures.commitsChange,
     contributors: figures.contributors,

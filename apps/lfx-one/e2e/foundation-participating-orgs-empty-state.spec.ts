@@ -121,7 +121,6 @@ test.describe('Foundation Lens Participating Companies empty states', () => {
             isMember: true,
             membershipTierClass: 'Gold',
             otherMemberships: [],
-            projectsInvolved: 2,
             commits: 120,
             commitsChange: 0.2,
             contributors: 8,
