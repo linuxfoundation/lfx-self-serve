@@ -4,7 +4,7 @@ description: How to read the Projects table for the selected organization, filte
 audience: [all]
 product_area: Organization
 tags: [organization, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, score-breakdown, health, contributors, participants]
-last_updated: 2026-11-06
+last_updated: 2026-11-16
 intercom_collection: Organization
 ---
 
@@ -78,10 +78,10 @@ You filter the Projects table with the workspace, foundation, and employee menus
 
 1. Open the workspace menu at the left, which shows the current workspace's name, and select a workspace under **Shared Workspaces**.
 2. Open the foundation menu. It starts on **All Foundations**. Type in **Search foundations…** to find one, and select it to keep only that foundation's projects.
-3. Open **All Employees** and select one or more people to keep only the projects they maintain, contribute to, or participate in.
+3. Open **All Employees** and select one or more people to keep only the projects they maintain or contribute to. Event participation doesn't count.
 4. Select **More filters** to show **Organization scope** and **Team members**. The link counts how many of the two are set to something other than their default, such as **More filters (1)**. Select **Fewer filters** to hide them again.
 
-When maintainer data cannot be read, the page says **Maintainer data is currently unavailable — the Employees filter matches contributors and participants only.**
+When maintainer data cannot be read, the page says **Maintainer data is currently unavailable — the Employees filter matches contributors only.**
 
 When the filters match no projects, the table says **No results for filters** and **Try a different workspace or clear your filters.** Select **Reset filters** to clear the workspace, foundation, employee, organization scope, and team members choices at once.
 
