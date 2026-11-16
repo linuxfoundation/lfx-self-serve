@@ -48,11 +48,13 @@ import {
   filterHealthMetricsEngagementRepRows,
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementAvgReps,
+  buildHealthMetricsEngagementNewsletterChart,
   buildHealthMetricsEngagementNewsletterView,
   buildHealthMetricsEngagementRecipientRow,
   countHealthMetricsEngagementRecipients,
   filterHealthMetricsEngagementRecipients,
-  formatHealthMetricsRelativeTime,
+  formatHealthMetricsShortAge,
+  buildHealthMetricsEngagementRecipientMetrics,
   formatHealthMetricsEngagementCount,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
@@ -964,18 +966,26 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
     newsletters: [newsletter, unengaged, { ...newsletter, key: 'n1', sentDate: `${year - 1}-12-01` }],
   };
 
-  it('labels the KPIs, with subscriber growth since its baseline month', () => {
+  it('builds the metrics row, with growth since its baseline month and the delivery and click-to-open rates as descriptions', () => {
     const view = buildHealthMetricsEngagementNewsletterView(performance, 'YTD');
 
     expect(view.isEmpty).toBe(false);
-    expect(view.headline).toMatchObject({ value: '1,490', delta: '+21% since Aug', deltaDirection: 'up' });
-    expect(view.side.map((kpi) => [kpi.label, kpi.value])).toEqual([
-      ['Newsletters sent', '3'],
-      ['Avg. open rate', '45%'],
-      ['Avg. click rate', '5.7%'],
-      ['Click-to-open rate', '13%'],
-      ['Delivery rate', '96%'],
+    expect(view.metrics).toEqual([
+      { key: 'subscribers', label: 'Subscribers', value: '1,490', descriptionLead: '+21%', descriptionLeadTone: 'up', description: 'since Aug' },
+      { key: 'sent', label: 'Newsletters sent', value: '3', description: '96% delivered' },
+      { key: 'open', label: 'Avg. open rate', value: '45%' },
+      { key: 'click', label: 'Avg. click rate', value: '5.7%', description: '13% of opens' },
     ]);
+  });
+
+  it('leaves out a description with no rate behind it', () => {
+    const view = buildHealthMetricsEngagementNewsletterView(
+      { ...performance, periods: { ...performance.periods, YTD: { ...period, avgDeliveryRate: null, avgClickToOpenRate: null } } },
+      'YTD'
+    );
+
+    expect(view.metrics[1]).toEqual({ key: 'sent', label: 'Newsletters sent', value: '3' });
+    expect(view.metrics[3]).toEqual({ key: 'click', label: 'Avg. click rate', value: '5.7%' });
   });
 
   it('keeps the period’s newsletters latest first in the table, with dashes where there is no engagement data', () => {
@@ -989,6 +999,7 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
       uniqueOpensLabel: '647',
       totalOpensLabel: '997 total',
       openRateLabel: '43%',
+      openRatePct: expect.closeTo(43.42),
       clickRateLabel: '5%',
       clickToOpenLabel: '12%',
     });
@@ -998,7 +1009,7 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
       uniqueOpensLabel: '—',
       totalOpensLabel: '',
       openRateLabel: '—',
-      openRateWidthPct: 0,
+      openRatePct: null,
       clickToOpenLabel: '—',
     });
   });
@@ -1026,13 +1037,83 @@ describe('buildHealthMetricsEngagementNewsletterView', () => {
       { ...performance, periods: { ...performance.periods, YTD: { ...period, growthBaselineDate: `${year - 1}-03-02` } } },
       'YTD'
     );
-    expect(view.headline.delta).toBe(`+21% since Mar ${year - 1}`);
+    expect(view.metrics[0]).toMatchObject({ descriptionLead: '+21%', description: `since Mar ${year - 1}` });
 
     const flat = buildHealthMetricsEngagementNewsletterView(
       { ...performance, periods: { ...performance.periods, YTD: { ...period, subscribersGrowth: 0.001 } } },
       'YTD'
     );
-    expect(flat.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
+    expect(flat.metrics[0]).toEqual({ key: 'subscribers', label: 'Subscribers', value: '1,490' });
+  });
+});
+
+describe('buildHealthMetricsEngagementNewsletterChart', () => {
+  const point = (key: string, tick: string, open: number | null, click: number | null, cto: number | null, recipients: number, opens: number | null) => ({
+    key,
+    tick,
+    title: `${key} · ${tick} 1, 2026`,
+    openPct: open,
+    clickPct: click,
+    clickToOpenPct: cto,
+    recipients,
+    uniqueOpens: opens,
+  });
+  const points = [point('a', 'Jan', 41.2, 5.1, 12.4, 1400, 577), point('b', 'Feb', 47.9, 6.0, 12.5, 1458, 698)];
+
+  it('plots the rates to the peak rate rounded up to the next 10%, click-to-open dashed', () => {
+    const { chart, legend } = buildHealthMetricsEngagementNewsletterChart(points, 'rates');
+
+    expect(chart.yTicks).toEqual(['50%', '38%', '25%', '13%', '0%']);
+    expect(chart.paths.map((path) => [path.key, path.dashed])).toEqual([
+      ['open', false],
+      ['click', false],
+      ['cto', true],
+    ]);
+    expect(chart.area?.color).toBe('#009AFF');
+    expect(chart.ticks.map((tick) => tick.label)).toEqual(['Jan', 'Feb']);
+    expect(chart.ariaLabel).toBe('Open, click and click-to-open rate by newsletter');
+    expect(legend.map((item) => [item.label, item.color])).toEqual([
+      ['Open rate', '#009AFF'],
+      ['Click rate', '#AD46FF'],
+      ['Click-to-open rate', '#00BC7D'],
+    ]);
+  });
+
+  it('titles each popup with the newsletter and its date, one inline row per series', () => {
+    const tip = buildHealthMetricsEngagementNewsletterChart(points, 'rates').chart.columns[1].tip;
+
+    expect(tip.title).toBe('b · Feb 1, 2026');
+    expect(tip.rows.map((row) => [row.label, row.value, row.inline])).toEqual([
+      ['Open rate', '48%', true],
+      ['Click rate', '6%', true],
+      ['Click-to-open rate', '13%', true],
+    ]);
+  });
+
+  it('keeps the rate axis between 10% and 100%', () => {
+    expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 2, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('10%');
+    expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 100, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('100%');
+    // 0.3 * 100 is 30.000000000000004 in JavaScript; the axis still tops out at 30%.
+    expect(buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 0.3 * 100, 1, 1, 10, 1)], 'rates').chart.yTicks[0]).toBe('30%');
+  });
+
+  it('raises the rate axis to a click-to-open rate above the open rate, so its line is drawn at its value', () => {
+    const { chart } = buildHealthMetricsEngagementNewsletterChart([point('a', 'Jan', 20, 8, 40, 10, 2), point('b', 'Feb', 20, 12, 60, 10, 2)], 'rates');
+
+    expect(chart.yTicks[0]).toBe('60%');
+    expect(chart.paths.find((path) => path.key === 'cto')?.d).toBe('M0.0 66.7 L600.0 0.0');
+  });
+
+  it('plots the audience to a round ceiling over its peak, with counts in the popup', () => {
+    const { chart, legend } = buildHealthMetricsEngagementNewsletterChart(points, 'audience');
+
+    expect(chart.yTicks).toEqual(['1,600', '1,200', '800', '400', '0']);
+    expect(chart.columns[0].tip.rows.map((row) => [row.label, row.value])).toEqual([
+      ['Recipients', '1,400'],
+      ['Unique opens', '577'],
+    ]);
+    expect(legend.map((item) => item.label)).toEqual(['Recipients', 'Unique opens']);
+    expect(chart.ariaLabel).toBe('Recipients and unique opens by newsletter');
   });
 });
 
@@ -1094,31 +1175,72 @@ describe('newsletter recipient rules', () => {
       nameLabel: 'Recipient Alpha',
       deliveryLabel: 'Delivered',
       engagementLabel: 'Opened',
+      deliveryTone: 'success',
+      engagementTone: 'accent',
       opensLabel: '2',
-      lastOpenedLabel: '12 hr ago',
+      opensDescription: 'Last opened 12h',
       clicksLabel: '5',
-      lastClickedLabel: '1 day ago',
+      clicksDescription: 'Last clicked 1d',
     });
     expect(buildHealthMetricsEngagementRecipientRow(recipients[2], now)).toMatchObject({
       nameLabel: '—',
-      organizationLabel: '—',
+      description: '',
       engagementLabel: 'Not opened',
+      engagementTone: 'neutral',
     });
     expect(buildHealthMetricsEngagementRecipientRow(recipients[3], now)).toMatchObject({
       deliveryLabel: 'Failed',
+      deliveryTone: 'danger',
       engagementLabel: '',
       opensLabel: '—',
       clicksLabel: '—',
-      lastOpenedLabel: '—',
-      lastClickedLabel: '—',
+      opensDescription: '',
+      clicksDescription: '',
     });
   });
 
-  it('words a time relative to now, falling back to the date past 30 days', () => {
-    expect(formatHealthMetricsRelativeTime(null, now)).toBe('—');
-    expect(formatHealthMetricsRelativeTime('2026-10-28T11:59:40Z', now)).toBe('Just now');
-    expect(formatHealthMetricsRelativeTime('2026-10-28T11:15:00Z', now)).toBe('45 min ago');
-    expect(formatHealthMetricsRelativeTime('2026-10-24T12:00:00Z', now)).toBe('4 days ago');
-    expect(formatHealthMetricsRelativeTime('2026-08-01T12:00:00Z', now)).toBe('Aug 1, 2026');
+  // A pending delivery has not landed, so it reads and counts as not opened, whatever the view segments it as.
+  it('badges a pending delivery neutral and reads and counts it as not opened', () => {
+    const pending = { ...recipients[0], deliveryStatus: 'Pending' };
+
+    expect(buildHealthMetricsEngagementRecipientRow(pending, now)).toMatchObject({
+      deliveryLabel: 'Pending',
+      deliveryTone: 'neutral',
+      engagementLabel: 'Not opened',
+      engagementTone: 'neutral',
+      opensDescription: '',
+      clicksDescription: '',
+    });
+    expect(filterHealthMetricsEngagementRecipients([pending], 'opened', '')).toEqual([]);
+    expect(filterHealthMetricsEngagementRecipients([pending], 'clicked', '')).toEqual([]);
+    expect(filterHealthMetricsEngagementRecipients([pending], 'not-opened', '')).toEqual([pending]);
+  });
+
+  it('gives a nameless recipient an empty avatar name, so the avatar shows its glyph', () => {
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[2], now)).toMatchObject({ nameLabel: '—', avatarName: '' });
+    expect(buildHealthMetricsEngagementRecipientRow(recipients[0], now).avatarName).toBe('Recipient Alpha');
+  });
+
+  it('builds the status counts as a metrics row, each with its dot and tooltip', () => {
+    const metrics = buildHealthMetricsEngagementRecipientMetrics(recipients);
+
+    expect(metrics.map((metric) => [metric.label, metric.dotClass])).toEqual([
+      ['Opened', 'bg-blue-500'],
+      ['Clicked', 'bg-violet-500'],
+      ['Not opened', 'bg-gray-400'],
+      ['Failed', 'bg-red-500'],
+    ]);
+    expect(metrics.map((metric) => metric.value)).toEqual(['1', '2', '2', '1']);
+    expect(metrics[0].tip).toBe('Recipients who opened the newsletter at least once. Some mail clients block tracking, so this is a floor.');
+  });
+
+  it("words a time in the design's short units, and leaves no time empty", () => {
+    expect(formatHealthMetricsShortAge(null, now)).toBe('');
+    expect(formatHealthMetricsShortAge('2026-10-28T11:59:40Z', now)).toBe('1m');
+    expect(formatHealthMetricsShortAge('2026-10-28T11:15:00Z', now)).toBe('45m');
+    expect(formatHealthMetricsShortAge('2026-10-28T09:00:00Z', now)).toBe('3h');
+    expect(formatHealthMetricsShortAge('2026-10-24T12:00:00Z', now)).toBe('4d');
+    expect(formatHealthMetricsShortAge('2026-10-10T12:00:00Z', now)).toBe('2w');
+    expect(formatHealthMetricsShortAge('2026-08-01T12:00:00Z', now)).toBe('2mo');
   });
 });

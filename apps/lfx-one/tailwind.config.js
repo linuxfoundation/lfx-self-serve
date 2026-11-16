@@ -26,6 +26,7 @@ import {
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
+  HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
   HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
@@ -268,6 +269,8 @@ export default {
     HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
     // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
     ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
+    // Newsletter recipient status dots (HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS in @lfx-one/shared) — applied via [class].
+    ...HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS.map((metric) => metric.dotClass),
     ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
     // Members breakdown table cells and rules (HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_MEMBERS_BREAKDOWN_TABLE_CLASSES)
