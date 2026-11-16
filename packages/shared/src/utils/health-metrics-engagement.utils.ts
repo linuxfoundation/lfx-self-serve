@@ -584,8 +584,8 @@ export function buildHealthMetricsEngagementNewsletterView(
 }
 
 /**
- * The newsletter chart, one point per newsletter in send order. Rates run to the peak open rate rounded up to the next
- * 10%, between 10% and 100%, with click-to-open dashed; the audience runs to a round ceiling over its peak.
+ * The newsletter chart, one point per newsletter in send order. Rates run to the highest plotted rate rounded up to the
+ * next 10%, between 10% and 100%, with click-to-open dashed; the audience runs to a round ceiling over its peak.
  */
 export function buildHealthMetricsEngagementNewsletterChart(
   points: readonly HealthMetricsEngagementNewsletterPointView[],
