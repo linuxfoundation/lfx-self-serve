@@ -4,7 +4,7 @@
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { stubMeetingsRedesignFlag } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingsRedesignFlag } from './helpers/meetings-redesign-flag.helper';
 
 const MEETINGS_URL = '/meetings';
 const LENS_COOKIE = 'lfx-active-lens';

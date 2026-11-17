@@ -31,7 +31,7 @@ import { LENS_COOKIE_KEY, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { stubMeetingsRedesignFlag, stubMeetingsV2Flag } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingsRedesignFlag } from './helpers/meetings-redesign-flag.helper';
 
 test.setTimeout(120_000);
 test.beforeEach(async ({ page }) => {
@@ -402,8 +402,9 @@ async function stubMeetingEdit(page: Page, meeting: Record<string, unknown>): Pr
  * fetch stubbed.
  *
  * The card's Edit button rather than `/project/meetings/:id/edit`: that URL reaches the composer
- * too when the flag is on (`meetingsV2Guard`), but only through a full navigation, which SSRs the
- * route and escapes the stubs above. The card is the entry point real organizers use.
+ * too (project-context-deep-link.spec.ts covers it), but it redirects to this same list underneath
+ * the drawer, so it adds a navigation without exercising anything the owner picker depends on. The
+ * card is the entry point real organizers use.
  * It costs one extra step — the button re-checks edit access against the meeting detail before
  * opening anything — which the stub in {@link stubMeetingEdit} already answers.
  */
@@ -464,10 +465,6 @@ async function saveFromComposer(page: Page): Promise<void> {
 
 test.describe('Meeting edit composer — owner picker (GH-1673)', () => {
   test.beforeEach(async ({ page }) => {
-    // Every assertion below is about the composer's organizer picker, and the card's Edit button
-    // only raises the composer while `MEETING_V2_ENABLED_FLAG` is on — pinned rather than inherited
-    // from whatever this account happens to be targeted for in LaunchDarkly.
-    await stubMeetingsV2Flag(page);
     await setPersonaAndLensCookies(page, ['executive-director'], 'project');
     await setProjectCookie(page);
     await stubComposerContext(page);
