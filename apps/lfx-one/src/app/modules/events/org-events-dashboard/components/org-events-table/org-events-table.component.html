@@ -110,7 +110,7 @@
       <!-- Event Attendees: this org's registrants. The event-wide goal rides alongside only for LF
            staff — for an external admin the field is absent from the payload entirely (#4432). -->
       <td [attr.data-testid]="'org-event-attendees-' + event.eventId" [attr.title]="attendeesCaption()">
-        @if (event.orgAttendeeCount > 0) {
+        @if (event.orgAttendeeCount > 0 && !employeeView()) {
           <button
             type="button"
             class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
@@ -132,13 +132,15 @@
 
       <!-- Event Speakers: Accepted / Submitted -->
       <td [attr.data-testid]="'org-event-speakers-' + event.eventId">
-        @if (event.orgSpeakerAcceptedCount > 0 || event.orgSpeakerSubmittedCount > 0) {
+        @if ((event.orgSpeakerAcceptedCount > 0 || event.orgSpeakerSubmittedCount > 0) && !employeeView()) {
           <button
             type="button"
             class="text-sm text-gray-900 whitespace-nowrap hover:underline focus-visible:underline focus-visible:outline-none"
             (click)="speakersClick.emit(event)">
             {{ event.orgSpeakerAcceptedCount }} / {{ event.orgSpeakerSubmittedCount }}
           </button>
+        } @else if (employeeView()) {
+          <span class="text-sm text-gray-900 whitespace-nowrap">{{ event.orgSpeakerAcceptedCount }} / {{ event.orgSpeakerSubmittedCount }}</span>
         } @else {
           <span class="text-sm text-gray-400 whitespace-nowrap">0 / 0</span>
         }

@@ -22,6 +22,7 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
 import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 import { requireOrgLensRoiAudience } from '../middleware/require-org-lens-roi-audience.middleware';
 
@@ -112,8 +113,8 @@ function buildOrgsRouter(): Router {
   // /attendees and /speakers paths, so ordering isn't strictly required; they're grouped here for readability.
   router.get('/:accountId/lens/events/summary', (req, res, next) => orgLensEventsController.getOrgEventsSummary(req, res, next));
   router.get('/:accountId/lens/events/foundations', (req, res, next) => orgLensEventsController.getOrgEventFoundations(req, res, next));
-  router.get('/:accountId/lens/events/:eventId/attendees', (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
-  router.get('/:accountId/lens/events/:eventId/speakers', (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
+  router.get('/:orgUid/lens/events/:eventId/attendees', blockEmployeeView, (req, res, next) => orgLensEventsController.getEventAttendees(req, res, next));
+  router.get('/:orgUid/lens/events/:eventId/speakers', blockEmployeeView, (req, res, next) => orgLensEventsController.getEventSpeakers(req, res, next));
   router.get('/:accountId/lens/events', (req, res, next) => orgLensEventsController.getOrgEvents(req, res, next));
   router.get('/:orgUid/lens/memberships/active', (req, res, next) => orgLensMembershipsController.getActiveMemberships(req, res, next));
   router.get('/:orgUid/lens/memberships/expired', (req, res, next) => orgLensMembershipsController.getExpiredMemberships(req, res, next));
