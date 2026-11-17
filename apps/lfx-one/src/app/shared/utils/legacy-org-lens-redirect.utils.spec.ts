@@ -21,7 +21,7 @@ const routes: Routes = [
       { path: '**', component: StubComponent },
     ],
   },
-  { path: 'organization', component: StubComponent },
+  { path: 'organizations', component: StubComponent },
 ];
 
 describe('legacy Company Lens redirects', () => {
@@ -40,14 +40,16 @@ describe('legacy Company Lens redirects', () => {
     ['/org/overview#top', '/company/overview#top'],
     ['/org/easycla/g1?org=001A&signed=1', '/company/easycla/g1?company=001A&signed=1'],
     ['/org/acme/easycla/g1?signed=1', '/company/acme/easycla/g1?signed=1'],
+    ['/organization/google-llc/profile', '/company/google-llc/profile'],
+    ['/organization/google-llc/easycla', '/company/google-llc/easycla'],
   ])('%s lands on %s', async (from, to) => {
     await router.navigateByUrl(from);
     expect(router.url).toBe(to);
   });
 
   it('does not touch addresses that only start with the letters org', async () => {
-    await router.navigateByUrl('/organization');
-    expect(router.url).toBe('/organization');
+    await router.navigateByUrl('/organizations');
+    expect(router.url).toBe('/organizations');
   });
 });
 
