@@ -58,6 +58,7 @@ test.describe('Admin program detail — structure', () => {
 
   test('renders the title and one tab per section', async ({ page }) => {
     await expect(page.getByTestId('mentorship-program-detail-title')).toBeVisible();
+    await expect(page.getByTestId('mentorship-program-detail-header').getByTestId('mentorship-program-meta-admin')).toBeVisible();
     for (const tab of TABS) {
       await expect(page.getByTestId(`mentorship-program-detail-tab-${tab}`)).toBeVisible();
     }

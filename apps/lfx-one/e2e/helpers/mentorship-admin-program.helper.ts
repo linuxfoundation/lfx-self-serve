@@ -53,6 +53,7 @@ export const ADMIN_PROGRAM_PAGE: MentorshipAdminProgramPage = {
     { id: ADMIN_OPEN_TERM_ID, name: ADMIN_OPEN_TERM_NAME, status: 'open' },
     { id: '67777777-7777-4777-8777-777777777777', name: 'Test Term Closed', status: 'closed' },
   ],
+  submitter: { name: 'Test Admin', email: 'test.admin@example.org', avatarUrl: null },
 };
 
 export const ADMIN_TASKS: MentorshipApplicantTask[] = [

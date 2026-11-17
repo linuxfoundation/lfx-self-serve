@@ -43,8 +43,25 @@ describe('MentorshipService program review', () => {
     created_on: '2026-09-01T00:00:00Z',
     updated_on: '2026-09-01T00:00:00Z',
   };
+  const programPath = `/mentorship/v1/programs/${programId}`;
+  const catalogPath = `${programPath}/catalog`;
+  const submitterPath = `${programPath}/submitter`;
+  const upstreamSubmitter = { lfid: 'janedoe', name: 'Jane Doe', email: 'jane.doe@example.org', avatar_url: 'https://avatars.example/jane.png' };
+  const submitter = { name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: 'https://avatars.example/jane.png' };
+  const notFound = (): MicroserviceError => new MicroserviceError('Program not found', 404, 'NOT_FOUND');
   let service: InstanceType<typeof MentorshipService>;
   let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  /** Answers each read by its path, since the submitter is read alongside the program; a route set to an Error rejects. */
+  const routeReads = (routes: Record<string, unknown>): void => {
+    proxyRequest.mockImplementation(async (_req, _service, path: string) => {
+      const route = routes[path];
+      if (route === undefined) throw new Error(`unexpected path ${path}`);
+      if (route instanceof Error) throw route;
+      return route as never;
+    });
+  };
+  const calledPaths = (): string[] => proxyRequest.mock.calls.map(([, , path]) => path);
 
   beforeEach(() => {
     proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
@@ -56,22 +73,25 @@ describe('MentorshipService program review', () => {
   });
 
   it('reads the program from the catalog and returns only the review fields', async () => {
-    proxyRequest.mockResolvedValue({
-      ...upstreamProgram,
-      project_name: 'Test Foundation',
-      description: '<p>Learn the codebase.</p>',
-      logo_url: 'https://logo.example/test.png',
-      repo_link: 'github.com/test-org/test-repo',
-      code_of_conduct: 'https://test-org.example/coc',
-      cii_project_id: ' 1234 ',
-      skills: ['go', ' ', 'kubernetes '],
-      terms: [{ id: 'term-1' }],
-      mentors: [{ id: 'mentor-1' }],
+    routeReads({
+      [submitterPath]: upstreamSubmitter,
+      [catalogPath]: {
+        ...upstreamProgram,
+        project_name: 'Test Foundation',
+        description: '<p>Learn the codebase.</p>',
+        logo_url: 'https://logo.example/test.png',
+        repo_link: 'github.com/test-org/test-repo',
+        code_of_conduct: 'https://test-org.example/coc',
+        cii_project_id: ' 1234 ',
+        skills: ['go', ' ', 'kubernetes '],
+        terms: [{ id: 'term-1' }],
+        mentors: [{ id: 'mentor-1' }],
+      },
     });
 
     const review = await service.getProgramReview(buildReq(), programId);
 
-    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}/catalog`, 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', catalogPath, 'GET');
     expect(review).toEqual({
       id: programId,
       name: 'Test Program',
@@ -83,18 +103,23 @@ describe('MentorshipService program review', () => {
       codeOfConductUrl: 'https://test-org.example/coc',
       ciiProjectId: '1234',
       skills: ['go', 'kubernetes'],
+      createdOn: '2026-09-01T00:00:00Z',
+      submitter,
       hasDetails: true,
     });
   });
 
   it('drops unsafe links, a non-numeric CII id and missing fields', async () => {
-    proxyRequest.mockResolvedValue({
-      ...upstreamProgram,
-      description: '  ',
-      repo_link: 'javascript:alert(1)',
-      code_of_conduct: '',
-      cii_project_id: 'abc',
-      skills: null,
+    routeReads({
+      [submitterPath]: notFound(),
+      [catalogPath]: {
+        ...upstreamProgram,
+        description: '  ',
+        repo_link: 'javascript:alert(1)',
+        code_of_conduct: '',
+        cii_project_id: 'abc',
+        skills: null,
+      },
     });
 
     const review = await service.getProgramReview(buildReq(), programId);
@@ -110,19 +135,23 @@ describe('MentorshipService program review', () => {
       codeOfConductUrl: null,
       ciiProjectId: null,
       skills: [],
+      createdOn: '2026-09-01T00:00:00Z',
+      submitter: null,
       hasDetails: true,
     });
   });
 
   it('reads the status of a program the catalog does not serve, without its details', async () => {
-    proxyRequest
-      .mockRejectedValueOnce(new MicroserviceError('Program not found', 404, 'NOT_FOUND'))
-      .mockResolvedValueOnce({ ...upstreamProgram, status: 'rejected', project_name: 'Test Foundation', description: 'not forwarded' });
+    routeReads({
+      [submitterPath]: upstreamSubmitter,
+      [catalogPath]: notFound(),
+      [programPath]: { ...upstreamProgram, status: 'rejected', project_name: 'Test Foundation', description: 'not forwarded' },
+    });
 
     const review = await service.getProgramReview(buildReq(), programId);
 
-    expect(proxyRequest).toHaveBeenNthCalledWith(1, expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}/catalog`, 'GET');
-    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', catalogPath, 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', programPath, 'GET');
     expect(review).toEqual({
       id: programId,
       name: 'Test Program',
@@ -134,24 +163,41 @@ describe('MentorshipService program review', () => {
       codeOfConductUrl: null,
       ciiProjectId: null,
       skills: [],
+      createdOn: '2026-09-01T00:00:00Z',
+      submitter,
       hasDetails: false,
     });
   });
 
   it('lets a 404 through when the program does not exist at all', async () => {
-    const missing = new MicroserviceError('Program not found', 404, 'NOT_FOUND');
-    proxyRequest.mockRejectedValueOnce(new MicroserviceError('Program not found', 404, 'NOT_FOUND')).mockRejectedValueOnce(missing);
+    const missing = notFound();
+    routeReads({ [submitterPath]: notFound(), [catalogPath]: notFound(), [programPath]: missing });
 
     await expect(service.getProgramReview(buildReq(), programId)).rejects.toBe(missing);
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(calledPaths()).toContain(programPath);
   });
 
   it('does not fall back on a catalog error other than 404', async () => {
     const forbidden = new MicroserviceError('Forbidden', 403, 'FORBIDDEN');
-    proxyRequest.mockRejectedValueOnce(forbidden);
+    routeReads({ [submitterPath]: new MicroserviceError('Forbidden', 403, 'FORBIDDEN'), [catalogPath]: forbidden });
 
     await expect(service.getProgramReview(buildReq(), programId)).rejects.toBe(forbidden);
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(calledPaths()).not.toContain(programPath);
+  });
+
+  it('shows the program without its submitter when the submitter read fails', async () => {
+    routeReads({ [submitterPath]: new MicroserviceError('Upstream unavailable', 503, 'SERVICE_UNAVAILABLE'), [catalogPath]: upstreamProgram });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(review.submitter).toBeNull();
+    expect(review.createdOn).toBe('2026-09-01T00:00:00Z');
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'mentorship_get_program_review',
+      expect.stringContaining('submitter'),
+      expect.objectContaining({ programId, status: 503 })
+    );
   });
 
   it.each([

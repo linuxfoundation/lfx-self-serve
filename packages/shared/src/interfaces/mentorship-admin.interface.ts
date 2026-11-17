@@ -18,6 +18,7 @@ import type {
   MentorshipMenteeStatus,
   MentorshipProgramApplicant,
   MentorshipProgramPersonBase,
+  MentorshipProgramSubmitter,
 } from './mentorship.interface';
 import type { MentorshipUpstreamProgramTerm, MentorshipUpstreamTaskStatus } from './mentorship-mentee.interface';
 
@@ -336,6 +337,8 @@ export interface MentorshipAdminProgramPage {
   tabCounts: MentorshipAdminProgramTabCounts;
   /** Open and closed terms of the program; empty when the terms read failed. */
   terms: MentorshipAdminTermOption[];
+  /** Who submitted the program, shown in the header; `null` when it could not be read. */
+  submitter: MentorshipProgramSubmitter | null;
 }
 
 /** One page of a program's mentees, from `GET /api/mentorship/admin/programs/:programId/mentees`. */

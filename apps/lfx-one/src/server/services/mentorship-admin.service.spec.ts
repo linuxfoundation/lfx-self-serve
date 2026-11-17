@@ -220,6 +220,7 @@ const stubProgramReads = (routes: Record<string, unknown>) =>
 
 const pageRoutes = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   [`${PROGRAM_PATH}/header`]: header,
+  [`${PROGRAM_PATH}/submitter`]: { lfid: 'janedoe', name: 'Jane Doe', email: 'jane.doe@example.org' },
   [`${PROGRAM_PATH}/management-summary`]: summary,
   [`${PROGRAM_PATH}/applications`]: { data: [], meta: { total: 7, limit: 1, offset: 0 } },
   [`${PROGRAM_PATH}/member-management`]: { data: [], meta: { total: 2, limit: 1, offset: 0 } },
@@ -259,6 +260,19 @@ describe('MentorshipAdminService.getProgramPage', () => {
       { id: 't1', name: 'Fall', status: 'open' },
       { id: 't0', name: 'Spring', status: 'closed' },
     ]);
+    expect(page.submitter).toEqual({ name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: null });
+  });
+
+  it.each([
+    ['has none (404)', 404],
+    ['cannot be read', 503],
+  ])('shows the page without a submitter when the program %s', async (_case, statusCode) => {
+    stubProgramReads(pageRoutes({ [`${PROGRAM_PATH}/submitter`]: new MicroserviceError('Submitter read failed', statusCode, 'UPSTREAM') }));
+
+    const page = await service.getProgramPage(buildReq(), PROGRAM_ID);
+
+    expect(page.submitter).toBeNull();
+    expect(page.program).toMatchObject({ id: PROGRAM_ID, name: 'Grid' });
   });
 
   it('sends the one-row count reads and the largest terms page', async () => {

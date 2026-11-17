@@ -1,0 +1,51 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (date() || submitter()) {
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500" data-testid="mentorship-program-meta">
+    @if (date(); as createdOn) {
+      <div class="flex items-center gap-2" data-testid="mentorship-program-meta-date">
+        <i class="fa-light fa-calendar text-gray-400" aria-hidden="true"></i>
+        <span>{{ dateLabel() }}</span>
+        <span class="font-semibold text-gray-900">{{ createdOn | date: 'MMM d, y' : 'UTC' }}</span>
+      </div>
+    }
+    @if (date() && submitter()) {
+      <span class="hidden h-4 w-px bg-gray-200 sm:block" aria-hidden="true"></span>
+    }
+    @if (submitter(); as admin) {
+      <div class="flex min-w-0 flex-wrap items-center gap-2" data-testid="mentorship-program-meta-admin">
+        <i class="fa-light fa-shield text-gray-400" aria-hidden="true"></i>
+        <span>Program admin</span>
+        <span class="flex min-w-0 items-center gap-2">
+          <!-- 24px chip with 10px initials, as in the design (exact px; the root font is 14px). -->
+          @if (admin.avatarUrl && !avatarFailed()) {
+            <img
+              [src]="admin.avatarUrl"
+              alt=""
+              class="h-6 w-6 shrink-0 rounded-full object-cover"
+              (error)="avatarFailed.set(true)"
+              data-testid="mentorship-program-meta-admin-avatar" />
+          } @else {
+            <span
+              class="flex h-6 w-6 shrink-0 items-center justify-center !rounded-full text-[10px] font-semibold"
+              [class]="avatarStyleClass()"
+              aria-hidden="true"
+              data-testid="mentorship-program-meta-admin-initials">
+              {{ initials() }}
+            </span>
+          }
+          <span class="break-words font-semibold text-gray-900" data-testid="mentorship-program-meta-admin-name">{{ admin.name }}</span>
+        </span>
+        @if (admin.email) {
+          <a
+            [href]="'mailto:' + admin.email"
+            class="break-all text-blue-600 transition-colors hover:text-blue-700 hover:underline"
+            data-testid="mentorship-program-meta-admin-email">
+            {{ admin.email }}
+          </a>
+        }
+      </div>
+    }
+  </div>
+}
