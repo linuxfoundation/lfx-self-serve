@@ -213,6 +213,8 @@ describe('SidebarNavService', () => {
             claManagerOrgSet,
             claManagerLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
           },
         },
       ],

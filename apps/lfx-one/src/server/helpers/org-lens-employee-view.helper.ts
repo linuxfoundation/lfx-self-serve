@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_LENS_EMPLOYEE_VIEW, ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS, ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS } from '@lfx-one/shared/constants';
-import type { OrgLensEmployeeViewException } from '@lfx-one/shared/interfaces';
+import type { StripPersonalFieldsOptions } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { getOrgLensViewMode } from './org-lens-read-access.helper';
@@ -13,15 +13,6 @@ const normalizeKey = (key: string): string => key.toLowerCase().replace(/[_-]/g,
 const PERSONAL_FIELD_KEYS: ReadonlySet<string> = new Set(ORG_LENS_EMPLOYEE_VIEW_PERSONAL_FIELDS.map(normalizeKey));
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export interface StripPersonalFieldsOptions {
-  /** The page being served (`overview`, `projects`, `events` ...). Selects its entries in the exceptions allow-list. */
-  page: string;
-  /** Extra field names to remove on this route, for a person name that travels under a bare key (`name`, `title` ...). */
-  extraFields?: readonly string[];
-  /** Override the allow-list; tests only. Production always uses `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS`. */
-  exceptions?: readonly OrgLensEmployeeViewException[];
-}
 
 /**
  * Returns a deep copy of `data` with every personal field removed: the keys in

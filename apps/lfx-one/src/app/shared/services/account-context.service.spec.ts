@@ -39,6 +39,7 @@ describe('AccountContextService — address-adopted selection', () => {
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
     employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
   };
 
   beforeEach(() => {
@@ -51,6 +52,7 @@ describe('AccountContextService — address-adopted selection', () => {
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
       employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -419,7 +421,8 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
             isStaff: signal(false),
             claManagerOrgSet: signal(new Set()),
             employeeViewOrgUid: signal(null),
-          },
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+                },
         },
         {
           provide: OrgRollUpFamiliesService,
@@ -559,6 +562,7 @@ describe('AccountContextService — family roll-up', () => {
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
     employeeViewOrgUid: WritableSignal<string | null>;
+    employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
@@ -617,6 +621,7 @@ describe('AccountContextService — family roll-up', () => {
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
       employeeViewOrgUid: signal<string | null>(null),
+      employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
     };

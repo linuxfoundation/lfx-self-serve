@@ -39,18 +39,26 @@ export function orgLensFullViewOnlyGuard(page: string = ORG_LENS_EMPLOYEE_VIEW_H
     const router = inject(Router);
     const injector = inject(Injector);
 
+    const redirect = (): UrlTree => {
+      const segments = router.parseUrl(state.url).root.children['primary']?.segments.map((segment) => segment.path) ?? [];
+      return router.parseUrl(orgLensPagePath(segments, page));
+    };
+
+    // The mode may already be recorded (the address resolver or a selector row marks it before the grants answer), and a
+    // recorded employee view must not wait on, or fail open past, the role-grants wait.
+    if (viewMode.isEmployeeView()) {
+      return redirect();
+    }
+
     if (!roleGrants.loaded()) {
       const loaded = await firstValueFrom(
         toObservable(roleGrants.loaded, { injector }).pipe(filter(Boolean), timeout({ first: ORG_CLA_ONLY_GRANTS_WAIT_MS, with: () => of(false) }))
       );
+      // The wait ran out: admit (the server refuses the page's data), unless the mode was recorded meanwhile.
       if (!loaded) {
-        return true;
+        return viewMode.isEmployeeView() ? redirect() : true;
       }
     }
-    if (!viewMode.isEmployeeView()) {
-      return true;
-    }
-    const segments = router.parseUrl(state.url).root.children['primary']?.segments.map((segment) => segment.path) ?? [];
-    return router.parseUrl(orgLensPagePath(segments, page));
+    return viewMode.isEmployeeView() ? redirect() : true;
   };
 }

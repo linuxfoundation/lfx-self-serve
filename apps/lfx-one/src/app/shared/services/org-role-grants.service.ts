@@ -59,6 +59,9 @@ export class OrgRoleGrantsService {
   // Epic #5845 — the company the caller may open in the all employee view. Null whenever the server did not prove it,
   // which keeps today's empty state. Read it through `OrgLensViewModeService`.
   private readonly employeeViewOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
+  // Companies an address or selector row marked as employee-view; kept here (not in the view-mode service) so the CLA-only
+  // access service can read it without a dependency cycle.
+  private readonly addressedEmployeeViewUidsInternal: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(new Set());
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
@@ -101,11 +104,30 @@ export class OrgRoleGrantsService {
   public readonly affiliatedToMember: Signal<boolean> = this.affiliatedToMemberInternal.asReadonly();
   /** Epic #5845 — uid of the company the caller reaches only through the all employee view, or null. Read it through `OrgLensViewModeService`. */
   public readonly employeeViewOrgUid: Signal<string | null> = this.employeeViewOrgUidInternal.asReadonly();
+  /** Epic #5845 — every company the caller reaches through the all employee view: the role-grants company plus any an address or selector row marked. */
+  public readonly employeeViewOrgUids: Signal<ReadonlySet<string>> = computed(() => {
+    const granted = this.employeeViewOrgUidInternal();
+    const addressed = this.addressedEmployeeViewUidsInternal();
+    return granted ? new Set([granted, ...addressed]) : addressed;
+  });
 
   public constructor() {
     afterNextRender(() => {
       this.refresh().subscribe();
     });
+  }
+
+  /** Records an address's or selector row's employee-view answer for `uid`; a later non-employee answer clears it. */
+  public noteEmployeeViewAddressed(uid: string, employeeView: boolean): void {
+    const current = this.addressedEmployeeViewUidsInternal();
+    if (current.has(uid) === employeeView) return;
+    const next = new Set(current);
+    if (employeeView) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+    this.addressedEmployeeViewUidsInternal.set(next);
   }
 
   /**

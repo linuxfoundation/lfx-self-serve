@@ -105,6 +105,8 @@ describe('OrgNavigationService default selection', () => {
             claManagerOrgSet,
             claManagerLookupFailed,
             employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },

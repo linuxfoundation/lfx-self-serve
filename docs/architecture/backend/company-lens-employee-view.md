@@ -16,9 +16,11 @@ The all employee view is a **mode** of the Company Lens (`OrgLensViewMode = 'ful
 1. Current employer: CDP work history, no end date, with a crowd.dev organization id.
 2. That employer's LF account is `:orgUid`. The company is the one the affiliation names; editing the URL opens nothing.
 3. The account is an active member (`ORG_LENS_ACCOUNT_CONTEXT.IS_MEMBER`).
-4. A **verified** email (`resolveVerifiedUserEmails`, strict) on one of the company's domains: member-service `primary_domain`, or the host of `website`. The domain match is on a whole label (`eng.acme.com` matches `acme.com`; `notacme.com` and `acme.com.evil.test` do not).
+4. A **verified** email (`resolveVerifiedUserEmails`, strict) on the company's `primary_domain` from member-service. The website host is deliberately not used (it can name a third-party host). The domain match is on a whole label (`eng.acme.com` matches `acme.com`; `notacme.com` and `acme.com.evil.test` do not).
 
-Anything unproven is a denial (403), including a company with no domain on record and an employer the account-grain mapping does not list. A lookup that **fails** (CDP, warehouse, member-service, auth-service) is a 503 `ROLE_GRANTS_UNAVAILABLE`, never "not an employee". Verdicts are held 60 s per caller and company so a page's parallel requests cost one lookup; a failure is never kept.
+The company record is read with the BFF's machine token (`generateM2MToken`), scoped to that one call and made only after the employer, account and membership checks pass: the caller was just refused `b2b_org#auditor`, which member-service requires for `GET /b2b_orgs/{uid}`, so their own token could never read the domain. Anything unproven is a denial (403), including a company with no `primary_domain` on record and an employer the account-grain mapping does not list. A lookup that **fails** (CDP, warehouse, member-service, auth-service) is a 503 `ROLE_GRANTS_UNAVAILABLE`, never "not an employee". Verdicts are held 60 s per caller and company so a page's parallel requests cost one lookup; a failure is never kept.
+
+Employee access supersedes CLA-only classification for the same company (selector row, address resolver, client state); the caller's own CLA Manager scope is still asked by the EasyCLA gate. The resolver tries the employee view before the CLA scope and, if the employee lookup is unavailable and the CLA scope does not hit, answers a structured 503 `ROLE_GRANTS_UNAVAILABLE` (never a 404 the client would cache). Slug addresses fall back too.
 
 Roll-up segments never qualify: the roll-up gate shares a roster, which skips the employee-view attempt, and drops any company that comes back `employee-view`.
 
@@ -60,3 +62,13 @@ Each page story applies these to **one** page. Nothing is exposed by default.
 ## Client
 
 `GET /api/orgs/me/role-grants` carries `employeeView?: { orgUid, orgName }`, computed only for a caller with no grant, not staff, whose affiliation already says the employer is a member. `OrgRoleGrantsService.employeeViewOrgUid` holds it. `OrgLensViewModeService` answers `viewMode()` / `isEmployeeView()` for the selected company (`modeFor(uid)` for others); a real grant or staff always wins. The selector lists the company (`OrgItem.employeeView`), `/api/orgs/resolve/:segment` resolves its address (`OrgResolveResponse.employeeView`), and the empty state opens the lens instead of "no company linked". The client is UX only: the server refuses and redacts regardless.
+
+## Every `assertOrgLensRead` consumer
+
+| Consumer | Employee view |
+| --- | --- |
+| `requireOrgLensAccess` on `/api/orgs/:orgUid/lens/*` | Admitted, read-only (non-GET/HEAD is 403); pages redact or `blockEmployeeView` per story |
+| `assertOrgLensClaRead` / `requireOrgLensClaAccess` (EasyCLA router, mounted before `orgsRouter`) | **Refused** (403 `EMPLOYEE_VIEW_FORBIDDEN`) unless the caller holds the CLA Manager scope |
+| `assertOrgAnalyticsRead` (`/api/analytics/*`) | **Refused by default**; a reviewed, redacting route opts in with `{ allowEmployeeView: true }`. `filterReadableAccountIds` / `filterConfirmedReadableAccountIds` never consult the employee view |
+| `resolveOrgLensRollUp` | Never (shared roster skips the attempt; `employee-view` results are dropped) |
+| ROI, groups, meetings, training, people handlers | Behind the lens prefix; each page story applies `blockEmployeeView` or `redactForEmployeeView` |

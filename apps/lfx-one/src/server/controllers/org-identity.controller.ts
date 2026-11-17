@@ -184,6 +184,13 @@ export class OrgIdentityController {
       // as not found). Query-service answers "no rows" with an empty 200, so an upstream 4xx — a
       // routing 404, a 409, a 429 — is a transport failure, never an answer about the address; only
       // the resolver's own outcomes (200/404/409) and local validation (400) may carry those codes.
+      // The one exception: the employee-view qualification could not be verified (epic #5845). That is a retriable 503 with
+      // its code, not a transport failure of query-service, so the client does not cache it as "not found".
+      if (error instanceof MicroserviceError && error.statusCode === 503 && error.code === 'ROLE_GRANTS_UNAVAILABLE') {
+        logger.warning(req, 'resolve_org_segment', 'Qualification lookup unavailable', { err: error, outcome: 'unavailable' });
+        res.status(503).json({ error: error.message, code: error.code });
+        return;
+      }
       if (error instanceof MicroserviceError) {
         logger.warning(req, 'resolve_org_segment', 'Upstream failure', { err: error, upstream_status: error.statusCode, outcome: 'upstream_error' });
         res.status(502).json({ error: 'Upstream query-service failure' });

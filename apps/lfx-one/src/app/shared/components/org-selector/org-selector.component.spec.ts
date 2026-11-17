@@ -117,6 +117,8 @@ describe('OrgSelectorComponent.selectItem', () => {
             inheritedAuditorSet: empty,
             parentNameByUid: signal(new Map<string, string>()),
             employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
@@ -285,6 +287,7 @@ describe('OrgSelectorComponent navbar card', () => {
     inheritedWriters?: string[];
     claManagerOrgs?: string[];
     claOnlyPending?: boolean;
+    employeeViewOrgs?: string[];
   }
 
   const createCard = async ({
@@ -295,6 +298,7 @@ describe('OrgSelectorComponent navbar card', () => {
     inheritedWriters = [],
     claManagerOrgs = [],
     claOnlyPending = false,
+    employeeViewOrgs = [],
   }: CardSetup): Promise<NavbarCardView> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -348,7 +352,9 @@ describe('OrgSelectorComponent navbar card', () => {
             parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
             claManagerOrgSet: signal(new Set(claManagerOrgs)),
             claManagerLookupFailed: signal(false),
-            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUid: signal<string | null>(employeeViewOrgs[0] ?? null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set(employeeViewOrgs)),
+            noteEmployeeViewAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
@@ -437,6 +443,31 @@ describe('OrgSelectorComponent navbar card', () => {
 
     it('lets a held grant win over a CLA-only flag on the same row', async () => {
       const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A], claManagerOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
+    });
+  });
+
+  describe('an all employee view company (#5845)', () => {
+    const EMPLOYEE_TOOLTIP = 'You work for this company. You can see a read-only summary with no names or email addresses.';
+
+    it('labels an employee-view row that carries no grant', async () => {
+      const card = await createCard({ items: [{ ...rowA, employeeView: true }] });
+
+      expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([[UID_A, 'Employee', EMPLOYEE_TOOLTIP]]);
+    });
+
+    it('labels the card when the selected company is an employee-view company', async () => {
+      const card = await createCard({ employeeViewOrgs: [UID_A] });
+
+      expect(card.selectedRoleLabel()).toBe('Employee');
+      expect(card.selectedRoleTooltip()).toBe(EMPLOYEE_TOOLTIP);
+      expect(card.navbarRoleTooltip()).toBe(EMPLOYEE_TOOLTIP);
+    });
+
+    it('lets a held grant win over the employee-view flag', async () => {
+      const card = await createCard({ items: [{ ...rowA, employeeView: true }], writers: [UID_A], employeeViewOrgs: [UID_A] });
 
       expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
       expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
@@ -558,6 +589,9 @@ describe('OrgSelectorComponent family roll-ups', () => {
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
             parentNameByUid: signal(new Map<string, string>()),
+            employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: navigateSpy, navigateToRollUpHome: rollUpHomeSpy, isOnNotFound: onNotFound } },

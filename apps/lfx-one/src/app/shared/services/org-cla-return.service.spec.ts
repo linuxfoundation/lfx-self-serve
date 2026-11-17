@@ -72,6 +72,8 @@ describe('OrgClaReturnService', () => {
             inheritedAuditorSet: signal(new Set<string>()),
             claManagerOrgSet: signal(new Set<string>()),
             employeeViewOrgUid: signal<string | null>(null),
+            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            noteEmployeeViewAddressed: vi.fn(),
             claManagerLookupFailed: signal(false),
           },
         },

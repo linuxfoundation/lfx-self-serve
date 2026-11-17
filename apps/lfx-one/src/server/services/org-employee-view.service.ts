@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_AFFILIATION_LOOKUP_TIMEOUT_MS, ORG_LENS_EMPLOYEE_VIEW_CACHE_MAX_ENTRIES, ORG_LENS_EMPLOYEE_VIEW_CACHE_TTL_MS } from '@lfx-one/shared/constants';
-import type { MemberServiceB2bOrgResponse, OrgLensEmployeeViewGrant, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import type { MemberServiceB2bOrgResponse, OrgEmployeeViewDenial, OrgEmployeeViewVerdict, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 // Deep import, never the `utils` barrel (see org-affiliation.service.ts).
 import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils/invitation.utils';
 import type { Request } from 'express';
@@ -11,6 +11,7 @@ import { MicroserviceError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { CdpService } from './cdp.service';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
@@ -19,17 +20,6 @@ import { claOnlyEntryApplies } from './org-cla-only-orgs.service';
 import { OrganizationService } from './organization.service';
 
 const OPERATION = 'resolve_org_lens_employee_view';
-
-/** Why a caller is not in the all employee view of a company. Every one of these is "no access" (403), never an outage. */
-export type OrgEmployeeViewDenial =
-  | 'no-employer'
-  | 'employer-unresolvable'
-  | 'other-company'
-  | 'not-member'
-  | 'company-domains-unknown'
-  | 'no-verified-company-email';
-
-export type OrgEmployeeViewVerdict = { eligible: true; org: OrgLensEmployeeViewGrant } | { eligible: false; reason: OrgEmployeeViewDenial };
 
 /**
  * Lowercased bare hostname from a domain or URL (`https://www.Acme.com/careers` -> `acme.com`), or null when
@@ -199,21 +189,41 @@ export class OrgEmployeeViewService {
     if (requestedOrgUid && account.accountId !== requestedOrgUid) return deny('other-company');
     if (account.isMember !== true) return deny('not-member');
 
-    const [domains, emails] = await Promise.all([this.getCompanyDomains(req, account.accountId), this.getVerifiedEmails(req)]);
-    if (domains.length === 0) return deny('company-domains-unknown');
-    if (!emails.some((email) => emailBelongsToCompanyDomain(email, domains))) return deny('no-verified-company-email');
+    const [company, emails] = await Promise.all([this.getCompanyRecord(req, account.accountId), this.getVerifiedEmails(req)]);
+    // `primary_domain` only: a website can name a third-party host, which would let any verified address there qualify.
+    const domain = normalizeCompanyDomain(company?.primary_domain);
+    if (!domain) return deny('company-domains-unknown');
+    if (!emails.some((email) => emailBelongsToCompanyDomain(email, [domain]))) return deny('no-verified-company-email');
 
-    return { eligible: true, org: { orgUid: account.accountId, orgName: account.accountName } };
+    return { eligible: true, org: { orgUid: account.accountId, orgName: account.accountName, orgSlug: company?.slug?.trim().toLowerCase() || null } };
   }
 
-  /** The company's own domains from member-service (`primary_domain`, and the host of `website`). Empty means "none on record". */
-  private async getCompanyDomains(req: Request, accountId: string): Promise<string[]> {
+  /**
+   * The company's member-service record (`primary_domain`, `slug`), or null when it has none.
+   *
+   * Read with the BFF's own machine token, not the caller's: this runs only after the read gate refused the caller
+   * `b2b_org#auditor`, and member-service requires that same permission for `GET /b2b_orgs/{uid}`, so the caller's token
+   * could never fetch the domain it is being checked against. The token is scoped to this one upstream call, runs only
+   * after the employer, account and membership checks have passed for the effective user, and nothing of the record
+   * beyond the domain and slug is used or returned.
+   */
+  private async getCompanyRecord(req: Request, accountId: string): Promise<MemberServiceB2bOrgResponse | null> {
     try {
-      const org = await this.proxy.proxyRequest<MemberServiceB2bOrgResponse>(req, 'LFX_V2_SERVICE', `/b2b_orgs/${encodeURIComponent(accountId)}`, 'GET');
-      const domains = [normalizeCompanyDomain(org.primary_domain), normalizeCompanyDomain(org.website)].filter((domain): domain is string => !!domain);
-      return [...new Set(domains)];
+      const bearerToken = await generateM2MToken(req);
+      return await this.proxy.proxyRequest<MemberServiceB2bOrgResponse>(
+        req,
+        'LFX_V2_SERVICE',
+        `/b2b_orgs/${encodeURIComponent(accountId)}`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        {
+          bearerToken,
+        }
+      );
     } catch (error) {
-      if (error instanceof MicroserviceError && error.statusCode === 404) return [];
+      if (error instanceof MicroserviceError && error.statusCode === 404) return null;
       throw error;
     }
   }

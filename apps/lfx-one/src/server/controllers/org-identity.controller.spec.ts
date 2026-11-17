@@ -277,6 +277,18 @@ describe('OrgIdentityController.resolveSegment', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('preserves a qualification-lookup outage as a structured 503, not a 502 or a 404 (#5845)', async () => {
+    resolveSegment.mockRejectedValue(new MicroserviceError('Try again.', 503, 'ROLE_GRANTS_UNAVAILABLE', { operation: 'op', service: 'svc' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgIdentityController().resolveSegment(request('acme'), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Try again.', code: 'ROLE_GRANTS_UNAVAILABLE' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('hands validation errors to the error handler (400 stays a local answer)', async () => {
     const validation = ServiceValidationError.forField('segment', 'Invalid company segment', { operation: 'op', service: 'svc', path: '/x' });
     resolveSegment.mockRejectedValueOnce(validation);

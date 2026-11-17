@@ -4,9 +4,10 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { resolveEmployeeView } = vi.hoisted(() => ({ resolveEmployeeView: vi.fn() }));
 vi.mock('./org-employee-view.service', () => ({
   OrgEmployeeViewService: class {
-    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-employer' });
+    public resolve = resolveEmployeeView;
     public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
   },
 }));
@@ -65,6 +66,8 @@ function cachePredicates(): { accept: (value: unknown) => boolean; storable: (va
 beforeEach(() => {
   vi.resetAllMocks();
   getEffectiveUsername.mockReturnValue('viewer');
+  delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
   buildPerUserOrgKey.mockImplementation((namespace: string, username: string, segment: string) => `${namespace}:${username}:${segment}`);
   // Pass-through cache: the fetcher decides, the predicates are captured for assertion.
   withCache.mockImplementation((_key: string | null, _ttl: number, fetcher: () => Promise<unknown>) => fetcher());
@@ -302,5 +305,78 @@ describe('OrgSlugResolverService — `prefer` tie-break (DR-007 §4)', () => {
   it('does not let `prefer` widen access: an unreadable preferred organization leaves the tie unbroken', async () => {
     proxyRequest.mockResolvedValueOnce(page([]));
     expect(await new OrgSlugResolverService().resolveSegment(req, 'acme-inc', UID_C)).toMatchObject({ outcome: 'ambiguous' });
+  });
+});
+
+describe('OrgSlugResolverService — all employee view company (#5845)', () => {
+  const eligible = { eligible: true, org: { orgUid: UID_A, orgName: 'Acme Motors', orgSlug: 'acme-inc' } };
+
+  beforeEach(() => {
+    process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'] = 'true';
+  });
+
+  it('resolves the SFID of the employee company when query-service hides it', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockResolvedValue(eligible);
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toEqual({
+      outcome: 'hit',
+      org: { uid: UID_A, slug: null, name: 'Acme Motors', employeeView: true },
+      cache: 'bypass',
+    });
+  });
+
+  it('resolves the slug of the employee company when query-service hides it, and never caches that answer', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockResolvedValue(eligible);
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, 'acme-inc');
+
+    expect(result).toMatchObject({ outcome: 'hit', org: { uid: UID_A, employeeView: true } });
+    expect(cachePredicates().storable({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'x', employeeView: true } })).toBe(true);
+  });
+
+  it('is a miss for a slug or SFID that is not the caller’s employee company', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockResolvedValue(eligible);
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, 'other-co')).resolves.toMatchObject({ outcome: 'miss' });
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_B)).resolves.toMatchObject({ outcome: 'miss' });
+  });
+
+  it('prefers employee access over CLA-only for the same company', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockResolvedValue(eligible);
+    resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Acme Motors', claOnly: true });
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(result).toMatchObject({ outcome: 'hit', org: { employeeView: true } });
+    expect(result).not.toMatchObject({ org: { claOnly: true } });
+  });
+
+  it('falls back to CLA-only when the employee-view lookup is unavailable and the CLA scope confirms the company', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+    resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Acme Motors', claOnly: true });
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'hit', org: { claOnly: true } });
+  });
+
+  it('throws a structured 503, not a miss, when the lookup is unavailable and nothing else answers', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockRejectedValue(new Error('cdp down'));
+    resolveClaOnlyOrg.mockResolvedValue(null);
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+    await expect(new OrgSlugResolverService().resolveSegment(req, 'acme-inc')).rejects.toMatchObject({ statusCode: 503, code: 'ROLE_GRANTS_UNAVAILABLE' });
+  });
+
+  it('asks nothing of the employee view when the flag is off', async () => {
+    delete process.env['LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED'];
+    proxyRequest.mockResolvedValue(page([]));
+
+    await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'miss' });
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
   });
 });

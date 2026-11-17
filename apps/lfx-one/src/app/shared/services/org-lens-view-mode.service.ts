@@ -1,14 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, Signal } from '@angular/core';
 import { ORG_LENS_EMPLOYEE_VIEW, ORG_LENS_FULL_VIEW } from '@lfx-one/shared/constants';
 import type { OrgLensViewMode } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
-
-const NO_ORGS: ReadonlySet<string> = new Set();
 
 /**
  * The Company Lens view mode (epic #5845) for the selected company: `'employee'` for the reduced, read-only all employee
@@ -27,14 +25,8 @@ export class OrgLensViewModeService {
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly accountContext = inject(AccountContextService);
 
-  private readonly addressedEmployeeViewUids: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(NO_ORGS);
-
-  /** Companies the caller reaches only through the all employee view: the role-grants company plus any the resolver marked. */
-  public readonly employeeViewOrgUids: Signal<ReadonlySet<string>> = computed(() => {
-    const granted = this.roleGrants.employeeViewOrgUid();
-    const addressed = this.addressedEmployeeViewUids();
-    return granted ? new Set([granted, ...addressed]) : addressed;
-  });
+  /** Companies the caller reaches only through the all employee view: the role-grants company plus any an address or selector row marked. */
+  public readonly employeeViewOrgUids: Signal<ReadonlySet<string>> = this.roleGrants.employeeViewOrgUids;
 
   /** The view mode of the selected company. */
   public readonly viewMode: Signal<OrgLensViewMode> = computed(() => this.modeFor(this.accountContext.selectedAccount().uid));
@@ -49,17 +41,9 @@ export class OrgLensViewModeService {
     return ORG_LENS_EMPLOYEE_VIEW;
   }
 
-  /** Records the resolver's answer for an addressed company; a later non-employee answer clears it. */
+  /** Records the resolver's (or a selector row's) answer for a company; a later non-employee answer clears it. */
   public noteAddressed(uid: string, employeeView: boolean): void {
-    const current = this.addressedEmployeeViewUids();
-    if (current.has(uid) === employeeView) return;
-    const next = new Set(current);
-    if (employeeView) {
-      next.add(uid);
-    } else {
-      next.delete(uid);
-    }
-    this.addressedEmployeeViewUids.set(next);
+    this.roleGrants.noteEmployeeViewAddressed(uid, employeeView);
   }
 
   private holdsGrant(uid: string): boolean {

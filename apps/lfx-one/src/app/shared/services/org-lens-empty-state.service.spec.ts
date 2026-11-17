@@ -124,6 +124,8 @@ function setup(): Harness {
           inheritedAuditorSet,
           affiliatedToMember,
           employeeViewOrgUid: signal<string | null>(null),
+          employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+          noteEmployeeViewAddressed: vi.fn(),
           refresh,
         },
       },

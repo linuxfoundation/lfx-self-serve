@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  ORG_ACCESS_UNVERIFIABLE_MESSAGE,
   ORG_ACCOUNT_ID_PATTERN,
   ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS,
   ORG_SLUG_RESOLVE_NAMESPACE,
@@ -10,12 +11,13 @@ import {
   ORG_SLUG_RESOLVE_TTL_SECONDS,
   ORG_SLUG_SEGMENT_PATTERN,
 } from '@lfx-one/shared/constants';
-import { B2bOrgIndexedDoc, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import { B2bOrgIndexedDoc, OrgLensEmployeeViewGrant, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 // Deep import on purpose: the `@lfx-one/shared/utils` barrel pulls Angular-only utils into the Node
 // server bundle and its specs; this module is pure (same precedent as `impersonation.utils`).
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
@@ -83,8 +85,11 @@ export class OrgSlugResolverService {
     if (segmentKind === 'sfid') {
       // A CLA Manager holds no Org Lens read, so query-service hides the org from them; their own
       // `cla-manager` scope is the second chance. SFID only — a CLA-only org is addressed by SFID.
-      const org =
-        (await this.lookupByUid(req, segment)) ?? (await this.claOnlyOrgs.resolveOrg(req, segment)) ?? (await this.resolveEmployeeViewOrg(req, segment));
+      const readable = await this.lookupByUid(req, segment);
+      if (readable) {
+        return { outcome: 'hit', org: readable, cache: 'bypass' };
+      }
+      const org = await this.resolveFallbackOrg(req, (employee) => employee.orgUid === segment, segment);
       return org ? { outcome: 'hit', org, cache: 'bypass' } : { outcome: 'miss', cache: 'bypass' };
     }
 
@@ -112,6 +117,11 @@ export class OrgSlugResolverService {
     if (key === null) cache = 'bypass';
     else if (fetched) cache = 'miss';
 
+    if (cached.outcome === 'miss') {
+      // query-service hides a company the caller cannot read, so an employee-view company is a miss there. Never cached.
+      const org = await this.resolveFallbackOrg(req, (employee) => employee.orgSlug === segment, null);
+      return org ? { outcome: 'hit', org, cache } : { ...cached, cache };
+    }
     if (cached.outcome !== 'ambiguous') {
       return { ...cached, cache };
     }
@@ -131,21 +141,44 @@ export class OrgSlugResolverService {
   }
 
   /**
-   * Epic #5845 — the company the caller reaches only through the all employee view, when `uid` is that company. Null
-   * when the flag is off, when the caller does not qualify for it, and when the lookup cannot answer (logged): an
-   * unverifiable address reads as not found, like the CLA-only fallback.
+   * The fallbacks for a company query-service does not show the caller, in order of precedence: the company they reach
+   * through the all employee view (epic #5845), then the one they manage CLAs for. Employee access comes first because it
+   * supersedes CLA-only classification — a caller who is both would otherwise open EasyCLA alone and be redirected
+   * from every other page. `matches` says whether the employee company is the one addressed.
+   *
+   * Null is a CONFIRMED miss. When the employee-view lookup cannot answer, the CLA-only answer still wins if it hits;
+   * otherwise this throws a structured 503 (`ROLE_GRANTS_UNAVAILABLE`), so an outage is never cached by the client as "not found".
    */
-  private async resolveEmployeeViewOrg(req: Request, uid: string): Promise<OrgResolveResponse | null> {
-    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
-      return null;
+  private async resolveFallbackOrg(
+    req: Request,
+    matches: (employee: OrgLensEmployeeViewGrant) => boolean,
+    claOnlyUid: string | null
+  ): Promise<OrgResolveResponse | null> {
+    let employeeViewError: unknown;
+    if (isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+      try {
+        const verdict = await this.employeeView.resolve(req, null);
+        if (verdict.eligible && matches(verdict.org)) {
+          return { uid: verdict.org.orgUid, slug: null, name: verdict.org.orgName, employeeView: true };
+        }
+      } catch (error) {
+        employeeViewError = error;
+        logger.warning(req, 'resolve_employee_view_org', 'Could not verify employee-view company', { err: error });
+      }
     }
-    try {
-      const verdict = await this.employeeView.resolve(req, uid);
-      return verdict.eligible ? { uid: verdict.org.orgUid, slug: null, name: verdict.org.orgName, employeeView: true } : null;
-    } catch (error) {
-      logger.warning(req, 'resolve_employee_view_org', 'Could not verify employee-view company; answering not found', { org_uid: uid, err: error });
-      return null;
+    // A CLA-only org is addressed by SFID only.
+    const claOnly = claOnlyUid ? await this.claOnlyOrgs.resolveOrg(req, claOnlyUid) : null;
+    if (claOnly) {
+      return claOnly;
     }
+    if (employeeViewError !== undefined) {
+      throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
+        operation: 'resolve_employee_view_org',
+        service: 'org_slug_resolver_service',
+        originalError: employeeViewError instanceof Error ? employeeViewError : undefined,
+      });
+    }
+    return null;
   }
 
   private classify(segment: string, path: string): 'sfid' | 'slug' {

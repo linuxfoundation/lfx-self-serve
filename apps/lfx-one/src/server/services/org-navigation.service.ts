@@ -163,8 +163,10 @@ export class OrgNavigationService {
     const { orgs, failed: claOnlyFailed } = await this.claOnlyOrgs.listOrgs(req);
     const { item: employeeViewItem, failed: employeeViewFailed } = await this.getEmployeeViewItem(req);
     const failed = claOnlyFailed || employeeViewFailed;
-    // A company the caller also manages CLAs for stays a CLA-only row: it already opens, and the two views never combine.
-    const items = [...this.toClaOnlyItems(orgs), ...(employeeViewItem && !orgs.some((org) => org.uid === employeeViewItem.uid) ? [employeeViewItem] : [])];
+    // Proven employee access supersedes CLA-only classification for the same company: a CLA-only row opens EasyCLA alone and
+    // redirects every other page there, which would lock a qualifying employee out of the view they earned. The caller's own
+    // CLA Manager scope is untouched — EasyCLA's gate still asks it independently.
+    const items = [...this.toClaOnlyItems(orgs).filter((item) => item.uid !== employeeViewItem?.uid), ...(employeeViewItem ? [employeeViewItem] : [])];
     const shown = this.applySelectedUidPin(sortOrgItemsByName(filterOrgItemsByName(items, name), name), items, selectedUid, pageToken);
 
     logger.debug(req, 'build_org_items', 'Built CLA-only org items', {

@@ -4,7 +4,8 @@
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, provideRouter, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { ORG_CLA_ONLY_GRANTS_WAIT_MS } from '@lfx-one/shared/constants';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgLensViewModeService } from '../services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
@@ -52,6 +53,40 @@ describe('orgLensFullViewOnlyGuard', () => {
     loaded.set(true);
 
     expect(await pending).toBe('/company/acme-inc/overview');
+  });
+
+  it('redirects a recorded employee view without waiting for the role grants', async () => {
+    loaded.set(false);
+    isEmployeeView.set(true);
+
+    expect(await verdictFor('/company/acme-inc/people')).toBe('/company/acme-inc/overview');
+  });
+
+  it('redirects when the mode is recorded while the role-grants wait runs out', async () => {
+    vi.useFakeTimers();
+    try {
+      loaded.set(false);
+      const pending = verdictFor('/company/acme-inc/people');
+      isEmployeeView.set(true);
+      await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS + 1);
+
+      expect(await pending).toBe('/company/acme-inc/overview');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('admits the page when the wait runs out with no employee view recorded', async () => {
+    vi.useFakeTimers();
+    try {
+      loaded.set(false);
+      const pending = verdictFor('/company/acme-inc/people');
+      await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS + 1);
+
+      expect(await pending).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('redirects to the page it is given', async () => {

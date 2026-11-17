@@ -31,6 +31,9 @@ export class OrgClaOnlyAccessService {
     // A grant that arrived after the address was resolved wins: the selected organization skips the
     // resolver on later navigations, so nothing else would clear the note.
     if (this.holdsOrgLensAccess(uid)) return false;
+    // Proven employee access supersedes CLA-only (epic #5845): otherwise a qualifying employee who also manages the
+    // company's CLAs would be confined to EasyCLA and redirected there from every other page.
+    if (this.orgRoleGrants.employeeViewOrgUids().has(uid)) return false;
     return this.claOnlyOrgUids().has(uid) || this.addressedClaOnlyUids().has(uid);
   }
 

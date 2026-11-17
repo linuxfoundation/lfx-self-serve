@@ -20,6 +20,8 @@ export interface OrgLensEmployeeViewGrant {
   orgUid: string;
   /** Company display name for the selector row. */
   orgName: string;
+  /** Lowercase URL-identity slug member-service published for the company, or null. Lets a `/company/{slug}/…` address resolve. */
+  orgSlug?: string | null;
 }
 
 /**
@@ -36,4 +38,26 @@ export interface OrgLensEmployeeViewException {
   reason: string;
   /** The product owner decision or ticket that approved it. */
   approvedBy: string;
+}
+
+/** Why a caller is not in the all employee view of a company. Every one of these is "no access" (403), never an outage. */
+export type OrgEmployeeViewDenial =
+  | 'no-employer'
+  | 'employer-unresolvable'
+  | 'other-company'
+  | 'not-member'
+  | 'company-domains-unknown'
+  | 'no-verified-company-email';
+
+/** A clean answer to "is this caller in the all employee view?". A failed lookup is a rejection, never a verdict. */
+export type OrgEmployeeViewVerdict = { eligible: true; org: OrgLensEmployeeViewGrant } | { eligible: false; reason: OrgEmployeeViewDenial };
+
+/** Options of the server's `stripPersonalFields` / `redactForEmployeeView`. */
+export interface StripPersonalFieldsOptions {
+  /** The page being served (`overview`, `projects`, `events` ...). Selects its entries in the exceptions allow-list. */
+  page: string;
+  /** Extra field names to remove on this route, for a person name that travels under a bare key (`name`, `title` ...). */
+  extraFields?: readonly string[];
+  /** Override the allow-list; tests only. Production always uses `ORG_LENS_EMPLOYEE_VIEW_EXCEPTIONS`. */
+  exceptions?: readonly OrgLensEmployeeViewException[];
 }

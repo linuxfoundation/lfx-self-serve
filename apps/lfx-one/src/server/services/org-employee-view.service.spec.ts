@@ -7,12 +7,14 @@ import type { RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEffectiveUsername, resolveVerifiedUserEmails } = vi.hoisted(() => ({
+const { getEffectiveUsername, resolveVerifiedUserEmails, generateM2MToken } = vi.hoisted(() => ({
+  generateM2MToken: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'employee'),
   resolveVerifiedUserEmails: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername() }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 vi.mock('../helpers/user-emails.helper', () => ({ resolveVerifiedUserEmails }));
 vi.mock('./logger.service', () => ({ logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
@@ -69,13 +71,14 @@ function build(opts: Setup = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   getEffectiveUsername.mockReturnValue('employee');
+  generateM2MToken.mockResolvedValue('m2m-token');
 });
 
 describe('OrgEmployeeViewService.resolve', () => {
   it('admits a current employee of an active member with a verified email on the company domain', async () => {
     const { svc } = build({ experiences: experience(CDEV_ORG) });
 
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: true, org: { orgUid: ORG_UID, orgName: 'Acme Motors' } });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: true, org: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null } });
   });
 
   it('names the company from the affiliation when no uid is asked for', async () => {
@@ -137,14 +140,46 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'company-domains-unknown' });
   });
 
-  it('accepts a subdomain of the company domain and a domain taken from the website', async () => {
+  it('accepts a subdomain of the company domain', async () => {
+    const { svc } = build({ experiences: experience(CDEV_ORG), emails: ['Dev@Eng.Acme-Motors.Example'] });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('does not take a domain from the website: only primary_domain counts', async () => {
     const { svc } = build({
       experiences: experience(CDEV_ORG),
       org: { uid: ORG_UID, name: 'Acme Motors', website: 'https://www.acme-motors.example/about' },
-      emails: ['Dev@Eng.Acme-Motors.Example'],
+      emails: ['dev@acme-motors.example'],
     });
 
-    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'company-domains-unknown' });
+  });
+
+  it('reads the company record with the BFF machine token, not the caller token', async () => {
+    const { svc, proxy } = build({ experiences: experience(CDEV_ORG) });
+
+    await svc.resolve(req(), ORG_UID);
+
+    expect(proxy.proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/b2b_orgs/${ORG_UID}`, 'GET', undefined, undefined, undefined, {
+      bearerToken: 'm2m-token',
+    });
+  });
+
+  it('reports the company slug so a slug address can resolve', async () => {
+    const { svc } = build({
+      experiences: experience(CDEV_ORG),
+      org: { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme-motors.example', slug: 'Acme-Motors' },
+    });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgSlug: 'acme-motors' } });
+  });
+
+  it('rejects when the machine token cannot be minted', async () => {
+    generateM2MToken.mockRejectedValueOnce(new Error('auth0 down'));
+    const { svc } = build({ experiences: experience(CDEV_ORG) });
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toBeInstanceOf(Error);
   });
 
   it.each([
@@ -216,7 +251,9 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
   it('reports the company for a grant-less employee of a member', async () => {
     const { svc } = build({ experiences: experience(CDEV_ORG) });
 
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({ employeeView: { orgUid: ORG_UID, orgName: 'Acme Motors' } });
+    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({
+      employeeView: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
+    });
   });
 
   it.each([
