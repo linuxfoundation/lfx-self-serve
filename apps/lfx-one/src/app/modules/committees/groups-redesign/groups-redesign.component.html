@@ -32,11 +32,11 @@
 
   @if (store.loading()) {
     <div
-      class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]"
+      [class]="store.view() === 'list' ? 'flex flex-col' : skeletonGridClass"
       role="status"
       aria-label="Loading groups"
       data-testid="groups-redesign-loading">
-      <ng-container [ngTemplateOutlet]="skeletons" />
+      <ng-container [ngTemplateOutlet]="store.view() === 'list' ? tableSkeletons : skeletons" />
     </div>
   } @else if (store.failed()) {
     <lfx-ui-empty-state
@@ -109,7 +109,19 @@
         [tabs]="tabs()"
         [value]="store.tab()"
         (valueChange)="onTabChange($event)"
-        data-testid="groups-redesign-tabs" />
+        data-testid="groups-redesign-tabs">
+        <!-- 8px keeps the switch off the tabs' rule, like the tabs' own select. -->
+        <lfx-ui-switch
+          class="pb-[8px]"
+          size="small"
+          ariaLabel="Groups view"
+          [value]="store.view()"
+          (valueChange)="onViewChange($event)"
+          data-testid="groups-redesign-view">
+          <lfx-ui-switch-option value="card" label="Card view" icon="fa-light fa-grid-2" iconOnly data-testid="groups-redesign-view-card" />
+          <lfx-ui-switch-option value="list" label="List view" icon="fa-light fa-list-ul" iconOnly data-testid="groups-redesign-view-list" />
+        </lfx-ui-switch>
+      </lfx-ui-tabs>
       <div class="mt-[20px] flex flex-wrap items-center gap-[8px]">
         <lfx-ui-search-input
           class="w-full min-[641px]:w-auto min-[641px]:flex-[1_1_240px]"
@@ -178,21 +190,27 @@
     <p class="sr-only" role="status" data-testid="groups-redesign-grid-status">
       Showing {{ store.visibleGroups().length }} of {{ store.filteredGroups().length }} groups
     </p>
-    <!-- At most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px -->
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]" data-testid="groups-redesign-grid">
-      @for (group of store.visibleGroups(); track group.uid) {
-        <lfx-group-card [group]="group" />
-      }
-    </div>
+    @if (store.view() === 'list') {
+      <lfx-groups-table [groups]="store.visibleGroups()" />
+    } @else {
+      <!-- At most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px -->
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]" data-testid="groups-redesign-grid">
+        @for (group of store.visibleGroups(); track group.uid) {
+          <lfx-group-card [group]="group">
+            <lfx-group-actions group-card-menu size="small" [group]="group" />
+          </lfx-group-card>
+        }
+      </div>
+    }
     @if (store.hasMore()) {
       <!-- Re-created per batch so skeletons still in view after a batch loads fire again. -->
       @for (count of [store.visibleGroups().length]; track count) {
         <div
           #loadMoreTrigger
-          class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]"
+          [class]="store.view() === 'list' ? 'flex flex-col' : skeletonGridClass"
           aria-hidden="true"
           data-testid="groups-redesign-load-more">
-          <ng-container [ngTemplateOutlet]="skeletons" />
+          <ng-container [ngTemplateOutlet]="store.view() === 'list' ? tableSkeletons : skeletons" />
         </div>
       }
     } @else if (store.filteredGroups().length > pageSize) {
@@ -200,6 +218,24 @@
         All {{ store.filteredGroups().length }} groups loaded
       </p>
     }
+  }
+</ng-template>
+
+<ng-template #tableSkeletons>
+  <!-- Mirrors a table row: name and project, type pill, role, members, channels, voting and the menu. -->
+  @for (row of skeletonCards; track row) {
+    <div class="flex min-h-[62px] items-center gap-[24px] border-b border-gray-100 px-[16px]" aria-hidden="true">
+      <span class="flex min-w-0 flex-[2.6] flex-col gap-[6px]">
+        <lfx-ui-skeleton width="46%" height="12px" />
+        <lfx-ui-skeleton width="30%" height="10px" />
+      </span>
+      <lfx-ui-skeleton shape="pill" width="110px" height="24px" />
+      <lfx-ui-skeleton width="64px" height="12px" />
+      <lfx-ui-skeleton width="24px" height="12px" />
+      <lfx-ui-skeleton width="44px" height="12px" />
+      <lfx-ui-skeleton width="52px" height="12px" />
+      <lfx-ui-skeleton shape="circle" width="32px" height="32px" />
+    </div>
   }
 </ng-template>
 

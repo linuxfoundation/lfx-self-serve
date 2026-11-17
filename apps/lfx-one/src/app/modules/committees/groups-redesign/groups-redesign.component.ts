@@ -26,11 +26,15 @@ import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
 import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
+import { GroupActionsComponent } from './components/group-actions/group-actions.component';
 import { GroupCardComponent } from './components/group-card/group-card.component';
 import { GroupsFiltersComponent } from './components/groups-filters/groups-filters.component';
+import { GroupsTableComponent } from './components/groups-table/groups-table.component';
 import { GroupsHomeStore } from './services/groups-home.store';
 
 /**
@@ -49,9 +53,13 @@ import { GroupsHomeStore } from './services/groups-home.store';
     UiEmptyStateComponent,
     UiSearchInputComponent,
     UiSkeletonComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
     UiTabsComponent,
+    GroupActionsComponent,
     GroupCardComponent,
     GroupsFiltersComponent,
+    GroupsTableComponent,
   ],
   templateUrl: './groups-redesign.component.html',
   providers: [GroupsHomeStore],
@@ -79,6 +87,8 @@ export class GroupsRedesignComponent {
   protected readonly idPrefix = 'groups-redesign';
   protected readonly pageSize = GROUPS_HOME_PAGE_SIZE;
   protected readonly skeletonCards = [0, 1, 2];
+  /** The card grid: at most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px. */
+  protected readonly skeletonGridClass = 'grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]';
   /** Measured header height; the toolbar sticks right below it. */
   protected readonly headerHeight = signal(0);
   /** Where the sticky header stops: below the mobile menu bar and impersonation banner. */
@@ -105,12 +115,18 @@ export class GroupsRedesignComponent {
   protected onTabChange(value: string): void {
     this.store.setTab(value as GroupsHomeTab);
     if (!isPlatformBrowser(this.platformId)) return;
-    // A new tab starts at the top of the grid when the grid has scrolled under the toolbar.
+    // A new tab or view starts at the top of the grid when the grid has scrolled under the toolbar.
     const panels = this.panels()?.nativeElement;
     const toolbar = this.toolbar()?.nativeElement;
     if (!panels || !toolbar) return;
     const offset = panels.getBoundingClientRect().top - toolbar.getBoundingClientRect().bottom;
     if (offset < 0) window.scrollBy({ top: offset });
+  }
+
+  protected onViewChange(value: string | null): void {
+    if (value !== 'card' && value !== 'list') return;
+    this.store.setView(value);
+    this.onTabChange(this.store.tab());
   }
 
   protected createGroup(): void {

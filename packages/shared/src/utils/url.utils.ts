@@ -99,6 +99,11 @@ export function isRelativeInAppPath(value: string): boolean {
   return value.startsWith('/') && !value.startsWith('//');
 }
 
+/** True for a link click the browser should handle itself: not the main button, or with a modifier key for a new tab or window. */
+export function isModifiedClick(event: { button: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }): boolean {
+  return event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey;
+}
+
 /**
  * Trailing characters that are almost never part of an intended URL when found at the end
  * of a regex match — sentence punctuation and quotes (e.g. `Visit https://example.com.`
