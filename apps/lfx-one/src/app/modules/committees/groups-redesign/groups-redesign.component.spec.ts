@@ -20,6 +20,7 @@ const group = (uid: string, category: string, extra: Partial<MyCommittee> = {}):
 describe('GroupsRedesignComponent', () => {
   let groups$: Subject<MyCommittee[]>;
   let openCreateDialog: ReturnType<typeof vi.fn>;
+  let observerCallback: IntersectionObserverCallback | null;
 
   const render = async (groups?: MyCommittee[]): Promise<ComponentFixture<GroupsRedesignComponent>> => {
     const fixture = TestBed.createComponent(GroupsRedesignComponent);
@@ -40,6 +41,17 @@ describe('GroupsRedesignComponent', () => {
   beforeEach(() => {
     groups$ = new Subject();
     openCreateDialog = vi.fn();
+    observerCallback = null;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        public observe = vi.fn();
+        public disconnect = vi.fn();
+        public constructor(callback: IntersectionObserverCallback) {
+          observerCallback = callback;
+        }
+      }
+    );
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -110,5 +122,31 @@ describe('GroupsRedesignComponent', () => {
     const tabs = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[role="tab"]')).map(text);
 
     expect(tabs).toEqual(['All3', 'Boards1', 'Working Groups2']);
+  });
+
+  it('filters the cards by the selected tab', async () => {
+    const fixture = await render([group('a', 'Board'), group('b', 'Working Group')]);
+
+    Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[role="tab"]'))
+      .find((tab) => text(tab).startsWith('Working Groups'))
+      ?.click();
+    await fixture.whenStable();
+
+    expect(all(fixture, 'groups-home-card-name').map(text)).toEqual(['Group b']);
+  });
+
+  it('shows 20 cards, then the next 20 when the skeletons scroll into view, then the end label', async () => {
+    const fixture = await render(Array.from({ length: 45 }, (_, i) => group(String(i).padStart(2, '0'), 'Working Group')));
+    expect(all(fixture, 'groups-home-card')).toHaveLength(20);
+    expect(one(fixture, 'groups-redesign-load-more')).not.toBeNull();
+
+    for (const expected of [40, 45]) {
+      observerCallback?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      await fixture.whenStable();
+      expect(all(fixture, 'groups-home-card')).toHaveLength(expected);
+    }
+
+    expect(one(fixture, 'groups-redesign-load-more')).toBeNull();
+    expect(text(one(fixture, 'groups-redesign-all-loaded'))).toBe('All 45 groups loaded');
   });
 });
