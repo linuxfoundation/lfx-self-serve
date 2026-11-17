@@ -294,7 +294,8 @@ export function buildHealthMetricsEngagementAttendanceTrendView(
 
   let state: HealthMetricsEngagementAttendanceTrendView['state'] = 'trend';
   if (inProgress && count === 1) state = 'january';
-  else if (range !== 'YTD' && found.includes(null)) state = 'unavailable';
+  // A foundation the view has no rows for reads as empty on every pill, not as a year still to arrive.
+  else if (range !== 'YTD' && months.length > 0 && found.includes(null)) state = 'unavailable';
   else if (ratedMonths === 0) state = 'empty';
   else if (fullRated.length < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) state = 'insufficient';
 
@@ -751,10 +752,14 @@ function buildAttendanceTrendPoint(
     monthLabel: `${name} ${year}${isInProgress ? ' (to date)' : ''}`,
     rate: isRatedAttendanceMonth(month) ? (month.attendancePct as number) * 100 : null,
     rateLabel: formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld),
-    meetingsLabel:
-      month.meetingsHeld === null ? '—' : `${formatHealthMetricsEngagementCount(month.meetingsHeld)} ${month.meetingsHeld === 1 ? 'meeting' : 'meetings'}`,
+    meetingsLabel: formatAttendanceTrendMeetings(month.meetingsHeld),
     isInProgress,
   };
+}
+
+function formatAttendanceTrendMeetings(meetingsHeld: number | null): string {
+  if (meetingsHeld === null) return '—';
+  return `${formatHealthMetricsEngagementCount(meetingsHeld)} ${meetingsHeld === 1 ? 'meeting' : 'meetings'}`;
 }
 
 function attendanceTrendNotice(state: HealthMetricsEngagementAttendanceTrendView['state'], year: number, fullRated: number): string {
@@ -821,7 +826,7 @@ function buildAttendanceTrendMetrics(
   ];
 }
 
-/** One filled line over the full months; in year to date a dashed run from the last full month ends on a hollow dot. */
+/** One filled line over the full months; in year to date a dashed run into the month in progress ends on a hollow dot. */
 function buildAttendanceTrendChart(
   points: readonly HealthMetricsEngagementAttendanceTrendPointView[],
   lastFull: number,
@@ -833,7 +838,8 @@ function buildAttendanceTrendChart(
   const series: HealthMetricsLineChartSeries[] = [
     { key: 'attendance', label: 'Attendance', color, values: rates.map((rate, index) => (index <= lastFull ? rate : null)), fill: true },
   ];
-  if (inProgress) {
+  // A month in progress below the rate rule has no point to dash into.
+  if (inProgress && rates[rates.length - 1] !== null) {
     series.push({
       key: 'in-progress',
       label: 'Attendance (month in progress)',

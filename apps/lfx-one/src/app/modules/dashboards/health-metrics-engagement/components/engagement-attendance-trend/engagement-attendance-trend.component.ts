@@ -38,8 +38,11 @@ export class EngagementAttendanceTrendComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
-  public readonly settled = output<boolean>();
+  /**
+   * Fires once the section settles, `true` when the period has nothing to show, `null` when its card says why it cannot
+   * chart yet (January, or a year the view lacks); its height changes, moving every anchor below.
+   */
+  public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
@@ -100,7 +103,7 @@ export class EngagementAttendanceTrendComponent {
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) {
-                this.settled.emit(!this.loadFailed() && this.buildView(response).state === 'empty');
+                this.settled.emit(this.loadFailed() ? false : this.verdict(this.buildView(response)));
               }
             })
           )
@@ -112,8 +115,8 @@ export class EngagementAttendanceTrendComponent {
 
   private buildView(response: HealthMetricsEngagementAttendanceTrend): HealthMetricsEngagementAttendanceTrendView {
     const range = this.chrome.selectedRange();
-    // The pill's own year, so the trend and the pill always name the same one.
-    const year = this.chrome.periods.find((period) => period.range === range)?.year ?? this.today().getUTCFullYear();
+    // Year to date on the same UTC clock that judges the month in progress; a past year is its pill's own.
+    const year = range === 'YTD' ? this.today().getUTCFullYear() : (this.chrome.periods.find((period) => period.range === range)?.year ?? 0);
     return buildHealthMetricsEngagementAttendanceTrendView(response.months, range, year, this.today());
   }
 
@@ -122,6 +125,12 @@ export class EngagementAttendanceTrendComponent {
     // A read in flight still holds the previous foundation's payload, and its own settle is still to come.
     if (this.loadFailed() || this.loading()) return;
 
-    this.settled.emit(this.view().state === 'empty');
+    this.settled.emit(this.verdict(this.view()));
+  }
+
+  /** Empty only with nothing recorded; a card that says why it cannot chart yet gives the shell no verdict. */
+  private verdict(view: HealthMetricsEngagementAttendanceTrendView): boolean | null {
+    if (view.state === 'january' || view.state === 'unavailable') return null;
+    return view.state === 'empty';
   }
 }

@@ -922,6 +922,17 @@ describe('buildHealthMetricsEngagementAttendanceTrendView', () => {
     expect(view).toMatchObject({ state: 'unavailable', notice: 'Attendance history for 2025 is not available yet.', metrics: [], chart: null });
   });
 
+  it('reads a foundation the view has no rows for as empty on a past year too', () => {
+    expect(buildHealthMetricsEngagementAttendanceTrendView([], 'COMPLETED_YEAR', 2025, today).state).toBe('empty');
+  });
+
+  it('leaves the dashed run out while the month in progress has no rate yet', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(thin(9), 'YTD', 2026, today);
+
+    expect(view.chart?.paths.map((path) => path.key)).toEqual(['attendance']);
+    expect(view.points[9]).toMatchObject({ isInProgress: true, rate: null });
+  });
+
   it('waits for January to close in year to date', () => {
     const view = buildHealthMetricsEngagementAttendanceTrendView(months(2026, [[40, 10]]), 'YTD', 2026, new Date('2026-01-12T00:00:00Z'));
 

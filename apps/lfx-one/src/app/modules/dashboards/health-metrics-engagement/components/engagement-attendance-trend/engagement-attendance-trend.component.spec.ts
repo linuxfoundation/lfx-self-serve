@@ -46,7 +46,7 @@ describe('EngagementAttendanceTrendComponent', () => {
   let getEngagementAttendanceTrend: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
-  let verdicts: boolean[];
+  let verdicts: (boolean | null)[];
 
   async function render(payload: HealthMetricsEngagementAttendanceTrend | Error = { months: months(2026, DESIGN_2026) }): Promise<void> {
     getEngagementAttendanceTrend = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -191,7 +191,8 @@ describe('EngagementAttendanceTrendComponent', () => {
 
     expect(getEngagementAttendanceTrend).not.toHaveBeenCalled();
     expect(text('engagement-attendance-trend-insufficient')).toContain('Attendance history for 2025 is not available yet.');
-    expect(verdicts).toEqual([false, false]);
+    // The card says why it cannot chart, so the shell gets no verdict and the tab's blank card is not held back.
+    expect(verdicts).toEqual([false, null]);
   });
 
   it('charts a completed year from January to December when the view holds it', async () => {
@@ -206,6 +207,22 @@ describe('EngagementAttendanceTrendComponent', () => {
     expect(text('engagement-attendance-trend-metrics-latest-label')).toBe('December 2025');
     expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-attendance-trend-table"] tbody tr')).toHaveLength(12);
     expect(el('engagement-attendance-trend-chart-line-in-progress')).toBeNull();
+  });
+
+  it('gives the shell no verdict for January in year to date', async () => {
+    vi.setSystemTime(new Date('2026-01-12T12:00:00Z'));
+    await render({ months: months(2026, [[40, 10]]) });
+
+    expect(text('engagement-attendance-trend-insufficient')).toContain('The trend starts once January closes.');
+    expect(verdicts).toEqual([null]);
+  });
+
+  it('settles empty on a past year too when the view has no rows for the foundation', async () => {
+    await render({ months: [] });
+
+    await selectYear('COMPLETED_YEAR');
+
+    expect(verdicts).toEqual([true, true]);
   });
 
   // A tab left open across a month boundary must not headline the new month's partial attendance.
