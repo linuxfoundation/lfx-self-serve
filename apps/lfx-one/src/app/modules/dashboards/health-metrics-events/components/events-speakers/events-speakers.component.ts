@@ -4,36 +4,49 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEventsSpeakersView, buildHealthMetricsEventsSpeakersYears, formatHealthMetricsEventsCount, hexToRgba } from '@lfx-one/shared/utils';
+import { HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED } from '@lfx-one/shared/constants';
+import { buildHealthMetricsEventsSpeakersView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsBarListComponent } from '../../../components/health-metrics-bar-list/health-metrics-bar-list.component';
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsColumnChartComponent } from '../../../components/health-metrics-column-chart/health-metrics-column-chart.component';
+import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
-import type { ChartData, ChartOptions } from 'chart.js';
 import type {
-  FilterPillOption,
   HealthMetricsEventsSpeakers,
+  HealthMetricsEventsSpeakersList,
   HealthMetricsEventsSpeakersQuery,
-  HealthMetricsEventsSpeakersTab,
   HealthMetricsEventsSpeakersView,
-  HealthMetricsEventsSpeakersYearView,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * `#spk` — the CFP pipeline: accepted proposals, status mix, proposals per year, the top organizations and
- * the latest proposals. One read carries all four periods, so a period or tab change re-projects it.
+ * `#spk` — the CFP pipeline: the metrics row, proposals by year by status, then the latest proposals or the companies
+ * that submitted the most. One read carries all four periods, so a period change re-projects it.
  */
 @Component({
   selector: 'lfx-events-speakers',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [
+    EmptyStateComponent,
+    HealthMetricsBarListComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsColumnChartComponent,
+    HealthMetricsMetricsRowComponent,
+    Skeleton,
+    TableComponent,
+    UiBadgeComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
+  ],
   templateUrl: './events-speakers.component.html',
 })
 export class EventsSpeakersComponent {
@@ -49,51 +62,19 @@ export class EventsSpeakersComponent {
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly tab = signal<HealthMetricsEventsSpeakersTab>(HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS[0].id);
-  protected readonly tabOptions: FilterPillOption[] = [...HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS];
+  protected readonly listOptions = HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS;
+  /** Recent proposals or the most active companies, as the switch under the chart picks. */
+  protected readonly list = signal<HealthMetricsEventsSpeakersList>(HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS[0].id);
 
   protected readonly query: Signal<HealthMetricsEventsSpeakersQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
   }));
   protected readonly response: Signal<HealthMetricsEventsSpeakers> = this.initResponse();
   protected readonly view: Signal<HealthMetricsEventsSpeakersView> = computed(() =>
-    buildHealthMetricsEventsSpeakersView(this.response(), this.chrome.selectedRange(), this.tab())
+    buildHealthMetricsEventsSpeakersView(this.response(), this.chrome.selectedRange())
   );
   /** Nothing measured for the foundation or the period; the shell shows the section's empty state instead. */
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
-
-  // Keyed on the response alone, so a period or tab change does not rebuild the chart.
-  protected readonly years: Signal<HealthMetricsEventsSpeakersYearView[]> = computed(() => buildHealthMetricsEventsSpeakersYears(this.response()));
-  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.years()));
-  /** Names what the canvas depicts; the per-year values live in the adjacent table. */
-  protected readonly chartSummaryLabel: Signal<string> = computed(() => {
-    const years = this.years();
-    if (years.length === 0) return 'Proposals per year';
-    return `Bar chart of proposals per year, ${years[0].year} to ${years[years.length - 1].year}. The same figures follow in a table.`;
-  });
-  protected readonly chartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: true,
-        callbacks: {
-          // An unmeasured year has nothing to label, so its row is dropped.
-          label: (item) => (item.parsed.y === null ? '' : `Proposals: ${formatHealthMetricsEventsCount(item.parsed.y)}`),
-        },
-      },
-    },
-    scales: {
-      x: { grid: { display: false }, ticks: { color: lfxColors.gray[500], font: { size: 10 } } },
-      y: {
-        beginAtZero: true,
-        grid: { color: lfxColors.gray[200] },
-        border: { display: false },
-        ticks: { color: lfxColors.gray[500], font: { size: 10 } },
-      },
-    },
-  };
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -104,12 +85,12 @@ export class EventsSpeakersComponent {
     }
   }
 
-  protected onTabChange(id: string): void {
-    const option = HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS.find((candidate) => candidate.id === id);
+  protected onListChange(id: string | null): void {
+    const option = HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS.find((candidate) => candidate.id === id);
     if (!option) return;
 
-    this.tab.set(option.id);
-    // The list's length moves with the tab, and every anchor below with it.
+    this.list.set(option.id);
+    // The two lists differ in height, and every anchor below moves with it.
     if (!this.loadFailed() && !this.loading()) this.settled.emit(isEmptyView(this.view()));
   }
 
@@ -142,7 +123,7 @@ export class EventsSpeakersComponent {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen)
-                this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsSpeakersView(response, this.chrome.selectedRange(), this.tab())));
+                this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsSpeakersView(response, this.chrome.selectedRange())));
             })
           )
         )
@@ -156,24 +137,6 @@ export class EventsSpeakersComponent {
     if (this.loadFailed() || this.loading()) return;
 
     this.settled.emit(isEmptyView(this.view()));
-  }
-
-  /** Proposals submitted per year; an unmeasured year stays `null` so its slot is empty, and the open year is drawn lighter. */
-  private buildChart(years: HealthMetricsEventsSpeakersYearView[]): ChartData<'bar'> {
-    const color = lfxColors.blue[500];
-
-    return {
-      labels: years.map((year) => String(year.year)),
-      datasets: [
-        {
-          label: 'Proposals',
-          data: years.map((year) => year.submitted),
-          backgroundColor: years.map((year) => (year.isPartialYear ? hexToRgba(color, 0.4) : color)),
-          borderRadius: 2,
-          maxBarThickness: 28,
-        },
-      ],
-    } as ChartData<'bar'>;
   }
 }
 

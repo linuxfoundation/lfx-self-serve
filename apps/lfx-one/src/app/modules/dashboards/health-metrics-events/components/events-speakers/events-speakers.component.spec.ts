@@ -36,6 +36,7 @@ function proposal(overrides: Partial<HealthMetricsEventsSpeakersProposal> = {}):
     range: 'YTD',
     jobTitle: 'Platform Engineer',
     organizationName: 'Acme Motors',
+    logoUrl: '',
     unaffiliated: false,
     eventName: 'Sample Summit',
     sessionTitle: 'Scaling sample workloads',
@@ -50,8 +51,8 @@ function speakers(overrides: Partial<HealthMetricsEventsSpeakers> = {}): HealthM
   return {
     periods: [period(), period({ range: 'COMPLETED_YEAR', submitted: 2000, accepted: 500, changes: { speakers: 0.1 } })],
     organizations: [
-      { accountId: 'acct-acme', accountName: 'Acme Motors', periods: [{ range: 'YTD', submitted: 40, rank: 1 }] },
-      { accountId: 'acct-beta', accountName: 'Beta Coastal', periods: [{ range: 'YTD', submitted: 20, rank: 2 }] },
+      { accountId: 'acct-acme', accountName: 'Acme Motors', logoUrl: '', periods: [{ range: 'YTD', submitted: 40, rank: 1 }] },
+      { accountId: 'acct-beta', accountName: 'Beta Coastal', logoUrl: '', periods: [{ range: 'YTD', submitted: 20, rank: 2 }] },
     ],
     unaffiliated: [{ range: 'YTD', submitted: 90 }],
     proposals: [
@@ -116,9 +117,10 @@ describe('EventsSpeakersComponent', () => {
   }
 
   function rowKeys(): string[] {
-    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="events-speakers-row-"]')).map((row) =>
-      (row as HTMLElement).dataset['testid']!.replace('events-speakers-row-', '')
-    );
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="events-speakers-proposal-"]'))
+      .map((row) => (row as HTMLElement).dataset['testid'] ?? '')
+      .filter((id) => !id.endsWith('-status'))
+      .map((id) => id.replace('events-speakers-proposal-', ''));
   }
 
   async function pickRange(range: HealthMetricsEventsSpeakersPeriod['range']): Promise<void> {
@@ -143,87 +145,72 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-loading')).toBeNull();
   });
 
-  it("renders the period's headline, side stats and status rows", async () => {
+  it("lays out the period's metrics row", async () => {
     await render();
 
-    expect(text('events-speakers-headline-value')).toBe('300');
-    // The hero sits flush in the section, as the design draws it, not inside a card.
-    expect(query('events-speakers-hero')?.classList).not.toContain('border');
-    expect(text('events-speakers-side-total-value')).toBe('1,200');
-    expect(text('events-speakers-side-acceptance-rate-value')).toBe('25%');
-    expect(text('events-speakers-side-speakers-delta')).toBe('−35%');
-    expect(text('events-speakers-status-declined-value')).toBe('800');
-    expect(text('events-speakers-count')).toBe('1,200 proposals');
-    expect(query('events-speakers-chart')).not.toBeNull();
+    expect(text('events-speakers-metrics-total-value')).toBe('1,200');
+    expect(text('events-speakers-metrics-accepted-description')).toBe('25% acceptance rate');
+    expect(text('events-speakers-metrics-speakers-trend')).toBe('−35%');
+    expect(query('events-speakers-metrics-speakers-tip')).not.toBeNull();
   });
 
-  it('stacks status over the per-year chart and titles each list with its caption', async () => {
-    await render();
-    const breakdown = query('events-speakers-breakdown');
-    // Heading and caption are separate flex items, spaced by the gap rather than a text node.
-    const heading = (testId: string): string =>
-      Array.from(query(testId)?.querySelector('h4')?.parentElement?.children ?? [])
-        .map((child) => child.textContent?.trim())
-        .join(' ');
-
-    expect(breakdown?.classList).toContain('flex-col');
-    expect(breakdown?.classList).toContain('gap-[24px]');
-    expect(Array.from(breakdown?.children ?? []).map((child) => child.getAttribute('data-testid'))).toEqual([
-      'events-speakers-status',
-      'events-speakers-by-year',
-    ]);
-    expect(heading('events-speakers-status')).toBe('Proposals by status count');
-    expect(heading('events-speakers-organizations')).toBe('Most active companies proposals submitted');
-  });
-
-  it('ranks the organizations and keeps individual speakers on their own line', async () => {
+  it('draws proposals by year as stacked status columns with a legend', async () => {
     await render();
 
-    expect(text('events-speakers-organization-acct-acme-value')).toBe('40');
-    expect(text('events-speakers-organization-acct-beta-value')).toBe('20');
-    expect(text('events-speakers-individual-value')).toBe('90 proposals submitted');
+    expect(text('events-speakers-years-heading')).toBe('Proposals by year');
+    expect([...(query('events-speakers-chart-legend')?.children ?? [])].map((item) => item.textContent?.trim())).toEqual(['Accepted', 'In review', 'Declined']);
+    expect(query(`events-speakers-chart-column-${new Date().getFullYear()}`)?.getAttribute('aria-label')).toContain('· partial year');
   });
 
-  it("lists the period's proposals, labelling an individual's and badging the status", async () => {
+  it("lists the period's latest proposals by job title, with the company, an individual's as Individual, and the status badge", async () => {
     await render();
 
     expect(rowKeys()).toEqual(['p-1', 'p-2']);
-    expect(text('events-speakers-organization-label-p-2')).toBe('Individual');
-    expect(text('events-speakers-job-title-p-1')).toBe('Platform Engineer');
-    expect(query('events-speakers-job-title-p-2')).toBeNull();
-    expect(query('events-speakers-status-badge-p-1')?.className).toContain('bg-emerald-50');
-    expect(text('events-speakers-status-badge-p-2')).toBe('Waitlisted');
+    expect(text('events-speakers-proposal-p-1')).toContain('Platform Engineer');
+    expect(text('events-speakers-proposal-p-1')).toContain('Scaling sample workloads');
+    expect(text('events-speakers-proposal-p-2')).toContain('Individual');
+    expect(text('events-speakers-proposal-p-1-status')).toBe('Accepted');
+    expect(text('events-speakers-proposal-p-2-status')).toBe('In review');
   });
 
-  it('filters the proposals by tab and re-settles', async () => {
+  it('switches to the most active companies as bars, and re-settles as the height moves', async () => {
     await render();
     lifecycle = [];
-    const chartData = fixture.componentInstance['chartData']();
 
-    fixture.componentInstance['onTabChange']('in-review');
+    fixture.componentInstance['onListChange']('companies');
     await settle();
 
-    expect(rowKeys()).toEqual(['p-2']);
-    expect(text('events-speakers-count')).toBe('100 proposals');
+    expect(query('events-speakers-proposals')).toBeNull();
+    const cells = [...(query('events-speakers-companies-row-acct-acme')?.children ?? [])].map((cell) => cell.textContent?.trim());
+    expect(cells[0]).toContain('Acme Motors');
+    expect(cells[2]).toBe('40 proposals');
     expect(lifecycle).toEqual(['settled']);
-    expect(getEventsSpeakers).toHaveBeenCalledTimes(1);
-    // The chart is keyed on the response alone, so a tab change must not rebuild it.
-    expect(fixture.componentInstance['chartData']()).toBe(chartData);
+  });
+
+  it('says so when the period has no proposal or no company', async () => {
+    await render(speakers({ proposals: [], organizations: [] }));
+
+    expect(text('events-speakers-proposals-empty')).toBe('No proposal in the selected period.');
+    fixture.componentInstance['onListChange']('companies');
+    await settle();
+    expect(text('events-speakers-companies-empty')).toBe('No company submitted a proposal in the selected period.');
   });
 
   it('re-projects a period change without re-reading, and re-settles', async () => {
     await render();
     lifecycle = [];
-    const chartData = fixture.componentInstance['chartData']();
+    const year = new Date().getFullYear();
+    const columns = () => [...fixture.nativeElement.querySelectorAll('[data-testid^="events-speakers-chart-column-"]')].length;
 
     await pickRange('COMPLETED_YEAR');
 
     expect(getEventsSpeakers).toHaveBeenCalledTimes(1);
-    expect(text('events-speakers-headline-value')).toBe('500');
+    expect(text('events-speakers-metrics-accepted-value')).toBe('500');
     expect(rowKeys()).toEqual(['p-3']);
-    expect(query('events-speakers-individual')).toBeNull();
     expect(lifecycle).toEqual(['settled']);
-    expect(fixture.componentInstance['chartData']()).toBe(chartData);
+    // The chart shows every year whatever the period.
+    expect(columns()).toBe(4);
+    expect(query(`events-speakers-chart-column-${year}`)).not.toBeNull();
   });
 
   it('settles an unmeasured period empty, with no body, rather than showing zeros', async () => {
@@ -232,7 +219,7 @@ describe('EventsSpeakersComponent', () => {
     await pickRange('COMPLETED_YEAR_2');
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-speakers-hero')).toBeNull();
+    expect(query('events-speakers-metrics')).toBeNull();
     expect(query('events-speakers-breakdown')).toBeNull();
   });
 
@@ -240,7 +227,7 @@ describe('EventsSpeakersComponent', () => {
     await render(speakers({ periods: [], organizations: [], unaffiliated: [], proposals: [] }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('events-speakers-hero')).toBeNull();
+    expect(query('events-speakers-metrics')).toBeNull();
   });
 
   it('shows the error state when the read fails, and still settles', async () => {
@@ -264,22 +251,6 @@ describe('EventsSpeakersComponent', () => {
     expect(getEventsSpeakers).toHaveBeenLastCalledWith({ foundationSlug: 'beta' });
     expect(lifecycle).toEqual(['reading', 'settled', 'reading', 'settled']);
     expect(rowKeys()).toEqual(['p-b']);
-  });
-
-  it('gives the chart a text equivalent listing every year', async () => {
-    await render();
-
-    const rows = Array.from(query('events-speakers-chart-table')?.querySelectorAll('tbody tr') ?? []).map((row) =>
-      Array.from(row.children).map((cell) => cell.textContent?.trim())
-    );
-    expect(rows).toHaveLength(4);
-    expect(rows[0][1]).toBe('not available');
-    expect(rows[2][1]).toBe('2,000');
-    expect(rows[3][0]).toMatch(/^\d{4} \(partial year\)$/);
-    expect(rows[3][1]).toBe('1,200');
-    expect(query('events-speakers-chart')?.getAttribute('aria-label')).toMatch(
-      /^Bar chart of proposals per year, \d{4} to \d{4}\. The same figures follow in a table\.$/
-    );
   });
 
   it('holds the skeleton without settling until a foundation resolves', async () => {

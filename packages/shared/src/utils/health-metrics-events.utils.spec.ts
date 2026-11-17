@@ -16,7 +16,6 @@ import {
   buildHealthMetricsEventsRegistrationsGrowthChart,
   buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSpeakersView,
-  buildHealthMetricsEventsSpeakersYears,
   buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
   formatHealthMetricsEventsOrganizationsCountLabel,
@@ -818,6 +817,7 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
       range: 'YTD',
       jobTitle: 'Staff Engineer',
       organizationName: 'Acme Motors',
+      logoUrl: 'https://logos.example/acme.png',
       unaffiliated: false,
       eventName: 'Summit',
       sessionTitle: 'A talk',
@@ -832,9 +832,9 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     return {
       periods: [speakersPeriod(), speakersPeriod({ range: 'COMPLETED_YEAR_3', submitted: 4000, changes: null })],
       organizations: [
-        { accountId: 'org-b', accountName: 'Vendor Corp', periods: [{ range: 'YTD', submitted: 200, rank: 2 }] },
-        { accountId: 'org-a', accountName: 'Acme Motors', periods: [{ range: 'YTD', submitted: 400, rank: 1 }] },
-        { accountId: 'org-c', accountName: 'Other Co', periods: [{ range: 'COMPLETED_YEAR', submitted: 90, rank: 1 }] },
+        { accountId: 'org-b', accountName: 'Vendor Corp', logoUrl: '', periods: [{ range: 'YTD', submitted: 200, rank: 2 }] },
+        { accountId: 'org-a', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', periods: [{ range: 'YTD', submitted: 400, rank: 1 }] },
+        { accountId: 'org-c', accountName: 'Other Co', logoUrl: '', periods: [{ range: 'COMPLETED_YEAR', submitted: 90, rank: 1 }] },
       ],
       unaffiliated: [{ range: 'YTD', submitted: 1351 }],
       proposals: [
@@ -847,106 +847,76 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     };
   }
 
-  it('builds the headline and side stats with the speakers change', () => {
-    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+  it('lays out total, accepted with its acceptance rate, in review, and unique speakers with its change and tooltip', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD');
 
-    expect(view.foundationMeasured).toBe(true);
-    expect(view.measured).toBe(true);
-    expect(view.countLabel).toBe('6,283 proposals');
-    expect(view.headline).toMatchObject({ key: 'accepted', label: 'Accepted proposals', value: '348', delta: null });
-    expect(view.side.map((stat) => stat.value)).toEqual(['6,283', '6%', '3,559']);
-    expect(view.side[2]).toMatchObject({ delta: '−14%', deltaDirection: 'down' });
-  });
-
-  it('leaves the speakers stat without a delta for an uncompared period', () => {
-    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR_3', 'all');
-
-    expect(view.side[2]).toMatchObject({ delta: null, deltaDirection: 'neutral' });
-  });
-
-  it('counts the chosen tab, singular for one', () => {
-    const data = speakers({ periods: [speakersPeriod({ inReview: 1 })] });
-
-    expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'accepted').countLabel).toBe('348 proposals');
-    expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'in-review').countLabel).toBe('1 proposal');
-  });
-
-  it('ranks the status rows by count, largest first', () => {
-    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
-
-    expect(view.statusRows.map((row) => row.key)).toEqual(['in-review', 'declined', 'accepted']);
-    expect(view.statusRows[0]).toEqual({ key: 'in-review', label: 'In review', valueLabel: '3,447' });
-  });
-
-  it('charts the four years oldest first, marking the open one partial', () => {
-    expect(buildHealthMetricsEventsSpeakersYears(speakers())).toEqual([
-      {
-        year: getYearForRange('COMPLETED_YEAR_3'),
-        submitted: 4000,
-        isPartialYear: false,
-        yearLabel: `${getYearForRange('COMPLETED_YEAR_3')}`,
-        submittedLabel: '4,000',
-      },
-      {
-        year: getYearForRange('COMPLETED_YEAR_2'),
-        submitted: null,
-        isPartialYear: false,
-        yearLabel: `${getYearForRange('COMPLETED_YEAR_2')}`,
-        submittedLabel: 'not available',
-      },
-      {
-        year: getYearForRange('COMPLETED_YEAR'),
-        submitted: null,
-        isPartialYear: false,
-        yearLabel: `${getYearForRange('COMPLETED_YEAR')}`,
-        submittedLabel: 'not available',
-      },
-      { year: getYearForRange('YTD'), submitted: 6283, isPartialYear: true, yearLabel: `${getYearForRange('YTD')} (partial year)`, submittedLabel: '6,283' },
+    expect(view).toMatchObject({ foundationMeasured: true, measured: true });
+    expect(view.metrics.map(({ key, label, value, description, trend }) => [key, label, value, description, trend])).toEqual([
+      ['total', 'Total proposals', '6,283', undefined, undefined],
+      ['accepted', 'Accepted proposals', '348', '6% acceptance rate', undefined],
+      ['in-review', 'In review', '3,447', undefined, undefined],
+      ['speakers', 'Unique speakers', '3,559', undefined, '−14%'],
     ]);
+    expect(view.metrics[3].tip).toContain('A speaker with several talks counts once');
   });
 
-  it("ranks the period's organizations and keeps individuals on their own line", () => {
-    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+  it('leaves Unique speakers without a change for an uncompared period', () => {
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR_3').metrics[3].trend).toBeUndefined();
+  });
 
-    expect(view.organizations).toEqual([
-      { key: 'org-a', label: 'Acme Motors', valueLabel: '400' },
-      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200' },
+  it('charts every year the view holds by status, the current year at full colour and titled a partial year', () => {
+    const year = new Date().getFullYear();
+    const { chart } = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR_3');
+
+    expect(chart.columns.map((column) => [column.label, column.total, column.opacity])).toEqual([
+      [`${year - 3}`, '4,000', 0.35],
+      [`${year - 2}`, '', 0.35],
+      [`${year - 1}`, '', 0.35],
+      [`${year}`, '6,283', 1],
     ]);
-    expect(view.individualLabel).toBe('1,351 proposals submitted');
-    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
-    expect(buildHealthMetricsEventsSpeakersView(speakers({ unaffiliated: [{ range: 'YTD', submitted: 1 }] }), 'YTD', 'all').individualLabel).toBe(
-      '1 proposal submitted'
-    );
+    expect(chart.columns[3].tip.title).toBe(`${year} · partial year`);
+    expect(chart.series.map((series) => series.label)).toEqual(['Accepted', 'In review', 'Declined']);
+    expect([chart.heightPx, chart.barWidthPx]).toEqual([200, 40]);
   });
 
-  it("lists the period's proposals most recent first, filtered by the tab", () => {
-    const all = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
+  it("lists the period's latest proposals by job title, the session title under it, with company, date and status", () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD');
 
-    expect(all.proposals.map((row) => row.proposal.proposalKey)).toEqual(['p-1', 'p-ind', 'p-old']);
-    expect(all.proposals[1]).toMatchObject({ organizationLabel: 'Individual', statusClass: 'bg-gray-100 text-gray-600' });
-    expect(all.proposals[0]).toMatchObject({ organizationLabel: 'Acme Motors', statusClass: 'bg-emerald-50 text-emerald-700' });
-    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'in-review').proposals.map((row) => row.proposal.proposalKey)).toEqual(['p-old']);
+    expect(view.proposals.map((row) => row.key)).toEqual(['p-1', 'p-ind', 'p-old']);
+    expect(view.proposals[0]).toEqual({
+      key: 'p-1',
+      title: 'Staff Engineer',
+      description: 'A talk',
+      company: { kind: 'company', name: 'Acme Motors', logoUrl: 'https://logos.example/acme.png' },
+      eventName: 'Summit',
+      dateLabel: 'Mar 10, 2026',
+      statusLabel: 'Accepted',
+      statusTone: 'success',
+    });
+    expect(view.proposals[1]).toMatchObject({ company: { name: 'Individual', logoUrl: '' }, statusLabel: 'Declined', statusTone: 'danger' });
+    expect(view.proposals[2]).toMatchObject({ statusLabel: 'In review', statusTone: 'warning' });
   });
 
-  it('caps the list at ten and shows a dash for a missing organization or date', () => {
-    const many = Array.from({ length: 12 }, (_, index) => proposal({ proposalKey: `p-${String(index).padStart(2, '0')}` }));
-    const view = buildHealthMetricsEventsSpeakersView(speakers({ proposals: many }), 'YTD', 'all');
+  it('leads with the session title when a proposal lists no job title, and caps the list at ten', () => {
+    const proposals = Array.from({ length: 12 }, (_, index) => proposal({ proposalKey: `p-${String(index).padStart(2, '0')}`, jobTitle: null }));
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ proposals }), 'YTD');
 
     expect(view.proposals).toHaveLength(10);
-    const bare = buildHealthMetricsEventsSpeakersView(
-      speakers({ proposals: [proposal({ organizationName: null, submissionDate: null, statusGroup: null })] }),
-      'YTD',
-      'all'
-    );
-    expect(bare.proposals[0]).toMatchObject({ organizationLabel: '—', dateLabel: '—', statusClass: 'bg-gray-100 text-gray-600' });
+    expect(view.proposals[0]).toMatchObject({ title: 'A talk', description: '' });
+  });
+
+  it("ranks the period's companies as bars against the most active, with their logos and no individual speakers", () => {
+    const { companies } = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD');
+
+    expect(companies.map(({ label, value, pct, company }) => [label, value, pct, company?.logoUrl])).toEqual([
+      ['Acme Motors', '400 proposals', 100, 'https://logos.example/acme.png'],
+      ['Vendor Corp', '200 proposals', 50, ''],
+    ]);
   });
 
   it('reads as unmeasured with no period, and as foundation-unmeasured with none at all', () => {
-    const missing = buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all');
-    const empty = buildHealthMetricsEventsSpeakersView(speakers({ periods: [] }), 'YTD', 'all');
-
-    expect(missing).toMatchObject({ foundationMeasured: true, measured: false, countLabel: '' });
-    expect(empty.foundationMeasured).toBe(false);
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR')).toMatchObject({ foundationMeasured: true, measured: false });
+    expect(buildHealthMetricsEventsSpeakersView(speakers({ periods: [] }), 'YTD')).toMatchObject({ foundationMeasured: false, measured: false });
   });
 });
 

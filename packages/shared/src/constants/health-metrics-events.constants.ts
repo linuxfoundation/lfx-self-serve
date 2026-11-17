@@ -19,7 +19,7 @@ import type {
   HealthMetricsEventsSnapshot,
   HealthMetricsEventsSnapshotPeriodOption,
   HealthMetricsEventsSpeakers,
-  HealthMetricsEventsSpeakersTabOption,
+  HealthMetricsEventsSpeakersListOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
@@ -252,26 +252,36 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED: HealthMetricsEventsSpeak
 export const HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
 
 /** Organizations ranked per period; individual speakers sit on their own line, outside the ranking. */
-export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 5;
+export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 10;
 
 /** Recent proposals listed per period and tab. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS = 10;
 
 /** Status groups as the view names them, with each group's badge. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS = {
-  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700' },
-  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700' },
-  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600' },
-} as const;
+  accepted: { label: 'Accepted', viewValue: 'Accepted', tone: 'success' },
+  'in-review': { label: 'In review', viewValue: 'In review', tone: 'warning' },
+  declined: { label: 'Declined', viewValue: 'Declined', tone: 'danger' },
+} as const satisfies Record<string, { label: string; viewValue: string; tone: UiBadgeTone }>;
 
-/** Badge for a proposal whose status the view left ungrouped. */
-export const HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS = 'bg-gray-100 text-gray-600';
+/** Proposals by year's stacked series, bottom up: accepted blue-500, in review amber-500, declined red-500. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_SERIES: readonly HealthMetricsColumnChartSeries[] = [
+  { key: 'accepted', label: 'Accepted', color: lfxColors.blue[500] },
+  { key: 'in-review', label: 'In review', color: lfxColors.amber[500] },
+  { key: 'declined', label: 'Declined', color: lfxColors.red[500] },
+];
 
-/** The tabs over the section; the first is the default. */
-export const HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS: readonly HealthMetricsEventsSpeakersTabOption[] = [
-  { id: 'all', label: 'All proposals' },
-  { id: 'accepted', label: 'Accepted' },
-  { id: 'in-review', label: 'In review' },
+/** Proposals by year's plot height, as the design draws it. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_CHART_HEIGHT_PX = 200;
+
+/** The tooltip on Unique speakers. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_UNIQUE_TIP =
+  'People who presented at least one session at an event this period. A speaker with several talks counts once.';
+
+/** The switch under the proposals chart; the first option is the default. */
+export const HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS: readonly HealthMetricsEventsSpeakersListOption[] = [
+  { id: 'proposals', label: 'Recent proposals' },
+  { id: 'companies', label: 'Most active companies' },
 ];
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
