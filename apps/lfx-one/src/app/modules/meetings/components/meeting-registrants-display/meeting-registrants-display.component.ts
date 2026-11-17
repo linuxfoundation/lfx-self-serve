@@ -124,6 +124,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
   public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
   public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
+  /** The parent could not confirm a complete roster; suppress duplicate-sensitive self-adds. */
+  public readonly initialRegistrantsFailed: InputSignal<boolean> = input<boolean>(false);
   /** The occurrence the host is showing; lets a guest be invited to that date only. */
   public readonly occurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
 
@@ -753,7 +755,7 @@ export class MeetingRegistrantsDisplayComponent {
               const allDatesOnly = includeRsvp && !!meeting.recurrence && !occurrenceId;
               const registrantsObservable = useMyEndpoint
                 ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, allDatesOnly)
-                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, undefined, true, allDatesOnly);
+                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, this.showAddRegistrant(), undefined, true, allDatesOnly);
 
               return registrantsObservable.pipe(
                 catchError(() => {
@@ -1024,7 +1026,7 @@ export class MeetingRegistrantsDisplayComponent {
         this.pastMeeting() ||
         !this.showAddRegistrant() ||
         this.registrantsLoading() ||
-        (!this.externallyManaged() && this.internalLoadFailed())
+        (this.externallyManaged() ? this.initialRegistrantsFailed() : this.internalLoadFailed())
       ) {
         return false;
       }

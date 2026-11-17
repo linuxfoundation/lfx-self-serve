@@ -280,6 +280,21 @@ describe('MeetingJoinComponent', () => {
     expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
   });
 
+  it('marks a failed roster as unconfirmed until a later fetch succeeds', async () => {
+    getMyMeetingRegistrants.mockReturnValue(throwError(() => new Error('roster fetch failed')));
+    const component = await createComponent();
+    const failed = () => (component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed();
+
+    expect(failed()).toBe(true);
+    expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+
+    getMyMeetingRegistrants.mockReturnValue(of([]));
+    component.onRegistrantsRefreshRequested(0);
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(failed()).toBe(false);
+  });
+
   // The BFF returns no roster to an invitee when the organizer hides attendees, so the page must not
   // offer a guest list it cannot fill.
   describe('guest list visibility for invitees', () => {
@@ -533,6 +548,7 @@ describe('MeetingJoinComponent', () => {
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(10);
     expect(component.additionalRegistrantsCount()).toBe(2);
     expect((component as unknown as { registrantsLoading: () => boolean }).registrantsLoading()).toBe(false);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(true);
 
     // A follow-up refetch that actually observes growth is the only way to prove the pad above
     // isn't just a leftover value the failure path left untouched — it must still be able to
@@ -542,6 +558,7 @@ describe('MeetingJoinComponent', () => {
 
     expect((component as unknown as { registrants: () => MeetingRegistrant[] }).registrants()).toHaveLength(11);
     expect(component.additionalRegistrantsCount()).toBe(1);
+    expect((component as unknown as { registrantsLoadFailed: () => boolean }).registrantsLoadFailed()).toBe(false);
   });
 
   it("falls back to an empty roster instead of leaking a previous occurrence's roster when the refetch for a newly-selected occurrence fails", async () => {

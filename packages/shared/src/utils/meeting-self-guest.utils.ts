@@ -6,10 +6,10 @@ import type { CombinedProfile, MeetingHostCandidate, MeetingInviteEmail, Meeting
 /**
  * Builds the signed-in user as a meeting guest for the "Add myself" action.
  *
- * Every source but the session is optional, because each comes from a separate lookup that may
- * fail on its own; a missing one falls through to the next source. The invite goes to the
- * meeting-invite preference when the user set one, since that is where they asked to receive
- * meeting invitations, else to the profile's primary email, else to the session email.
+ * Every source is optional: the session may be absent, and the other sources come from separate
+ * lookups that may fail on their own. A missing source falls through to the next one. The invite
+ * goes to the meeting-invite preference when the user set one, since that is where they asked to
+ * receive meeting invitations, else to the profile's primary email, else to the session email.
  *
  * @returns `null` when no source has an email, since a guest cannot be invited without one
  */

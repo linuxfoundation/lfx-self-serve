@@ -713,12 +713,29 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     const { button } = await mount({ fetched: of([listed('someone@acme-motors.example')]) });
 
     expect(button()).not.toBeNull();
+    expect(TestBed.inject(MeetingService).getMeetingRegistrants).toHaveBeenCalledWith('meeting-1', false, undefined, true, undefined, true, false);
   });
 
   it('is hidden when the drawer fetch failed, since the list may be incomplete', async () => {
     const { button } = await mount({ fetched: throwError(() => new Error('upstream down')) });
 
     expect(button()).toBeNull();
+  });
+
+  it('hides the action after a parent-supplied roster fails, then restores it after recovery', async () => {
+    const { fixture, button } = await mount();
+    expect(button()).not.toBeNull();
+
+    fixture.componentRef.setInput('initialRegistrantsFailed', true);
+    fixture.detectChanges();
+    expect(button()).toBeNull();
+
+    fixture.componentInstance.onAddSelf();
+    expect(addMeetingRegistrants).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('initialRegistrantsFailed', false);
+    fixture.detectChanges();
+    expect(button()).not.toBeNull();
   });
 
   it('is hidden when the profile lacks a last name, since the add needs both names', async () => {

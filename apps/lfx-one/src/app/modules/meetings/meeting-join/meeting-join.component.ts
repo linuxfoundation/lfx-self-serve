@@ -404,6 +404,8 @@ export class MeetingJoinComponent implements OnInit {
   // skeleton on first paint instead of a premature "0 of 0" — cleared once the initial fetch
   // resolves, including the early-return branches that never issue a request (GH-1731).
   protected registrantsLoading: WritableSignal<boolean> = signal(true);
+  // A stale or empty fallback is not a confirmed roster for duplicate-sensitive guest actions.
+  protected readonly registrantsLoadFailed: WritableSignal<boolean> = signal(false);
   // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
   private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
   // Snapshot of the roster size immediately before a refresh was requested — lets the refetch
@@ -1713,9 +1715,11 @@ export class MeetingJoinComponent implements OnInit {
             // No fetch will happen on this branch (unauthenticated, not allowed to see the guests, or
             // a past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
+            this.registrantsLoadFailed.set(false);
             return of([] as MeetingRegistrant[]);
           }
           this.registrantsLoading.set(true);
+          this.registrantsLoadFailed.set(false);
           const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence });
           const allDatesOnly = isMeetingInviteResponsesEnabled(meeting) && !!meeting.recurrence && !occurrenceId;
           return this.meetingService.getMyMeetingRegistrants(meeting.id, true, occurrenceId, false, allDatesOnly).pipe(
@@ -1732,6 +1736,7 @@ export class MeetingJoinComponent implements OnInit {
               this.registrantsRosterKey.set(this.buildRegistrantsRosterKey(meeting.id, occurrenceId));
             }),
             catchError((error) => {
+              this.registrantsLoadFailed.set(true);
               // A failed refetch for the SAME meeting+occurrence must not reach reconcileOptimisticPad
               // as an empty list — that would look like "the roster shrank to zero" and zero out a
               // pending pad for guests that were actually added. But if the last successful fetch

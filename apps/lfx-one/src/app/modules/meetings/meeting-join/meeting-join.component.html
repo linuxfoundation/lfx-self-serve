@@ -978,6 +978,7 @@
           [myMeetingRegistrants]="true"
           [initialRegistrants]="registrants()"
           [initialRegistrantsLoading]="registrantsLoading()"
+          [initialRegistrantsFailed]="registrantsLoadFailed()"
           [visible]="showRegistrants()"
           (refreshRequested)="onRegistrantsRefreshRequested($event)">
         </lfx-meeting-registrants-display>

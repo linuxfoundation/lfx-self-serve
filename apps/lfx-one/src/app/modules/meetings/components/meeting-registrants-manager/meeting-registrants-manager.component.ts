@@ -464,7 +464,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
     this.loadFailed.set(false);
     this.meetingService
-      .getMeetingRegistrants(uid, false)
+      .getMeetingRegistrants(uid, false, undefined, true)
       .pipe(
         take(1),
         catchError((error) => {

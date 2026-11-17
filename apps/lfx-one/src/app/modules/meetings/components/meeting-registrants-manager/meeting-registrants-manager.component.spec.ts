@@ -146,6 +146,14 @@ describe('add myself', () => {
     });
   });
 
+  it('requires a complete roster before offering duplicate-sensitive self-adds', async () => {
+    const fetch = vi.spyOn(TestBed.inject(MeetingService), 'getMeetingRegistrants');
+    const { fixture } = await render();
+
+    expect(fetch).toHaveBeenCalledWith('meeting-1', false, undefined, true);
+    await load(fixture, []);
+  });
+
   it('is hidden while the invitation list is loading, then offered when the user is not on it', async () => {
     const { fixture, button } = await render();
     expect(button()).toBeNull();
