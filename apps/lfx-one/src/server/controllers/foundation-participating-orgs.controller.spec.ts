@@ -40,7 +40,7 @@ async function exportCsv(query: Record<string, string>) {
     send: vi.fn(),
     status: vi.fn(() => res),
     end: vi.fn(),
-  } as Partial<Response> as Response;
+  } as unknown as Response;
   const next = vi.fn();
   await new FoundationParticipatingOrgsController().export({ query } as unknown as Request, res, next);
   return { headers, next };
