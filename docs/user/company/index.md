@@ -50,8 +50,7 @@ You can see how the selected company takes part in Linux Foundation foundations 
   - **Training & Certification** shows the courses and certifications the company's people enrolled in or completed
   - **Meetings** shows how the company's employees take part in project meetings and how that adds to its influence on each project
   - **Groups** shows the working groups and committees where the company's employees hold seats, and who holds them
-  - **Crowdfunding Initiatives** shows the crowdfunding initiatives run on behalf of the company, if you are an Admin granted directly on it
-  - **Crowdfunding Donations** shows the crowdfunding donations made on behalf of the company
+  - **Crowdfunding** has an **Initiatives** tab, with the crowdfunding initiatives run on behalf of the company (if you are an Admin granted directly on it), and a **Donations** tab, with the crowdfunding donations made on behalf of the company
 - **EasyCLA** lets you view the corporate CLAs the company holds and, as a CLA Manager named on one, manage it
 - **Company Profile** shows the company's logo, description, website, employees, industry, sector and addresses and, if you can edit the company, lets you change its logo, description, website, Crunchbase profile, number of employees, industry and sector
 
@@ -61,7 +60,7 @@ Your own signed agreements, as a contributor, are on the [CLAs](../account/my-cl
 
 ## Who can use the Company lens?
 
-You can open a company in the Company lens when you hold a role on it: an admin or viewer role, including one inherited from a related company, or a CLA Manager or initial CLA Manager designee role. An admin or viewer can open every page in the Company lens sidebar, and **Crowdfunding Initiatives** appears there only for an Admin granted directly on that company. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. To give someone an admin or viewer role, see [Manage Company Lens Access](./manage-company-lens-access/).
+You can open a company in the Company lens when you hold a role on it: an admin or viewer role, including one inherited from a related company, or a CLA Manager or initial CLA Manager designee role. An admin or viewer can open every page in the Company lens sidebar, and the **Initiatives** tab of **Crowdfunding** appears there only for an Admin granted directly on that company. A CLA Manager, or an initial CLA Manager designee, with no other role on that company sees only **EasyCLA**. To give someone an admin or viewer role, see [Manage Company Lens Access](./manage-company-lens-access/).
 
 ## How do I open the Company lens?
 

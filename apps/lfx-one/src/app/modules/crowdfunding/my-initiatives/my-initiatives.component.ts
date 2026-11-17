@@ -49,6 +49,8 @@ export class MyInitiativesComponent {
   // it lists the caller's own initiatives.
   private readonly lens = this.route.snapshot.data['lens'] as Lens | undefined;
   private readonly isOrgLens = this.lens === 'org';
+  // Shown as a tab of the Company lens Crowdfunding page (#5838), whose shell owns the page header and its actions.
+  protected readonly embedded = this.route.snapshot.data['embedded'] === true;
   protected readonly isLensPage = this.isOrgLens || NAV_LENSES.includes(this.lens as NavLens);
 
   // ─── Simple WritableSignals ───────────────────────────────────────────────

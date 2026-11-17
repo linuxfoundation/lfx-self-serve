@@ -18,7 +18,7 @@ Anyone who can view the selected company in the **Company** lens.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to the **Company** lens and select the company.
-3. Select **Crowdfunding Donations** from the left navigation sidebar.
+3. Select **Crowdfunding** from the left navigation sidebar, then open the **Donations** tab.
 
 ## What the page shows
 

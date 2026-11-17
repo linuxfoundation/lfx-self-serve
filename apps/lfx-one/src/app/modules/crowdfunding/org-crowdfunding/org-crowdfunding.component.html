@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-crowdfunding">
+  <lfx-page-header [title]="'Crowdfunding — ' + companyName()" titleTestId="org-crowdfunding-title">
+    @if (activeTab() === 'initiatives') {
+      <div pageHeaderActions class="flex items-center gap-6">
+        <lfx-button
+          label="New Initiative"
+          icon="fa-light fa-arrow-up-right-from-square"
+          iconPos="right"
+          severity="secondary"
+          [outlined]="true"
+          size="small"
+          [href]="newInitiativeUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="new-initiative-button" />
+      </div>
+    }
+  </lfx-page-header>
+
+  <div
+    role="tablist"
+    aria-label="Crowdfunding sections"
+    class="flex items-center gap-1 border-b border-gray-200"
+    data-testid="crowdfunding-tab-bar"
+    (keydown)="onTabKeydown($event)">
+    @for (tab of tabs(); track tab.id) {
+      <button
+        type="button"
+        role="tab"
+        [id]="'crowdfunding-tab-trigger-' + tab.id"
+        [attr.aria-selected]="activeTab() === tab.id"
+        [attr.aria-controls]="'crowdfunding-tab-panel'"
+        [attr.tabindex]="activeTab() === tab.id ? 0 : -1"
+        class="flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors"
+        [class.border-blue-600]="activeTab() === tab.id"
+        [class.text-blue-600]="activeTab() === tab.id"
+        [class.border-transparent]="activeTab() !== tab.id"
+        [class.text-gray-500]="activeTab() !== tab.id"
+        [class.hover:text-gray-700]="activeTab() !== tab.id"
+        [attr.data-testid]="'crowdfunding-tab-' + tab.id"
+        (click)="switchTab(tab.id)">
+        <i [class]="tab.icon" aria-hidden="true"></i>
+        {{ tab.label }}
+      </button>
+    }
+  </div>
+
+  <div role="tabpanel" id="crowdfunding-tab-panel" [attr.aria-labelledby]="'crowdfunding-tab-trigger-' + activeTab()">
+    <router-outlet />
+  </div>
+</div>
