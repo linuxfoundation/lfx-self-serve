@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
 import { MentorshipProgramSubmitter } from '@lfx-one/shared/interfaces';
-import { isMailtoSafeEmail, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { isMailtoSafeEmail, mentorshipPersonAvatarClass, mentorshipPersonInitials, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
 
 /**
  * The line under a program's title on the admin program page and the review page: when the program was created or
@@ -22,11 +22,19 @@ import { isMailtoSafeEmail, mentorshipPersonAvatarClass, mentorshipPersonInitial
 export class ProgramMetaComponent {
   /** The date's label, e.g. "Created" on the admin page and "Submitted" on the review page. */
   public readonly dateLabel = input.required<string>();
-  /** ISO timestamp; `null` leaves the date out. */
+  /** ISO timestamp or date-only `YYYY-MM-DD`; `null` leaves the date out. */
   public readonly date = input<string | null>(null);
   /** `null` leaves the program admin out. */
   public readonly submitter = input<MentorshipProgramSubmitter | null>(null);
 
+  /**
+   * The date as an instant for `DatePipe` in UTC. `DatePipe` reads a date-only value as local midnight, which shows the
+   * previous day east of UTC, so a date-only value becomes its UTC midnight first.
+   */
+  protected readonly dateInstant = computed(() => {
+    const date = this.date();
+    return date ? toMentorshipUtcInstant(date) : null;
+  });
   /** Set when the avatar image fails to load, so the initials show instead; reset when the submitter changes. */
   protected readonly avatarFailed = linkedSignal<MentorshipProgramSubmitter | null, boolean>({ source: this.submitter, computation: () => false });
   protected readonly initials = computed(() => mentorshipPersonInitials(this.submitter()?.name ?? ''));

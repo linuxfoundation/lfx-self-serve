@@ -32,6 +32,12 @@ describe('ProgramMetaComponent', () => {
     expect(text(el, 'mentorship-program-meta-date')).toContain('Sep 15, 2026');
   });
 
+  it('shows a date-only value as that calendar day, not the day before', () => {
+    const el = render('2026-06-01', null);
+
+    expect(text(el, 'mentorship-program-meta-date')).toContain('Jun 1, 2026');
+  });
+
   it('shows the program admin with initials and a mailto link', () => {
     const el = render('2026-09-15T10:00:00Z', { name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: null });
 
