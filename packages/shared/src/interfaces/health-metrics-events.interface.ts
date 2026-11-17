@@ -28,7 +28,7 @@ export interface HealthMetricsEventsSubNavItem extends HealthMetricsL2SubNavItem
 /** One upcoming event's pace; see `resolveHealthMetricsEventsForecastStatus` for the rule. */
 export type HealthMetricsEventsForecastStatus = 'on-track' | 'at-risk' | 'action' | 'no-goal' | 'no-data';
 
-/** The forecast callout's case; the component owns each case's copy. */
+/** The forecast verdict's case; `buildHealthMetricsEventsForecastView` writes each case's copy. */
 export type HealthMetricsEventsForecastVerdictKind = 'no-goal' | 'no-data' | 'stale' | 'goal-suspect' | 'on-track' | 'short';
 
 /** Foundation scope for the forecast's event list; the period does not change what it reads. */

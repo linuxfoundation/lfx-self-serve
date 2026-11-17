@@ -21,6 +21,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES,
+  HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
@@ -94,8 +95,6 @@ const REGISTRATION_COUNTRY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_RE
 const WEEK_OVER_WEEK_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS_WEEK_OVER_WEEK';
 const SPONSORSHIPS_BY_TIER_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPONSORSHIPS_BY_TIER';
 const EVENT_REGISTRATIONS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REGISTRATIONS';
-/** Cities dbt reads as a virtual event, not a place. */
-const VIRTUAL_CITIES: readonly string[] = ['online', 'virtual'];
 
 /**
  * The forecast view `f` holds closed events and has no end date or past flag of its own; until it does, its reads keep an
@@ -1463,8 +1462,9 @@ function mapForecastEvent(row: ForecastEventRow): HealthMetricsEventsForecastEve
 /** dbt's virtual rule: a city or location naming online or virtual. Such a city is no place, so it is dropped. */
 function mapEventPlace(city: string | null, location: string | null): Pick<HealthMetricsEventsForecastEvent, 'city' | 'isVirtual'> {
   const trimmed = city?.trim() || null;
-  const virtualCity = trimmed !== null && VIRTUAL_CITIES.includes(trimmed.toLowerCase());
-  const virtualLocation = /online|virtual/i.test(location ?? '');
+  const virtualCity = trimmed !== null && HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.includes(trimmed.toLowerCase());
+  const place = (location ?? '').toLowerCase();
+  const virtualLocation = HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.some((term) => place.includes(term));
 
   return { city: virtualCity ? null : trimmed, isVirtual: virtualCity || virtualLocation };
 }

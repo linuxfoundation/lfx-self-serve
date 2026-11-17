@@ -152,8 +152,8 @@ export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEve
 }
 
 /**
- * EVT-01: upper forecast below goal is Action required, central below goal is At risk, else On track.
- * The band narrows as the event nears, so the rule calibrates itself.
+ * EVT-01: upper forecast below goal is Action required, central below goal is At risk, else On track. It counts the
+ * sub-nav's misses, which leave out a mis-entered goal; the band narrows as the event nears, so the rule calibrates itself.
  */
 export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastStatus {
   // No forecast outranks no goal: there is nothing to show either way, and the contract says No data.
@@ -166,23 +166,23 @@ export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEve
   return 'on-track';
 }
 
-/** The callout under the headline. A goal 3× under the forecast reads as stale, not as success. */
+/** The verdict note under the metrics row. A goal 3× under the forecast reads as stale, not as success. */
 export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastVerdict {
   const base = { forecast: event.forecastAvg, goal: event.goal, gap: 0, ratio: null, daysLeft: event.daysLeft };
 
   if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'summary' };
   if (!hasHealthMetricsEventsGoal(event.goal)) return { ...base, kind: 'no-goal', tone: 'summary' };
 
-  // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
+  // Mis-entered goes first, so a 10× gap reads as the sub-nav count reads it: no miss.
   const ratio = event.forecastAvg / event.goal;
   if (isHealthMetricsEventsForecastGoalSuspect(event)) return { ...base, kind: 'goal-suspect', tone: 'attention', ratio };
   if (ratio >= HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO) return { ...base, kind: 'stale', tone: 'attention', ratio };
 
-  // Branch on the raw values, as the chip does, and round only the gap shown.
+  // Branch on the raw values, as the status does, and round only the gap shown.
   const gap = Math.round(Math.abs(event.forecastAvg - event.goal));
   if (event.forecastAvg >= event.goal) return { ...base, kind: 'on-track', tone: 'healthy', gap };
 
-  // Even the high forecast missing is the chip's Action required; within the band, it needs attention.
+  // Even the high forecast missing is the status's Action required; within the band, it needs attention.
   const hopeless = event.forecastHigh !== null && event.forecastHigh < event.goal;
   return { ...base, kind: 'short', tone: hopeless ? 'action' : 'attention', gap };
 }
@@ -691,7 +691,10 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
   };
 }
 
-/** The goal bar's fill from the raw forecast, as the design colours it; an event with no forecast has no verdict. */
+/**
+ * The goal bar's fill from the raw forecast, as the design colours it, so a mis-entered goal keeps its colour while its
+ * note and sort withhold the pace. An event with no forecast has no verdict, so its bar is gray.
+ */
 function forecastFillClass(event: HealthMetricsEventsForecastEvent, goal: number | null): string {
   if (goal === null || event.forecastAvg === null) return HEALTH_METRICS_EVENTS_FORECAST_FILLS.none;
   if (event.forecastHigh !== null && event.forecastHigh < goal) return HEALTH_METRICS_EVENTS_FORECAST_FILLS.action;

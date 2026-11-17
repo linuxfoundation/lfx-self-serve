@@ -297,6 +297,18 @@ describe('forecast table helpers', () => {
     expect(fill({ goal: 550, forecastAvg: null, forecastHigh: null })).toBe('bg-gray-400');
   });
 
+  it('keeps the raw colour for a goal ten times off the forecast, which still sorts last', () => {
+    const rows = buildHealthMetricsEventsForecastRowViews([
+      event({ eventId: 'suspect', eventName: 'A suspect', goal: 5000 }),
+      event({ eventId: 'behind', registrationsNow: 50, goal: 450 }),
+    ]);
+
+    expect(rows.map((row) => [row.eventId, row.fillClass])).toEqual([
+      ['behind', 'bg-emerald-500'],
+      ['suspect', 'bg-red-400'],
+    ]);
+  });
+
   it.each([null, 0, -5])('reads a goal of %s as no goal: no goal label and an empty bar', (goal) => {
     expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ goalLabel: '', pct: 0 });
   });

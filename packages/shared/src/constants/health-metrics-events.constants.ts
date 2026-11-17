@@ -147,8 +147,11 @@ export const HEALTH_METRICS_EVENTS_FORECAST_FILLS = {
 /** A forecast this many times its goal reads as a stale goal, not an over-performing event. */
 export const HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO = 3;
 
-/** Goal and forecast this far apart, either way, is a data-entry problem: the chip is withheld. */
+/** Goal and forecast this far apart, either way, is a data-entry problem: the verdict, sort and sub-nav count withhold the pace. */
 export const HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO = 10;
+
+/** Words in an event's city or location that dbt reads as a virtual event; such a city names no place. */
+export const HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS: readonly string[] = ['online', 'virtual'];
 
 /** Rows per page of "All upcoming events". */
 export const HEALTH_METRICS_EVENTS_FORECAST_PAGE_SIZE = 10;
