@@ -4,7 +4,7 @@ description: How to join a project meeting from its LFX Self Serve link, respond
 audience: [all]
 product_area: Meetings
 tags: [meetings, join, attendee, rsvp, register, guest, zoom]
-last_updated: 2026-11-05
+last_updated: 2026-11-17
 intercom_collection: Meetings
 ---
 
@@ -57,7 +57,7 @@ If the organizer turned on **Show attendees to guests**, invited people can open
 
 ## Register for a meeting
 
-If a meeting is public and not restricted, and you haven't already been invited, a signed-in visitor sees a **Register for Meeting** button. Selecting it opens a short form: **First Name**, **Last Name**, and **Email** are required, and **Job Title** and **Company** are optional. Submitting it adds you as a registrant.
+If a meeting is public and not restricted, and you haven't already been invited, a signed-in visitor sees a **Register for Meeting** button. Selecting it opens a short form: **First Name**, **Last Name**, and **Email** are required, and **Job Title** and **Company** are optional. The company field searches as you type, and you can also keep a name that isn't in the list. Submitting it adds you as a registrant.
 
 The button doesn't appear if you aren't signed in, if you're already invited, or if the meeting is Restricted. For a Restricted meeting, ask the organizer to add you.
 
