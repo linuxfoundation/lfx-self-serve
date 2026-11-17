@@ -372,3 +372,37 @@ describe('Org Lens roll-up routes', () => {
     });
   });
 });
+
+// Company lens Crowdfunding (#5838): the Initiatives and Donations pages became tabs, and every old address must still land.
+describe('Company lens Crowdfunding routes', () => {
+  function collect(tree: Route[], predicate: (route: Route) => boolean): Route[] {
+    return tree.flatMap((route) => [...(predicate(route) ? [route] : []), ...(route.children ? collect(route.children, predicate) : [])]);
+  }
+  const orgCrowdfunding = collect(routes, (route) => route.path === 'crowdfunding' && route.data?.['lens'] === 'org');
+
+  it('mounts the page under both company address forms', () => {
+    expect(orgCrowdfunding).toHaveLength(2);
+  });
+
+  it('gives the page its two tabs, plus the initiative detail page, behind the roll-up guard', () => {
+    for (const page of orgCrowdfunding) {
+      expect(page.canActivate).toBeDefined();
+      const shell = page.children?.find((child) => child.path === '');
+      expect(shell?.children?.map((child) => child.path)).toEqual(['initiatives', 'donations']);
+      expect(shell?.children?.every((child) => child.data?.['embedded'] === true && child.data?.['lens'] === 'org')).toBe(true);
+      expect(page.children?.some((child) => child.path === 'initiatives/:slug')).toBe(true);
+    }
+  });
+
+  it('redirects the old Initiatives and Donations addresses, detail pages included, to the tabs', () => {
+    const redirects = collect(routes, (route) => route.redirectTo === 'crowdfunding/initiatives' || route.redirectTo === 'crowdfunding/donations');
+    expect(redirects.map((route) => `${route.path}>${route.redirectTo}`).sort()).toEqual([
+      'donations>crowdfunding/donations',
+      'donations>crowdfunding/donations',
+      'initiatives>crowdfunding/initiatives',
+      'initiatives>crowdfunding/initiatives',
+    ]);
+    // A prefix redirect carries the rest of the address, so `initiatives/<initiative>` lands on its detail page.
+    expect(redirects.every((route) => (route.pathMatch ?? 'prefix') === 'prefix')).toBe(true);
+  });
+});

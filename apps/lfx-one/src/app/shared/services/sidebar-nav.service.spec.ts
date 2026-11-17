@@ -622,15 +622,15 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/company/family-0014100000RootAAAA/easycla')).toBeUndefined();
   });
 
-  // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
-  it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
+  // Both Crowdfunding tabs are single-company: their endpoints take one `orgUid` (#4415, Copilot).
+  it('drops Crowdfunding in roll-up mode even with the flag on', () => {
     activeLens.set('org');
     cfOrgDonationsEnabled.set(true);
     selectedOrgUid.set('family-0014100000RootAAAA');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
-    expect(labels(items)).not.toContain('Crowdfunding Donations');
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain('Crowdfunding');
   });
 
   it('keeps Company Profile for a concrete organization', () => {
@@ -763,7 +763,7 @@ describe('SidebarNavService', () => {
     expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
   });
 
-  it('shows Initiatives right below Groups on the org lens only for a direct writer on the selected company', () => {
+  it('shows one Crowdfunding link right below Groups on the org lens for a direct writer on the selected company (#5838)', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');
     orgSegment.set('acme-inc');
@@ -771,17 +771,32 @@ describe('SidebarNavService', () => {
     const service = TestBed.inject(SidebarNavService);
 
     orgWriterSet.set(new Set(['001000000000000BBB']));
-    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/crowdfunding')).toBeUndefined();
 
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
-    const itemLabels = labels(items);
-    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/initiatives')).toEqual(
-      expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
+    const engagement = sectionItems(items, 'Company Engagement');
+    expect(findByLink(engagement, '/company/acme-inc/crowdfunding')).toEqual(
+      expect.objectContaining({ label: 'Crowdfunding', testId: 'sidebar-org-crowdfunding' })
     );
-    expect(itemLabels).not.toContain('Crowdfunding Initiatives');
-    const engagement = labels(sectionItems(items, 'Company Engagement'));
-    expect(engagement.indexOf('Crowdfunding Initiatives')).toBe(engagement.indexOf(COMMITTEE_LABEL.plural) + 1);
+    expect(labels(engagement).slice(-2)).toEqual([COMMITTEE_LABEL.plural, 'Crowdfunding']);
+    expect(labels(items)).not.toContain('Crowdfunding');
+    expect(labels(engagement)).not.toContain('Crowdfunding Initiatives');
+    expect(labels(engagement)).not.toContain('Crowdfunding Donations');
+  });
+
+  it('shows the single Crowdfunding link with the donations flag on, without a writer grant (#415, #5838)', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set('001000000000000AAA');
+    const service = TestBed.inject(SidebarNavService);
+
+    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/crowdfunding')).toBeUndefined();
+
+    cfOrgDonationsEnabled.set(true);
+    const engagement = labels(sectionItems(service.sidebarItems(), 'Company Engagement'));
+    expect(engagement.filter((label) => label.startsWith('Crowdfunding'))).toEqual(['Crowdfunding']);
+    expect(engagement.slice(-2)).toEqual([COMMITTEE_LABEL.plural, 'Crowdfunding']);
   });
 
   describe('the LF Staff Only section', () => {
@@ -810,37 +825,6 @@ describe('SidebarNavService', () => {
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('LF Staff Only');
     });
-  });
-
-  it('shows Donations right below Groups on the org lens with the flag on, without a writer grant (#415)', () => {
-    activeLens.set('org');
-    orgSegment.set('acme-inc');
-    selectedOrgUid.set('001000000000000AAA');
-    const service = TestBed.inject(SidebarNavService);
-
-    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/donations')).toBeUndefined();
-
-    cfOrgDonationsEnabled.set(true);
-    const items = service.sidebarItems();
-    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/donations')).toEqual(
-      expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' })
-    );
-    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/initiatives')).toBeUndefined();
-    expect(labels(items)).not.toContain('Crowdfunding Donations');
-    const engagement = labels(sectionItems(items, 'Company Engagement'));
-    expect(engagement.indexOf('Crowdfunding Donations')).toBe(engagement.indexOf(COMMITTEE_LABEL.plural) + 1);
-  });
-
-  it('orders Groups, Crowdfunding Initiatives, then Crowdfunding Donations at the end of Company Engagement', () => {
-    activeLens.set('org');
-    orgSegment.set('acme-inc');
-    selectedOrgUid.set('001000000000000AAA');
-    orgWriterSet.set(new Set(['001000000000000AAA']));
-    cfOrgDonationsEnabled.set(true);
-
-    const engagement = labels(sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement'));
-
-    expect(engagement.slice(-3)).toEqual([COMMITTEE_LABEL.plural, 'Crowdfunding Initiatives', 'Crowdfunding Donations']);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
