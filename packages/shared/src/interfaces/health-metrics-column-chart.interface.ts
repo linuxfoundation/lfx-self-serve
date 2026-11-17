@@ -18,6 +18,8 @@ export interface HealthMetricsColumnChartInputColumn {
   /** A second line under the label, such as `partial`; empty for none. */
   sub: string;
   values: (number | null)[] | null;
+  /** The total over the stack, as the source models it; `null` when unmeasured, which reads "—" rather than 0. */
+  total: number | null;
   /** Drawn at the design's 35% so the current column stands out. */
   muted: boolean;
   tipTitle: string;

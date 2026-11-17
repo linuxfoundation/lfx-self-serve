@@ -106,12 +106,19 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
  * times a power of ten). A chart with nothing above zero still gets an axis of 4.
  */
 export function healthMetricsLineChartCountCeiling(peak: number): number {
-  // Never below 4, so a tiny peak still labels its quarters with whole, distinct numbers.
+  return healthMetricsQuarterCeiling(peak, HEALTH_METRICS_LINE_CHART_QUARTER_STEPS);
+}
+
+/**
+ * A peak rounded up so each of the axis's four quarters is one of `steps` times a power of ten; never below 4, so a tiny
+ * peak still labels its quarters distinctly. `wholeQuarters` skips a step that would make a quarter fractional.
+ */
+export function healthMetricsQuarterCeiling(peak: number, steps: readonly number[], wholeQuarters = false): number {
   if (!Number.isFinite(peak) || peak <= 4) return 4;
 
   const quarter = peak / 4;
   const magnitude = 10 ** Math.floor(Math.log10(quarter));
-  const step = HEALTH_METRICS_LINE_CHART_QUARTER_STEPS.find((candidate) => candidate * magnitude >= quarter) ?? 10;
+  const step = steps.find((candidate) => candidate * magnitude >= quarter && (!wholeQuarters || Number.isInteger(candidate * magnitude))) ?? 10;
   return step * magnitude * 4;
 }
 

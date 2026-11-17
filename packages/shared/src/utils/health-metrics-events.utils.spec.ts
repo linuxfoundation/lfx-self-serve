@@ -20,7 +20,6 @@ import {
   buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
   formatHealthMetricsEventsOrganizationsCountLabel,
-  formatHealthMetricsEventsRevenue,
   hasHealthMetricsEventsGoal,
   formatHealthMetricsEventsPlaceLabel,
   pickHealthMetricsEventsForecastFormat,
@@ -446,13 +445,6 @@ describe('hasHealthMetricsEventsGoal', () => {
   });
 });
 
-describe('past-events labels', () => {
-  it('reads $0 revenue as measured and only null as not available', () => {
-    expect(formatHealthMetricsEventsRevenue(0)).toBe('$0');
-    expect(formatHealthMetricsEventsRevenue(null)).toBe('not available');
-  });
-});
-
 describe('buildHealthMetricsEventsAtAGlanceView', () => {
   function glancePeriod(overrides: Partial<HealthMetricsEventsAtAGlancePeriod> = {}): HealthMetricsEventsAtAGlancePeriod {
     return {
@@ -756,7 +748,13 @@ describe('buildHealthMetricsEventsRegistrationsGrowthChart', () => {
   });
 
   it('tops the axis at the largest total plus 8%, rounded up to a clean step, as the design draws 24K for 18,772', () => {
-    expect(chart([growthYear({ inPersonRegistrations: 1210, virtualRegistrations: 17562 })]).yTicks).toEqual(['24K', '18K', '12K', '6K', '0']);
+    expect(chart([growthYear({ totalRegistrations: 18772, inPersonRegistrations: 1210, virtualRegistrations: 17562 })]).yTicks).toEqual([
+      '24K',
+      '18K',
+      '12K',
+      '6K',
+      '0',
+    ]);
   });
 
   it('switches every figure between registrations and attendees', () => {
@@ -774,6 +772,17 @@ describe('buildHealthMetricsEventsRegistrationsGrowthChart', () => {
     expect(view.columns.map((column) => column.tip.title)).toEqual(['2023', '2024 · no events recorded', '2025 · partial year']);
     expect(view.columns[1]).toMatchObject({ total: '', segments: [] });
     expect(view.columns[1].tip.rows).toEqual([]);
+  });
+
+  it('takes each column\'s total from the view, and reads an unmeasured one as "—", never 0', () => {
+    const view = chart(
+      [growthYear({ totalRegistrations: 1500 }), growthYear({ year: 2024, totalAttendees: null, inPersonAttendees: null, virtualAttendees: null })],
+      'attendees'
+    );
+
+    expect(chart([growthYear({ totalRegistrations: 1500 })]).columns[0].total).toBe('1.5K');
+    expect(view.columns[1].total).toBe('');
+    expect(view.columns[1].tip.rows.map((row) => row.value)).toEqual(['—', '—', '—']);
   });
 
   it('draws nothing for a foundation with no year', () => {

@@ -14,8 +14,8 @@ function input(overrides: Partial<HealthMetricsColumnChartInput> = {}): HealthMe
       { key: 'declined', label: 'Declined', color: '#FB2C36' },
     ],
     columns: [
-      { key: '2025', label: '2025', sub: '', values: [250, 855], muted: true, tipTitle: '2025' },
-      { key: '2026', label: '2026', sub: 'partial', values: [286, null], muted: false, tipTitle: '2026 · partial year' },
+      { key: '2025', label: '2025', sub: '', values: [250, 855], total: 1105, muted: true, tipTitle: '2025' },
+      { key: '2026', label: '2026', sub: 'partial', values: [286, null], total: 286, muted: false, tipTitle: '2026 · partial year' },
     ],
     peak: 1240,
     heightPx: 200,
@@ -58,9 +58,18 @@ describe('buildHealthMetricsColumnChart', () => {
     expect(second.opacity).toBe(1);
   });
 
+  it('reads an unmeasured total as "—", never as 0, with no label above the stack', () => {
+    const view = buildHealthMetricsColumnChart(
+      input({ columns: [{ key: '2026', label: '2026', sub: '', values: [null, null], total: null, muted: false, tipTitle: '2026' }] })
+    );
+
+    expect(view.columns[0].total).toBe('');
+    expect(view.columns[0].tip.rows.at(-1)).toEqual({ label: 'Total', value: '—', color: 'transparent', separated: false });
+  });
+
   it('keeps an empty slot for a column with no data', () => {
     const view = buildHealthMetricsColumnChart(
-      input({ columns: [{ key: 'gap', label: '2024', sub: '', values: null, muted: true, tipTitle: '2024 · no events recorded' }] })
+      input({ columns: [{ key: 'gap', label: '2024', sub: '', values: null, total: null, muted: true, tipTitle: '2024 · no events recorded' }] })
     );
 
     expect(view.columns[0]).toMatchObject({ total: '', segments: [], tip: { title: '2024 · no events recorded', rows: [] } });
@@ -72,6 +81,8 @@ describe('healthMetricsColumnChartCeiling', () => {
     [20274, 24000],
     [1240, 1600],
     [380, 400],
+    [9, 12],
+    [5, 8],
     [3, 4],
     [Number.NaN, 4],
   ])('rounds a peak of %s up to %s, so each quarter is a clean step', (peak, ceiling) => {
@@ -87,6 +98,7 @@ describe('formatHealthMetricsChartCompact', () => {
     [1600, '1.6K'],
     [800, '800'],
     [1500000, '1.5M'],
+    [999960, '1M'],
   ])('writes %s as %s, as the design does', (value, label) => {
     expect(formatHealthMetricsChartCompact(value)).toBe(label);
   });

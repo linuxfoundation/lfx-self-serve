@@ -307,10 +307,10 @@ export interface HealthMetricsEventsRegistrationsGrowth {
   years: HealthMetricsEventsRegistrationsGrowthYear[];
 }
 
-/** Which count the section's toggle shows; it switches the chart and the table together. */
+/** What Registrations & growth charts, as its header switch picks. */
 export type HealthMetricsEventsRegistrationsGrowthMetric = 'registrations' | 'attendees';
 
-/** A toggle pill whose id is the metric it selects. */
+/** A header switch option whose id is the metric it picks. */
 export interface HealthMetricsEventsRegistrationsGrowthMetricOption extends FilterPillOption {
   id: HealthMetricsEventsRegistrationsGrowthMetric;
 }

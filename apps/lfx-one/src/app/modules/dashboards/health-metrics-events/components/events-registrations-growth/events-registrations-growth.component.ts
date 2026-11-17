@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS, HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsRegistrationsGrowthChart } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -36,7 +36,7 @@ export class EventsRegistrationsGrowthComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   /** Registrations or attendees, as the card header's switch picks. */
-  public readonly metric = input<HealthMetricsEventsRegistrationsGrowthMetric>('registrations');
+  public readonly metric = input<HealthMetricsEventsRegistrationsGrowthMetric>(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS[0].id);
 
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
@@ -51,7 +51,8 @@ export class EventsRegistrationsGrowthComponent {
   }));
   protected readonly response: Signal<HealthMetricsEventsRegistrationsGrowth> = this.initResponse();
   protected readonly chart: Signal<HealthMetricsColumnChartView> = computed(() =>
-    buildHealthMetricsEventsRegistrationsGrowthChart(this.response(), this.metric(), new Date().getFullYear())
+    // The UTC year, as the server's year window counts it.
+    buildHealthMetricsEventsRegistrationsGrowthChart(this.response(), this.metric(), new Date().getUTCFullYear())
   );
 
   private initResponse(): Signal<HealthMetricsEventsRegistrationsGrowth> {
@@ -82,7 +83,7 @@ export class EventsRegistrationsGrowthComponent {
             tap((response) => {
               this.loading.set(!foundationSeen);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link. Only a read with no
-              // year is empty; a metric with none keeps the section's own note and the toggle to switch back.
+              // year is empty; a metric with no figures still draws its years, so the header switch can go back.
               if (foundationSeen) this.settled.emit(!this.loadFailed() && response.years.length === 0);
             })
           )

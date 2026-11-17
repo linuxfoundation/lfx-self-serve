@@ -203,7 +203,7 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP = 100;
 /** Read-failed / no-foundation value: no years, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED: HealthMetricsEventsRegistrationsGrowth = { years: [] };
 
-/** The toggle over the chart and table; the first option is the default. */
+/** Registrations & growth's header switch; the first option is the default. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS: readonly HealthMetricsEventsRegistrationsGrowthMetricOption[] = [
   { id: 'registrations', label: 'Registrations' },
   { id: 'attendees', label: 'Attendees' },

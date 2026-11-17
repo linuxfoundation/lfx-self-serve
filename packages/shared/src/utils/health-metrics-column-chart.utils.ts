@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HEALTH_METRICS_COLUMN_CHART_MUTED_OPACITY, HEALTH_METRICS_COLUMN_CHART_QUARTER_STEPS } from '../constants/health-metrics-column-chart.constants';
+import { healthMetricsQuarterCeiling } from './health-metrics-line-chart.utils';
 
 import type {
   HealthMetricsColumnChartColumnView,
@@ -28,19 +29,14 @@ export function buildHealthMetricsColumnChart(input: HealthMetricsColumnChartInp
   };
 }
 
-/** A peak rounded up so each of the four quarters is a clean step (1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten); never below 4. */
+/** A peak rounded up so each of the four quarters is a whole, clean step (1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten). */
 export function healthMetricsColumnChartCeiling(peak: number): number {
-  if (!Number.isFinite(peak) || peak <= 4) return 4;
-
-  const quarter = peak / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(quarter));
-  const step = HEALTH_METRICS_COLUMN_CHART_QUARTER_STEPS.find((candidate) => candidate * magnitude >= quarter) ?? 10;
-  return step * magnitude * 4;
+  return healthMetricsQuarterCeiling(peak, HEALTH_METRICS_COLUMN_CHART_QUARTER_STEPS, true);
 }
 
-/** The design's chart label: `24K`, `1.6K` or `800`; one decimal under 100K, none above. */
+/** The design's chart label: `24K`, `1.6K` or `800`; one decimal under 100K, none above, and `1M` rather than `1000K`. */
 export function formatHealthMetricsChartCompact(value: number): string {
-  if (value >= 1e6) return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  if (value >= 999_950) return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
   if (value >= 1e3) return `${(value / 1e3).toFixed(value >= 1e5 ? 0 : 1).replace(/\.0$/, '')}K`;
   return String(Math.round(value));
 }
@@ -57,7 +53,7 @@ function buildColumn(input: HealthMetricsColumnChartInput, column: HealthMetrics
         return segment;
       })
     : [];
-  const total = values ? values.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
+  const total = values ? column.total : null;
   const rows: HealthMetricsChartTipRowView[] = values
     ? [
         ...input.series.map((series, index) => ({ label: series.label, value: formatValue(input, values[index]), color: series.color, separated: false })),

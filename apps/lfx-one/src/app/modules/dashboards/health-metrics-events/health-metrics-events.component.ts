@@ -85,7 +85,7 @@ export class HealthMetricsEventsComponent {
   protected readonly forecastPicker = signal<HealthMetricsEventsForecastPicker>({ options: [], eventId: null });
   protected readonly growthMetrics = HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS;
   /** Registrations & growth's header switch. */
-  protected readonly growthMetric = signal<HealthMetricsEventsRegistrationsGrowthMetric>('registrations');
+  protected readonly growthMetric = signal<HealthMetricsEventsRegistrationsGrowthMetric>(HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS[0].id);
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 

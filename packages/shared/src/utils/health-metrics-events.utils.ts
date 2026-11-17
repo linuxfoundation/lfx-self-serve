@@ -322,11 +322,6 @@ export function buildHealthMetricsEventsPastView(past: HealthMetricsEventsPast, 
   };
 }
 
-/** `$0` is a measured result; only an unmeasured revenue reads as not available. */
-export function formatHealthMetricsEventsRevenue(value: number | null): string {
-  return value === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : formatCurrency(value);
-}
-
 /**
  * One period's at-a-glance section: the metrics row, then each figure against the comparison period. Year to date and
  * the last completed year are compared with the year before, the one the view's change columns use; older years read "—".
@@ -450,16 +445,19 @@ export function buildHealthMetricsEventsRegistrationsGrowthChart(
     const year = first + index;
     const data = byYear.get(year) ?? null;
     const values = data && [attendees ? data.inPersonAttendees : data.inPersonRegistrations, attendees ? data.virtualAttendees : data.virtualRegistrations];
+    // The view's own total, which can count registrations in neither format, never a sum of the two.
+    const total = data && (attendees ? data.totalAttendees : data.totalRegistrations);
     return {
       key: String(year),
       label: String(year),
       sub: data?.isPartialYear ? 'partial' : '',
       values,
+      total,
       muted: year !== currentYear,
       tipTitle: registrationsGrowthTipTitle(year, data),
     };
   });
-  const totals = columns.map((column) => (column.values ?? []).reduce<number>((sum, value) => sum + (value ?? 0), 0));
+  const totals = columns.map((column) => column.total ?? 0);
 
   return buildHealthMetricsColumnChart({
     series: [...HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES],

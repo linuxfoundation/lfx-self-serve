@@ -13,8 +13,8 @@ const CHART = buildHealthMetricsColumnChart({
     { key: 'virtual', label: 'Virtual', color: '#8E51FF' },
   ],
   columns: [
-    { key: '2025', label: '2025', sub: '', values: [14010, 600], muted: true, tipTitle: '2025' },
-    { key: '2026', label: '2026', sub: 'partial', values: [10797, 0], muted: false, tipTitle: '2026 · partial year' },
+    { key: '2025', label: '2025', sub: '', values: [14010, 600], total: 14610, muted: true, tipTitle: '2025' },
+    { key: '2026', label: '2026', sub: 'partial', values: [10797, 0], total: 10797, muted: false, tipTitle: '2026 · partial year' },
   ],
   peak: 15779,
   heightPx: 260,
