@@ -277,12 +277,13 @@ export interface MentorshipAdminDeclinePendingResponse {
 }
 
 /**
- * Data of the Mentors tab's Invite a mentor dialog: the program to invite to. The dialog searches LF users and sends the
- * invite itself, closing with `true` when the Mentors list changed (an invite sent, or one upstream says already
- * exists), or with nothing when cancelled or dismissed.
+ * Data of the Mentors tab's Invite a mentor dialog: the program to invite to, and what to call when the Mentors list
+ * changed (an invite sent, or one upstream says already exists). The dialog searches LF users and sends the invite
+ * itself; the send is not tied to the dialog, so `onListChanged` runs even when the dialog was dismissed mid-send.
  */
 export interface MentorshipInviteMentorDialogData {
   programId: string;
+  onListChanged: () => void;
 }
 
 /**

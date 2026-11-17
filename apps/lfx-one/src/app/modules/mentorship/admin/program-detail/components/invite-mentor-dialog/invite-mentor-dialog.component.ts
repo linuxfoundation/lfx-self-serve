@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -65,6 +65,8 @@ export class InviteMentorDialogComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly programId = this.dialogConfig.data?.programId ?? '';
+  /** Set once the dialog is gone (closed, or dismissed mid-send), so a send that lands afterwards does not close it again. */
+  private closed = false;
 
   protected readonly subtitle = MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_SUBTITLE;
   protected readonly placeholder = MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER;
@@ -98,6 +100,7 @@ export class InviteMentorDialogComponent {
   protected readonly sendIcon = computed(() => (this.sending() ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-paper-plane'));
 
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.closed = true));
     // The dialog would otherwise focus its close button first; the search is what the admin came for.
     afterNextRender(() => this.host.nativeElement.querySelector<HTMLInputElement>('#mentorship-mentors-invite-search')?.focus());
   }
@@ -110,7 +113,10 @@ export class InviteMentorDialogComponent {
     this.form.controls.search.setValue('');
   }
 
-  /** Enter sends once there is something to send: a picked candidate or an email offer for the text shown. */
+  /**
+   * Enter in the search sends once there is something to send: a picked candidate or an email offer for the text shown.
+   * It is bound to the search input only, so Enter on the clear button still clears.
+   */
   protected onSearchEnter(event: Event): void {
     event.preventDefault();
     if (this.canSend()) this.onSend();
@@ -120,7 +126,11 @@ export class InviteMentorDialogComponent {
     this.dialogRef.close();
   }
 
-  /** Invites the picked candidate by LFID, or the offered email address; the dialog stays open on a refusal. */
+  /**
+   * Invites the picked candidate by LFID, or the offered email address; the dialog stays open on a refusal. Like the
+   * Mentors tab's row actions, the send is never cancelled by the dialog going away (no `takeUntilDestroyed`): aborting
+   * it would leave the invite unknown, so a send that lands after a dismissal still toasts and refreshes the list.
+   */
   protected onSend(): void {
     if (!this.canSend()) return;
     const candidate = this.selected();
@@ -140,12 +150,12 @@ export class InviteMentorDialogComponent {
     this.sending.set(true);
     this.mentorshipAdminService
       .inviteProgramMentor(this.programId, body)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(take(1))
       .subscribe({
         next: () => {
           this.sending.set(false);
           this.showToast('success', 'Success', successMessage, 3000);
-          this.dialogRef.close(true);
+          this.onListChanged();
         },
         error: (err: unknown) => {
           this.sending.set(false);
@@ -236,7 +246,7 @@ export class InviteMentorDialogComponent {
   }
 
   /**
-   * A 409 means the person is already invited or a mentor, so the dialog closes and the list reloads to show them. A 400
+   * A 409 means the person is already invited or a mentor, so the list reloads to show them and the dialog closes. A 400
    * (an unpublished program), a 422 (no LF account, or another reason upstream names; see
    * `MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS`), a 503 (account lookup down) and every other failure keep the
    * dialog open so the admin can retry.
@@ -245,7 +255,7 @@ export class InviteMentorDialogComponent {
     const status = err instanceof HttpErrorResponse ? err.status : 0;
     if (status === 409) {
       this.showToast('error', 'Error', MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE, 5000);
-      this.dialogRef.close(true);
+      this.onListChanged();
       return;
     }
     if (status === 400) {
@@ -266,6 +276,12 @@ export class InviteMentorDialogComponent {
       return;
     }
     this.showToast('error', 'Error', MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE, 5000);
+  }
+
+  /** Has the Mentors tab reload its list and counts, then closes the dialog unless it is already gone. */
+  private onListChanged(): void {
+    this.dialogConfig.data?.onListChanged();
+    if (!this.closed) this.dialogRef.close(true);
   }
 
   private showToast(severity: 'success' | 'error', summary: string, detail: string, life: number): void {

@@ -43,7 +43,7 @@ import { MentorshipPublicUrlPipe } from '@pipes/mentorship-public-url.pipe';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { catchError, debounceTime, distinctUntilChanged, map, of, switchMap, take, tap } from 'rxjs';
 
 import { InviteMentorDialogComponent } from '../invite-mentor-dialog/invite-mentor-dialog.component';
@@ -136,13 +136,20 @@ export class MentorsTabComponent {
   }
 
   /**
-   * Opens the Invite a mentor dialog, which searches, picks and sends the invite itself. When it closes with the
-   * Mentors list changed, the page reloads and the parent refreshes the counts.
+   * Opens the Invite a mentor dialog, which searches, picks and sends the invite itself. When the Mentors list changed,
+   * it calls back so the page reloads and the parent refreshes the counts, even if the dialog was dismissed mid-send
+   * (and, as for row actions, after a tab switch destroyed this tab, when only the counts refresh).
    */
   protected onOpenInvite(): void {
-    const data: MentorshipInviteMentorDialogData = { programId: this.programId() };
+    const data: MentorshipInviteMentorDialogData = {
+      programId: this.programId(),
+      onListChanged: () => {
+        this.countsRefresh()();
+        this.reloadPage();
+      },
+    };
     // `open()` returns null while a dialog of the same component is still open, as a quick second click can do.
-    const dialogRef: DynamicDialogRef | null = this.dialogService.open(InviteMentorDialogComponent, {
+    this.dialogService.open(InviteMentorDialogComponent, {
       header: MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_HEADER,
       width: '36rem',
       style: { maxWidth: '90vw' },
@@ -150,14 +157,6 @@ export class MentorsTabComponent {
       closable: true,
       dismissableMask: true,
       data,
-    });
-    if (!dialogRef) return;
-
-    // Not tied to the tab: an invite sent just before a tab switch must still refresh the parent's counts.
-    dialogRef.onClose.pipe(take(1)).subscribe((changed: boolean | undefined) => {
-      if (changed !== true) return;
-      this.countsRefresh()();
-      this.reloadPage();
     });
   }
 

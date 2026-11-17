@@ -35,6 +35,7 @@ describe('InviteMentorDialogComponent', () => {
   let toast: ReturnType<typeof vi.fn<(message: ToastMessageOptions) => void>>;
   let getMentorCandidates: ReturnType<typeof vi.fn<(programId: string, search: string) => Observable<MentorshipAdminMentorCandidatesResponse>>>;
   let inviteProgramMentor: ReturnType<typeof vi.fn<(programId: string, body: MentorshipAdminMentorInviteRequest) => Observable<void>>>;
+  let onListChanged: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -49,6 +50,7 @@ describe('InviteMentorDialogComponent', () => {
       })
     );
     inviteProgramMentor = vi.fn().mockReturnValue(of(undefined));
+    onListChanged = vi.fn();
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -57,7 +59,7 @@ describe('InviteMentorDialogComponent', () => {
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: toast } },
         { provide: DynamicDialogRef, useValue: { close } },
-        { provide: DynamicDialogConfig, useValue: { data: { programId: 'prog_1' } } },
+        { provide: DynamicDialogConfig, useValue: { data: { programId: 'prog_1', onListChanged } } },
         { provide: MentorshipAdminService, useValue: { getMentorCandidates, inviteProgramMentor } },
       ],
     });
@@ -167,13 +169,20 @@ describe('InviteMentorDialogComponent', () => {
     it('sends the picked LFID, toasts and closes with the list changed', () => {
       type('priya');
       pick('priya');
-      expect(byTestId('mentorship-mentors-candidate-priya')?.getAttribute('aria-pressed')).toBe('true');
+      const row = byTestId('mentorship-mentors-candidate-priya');
+      expect(row?.getAttribute('aria-pressed')).toBe('true');
+      // A static `class` and a `[class]` binding merge, so the row keeps its layout next to the selected style.
+      expect(row?.classList).toContain('flex');
+      expect(row?.classList).toContain('w-full');
+      expect(row?.classList).toContain('border-blue-300');
+      expect(byTestId('mentorship-mentors-candidate-dsouza')?.classList).toContain('flex');
       expect(sendButton()?.disabled).toBe(false);
 
       sendButton()?.click();
 
       expect(inviteProgramMentor).toHaveBeenCalledWith('prog_1', { lfid: 'priya' });
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE });
+      expect(onListChanged).toHaveBeenCalledTimes(1);
       expect(close).toHaveBeenCalledWith(true);
     });
 
@@ -197,6 +206,7 @@ describe('InviteMentorDialogComponent', () => {
       component()['onSend']();
 
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE });
+      expect(onListChanged).toHaveBeenCalledTimes(1);
       expect(close).toHaveBeenCalledWith(true);
     });
 
@@ -215,6 +225,7 @@ describe('InviteMentorDialogComponent', () => {
 
       expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: message });
       expect(close).not.toHaveBeenCalled();
+      expect(onListChanged).not.toHaveBeenCalled();
       expect(component()['selected']()).toMatchObject({ lfid: 'priya' });
       expect(sendButton()?.disabled).toBe(false);
     });
@@ -257,9 +268,26 @@ describe('InviteMentorDialogComponent', () => {
       component()['onSend']();
       fixture.detectChanges();
       expect(sendButton()?.disabled).toBe(true);
+      expect(byTestId('mentorship-mentors-invite-cancel')?.querySelector('button')?.disabled).toBe(true);
       component()['onSend']();
 
       expect(inviteProgramMentor).toHaveBeenCalledTimes(1);
+    });
+
+    it('finishes a send the dialog was dismissed during: it still toasts and has the tab reload, and closes nothing', () => {
+      const pending = new Subject<void>();
+      inviteProgramMentor.mockReturnValue(pending);
+      type('priya');
+      pick('priya');
+      component()['onSend']();
+
+      fixture.destroy();
+      pending.next();
+      pending.complete();
+
+      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE });
+      expect(onListChanged).toHaveBeenCalledTimes(1);
+      expect(close).not.toHaveBeenCalled();
     });
   });
 
@@ -322,6 +350,19 @@ describe('InviteMentorDialogComponent', () => {
       type('new.mentor@example.org');
       enter();
       expect(inviteProgramMentor).toHaveBeenCalledWith('prog_1', { email: 'new.mentor@example.org' });
+    });
+
+    it('clears on Enter on the clear button rather than sending', () => {
+      getMentorCandidates.mockReturnValue(of({ data: [] }));
+      type('new.mentor@example.org');
+      const clear = byTestId('mentorship-mentors-invite-search-clear');
+
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      clear?.dispatchEvent(event);
+      fixture.detectChanges();
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(inviteProgramMentor).not.toHaveBeenCalled();
     });
 
     it('closes with nothing on Cancel', () => {

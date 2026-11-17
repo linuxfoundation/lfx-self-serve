@@ -50,8 +50,6 @@ describe('MentorsTabComponent', () => {
   let fixture: ComponentFixture<MentorsTabComponent>;
   let getProgramMentors: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminMentorsQuery) => Observable<MentorshipAdminMentorsResponse>>>;
   let updateProgramMentor: ReturnType<typeof vi.fn<(programId: string, memberId: string, body: MentorshipAdminMentorStatusUpdate) => Observable<void>>>;
-  /** What the Invite a mentor dialog closes with: `true` when the list changed, `undefined` a cancel or dismiss. */
-  let dialogResult: boolean | undefined;
   let dialogOpen: ReturnType<typeof vi.fn>;
 
   /** Runs the effects that start a read, then renders what it wrote. */
@@ -63,8 +61,7 @@ describe('MentorsTabComponent', () => {
   beforeEach(() => {
     getProgramMentors = vi.fn().mockReturnValue(of(firstPage()));
     updateProgramMentor = vi.fn().mockReturnValue(of(undefined));
-    dialogResult = true;
-    dialogOpen = vi.fn(() => ({ onClose: of(dialogResult) }));
+    dialogOpen = vi.fn(() => ({ onClose: of(undefined) }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -200,31 +197,48 @@ describe('MentorsTabComponent', () => {
       expect(dialogOpen).toHaveBeenCalledTimes(1);
       const config = dialogOpen.mock.calls[0][1] as { header: string; data: MentorshipInviteMentorDialogData };
       expect(config.header).toBe('Invite a mentor');
-      expect(config.data).toEqual({ programId: 'prog_1' });
+      expect(config.data.programId).toBe('prog_1');
     });
 
-    it('reloads the page and has the parent refresh the counts when the dialog changed the list', () => {
+    const openedData = (): MentorshipInviteMentorDialogData => {
+      fixture.componentInstance['onOpenInvite']();
+      return (dialogOpen.mock.calls[0][1] as { data: MentorshipInviteMentorDialogData }).data;
+    };
+
+    it('reloads the page and has the parent refresh the counts when the dialog says the list changed', () => {
       const refresh = vi.fn();
       fixture.componentRef.setInput('countsRefresh', refresh);
       const reads = getProgramMentors.mock.calls.length;
 
-      fixture.componentInstance['onOpenInvite']();
+      openedData().onListChanged();
       settle();
 
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(getProgramMentors.mock.calls.length).toBe(reads + 1);
     });
 
-    it('reloads nothing when the dialog is cancelled or dismissed', () => {
-      dialogResult = undefined;
+    it('reloads nothing until the dialog says the list changed, whatever it closes with', () => {
       const refresh = vi.fn();
       fixture.componentRef.setInput('countsRefresh', refresh);
       const reads = getProgramMentors.mock.calls.length;
 
-      fixture.componentInstance['onOpenInvite']();
+      openedData();
       settle();
 
       expect(refresh).not.toHaveBeenCalled();
+      expect(getProgramMentors.mock.calls.length).toBe(reads);
+    });
+
+    it('still refreshes the parent counts, but reloads no table, when the list changes after the tab is gone', () => {
+      const refresh = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', refresh);
+      const data = openedData();
+      const reads = getProgramMentors.mock.calls.length;
+
+      fixture.destroy();
+      data.onListChanged();
+
+      expect(refresh).toHaveBeenCalledTimes(1);
       expect(getProgramMentors.mock.calls.length).toBe(reads);
     });
 
