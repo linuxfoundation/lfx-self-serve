@@ -163,6 +163,8 @@ export class FoundationParticipatingOrgsService {
       if (!readKeys.has(row.participantKey)) return { items, truncated: true };
       const company = companies.get(row.participantKey);
       const lines = company ? toProjectLines(foundation, company, byCompany.get(row.participantKey) ?? []) : [];
+      // A company whose commits sit only on the foundation's own project has no project line, so it has nothing to put in this file.
+      if (lines.length === 0) continue;
       if (remaining <= 0) return { items, truncated: true };
       const kept = lines.slice(0, remaining);
       items.push({ row, lines: kept });

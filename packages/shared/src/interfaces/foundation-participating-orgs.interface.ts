@@ -127,10 +127,6 @@ export interface FoundationParticipatingOrgProjectLine {
 /** The "Other N projects" row that keeps a large company's breakdown adding up. Contributors are not summed (people count once). */
 export interface FoundationParticipatingOrgOtherProjects {
   count: number;
-  commits: number;
-  shareOfCompanyCommits: number;
-  /** The share as a whole percent, `24%`. */
-  shareLabel: string;
 }
 
 /**

@@ -46,10 +46,15 @@ describe('splitBreakdown', () => {
     expect(result.other).toBeNull();
   });
 
-  it('shows the top 10 and folds the rest into Other N projects with their summed commits and share', () => {
+  it('shows the top 10 and folds the rest into Other N projects, with a count and no summed figures', () => {
     const result = splitBreakdown(lines, false, '');
     expect(result.shown).toHaveLength(10);
-    expect(result.other).toEqual({ count: 2, commits: lines[10].commits + lines[11].commits, shareOfCompanyCommits: 0.1, shareLabel: '10%' });
+    expect(result.other).toEqual({ count: 2 });
+  });
+
+  it('never sums folded lines, so a parent and its child rolling up the same commits cannot be counted twice', () => {
+    const overlapping = [...lines.slice(0, 10), { ...line(11), name: 'Parent', commits: 10 }, { ...line(12), name: 'Child', commits: 10 }];
+    expect(splitBreakdown(overlapping, false, '').other).toEqual({ count: 2 });
   });
 
   it('keeps the project the page is scoped to visible when it falls past the top 10', () => {
@@ -57,7 +62,6 @@ describe('splitBreakdown', () => {
     expect(result.shown).toHaveLength(10);
     expect(result.shown.map((item) => item.projectSlug)).toContain('project-12');
     expect(result.other?.count).toBe(2);
-    expect(result.other?.commits).toBe(lines[9].commits + lines[10].commits);
   });
 
   it('shows everything for Show all, and filters by name without folding', () => {

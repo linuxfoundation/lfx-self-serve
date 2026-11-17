@@ -51,7 +51,8 @@ export function decorateProjectLine(line: FoundationParticipatingOrgProjectLine)
 
 /**
  * The lines a breakdown shows: all of them, or — for a company in more than the top-N projects — the top N plus an
- * "Other N projects" row whose commits make the column add up to the total.
+ * "Other N projects" row. That row carries only the count: the warehouse's project lines are ancestor rollups, so a folded parent and
+ * its child would be summed twice, and without the project hierarchy the remainder cannot be computed.
  */
 export function splitBreakdown(
   lines: FoundationParticipatingOrgProjectLine[],
@@ -76,15 +77,9 @@ export function splitBreakdown(
         ]
       : matching;
   const rest = ordered.slice(FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N);
-  const otherShare = rest.reduce((sum, line) => sum + line.shareOfCompanyCommits, 0);
   return {
     shown: ordered.slice(0, FOUNDATION_PARTICIPATING_ORGS_BREAKDOWN_TOP_N),
-    other: {
-      count: rest.length,
-      commits: rest.reduce((sum, line) => sum + line.commits, 0),
-      shareOfCompanyCommits: otherShare,
-      shareLabel: `${Math.round(otherShare * 100)}%`,
-    },
+    other: { count: rest.length },
   };
 }
 

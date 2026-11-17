@@ -271,6 +271,14 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(truncated).toBe(true);
     });
 
+    it('leaves a company with no project line out of the by-project file, and does not flag it as a cut', async () => {
+      // Beta's and Gamma's commits sit only on the foundation's own project, so the project-line read has nothing for them.
+      getProjectLines.mockResolvedValue(LINES.filter((entry) => entry.companyKey === 'alpha'));
+      const { items, truncated } = await service.getExportRows(req, base, 'by-project');
+      expect(items.map((item) => item.row.name)).toEqual(['Alpha Inc']);
+      expect(truncated).toBe(false);
+    });
+
     it('does not query the warehouse when no company matches the filters', async () => {
       const { items, truncated } = await service.getExportRows(req, { ...base, search: 'zzz' }, 'by-project');
       expect(items).toEqual([]);
