@@ -59,20 +59,25 @@ describe('HealthMetricsColumnChartComponent', () => {
   });
 
   it('places an open popup again when the window resizes', async () => {
-    await render();
-    const column = query('chart-column-2025') as HTMLElement;
-    column.dispatchEvent(new Event('mouseenter'));
-    fixture.detectChanges();
+    const root = document.documentElement;
+    const original = Object.getOwnPropertyDescriptor(root, 'clientWidth');
+    const setViewport = (width: number) => Object.defineProperty(root, 'clientWidth', { value: width, configurable: true });
+    try {
+      setViewport(200);
+      await render();
+      (query('chart-column-2025') as HTMLElement).dispatchEvent(new Event('mouseenter'));
+      fixture.detectChanges();
+      // No room on either side of a 200px screen, so the popup shifts to stay 8px inside.
+      expect(fixture.componentInstance['tipPlacement']()).toEqual({ left: 'calc(50% + 8px)', right: null });
 
-    const placements: unknown[] = [];
-    placements.push(fixture.componentInstance['tipPlacement']());
-    window.dispatchEvent(new Event('resize'));
-    fixture.detectChanges();
-    placements.push(fixture.componentInstance['tipPlacement']());
-
-    expect(query('chart-tip')).not.toBeNull();
-    expect(placements[1]).toEqual(placements[0]);
-    expect(placements[1]).not.toBeNull();
+      setViewport(1200);
+      window.dispatchEvent(new Event('resize'));
+      fixture.detectChanges();
+      expect(fixture.componentInstance['tipPlacement']()).toEqual({ left: 'calc(50% + 12px)', right: null });
+    } finally {
+      if (original) Object.defineProperty(root, 'clientWidth', original);
+      else delete (root as { clientWidth?: number }).clientWidth;
+    }
   });
 
   it('labels the y axis, the years with their sub-line, and the legend', async () => {
