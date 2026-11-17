@@ -293,9 +293,10 @@ export function buildHealthMetricsEngagementAttendanceTrendView(
   const points = window.map((month, index) => buildAttendanceTrendPoint(month, year, inProgress && index === count - 1));
 
   let state: HealthMetricsEngagementAttendanceTrendView['state'] = 'trend';
-  if (inProgress && count === 1) state = 'january';
-  // A foundation the view has no rows for reads as empty on every pill, not as a year still to arrive.
-  else if (range !== 'YTD' && months.length > 0 && found.includes(null)) state = 'unavailable';
+  // A foundation with no rated month anywhere reads as empty on every pill, never as a year still to arrive.
+  if (!months.some(isRatedAttendanceMonth)) state = 'empty';
+  else if (inProgress && count === 1) state = 'january';
+  else if (range !== 'YTD' && found.includes(null)) state = 'unavailable';
   else if (ratedMonths === 0) state = 'empty';
   else if (fullRated.length < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) state = 'insufficient';
 
@@ -778,7 +779,7 @@ function attendanceTrendNotice(state: HealthMetricsEngagementAttendanceTrendView
 
 /**
  * Last full month (the previous month, or December), the change across the year's rated full months, and the highest
- * and lowest of them; a tie goes to the earlier month.
+ * and lowest of them by exact rate; a tie goes to the earlier month.
  */
 function buildAttendanceTrendMetrics(
   window: readonly HealthMetricsEngagementAttendanceMonth[],
@@ -809,8 +810,9 @@ function buildAttendanceTrendMetrics(
   const startName = attendanceMonthName(start);
   const endName = attendanceMonthName(end);
   const rated = fullRated.map((index) => window[index]);
-  const high = rated.reduce((best, month) => (attendanceWholePct(month) > attendanceWholePct(best) ? month : best));
-  const low = rated.reduce((best, month) => (attendanceWholePct(month) < attendanceWholePct(best) ? month : best));
+  // Picked on the exact rate, so the plotted peak is named; strict comparisons give a true tie to the earlier month.
+  const high = rated.reduce((best, month) => ((month.attendancePct as number) > (best.attendancePct as number) ? month : best));
+  const low = rated.reduce((best, month) => ((month.attendancePct as number) < (best.attendancePct as number) ? month : best));
 
   return [
     latest,

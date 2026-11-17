@@ -922,8 +922,27 @@ describe('buildHealthMetricsEngagementAttendanceTrendView', () => {
     expect(view).toMatchObject({ state: 'unavailable', notice: 'Attendance history for 2025 is not available yet.', metrics: [], chart: null });
   });
 
-  it('reads a foundation the view has no rows for as empty on a past year too', () => {
+  it('reads a foundation with no rated month as empty on every pill, January included', () => {
     expect(buildHealthMetricsEngagementAttendanceTrendView([], 'COMPLETED_YEAR', 2025, today).state).toBe('empty');
+    expect(buildHealthMetricsEngagementAttendanceTrendView([], 'YTD', 2026, new Date('2026-01-12T00:00:00Z')).state).toBe('empty');
+    const zeroFilled = months(
+      2026,
+      design.map(() => [null, 0])
+    );
+    expect(buildHealthMetricsEngagementAttendanceTrendView(zeroFilled, 'COMPLETED_YEAR', 2026, today).state).toBe('empty');
+  });
+
+  it('names the month with the exact highest and lowest rate when their whole percents tie', () => {
+    const close = months(2026, [
+      [50.1, 10],
+      [50.4, 10],
+      [49.6, 10],
+      [49.9, 10],
+    ]);
+    const view = buildHealthMetricsEngagementAttendanceTrendView(close, 'YTD', 2026, new Date('2026-04-03T00:00:00Z'));
+
+    expect(view.metrics[2]).toMatchObject({ value: '50%', description: 'February 2026' });
+    expect(view.metrics[3]).toMatchObject({ value: '50%', description: 'March 2026' });
   });
 
   it('leaves the dashed run out while the month in progress has no rate yet', () => {

@@ -40,7 +40,7 @@ export class EngagementAttendanceTrendComponent {
 
   /**
    * Fires once the section settles, `true` when the period has nothing to show, `null` when its card says why it cannot
-   * chart yet (January, or a year the view lacks); its height changes, moving every anchor below.
+   * chart (January, a year the view lacks, too few rated months); its height changes, moving every anchor below.
    */
   public readonly settled = output<boolean | null>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -130,7 +130,7 @@ export class EngagementAttendanceTrendComponent {
 
   /** Empty only with nothing recorded; a card that says why it cannot chart yet gives the shell no verdict. */
   private verdict(view: HealthMetricsEngagementAttendanceTrendView): boolean | null {
-    if (view.state === 'january' || view.state === 'unavailable') return null;
+    if (view.state === 'january' || view.state === 'unavailable' || view.state === 'insufficient') return null;
     return view.state === 'empty';
   }
 }

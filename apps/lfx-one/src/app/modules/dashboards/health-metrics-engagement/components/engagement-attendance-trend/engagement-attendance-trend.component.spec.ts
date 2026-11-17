@@ -158,6 +158,8 @@ describe('EngagementAttendanceTrendComponent', () => {
 
     expect(text('engagement-attendance-trend-insufficient')).toContain('Only one month in 2026 has attendance from 3 or more meetings.');
     expect(el('engagement-attendance-trend-chart')).toBeNull();
+    // The card says why it cannot chart, so it never holds back the tab's blank card.
+    expect(verdicts).toEqual([null]);
   });
 
   it('settles empty, with no body, when no month has a rate', async () => {
@@ -215,6 +217,14 @@ describe('EngagementAttendanceTrendComponent', () => {
 
     expect(text('engagement-attendance-trend-insufficient')).toContain('The trend starts once January closes.');
     expect(verdicts).toEqual([null]);
+  });
+
+  it('settles empty in January when the foundation has no attendance at all', async () => {
+    vi.setSystemTime(new Date('2026-01-12T12:00:00Z'));
+    await render({ months: [] });
+
+    expect(el('engagement-attendance-trend-insufficient')).toBeNull();
+    expect(verdicts).toEqual([true]);
   });
 
   it('settles empty on a past year too when the view has no rows for the foundation', async () => {
