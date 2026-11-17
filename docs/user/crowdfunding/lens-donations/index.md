@@ -22,7 +22,7 @@ Anyone who can view the selected company in the **Company** lens.
 
 ## What the page shows
 
-The page header reads **Crowdfunding — <company>**, shared with the **Initiatives** tab, and the **Donations** tab lists the donations on LFX Crowdfunding made on behalf of the company. Each row shows:
+The page header reads **Crowdfunding — {company name}**, shared with the **Initiatives** tab, and the **Donations** tab lists the donations on LFX Crowdfunding made on behalf of the company. Each row shows:
 
 - **Initiative** — the initiative donated to, tagged **Recurring** for a recurring donation. Select the name to open the initiative on the public crowdfunding site in a new tab
 - **Date** — when the donation was made

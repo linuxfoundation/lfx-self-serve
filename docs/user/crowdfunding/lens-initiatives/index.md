@@ -25,7 +25,7 @@ Other users don't see the navigation item. If they open the page's address anywa
 
 ## What the page shows
 
-In the **Projects** and **Foundation** lenses the page header reads **Initiatives**, with the description "Fundraising initiatives on LFX Crowdfunding run on behalf of" followed by the entity name. In the **Company** lens the header reads **Crowdfunding — <company>**, shared by the **Initiatives** and **Donations** tabs, with the **New Initiative** button beside it on the **Initiatives** tab and no description. Below the header, you get the same stats bar (**Active Initiatives**, **Total Raised**, **Total Sponsors**), the **Active**, **Pending**, and **Archived** filter pills, and the **New Initiative** button as the Me lens page. See [View Initiatives](../view-initiatives/) for details.
+In the **Projects** and **Foundation** lenses the page header reads **Initiatives**, with the description "Fundraising initiatives on LFX Crowdfunding run on behalf of" followed by the entity name. In the **Company** lens the header reads **Crowdfunding — {company name}**, shared by the **Initiatives** and **Donations** tabs, with the **New Initiative** button beside it on the **Initiatives** tab and no description. Below the header, you get the same stats bar (**Active Initiatives**, **Total Raised**, **Total Sponsors**), the **Active**, **Pending**, and **Archived** filter pills, and the **New Initiative** button as the Me lens page. See [View Initiatives](../view-initiatives/) for details.
 
 Each initiative also shows **Created by** followed by the name of the person who created it, both in the list and at the top of its detail page. This appears only in the **Projects**, **Foundation**, and **Company** lenses, not in the **Me** lens.
 
