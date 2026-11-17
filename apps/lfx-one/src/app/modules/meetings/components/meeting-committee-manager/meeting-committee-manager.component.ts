@@ -81,14 +81,14 @@ export class MeetingCommitteeManagerComponent {
   public readonly savedAttendeeVisibility = input<boolean | null>(null);
   /**
    * Meeting composer only: restricted meetings may opt in, so only board meetings lock the toggle.
-   * @description Off by default, which keeps any other host on the rule it has always had (board or
-   * restricted).
+   * @description Off by default, the stored-meeting rule (board or restricted locks); both current
+   * hosts, the composer's guests section and its quick create dialog, turn it on.
    */
   public readonly allowRestrictedAttendees = input<boolean>(false);
   /**
    * Meeting composer only: the picker's description sits between its label and the dropdown, always
    * shown, and the placeholder is the shorter "Select group(s)".
-   * @description Off by default, so any other host keeps the hint-below layout.
+   * @description Off by default (hint below the dropdown); both current hosts turn it on.
    */
   public readonly composerLayout = input<boolean>(false);
   /**
