@@ -364,6 +364,8 @@ export interface OrgListPage {
   term?: string;
   /** The response's `cla_only_deferred`: the caller's CLA-only rows arrive from a separate request. */
   claOnlyDeferred?: boolean;
+  /** The `selected_uid` a first page was fetched with, or `null` (always `null` on next pages). */
+  pinnedUid?: string | null;
 }
 
 /** Carries dispatch generation so stale responses can be filtered out of the merged stream (FR-011 race-guard). */

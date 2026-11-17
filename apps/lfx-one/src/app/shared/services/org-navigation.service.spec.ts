@@ -718,6 +718,50 @@ describe('OrgNavigationService default selection', () => {
       expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
     });
 
+    describe('a cookie-restored CLA-only company that is not yet the selected account (#5804)', () => {
+      beforeEach(() => {
+        writerSet.set(new Set([UID_A]));
+      });
+
+      it('waits for the CLA-only rows instead of defaulting to the first held organization, then keeps it', () => {
+        service.resetAndReload(UID_C);
+        const held = http.expectOne(isMainRequest);
+        expect(held.request.params.get('selected_uid')).toBe(UID_C);
+        held.flush(hinted([item(UID_A, 'Acme')]));
+        TestBed.tick();
+        const selectedBeforeClaOnlyRows = setAccount.mock.calls.map(([account]) => (account as Account).uid);
+        expect(service.firstPagePinnedUid()).toBe(UID_C);
+        expect(service.selectionUndecided()).toBe(true);
+
+        flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
+
+        expect(selectedBeforeClaOnlyRows).toEqual([]);
+        expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+        expect(selectedAccount().uid).toBe(UID_C);
+        expect(TestBed.inject(OrgClaOnlyAccessService).isClaOnly(UID_C)).toBe(true);
+        expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+      });
+
+      it('still defaults to the held organization when the cookie names a company the CLA-only rows do not list', () => {
+        service.resetAndReload(UID_C);
+        http.expectOne(isMainRequest).flush(hinted([item(UID_A, 'Acme')]));
+        flushClaOnly([claOnlyRow(UID_B, 'Beta')]);
+
+        expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      });
+
+      it('leaves a pinned held organization to the authority-first default', () => {
+        auditorSet.set(new Set([UID_B]));
+
+        service.resetAndReload(UID_B);
+        http.expectOne(isMainRequest).flush(hinted([item(UID_B, 'Beta'), item(UID_A, 'Acme')]));
+        flushClaOnly([]);
+
+        expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+        expect(setAccount).not.toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+      });
+    });
+
     it('defaults as today when the CLA-only request fails for a restored selection the held page lacks', () => {
       selectedAccount.set({ ...placeholder, uid: UID_C, accountId: UID_C });
 

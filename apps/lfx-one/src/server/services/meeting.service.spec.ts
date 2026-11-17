@@ -1482,6 +1482,18 @@ describe('MeetingService.canViewMeetingRoster', () => {
     expect(byEmail).not.toHaveBeenCalled();
   });
 
+  // #5438: an invite-only meeting shares its guests once its organizer opts in, and not before.
+  it.each([
+    [true, true],
+    [false, false],
+  ])('lets an invitee of a restricted meeting see the guests only when shared (shared: %s)', async (shared, expected) => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+    vi.spyOn(service, 'getMeetingById').mockResolvedValue({ uid: MEETING_UID, restricted: true, show_meeting_attendees: shared } as unknown as Meeting);
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-self' } as MeetingRegistrant]);
+
+    await expect(service.canViewMeetingRoster(req, MEETING_UID)).resolves.toBe(expected);
+  });
+
   it('matches an invitee by username when they have no email, the rule the invited flag uses', async () => {
     vi.mocked(getEffectiveEmail).mockReturnValue(undefined as unknown as string);
     vi.mocked(getUsernameFromAuth).mockResolvedValue('ada');
@@ -2518,11 +2530,23 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(true);
   });
 
-  it('still forces show_meeting_attendees off on a restricted meeting saved without an explicit opt-in', async () => {
+  // #5438: the stored value is the organizer's choice on an invite-only meeting, so a partial update
+  // must not silently clear it.
+  it("keeps a restricted meeting's stored choice when the update makes none", async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
     await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBeUndefined();
+  });
+
+  it('forwards an explicit false on a restricted meeting', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, restricted: true, show_meeting_attendees: false });
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);

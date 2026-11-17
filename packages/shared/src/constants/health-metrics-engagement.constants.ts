@@ -65,11 +65,10 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
   {
     key: 'trend',
-    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board, snapshot: true },
+    empty: { icon: 'fa-light fa-users-rectangle', source: HEALTH_METRICS_L2_EMPTY_SOURCES.board },
     label: 'Attendance trend',
     heading: 'Attendance trend',
-    description:
-      'All-meeting attendance over time. Level and direction are separate signals — attendance can be improving and still sit below where it needs to be.',
+    description: 'Whether people show up more or less over time.',
   },
   {
     key: 'orgs',
@@ -324,7 +323,7 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED: HealthMetric
   months: [],
 };
 
-/** Fewer rated months than this draws the line under a low-confidence banner; one month draws none. */
+/** Fewer rated months in the year than this draws the line under a low-confidence note. */
 export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS = 6;
 
 /**

@@ -4,7 +4,7 @@ description: How to create a group (committee) in LFX Self Serve with the four-s
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, create, wizard, join-mode, governance]
-last_updated: 2026-11-05
+last_updated: 2026-11-16
 intercom_collection: Committees
 ---
 
@@ -45,7 +45,7 @@ Choose **Newsletter** for a group that receives a newsletter. A newsletter can o
   - **Enable Audit**: tracks and logs group activity for compliance.
   - **Make Group Public** (recommended): makes the group visible to all users.
   - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
-  - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board and restricted meetings never share their guest list.
+  - **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board meetings never share their guest list.
 
   With **Business Email Required** or **Enable Voting** on, members joining the group must give a company name and URL.
 
