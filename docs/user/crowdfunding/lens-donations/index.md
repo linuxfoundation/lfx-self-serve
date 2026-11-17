@@ -4,7 +4,7 @@ description: View the crowdfunding donations made on behalf of a company in the 
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, donations, company, lens]
-last_updated: 2026-11-10
+last_updated: 2026-11-17
 intercom_collection: Crowdfunding
 ---
 

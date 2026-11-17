@@ -28,7 +28,7 @@ tags:
     involvement,
     leaderboard,
   ]
-last_updated: 2026-11-09
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 
