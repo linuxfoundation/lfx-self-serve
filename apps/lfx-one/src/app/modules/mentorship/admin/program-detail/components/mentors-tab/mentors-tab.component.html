@@ -4,80 +4,34 @@
 <p-confirmDialog />
 
 <div class="flex flex-col gap-4" data-testid="mentorship-mentors-tab">
-  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-    <div class="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center lg:flex-1">
-      <label class="w-full min-w-0 sm:flex-1">
-        <span class="sr-only">Search mentors</span>
-        <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentors-search" />
-      </label>
+  <div class="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+    <label class="w-full min-w-0 sm:flex-1">
+      <span class="sr-only">Search mentors</span>
+      <lfx-input-text [form]="form" control="search" placeholder="Search" icon="fa-light fa-magnifying-glass" dataTest="mentorship-mentors-search" />
+    </label>
 
-      <div class="w-full sm:w-48 sm:shrink-0">
-        <lfx-select
-          [form]="form"
-          control="status"
-          [options]="statusOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Filter By Status"
-          ariaLabel="Filter mentors by status"
-          styleClass="w-full"
-          dataTest="mentorship-mentors-status" />
-      </div>
+    <div class="w-full sm:w-48 sm:shrink-0">
+      <lfx-select
+        [form]="form"
+        control="status"
+        [options]="statusOptions"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="Filter By Status"
+        ariaLabel="Filter mentors by status"
+        styleClass="w-full"
+        dataTest="mentorship-mentors-status" />
     </div>
 
-    <div class="flex items-start gap-2">
-      <div class="flex w-full flex-col gap-1 sm:w-72">
-        <label for="mentorship-mentors-invitee-input" class="sr-only">Search for a person to invite as a mentor</label>
-        <lfx-autocomplete
-          [form]="form"
-          control="invitee"
-          inputId="mentorship-mentors-invitee-input"
-          [suggestions]="candidateOptions()"
-          optionLabel="name"
-          dataKey="lfid"
-          placeholder="Search and select mentors..."
-          [minLength]="candidateMinSearchLength"
-          [forceSelection]="true"
-          [showClear]="true"
-          appendTo="body"
-          styleClass="w-full"
-          inputStyleClass="w-full"
-          describedBy="mentorship-mentors-invitee-help"
-          dataTestId="mentorship-mentors-invitee"
-          (completeMethod)="onCandidateSearch($event)">
-          <ng-template #item let-option>
-            <div class="flex min-w-0 items-center gap-2" [attr.data-testid]="'mentorship-mentors-candidate-' + option.lfid">
-              <lfx-avatar
-                [image]="option.avatarUrl ?? ''"
-                [label]="option.initials"
-                shape="circle"
-                size="normal"
-                [styleClass]="option.avatarStyleClass"
-                [ariaLabel]="option.name" />
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ option.name }}</span>
-                <span class="whitespace-normal break-all text-xs text-gray-500">{{ option.lfid }}</span>
-              </div>
-            </div>
-          </ng-template>
-          <ng-template #empty>
-            <span class="text-sm text-gray-500" data-testid="mentorship-mentors-candidates-empty">{{ candidatesEmptyMessage() }}</span>
-          </ng-template>
-        </lfx-autocomplete>
-        <span id="mentorship-mentors-invitee-help" class="text-xs text-gray-500" data-testid="mentorship-mentors-invitee-help">{{ candidateHelpText }}</span>
-      </div>
-
-      <lfx-button
-        label="Invite"
-        icon="fa-light fa-plus"
-        iconPos="left"
-        severity="primary"
-        size="small"
-        [disabled]="!canInvite()"
-        (onClick)="onInviteMentor()"
-        styleClass="whitespace-nowrap !py-2.5"
-        data-testid="mentorship-mentors-invite" />
-    </div>
+    <lfx-button
+      [label]="inviteLabel"
+      icon="fa-light fa-plus"
+      iconPos="left"
+      severity="primary"
+      size="small"
+      (onClick)="onOpenInvite()"
+      styleClass="w-full justify-center whitespace-nowrap !py-2.5 sm:w-auto"
+      data-testid="mentorship-mentors-invite" />
   </div>
 
   @if (loadFailed()) {
@@ -141,6 +95,9 @@
                     </a>
                   } @else {
                     <span class="text-sm font-medium text-gray-900 truncate" [title]="row.name">{{ row.name }}</span>
+                  }
+                  @if (row.accountPending) {
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'mentorship-mentor-account-pending-' + row.id">{{ accountPendingLabel }}</span>
                   }
                 </div>
               </div>

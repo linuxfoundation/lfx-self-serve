@@ -115,7 +115,6 @@ test.describe('Admin program detail — live tab structure', () => {
 
     await expect(tab.locator('[data-test="mentorship-mentors-search"]')).toBeVisible();
     await expect(tab.locator('[data-test="mentorship-mentors-status"]')).toBeVisible();
-    await expect(tab.getByTestId('mentorship-mentors-invitee')).toBeVisible();
     await expect(tab.getByTestId('mentorship-mentors-invite')).toBeVisible();
     await expect(tab.getByTestId(`mentorship-mentor-row-${ADMIN_MENTORS[0].id}`)).toBeVisible();
     await expect(page.getByTestId('mentorship-admin-mentors-load-error')).toHaveCount(0);
