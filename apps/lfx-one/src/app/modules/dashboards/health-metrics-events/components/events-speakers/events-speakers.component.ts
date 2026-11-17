@@ -9,13 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import { HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
-import {
-  buildHealthMetricsEventsSpeakersNote,
-  buildHealthMetricsEventsSpeakersView,
-  buildHealthMetricsEventsSpeakersYears,
-  formatHealthMetricsEventsCount,
-  hexToRgba,
-} from '@lfx-one/shared/utils';
+import { buildHealthMetricsEventsSpeakersView, buildHealthMetricsEventsSpeakersYears, formatHealthMetricsEventsCount, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
@@ -48,8 +42,6 @@ export class EventsSpeakersComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The sub-nav note ("down N% YoY"); empty while a read is pending or failed. */
-  public readonly noteChange = output<string>();
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -137,7 +129,6 @@ export class EventsSpeakersComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.noteChange.emit('');
           this.reading.emit();
         }),
         switchMap((query) =>
@@ -149,7 +140,6 @@ export class EventsSpeakersComponent {
             }),
             tap((response) => {
               this.loading.set(!foundationSeen);
-              this.noteChange.emit(this.loadFailed() ? '' : buildHealthMetricsEventsSpeakersNote(response, this.chrome.selectedRange()));
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen)
                 this.settled.emit(!this.loadFailed() && isEmptyView(buildHealthMetricsEventsSpeakersView(response, this.chrome.selectedRange(), this.tab())));
@@ -161,11 +151,10 @@ export class EventsSpeakersComponent {
     );
   }
 
-  /** Re-notes and re-settles the re-projected section; a read in flight or failed does both on its own. */
+  /** Re-settles the re-projected section; a read in flight or failed settles on its own. */
   private onRangeChange(): void {
     if (this.loadFailed() || this.loading()) return;
 
-    this.noteChange.emit(buildHealthMetricsEventsSpeakersNote(this.response(), this.chrome.selectedRange()));
     this.settled.emit(isEmptyView(this.view()));
   }
 

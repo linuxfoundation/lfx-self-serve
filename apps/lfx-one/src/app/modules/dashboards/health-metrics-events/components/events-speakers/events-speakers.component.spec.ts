@@ -76,7 +76,6 @@ describe('EventsSpeakersComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
-  let notes: string[];
 
   async function render(payload: HealthMetricsEventsSpeakers | Error = speakers()): Promise<void> {
     getEventsSpeakers = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -99,7 +98,6 @@ describe('EventsSpeakersComponent', () => {
       lifecycle.push('settled');
       verdicts.push(empty);
     });
-    fixture.componentInstance.noteChange.subscribe((note) => notes.push(note));
     await settle();
   }
 
@@ -133,17 +131,15 @@ describe('EventsSpeakersComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
     verdicts = [];
-    notes = [];
   });
 
-  it('reads the foundation once, settles and reports the sub-nav note', async () => {
+  it('reads the foundation once and settles', async () => {
     await render();
 
     expect(getEventsSpeakers).toHaveBeenCalledTimes(1);
     expect(getEventsSpeakers).toHaveBeenCalledWith({ foundationSlug: 'acme' });
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
-    expect(notes).toEqual(['', 'down 35% YoY']);
     expect(query('events-speakers-loading')).toBeNull();
   });
 
@@ -215,10 +211,9 @@ describe('EventsSpeakersComponent', () => {
     expect(fixture.componentInstance['chartData']()).toBe(chartData);
   });
 
-  it('re-projects a period change without re-reading, and re-notes it', async () => {
+  it('re-projects a period change without re-reading, and re-settles', async () => {
     await render();
     lifecycle = [];
-    notes = [];
     const chartData = fixture.componentInstance['chartData']();
 
     await pickRange('COMPLETED_YEAR');
@@ -228,7 +223,6 @@ describe('EventsSpeakersComponent', () => {
     expect(rowKeys()).toEqual(['p-3']);
     expect(query('events-speakers-individual')).toBeNull();
     expect(lifecycle).toEqual(['settled']);
-    expect(notes).toEqual(['']);
     expect(fixture.componentInstance['chartData']()).toBe(chartData);
   });
 
@@ -249,16 +243,15 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-hero')).toBeNull();
   });
 
-  it('shows the error state and clears the note when the read fails', async () => {
+  it('shows the error state when the read fails, and still settles', async () => {
     await render(new Error('boom'));
 
     expect(query('events-speakers-error')).not.toBeNull();
-    expect(notes).toEqual(['', '']);
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
   });
 
-  it('re-reads on a foundation switch, clearing the note until the new read settles', async () => {
+  it('re-reads on a foundation switch and settles again', async () => {
     await render();
     getEventsSpeakers.mockReturnValue(
       of(speakers({ periods: [period({ changes: { speakers: -0.5 } })], proposals: [proposal({ proposalKey: 'p-b', organizationName: 'Beta Coastal' })] }))
@@ -270,7 +263,6 @@ describe('EventsSpeakersComponent', () => {
     expect(getEventsSpeakers).toHaveBeenCalledTimes(2);
     expect(getEventsSpeakers).toHaveBeenLastCalledWith({ foundationSlug: 'beta' });
     expect(lifecycle).toEqual(['reading', 'settled', 'reading', 'settled']);
-    expect(notes).toEqual(['', 'down 35% YoY', '', 'down 50% YoY']);
     expect(rowKeys()).toEqual(['p-b']);
   });
 

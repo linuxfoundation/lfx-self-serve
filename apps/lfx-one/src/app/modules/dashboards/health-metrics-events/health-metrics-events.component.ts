@@ -72,18 +72,15 @@ export class HealthMetricsEventsComponent {
   protected readonly dataSections = HEALTH_METRICS_EVENTS_DATA_SECTIONS;
   protected readonly blank = HEALTH_METRICS_EVENTS_BLANK;
 
-  // Empty until the forecast reports, which renders no note rather than a premature one.
+  // Empty until the forecast reports, which renders no note rather than a premature one. It is the tab's only note.
   protected readonly forecastNote = signal<string>('');
-  protected readonly speakersNote = signal<string>('');
   // The forecast's event select sits in its card header, so the tab holds the pick and the forecast reports its events.
   protected readonly forecastEventId = signal<string | null>(null);
   protected readonly forecastPicker = signal<HealthMetricsEventsForecastPicker>({ options: [], eventId: null });
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
-  protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
-    buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote(), spk: this.speakersNote() })
-  );
+  protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() => buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }));
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
 

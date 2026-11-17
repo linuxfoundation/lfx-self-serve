@@ -78,7 +78,6 @@ class SponsorshipStubComponent {
 /** Stands in for Speakers & proposals, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-speakers', template: '<div data-testid="events-spk-stub"></div>' })
 class SpeakersStubComponent {
-  public readonly noteChange = output<string>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -158,7 +157,7 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.detectChanges();
   }
 
-  async function sectionsReport(note: string, speakersNote = ''): Promise<void> {
+  async function sectionsReport(note: string): Promise<void> {
     const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
     const pastStub = fixture.debugElement.query(By.directive(PastStubComponent)).componentInstance as PastStubComponent;
     atAGlanceStub().settled.emit(false);
@@ -169,7 +168,6 @@ describe('HealthMetricsEventsComponent', () => {
     (fixture.debugElement.query(By.directive(RevenueStubComponent)).componentInstance as RevenueStubComponent).settled.emit(false);
     (fixture.debugElement.query(By.directive(SponsorshipStubComponent)).componentInstance as SponsorshipStubComponent).settled.emit(false);
     const speakersStub = fixture.debugElement.query(By.directive(SpeakersStubComponent)).componentInstance as SpeakersStubComponent;
-    speakersStub.noteChange.emit(speakersNote);
     speakersStub.settled.emit(false);
     const orgsStub = fixture.debugElement.query(By.directive(OrganizationsStubComponent)).componentInstance as OrganizationsStubComponent;
     orgsStub.settled.emit(false);
@@ -275,11 +273,12 @@ describe('HealthMetricsEventsComponent', () => {
     expect(forecast.pickedEventId()).toBe('evt-2');
   });
 
-  it('shows the note Speakers & proposals reports on its sub-nav item', async () => {
+  it("shows only the forecast's note in the sub-nav, as the design does", async () => {
     await setup();
-    await sectionsReport('', 'down 30% YoY');
+    await sectionsReport('2 will miss goal');
 
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk"]').textContent).toContain('down 30% YoY');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk-note"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid$="-note"][data-testid^="events-sub-nav-"]').length).toBe(1);
   });
 
   it('scrolls to the section a deep link names', async () => {

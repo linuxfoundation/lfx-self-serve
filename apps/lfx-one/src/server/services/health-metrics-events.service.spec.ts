@@ -95,6 +95,8 @@ function pastRow(overrides: Record<string, unknown> = {}) {
     GOAL_MET: false,
     REVENUE_USD: 0,
     PACE_STATUS: 'needs_attention',
+    EVENT_CITY: 'Springfield',
+    EVENT_LOCATION: null,
     IS_IN_PERIOD_YTD: true,
     SCOPE_PAST_EVENTS_COUNT_YTD: 4,
     SCOPE_REGISTRATIONS_COUNT_YTD: 2400,
@@ -125,11 +127,12 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     execute.mockResolvedValue({ rows: [eventRow()] });
   });
 
-  it('binds only the foundation, keeps events that have not ended, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events that have not ended, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toMatch(NOT_ENDED_SCOPE);
     expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
@@ -442,17 +445,28 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     execute.mockResolvedValue({ rows: [pastRow()] });
   });
 
-  it('binds only the foundation, keeps events in some period, newest first, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events in some period, newest first, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('MARKETING_EVENT_PAST_EVENTS');
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toContain('is_in_period_3rd_last_completed_year OR is_in_period_prev_completed_year OR is_in_period_last_completed_year OR is_in_period_ytd');
     expect(sql).toContain('scope_registrations_count_3rd_last_completed_year');
     expect(sql).toContain('ORDER BY event_start_date DESC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}`);
+  });
+
+  it("joins each event's city and location from the registrations view, one row per event", async () => {
+    await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS e');
+    expect(sql).toContain('WHERE event_id IN (SELECT event_id FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS WHERE foundation_slug = ?)');
+    expect(sql).toContain('GROUP BY event_id\n      ) p ON p.event_id = e.event_id');
+    expect(sql).toContain('p.event_city,');
   });
 
   it('maps an event with the periods it closed in, keeping $0 revenue as measured', async () => {
@@ -469,6 +483,8 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
         revenueUsd: 0,
         paceStatus: 'needs_attention',
         ranges: ['YTD'],
+        city: 'Springfield',
+        isVirtual: false,
       },
     ]);
   });
@@ -832,6 +848,8 @@ function revenueRow(overrides: Record<string, unknown> = {}) {
     COMBINED_REVENUE_GOAL: 200000,
     IS_PAST_EVENT: true,
     IS_REVENUE_GOAL_MET: false,
+    EVENT_CITY: null,
+    EVENT_LOCATION: 'Virtual',
     FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
     FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
     FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
@@ -864,11 +882,21 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     execute.mockResolvedValue({ rows: [revenueRow()] });
   });
 
-  it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
+  it("joins each event's city and location, reading a location that says virtual as a virtual event", async () => {
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE e');
+    expect(sql).toContain(') p ON p.event_id = e.event_id');
+    expect(events[0]).toMatchObject({ city: null, isVirtual: true });
+  });
+
+  it('binds only the foundation, twice, sorts older events and those outside every period last, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(sql).toContain('MARKETING_EVENT_REVENUE');
     expect(sql).toContain("event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()) AS in_period_ytd");
@@ -903,6 +931,8 @@ describe('HealthMetricsEventsService.getRevenue', () => {
         isPastEvent: true,
         goalMet: false,
         ranges: ['YTD'],
+        city: null,
+        isVirtual: true,
       },
     ]);
   });

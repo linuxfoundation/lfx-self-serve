@@ -22,6 +22,7 @@ import type {
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
+import type { UiBadgeTone } from '../interfaces/uikit.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -40,30 +41,28 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Past events',
     heading: 'Past events',
-    description:
-      'Final performance for events that have already closed — the record the registration forecast was projecting toward while they were still open.',
+    description: 'How closed events ended against their goals.',
   },
   {
     key: 'kpi',
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'At a glance',
     heading: 'Events at a glance',
-    description: 'Reach across every event this period.',
+    description: "How this year's events compare with last year.",
   },
   {
     key: 'reg',
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event, snapshot: true },
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
-    description: 'Registrations by year, split in-person versus virtual.',
+    description: 'How turnout has changed year to year, in person and online.',
   },
   {
     key: 'rev',
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Revenue',
     heading: 'Event revenue',
-    description:
-      'The two money lines events generate. Registration revenue is what attendees pay; sponsorship is what companies pay. They are driven by different teams and behave differently, so they are never merged into one figure.',
+    description: 'Ticket and sponsor income per event, against goal.',
     provisional: true,
   },
   {
@@ -71,7 +70,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Sponsorship',
     heading: 'Sponsorship',
-    description: 'What companies paid to sponsor events, and what they bought.',
+    description: 'How much sponsors paid, and which packages sold best.',
     provisional: true,
   },
   {
@@ -79,23 +78,21 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Speakers & proposals',
     heading: 'Speakers & proposals',
-    description:
-      'The speaking pipeline, kept separate from sponsorship — proposals measure community supply, sponsorship measures revenue. Acceptance rate shows how much choice the programme committee had.',
+    description: 'How many talks were submitted, and how many got in.',
   },
   {
     key: 'orgs',
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Companies',
     heading: 'Companies at events',
-    description:
-      'Which companies show up, sponsor and speak. This is the events view of a company — the same company also has a membership, meeting and contribution record in Members.',
+    description: 'Which companies attend, sponsor and speak most.',
   },
   {
     key: 'geo',
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Geographic distribution',
     heading: 'Geographic distribution',
-    description: 'Where registrations come from — useful for deciding where the next event should be and which regions are under-served.',
+    description: 'Where in the world registrations come from.',
   },
 ] as const satisfies readonly HealthMetricsL2Section[];
 
@@ -156,8 +153,11 @@ export const HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO = 10;
 /** Words in an event's city or location that dbt reads as a virtual event; such a city names no place. */
 export const HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS: readonly string[] = ['online', 'virtual'];
 
-/** Rows per page of "All upcoming events". */
-export const HEALTH_METRICS_EVENTS_FORECAST_PAGE_SIZE = 10;
+/** Rows per page of the forecast's upcoming events, past events and revenue by event. */
+export const HEALTH_METRICS_EVENTS_TABLE_PAGE_SIZE = 10;
+
+/** The at-a-glance tooltip on Participating companies. */
+export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPANIES_TIP = 'Companies that sent at least one registrant to an event this period.';
 
 /** Upcoming events read per foundation; one past it tells a full scope from a truncated one. */
 export const HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP = 200;
@@ -168,14 +168,14 @@ export const HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED: HealthMetricsEventsForec
 /** Read-failed / no-event value for the curve: no formats, which the chart renders as no curve. */
 export const HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED: HealthMetricsEventsForecastCurve = { eventId: '', formats: [] };
 
-/** Outcome chips for a closed event. A missed goal splits on the model's pace band at close; `unmeasured` has no outcome read. */
+/** Status pills for a closed event, as design-system badges. A missed goal splits on the model's pace band at close; `unmeasured` has no outcome read. */
 export const HEALTH_METRICS_EVENTS_PAST_STATUSES = {
-  hit: { label: 'Hit goal', badgeClass: 'bg-emerald-50 text-emerald-700' },
-  'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700' },
-  missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700' },
-  'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600' },
-  unmeasured: { label: 'Not tracked', badgeClass: 'bg-gray-100 text-gray-600' },
-} as const;
+  hit: { label: 'Goal reached', tone: 'success' },
+  'near-miss': { label: 'Just missed', tone: 'warning' },
+  missed: { label: 'Goal missed', tone: 'danger' },
+  'no-goal': { label: 'No goal set', tone: 'neutral' },
+  unmeasured: { label: 'Not tracked', tone: 'neutral' },
+} as const satisfies Record<string, { label: string; tone: UiBadgeTone }>;
 
 /** The model's pace band for an event that finished within reach of its goal. */
 export const HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE = 'needs_attention';
@@ -194,9 +194,6 @@ export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthM
 
 /** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as a foundation without events. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
-
-/** A year-over-year fall in speakers steeper than this sets the sub-nav note. */
-export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE = -0.3;
 
 /** Years read per foundation; one past it flags a truncated read. The longest history spans under ten. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP = 100;
@@ -230,16 +227,6 @@ export const HEALTH_METRICS_EVENTS_REVENUE_UNMEASURED: HealthMetricsEventsRevenu
 
 /** The periods the revenue view compares with the year before; the oldest carries no change columns. */
 export const HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2'];
-
-/** Right-aligned note above the revenue figures while they are provisional. */
-export const HEALTH_METRICS_EVENTS_REVENUE_PENDING_NOTE = 'All figures pending validation';
-
-/** Footer note for revenue that stayed in local currency; the marker flags each affected figure, headline included. */
-export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE =
-  'Events are billed in local currency. Figures marked * leave out registration revenue not yet converted to USD, so they are incomplete.';
-
-/** Screen-reader text for the * marker on a figure that leaves out unconverted revenue. */
-export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SCREEN_READER_TEXT = '(leaves out local-currency amounts not yet converted to USD)';
 
 /** Stands in for a goal set in a currency with no USD rate, so it never reads as no goal. */
 export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';

@@ -54,7 +54,7 @@
     <lfx-events-sponsorship (reading)="shell.sectionReading('spon')" (settled)="shell.sectionSettled('spon', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="spk">
-    <lfx-events-speakers (noteChange)="speakersNote.set($event)" (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk', $event)" />
+    <lfx-events-speakers (reading)="shell.sectionReading('spk')" (settled)="shell.sectionSettled('spk', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="orgs">
     <lfx-events-organizations (reading)="shell.sectionReading('orgs')" (settled)="shell.sectionSettled('orgs', $event)" />
