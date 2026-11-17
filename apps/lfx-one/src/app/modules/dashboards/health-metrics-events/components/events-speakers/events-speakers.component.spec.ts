@@ -180,6 +180,9 @@ describe('EventsSpeakersComponent', () => {
     await settle();
 
     expect(query('events-speakers-proposals')).toBeNull();
+    // The design's grid, with a phone grid that keeps the counts inside a 375px screen.
+    expect(query('events-speakers-companies-row-acct-acme')?.className).toContain('grid-cols-[minmax(200px,300px)_1fr_100px]');
+    expect(query('events-speakers-companies-row-acct-acme')?.className).toContain('max-[640px]:grid-cols-[minmax(0,1fr)_minmax(48px,0.6fr)_auto]');
     const cells = [...(query('events-speakers-companies-row-acct-acme')?.children ?? [])].map((cell) => cell.textContent?.trim());
     expect(cells[0]).toContain('Acme Motors');
     expect(cells[2]).toBe('40 proposals');

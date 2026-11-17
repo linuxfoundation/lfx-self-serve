@@ -69,10 +69,11 @@
     } @else if (view().companies.length === 0) {
       <p class="m-0 text-[13px] text-gray-500" data-testid="events-speakers-companies-empty">No company submitted a proposal in the selected period.</p>
     } @else {
-      <!-- Exact px: the design's minmax(200px,300px) 1fr 100px grid, with names at 500. -->
+      <!-- Exact px: the design's minmax(200px,300px) 1fr 100px grid, with names at 500. It needs 324px, more than a phone's
+           card holds, so on a phone the name shrinks (its full text in the truncation tip) and the count takes its own width. -->
       <lfx-health-metrics-bar-list
         [rows]="view().companies"
-        gridClass="grid-cols-[minmax(200px,300px)_1fr_100px]"
+        gridClass="grid-cols-[minmax(200px,300px)_1fr_100px] max-[640px]:grid-cols-[minmax(0,1fr)_minmax(48px,0.6fr)_auto]"
         labelClass="font-medium"
         testId="events-speakers-companies" />
     }
