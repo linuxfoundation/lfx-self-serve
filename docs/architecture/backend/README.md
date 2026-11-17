@@ -40,30 +40,31 @@ Request → Controller → Service → Microservice/Data Layer
 
 ## Documentation
 
-| Document                                                              | Topics                                                                          |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [SSR Server](./ssr-server.md)                                         | Express.js configuration, Angular SSR integration, static assets, health checks |
-| [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management    |
-| [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
-| [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
-| [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution |
-| [Marketing OS Downstream Rebuild](./mktg-rebuild.md)                  | Current-revision staleness, ordered rebuild sessions, questions and Drafts      |
-| [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
-| [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
-| [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
-| [NATS Integration](./nats-integration.md)                             | Inter-service messaging, project slug resolution, lazy connections              |
-| [Snowflake Integration](./snowflake-integration.md)                   | Analytics queries, connection pooling, query deduplication                      |
-| [Public Meetings](./public-meetings.md)                               | Unauthenticated meeting access, M2M token flow                                  |
-| [Login-Free Vote Links](./vote-links.md)                              | Token-in-fragment ballots, public proxy routes, send-ballots flow               |
-| [Mentorship Mentee Registration](./mentorship-mentee-registration.md) | Register BFF, replace-all upsert pre-check, error mapping, impersonation block  |
-| [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source              |
-| [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |
-| [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
-| [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, routes, BFF proxies, authorization, keys, flag    |
-| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                         |
-| [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
-| [LinkedIn Post Agent](./mktg-linkedin-post.md)                        | User profile lifecycle, source ingestion, one-off documents, privacy boundaries |
-| [One-off Result Hook](./mktg-one-off-landing.md)                      | Current-turn terminal facts, root replies, creator-only failure text            |
+| Document                                                              | Topics                                                                                            |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [SSR Server](./ssr-server.md)                                         | Express.js configuration, Angular SSR integration, static assets, health checks                   |
+| [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management                      |
+| [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format                           |
+| [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                                    |
+| [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution                   |
+| [Marketing OS Downstream Rebuild](./mktg-rebuild.md)                  | Current-revision staleness, ordered rebuild sessions, questions and Drafts                        |
+| [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation                                |
+| [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns                                |
+| [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                                  |
+| [NATS Integration](./nats-integration.md)                             | Inter-service messaging, project slug resolution, lazy connections                                |
+| [Snowflake Integration](./snowflake-integration.md)                   | Analytics queries, connection pooling, query deduplication                                        |
+| [Public Meetings](./public-meetings.md)                               | Unauthenticated meeting access, M2M token flow                                                    |
+| [Login-Free Vote Links](./vote-links.md)                              | Token-in-fragment ballots, public proxy routes, send-ballots flow                                 |
+| [Mentorship Mentee Registration](./mentorship-mentee-registration.md) | Register BFF, replace-all upsert pre-check, error mapping, impersonation block                    |
+| [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source                                |
+| [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers                              |
+| [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center                   |
+| [Company Lens all employee view](./company-lens-employee-view.md)     | The `employee-view` read qualification, the view mode, and the redaction tools page stories apply |
+| [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, routes, BFF proxies, authorization, keys, flag                      |
+| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                                           |
+| [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project                           |
+| [LinkedIn Post Agent](./mktg-linkedin-post.md)                        | User profile lifecycle, source ingestion, one-off documents, privacy boundaries                   |
+| [One-off Result Hook](./mktg-one-off-landing.md)                      | Current-turn terminal facts, root replies, creator-only failure text                              |
 
 ### Committee Management
 

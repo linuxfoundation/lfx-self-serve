@@ -771,6 +771,17 @@ export enum ServerFeatureFlag {
    * Removing the knob is part of that same step.
    */
   OrgEasyclaReturnInPath = 'ORG_EASYCLA_RETURN_IN_PATH',
+
+  /**
+   * Opens the Company Lens "all employee view" (epic #5845): the `employee-view` qualification of
+   * `assertOrgLensRead` and the `employeeView` verdict on `GET /api/orgs/me/role-grants`.
+   *
+   * OFF by default, and the reason is sequencing, not caution about the feature itself: the gate lands
+   * before the per-page stories (#5847 onward) that redact each lens endpoint, so with this ON and a page
+   * not yet redacted, an employee would read that page's full data. Turn it ON only once every page story
+   * has shipped. OFF is a complete no-op: no extra lookup runs and the lens behaves exactly as before.
+   */
+  OrgLensEmployeeView = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED',
 }
 
 /**

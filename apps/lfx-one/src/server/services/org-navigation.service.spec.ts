@@ -4,6 +4,13 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('./org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-employer' });
+    public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
+  },
+}));
+
 // Mirrors org-role-grants.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', () => ({

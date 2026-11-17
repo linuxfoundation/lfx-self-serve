@@ -104,6 +104,7 @@ describe('OrgNavigationService default selection', () => {
             error: grantsError,
             claManagerOrgSet,
             claManagerLookupFailed,
+            employeeViewOrgUid: signal<string | null>(null),
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },

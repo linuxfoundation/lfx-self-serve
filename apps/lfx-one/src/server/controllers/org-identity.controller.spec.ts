@@ -3,6 +3,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../services/org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-employer' });
+    public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
+  },
+}));
+
 const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getRollUpSet, getClaManagerOrgs, getRoleGrantAffiliation } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),

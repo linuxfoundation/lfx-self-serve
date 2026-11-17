@@ -38,6 +38,7 @@ describe('AccountContextService — address-adopted selection', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
   };
 
   beforeEach(() => {
@@ -49,6 +50,7 @@ describe('AccountContextService — address-adopted selection', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -411,7 +413,13 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
         {
           provide: OrgRoleGrantsService,
-          useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false), claManagerOrgSet: signal(new Set()) },
+          useValue: {
+            writerSet: signal(new Set()),
+            auditorSet: signal(new Set()),
+            isStaff: signal(false),
+            claManagerOrgSet: signal(new Set()),
+            employeeViewOrgUid: signal(null),
+          },
         },
         {
           provide: OrgRollUpFamiliesService,
@@ -550,6 +558,7 @@ describe('AccountContextService — family roll-up', () => {
     inheritedAuditorSet: WritableSignal<Set<string>>;
     isStaff: WritableSignal<boolean>;
     claManagerOrgSet: WritableSignal<Set<string>>;
+    employeeViewOrgUid: WritableSignal<string | null>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
@@ -607,6 +616,7 @@ describe('AccountContextService — family roll-up', () => {
       inheritedAuditorSet: signal(new Set<string>()),
       isStaff: signal(false),
       claManagerOrgSet: signal(new Set<string>()),
+      employeeViewOrgUid: signal<string | null>(null),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
     };

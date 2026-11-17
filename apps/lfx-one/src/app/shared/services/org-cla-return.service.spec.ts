@@ -71,6 +71,7 @@ describe('OrgClaReturnService', () => {
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet: signal(new Set<string>()),
             claManagerOrgSet: signal(new Set<string>()),
+            employeeViewOrgUid: signal<string | null>(null),
             claManagerLookupFailed: signal(false),
           },
         },

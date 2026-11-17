@@ -4,6 +4,13 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('./org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = vi.fn().mockResolvedValue({ eligible: false, reason: 'no-employer' });
+    public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
+  },
+}));
+
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { OrgSlugResolverService } from './org-slug-resolver.service';
 

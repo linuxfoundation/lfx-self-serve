@@ -97,7 +97,10 @@ async function resolveScope(req: Request, rollUpKey: string, operation: string):
   const members: OrgRollUpSetOrg[] = [];
   checks.forEach((check, index) => {
     if (check.status === 'fulfilled') {
-      members.push(family.orgs[index]);
+      // The all employee view is single-company and reduced; a roll-up must never serve a company at full width on it.
+      if (check.value !== 'employee-view') {
+        members.push(family.orgs[index]);
+      }
       return;
     }
     if (!(check.reason instanceof MicroserviceError && check.reason.statusCode === 403)) {

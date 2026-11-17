@@ -8,6 +8,7 @@ import { ActivatedRouteSnapshot, convertToParamMap, provideRouter, Router, Route
 import { Account, OrgResolveResponse } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgClaOnlyAccessService } from '@shared/services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { OrgSlugResolverService } from '@shared/services/org-slug-resolver.service';
 import { firstValueFrom, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
@@ -95,6 +96,7 @@ describe('orgPathParamGuard', () => {
         },
         { provide: OrgSlugResolverService, useValue: { resolve } },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
+        { provide: OrgLensViewModeService, useValue: { noteAddressed: vi.fn() } },
       ],
     });
     router = TestBed.inject(Router);

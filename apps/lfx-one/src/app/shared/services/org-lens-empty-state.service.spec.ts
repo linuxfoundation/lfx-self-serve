@@ -123,6 +123,7 @@ function setup(): Harness {
           inheritedWriterSet: signal(new Set<string>()),
           inheritedAuditorSet,
           affiliatedToMember,
+          employeeViewOrgUid: signal<string | null>(null),
           refresh,
         },
       },

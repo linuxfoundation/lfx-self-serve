@@ -23,6 +23,7 @@ import {
   ORG_EASYCLA_PATH,
   CF_ORG_DONATIONS_FLAG,
   ORG_EVENTS_PARTICIPATION_QUERY_PARAM,
+  ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES,
   ORG_LENS_TIME_RANGE_QUERY_PARAM,
   ORG_SCOPE_QUERY_PARAM,
   ORG_TEAM_MEMBERS_QUERY_PARAM,
@@ -36,6 +37,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
@@ -64,6 +66,7 @@ export class SidebarNavService {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly orgLensViewMode = inject(OrgLensViewModeService);
 
   /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'Engagement';
@@ -293,7 +296,8 @@ export class SidebarNavService {
     const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
     const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
-    return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
+    const withStaffSection = this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
+    return this.withoutEmployeeViewHiddenPages(withStaffSection);
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),
@@ -1131,6 +1135,25 @@ export class SidebarNavService {
    * Inserts EasyCLA directly before Organization Profile, taking over Profile's divider so the two
    * share the org-admin group; appended if Profile ever goes away.
    */
+  /**
+   * Epic #5845 — in the all employee view, drops every item whose page is in `ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES`,
+   * and any section that empties as a result. A no-op in the full view and while that list is empty.
+   */
+  private withoutEmployeeViewHiddenPages(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    if (!this.orgLensViewMode.isEmployeeView() || ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.length === 0) return items;
+    const pageOf = (item: SidebarMenuItem): string | undefined => item.routerLink?.split(/[?#]/)[0].split('/').filter(Boolean).pop();
+    const keep = (list: SidebarMenuItem[]): SidebarMenuItem[] =>
+      list.flatMap((item): SidebarMenuItem[] => {
+        if (item.items) {
+          const children = keep(item.items);
+          return children.length > 0 ? [{ ...item, items: children }] : [];
+        }
+        const page = pageOf(item);
+        return page && ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES.includes(page) ? [] : [item];
+      });
+    return keep(items);
+  }
+
   private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));
     if (profileIndex === -1) return [...items, this.orgEasyclaNavItem()];

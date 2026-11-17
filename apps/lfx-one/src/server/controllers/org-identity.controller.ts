@@ -24,6 +24,7 @@ import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgAffiliationService } from '../services/org-affiliation.service';
 import { OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
+import { OrgEmployeeViewService } from '../services/org-employee-view.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
@@ -37,6 +38,7 @@ export class OrgIdentityController {
   private readonly orgSlugResolver: OrgSlugResolverService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
   private readonly affiliation: OrgAffiliationService;
+  private readonly employeeView: OrgEmployeeViewService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
@@ -44,6 +46,7 @@ export class OrgIdentityController {
     this.orgLensAddressesService = new OrgLensAddressesService();
     this.claOnlyOrgs = new OrgClaOnlyOrgsService();
     this.affiliation = new OrgAffiliationService();
+    this.employeeView = new OrgEmployeeViewService();
     this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy, this.claOnlyOrgs);
   }
 
@@ -70,7 +73,9 @@ export class OrgIdentityController {
         this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants),
         this.affiliation.getRoleGrantAffiliation(req, grants),
       ]);
-      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation };
+      // Epic #5845 — the all employee view is offered only to a caller whose employer is already known to be a member.
+      const employeeView = await this.employeeView.getRoleGrantEmployeeView(req, grants, affiliation.affiliation);
+      const result: RoleGrantsResponse = { ...grants, ...claManagerOrgs, ...affiliation, ...employeeView };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
@@ -80,6 +85,7 @@ export class OrgIdentityController {
         affiliation_lookup: result.affiliation?.lookup,
         affiliation_has_employer: result.affiliation?.hasEmployer,
         affiliation_employer_is_member: result.affiliation?.employerIsMember,
+        employee_view: !!result.employeeView,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });

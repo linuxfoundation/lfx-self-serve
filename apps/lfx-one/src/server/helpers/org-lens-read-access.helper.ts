@@ -1,18 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
-import type { AccessAwareOrgsResult } from '@lfx-one/shared/interfaces';
+import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_LENS_EMPLOYEE_VIEW, ORG_LENS_FULL_VIEW } from '@lfx-one/shared/constants';
+import type { AccessAwareOrgsResult, OrgLensViewMode } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
+import { OrgEmployeeViewService } from '../services/org-employee-view.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { isServerFeatureEnabled, ServerFeatureFlag } from './server-feature-flag.helper';
 
 const roleGrants = new OrgRoleGrantsService();
 const accessCheck = new AccessCheckService();
+const employeeView = new OrgEmployeeViewService();
 
 /**
  * How a caller cleared the gate. Both values mean "allowed" — the distinction matters only to
@@ -25,10 +29,42 @@ const accessCheck = new AccessCheckService();
  * upstream, so upstream stops being the deciding authority for that request. Callers that share
  * must therefore serve the shared copy only on `org-grant`, keeping every other caller on the
  * direct path.
+ *
+ * `employee-view` (epic #5845) is the third way in and the only reduced one: the caller holds no grant and no
+ * entitlement here, but works for this company, which is an active LF member, and holds a verified email on one of
+ * its domains. It is READ-ONLY and redacted — it maps to `OrgLensViewMode` `'employee'` (see
+ * {@link getOrgLensViewMode}) — so it is never equivalent to the other two, and shared results are never served on it.
  */
-export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement';
+export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement' | 'employee-view';
 
 const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensReadQualification>>>();
+const viewModeByRequest = new WeakMap<Request, Map<string, OrgLensViewMode>>();
+
+/**
+ * The view mode `assertOrgLensRead` resolved for `orgUid` on this request: `'full'` unless the caller got in as
+ * `employee-view`. Synchronous so a handler can redact inline (`stripPersonalFields`) without awaiting.
+ *
+ * Fails closed: before the gate has resolved for this company on this request — it never ran, or is still in flight —
+ * the answer is `'employee'`, the most restrictive mode, so a handler that forgot to await the gate redacts rather
+ * than leaks. A roll-up segment answers `'full'`: the roll-up gate admits grant holders only and drops any company
+ * the caller reaches as an employee. Handlers that cannot be sure the gate ran should use
+ * {@link resolveOrgLensViewMode}.
+ */
+export function getOrgLensViewMode(req: Request, orgUid: string): OrgLensViewMode {
+  if (isOrgRollUpSegment(orgUid)) {
+    return ORG_LENS_FULL_VIEW;
+  }
+  return viewModeByRequest.get(req)?.get(orgUid) ?? ORG_LENS_EMPLOYEE_VIEW;
+}
+
+/** Runs (or replays) the read gate for `orgUid`, then answers the view mode it resolved. Throws exactly when {@link assertOrgLensRead} does. */
+export async function resolveOrgLensViewMode(req: Request, orgUid: string, operation: string): Promise<OrgLensViewMode> {
+  if (isOrgRollUpSegment(orgUid)) {
+    return ORG_LENS_FULL_VIEW;
+  }
+  await assertOrgLensRead(req, orgUid, operation);
+  return getOrgLensViewMode(req, orgUid);
+}
 
 /**
  * Read gate for Org Lens analytics that expose organization-level aggregates.
@@ -84,7 +120,15 @@ export async function assertOrgLensRead(
   }
   let qualification = byOrg.get(orgUid);
   if (!qualification) {
-    qualification = resolveOrgLensRead(req, orgUid, operation, roster);
+    qualification = resolveOrgLensRead(req, orgUid, operation, roster).then((resolved) => {
+      let modes = viewModeByRequest.get(req);
+      if (!modes) {
+        modes = new Map();
+        viewModeByRequest.set(req, modes);
+      }
+      modes.set(orgUid, resolved === 'employee-view' ? ORG_LENS_EMPLOYEE_VIEW : ORG_LENS_FULL_VIEW);
+      return resolved;
+    });
     byOrg.set(orgUid, qualification);
   }
   return qualification;
@@ -174,6 +218,23 @@ async function resolveOrgLensRead(
   }
   if (lookupFailed || rollUpIncomplete) {
     throw unavailable(undefined, lookupFailed ? '/query/resources' : undefined);
+  }
+
+  // Last resort, and only for a caller PROVEN to hold nothing: the roster loaded in full and the authorizer said no,
+  // so no existing path could have admitted them. A roll-up check passes `roster`; a roll-up never admits the employee
+  // view, so it is not even asked. Off by default until every page story has redacted its endpoint.
+  if (!roster && isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+    let verdict: Awaited<ReturnType<OrgEmployeeViewService['resolve']>>;
+    try {
+      verdict = await employeeView.resolve(req, orgUid);
+    } catch (error) {
+      // Could not check is not "not an employee": retriable 503, as for the other two upstreams.
+      logger.warning(req, operation, 'Employee-view lookup failed; cannot verify Org Lens read access', { org_uid: orgUid, err: error });
+      throw unavailable(error);
+    }
+    if (verdict.eligible) {
+      return 'employee-view';
+    }
   }
   throw forbidden();
 }

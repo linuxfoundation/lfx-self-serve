@@ -56,6 +56,9 @@ export class OrgRoleGrantsService {
   // access", not "no organization". False whenever the server could not establish it, which keeps the
   // copy the user sees today rather than asserting a reason that may be wrong.
   private readonly affiliatedToMemberInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // Epic #5845 — the company the caller may open in the all employee view. Null whenever the server did not prove it,
+  // which keeps today's empty state. Read it through `OrgLensViewModeService`.
+  private readonly employeeViewOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
@@ -96,6 +99,8 @@ export class OrgRoleGrantsService {
    * non-member employer all read false, so the classifier falls back to the state it shows today.
    */
   public readonly affiliatedToMember: Signal<boolean> = this.affiliatedToMemberInternal.asReadonly();
+  /** Epic #5845 — uid of the company the caller reaches only through the all employee view, or null. Read it through `OrgLensViewModeService`. */
+  public readonly employeeViewOrgUid: Signal<string | null> = this.employeeViewOrgUidInternal.asReadonly();
 
   public constructor() {
     afterNextRender(() => {
@@ -132,6 +137,8 @@ export class OrgRoleGrantsService {
         // Absent on an older server, or `lookup: 'failed'` ⇒ false: a rolling deploy and a broken
         // lookup both fall back to the no-organization copy rather than to a confident new reason.
         this.affiliatedToMemberInternal.set(response.affiliation?.lookup === 'ok' && response.affiliation.hasEmployer && response.affiliation.employerIsMember);
+        // Absent on an older server, a flag-off server or an unproven lookup ⇒ null: never inferred from absence.
+        this.employeeViewOrgUidInternal.set(response.employeeView?.orgUid ?? null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -157,6 +164,7 @@ export class OrgRoleGrantsService {
         // `lookupOutcome: 'failed'` already reports this outage.
         this.claManagerLookupFailedInternal.set(false);
         this.affiliatedToMemberInternal.set(false);
+        this.employeeViewOrgUidInternal.set(null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

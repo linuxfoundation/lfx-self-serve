@@ -4,6 +4,8 @@
 import type { Signal, WritableSignal } from '@angular/core';
 import type { Subject } from 'rxjs';
 
+import type { OrgLensEmployeeViewGrant } from './org-lens-view-mode.interface';
+
 /** Selector row. Spec 002: the org account id (18-char SFID) is the canonical identifier; `uid` and `accountId` both carry it. */
 export interface OrgItem {
   /** Org account id (18-char SFID), sourced from the indexed `b2b_org` doc id. */
@@ -32,6 +34,8 @@ export interface OrgItem {
   slug?: string | null;
   /** True for an org the caller reaches only as its CLA Manager (see `OrgResolveResponse.claOnly`). Absent means false. */
   claOnly?: boolean;
+  /** True for the company the caller reaches only through the all employee view (epic #5845). Absent means false. */
+  employeeView?: boolean;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -227,6 +231,14 @@ export interface RoleGrantsResponse {
    * Optional for rolling deploys: absent ⇒ treat as `lookup: 'failed'`, i.e. keep today's copy.
    */
   affiliation?: OrgLensAffiliationVerdict;
+  /**
+   * Epic #5845 — the company the caller may open in the all employee view (read-only, no names or emails):
+   * their current employer is an active LF member and they hold a verified email on one of its domains.
+   * Computed only when the caller holds no grant and is not staff, like `affiliation`, and only when that
+   * verdict already says the employer is a member. Absent for everyone else, and whenever the lookup could not
+   * prove every condition, so an outage keeps today's empty state. Never widens what a grant holder sees.
+   */
+  employeeView?: OrgLensEmployeeViewGrant;
 }
 
 /**
@@ -268,6 +280,8 @@ export interface OrgResolveResponse {
   name: string;
   /** True when the caller reaches this org only as its CLA Manager: no Org Lens read, so only its EasyCLA tab opens. Absent means false. */
   claOnly?: boolean;
+  /** True when the caller reaches this org only through the all employee view (epic #5845). Absent means false. */
+  employeeView?: boolean;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */

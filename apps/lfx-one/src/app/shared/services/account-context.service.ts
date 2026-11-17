@@ -281,7 +281,9 @@ export class AccountContextService {
       this.availableAccounts().length > 0 ||
       this.orgRoleGrantsService.isStaff() ||
       // M3: a CLA Manager with no grant still needs the selector to reach their company's EasyCLA tab.
-      this.orgClaOnlyAccess.claOnlyOrgUids().size > 0
+      this.orgClaOnlyAccess.claOnlyOrgUids().size > 0 ||
+      // Epic #5845: an employee with a verified company email reaches their company's read-only view through the selector.
+      this.orgRoleGrantsService.employeeViewOrgUid() !== null
   );
 
   public constructor() {
@@ -512,6 +514,8 @@ export class AccountContextService {
       // on `/org/not-found`, even though `canAddressOrganization` keeps that same organization when
       // they are already addressing it — the EasyCLA page guard redirects it from there (#4415, Copilot).
       this.orgClaOnlyAccess.claOnlyOrgUids(),
+      // Epic #5845: after the CLA-only set for the same reason — a real address, never part of a roll-up.
+      new Set(this.orgRoleGrantsService.employeeViewOrgUid() ? [this.orgRoleGrantsService.employeeViewOrgUid() as string] : []),
     ]) {
       for (const uid of set) {
         // Same shape the cookie-restore path uses for an id with no seed behind it, `accountId`
@@ -843,7 +847,7 @@ export class AccountContextService {
     if (!uid) {
       return false;
     }
-    if (this.orgRoleGrantsService.isStaff() || this.orgClaOnlyAccess.claOnlyOrgUids().has(uid)) {
+    if (this.orgRoleGrantsService.isStaff() || this.orgClaOnlyAccess.claOnlyOrgUids().has(uid) || this.orgRoleGrantsService.employeeViewOrgUid() === uid) {
       return true;
     }
     if (this.userOrganizations().some((account) => account.uid === uid)) {

@@ -17,10 +17,12 @@ import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment } from '@l
 import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
+import { OrgEmployeeViewService } from './org-employee-view.service';
 import { buildPerUserOrgKey, valkeyService } from './valkey.service';
 
 /** Cached shape: only unambiguous hits are stored, so a later call with a different `prefer` can never be answered from another call's tie-break. */
@@ -59,10 +61,12 @@ const OPERATION = 'resolve_org_segment';
 export class OrgSlugResolverService {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
+  private readonly employeeView: OrgEmployeeViewService;
 
-  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService) {
+  public constructor(microserviceProxy?: MicroserviceProxyService, claOnlyOrgs?: OrgClaOnlyOrgsService, employeeView?: OrgEmployeeViewService) {
     this.microserviceProxy = microserviceProxy ?? new MicroserviceProxyService();
     this.claOnlyOrgs = claOnlyOrgs ?? new OrgClaOnlyOrgsService();
+    this.employeeView = employeeView ?? new OrgEmployeeViewService();
   }
 
   public async resolveSegment(req: Request, rawSegment: string, prefer?: string): Promise<OrgSegmentResolution> {
@@ -79,7 +83,8 @@ export class OrgSlugResolverService {
     if (segmentKind === 'sfid') {
       // A CLA Manager holds no Org Lens read, so query-service hides the org from them; their own
       // `cla-manager` scope is the second chance. SFID only — a CLA-only org is addressed by SFID.
-      const org = (await this.lookupByUid(req, segment)) ?? (await this.claOnlyOrgs.resolveOrg(req, segment));
+      const org =
+        (await this.lookupByUid(req, segment)) ?? (await this.claOnlyOrgs.resolveOrg(req, segment)) ?? (await this.resolveEmployeeViewOrg(req, segment));
       return org ? { outcome: 'hit', org, cache: 'bypass' } : { outcome: 'miss', cache: 'bypass' };
     }
 
@@ -123,6 +128,24 @@ export class OrgSlugResolverService {
       return { outcome: 'hit', org: preferred, cache };
     }
     return { outcome: 'ambiguous', cache };
+  }
+
+  /**
+   * Epic #5845 — the company the caller reaches only through the all employee view, when `uid` is that company. Null
+   * when the flag is off, when the caller does not qualify for it, and when the lookup cannot answer (logged): an
+   * unverifiable address reads as not found, like the CLA-only fallback.
+   */
+  private async resolveEmployeeViewOrg(req: Request, uid: string): Promise<OrgResolveResponse | null> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+      return null;
+    }
+    try {
+      const verdict = await this.employeeView.resolve(req, uid);
+      return verdict.eligible ? { uid: verdict.org.orgUid, slug: null, name: verdict.org.orgName, employeeView: true } : null;
+    } catch (error) {
+      logger.warning(req, 'resolve_employee_view_org', 'Could not verify employee-view company; answering not found', { org_uid: uid, err: error });
+      return null;
+    }
   }
 
   private classify(segment: string, path: string): 'sfid' | 'slug' {
