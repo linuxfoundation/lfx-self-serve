@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
 import { MentorshipProgramSubmitter } from '@lfx-one/shared/interfaces';
-import { mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
+import { isMailtoSafeEmail, mentorshipPersonAvatarClass, mentorshipPersonInitials } from '@lfx-one/shared/utils';
 
 /**
  * The line under a program's title on the admin program page and the review page: when the program was created or
@@ -31,4 +31,9 @@ export class ProgramMetaComponent {
   protected readonly avatarFailed = linkedSignal<MentorshipProgramSubmitter | null, boolean>({ source: this.submitter, computation: () => false });
   protected readonly initials = computed(() => mentorshipPersonInitials(this.submitter()?.name ?? ''));
   protected readonly avatarStyleClass = computed(() => mentorshipPersonAvatarClass(this.submitter()?.name ?? ''));
+  /** The email's `mailto:` link, or `null` when the address could add recipients or headers; it then shows as text. */
+  protected readonly emailHref = computed(() => {
+    const email = this.submitter()?.email;
+    return isMailtoSafeEmail(email) ? `mailto:${email}` : null;
+  });
 }

@@ -200,6 +200,23 @@ describe('MentorshipService program review', () => {
     );
   });
 
+  it.each([401, 403, 404])('logs a %i on the submitter read at debug, since a caller can trigger it', async (statusCode) => {
+    vi.mocked(logger.warning).mockClear();
+    vi.mocked(logger.debug).mockClear();
+    routeReads({ [submitterPath]: new MicroserviceError('Submitter read refused', statusCode, 'UPSTREAM'), [catalogPath]: upstreamProgram });
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(review.submitter).toBeNull();
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.anything(),
+      'mentorship_get_program_review',
+      expect.stringContaining('submitter'),
+      expect.objectContaining({ programId, status: statusCode })
+    );
+  });
+
   it.each([
     ['approve', 'published'],
     ['reject', 'rejected'],

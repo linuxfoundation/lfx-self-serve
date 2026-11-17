@@ -37,13 +37,15 @@
           }
           <span class="break-words font-semibold text-gray-900" data-testid="mentorship-program-meta-admin-name">{{ admin.name }}</span>
         </span>
-        @if (admin.email) {
+        @if (emailHref(); as href) {
           <a
-            [href]="'mailto:' + admin.email"
+            [href]="href"
             class="break-all text-blue-600 transition-colors hover:text-blue-700 hover:underline"
             data-testid="mentorship-program-meta-admin-email">
             {{ admin.email }}
           </a>
+        } @else if (admin.email) {
+          <span class="break-all text-gray-700" data-testid="mentorship-program-meta-admin-email-text">{{ admin.email }}</span>
         }
       </div>
     }

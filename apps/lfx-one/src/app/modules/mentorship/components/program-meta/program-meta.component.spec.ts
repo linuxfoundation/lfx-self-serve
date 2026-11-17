@@ -62,6 +62,13 @@ describe('ProgramMetaComponent', () => {
     expect(text(el, 'mentorship-program-meta-admin-initials')).toBe('JD');
   });
 
+  it('shows an address that could add recipients as text, not as a mailto link', () => {
+    const el = render(null, { name: 'Jane Doe', email: 'jane.doe@example.org?cc=other@example.org', avatarUrl: null });
+
+    expect(el.querySelector('[data-testid="mentorship-program-meta-admin-email"]')).toBeNull();
+    expect(text(el, 'mentorship-program-meta-admin-email-text')).toBe('jane.doe@example.org?cc=other@example.org');
+  });
+
   it('renders nothing when both the date and the program admin are unknown', () => {
     const el = render(null, null);
 
