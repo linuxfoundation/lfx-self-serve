@@ -65,10 +65,10 @@ Each page story applies these to **one** page. Nothing is exposed by default.
 
 ## Every `assertOrgLensRead` consumer
 
-| Consumer | Employee view |
-| --- | --- |
-| `requireOrgLensAccess` on `/api/orgs/:orgUid/lens/*` | Admitted, read-only (non-GET/HEAD is 403); pages redact or `blockEmployeeView` per story |
-| `assertOrgLensClaRead` / `requireOrgLensClaAccess` (EasyCLA router, mounted before `orgsRouter`) | **Refused** (403 `EMPLOYEE_VIEW_FORBIDDEN`) unless the caller holds the CLA Manager scope |
-| `assertOrgAnalyticsRead` (`/api/analytics/*`) | **Refused by default**; a reviewed, redacting route opts in with `{ allowEmployeeView: true }`. `filterReadableAccountIds` / `filterConfirmedReadableAccountIds` never consult the employee view |
-| `resolveOrgLensRollUp` | Never (shared roster skips the attempt; `employee-view` results are dropped) |
-| ROI, groups, meetings, training, people handlers | Behind the lens prefix; each page story applies `blockEmployeeView` or `redactForEmployeeView` |
+| Consumer                                                                                         | Employee view                                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `requireOrgLensAccess` on `/api/orgs/:orgUid/lens/*`                                             | Admitted, read-only (non-GET/HEAD is 403); pages redact or `blockEmployeeView` per story                                                                                                         |
+| `assertOrgLensClaRead` / `requireOrgLensClaAccess` (EasyCLA router, mounted before `orgsRouter`) | **Refused** (403 `EMPLOYEE_VIEW_FORBIDDEN`) unless the caller holds the CLA Manager scope                                                                                                        |
+| `assertOrgAnalyticsRead` (`/api/analytics/*`)                                                    | **Refused by default**; a reviewed, redacting route opts in with `{ allowEmployeeView: true }`. `filterReadableAccountIds` / `filterConfirmedReadableAccountIds` never consult the employee view |
+| `resolveOrgLensRollUp`                                                                           | Never (shared roster skips the attempt; `employee-view` results are dropped)                                                                                                                     |
+| ROI, groups, meetings, training, people handlers                                                 | Behind the lens prefix; each page story applies `blockEmployeeView` or `redactForEmployeeView`                                                                                                   |

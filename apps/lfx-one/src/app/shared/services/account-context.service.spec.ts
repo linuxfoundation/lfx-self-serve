@@ -422,7 +422,7 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
             claManagerOrgSet: signal(new Set()),
             employeeViewOrgUid: signal(null),
             employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
-                },
+          },
         },
         {
           provide: OrgRollUpFamiliesService,
