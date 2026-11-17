@@ -18,7 +18,7 @@ const V1_COMMITTEE_SFID = 'a09v1SFIDaaaa';
 const USER_TOKEN = 'user-bearer-token';
 const M2M_TOKEN = 'm2m-bearer-token';
 
-const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, resolveCommitteeV2UidMappingsMock, generateM2MTokenMock } = vi.hoisted(() => ({
+const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, generateM2MTokenMock } = vi.hoisted(() => ({
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
@@ -39,7 +39,6 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
   resolveCommitteeV2UidsToV1IdsMock: vi.fn(),
-  resolveCommitteeV2UidMappingsMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
 }));
 
@@ -104,7 +103,6 @@ vi.mock('../helpers/meeting.helper', () => ({
 }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({
   resolveCommitteeV2UidsToV1Ids: resolveCommitteeV2UidsToV1IdsMock,
-  resolveCommitteeV2UidMappings: resolveCommitteeV2UidMappingsMock,
 }));
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: vi.fn(() => 'user@example.com'),
@@ -374,25 +372,28 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingById.mockResolvedValue({ committees: [{ uid: V2_COMMITTEE_UID }] });
     });
 
-    // GH-1463: upstream stores a v1 SFID and derives type: 'committee' from it. Forwarding the v2
-    // UID the picker works in would persist a bogus committee reference.
-    it('rewrites a group guest committee_uid from the v2 UID to the v1 SFID', async () => {
-      resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]), confirmedUnresolved: new Set() });
+    // lfx-self-serve-ops#1514: lfx-v2-meeting-service owns the v2→v1 translation for this field
+    // internally (CreateRegistrant/UpdateRegistrant call mapCommitteeFieldV2ToV1 on whatever
+    // committee_uid they receive, and translate the response back to v2). Resolving it here too,
+    // as this used to, was a double translation: upstream's own resolver then tried to translate
+    // the already-v1 SFID as if it were still v2, which can never succeed, and surfaced in
+    // production as "invalid ID: mapping not found for committee.uid.<v1_sfid>".
+    it('forwards a group guest committee_uid as the v2 UID, unchanged', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V1_COMMITTEE_SFID }));
+      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V2_COMMITTEE_UID }));
     });
 
     // A caller can attribute a guest to any committee UID it likes; only the ones the meeting is
-    // actually scoped to may be resolved, or the v1 lookup becomes an unauthorized cross-project read.
-    it('strips a committee_uid the meeting is not scoped to without looking it up', async () => {
+    // actually scoped to may be forwarded, or upstream derives `type: 'committee'` from a reference
+    // the meeting has nothing to do with.
+    it('strips a committee_uid the meeting is not scoped to', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: 'cmte-v2-someone-elses' }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(resolveCommitteeV2UidMappingsMock).not.toHaveBeenCalled();
       const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
       expect(forwarded).not.toHaveProperty('committee_uid');
     });
@@ -413,30 +414,6 @@ describe('MeetingController', () => {
 
     // The key is deleted, not nulled: upstream declares `committee_uid` a non-nullable optional
     // `string`, so omission is on-contract and an explicit `null` is not.
-    it('strips a confirmed-unresolvable committee_uid rather than forwarding a v2 UID upstream', async () => {
-      resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map(), confirmedUnresolved: new Set([V2_COMMITTEE_UID]) });
-      const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
-
-      await controller.addMeetingRegistrants(req, buildRes(), next);
-
-      const [, forwarded] = meetingSvc.addMeetingRegistrant.mock.calls[0];
-      expect(forwarded).not.toHaveProperty('committee_uid');
-    });
-
-    // The counterpart to the test above, and the reason the two are told apart at all: "no v1
-    // counterpart exists" is permanent and degrades, while "the lookup didn't answer" is transient.
-    // Downgrading the second writes a `direct` row and answers 201, and the update contract declares
-    // no `committee_uid` to repair it with — so it has to fail before the first write instead.
-    it('fails the batch when an allowlisted committee_uid lookup is indeterminate', async () => {
-      resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map(), confirmedUnresolved: new Set() });
-      const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
-
-      await controller.addMeetingRegistrants(req, buildRes(), next);
-
-      expect(meetingSvc.addMeetingRegistrant).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 503 }));
-    });
-
     it('drops a client-sent null committee_uid instead of proxying it upstream', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: null }] });
 
@@ -446,12 +423,11 @@ describe('MeetingController', () => {
       expect(forwarded).not.toHaveProperty('committee_uid');
     });
 
-    it('skips the mapping lookup entirely for directly-added guests', async () => {
+    it('does not touch committee_uid for directly-added guests', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com' }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(resolveCommitteeV2UidMappingsMock).not.toHaveBeenCalled();
       expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ email: 'a@example.com' }));
     });
 
