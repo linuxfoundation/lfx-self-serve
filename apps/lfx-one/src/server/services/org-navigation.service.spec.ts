@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { resolveEmployeeView } = vi.hoisted(() => ({ resolveEmployeeView: vi.fn() }));
 vi.mock('./org-employee-view.service', () => ({
   OrgEmployeeViewService: class {
-    public resolve = resolveEmployeeView;
+    public resolveReduced = resolveEmployeeView;
     public getRoleGrantEmployeeView = vi.fn().mockResolvedValue({});
   },
 }));

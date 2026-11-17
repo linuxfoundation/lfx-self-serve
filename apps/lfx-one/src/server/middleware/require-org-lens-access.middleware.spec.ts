@@ -1,57 +1,501 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Same reason as require-executive-director.middleware.spec.ts: the import graph transitively
+// reaches Angular's partially-compiled @angular/common, which needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import type { Request, Response } from 'express';
+import type { OrgRollUpSetOrg, OrgRollUpSetResponse } from '@lfx-one/shared/interfaces';
+import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ assertOrgLensRead: vi.fn(), getOrgLensViewMode: vi.fn(), resolveOrgLensRollUp: vi.fn() }));
+const getAccessAwareOrgs = vi.fn();
+const toRollUpSet = vi.fn();
+const checkSingleAccessStrict = vi.fn();
+const getEffectiveUsername = vi.fn();
 
-vi.mock('../helpers/org-lens-read-access.helper', () => ({ assertOrgLensRead: mocks.assertOrgLensRead, getOrgLensViewMode: mocks.getOrgLensViewMode }));
-vi.mock('../helpers/org-lens-roll-up.helper', () => ({ resolveOrgLensRollUp: mocks.resolveOrgLensRollUp }));
+// The middleware delegates to `assertOrgLensRead`, so these mocks target what that helper consumes —
+// the tests therefore exercise the real gate logic, not a reimplementation of it.
+vi.mock('../services/org-role-grants.service', () => ({
+  OrgRoleGrantsService: class {
+    public getAccessAwareOrgs = getAccessAwareOrgs;
+    public toRollUpSet = toRollUpSet;
+  },
+}));
+// The per-org authorizer question (`b2b_org:<uid>#auditor`) the gate asks alongside the roster.
+vi.mock('../services/access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccessStrict = checkSingleAccessStrict;
+  },
+}));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername() }));
+// Deny paths log before rejecting; the real logger expects a fuller request object than these stubs
+// carry, and would otherwise throw into the catch and turn a 403 into a 500.
+vi.mock('../services/logger.service', () => ({
+  logger: { info: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
 
 const { requireOrgLensAccess } = await import('./require-org-lens-access.middleware');
+const { resolveOrgLensRollUp } = await import('../helpers/org-lens-roll-up.helper');
 
-const ORG_UID = '0016100000ACMEAAA1';
+const LF = '0014100000Te2ovAAB';
+const OTHER_ORG = '0014100000BetaAAAA';
 
-const run = async (method: string, orgUid = ORG_UID) => {
-  const next = vi.fn();
-  await requireOrgLensAccess({ params: { orgUid }, method, path: '/x' } as unknown as Request, {} as Response, next);
-  return next;
-};
+function grants(uids: string[], upstreamFailed = false): { resolved: Map<string, unknown>; upstreamFailed: boolean } {
+  return { resolved: new Map(uids.map((uid) => [uid, { roleSource: 'direct-writer' }])), upstreamFailed };
+}
+
+function buildReq(orgUid: string): Request {
+  return { path: `/api/orgs/${orgUid}/lens/people/all`, params: { orgUid } } as unknown as Request;
+}
+
+async function run(orgUid: string): Promise<{ next: ReturnType<typeof vi.fn> }> {
+  const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+  await requireOrgLensAccess(buildReq(orgUid), {} as Response, next);
+  return { next };
+}
+
+/** Allow = next() with no argument; deny = next(error). */
+function statusOf(next: ReturnType<typeof vi.fn>): number | 'allow' {
+  expect(next).toHaveBeenCalledTimes(1);
+  const arg: unknown = next.mock.calls[0][0];
+  if (arg === undefined) return 'allow';
+  return arg instanceof Error && 'statusCode' in arg && typeof arg.statusCode === 'number' ? arg.statusCode : 500;
+}
+
+/** The error handed to next(); undefined when the request was allowed. */
+function errorOf(next: ReturnType<typeof vi.fn>): unknown {
+  return next.mock.calls[0][0];
+}
 
 beforeEach(() => {
-  vi.resetAllMocks();
-  mocks.assertOrgLensRead.mockResolvedValue('org-grant');
-  mocks.getOrgLensViewMode.mockReturnValue('full');
+  vi.clearAllMocks();
+  getEffectiveUsername.mockReturnValue('jdoe');
+  getAccessAwareOrgs.mockResolvedValue(grants([LF]));
+  // Default: the authorizer resolves "not an auditor" — the roster alone decides in most cases.
+  checkSingleAccessStrict.mockResolvedValue(false);
 });
 
-describe('requireOrgLensAccess: the all employee view is read-only', () => {
-  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('answers 403 EMPLOYEE_VIEW_FORBIDDEN to %s in the employee view', async (method) => {
-    mocks.assertOrgLensRead.mockResolvedValue('employee-view');
-    mocks.getOrgLensViewMode.mockReturnValue('employee');
-
-    const next = await run(method);
-
-    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+describe('requireOrgLensAccess', () => {
+  it('allows a caller holding a relation on the requested organization without asking the authorizer', async () => {
+    const { next } = await run(LF);
+    expect(statusOf(next)).toBe('allow');
+    // The authorizer cannot change an org-grant outcome, so a granted read never pays for it.
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
-  it.each(['GET', 'HEAD'])('lets %s through in the employee view', async (method) => {
-    mocks.assertOrgLensRead.mockResolvedValue('employee-view');
-    mocks.getOrgLensViewMode.mockReturnValue('employee');
-
-    expect(await run(method)).toHaveBeenCalledWith();
+  it('refuses an organization the caller holds no relation on (the reported exposure)', async () => {
+    // Before this middleware existed, this request returned 3,519 rows of another org's people.
+    const { next } = await run(OTHER_ORG);
+    expect(statusOf(next)).toBe(403);
+    // A verified denial is not an upstream failure, so it names no failed upstream path.
+    expect(errorOf(next)).toMatchObject({ service: 'LFX_V2_SERVICE', operation: 'require_org_lens_access', path: undefined });
   });
 
-  it('lets a grant holder write', async () => {
-    expect(await run('POST')).toHaveBeenCalledWith();
+  it('allows a cascading (inherited) grant, not only a direct one', async () => {
+    getAccessAwareOrgs.mockResolvedValue({
+      resolved: new Map([[OTHER_ORG, { roleSource: 'inherited-auditor', parentUid: LF, parentName: 'LF' }]]),
+      upstreamFailed: false,
+    });
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe('allow');
   });
 
-  it('passes the gate refusal through unchanged', async () => {
-    const refusal = Object.assign(new Error('nope'), { statusCode: 403 });
-    mocks.assertOrgLensRead.mockRejectedValue(refusal);
+  it('allows a direct auditor', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-auditor' }]]), upstreamFailed: false });
 
-    expect((await run('GET')).mock.calls[0][0]).toBe(refusal);
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('returns a retriable 503 when the grants lookup fails, rather than claiming no permission', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([], true));
+
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('does not fall open when the grants lookup fails for an org the caller could otherwise read', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-writer' }]]), upstreamFailed: true });
+
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('allows a verified grant on this org even when roll-up expansion degraded', async () => {
+    // The regression this locks: folding the roll-up `degraded` flag into the gate's veto made a
+    // CONFIRMED direct grant answer 503, locking an administrator out of the org they administer
+    // whenever some unrelated part of the hierarchy walk came back incomplete. `degraded` reports
+    // which orgs are missing from the map; it never invalidates one that is present.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-writer' }]]), upstreamFailed: false, degraded: true });
+
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('still returns 503 for an org absent from a degraded map, since the absence is unverified', async () => {
+    // The other half of the contract: a degraded map is a lower bound, so "not in the map" is not
+    // yet "denied" — answering 403 here would tell a roll-up editor they lost access they hold.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[LF, { roleSource: 'direct-writer' }]]), upstreamFailed: false, degraded: true });
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('allows a caller the authorizer confirms as auditor on an org they hold no roster grant on', async () => {
+    // LF staff, a cascade the roster did not surface, and key-contact promotion all resolve through
+    // the one `b2b_org#auditor` relation — the gate asks the authorizer instead of mirroring a team
+    // list (spec 044 / DR-001). Pinning this matters because
+    // it is what makes a 200 the correct answer for such a caller on an arbitrary org — behaviour
+    // that is easy to mistake for a missing gate.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe('allow');
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: OTHER_ORG, access: 'auditor' });
+  });
+
+  it('allows an authorizer-confirmed auditor even when the grant lookup degraded, because the two resolutions are independent', async () => {
+    // The authorizer answer is deliberately ordered BEFORE the degraded branch: it and the per-org
+    // roster are separate upstream calls, so a roster outage must not withhold access the
+    // authorizer already confirmed. A refactor that hoisted the degraded guard above it would
+    // answer 503 and lock every team member out during any roster blip.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true });
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('returns a retriable 503 when the authorizer check itself fails, never a 403 and never data', async () => {
+    // Fail-closed in the accurate direction: an authorizer outage is "couldn't verify", not
+    // "denied". The strict check is used precisely so this path cannot degrade to a silent false.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('refuses a caller the authorizer resolves as not an auditor when nothing is degraded', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: false });
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe(403);
+  });
+
+  it('does not consult a team list: the roster shape carries no staff flag the gate could read', async () => {
+    // The pre-044 gate short-circuited on `isStaff` from the roster. The contract now forbids the
+    // gate consulting any team list — only the affordance does — so a roster claiming staff must
+    // not by itself open an org the authorizer denies.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, isStaff: true });
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe(403);
+  });
+
+  it('refuses when no caller identity can be resolved', async () => {
+    getEffectiveUsername.mockReturnValue(undefined);
+
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe(403);
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the route carries no organization id', async () => {
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess({ path: '/api/orgs//lens/people/all', params: {} } as unknown as Request, {} as Response, next);
+
+    expect(statusOf(next)).toBe(400);
+  });
+
+  it('rejects a malformed organization id before asking any upstream', async () => {
+    // `:orgUid` is the 18-char account id; anything else is a client error, not a question for
+    // the roster or the authorizer, so neither is reached with a value they could never match.
+    const { next } = await run('abc');
+
+    expect(statusOf(next)).toBe(400);
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+  });
+
+  it('allows an authorizer-confirmed auditor when the roster lookup throws outright', async () => {
+    // A thrown roster lookup and a degraded one are the same fact to the gate: the roster has no
+    // answer. Both wait for the authorizer, which is independent and may still admit the caller.
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('returns a retriable 503 naming the roster upstream when the lookup throws and the authorizer denies', async () => {
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await run(LF);
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: '/query/resources' });
+  });
+
+  it('names the authorizer upstream when both the roster and the authorizer throw', async () => {
+    // Row 3 precedes row 4: the authorizer is the deciding authority for an unlisted org, so its
+    // outage is the one to report even though the roster failed first.
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+    checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: '/access-check' });
+  });
+
+  it('admits an authorizer-confirmed auditor over an incomplete roll-up', async () => {
+    // Row 2 precedes row 5: `degraded` says other orgs may be missing from the roster, which is
+    // no reason to 503 a caller the authorizer has confirmed on this one.
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: true });
+    checkSingleAccessStrict.mockResolvedValue(true);
+
+    const { next } = await run(OTHER_ORG);
+
+    expect(statusOf(next)).toBe('allow');
+  });
+
+  it('resolves each request and org once, replaying the answer to a second caller on the same request', async () => {
+    // The middleware and a handler that also asserts share one request; the second call must not
+    // cost a second roster lookup or authorizer round-trip.
+    const req = buildReq(OTHER_ORG);
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const first = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    const second = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess(req, {} as Response, first);
+    await requireOrgLensAccess(req, {} as Response, second);
+
+    expect(statusOf(first)).toBe(403);
+    expect(statusOf(second)).toBe(403);
+    expect(getAccessAwareOrgs).toHaveBeenCalledTimes(1);
+    expect(checkSingleAccessStrict).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('requireOrgLensAccess — family roll-up key', () => {
+  const ROOT = '001000000000000AAA';
+  const SUBSIDIARY = '001000000000001AAA';
+  const OTHER_ROOT = '001000000000009AAA';
+  const ROLL_UP = `family-${ROOT}`;
+
+  const org = (uid: string, name: string): OrgRollUpSetOrg => ({ uid, accountId: uid, name, logoUrl: null });
+  const rollUpSet = (
+    orgs = [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
+    overrides: Partial<OrgRollUpSetResponse> = {}
+  ): OrgRollUpSetResponse => ({
+    families: [{ rootUid: ROOT, rootName: 'Parent Co', rootLogoUrl: null, orgs }],
+    degraded: false,
+    lookupOutcome: 'ok',
+    ...overrides,
+  });
+
+  function buildRollUpReq(method = 'GET', query: Record<string, unknown> = {}): Request {
+    return { method, path: `/api/orgs/${ROLL_UP}/lens/memberships/active`, params: { orgUid: ROLL_UP }, query } as unknown as Request;
+  }
+
+  async function runRollUp(req: Request): Promise<{ next: ReturnType<typeof vi.fn> }> {
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess(req, {} as Response, next);
+    return { next };
+  }
+
+  beforeEach(() => {
+    toRollUpSet.mockReturnValue(rollUpSet());
+    getAccessAwareOrgs.mockResolvedValue(grants([ROOT, SUBSIDIARY]));
+  });
+
+  it('allows a family the caller holds organizations in, and scopes the read to them from the server-side set', async () => {
+    const req = buildRollUpReq();
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    expect(getAccessAwareOrgs).toHaveBeenCalledWith(req, 'jdoe');
+    await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
+      rollUpKey: ROLL_UP,
+      rootUid: ROOT,
+      members: [org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')],
+      complete: true,
+    });
+    expect(toRollUpSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads the caller roster once for the whole family, not once per member', async () => {
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe('allow');
+    expect(getAccessAwareOrgs).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves the verified members of a family present in a partial roll-up set, marked incomplete', async () => {
+    toRollUpSet.mockReturnValue(rollUpSet([org(ROOT, 'Parent Co')], { degraded: true, lookupOutcome: 'partial' }));
+    getAccessAwareOrgs.mockResolvedValue({ ...grants([ROOT]), degraded: true });
+    const req = buildRollUpReq();
+
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    await expect(resolveOrgLensRollUp(req, ROLL_UP, 'handler')).resolves.toEqual({
+      rollUpKey: ROLL_UP,
+      rootUid: ROOT,
+      members: [org(ROOT, 'Parent Co')],
+      complete: false,
+    });
+  });
+
+  it('never takes the organizations from the client', async () => {
+    const req = buildRollUpReq('GET', { accountIds: OTHER_ROOT, members: [OTHER_ROOT] });
+    await runRollUp(req);
+
+    const scope = await resolveOrgLensRollUp(req, ROLL_UP, 'handler');
+    expect(scope.members.map((member) => member.accountId)).toEqual([ROOT, SUBSIDIARY]);
+  });
+
+  it('leaves out an organization that fails its own read check, keeping the rest', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([ROOT]));
+    checkSingleAccessStrict.mockResolvedValue(false);
+    const req = buildRollUpReq();
+
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co')]);
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: SUBSIDIARY, access: 'auditor' });
+  });
+
+  it('refuses a family the caller holds no organization in, rather than widening to that family', async () => {
+    toRollUpSet.mockReturnValue({
+      families: [{ rootUid: OTHER_ROOT, rootName: 'Other', rootLogoUrl: null, orgs: [org(OTHER_ROOT, 'Other')] }],
+      degraded: false,
+      lookupOutcome: 'ok',
+    });
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(403);
+    expect(checkSingleAccessStrict).not.toHaveBeenCalled();
+  });
+
+  it('picks the addressed family when another family is listed before it', async () => {
+    const addressed = rollUpSet();
+    toRollUpSet.mockReturnValue({
+      ...addressed,
+      families: [{ rootUid: OTHER_ROOT, rootName: 'Other', rootLogoUrl: null, orgs: [org(OTHER_ROOT, 'Other')] }, ...addressed.families],
+    });
+    const req = buildRollUpReq();
+
+    const { next } = await runRollUp(req);
+
+    expect(statusOf(next)).toBe('allow');
+    expect((await resolveOrgLensRollUp(req, ROLL_UP, 'handler')).members).toEqual([org(ROOT, 'Parent Co'), org(SUBSIDIARY, 'Subsidiary Co')]);
+  });
+
+  it('refuses when every organization in the family fails its read check', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([]));
+    checkSingleAccessStrict.mockResolvedValue(false);
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(403);
+  });
+
+  it('fails the whole read when one organization cannot be verified, rather than answering a short roll-up', async () => {
+    getAccessAwareOrgs.mockResolvedValue(grants([ROOT]));
+    checkSingleAccessStrict.mockRejectedValue(new Error('access-check unreachable'));
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('returns a retriable 503 when the roll-up set could not be loaded', async () => {
+    toRollUpSet.mockReturnValue({ families: [], degraded: true, lookupOutcome: 'failed' });
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: '/query/resources' });
+  });
+
+  it('returns a retriable 503 when the roll-up set lookup throws', async () => {
+    getAccessAwareOrgs.mockRejectedValue(new Error('query-service unreachable'));
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+  });
+
+  it('returns a 503, not a 403, for a family missing from a degraded roll-up set', async () => {
+    toRollUpSet.mockReturnValue({ families: [], degraded: true, lookupOutcome: 'partial' });
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(503);
+    expect(errorOf(next)).toMatchObject({ path: undefined });
+  });
+
+  it('admits a HEAD on a roll-up key as a read', async () => {
+    const { next } = await runRollUp(buildRollUpReq('HEAD'));
+
+    expect(statusOf(next)).toBe('allow');
+    expect(toRollUpSet).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('refuses a %s on a roll-up key before asking any upstream', async (method) => {
+    const { next } = await runRollUp(buildRollUpReq(method));
+
+    expect(statusOf(next)).toBe(400);
+    expect(toRollUpSet).not.toHaveBeenCalled();
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+  });
+
+  it('refuses when no caller identity can be resolved', async () => {
+    getEffectiveUsername.mockReturnValue(undefined);
+
+    const { next } = await runRollUp(buildRollUpReq());
+
+    expect(statusOf(next)).toBe(403);
+    expect(toRollUpSet).not.toHaveBeenCalled();
+  });
+
+  it('treats a malformed roll-up key as a malformed organization id', async () => {
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
+    await requireOrgLensAccess(
+      { method: 'GET', path: '/api/orgs/family-123/lens/x', params: { orgUid: 'family-123' } } as unknown as Request,
+      {} as Response,
+      next
+    );
+
+    expect(statusOf(next)).toBe(400);
+  });
+
+  it('rejects a key without a valid top account id before loading the roll-up set', async () => {
+    await expect(resolveOrgLensRollUp(buildRollUpReq(), 'family-123', 'handler')).rejects.toMatchObject({ statusCode: 400 });
+    expect(toRollUpSet).not.toHaveBeenCalled();
   });
 });

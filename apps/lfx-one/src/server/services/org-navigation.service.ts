@@ -189,7 +189,7 @@ export class OrgNavigationService {
       return { item: null, failed: false };
     }
     try {
-      const verdict = await this.employeeView.resolve(req, null);
+      const verdict = await this.employeeView.resolveReduced(req);
       if (!verdict.eligible) {
         return { item: null, failed: false };
       }

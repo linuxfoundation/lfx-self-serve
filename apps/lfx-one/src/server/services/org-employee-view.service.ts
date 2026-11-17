@@ -13,6 +13,7 @@ import { resolveVerifiedUserEmails } from '../helpers/user-emails.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { CdpService } from './cdp.service';
+import { AccessCheckService } from './access-check.service';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -80,15 +81,23 @@ export class OrgEmployeeViewService {
   private readonly organizations: OrganizationService;
   private readonly emailVerification: EmailVerificationService;
   private readonly proxy: MicroserviceProxyService;
+  private readonly accessCheck: AccessCheckService;
   private readonly cache = new Map<string, { expiresAt: number; verdict: Promise<OrgEmployeeViewVerdict> }>();
 
   public constructor(
-    deps: { cdp?: CdpService; organizations?: OrganizationService; emailVerification?: EmailVerificationService; proxy?: MicroserviceProxyService } = {}
+    deps: {
+      cdp?: CdpService;
+      organizations?: OrganizationService;
+      emailVerification?: EmailVerificationService;
+      proxy?: MicroserviceProxyService;
+      accessCheck?: AccessCheckService;
+    } = {}
   ) {
     this.cdp = deps.cdp ?? new CdpService();
     this.organizations = deps.organizations ?? new OrganizationService();
     this.emailVerification = deps.emailVerification ?? new EmailVerificationService();
     this.proxy = deps.proxy ?? new MicroserviceProxyService();
+    this.accessCheck = deps.accessCheck ?? new AccessCheckService();
   }
 
   /**
@@ -120,6 +129,22 @@ export class OrgEmployeeViewService {
   }
 
   /**
+   * The company the caller reaches ONLY as an employee, for the surfaces that publish the mode to the client (role-grants,
+   * the selector row, the address resolver). Like {@link resolve} with no company, plus one more fact: a caller who also holds
+   * `b2b_org#auditor` on that company (an authorizer-only reader such as a key contact absent from the roster) is resolved
+   * `full` by the read gate, so they are NOT employee-only and get `holds-full-access` here — otherwise the client would give
+   * an existing full-view reader the reduced mode. The authorizer is asked strictly: a failure rejects, never reads as "no".
+   */
+  public async resolveReduced(req: Request): Promise<OrgEmployeeViewVerdict> {
+    const verdict = await this.resolve(req, null);
+    if (!verdict.eligible) {
+      return verdict;
+    }
+    const holdsAuditor = await this.accessCheck.checkSingleAccessStrict(req, { resource: 'b2b_org', id: verdict.org.orgUid, access: 'auditor' });
+    return holdsAuditor ? { eligible: false, reason: 'holds-full-access' } : verdict;
+  }
+
+  /**
    * The `employeeView` field for `GET /api/orgs/me/role-grants`, or nothing. Asked only when the flag is on, the caller
    * demonstrably holds no grant on a clean roster and is not staff (the same entry rule as the CLA-only and affiliation
    * lookups), and the affiliation verdict already says their employer is an LF member, so a caller who cannot qualify
@@ -143,7 +168,7 @@ export class OrgEmployeeViewService {
     let timer: NodeJS.Timeout | undefined;
     try {
       const verdict = await Promise.race([
-        this.resolve(req, null),
+        this.resolveReduced(req),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`)),
@@ -190,10 +215,11 @@ export class OrgEmployeeViewService {
     if (account.isMember !== true) return deny('not-member');
 
     const [company, emails] = await Promise.all([this.getCompanyRecord(req, account.accountId), this.getVerifiedEmails(req)]);
-    // `primary_domain` only: a website can name a third-party host, which would let any verified address there qualify.
-    const domain = normalizeCompanyDomain(company?.primary_domain);
-    if (!domain) return deny('company-domains-unknown');
-    if (!emails.some((email) => emailBelongsToCompanyDomain(email, [domain]))) return deny('no-verified-company-email');
+    // `primary_domain` plus the registered `domain_aliases` only: a website can name a third-party host, which would let
+    // any verified address there qualify.
+    const domains = [...new Set([company?.primary_domain, ...(company?.domain_aliases ?? [])].map(normalizeCompanyDomain).filter((d): d is string => !!d))];
+    if (domains.length === 0) return deny('company-domains-unknown');
+    if (!emails.some((email) => emailBelongsToCompanyDomain(email, domains))) return deny('no-verified-company-email');
 
     return { eligible: true, org: { orgUid: account.accountId, orgName: account.accountName, orgSlug: company?.slug?.trim().toLowerCase() || null } };
   }

@@ -474,6 +474,8 @@ export interface MemberServiceB2bOrgResponse {
   description?: string | null;
   website?: string | null;
   primary_domain?: string | null;
+  /** Normalized alternate domains registered for the company; an employee's verified email may match any of them. */
+  domain_aliases?: string[] | null;
   logo_url?: string | null;
   /** Spec 050 — lowercase slug derived from the org name by member-service (DR-007); `omitempty` upstream. */
   slug?: string | null;

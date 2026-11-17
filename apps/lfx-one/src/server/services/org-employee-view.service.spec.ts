@@ -35,6 +35,7 @@ interface Setup {
   account?: unknown;
   org?: unknown;
   emails?: string[] | Error;
+  auditor?: boolean | Error;
 }
 
 function build(opts: Setup = {}) {
@@ -64,8 +65,19 @@ function build(opts: Setup = {}) {
   resolveVerifiedUserEmails.mockImplementation(() =>
     opts.emails instanceof Error ? Promise.reject(opts.emails) : Promise.resolve(opts.emails ?? ['dev@acme-motors.example'])
   );
-  const svc = new OrgEmployeeViewService({ cdp: cdp as never, organizations: organizations as never, emailVerification: {} as never, proxy: proxy as never });
-  return { svc, cdp, organizations, proxy };
+  const accessCheck = {
+    checkSingleAccessStrict: vi
+      .fn()
+      .mockImplementation(() => (opts.auditor instanceof Error ? Promise.reject(opts.auditor) : Promise.resolve(opts.auditor ?? false))),
+  };
+  const svc = new OrgEmployeeViewService({
+    cdp: cdp as never,
+    organizations: organizations as never,
+    emailVerification: {} as never,
+    proxy: proxy as never,
+    accessCheck: accessCheck as never,
+  });
+  return { svc, cdp, organizations, proxy, accessCheck };
 }
 
 beforeEach(() => {
@@ -144,6 +156,38 @@ describe('OrgEmployeeViewService.resolve', () => {
     const { svc } = build({ experiences: experience(CDEV_ORG), emails: ['Dev@Eng.Acme-Motors.Example'] });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('matches a registered domain alias, and an alias-only company still has domains', async () => {
+    const { svc } = build({
+      experiences: experience(CDEV_ORG),
+      org: { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme-motors.example', domain_aliases: ['Acme-Group.example', 'bad host'] },
+      emails: ['dev@eng.acme-group.example'],
+    });
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+
+    const aliasOnly = build({
+      experiences: experience(CDEV_ORG),
+      org: { uid: ORG_UID, name: 'Acme Motors', domain_aliases: ['acme-group.example'] },
+      emails: ['dev@acme-group.example'],
+    });
+    await expect(aliasOnly.svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('still excludes the website host when aliases exist', async () => {
+    const { svc } = build({
+      experiences: experience(CDEV_ORG),
+      org: {
+        uid: ORG_UID,
+        name: 'Acme Motors',
+        primary_domain: 'acme-motors.example',
+        domain_aliases: ['acme-group.example'],
+        website: 'https://social.example/acme',
+      },
+      emails: ['dev@social.example'],
+    });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
   });
 
   it('does not take a domain from the website: only primary_domain counts', async () => {
@@ -228,6 +272,34 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 });
 
+describe('OrgEmployeeViewService.resolveReduced', () => {
+  it('reports the company for a caller who is employee-only', async () => {
+    const { svc, accessCheck } = build({ experiences: experience(CDEV_ORG) });
+
+    await expect(svc.resolveReduced(req())).resolves.toMatchObject({ eligible: true, org: { orgUid: ORG_UID } });
+    expect(accessCheck.checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: ORG_UID, access: 'auditor' });
+  });
+
+  it('does not publish an employee-only flag for a caller who also holds the auditor entitlement (they resolve full)', async () => {
+    const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
+
+    await expect(svc.resolveReduced(req())).resolves.toEqual({ eligible: false, reason: 'holds-full-access' });
+  });
+
+  it('rejects, never publishes, when the authorizer cannot answer', async () => {
+    const { svc } = build({ experiences: experience(CDEV_ORG), auditor: new Error('authorizer down') });
+
+    await expect(svc.resolveReduced(req())).rejects.toBeInstanceOf(Error);
+  });
+
+  it('asks the authorizer nothing for a caller who is not eligible', async () => {
+    const { svc, accessCheck } = build({ experiences: [] });
+
+    await expect(svc.resolveReduced(req())).resolves.toMatchObject({ eligible: false });
+    expect(accessCheck.checkSingleAccessStrict).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
   const grants = (overrides: Partial<RoleGrantsResponse> = {}): RoleGrantsResponse => ({
     writers: [],
@@ -267,6 +339,12 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
 
     await expect(svc.getRoleGrantEmployeeView(req(), g, affiliation)).resolves.toEqual({});
     expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+  });
+
+  it('answers nothing for a caller who also holds the auditor entitlement', async () => {
+    const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({});
   });
 
   it('answers nothing, not an error, when the lookup fails', async () => {

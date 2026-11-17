@@ -47,7 +47,8 @@ export type OrgEmployeeViewDenial =
   | 'other-company'
   | 'not-member'
   | 'company-domains-unknown'
-  | 'no-verified-company-email';
+  | 'no-verified-company-email'
+  | 'holds-full-access';
 
 /** A clean answer to "is this caller in the all employee view?". A failed lookup is a rejection, never a verdict. */
 export type OrgEmployeeViewVerdict = { eligible: true; org: OrgLensEmployeeViewGrant } | { eligible: false; reason: OrgEmployeeViewDenial };
