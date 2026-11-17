@@ -24,7 +24,7 @@ The creator's management page has no ballot-changing controls. Invited voters wh
 
 ## Why did I see "Submitting will end this vote"?
 
-A vote ends as soon as every invited member has responded. If you are the last member who hasn't, your ballot ends the vote, so LFX Self Serve asks you to confirm before submitting it. Select **Submit and end vote** to submit, or **Go back** to keep your ballot open. The last responder's ballot can't be changed afterward, even on a vote that allows changes, because the vote has ended. The check happens when you select **Submit Vote**, so if another member responds at the same moment, you might not see the dialog.
+A vote ends as soon as every invited member has responded. If you are the last member who hasn't, your ballot ends the vote, so LFX Self Serve asks you to confirm before submitting it. Select **Submit and end vote** to submit, or **Go back** to keep your ballot open. The last responder's ballot can't be changed afterward, even on a vote that allows changes, because the vote has ended. The check happens when you submit your ballot, so if another member responds at the same moment, you might not see the dialog.
 
 ## Can I follow a description link without leaving my ballot?
 

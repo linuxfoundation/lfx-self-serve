@@ -1583,6 +1583,57 @@ describe('VoteCastDrawerComponent — last-voter confirmation (#4726)', () => {
     expect(fixture.componentInstance.form.get('q1')?.value).toBe('c1');
   });
 
+  it('Escape on the dialog goes back to the ballot without closing the drawer or clearing it', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    fixture.componentInstance.abstainControl.setValue(true);
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(submitMyResponse).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.visible()).toBe(true);
+    expect(fixture.componentInstance['submitting']()).toBe(false);
+    expect(fixture.componentInstance.abstainControl.value).toBe(true);
+    expect(document.body.textContent).not.toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+  });
+
+  it('lets Escape close the drawer again once the voter has gone back', async () => {
+    const confirmationService = await openAndAnswer({ submitMyResponse: vi.fn(), getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    const confirm = vi.spyOn(confirmationService, 'confirm');
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    lastConfirmation(confirm).reject?.();
+    await fixture.whenStable();
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.visible()).toBe(false);
+  });
+
+  it('lets Escape close a reopened drawer when the host hid it while the dialog was open', async () => {
+    await openAndAnswer({ submitMyResponse: vi.fn(), getMyWouldEndVote: vi.fn().mockReturnValue(of(true)) });
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.visible()).toBe(false);
+  });
+
   it('submits straight away without the dialog when this ballot would not end the vote', async () => {
     const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
     const confirmationService = await openAndAnswer({ submitMyResponse, getMyWouldEndVote: vi.fn().mockReturnValue(of(false)) });

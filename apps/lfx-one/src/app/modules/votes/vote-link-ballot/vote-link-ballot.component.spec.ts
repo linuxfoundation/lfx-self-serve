@@ -820,6 +820,25 @@ describe('VoteLinkBallotComponent last-voter confirmation (#4726)', () => {
     expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
   });
 
+  it('closes the dialog when another link is opened, and its stale accept submits nothing', async () => {
+    await open(BALLOT, of(true));
+    submit();
+    const close = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'close');
+    const staleConfirmation = lastConfirmation();
+
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}-second`);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    fixture.detectChanges();
+    staleConfirmation.accept?.();
+    fixture.detectChanges();
+
+    expect(close).toHaveBeenCalled();
+    expect(getLinkBallot).toHaveBeenLastCalledWith(`${TOKEN}-second`);
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+    expect(state()).toBe('ready');
+    expect(submitting()).toBe(false);
+  });
+
   it('POSTs without asking when the submission would not end the vote, and still offers a change', async () => {
     await open(BALLOT, of(false));
     submit();

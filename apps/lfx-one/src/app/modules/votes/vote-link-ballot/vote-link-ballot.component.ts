@@ -187,7 +187,9 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
         }
         this.confirmationService.confirm({
           ...VOTE_LAST_VOTER_CONFIRMATION,
+          // A dialog left open across a token switch must never submit the previous link's ballot.
           accept: () => {
+            if (this.token() !== token) return;
             this.endsVote.set(true);
             this.send(body, false, true);
           },
@@ -310,6 +312,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   /** Consumes the fragment token and (re)starts the page for it, discarding any previous token, ballot and in-flight request. */
   private startFromFragment(): void {
     this.cancel$.next();
+    this.confirmationService.close();
     this.ballot.set(null);
     this.project.set(null);
     this.lastSubmission.set(null);

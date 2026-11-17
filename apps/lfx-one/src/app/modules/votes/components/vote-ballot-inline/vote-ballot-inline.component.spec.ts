@@ -14,7 +14,7 @@ import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteBallotInlineComponent } from './vote-ballot-inline.component';
 
@@ -362,6 +362,12 @@ describe('VoteBallotInlineComponent — last-voter confirmation (#4726)', () => 
     ],
   } as Vote;
 
+  // The dialog renders into document.body, not the fixture host: wipe it so one test's dialog never satisfies another's.
+  afterEach(() => {
+    fixture?.destroy();
+    document.body.innerHTML = '';
+  });
+
   async function render(wouldEndVote: boolean, vote: Vote = VOTE): Promise<void> {
     submitMyResponse = vi.fn(() => of(undefined));
     getMyWouldEndVote = vi.fn(() => of(wouldEndVote));
@@ -407,6 +413,18 @@ describe('VoteBallotInlineComponent — last-voter confirmation (#4726)', () => 
     expect(lastConfirmation()).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
     expect(submitMyResponse).not.toHaveBeenCalled();
     expect(fixture.componentInstance['submitting']()).toBe(true);
+  });
+
+  it('renders the dialog copy from the shared constant', async () => {
+    await render(true);
+
+    submit();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.header);
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.acceptLabel);
+    expect(document.body.textContent).toContain(VOTE_LAST_VOTER_CONFIRMATION.rejectLabel);
   });
 
   it('submits once the voter accepts', async () => {

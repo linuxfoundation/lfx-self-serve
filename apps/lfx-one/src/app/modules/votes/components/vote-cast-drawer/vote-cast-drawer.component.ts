@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CdkDragDrop, DragDropModule, moveItemInArray } from '@angular/cdk/drag-drop';
-import { isPlatformBrowser } from '@angular/common';
+import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { VoteDescriptionPipe } from '../../pipes/vote-description.pipe';
@@ -60,7 +60,23 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
+import {
+  catchError,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  finalize,
+  fromEvent,
+  map,
+  merge,
+  of,
+  startWith,
+  Subject,
+  switchMap,
+  take,
+  takeUntil,
+  tap,
+} from 'rxjs';
 
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
 
@@ -101,6 +117,7 @@ export class VoteCastDrawerComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly document = inject(DOCUMENT);
 
   // === Inputs ===
   public readonly voteId = input<string | null>(null);
@@ -347,10 +364,31 @@ export class VoteCastDrawerComponent {
           this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
           return;
         }
+        // The drawer's own document Escape listener would close the drawer too, clearing the ballot: while the dialog is
+        // open, take Escape in the capture phase, before both listeners, and treat it as Go back.
+        const settled$ = new Subject<void>();
+        fromEvent<KeyboardEvent>(this.document, 'keydown', { capture: true })
+          .pipe(
+            filter((event) => event.key === 'Escape'),
+            take(1),
+            takeUntil(merge(settled$, this.cancelSubmit$)),
+            takeUntilDestroyed(this.destroyRef)
+          )
+          .subscribe((event) => {
+            event.stopPropagation();
+            this.confirmationService.close();
+            this.submitting.set(false);
+          });
         this.confirmationService.confirm({
           ...VOTE_LAST_VOTER_CONFIRMATION,
-          accept: () => this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses),
-          reject: () => this.submitting.set(false),
+          accept: () => {
+            settled$.next();
+            this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
+          },
+          reject: () => {
+            settled$.next();
+            this.submitting.set(false);
+          },
         });
       });
   }
