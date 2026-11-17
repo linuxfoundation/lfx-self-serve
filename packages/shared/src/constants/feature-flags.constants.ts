@@ -189,34 +189,6 @@ export const FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS = 3_000;
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';
 
 /**
- * Gates the Meetings v2 surfaces (epic #1451) — the in-context meeting composer that replaces the
- * pre-v2 create/edit wizard at every entry point it is wired into. Both implementations ship
- * together and live side by side: this flag decides which one a given user renders, so the pre-v2
- * wizard stays fully functional and is what everyone sees until the flag is turned on for them.
- *
- * Scoped to meetings v2 rather than to the composer specifically — later meetings-v2 work is
- * expected to sit behind the same gate.
- *
- * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
- * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
- * surface and false is what keeps it dark. LaunchDarkly targeting is the rollout switch, never the
- * code default; the fallback lives in {@link MEETING_V2_ENABLED_DEFAULT}. The deep links
- * (`/meetings/create`, `/meetings/:id/edit`) follow the flag too, through `meetingsV2Guard`.
- *
- * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
- * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
- * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
- *
- * {@link MEETINGS_REDESIGN_FLAG} also enables v2: the UI reads both through `meetingsV2EnabledSignal`.
- */
-export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
-/**
- * What {@link MEETING_V2_ENABLED_FLAG} reads as in the browser when LaunchDarkly has not answered (unready
- * or unreachable). Every read of the flag — components and `meetingsV2Guard` — uses this one value, so
- * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
- */
-export const MEETING_V2_ENABLED_DEFAULT = false;
-/**
  * Lets a user start new newsletters in the block composer, on top of the project gate in
  * `NEWSLETTER_BLOCKS_PROJECT_SLUGS`. Off keeps the basic editor. A draft that already has a layout
  * stays in the composer either way, because the basic editor can't edit it safely.
@@ -230,8 +202,7 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  * Dark-launch gate for the redesigned Home / Me lens Meetings page (epic #4468, #4470). Default false: a
  * missing LaunchDarkly flag keeps everyone on the existing meetings dashboard. It only affects the flat
  * `/meetings` route in the Me lens; `/foundation/meetings`, `/project/meetings` and the org lens stay on
- * the existing page whatever this reads. It also turns on the v2 composer at every entry point (see
- * {@link MEETING_V2_ENABLED_FLAG}).
+ * the existing page whatever this reads.
  *
  * **UI-only** — evaluated through `FeatureFlagService` in the browser, so the server renders a loading
  * state and the browser picks the page. A provider that is not ready within `FEATURE_FLAG_READY_TIMEOUT_MS` means

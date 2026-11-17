@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { MAX_MEETING_DURATION, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -164,8 +164,8 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.canSave()).toBe(false);
   });
 
-  it('takes a higher cap from the opener where meeting v2 is on', async () => {
-    const component = await mount(MAX_MEETING_DURATION);
+  it('caps the duration at the composer maximum', async () => {
+    const component = await mount();
 
     component.form.patchValue({ duration: MAX_MEETING_DURATION });
     expect(component.form.get('duration')?.valid).toBe(true);
@@ -174,11 +174,7 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.form.get('duration')?.valid).toBe(false);
   });
 
-  it('keeps the pre-v2 eight-hour cap outside the v2 composer', () => {
-    expect(MAX_CUSTOM_DURATION).toBe(480);
-  });
-
-  it.each([0, 4, MAX_CUSTOM_DURATION + 1])('blocks a duration of %s minutes', async (duration) => {
+  it.each([0, 4, MAX_MEETING_DURATION + 1])('blocks a duration of %s minutes', async (duration) => {
     const component = await mount();
 
     component.form.patchValue({ duration });
@@ -307,7 +303,7 @@ describe('RescheduleOccurrenceDialogComponent', () => {
   });
 
   it('shows the duration error up front when the existing occurrence is longer than the form allows', async () => {
-    occurrence = { ...OCCURRENCE, duration: MAX_CUSTOM_DURATION + 1 };
+    occurrence = { ...OCCURRENCE, duration: MAX_MEETING_DURATION + 1 };
     const component = await mount();
 
     expect(component.showDurationError()).toBe(true);

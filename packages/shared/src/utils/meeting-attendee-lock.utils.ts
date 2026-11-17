@@ -79,11 +79,8 @@ export function getShowMeetingAttendeesLockedNote(
  * later switch the meeting to an unlocked type would share a guest list they were last shown as
  * private.
  *
- * `options` picks the lock to read through. The meeting v2 composer passes `COMPOSER_ATTENDEE_LOCK`,
+ * `options` picks the lock to read through. The meeting composer passes `COMPOSER_ATTENDEE_LOCK`,
  * so a restricted meeting reports the organizer's stored choice and only Board reads as undecided.
- * The pre-v2 wizard keeps the default lock, under which a restricted meeting reads as undecided even
- * when it holds a real opt-in made in the composer; that wizard leaves the stored value alone on
- * save (`shouldPreserveStoredAttendeeVisibility`).
  */
 export function getSavedAttendeeVisibility(
   meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined,
@@ -93,28 +90,6 @@ export function getSavedAttendeeVisibility(
     return null;
   }
   return meeting.show_meeting_attendees ?? false;
-}
-
-/**
- * Whether the pre-v2 wizard should leave the stored attendee visibility untouched on save.
- * @description The wizard locks the toggle off for every restricted meeting, so it can neither show
- * nor change an opt-in made in the meeting v2 composer, where only Board locks. Sending its forced
- * `false` would clear that opt-in whenever someone without the v2 flag edits the meeting for any
- * other reason (#5438). It omits the field instead, and the BFF keeps the stored value.
- *
- * Only an edit of a meeting that was already restricted and stays restricted qualifies, and only
- * while the composer rule would leave it unlocked: switching to Board still writes `false`, and
- * turning `restricted` on in this edit still writes the `false` the organizer was shown.
- */
-export function shouldPreserveStoredAttendeeVisibility(
-  existing: Pick<Meeting, 'restricted'> | null | undefined,
-  meetingType: string | null | undefined,
-  restricted: boolean | string | null | undefined
-): boolean {
-  if (!existing || !isShowMeetingAttendeesLocked(null, existing.restricted)) {
-    return false;
-  }
-  return isShowMeetingAttendeesLocked(meetingType, restricted) && !isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK);
 }
 
 /**

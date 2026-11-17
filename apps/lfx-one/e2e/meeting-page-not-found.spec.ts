@@ -16,7 +16,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { stubMeetingPageRedesign } from './helpers/meetings-v2-flag.helper';
+import { stubMeetingPageRedesign } from './helpers/meetings-redesign-flag.helper';
 
 const PAGE_LOAD_TIMEOUT = 30_000;
 // Eleven digits like a Zoom meeting id, so it reaches the meeting lookup and 404s there.

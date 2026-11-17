@@ -4,7 +4,12 @@
 <!-- Exact px, not rem; 14px root: 8px gap between label, field and message. -->
 <div class="flex min-w-0 flex-col gap-[8px]">
   @if (label()) {
-    <label class="label-13 text-ui-neutral-600" [id]="labelId" [for]="inputId" data-testid="ui-combobox-label">{{ label() }}</label>
+    <label class="label-13 text-ui-neutral-600" [id]="labelId" [for]="inputId" data-testid="ui-combobox-label"
+      >{{ label() }}
+      @if (required()) {
+        <span class="text-ui-danger-600" aria-hidden="true" data-testid="ui-combobox-required"> *</span>
+      }
+    </label>
   }
   <div
     cdkOverlayOrigin
@@ -40,7 +45,7 @@
     <span [class]="chevronClasses()" data-testid="ui-combobox-chevron"><i class="ui-icon fa-light fa-chevron-down" aria-hidden="true"></i></span>
   </div>
   <!-- One live region that outlives the panel, so the empty message is announced when it appears. -->
-  <span role="status" class="sr-only" data-testid="ui-combobox-status">{{ expanded() && isEmpty() ? emptyMessage() : '' }}</span>
+  <span role="status" class="sr-only" data-testid="ui-combobox-status">{{ statusText() }}</span>
   @if (error()) {
     <lfx-ui-error size="field" [announce]="false" [id]="errorId" data-testid="ui-combobox-error">{{ error() }}</lfx-ui-error>
   } @else if (hint()) {
@@ -73,9 +78,24 @@
       [attr.aria-labelledby]="label() ? labelId : null"
       [attr.aria-label]="label() ? null : ariaLabel() || null"
       data-testid="ui-combobox-listbox">
+      @if (typedOption(); as typed) {
+        <div
+          role="option"
+          class="flex min-h-[40px] shrink-0 cursor-pointer items-center gap-[8px] whitespace-nowrap rounded-[10px] px-[10px] label-14 text-ui-neutral-900 data-[highlighted]:bg-ui-neutral-alpha-50 forced-colors:data-[highlighted]:outline forced-colors:data-[highlighted]:outline-2 forced-colors:data-[highlighted]:-outline-offset-2 forced-colors:data-[highlighted]:outline-[color:Highlight]"
+          [id]="typed.id"
+          [attr.aria-selected]="typedSelected()"
+          [attr.data-highlighted]="typedActive() ? '' : null"
+          (click)="pick(typed)"
+          (mousemove)="highlight(typed)"
+          data-testid="ui-combobox-typed-option">
+          <span class="min-w-0 flex-1 truncate">Use “{{ typed.label }}”</span>
+        </div>
+      }
       <ng-content />
     </div>
-    @if (isEmpty()) {
+    @if (loading()) {
+      <p class="copy-14 px-[16px] py-[12px] text-ui-neutral-600" data-testid="ui-combobox-loading">Searching…</p>
+    } @else if (isEmpty()) {
       <p class="copy-14 px-[16px] py-[12px] text-ui-neutral-600" data-testid="ui-combobox-empty">
         {{ emptyMessage() }}
       </p>

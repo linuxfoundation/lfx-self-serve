@@ -626,8 +626,8 @@ export class MeetingService {
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
     // to opt a board meeting into sharing its guest list. A restricted meeting
-    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
-    // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
+    // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting
+    // composer sends one — and is forced off otherwise.
     if (
       isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted, {
         allowRestricted: createPayload.show_meeting_attendees === true,
@@ -708,10 +708,7 @@ export class MeetingService {
     // Defense in depth: the form disables this control, but a direct API caller must not be able
     // to opt a board meeting into sharing its guest list. A restricted (invite-only) meeting is
     // read and written under the same composer rule (#5438): an explicit choice is forwarded, and a
-    // body that omits the flag leaves the organizer's stored choice alone. The pre-v2 wizard locks
-    // the control for restricted meetings: it omits the flag when editing a meeting that stays
-    // restricted, so a composer opt-in survives, and sends `false` when the edit makes the meeting
-    // Board or turns `restricted` on.
+    // body that omits the flag leaves the organizer's stored choice alone.
     if (isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK)) {
       updatePayload.show_meeting_attendees = false;
     } else if (

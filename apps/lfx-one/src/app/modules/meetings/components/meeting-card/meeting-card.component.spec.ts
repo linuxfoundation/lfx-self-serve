@@ -23,7 +23,6 @@ import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/componen
 import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
@@ -51,15 +50,6 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   let toastAdd: ReturnType<typeof vi.fn>;
   let getMeetingDetail: ReturnType<typeof vi.fn>;
   let getMeeting: ReturnType<typeof vi.fn>;
-  let navigate: ReturnType<typeof vi.fn>;
-  /**
-   * `MEETING_V2_ENABLED_FLAG`, stated per test.
-   * @description The probe below runs on both sides of the flag — it is a permission re-check, not a
-   * v2 feature — but only the flag-on branch opens the composer; with it off the same allowed probe
-   * navigates to the pre-v2 editor instead. Both branches are covered, so each case says which one
-   * it is rather than inheriting a default from the real service (which answers `false` here).
-   */
-  const meetingsV2Enabled = signal(true);
 
   /** Mounts the card over `meeting` with an empty template — this suite exercises the handler, not the markup. */
   async function mount(meeting: Meeting = MEETING, pinned: MeetingOccurrence | null = null): Promise<MeetingCardComponent> {
@@ -83,9 +73,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
         },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         { provide: MessageService, useValue: { add: toastAdd } },
-        { provide: Router, useValue: { navigate } },
         { provide: ConfirmationService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
         {
@@ -121,10 +109,8 @@ describe('MeetingCardComponent — edit-access re-check', () => {
   }
 
   beforeEach(() => {
-    meetingsV2Enabled.set(true);
     composerOpen = vi.fn();
     toastAdd = vi.fn();
-    navigate = vi.fn();
     getMeetingDetail = vi.fn().mockReturnValue(of({ ...MEETING, organizer: true }));
     getMeeting = vi.fn().mockReturnValue(of(MEETING));
   });
@@ -205,43 +191,6 @@ describe('MeetingCardComponent — edit-access re-check', () => {
     expect(component.checkingEditAccess()).toBe(false);
   });
 
-  it('navigates to the pre-v2 editor instead of the composer while the flag is off', async () => {
-    meetingsV2Enabled.set(false);
-    const component = await mount({ ...MEETING, is_foundation: false } as Meeting);
-
-    component.onEditMeeting();
-
-    // The pre-v2 editor is a page, not an overlay, so the context the composer would have been
-    // handed as arguments has to travel in the URL instead: `project` is what `writerGuard` resolves
-    // write access from, and the tier picks the lensed path.
-    expect(navigate).toHaveBeenCalledWith(['/', 'project', 'meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
-    expect(composerOpen).not.toHaveBeenCalled();
-  });
-
-  it('carries the group through to the pre-v2 editor for a committee-scoped meeting', async () => {
-    meetingsV2Enabled.set(false);
-    const meeting = { ...MEETING, is_foundation: true, committees: [{ uid: 'committee-1' }] } as Meeting;
-    getMeetingDetail.mockReturnValue(of({ ...meeting, organizer: true }));
-    const component = await mount(meeting);
-
-    component.onEditMeeting();
-
-    expect(navigate).toHaveBeenCalledWith(['/', 'foundation', 'meetings', 'meeting-1', 'edit'], {
-      queryParams: { project: 'acme', committee_uid: 'committee-1' },
-    });
-  });
-
-  it('falls back to the flat edit path when the meeting tier is unenriched', async () => {
-    meetingsV2Enabled.set(false);
-    const component = await mount();
-
-    component.onEditMeeting();
-
-    // `is_foundation` absent means the list payload never said which tier this meeting belongs to;
-    // the flat path exists so the redirect guard can work it out rather than guessing wrong here.
-    expect(navigate).toHaveBeenCalledWith(['/meetings', 'meeting-1', 'edit'], { queryParams: { project: 'acme' } });
-  });
-
   describe('recurring meetings', () => {
     const OCCURRENCE = { occurrence_id: '1893456000', start_time: '2030-01-01T00:00:00.000Z', duration: 30 };
     const RECURRING = { ...MEETING, recurrence: { type: 2, repeat_interval: 1 }, occurrences: [OCCURRENCE] } as unknown as Meeting;
@@ -294,30 +243,6 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(composerOpen).toHaveBeenCalledWith({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', occurrenceId: '1893542400' });
     });
 
-    it('keeps the pre-v2 reschedule dialog for a single occurrence while the flag is off', async () => {
-      meetingsV2Enabled.set(false);
-      const component = await mountRecurring();
-      const refreshed = vi.fn();
-      component.meetingDeleted.subscribe(refreshed);
-
-      component.onEditMeeting();
-      dialogResults[0].next({ proceed: true, scope: 'occurrence', occurrenceId: '1893456000' });
-
-      expect(composerOpen).not.toHaveBeenCalled();
-      expect(dialogOpen).toHaveBeenCalledTimes(2);
-      expect(dialogOpen.mock.calls[1][1].data).toEqual(expect.objectContaining({ occurrence: expect.objectContaining({ occurrence_id: '1893456000' }) }));
-
-      const moved = { ...OCCURRENCE, occurrence_id: '1893542400', start_time: '2030-01-02T00:00:00.000Z' };
-      getMeeting.mockReturnValue(of({ ...RECURRING, occurrences: [moved] }));
-      dialogResults[1].next({ confirmed: true, start_time: '2030-01-02T00:00:00.000Z' });
-
-      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
-      expect(refreshed).toHaveBeenCalledTimes(1);
-      // A host that never binds `meetingDeleted` (the committee meetings list) still sees the new time.
-      expect(getMeeting).toHaveBeenCalledWith('meeting-1');
-      expect(component.currentOccurrence()?.occurrence_id).toBe('1893542400');
-    });
-
     it('still finds a pinned occurrence whose id was written in milliseconds', async () => {
       const component = await mountRecurring({ ...OCCURRENCE, occurrence_id: '1893456000000' } as MeetingOccurrence);
 
@@ -359,16 +284,13 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(component.meetingDuration()).toBe(30);
     });
 
-    it('hands both dialogs the fresh meeting, so a changed series timezone is the one the form uses', async () => {
-      meetingsV2Enabled.set(false);
+    it('hands the scope dialog the fresh meeting, so a changed series timezone is the one it lists occurrences in', async () => {
       const component = await mountRecurring();
       getMeetingDetail.mockReturnValue(of({ ...RECURRING, organizer: true, timezone: 'America/New_York' }));
 
       component.onEditMeeting();
-      dialogResults[0].next({ proceed: true, scope: 'occurrence' });
 
       expect(dialogOpen.mock.calls[0][1].data.meeting.timezone).toBe('America/New_York');
-      expect(dialogOpen.mock.calls[1][1].data.meeting.timezone).toBe('America/New_York');
     });
 
     it('refreshes instead of opening a ghost slot when the pinned occurrence is gone from the fresh read', async () => {
@@ -394,20 +316,6 @@ describe('MeetingCardComponent — edit-access re-check', () => {
       expect(composerOpen).not.toHaveBeenCalled();
       expect(dialogOpen).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it('still re-checks access before the pre-v2 editor, and still refuses a revoked organizer', async () => {
-    meetingsV2Enabled.set(false);
-    getMeetingDetail.mockReturnValue(of({ ...MEETING, organizer: false }));
-    const component = await mount();
-
-    component.onEditMeeting();
-
-    // Turning the flag off must not turn the permission re-check off with it — the stale
-    // `organizer: true` on the card reaches the pre-v2 editor exactly the same way.
-    expect(getMeetingDetail).toHaveBeenCalledWith('meeting-1', { skipCache: true });
-    expect(navigate).not.toHaveBeenCalled();
-    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Editing unavailable' }));
   });
 });
 
@@ -476,7 +384,6 @@ describe('MeetingCardComponent — invitee panels', () => {
         },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         {
@@ -692,7 +599,6 @@ describe('MeetingCardComponent — remove myself', () => {
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: LensService, useValue: { activeLens: signal('me') } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: MessageService, useValue: { add: toastAdd } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: ConfirmationService, useValue: { confirm } },
@@ -1274,7 +1180,6 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
         { provide: LensService, useValue: { activeLens } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: MessageService, useValue: { add: toastAdd } },
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
@@ -1462,7 +1367,6 @@ describe('MeetingCardComponent — summary modal read-only', () => {
         },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: Router, useValue: { navigate: vi.fn() } },
         { provide: ConfirmationService, useValue: {} },
@@ -1570,7 +1474,6 @@ describe('MeetingCardComponent — occurrence-scoped materials', () => {
         { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null), meetingFeedIdentity: signal('') } },
         { provide: ProjectService, useValue: { project: signal(null) } },
         { provide: MeetingComposerService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         { provide: DialogService, useValue: { open: vi.fn() } },
         { provide: ConfirmationService, useValue: { confirm: vi.fn() } },

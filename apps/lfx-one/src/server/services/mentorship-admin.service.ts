@@ -489,21 +489,23 @@ export class MentorshipAdminService {
   }
 
   /**
-   * Invites the LF account behind `lfid` as a mentor of the program and returns the new member's id. Upstream creates
-   * the Mentorship user when there is none and emails the invite to the account's primary email. Its 400, 403, 409
-   * (already invited or a mentor), 422 (no LF account, or its primary email already on another Mentorship user) and
-   * 503 (account lookup down) pass through.
+   * Invites a mentor to the program and returns the new member's id. By `lfid`, upstream creates the Mentorship user
+   * when there is none and emails the invite to the account's primary email. By `email`, an address with an LF account
+   * is invited as that account; one with none gets an email invitation that only an LF account using the address can
+   * accept. Its 400, 403, 409 (already invited or a mentor), 422 (no LF account for the LFID, or its primary email
+   * already on another Mentorship user) and 503 (account lookup down) pass through.
    */
   public async inviteProgramMentor(req: Request, programId: string, body: MentorshipAdminMentorInviteRequest): Promise<string | undefined> {
-    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId });
+    logger.debug(req, 'mentorship_admin_invite_program_mentor', 'Inviting program mentor', { programId, byEmail: !!body.email });
 
+    const invitee = body.email ? { email: body.email } : { lfid: body.lfid };
     const member = await proxyMentorshipRequest<{ id?: string }>(
       this.microserviceProxy,
       req,
       `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/members`,
       'POST',
       undefined,
-      { lfid: body.lfid, member_type: 'mentor' }
+      { ...invitee, member_type: 'mentor' }
     );
     return member?.id;
   }

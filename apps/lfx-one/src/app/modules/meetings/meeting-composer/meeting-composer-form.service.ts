@@ -507,7 +507,7 @@ export class MeetingComposerFormService {
     const meetingUid = this.meetingId() ?? '';
 
     this.registrantUpdates.set({
-      // `occurrence_id` is added here rather than by the shared mapper, which the pre-v2 guest screens use
+      // `occurrence_id` is added here rather than by the shared mapper, which the meeting card's guest list uses
       // too: only the occurrence edit ever sets it on a new guest (see `newGuestDefaults`).
       toAdd: next
         .filter((guest) => guest.state === 'new')
@@ -2235,7 +2235,7 @@ export class MeetingComposerFormService {
    * Rejects an occurrence start that falls in the series zone's spring-forward gap.
    * @description `combineDateTime` silently normalizes such a time (2:30 AM on a spring-forward day becomes
    * 3:30 AM), so it would pass the future check and move the occurrence to an instant the organizer never
-   * picked. The same guard the pre-v2 reschedule dialog applies; occurrence mode only, since the occurrence
+   * picked. The same guard the reschedule-occurrence dialog applies; occurrence mode only, since the occurrence
    * endpoint always reads the time in the series zone.
    */
   private occurrenceWallTimeValidator(): ValidatorFn {
