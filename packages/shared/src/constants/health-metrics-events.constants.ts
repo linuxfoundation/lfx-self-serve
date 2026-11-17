@@ -246,15 +246,15 @@ export const HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES: readonly HealthMetri
 export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
-export const HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED: HealthMetricsEventsSpeakers = { periods: [], organizations: [], unaffiliated: [], proposals: [] };
+export const HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED: HealthMetricsEventsSpeakers = { periods: [], organizations: [], proposals: [] };
 
 /** The periods the speakers view compares with the year before; the two oldest carry no change columns. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
 
-/** Organizations ranked per period; individual speakers sit on their own line, outside the ranking. */
+/** Companies ranked per period in Most active companies; individual speakers are left out of the ranking. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 10;
 
-/** Recent proposals listed per period and tab. */
+/** Recent proposals listed per period. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS = 10;
 
 /** Status groups as the view names them, with each group's badge. */

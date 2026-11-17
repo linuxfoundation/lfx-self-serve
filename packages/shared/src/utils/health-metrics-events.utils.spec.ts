@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import {
   buildHealthMetricsEventsAtAGlanceView,
@@ -836,7 +835,6 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
         { accountId: 'org-a', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', periods: [{ range: 'YTD', submitted: 400, rank: 1 }] },
         { accountId: 'org-c', accountName: 'Other Co', logoUrl: '', periods: [{ range: 'COMPLETED_YEAR', submitted: 90, rank: 1 }] },
       ],
-      unaffiliated: [{ range: 'YTD', submitted: 1351 }],
       proposals: [
         proposal({ proposalKey: 'p-old', submissionDate: '2026-01-02', status: 'Waitlisted', statusGroup: 'in-review' }),
         proposal(),
@@ -912,6 +910,17 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
       ['Acme Motors', '400 proposals', 100, 'https://logos.example/acme.png'],
       ['Vendor Corp', '200 proposals', 50, ''],
     ]);
+  });
+
+  it('reads an unmeasured company count as "—" with no bar, and a named company with no name as "—", not Individual', () => {
+    const organizations = [
+      { accountId: 'org-a', accountName: 'Acme Motors', logoUrl: '', periods: [{ range: 'YTD' as const, submitted: 400, rank: 1 }] },
+      { accountId: 'org-b', accountName: 'Vendor Corp', logoUrl: '', periods: [{ range: 'YTD' as const, submitted: null, rank: 2 }] },
+    ];
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ organizations, proposals: [proposal({ organizationName: null })] }), 'YTD');
+
+    expect(view.companies[1]).toMatchObject({ value: '—', pct: 0 });
+    expect(view.proposals[0].company).toEqual({ kind: 'company', name: '—', logoUrl: 'https://logos.example/acme.png' });
   });
 
   it('reads as unmeasured with no period, and as foundation-unmeasured with none at all', () => {

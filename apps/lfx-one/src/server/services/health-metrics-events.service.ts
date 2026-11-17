@@ -64,7 +64,6 @@ import type {
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersOrganization,
   HealthMetricsEventsSpeakersPeriod,
-  HealthMetricsEventsSpeakersPeriodCount,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersQuery,
   HealthMetricsEventsSpeakersStatusGroup,
@@ -265,7 +264,7 @@ interface RevenueRow {
   [periodColumn: string]: unknown;
 }
 
-/** The foundation scope row, a ranked organization or the unaffiliated row; every count is period-suffixed. */
+/** The foundation scope row or a ranked company; every count is period-suffixed. */
 interface SpeakersDrilldownRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
@@ -734,7 +733,7 @@ export class HealthMetricsEventsService {
     return { periods: HEALTH_METRICS_L2_RANGES.map((range) => mapRevenuePeriod(row, range)), events, eventsMeasured: true };
   }
 
-  /** Each period's proposal pipeline, the top organizations and the latest proposals per period and tab. */
+  /** Each period's proposal pipeline, the top companies and the latest proposals per period. */
   public async getSpeakers(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<HealthMetricsEventsSpeakers> {
     const [drilldown, proposals] = await Promise.all([this.getSpeakersDrilldown(req, query), this.getSpeakerProposals(req, query)]);
     const scope = drilldown.find((row) => row.IS_ALL_ORGANIZATIONS === true);
@@ -748,7 +747,6 @@ export class HealthMetricsEventsService {
         .filter((row) => row.IS_ALL_ORGANIZATIONS !== true && row.IS_UNAFFILIATED_ORGANIZATION !== true)
         .map(mapSpeakersOrganization)
         .filter((organization): organization is HealthMetricsEventsSpeakersOrganization => organization !== null),
-      unaffiliated: mapSpeakersUnaffiliated(drilldown.find((row) => row.IS_UNAFFILIATED_ORGANIZATION === true)),
       proposals: proposals.map(mapSpeakerProposal).filter((proposal): proposal is HealthMetricsEventsSpeakersProposal => proposal !== null),
     };
   }
@@ -1020,7 +1018,7 @@ export class HealthMetricsEventsService {
     return result.rows;
   }
 
-  /** The scope row, the unaffiliated row and every organization ranked in the top few for any period. */
+  /** The scope row and every company ranked in the top few for any period; individual speakers are no company. */
   private async getSpeakersDrilldown(req: Request, query: HealthMetricsEventsSpeakersQuery): Promise<SpeakersDrilldownRow[]> {
     // Prefixes, suffixes and the cap come from constants, never from the request, so interpolating them is safe.
     const periodColumns = HEALTH_METRICS_L2_RANGES.flatMap((range) => {
@@ -1045,7 +1043,7 @@ export class HealthMetricsEventsService {
       LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = d.account_id
       WHERE d.foundation_slug = ?
         AND d.is_all_projects = TRUE
-        AND (d.is_all_organizations = TRUE OR d.is_unaffiliated_organization = TRUE OR ${ranked})
+        AND (d.is_all_organizations = TRUE OR ${ranked})
       -- One read serves every period, so SQL gives a stable order; each period then sorts by its own sort_rank.
       ORDER BY d.is_all_organizations DESC, d.is_unaffiliated_organization DESC, d.account_name ASC NULLS LAST, d.account_id ASC NULLS LAST
     `;
@@ -1395,12 +1393,6 @@ function mapSpeakersOrganization(row: SpeakersDrilldownRow): HealthMetricsEvents
   if (periods.length === 0) return null;
 
   return { accountId: row.ACCOUNT_ID, accountName: row.ACCOUNT_NAME ?? row.ACCOUNT_ID, logoUrl: row.LOGO_URL ?? '', periods };
-}
-
-function mapSpeakersUnaffiliated(row: SpeakersDrilldownRow | undefined): HealthMetricsEventsSpeakersPeriodCount[] {
-  if (!row) return [];
-
-  return HEALTH_METRICS_L2_RANGES.map((range) => ({ range, submitted: toNullableNumber(row[periodColumn('proposals_submitted_count', range)]) }));
 }
 
 function mapSpeakerProposal(row: SpeakerProposalRow): HealthMetricsEventsSpeakersProposal | null {

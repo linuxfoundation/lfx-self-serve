@@ -1189,14 +1189,13 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     expect(periods.find((period) => period.range === 'COMPLETED_YEAR_3')).toMatchObject({ submitted: 8017, changes: null });
   });
 
-  it('keeps organizations to the periods they rank in and the unaffiliated row apart', async () => {
-    const { organizations, unaffiliated } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
+  it('keeps companies to the periods they rank in, leaving the unaffiliated row out of the ranking', async () => {
+    const { organizations } = await new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' });
 
     expect(organizations).toEqual([
       { accountId: 'org-a', accountName: 'Acme Motors', logoUrl: 'https://logos.example/acme.png', periods: [{ range: 'YTD', rank: 1, submitted: 324 }] },
       { accountId: 'org-b', accountName: 'Beta Coastal', logoUrl: '', periods: [{ range: 'COMPLETED_YEAR', rank: 4, submitted: null }] },
     ]);
-    expect(unaffiliated.find((entry) => entry.range === 'YTD')).toEqual({ range: 'YTD', submitted: 1351 });
   });
 
   it('maps a proposal with its status group and drops one with no key or period', async () => {
@@ -1240,7 +1239,6 @@ describe('HealthMetricsEventsService.getSpeakers', () => {
     await expect(new HealthMetricsEventsService().getSpeakers(req, { foundationSlug: 'acme' })).resolves.toEqual({
       periods: [],
       organizations: [],
-      unaffiliated: [],
       proposals: [],
     });
   });

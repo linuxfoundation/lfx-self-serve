@@ -489,9 +489,7 @@ export interface HealthMetricsEventsSpeakersProposal {
 export interface HealthMetricsEventsSpeakers {
   periods: HealthMetricsEventsSpeakersPeriod[];
   organizations: HealthMetricsEventsSpeakersOrganization[];
-  /** Proposals from speakers with no organization, kept out of the organization ranking. */
-  unaffiliated: HealthMetricsEventsSpeakersPeriodCount[];
-  /** The latest few per period and tab, most recent first. */
+  /** The latest few per period, most recent first. */
   proposals: HealthMetricsEventsSpeakersProposal[];
 }
 

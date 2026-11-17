@@ -54,7 +54,6 @@ function speakers(overrides: Partial<HealthMetricsEventsSpeakers> = {}): HealthM
       { accountId: 'acct-acme', accountName: 'Acme Motors', logoUrl: '', periods: [{ range: 'YTD', submitted: 40, rank: 1 }] },
       { accountId: 'acct-beta', accountName: 'Beta Coastal', logoUrl: '', periods: [{ range: 'YTD', submitted: 20, rank: 2 }] },
     ],
-    unaffiliated: [{ range: 'YTD', submitted: 90 }],
     proposals: [
       proposal(),
       proposal({
@@ -220,11 +219,12 @@ describe('EventsSpeakersComponent', () => {
 
     expect(verdicts).toEqual([false, true]);
     expect(query('events-speakers-metrics')).toBeNull();
-    expect(query('events-speakers-breakdown')).toBeNull();
+    expect(query('events-speakers-chart')).toBeNull();
+    expect(query('events-speakers-list')).toBeNull();
   });
 
   it('settles empty, with no body, when the foundation has no proposals at all', async () => {
-    await render(speakers({ periods: [], organizations: [], unaffiliated: [], proposals: [] }));
+    await render(speakers({ periods: [], organizations: [], proposals: [] }));
 
     expect(verdicts).toEqual([true]);
     expect(query('events-speakers-metrics')).toBeNull();

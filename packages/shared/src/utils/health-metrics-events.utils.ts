@@ -75,7 +75,6 @@ import type {
   HealthMetricsEventsRankedRowView,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersProposalRowView,
-  HealthMetricsEventsSpeakersStatusGroup,
   HealthMetricsEventsSpeakersView,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipView,
@@ -495,11 +494,12 @@ export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEven
   const companies = speakers.organizations
     .flatMap((organization) => {
       const entry = organization.periods.find((candidate) => candidate.range === range);
-      return entry ? [{ organization, rank: entry.rank, submitted: entry.submitted ?? 0 }] : [];
+      return entry ? [{ organization, rank: entry.rank, submitted: entry.submitted }] : [];
     })
     .sort((a, b) => a.rank - b.rank)
     .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS);
-  const most = Math.max(0, ...companies.map((company) => company.submitted));
+  // An unmeasured count reads "—" with no bar, never as 0.
+  const most = Math.max(0, ...companies.map((company) => company.submitted ?? 0));
 
   return {
     foundationMeasured: speakers.periods.length > 0,
@@ -530,8 +530,8 @@ export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEven
     companies: companies.map(({ organization, submitted }) => ({
       key: organization.accountId,
       label: organization.accountName,
-      value: `${formatHealthMetricsEventsCount(submitted)} ${submitted === 1 ? 'proposal' : 'proposals'}`,
-      pct: most > 0 ? (submitted / most) * 100 : 0,
+      value: submitted === null ? HEALTH_METRICS_TABLE_DASH : `${formatHealthMetricsEventsCount(submitted)} ${submitted === 1 ? 'proposal' : 'proposals'}`,
+      pct: submitted !== null && most > 0 ? (submitted / most) * 100 : 0,
       tier: null,
       icon: '',
       company: { kind: 'company', name: organization.accountName, logoUrl: organization.logoUrl },
@@ -845,7 +845,8 @@ function buildSpeakersChart(speakers: HealthMetricsEventsSpeakers): HealthMetric
 }
 
 function buildSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersProposal): HealthMetricsEventsSpeakersProposalRowView {
-  const company = proposal.unaffiliated || !proposal.organizationName ? 'Individual' : proposal.organizationName;
+  // Only the view's flag makes a speaker an individual; a company with no name reads "—".
+  const company = proposal.unaffiliated ? 'Individual' : (proposal.organizationName ?? HEALTH_METRICS_TABLE_DASH);
   const group = proposal.statusGroup ? HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[proposal.statusGroup] : null;
 
   return {
@@ -853,7 +854,7 @@ function buildSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersPropo
     // The speaker is shown by job title, never by name; with none, the session title leads.
     title: proposal.jobTitle ?? proposal.sessionTitle,
     description: proposal.jobTitle ? proposal.sessionTitle : '',
-    company: { kind: 'company', name: company, logoUrl: company === 'Individual' ? '' : proposal.logoUrl },
+    company: { kind: 'company', name: company, logoUrl: proposal.unaffiliated ? '' : proposal.logoUrl },
     eventName: proposal.eventName,
     dateLabel: proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : HEALTH_METRICS_TABLE_DASH,
     statusLabel: group?.label ?? proposal.status,
