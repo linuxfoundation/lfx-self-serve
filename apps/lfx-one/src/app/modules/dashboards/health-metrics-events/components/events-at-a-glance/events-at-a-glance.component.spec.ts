@@ -103,11 +103,11 @@ describe('EventsAtAGlanceComponent', () => {
 
   it('compares each figure with last year in a table, its change as a badge', async () => {
     const year = new Date().getFullYear();
-    await render('ready', glance({ periods: [period(), period({ range: 'COMPLETED_YEAR', registrations: 14000 })] }));
+    await render('ready', glance({ periods: [period(), period({ range: 'COMPLETED_YEAR', registrations: 14091 })] }));
 
     expect(text('events-at-a-glance-period-heading')).toBe(`${year} (YTD)`);
     expect(text('events-at-a-glance-comparison-heading')).toBe(`${year - 1} (full year)`);
-    expect(cells('events-at-a-glance-row-registrations')).toEqual(['Registrations', '12,400', '14,000', '−12%']);
+    expect(cells('events-at-a-glance-row-registrations')).toEqual(['Registrations', '12,400', '14,091', '−12%']);
     expect(query('events-at-a-glance-row-registrations-change')?.textContent?.trim()).toBe('−12%');
     expect(text('events-at-a-glance-row-show-up-rate-change')).toBe('+2.2pp');
     expect(query('events-at-a-glance-tiles')).toBeNull();

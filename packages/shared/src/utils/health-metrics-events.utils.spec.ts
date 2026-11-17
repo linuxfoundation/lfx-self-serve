@@ -507,14 +507,27 @@ describe('buildHealthMetricsEventsAtAGlanceView', () => {
   });
 
   it('lists each figure against the comparison period, with its change as a badge, the show-up rate in points', () => {
-    const periods = [glancePeriod(), glancePeriod({ range: 'COMPLETED_YEAR', registrations: 14000, showUpRate: 0.732 })];
+    // Each comparison value is the one its change implies, as the view measures year to date against the whole last year.
+    const changes = {
+      registrations: -0.1143,
+      attendees: -0.35,
+      organizations: 0.0024,
+      speakers: -0.2982,
+      countries: 0.1875,
+      events: 0.5,
+      showUpRatePts: 0.022,
+    };
+    const periods = [
+      glancePeriod({ changes }),
+      glancePeriod({ range: 'COMPLETED_YEAR', registrations: 14000, attendees: 14308, organizations: 409, speakers: 171, countries: 32, showUpRate: 0.728 }),
+    ];
 
     expect(buildHealthMetricsEventsAtAGlanceView(glance({ periods }), 'YTD').rows).toEqual([
-      { key: 'registrations', label: 'Registrations', value: '12,400', comparison: '14,000', change: '−12%', changeTone: 'danger' },
-      { key: 'attendees', label: 'Attendees', value: '9,300', comparison: '9,300', change: '−35%', changeTone: 'danger' },
-      { key: 'companies', label: 'Participating companies', value: '410', comparison: '410', change: '+0%', changeTone: 'success' },
-      { key: 'speakers', label: 'Speakers', value: '120', comparison: '120', change: '−30%', changeTone: 'danger' },
-      { key: 'countries', label: 'Countries', value: '38', comparison: '38', change: '+20%', changeTone: 'success' },
+      { key: 'registrations', label: 'Registrations', value: '12,400', comparison: '14,000', change: '−11%', changeTone: 'danger' },
+      { key: 'attendees', label: 'Attendees', value: '9,300', comparison: '14,308', change: '−35%', changeTone: 'danger' },
+      { key: 'companies', label: 'Participating companies', value: '410', comparison: '409', change: '+0%', changeTone: 'success' },
+      { key: 'speakers', label: 'Speakers', value: '120', comparison: '171', change: '−30%', changeTone: 'danger' },
+      { key: 'countries', label: 'Countries', value: '38', comparison: '32', change: '+19%', changeTone: 'success' },
       { key: 'show-up-rate', label: 'Show-up rate', value: '75%', comparison: '73%', change: '+2.2pp', changeTone: 'success' },
     ]);
   });
