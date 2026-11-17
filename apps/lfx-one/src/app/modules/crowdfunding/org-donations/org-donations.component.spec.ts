@@ -8,6 +8,7 @@ import { EMPTY_ORG_DONATIONS } from '@lfx-one/shared/constants';
 import { OrgDonation } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { CrowdfundingService } from '@services/crowdfunding.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,10 +37,13 @@ describe('OrgDonationsComponent (#415)', () => {
     selectedAccount: signal<{ accountId: string; accountName: string; uid: string | null }>({ accountId: '', accountName: '', uid: null }),
   };
 
+  const employeeView = signal(false);
+
   const root = (): HTMLElement => fixture.nativeElement;
 
   beforeEach(async () => {
     rows = [];
+    employeeView.set(false);
     accountContext.selectedAccount.set({ accountId: '', accountName: '', uid: null });
     service = { getOrgDonations: vi.fn(() => of({ ...EMPTY_ORG_DONATIONS, data: rows, total: rows.length })) };
     await TestBed.configureTestingModule({
@@ -47,6 +51,7 @@ describe('OrgDonationsComponent (#415)', () => {
       providers: [
         { provide: CrowdfundingService, useValue: service },
         { provide: AccountContextService, useValue: accountContext },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(OrgDonationsComponent);
@@ -70,6 +75,23 @@ describe('OrgDonationsComponent (#415)', () => {
     accountContext.selectedAccount.set({ accountId: 'x', accountName: 'Synthetic Org Inc', uid: ORG_UID });
     await fixture.whenStable();
     expect(service.getOrgDonations).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no donor name or email column in the all employee view (epic #5845)', async () => {
+    employeeView.set(true);
+    // Defence in depth: even if a payload still carried the fields, the page does not render them.
+    rows = [donation()];
+    accountContext.selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+    await fixture.whenStable();
+
+    const row = root().querySelector<HTMLElement>('[data-testid="org-donation-row-synthetic-donation-1"]');
+    expect(row?.textContent).toContain('Synthetic Fund');
+    expect(row?.textContent).toContain('$25.00');
+    expect(root().textContent).not.toContain('Synthetic Donor');
+    expect(root().textContent).not.toContain('donor@example.com');
+    expect(root().textContent).not.toContain('Donor');
+    expect(root().textContent).not.toContain('Email');
+    expect(root().querySelectorAll('th').length).toBe(3);
   });
 
   it('links the initiative to its crowdfunding page when CF sends its slug', async () => {

@@ -17,6 +17,7 @@ import { InitiativeBase } from '@lfx-one/shared/interfaces';
 import { CrowdfundingService } from '@services/crowdfunding.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { MessageService } from 'primeng/api';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
@@ -132,6 +133,7 @@ describe('MyInitiativesComponent external creation links', () => {
         { provide: CrowdfundingService, useValue: service },
         { provide: ProjectContextService, useValue: projectContext },
         { provide: AccountContextService, useValue: accountContext },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(false) } },
         { provide: ActivatedRoute, useValue: { snapshot: { data: routeData } } },
       ],
     }).compileComponents();

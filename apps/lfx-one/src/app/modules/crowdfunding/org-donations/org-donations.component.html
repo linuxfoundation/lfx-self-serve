@@ -44,8 +44,10 @@
                   <tr class="border-b border-gray-200 bg-gray-50">
                     <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Initiative</th>
                     <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
-                    <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Donor</th>
-                    <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                    @if (!isEmployeeView()) {
+                      <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Donor</th>
+                      <th scope="col" class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                    }
                     <th scope="col" class="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
                   </tr>
                 </thead>
@@ -72,16 +74,18 @@
                         </div>
                       </td>
                       <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ item.date | date: 'MMM d, y' : 'UTC' }}</td>
-                      <!-- An anonymous donor (lfx-crowdfunding#466) arrives from CF as "Anonymous" with no email. -->
-                      @if (item.anonymous) {
-                        <td class="px-4 py-3 italic text-gray-500" [attr.data-testid]="'org-donation-anonymous-' + item.id">Anonymous</td>
-                      } @else {
-                        <td class="px-4 py-3 text-gray-900">{{ item.donorName }}</td>
-                      }
-                      @if (!item.anonymous && item.donorEmail) {
-                        <td class="px-4 py-3 text-gray-500">{{ item.donorEmail }}</td>
-                      } @else {
-                        <td class="px-4 py-3 text-gray-400"><span aria-hidden="true">—</span><span class="sr-only">No email</span></td>
+                      @if (!isEmployeeView()) {
+                        <!-- An anonymous donor (lfx-crowdfunding#466) arrives from CF as "Anonymous" with no email. -->
+                        @if (item.anonymous) {
+                          <td class="px-4 py-3 italic text-gray-500" [attr.data-testid]="'org-donation-anonymous-' + item.id">Anonymous</td>
+                        } @else {
+                          <td class="px-4 py-3 text-gray-900">{{ item.donorName }}</td>
+                        }
+                        @if (!item.anonymous && item.donorEmail) {
+                          <td class="px-4 py-3 text-gray-500">{{ item.donorEmail }}</td>
+                        } @else {
+                          <td class="px-4 py-3 text-gray-400"><span aria-hidden="true">—</span><span class="sr-only">No email</span></td>
+                        }
                       }
                       <td class="px-4 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">{{ item.amountCents / 100 | currency: 'USD' }}</td>
                     </tr>
