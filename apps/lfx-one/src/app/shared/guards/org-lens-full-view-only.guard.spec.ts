@@ -94,4 +94,12 @@ describe('orgLensFullViewOnlyGuard', () => {
 
     expect(await verdictFor('/company/acme-inc/groups', 'projects')).toBe('/company/acme-inc/projects');
   });
+
+  it('redirects the Groups page to the Overview in the employee view, and opens it in the full view (#5859)', async () => {
+    expect(await verdictFor('/company/acme-inc/groups')).toBe(true);
+
+    isEmployeeView.set(true);
+
+    expect(await verdictFor('/company/acme-inc/groups')).toBe('/company/acme-inc/overview');
+  });
 });

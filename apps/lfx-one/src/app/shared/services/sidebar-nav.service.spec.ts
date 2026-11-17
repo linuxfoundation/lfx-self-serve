@@ -55,6 +55,7 @@ describe('SidebarNavService', () => {
   const gatewazeEmbedEnabled = signal(false);
   const canWrite = signal(false);
   const selectedOrgUid = signal<string | null>(null);
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
   const orgWriterSet = signal(new Set<string>());
   const claManagerOrgSet = signal(new Set<string>());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
@@ -111,6 +112,7 @@ describe('SidebarNavService', () => {
     gatewazeEmbedEnabled.set(false);
     canWrite.set(false);
     selectedOrgUid.set(null);
+    employeeViewOrgUids.set(new Set());
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
     personaLoaded.set(true);
@@ -213,7 +215,7 @@ describe('SidebarNavService', () => {
             claManagerOrgSet,
             claManagerLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(null),
-            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            employeeViewOrgUids,
             fullAccessOrgUid: signal<string | null>(null),
             fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
             noteEmployeeViewAddressed: vi.fn(),
@@ -613,6 +615,20 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/company/family-0014100000RootAAAA/profile')).toBeUndefined();
     expect(labels(items)).toContain('Dashboard');
     expect(labels(items)).toContain('Memberships');
+    expect(labels(sectionItems(items, 'Company Engagement'))).toContain('People');
+  });
+
+  // Epic #5845 / #5859: the all employee view has no Groups link; the full view keeps it.
+  it('drops the Groups link in the all employee view only', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000Te2ovAAB');
+
+    expect(labels(sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement'))).toContain(COMMITTEE_LABEL.plural);
+
+    employeeViewOrgUids.set(new Set(['0014100000Te2ovAAB']));
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    expect(labels(sectionItems(items, 'Company Engagement'))).not.toContain(COMMITTEE_LABEL.plural);
     expect(labels(sectionItems(items, 'Company Engagement'))).toContain('People');
   });
 

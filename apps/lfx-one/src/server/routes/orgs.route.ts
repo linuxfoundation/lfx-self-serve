@@ -6,6 +6,7 @@ import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { MicroserviceError } from '../errors/microservice.error';
+import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
@@ -154,7 +155,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/key-contacts', (req, res, next) => orgLensPeopleController.getKeyContacts(req, res, next));
   // Spec 027 — People → Committee tab (org-wide committee members). Registered BEFORE the `/:personKey/detail`
   // matcher below so 'committee-members' isn't consumed as a personKey.
-  router.get('/:orgUid/lens/people/committee-members', (req, res, next) => orgLensPeopleController.getCommitteeMembers(req, res, next));
+  router.get('/:orgUid/lens/people/committee-members', blockEmployeeView, (req, res, next) => orgLensPeopleController.getCommitteeMembers(req, res, next));
   router.patch('/:orgUid/lens/people/committee-members/:seatId/reassign', (req, res, next) => orgLensPeopleController.reassignCommitteeMember(req, res, next));
   // People → Board tab (org-wide Board-only members). Registered BEFORE the `/:personKey/detail`
   // matcher below so 'board-members' isn't consumed as a personKey.
@@ -199,7 +200,7 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/training/groups', (req, res, next) => orgLensTrainingController.getGroups(req, res, next));
 
   // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
-  router.get('/:orgUid/lens/groups', (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
+  router.get('/:orgUid/lens/groups', blockEmployeeView, (req, res, next) => orgLensGroupsController.getGroups(req, res, next));
 
   // LFXV2-2735 — Org Lens Meetings insights. Unlike the sibling org-lens routes these carry an
   // org-membership read gate (`assertOrgLensRead`) inside each handler, ahead of any data access.
