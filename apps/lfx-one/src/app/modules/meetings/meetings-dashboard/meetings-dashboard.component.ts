@@ -19,7 +19,7 @@ import {
   MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
   MEETING_ROLLUP_ALL_PROJECTS,
   MEETING_TYPE_CONFIGS,
-  MEETINGS_ROLLUP_MAX_PROJECTS,
+  MEETING_ROLLUP_QUERY_MAX_PROJECTS,
   MY_MEETINGS_STATS_WINDOW_DAYS,
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
@@ -228,9 +228,9 @@ export class MeetingsDashboardComponent {
       const projectUids = this.rollupProjectsFilter();
       const committeeUid = this.groupFilter();
       const groupType = this.groupTypeFilter();
-      // One query takes at most MEETINGS_ROLLUP_MAX_PROJECTS projects, so a larger hand-picked selection shows
+      // One query takes at most MEETING_ROLLUP_QUERY_MAX_PROJECTS projects, so a larger hand-picked selection shows
       // the root's own meetings, as the server does for an oversized "all projects" scope.
-      const oversized = mode === 'subset' && projectUids.length > MEETINGS_ROLLUP_MAX_PROJECTS;
+      const oversized = mode === 'subset' && projectUids.length > MEETING_ROLLUP_QUERY_MAX_PROJECTS;
       return {
         includeSubProjects: true,
         ...((mode === 'default' || oversized) && { rootOnly: true }),
@@ -1301,7 +1301,7 @@ export class MeetingsDashboardComponent {
       // More projects than one query takes fall back to the root's own meetings (here and on the server),
       // so, like the default, only the root's own groups can match.
       const selectedCount = mode === 'all' ? projects.length : this.rollupProjectsFilter().length;
-      const rootOnly = mode === 'default' || selectedCount > MEETINGS_ROLLUP_MAX_PROJECTS;
+      const rootOnly = mode === 'default' || selectedCount > MEETING_ROLLUP_QUERY_MAX_PROJECTS;
       if (mode === 'all' && !rootOnly) return groups;
       const selected = new Set(rootOnly ? [this.project()?.uid] : this.rollupProjectsFilter());
       return groups.filter((group) => selected.has(group.project_uid));

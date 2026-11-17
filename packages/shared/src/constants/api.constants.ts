@@ -41,14 +41,6 @@ export const LFX_CACHE_BYPASS_HEADER = 'X-LFX-CACHE';
 export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 
 /**
- * Maximum number of projects a meetings roll-up queries in one `filters_or` request.
- * @description Above the general batch size, but measured to work in production (150 projects
- * work, 200 fail), so a foundation such as FINOS (123 projects) rolls up in one query. A larger
- * scope falls back to the root project's own meetings until the roll-up is batched.
- */
-export const MEETINGS_ROLLUP_MAX_PROJECTS = 150;
-
-/**
  * Upstream ceiling for `page_size` on query-service `/query/resources` requests.
  * @description The query-service rejects `page_size` above 1000 (`InvalidRangeError`). Passing
  * this on every paginated walk (registrant rosters, RSVP lists) fetches the fewest possible pages

@@ -3,7 +3,7 @@
 
 import {
   IMPORT_REGISTRANTS_MAX,
-  MEETINGS_ROLLUP_MAX_PROJECTS,
+  MEETING_ROLLUP_QUERY_MAX_PROJECTS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
   QUERY_SERVICE_MAX_PAGES,
@@ -2616,14 +2616,14 @@ export class MeetingService {
     if (scopeUids.length === 0) {
       return null;
     }
-    // One query takes at most MEETINGS_ROLLUP_MAX_PROJECTS projects; past it query-service fails the request.
+    // One query takes at most MEETING_ROLLUP_QUERY_MAX_PROJECTS projects; past it query-service fails the request.
     // A larger scope (a foundation such as TLF or CNCF with hundreds of projects) falls back to the root's
     // own meetings, as before the roll-up, until the scope is paged across batches.
-    if (scopeUids.length > MEETINGS_ROLLUP_MAX_PROJECTS) {
+    if (scopeUids.length > MEETING_ROLLUP_QUERY_MAX_PROJECTS) {
       logger.warning(req, operation, 'Roll-up scope exceeds the roll-up project limit; showing the root project only', {
         root_project_uid: rootUid,
         project_count: scopeUids.length,
-        max_projects: MEETINGS_ROLLUP_MAX_PROJECTS,
+        max_projects: MEETING_ROLLUP_QUERY_MAX_PROJECTS,
       });
       scopeUids = [rootUid];
     }
