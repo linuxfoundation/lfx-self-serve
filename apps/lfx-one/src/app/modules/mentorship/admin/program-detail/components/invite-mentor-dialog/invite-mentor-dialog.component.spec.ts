@@ -325,7 +325,7 @@ describe('InviteMentorDialogComponent', () => {
 
     it('drops the offer as soon as the search changes, before the next answer', () => {
       type('new.mentor@example.org');
-      component()['form'].controls.search.setValue('new.mentor@example.or');
+      component()['form'].controls.search.setValue('other.mentor@example.org');
       fixture.detectChanges();
 
       expect(component()['emailInvitee']()).toBeNull();
