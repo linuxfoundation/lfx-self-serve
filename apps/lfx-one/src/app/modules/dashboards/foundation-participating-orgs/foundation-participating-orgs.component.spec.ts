@@ -236,6 +236,9 @@ describe('FoundationParticipatingOrgsComponent', () => {
     getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
     getPage.mockReturnValue(new Subject<FoundationParticipatingOrgsPage>());
     selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    // Read before anything re-runs: only the settled gating, not a cleared status, can hide the last foundation's error here.
+    expect(fixture.componentInstance['viewState']()).toBe('ready');
+    expect(fixture.componentInstance['summaryLoading']()).toBe(true);
     await settle();
     expect(fixture.componentInstance['viewState']()).toBe('ready');
     expect(fixture.componentInstance['showSkeleton']()).toBe(true);
@@ -250,6 +253,29 @@ describe('FoundationParticipatingOrgsComponent', () => {
     selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
     await settle();
     expect(fixture.componentInstance['viewState']()).toBe('forbidden');
+  });
+
+  it('lets the page answer first decide the view while the summary is pending: a 403 is forbidden, a 503 is an error', async () => {
+    await render();
+    getSummary.mockReturnValue(new Subject<FoundationParticipatingOrgsSummaryResponse>());
+    getPage.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403 })));
+    selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    await settle();
+    expect(fixture.componentInstance['viewState']()).toBe('forbidden');
+
+    getPage.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    selectedFoundation.set({ uid: 'third-uid', name: 'Third Foundation', slug: 'third-foundation' });
+    await settle();
+    expect(fixture.componentInstance['viewState']()).toBe('error');
+  });
+
+  it('shows the empty state when the summary answers null while the page is still pending', async () => {
+    await render();
+    getSummary.mockReturnValue(of({ summary: null }));
+    getPage.mockReturnValue(new Subject<FoundationParticipatingOrgsPage>());
+    selectedFoundation.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+    await settle();
+    expect(fixture.componentInstance['viewState']()).toBe('empty');
   });
 
   it('keeps the tier list through a reload of the same foundation', async () => {

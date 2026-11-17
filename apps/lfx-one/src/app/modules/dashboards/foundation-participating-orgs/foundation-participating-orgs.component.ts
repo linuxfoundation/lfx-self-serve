@@ -536,7 +536,8 @@ export class FoundationParticipatingOrgsComponent {
         label: 'Members',
         ...(summary
           ? {
-              subLine: `${summary.contributingMembersCount.toLocaleString('en-US')} contributing`,
+              // The big number is the foundation's whole roster; under a project scope the subline says the contributing count is that project's.
+              subLine: `${summary.contributingMembersCount.toLocaleString('en-US')} contributing${this.projectSlug() ? ' to this project' : ''}`,
               subLineClass: FOUNDATION_PARTICIPATING_ORGS_STAT_SUBLINE_CLASS,
             }
           : {}),
@@ -577,7 +578,8 @@ export class FoundationParticipatingOrgsComponent {
       {
         id: 'foundation-participating-orgs-export-summary',
         label: 'Company summary',
-        title: 'One row per company · foundation totals',
+        // Under a project scope the rows hold that project's figures, so the title must not claim foundation totals.
+        title: this.projectSlug() ? `One row per company · ${this.selectedProjectName()} figures` : 'One row per company · foundation totals',
         command: () => this.export('summary'),
       },
       {
