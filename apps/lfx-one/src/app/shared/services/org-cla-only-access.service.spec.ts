@@ -16,10 +16,12 @@ describe('OrgClaOnlyAccessService', () => {
   const inheritedAuditorSet = signal(new Set<string>());
   const isStaff = signal(false);
   const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
+  const fullAccessOrgUids = signal<ReadonlySet<string>>(new Set());
   let service: OrgClaOnlyAccessService;
 
   beforeEach(() => {
     employeeViewOrgUids.set(new Set());
+    fullAccessOrgUids.set(new Set());
     claManagerOrgSet.set(new Set([UID]));
     claManagerLookupFailed.set(false);
     writerSet.set(new Set());
@@ -38,6 +40,7 @@ describe('OrgClaOnlyAccessService', () => {
             inheritedWriterSet: signal(new Set<string>()),
             inheritedAuditorSet,
             employeeViewOrgUids,
+            fullAccessOrgUids,
           },
         },
       ],
@@ -54,6 +57,12 @@ describe('OrgClaOnlyAccessService', () => {
 
   it('lets proven employee access supersede CLA-only for the same company', () => {
     employeeViewOrgUids.set(new Set([UID]));
+
+    expect(service.isClaOnly(UID)).toBe(false);
+  });
+
+  it('treats a company read at full width through the authorizer as full, not CLA-only, even for a CLA Manager', () => {
+    fullAccessOrgUids.set(new Set([UID]));
 
     expect(service.isClaOnly(UID)).toBe(false);
   });

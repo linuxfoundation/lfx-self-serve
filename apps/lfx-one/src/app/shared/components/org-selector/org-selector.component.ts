@@ -491,6 +491,7 @@ export class OrgSelectorComponent {
     // selection too, which returns below without navigating.
     this.claOnlyAccess.noteAddressed(item.uid, item.claOnly === true);
     this.viewModeService.noteAddressed(item.uid, item.employeeView === true);
+    this.viewModeService.noteFullAccessAddressed(item.uid, item.fullAccess === true);
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that

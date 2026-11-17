@@ -161,6 +161,10 @@ export class OrgSlugResolverService {
         if (verdict.eligible && matches(verdict.org)) {
           return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, employeeView: true };
         }
+        // An authorizer-only reader of this company is full: say so, and never fall through to CLA-only for it.
+        if (!verdict.eligible && verdict.reason === 'holds-full-access' && verdict.org && matches(verdict.org)) {
+          return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, fullAccess: true };
+        }
       } catch (error) {
         employeeViewError = error;
         logger.warning(req, 'resolve_employee_view_org', 'Could not verify employee-view company', { err: error });

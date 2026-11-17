@@ -77,6 +77,7 @@ export class OrgLensEmptyStateService {
       this.selectedHeld() ||
       this.selectedClaOnly() ||
       this.viewMode.isEmployeeView() ||
+      this.viewMode.isFullAccessReader() ||
       this.selectionAwaitsClaOnlyRows()
     ) {
       return null;
@@ -208,7 +209,7 @@ export class OrgLensEmptyStateService {
       return null;
     }
     // Epic #5845 — the all employee view opens the selected company read-only, so the page renders (redacted by the server).
-    if (this.selectedHeld() || this.selectedClaOnly() || this.viewMode.isEmployeeView()) {
+    if (this.selectedHeld() || this.selectedClaOnly() || this.viewMode.isEmployeeView() || this.viewMode.isFullAccessReader()) {
       return null;
     }
     const holdsAnything = this.accountContext.hasOrgSelectorAccess();

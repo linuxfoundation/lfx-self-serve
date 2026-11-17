@@ -283,7 +283,9 @@ export class AccountContextService {
       // M3: a CLA Manager with no grant still needs the selector to reach their company's EasyCLA tab.
       this.orgClaOnlyAccess.claOnlyOrgUids().size > 0 ||
       // Epic #5845: an employee with a verified company email reaches their company's read-only view through the selector.
-      this.orgRoleGrantsService.employeeViewOrgUid() !== null
+      this.orgRoleGrantsService.employeeViewOrgUid() !== null ||
+      // A company read at full width through the authorizer alone is never in a grant set, but is still addressable.
+      this.orgRoleGrantsService.fullAccessOrgUids().size > 0
   );
 
   public constructor() {
@@ -516,6 +518,7 @@ export class AccountContextService {
       this.orgClaOnlyAccess.claOnlyOrgUids(),
       // Epic #5845: after the CLA-only set for the same reason — a real address, never part of a roll-up.
       new Set(this.orgRoleGrantsService.employeeViewOrgUid() ? [this.orgRoleGrantsService.employeeViewOrgUid() as string] : []),
+      this.orgRoleGrantsService.fullAccessOrgUids(),
     ]) {
       for (const uid of set) {
         // Same shape the cookie-restore path uses for an id with no seed behind it, `accountId`
@@ -847,7 +850,12 @@ export class AccountContextService {
     if (!uid) {
       return false;
     }
-    if (this.orgRoleGrantsService.isStaff() || this.orgClaOnlyAccess.claOnlyOrgUids().has(uid) || this.orgRoleGrantsService.employeeViewOrgUid() === uid) {
+    if (
+      this.orgRoleGrantsService.isStaff() ||
+      this.orgClaOnlyAccess.claOnlyOrgUids().has(uid) ||
+      this.orgRoleGrantsService.employeeViewOrgUid() === uid ||
+      this.orgRoleGrantsService.fullAccessOrgUids().has(uid)
+    ) {
       return true;
     }
     if (this.userOrganizations().some((account) => account.uid === uid)) {

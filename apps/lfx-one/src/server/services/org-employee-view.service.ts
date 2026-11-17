@@ -141,7 +141,7 @@ export class OrgEmployeeViewService {
       return verdict;
     }
     const holdsAuditor = await this.accessCheck.checkSingleAccessStrict(req, { resource: 'b2b_org', id: verdict.org.orgUid, access: 'auditor' });
-    return holdsAuditor ? { eligible: false, reason: 'holds-full-access' } : verdict;
+    return holdsAuditor ? { eligible: false, reason: 'holds-full-access', org: verdict.org } : verdict;
   }
 
   /**
@@ -155,7 +155,7 @@ export class OrgEmployeeViewService {
     req: Request,
     grants: RoleGrantsResponse,
     affiliation: RoleGrantsResponse['affiliation']
-  ): Promise<Pick<RoleGrantsResponse, 'employeeView'>> {
+  ): Promise<Pick<RoleGrantsResponse, 'employeeView' | 'fullAccessOrgUid'>> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
       return {};
     }
@@ -176,7 +176,9 @@ export class OrgEmployeeViewService {
           );
         }),
       ]);
-      return verdict.eligible ? { employeeView: verdict.org } : {};
+      if (verdict.eligible) return { employeeView: verdict.org };
+      // An authorizer-only reader who also qualifies is full, and the client needs to be told: it cannot see authorizer entitlements.
+      return verdict.reason === 'holds-full-access' && verdict.org ? { fullAccessOrgUid: verdict.org.orgUid } : {};
     } catch (error) {
       logger.warning(req, OPERATION, 'Employee-view lookup failed; reporting no employee view', { err: error });
       return {};

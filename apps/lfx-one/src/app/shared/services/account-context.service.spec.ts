@@ -40,6 +40,8 @@ describe('AccountContextService — address-adopted selection', () => {
     claManagerOrgSet: WritableSignal<Set<string>>;
     employeeViewOrgUid: WritableSignal<string | null>;
     employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
   };
 
   beforeEach(() => {
@@ -53,6 +55,8 @@ describe('AccountContextService — address-adopted selection', () => {
       claManagerOrgSet: signal(new Set<string>()),
       employeeViewOrgUid: signal<string | null>(null),
       employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -422,6 +426,8 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
             claManagerOrgSet: signal(new Set()),
             employeeViewOrgUid: signal(null),
             employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            fullAccessOrgUid: signal<string | null>(null),
+            fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
           },
         },
         {
@@ -563,6 +569,8 @@ describe('AccountContextService — family roll-up', () => {
     claManagerOrgSet: WritableSignal<Set<string>>;
     employeeViewOrgUid: WritableSignal<string | null>;
     employeeViewOrgUids: WritableSignal<ReadonlySet<string>>;
+    fullAccessOrgUid: WritableSignal<string | null>;
+    fullAccessOrgUids: WritableSignal<ReadonlySet<string>>;
     loaded: WritableSignal<boolean>;
     lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   };
@@ -622,6 +630,8 @@ describe('AccountContextService — family roll-up', () => {
       claManagerOrgSet: signal(new Set<string>()),
       employeeViewOrgUid: signal<string | null>(null),
       employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+      fullAccessOrgUid: signal<string | null>(null),
+      fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
       loaded: signal(true),
       lookupOutcome: signal<OrgLensLookupOutcome>('ok'),
     };

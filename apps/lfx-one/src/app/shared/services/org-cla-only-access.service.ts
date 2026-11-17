@@ -33,7 +33,7 @@ export class OrgClaOnlyAccessService {
     if (this.holdsOrgLensAccess(uid)) return false;
     // Proven employee access supersedes CLA-only (epic #5845): otherwise a qualifying employee who also manages the
     // company's CLAs would be confined to EasyCLA and redirected there from every other page.
-    if (this.orgRoleGrants.employeeViewOrgUids().has(uid)) return false;
+    if (this.orgRoleGrants.employeeViewOrgUids().has(uid) || this.orgRoleGrants.fullAccessOrgUids().has(uid)) return false;
     return this.claOnlyOrgUids().has(uid) || this.addressedClaOnlyUids().has(uid);
   }
 

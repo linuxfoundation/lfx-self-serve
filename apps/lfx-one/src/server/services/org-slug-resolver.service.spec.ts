@@ -379,4 +379,16 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
     await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toMatchObject({ outcome: 'miss' });
     expect(resolveEmployeeView).not.toHaveBeenCalled();
   });
+
+  it('resolves an authorizer-only reader of the company as full access, ahead of CLA-only', async () => {
+    proxyRequest.mockResolvedValue(page([]));
+    resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'holds-full-access', org: eligible.org });
+    resolveClaOnlyOrg.mockResolvedValue({ uid: UID_A, slug: null, name: 'Acme Motors', claOnly: true });
+
+    const result = await new OrgSlugResolverService().resolveSegment(req, UID_A);
+
+    expect(result).toMatchObject({ outcome: 'hit', org: { uid: UID_A, fullAccess: true } });
+    expect(result).not.toMatchObject({ org: { claOnly: true } });
+    expect(result).not.toMatchObject({ org: { employeeView: true } });
+  });
 });

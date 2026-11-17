@@ -61,6 +61,9 @@ export class OrgRoleGrantsService {
   private readonly employeeViewOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
   // Companies an address or selector row marked as employee-view; kept here (not in the view-mode service) so the CLA-only
   // access service can read it without a dependency cycle.
+  // Epic #5845 — a company the caller reads at full width through the authorizer alone, which the grant sets never list.
+  private readonly fullAccessOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
+  private readonly addressedFullAccessUidsInternal: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(new Set());
   private readonly addressedEmployeeViewUidsInternal: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(new Set());
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
@@ -104,6 +107,12 @@ export class OrgRoleGrantsService {
   public readonly affiliatedToMember: Signal<boolean> = this.affiliatedToMemberInternal.asReadonly();
   /** Epic #5845 — uid of the company the caller reaches only through the all employee view, or null. Read it through `OrgLensViewModeService`. */
   public readonly employeeViewOrgUid: Signal<string | null> = this.employeeViewOrgUidInternal.asReadonly();
+  /** Epic #5845 — companies the caller reads at full width through the authorizer alone (role-grants company plus any an address or selector row marked). Supersedes CLA-only and employee view. */
+  public readonly fullAccessOrgUids: Signal<ReadonlySet<string>> = computed(() => {
+    const granted = this.fullAccessOrgUidInternal();
+    const addressed = this.addressedFullAccessUidsInternal();
+    return granted ? new Set([granted, ...addressed]) : addressed;
+  });
   /** Epic #5845 — every company the caller reaches through the all employee view: the role-grants company plus any an address or selector row marked. */
   public readonly employeeViewOrgUids: Signal<ReadonlySet<string>> = computed(() => {
     const granted = this.employeeViewOrgUidInternal();
@@ -115,6 +124,19 @@ export class OrgRoleGrantsService {
     afterNextRender(() => {
       this.refresh().subscribe();
     });
+  }
+
+  /** Records an address's or selector row's full-access answer for `uid`; a later non-full-access answer clears it. */
+  public noteFullAccessAddressed(uid: string, fullAccess: boolean): void {
+    const current = this.addressedFullAccessUidsInternal();
+    if (current.has(uid) === fullAccess) return;
+    const next = new Set(current);
+    if (fullAccess) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+    this.addressedFullAccessUidsInternal.set(next);
   }
 
   /** Records an address's or selector row's employee-view answer for `uid`; a later non-employee answer clears it. */
@@ -161,6 +183,7 @@ export class OrgRoleGrantsService {
         this.affiliatedToMemberInternal.set(response.affiliation?.lookup === 'ok' && response.affiliation.hasEmployer && response.affiliation.employerIsMember);
         // Absent on an older server, a flag-off server or an unproven lookup ⇒ null: never inferred from absence.
         this.employeeViewOrgUidInternal.set(response.employeeView?.orgUid ?? null);
+        this.fullAccessOrgUidInternal.set(response.fullAccessOrgUid ?? null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -187,6 +210,7 @@ export class OrgRoleGrantsService {
         this.claManagerLookupFailedInternal.set(false);
         this.affiliatedToMemberInternal.set(false);
         this.employeeViewOrgUidInternal.set(null);
+        this.fullAccessOrgUidInternal.set(null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

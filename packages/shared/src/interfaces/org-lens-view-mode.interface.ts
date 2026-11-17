@@ -51,7 +51,10 @@ export type OrgEmployeeViewDenial =
   | 'holds-full-access';
 
 /** A clean answer to "is this caller in the all employee view?". A failed lookup is a rejection, never a verdict. */
-export type OrgEmployeeViewVerdict = { eligible: true; org: OrgLensEmployeeViewGrant } | { eligible: false; reason: OrgEmployeeViewDenial };
+export type OrgEmployeeViewVerdict =
+  | { eligible: true; org: OrgLensEmployeeViewGrant }
+  /** `holds-full-access` carries the company: the caller qualifies as an employee but holds `b2b_org#auditor` there, so the read gate resolves them `full`. */
+  | { eligible: false; reason: OrgEmployeeViewDenial; org?: OrgLensEmployeeViewGrant };
 
 /** Options of the server's `stripPersonalFields` / `redactForEmployeeView`. */
 export interface StripPersonalFieldsOptions {

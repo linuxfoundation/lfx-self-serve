@@ -283,7 +283,11 @@ describe('OrgEmployeeViewService.resolveReduced', () => {
   it('does not publish an employee-only flag for a caller who also holds the auditor entitlement (they resolve full)', async () => {
     const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
 
-    await expect(svc.resolveReduced(req())).resolves.toEqual({ eligible: false, reason: 'holds-full-access' });
+    await expect(svc.resolveReduced(req())).resolves.toEqual({
+      eligible: false,
+      reason: 'holds-full-access',
+      org: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
+    });
   });
 
   it('rejects, never publishes, when the authorizer cannot answer', async () => {
@@ -341,10 +345,10 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
     expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
   });
 
-  it('answers nothing for a caller who also holds the auditor entitlement', async () => {
+  it('publishes the full-access company, not an employee view, for a caller who also holds the auditor entitlement', async () => {
     const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
 
-    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({});
+    await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({ fullAccessOrgUid: ORG_UID });
   });
 
   it('answers nothing, not an error, when the lookup fails', async () => {

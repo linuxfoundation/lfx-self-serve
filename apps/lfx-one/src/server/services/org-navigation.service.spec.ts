@@ -450,4 +450,34 @@ describe('OrgNavigationService — all employee view company (#5845)', () => {
 
     expect(resolveEmployeeView).not.toHaveBeenCalled();
   });
+
+  it('returns the company slug on the row, so the indexed row never overwrites the resolver slug', async () => {
+    resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: COMPANY_A, orgName: 'Acme Corp', orgSlug: 'acme-corp' } });
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items[0]).toMatchObject({ uid: COMPANY_A, slug: 'acme-corp' });
+  });
+
+  it('lists an authorizer-only reader as a full-access company, superseding their CLA-only row and never marking it employee-view', async () => {
+    resolveEmployeeView.mockResolvedValue({
+      eligible: false,
+      reason: 'holds-full-access',
+      org: { orgUid: COMPANY_A, orgName: 'Acme Corp', orgSlug: 'acme-corp' },
+    });
+    listClaOnlyOrgs.mockResolvedValue({
+      orgs: [
+        { uid: COMPANY_A, name: 'Acme Corp' },
+        { uid: COMPANY_B, name: 'Beta Corp' },
+      ],
+      failed: false,
+    });
+
+    const response = await new OrgNavigationService().getOrgItems(req, {});
+
+    expect(response.items.map((item) => [item.uid, item.claOnly === true, item.employeeView === true, item.fullAccess === true, item.slug])).toEqual([
+      [COMPANY_A, false, false, true, 'acme-corp'],
+      [COMPANY_B, true, false, false, null],
+    ]);
+  });
 });

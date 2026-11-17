@@ -163,7 +163,7 @@ export class OrgNavigationService {
     const { orgs, failed: claOnlyFailed } = await this.claOnlyOrgs.listOrgs(req);
     const { item: employeeViewItem, failed: employeeViewFailed } = await this.getEmployeeViewItem(req);
     const failed = claOnlyFailed || employeeViewFailed;
-    // Proven employee access supersedes CLA-only classification for the same company: a CLA-only row opens EasyCLA alone and
+    // Proven employee (or authorizer full) access supersedes CLA-only classification for the same company: a CLA-only row opens EasyCLA alone and
     // redirects every other page there, which would lock a qualifying employee out of the view they earned. The caller's own
     // CLA Manager scope is untouched — EasyCLA's gate still asks it independently.
     const items = [...this.toClaOnlyItems(orgs).filter((item) => item.uid !== employeeViewItem?.uid), ...(employeeViewItem ? [employeeViewItem] : [])];
@@ -173,7 +173,8 @@ export class OrgNavigationService {
       item_count: shown.length,
       cla_only_count: items.length,
       cla_only_failed: failed,
-      employee_view: !!employeeViewItem,
+      employee_view: employeeViewItem?.employeeView === true,
+      full_access: employeeViewItem?.fullAccess === true,
     });
 
     return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
@@ -190,21 +191,25 @@ export class OrgNavigationService {
     }
     try {
       const verdict = await this.employeeView.resolveReduced(req);
-      if (!verdict.eligible) {
+      // An authorizer-only reader who also qualifies is listed as a FULL company (`fullAccess`), never employee-view and never
+      // CLA-only: the client cannot see authorizer entitlements, so the row is how it learns the company opens in full.
+      const org = verdict.eligible ? verdict.org : verdict.reason === 'holds-full-access' ? verdict.org : undefined;
+      if (!org) {
         return { item: null, failed: false };
       }
       return {
         item: {
-          uid: verdict.org.orgUid,
-          accountId: verdict.org.orgUid,
-          name: verdict.org.orgName,
+          uid: org.orgUid,
+          accountId: org.orgUid,
+          name: org.orgName,
           logoUrl: null,
           primaryDomain: null,
           parentName: null,
           status: null,
-          slug: null,
+          // The company's own slug, so the indexed row never overwrites the slug the resolver already adopted.
+          slug: org.orgSlug ?? null,
           isAssigned: true,
-          employeeView: true,
+          ...(verdict.eligible ? { employeeView: true } : { fullAccess: true }),
         },
         failed: false,
       };

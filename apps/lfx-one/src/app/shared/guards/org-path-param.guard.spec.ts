@@ -31,6 +31,7 @@ describe('orgPathParamGuard', () => {
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
   let noteAddressed: Mock;
+  let noteFullAccessAddressed: Mock;
   let selectRollUp: Mock;
   let setAccount: Mock;
   let demoteAddressedRollUp: Mock;
@@ -73,6 +74,7 @@ describe('orgPathParamGuard', () => {
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
     noteAddressed = vi.fn();
+    noteFullAccessAddressed = vi.fn();
     selectRollUp = vi.fn(() => true);
     setAccount = vi.fn((next: Account) => selectedAccount.set(next));
     demoteAddressedRollUp = vi.fn(() => null);
@@ -96,7 +98,7 @@ describe('orgPathParamGuard', () => {
         },
         { provide: OrgSlugResolverService, useValue: { resolve } },
         { provide: OrgClaOnlyAccessService, useValue: { noteAddressed } },
-        { provide: OrgLensViewModeService, useValue: { noteAddressed: vi.fn() } },
+        { provide: OrgLensViewModeService, useValue: { noteAddressed: vi.fn(), noteFullAccessAddressed } },
       ],
     });
     router = TestBed.inject(Router);
@@ -255,6 +257,13 @@ describe('orgPathParamGuard', () => {
 
       resolve.mockReturnValueOnce(of(hit(UID_B, 'people')));
       expect(await outcome(UID_B, `/company/${UID_B}/people`)).toBe(true);
+    });
+
+    it('records a full-access answer from the resolver, so an authorizer reader who also manages CLAs is not CLA-only', async () => {
+      resolve.mockReturnValueOnce(of({ ...hit(UID_B, null), fullAccess: true }));
+      await outcome(UID_B, `/company/${UID_B}/people`);
+      expect(noteFullAccessAddressed).toHaveBeenLastCalledWith(UID_B, true);
+      expect(noteAddressed).toHaveBeenLastCalledWith(UID_B, false);
     });
 
     it('records whether the resolved organization is CLA-only, before adopting it', async () => {

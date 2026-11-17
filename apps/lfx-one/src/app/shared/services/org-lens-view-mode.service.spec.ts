@@ -15,6 +15,7 @@ const OTHER = '0016100000OTHERAAA1';
 describe('OrgLensViewModeService', () => {
   let employeeViewOrgUid: WritableSignal<string | null>;
   let addressed: WritableSignal<ReadonlySet<string>>;
+  let fullAccess: WritableSignal<ReadonlySet<string>>;
   let writerSet: WritableSignal<Set<string>>;
   let isStaff: WritableSignal<boolean>;
   let selected: WritableSignal<{ uid: string }>;
@@ -22,6 +23,7 @@ describe('OrgLensViewModeService', () => {
   beforeEach(() => {
     employeeViewOrgUid = signal<string | null>(null);
     addressed = signal<ReadonlySet<string>>(new Set());
+    fullAccess = signal<ReadonlySet<string>>(new Set());
     writerSet = signal(new Set<string>());
     isStaff = signal(false);
     selected = signal({ uid: ACME });
@@ -42,6 +44,13 @@ describe('OrgLensViewModeService', () => {
               if (on) next.add(uid);
               else next.delete(uid);
               addressed.set(next);
+            },
+            fullAccessOrgUids: fullAccess,
+            noteFullAccessAddressed: (uid: string, on: boolean) => {
+              const next = new Set(fullAccess());
+              if (on) next.add(uid);
+              else next.delete(uid);
+              fullAccess.set(next);
             },
             writerSet,
             isStaff,
@@ -101,6 +110,19 @@ describe('OrgLensViewModeService', () => {
 
     expect(employeeViewOrgUid()).toBeNull();
     expect(service.modeFor(ACME)).toBe('employee');
+  });
+
+  it('is the full view, and a full-access reader, for a company read through the authorizer even if it also qualifies as an employee', () => {
+    employeeViewOrgUid.set(ACME);
+    const service = TestBed.inject(OrgLensViewModeService);
+
+    service.noteFullAccessAddressed(ACME, true);
+
+    expect(service.viewMode()).toBe('full');
+    expect(service.isFullAccessReader()).toBe(true);
+
+    service.noteFullAccessAddressed(ACME, false);
+    expect(service.isFullAccessReader()).toBe(false);
   });
 
   it('is the full view when nothing is selected', () => {

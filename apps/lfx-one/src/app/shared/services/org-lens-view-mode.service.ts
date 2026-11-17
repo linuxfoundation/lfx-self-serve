@@ -28,6 +28,12 @@ export class OrgLensViewModeService {
   /** Companies the caller reaches only through the all employee view: the role-grants company plus any an address or selector row marked. */
   public readonly employeeViewOrgUids: Signal<ReadonlySet<string>> = this.roleGrants.employeeViewOrgUids;
 
+  /** Companies the caller reads at full width through the authorizer alone (never in a grant set). */
+  public readonly fullAccessOrgUids: Signal<ReadonlySet<string>> = this.roleGrants.fullAccessOrgUids;
+
+  /** The selected company is one the caller reads in full through the authorizer alone, so the page renders. */
+  public readonly isFullAccessReader: Signal<boolean> = computed(() => this.fullAccessOrgUids().has(this.accountContext.selectedAccount().uid ?? ''));
+
   /** The view mode of the selected company. */
   public readonly viewMode: Signal<OrgLensViewMode> = computed(() => this.modeFor(this.accountContext.selectedAccount().uid));
 
@@ -35,10 +41,15 @@ export class OrgLensViewModeService {
 
   /** The view mode for `uid`, for a caller that is not asking about the selection (a selector row, an address being adopted). */
   public modeFor(uid: string | null | undefined): OrgLensViewMode {
-    if (!uid || !this.employeeViewOrgUids().has(uid) || this.holdsGrant(uid)) {
+    if (!uid || !this.employeeViewOrgUids().has(uid) || this.holdsGrant(uid) || this.fullAccessOrgUids().has(uid)) {
       return ORG_LENS_FULL_VIEW;
     }
     return ORG_LENS_EMPLOYEE_VIEW;
+  }
+
+  /** Records the resolver's (or a selector row's) full-access answer for a company; a later non-full-access answer clears it. */
+  public noteFullAccessAddressed(uid: string, fullAccess: boolean): void {
+    this.roleGrants.noteFullAccessAddressed(uid, fullAccess);
   }
 
   /** Records the resolver's (or a selector row's) answer for a company; a later non-employee answer clears it. */
