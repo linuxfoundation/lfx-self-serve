@@ -3,8 +3,9 @@ title: Account FAQ
 description: Frequently asked questions about account settings, affiliations, identities, CLAs, transactions, and billing in LFX Self Serve.
 audience: [all]
 product_area: Account
-tags: [account, faq, settings, sidebar, theme, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
-last_updated: 2026-11-16
+tags:
+  [account, faq, api, mcp, settings, sidebar, theme, affiliations, cla, easycla, transactions, billing, privacy, contributions, github, lfid, merge-accounts]
+last_updated: 2026-11-17
 intercom_collection: Account
 ---
 
@@ -27,6 +28,16 @@ Go to the **Settings** tab (`/profile/settings`) > **Password** > **Change Passw
 ## Where are developer settings (API token)?
 
 Developer settings are in the **Settings** tab (`/profile/settings`) > **Developer Settings**. Use the **Show** button to reveal your Personal Access Token and the **Copy** button to copy it.
+
+## Can I use the LFX API or MCP Server?
+
+Yes. You'll find your API token in **Settings** > **Developer Settings**. To get started with the LFX MCP Server, see the [lfx-mcp repository](https://github.com/linuxfoundation/lfx-mcp).
+
+A few things to know:
+
+- The API and MCP Server let you see and do the same things you can in LFX Self Serve. If you need access to a project or company, the admins for that project or company can help.
+- The API and MCP Server are still evolving, so things may change over time.
+- We aren't able to help with API or MCP setup, authentication, or errors here, and we can't confirm whether a token has the access a particular integration needs.
 
 ## Are my settings shared across devices?
 
