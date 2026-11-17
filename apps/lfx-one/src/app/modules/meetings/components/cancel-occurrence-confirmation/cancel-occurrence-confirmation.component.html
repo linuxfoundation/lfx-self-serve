@@ -4,10 +4,10 @@
 <div class="meeting-cancel-occurrence-confirmation">
   <!-- Occurrence Details -->
   <div class="mb-6">
-    <div [class]="meetingsV2Enabled() ? 'rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm' : 'rounded-lg border border-gray-200 bg-gray-50 p-4'">
-      <h3 [class]="meetingsV2Enabled() ? 'mb-2 text-sm font-semibold text-gray-900' : 'mb-3 text-lg font-semibold text-gray-900'">Occurrence Details</h3>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+      <h3 class="mb-2 text-sm font-semibold text-gray-900">Occurrence Details</h3>
 
-      <div class="flex flex-col" [class]="meetingsV2Enabled() ? 'gap-1.5' : 'gap-2'">
+      <div class="flex flex-col gap-1.5">
         <div class="flex items-start">
           <span class="font-medium text-gray-700 w-20 flex-shrink-0">Title:</span>
           <span class="text-gray-900">{{ occurrence.title || meeting.title || 'Untitled Meeting' }}</span>
@@ -37,7 +37,7 @@
   <!-- Cancellation Note -->
   <div class="flex flex-col gap-1.5 mb-6">
     <label for="cancel-occurrence-note" class="text-sm font-medium text-gray-900">Reason <span class="font-normal text-gray-500">(optional)</span></label>
-    <!-- Arbitrary 64px min height (about two lines) is the size the design review asked for in v2. The
+    <!-- Arbitrary 64px min height (about two lines) is the size the design review asked for. The
          shared textarea sets \`field-sizing: content\`, which ignores \`rows\`, so a min height is the only
          way to give it a starting height. -->
     <lfx-textarea
@@ -45,7 +45,7 @@
       control="note"
       inputId="cancel-occurrence-note"
       [rows]="3"
-      [styleClass]="meetingsV2Enabled() ? 'w-full min-h-[64px]' : 'w-full'"
+      styleClass="w-full min-h-[64px]"
       [readonly]="isCanceling()"
       [invalid]="form.controls.note.hasError('maxCodePoints')"
       ariaDescribedBy="cancel-occurrence-note-hint"
@@ -60,7 +60,7 @@
   </div>
 
   <!-- Warning Message -->
-  <lfx-message severity="error" [icon]="meetingsV2Enabled() ? 'fa-solid fa-circle-exclamation' : 'fa-light fa-triangle-exclamation'" styleClass="mb-6">
+  <lfx-message severity="error" icon="fa-solid fa-circle-exclamation" styleClass="mb-6">
     <ng-template #content>
       <p class="mb-2 text-sm font-medium">
         You are canceling this occurrence for all registrants of the meeting, not just yourself. This is not how you unregister yourself from an occurrence.

@@ -10,7 +10,7 @@ import { formatInTimeZone, fromZonedTime, getTimezoneOffset, toZonedTime } from 
 // (constants/index.ts -> mentorship-enroll.constants.ts -> './date-time.utils'), so importing the
 // constants barrel here would close an actual cycle today. The two underlying constant files
 // sidestep that entirely.
-import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MINUTES_IN_HOUR, MS_IN_DAY, TIME_ROUNDING_MINUTES, WEEKDAY_CODES } from '../constants/meeting.constants';
+import { DAYS_IN_WEEK, DEFAULT_REPEAT_INTERVAL, MS_IN_DAY, WEEKDAY_CODES } from '../constants/meeting.constants';
 import { LEGACY_VOTE_TIMEZONE, TIMEZONES } from '../constants/timezones.constants';
 import { RecurrenceType } from '../enums';
 import type { MeetingRecurrence, TimezoneOption } from '../interfaces';
@@ -190,38 +190,8 @@ export const addMinutesToDate = (isoDate: string, minutes: number | null | undef
 };
 
 // ============================================================================
-// Time Formatting and Default Values
+// Time Formatting
 // ============================================================================
-
-/**
- * Gets default start date and time (1 week from now, rounded to next 15 minutes)
- */
-export function getDefaultStartDateTime(): { date: Date; time: string } {
-  const now = new Date();
-  // Add 1 hour to current time
-  now.setDate(now.getDate() + 7);
-
-  // Round up to next 15 minutes
-  const minutes = now.getMinutes();
-  const roundedMinutes = Math.ceil(minutes / TIME_ROUNDING_MINUTES) * TIME_ROUNDING_MINUTES;
-  now.setMinutes(roundedMinutes);
-  now.setSeconds(0);
-  now.setMilliseconds(0);
-
-  // If rounding pushed us to next hour, adjust accordingly
-  if (roundedMinutes === MINUTES_IN_HOUR) {
-    now.setHours(now.getHours() + 1);
-    now.setMinutes(0);
-  }
-
-  // Format time to 12-hour format (HH:MM AM/PM)
-  const timeString = formatTo12Hour(now);
-
-  return {
-    date: new Date(now),
-    time: timeString,
-  };
-}
 
 /**
  * Formats a Date object to 12-hour time format
