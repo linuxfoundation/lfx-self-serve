@@ -14,6 +14,7 @@ import {
 import type { Account, OrgContributionsResponse, OrgLensEmptyStateName, OrgLensOrgScope } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -51,6 +52,7 @@ async function render(
     queryParams = {} as Record<string, string>,
     response = EMPTY_ORG_CONTRIBUTIONS_RESPONSE as OrgContributionsResponse,
     orgScopeInfo = null as OrgLensOrgScope | null,
+    employeeView = false,
   } = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
@@ -80,6 +82,7 @@ async function render(
       { provide: ContributionsService, useValue: { getContributions } },
       { provide: OrgLensOrgScopeService, useValue: { current: signal<OrgLensOrgScope | null>(orgScopeInfo), retryFailedRead: () => undefined } },
       { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
+      { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(employeeView) } },
     ],
   }).compileComponents();
 
@@ -105,6 +108,30 @@ afterEach(() => {
   TestBed.resetTestingModule();
   vi.clearAllTimers();
   vi.useRealTimers();
+});
+
+describe('OrgContributionsComponent all employee view (epic #5845)', () => {
+  it('renders aggregates only: no Commits tab, no Employees filter, no person drawer, and asks the repositories view without employees', async () => {
+    const { fixture, getContributions } = await render(null, { employeeView: true, queryParams: { view: 'commits', employees: 'm1' } });
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="org-contributions-kpis"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-repositories-table"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-tabs"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-commits-table"]')).toBeNull();
+    expect(el.querySelector('lfx-person-detail-drawer')).toBeNull();
+    expect(el.textContent).not.toContain('All Employees');
+    for (const call of getContributions.mock.calls as unknown as [string, { view: string; employees: string[] }][]) {
+      expect(call[1]).toMatchObject({ view: 'repositories', employees: [] });
+    }
+  });
+
+  it('keeps the Commits tab and Employees filter in the full view', async () => {
+    const el = (await render(null)).fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="org-contributions-tabs"]')).not.toBeNull();
+    expect(el.querySelector('lfx-person-detail-drawer')).not.toBeNull();
+  });
 });
 
 describe('OrgContributionsComponent', () => {

@@ -105,6 +105,31 @@ describe('OrgContributionsService — GitHub username search', () => {
   });
 });
 
+describe('OrgContributionsService — all employee view (epic #5845)', () => {
+  it.each(['commits', 'code'] as const)(
+    'never reads the commits feed or the employee options, and keeps them out of the cache key, with metric=%s',
+    async (metric) => {
+      const response = await service.getContributions(ACCOUNT, query({ metric }), true);
+
+      expect(calls().some((call) => call.sql.includes('commit_message,'))).toBe(false);
+      expect(calls().some((call) => call.sql.includes('ANY_VALUE(member_display_name)'))).toBe(false);
+      expect(() => kpiCall()).not.toThrow();
+      expect(() => repoCall()).not.toThrow();
+      expect(response.commits).toEqual([]);
+      expect(response.employeeOptions).toEqual([]);
+      expect(withOrgCache.mock.calls[0][1]).toContain(':ev:');
+    }
+  );
+
+  it('still reads the feed and employee options in the full view', async () => {
+    await service.getContributions(ACCOUNT, query());
+
+    expect(() => feedCall()).not.toThrow();
+    expect(() => employeeOptionCall()).not.toThrow();
+    expect(withOrgCache.mock.calls[0][1]).not.toContain(':ev:');
+  });
+});
+
 describe('OrgContributionsService — commit filters', () => {
   it.each([
     ['all', null],
