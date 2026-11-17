@@ -1,0 +1,23 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+# Known legacy user-facing "organization"/"Org Lens" copy (#5061). Format: <count><TAB><path>.
+# Shrink only: S2-S6 lower or delete entries as they fix copy. Regenerate with
+# `node check-company-copy.mjs --update`. Never add entries for new code.
+1	apps/lfx-one/src/app/modules/committees/components/member-form/member-form.component.html
+1	apps/lfx-one/src/app/modules/crowdfunding/initiative-detail/components/edit-attribution-dialog/edit-attribution-dialog.component.html
+1	apps/lfx-one/src/app/modules/crowdfunding/initiative-detail/components/initiative-financials/initiative-financials.component.html
+1	apps/lfx-one/src/app/modules/crowdfunding/initiative-detail/components/initiative-overview-sidebar/initiative-overview-sidebar.component.html
+5	apps/lfx-one/src/app/modules/dashboards/health-metrics-events/components/events-speakers/events-speakers.component.html
+1	apps/lfx-one/src/app/modules/dashboards/health-metrics-non-members/components/non-members-people/non-members-people.component.html
+2	apps/lfx-one/src/app/modules/dashboards/org/org-profile/org-profile-edit.component.html
+3	apps/lfx-one/src/app/modules/formations/components/project-application-form/project-application-form.component.html
+1	apps/lfx-one/src/app/modules/meetings/components/guest-form/guest-form.component.html
+1	apps/lfx-one/src/app/modules/profile/components/affiliation-timeline-dialog/affiliation-timeline-dialog.component.html
+1	apps/lfx-one/src/app/modules/profile/components/profile-edit-drawer/profile-edit-drawer.component.html
+1	apps/lfx-one/src/app/modules/surveys/components/survey-responses-list/survey-responses-list.component.html
+2	apps/lfx-one/src/app/modules/votes/components/vote-voters/vote-voters.component.html
+1	apps/lfx-one/src/app/shared/components/org-selector/org-selector.component.ts
+1	docs/user/committees/manage-committees/index.md
+1	docs/user/surveys/create-survey/index.md
+1	packages/shared/src/utils/__fixtures__/aeo-geo-domain.fixture.ts

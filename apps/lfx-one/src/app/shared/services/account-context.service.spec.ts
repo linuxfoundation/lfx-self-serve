@@ -19,7 +19,7 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
 import { OrgRollUpFamiliesService } from './org-roll-up-families.service';
 import { OrgRollUpFlagService } from './org-roll-up-flag.service';
 
-// Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
+// Spec 050: the organization a `/company/{segment}/…` address names is adopted by the path-param guard
 // before the persona refresh re-seeds organizations. That re-seed runs `initializeUserOrganizations`
 // again — with empty seeds for a staff viewer — and used to reset the selection to the placeholder
 // or a seed, i.e. the silent substitution deep links exist to remove (#2713 review).
@@ -321,7 +321,7 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAdoptedFromAddress()).toBe(true);
     });
 
-    // Deliberate (lfx-self-serve#2793): the default write produces `/org/A/…`, whose guard shortcut
+    // Deliberate (lfx-self-serve#2793): the default write produces `/company/A/…`, whose guard shortcut
     // pins 'address'. Keeping the default kind there would let a later org-items reload re-default
     // the selection to B while the address still names A — spec 050's silent substitution.
     it('the guard shortcut upgrades a default pin to an address pin, so an addressed page cannot drift', () => {
@@ -516,7 +516,7 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
 /**
  * lfx-self-serve#4125 / #4133 — the family roll-up selection. It is a view mode keyed on the
  * family's top Salesforce account id rather than a `b2b_org` row, so it has to survive the cookie
- * round-trip, address as `/org/family-{root}/…`, and never reach an `:orgUid` endpoint.
+ * round-trip, address as `/company/family-{root}/…`, and never reach an `:orgUid` endpoint.
  *
  * Alpha is the top of the family and Bravo inherits from it, so the two are one family keyed on
  * Alpha — the shape the conglomerate case has in production. The families come from the server
@@ -592,7 +592,7 @@ describe('AccountContextService — family roll-up', () => {
 
   beforeEach(() => {
     cookies = new Map();
-    routerUrl = `/org/${SEGMENT}/people`;
+    routerUrl = `/company/${SEGMENT}/people`;
     navigateByUrl = vi.fn();
     navigateSpy = vi.fn();
     currentNavigation = null;
@@ -694,7 +694,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.rollUpFamilies().map((family) => family.rootUid)).toEqual([UID_C]);
       expect(service.canSelectRollUpFor(UID_C)).toBe(true);
       expect(service.selectRollUp(UID_C)).toBe(true);
-      expect(service.selectedAccount().accountName).toBe('All Charlie Organizations');
+      expect(service.selectedAccount().accountName).toBe('All Charlie Companies');
     });
 
     // No client-side guess: a guess offers family keys the server may not use, and a restored
@@ -720,7 +720,7 @@ describe('AccountContextService — family roll-up', () => {
       serverFamilies.unsettled.set(false);
       TestBed.tick();
 
-      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Organizations' }));
+      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Companies' }));
       expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: SEGMENT });
     });
 
@@ -735,7 +735,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.eligibleRollUpFamilies()).toEqual([]);
       expect(service.canSelectRollUpFor(ROOT)).toBe(false);
       expect(service.isRollUp()).toBe(true);
-      expect(service.selectedAccount().accountName).toBe('All Alpha Organizations');
+      expect(service.selectedAccount().accountName).toBe('All Alpha Companies');
     });
 
     // Retry reloads the grants; until the families answer that reload, the previous answer describes
@@ -915,7 +915,7 @@ describe('AccountContextService — family roll-up', () => {
       TestBed.tick();
 
       expect(service.isRollUp()).toBe(true);
-      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Organizations' }));
+      expect(service.selectedAccount()).toEqual(expect.objectContaining({ uid: SEGMENT, accountName: 'All Alpha Companies' }));
     });
 
     // With the flag off the families feed nothing on screen, so the switcher must not carry their
@@ -976,7 +976,7 @@ describe('AccountContextService — family roll-up', () => {
       expect(service.selectRollUp(UID_C)).toBe(true);
       expect(service.selectedRollUpRootUid()).toBe(UID_C);
       expect(service.selectedUrlSegment()).toBe(`family-${UID_C}`);
-      expect(service.selectedAccount().accountName).toBe('All Charlie Organizations');
+      expect(service.selectedAccount().accountName).toBe('All Charlie Companies');
       expect(service.rollUpOrganizationCount()).toBe(2);
     });
 
@@ -1011,7 +1011,7 @@ describe('AccountContextService — family roll-up', () => {
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     service.initializeUserOrganizations([seedA, seedB]);
     expect(service.isRollUp()).toBe(true);
-    expect(service.selectedAccount().accountName).toBe('All Alpha Organizations');
+    expect(service.selectedAccount().accountName).toBe('All Alpha Companies');
   });
 
   /**
@@ -1183,13 +1183,13 @@ describe('AccountContextService — family roll-up', () => {
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
     const [tree, extras] = navigateByUrl.mock.calls[0];
-    expect(TestBed.inject(UrlSerializer).serialize(tree)).toBe(`/org/${UID_A}/people`);
+    expect(TestBed.inject(UrlSerializer).serialize(tree)).toBe(`/company/${UID_A}/people`);
     expect(extras).toEqual({ replaceUrl: true });
   });
 
   // The roster selection names a person in the family, not in the organization it demotes to.
   it('drops the per-organization query state when it demotes, keeping the rest', () => {
-    routerUrl = `/org/${SEGMENT}/people?employees=jdoe&tab=board`;
+    routerUrl = `/company/${SEGMENT}/people?employees=jdoe&tab=board`;
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     service.initializeUserOrganizations([seedA]);
@@ -1198,7 +1198,7 @@ describe('AccountContextService — family roll-up', () => {
     TestBed.tick();
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
-    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people?tab=board`);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_A}/people?tab=board`);
   });
 
   it('leaves the address alone when demoting away from an Org Lens page', () => {
@@ -1226,11 +1226,11 @@ describe('AccountContextService — family roll-up', () => {
     expect(JSON.parse(cookies.get(COOKIE) as string)).toEqual({ uid: UID_A });
   });
 
-  // Regression, PR #4415 review 4 (cursor). The guards admit `/org/Family-{root}/people` — the match
+  // Regression, PR #4415 review 4 (cursor). The guards admit `/company/Family-{root}/people` — the match
   // guard normalizes before testing and the roll-up branch returns without canonicalizing — so an
   // un-normalized check left a mixed-case address on its combined-view URL after demotion.
   it('re-points a mixed-case roll-up address', () => {
-    routerUrl = `/org/Family-${ROOT}/people`;
+    routerUrl = `/company/Family-${ROOT}/people`;
     grants.loaded.set(false);
     cookies.set(COOKIE, JSON.stringify({ uid: SEGMENT }));
     service.initializeUserOrganizations([seedA]);
@@ -1239,7 +1239,7 @@ describe('AccountContextService — family roll-up', () => {
     TestBed.tick();
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
-    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people`);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_A}/people`);
   });
 
   /**
@@ -1262,12 +1262,12 @@ describe('AccountContextService — family roll-up', () => {
 
     // The navigation settles on the roll-up page.
     currentNavigation = null;
-    routerUrl = `/org/${SEGMENT}/people`;
-    routerEvents.next(new NavigationEnd(1, `/org/${SEGMENT}/people`, `/org/${SEGMENT}/people`));
+    routerUrl = `/company/${SEGMENT}/people`;
+    routerEvents.next(new NavigationEnd(1, `/company/${SEGMENT}/people`, `/company/${SEGMENT}/people`));
     await Promise.resolve();
 
     expect(navigateByUrl).toHaveBeenCalledTimes(1);
-    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_A}/people`);
+    expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_A}/people`);
   });
 
   // The settled navigation may have re-selected the roll-up (a roll-up address the guard adopted
@@ -1288,8 +1288,8 @@ describe('AccountContextService — family roll-up', () => {
     expect(service.selectRollUp(ROOT)).toBe(true);
 
     currentNavigation = null;
-    routerUrl = `/org/${SEGMENT}/people`;
-    routerEvents.next(new NavigationEnd(2, `/org/${SEGMENT}/people`, `/org/${SEGMENT}/people`));
+    routerUrl = `/company/${SEGMENT}/people`;
+    routerEvents.next(new NavigationEnd(2, `/company/${SEGMENT}/people`, `/company/${SEGMENT}/people`));
     await Promise.resolve();
 
     expect(navigateByUrl).not.toHaveBeenCalled();
@@ -1462,7 +1462,7 @@ describe('AccountContextService — family roll-up', () => {
      * Copilot on PR #4415. The addressing case above kept a CLA-only organization, but the
      * fallback that picks one did not look at `claOnlyOrgUids` at all — so a caller sitting on
      * roll-up whose Org Lens grants had lapsed, with only a CLA-manager company left, demoted
-     * to `null` and landed on `/org/not-found` while still holding a page they could open.
+     * to `null` and landed on `/company/not-found` while still holding a page they could open.
      */
     it('falls back to a CLA-only organization rather than the not-found dead end', () => {
       // On the roll-up itself, so there is no concrete selection to keep; nothing but CLA-only left.
@@ -1501,7 +1501,7 @@ describe('AccountContextService — family roll-up', () => {
   /**
    * Regression, PR #4415 review 10 (high). On a cold a roll-up address deep link the grants have not
    * answered, so a caller with no persona seeds had nothing to be demoted to and the guard's only
-   * answer was `/org/not-found`: a dead end later grants cannot repair, since reconciliation stops
+   * answer was `/company/not-found`: a dead end later grants cannot repair, since reconciliation stops
    * once the roll-up is deselected.
    */
   it('admits a cold roll-up visit it cannot yet decide, rather than stranding the caller', () => {
@@ -1515,7 +1515,7 @@ describe('AccountContextService — family roll-up', () => {
   /**
    * Regression, PR #4415 review 12. The admission above and the reconciliation effect asked the same
    * question differently: the effect checked only "pending or eligible", so it demoted the visit it
-   * had just been admitted, queued `/org/not-found`, and — because reconciliation returns early once
+   * had just been admitted, queued `/company/not-found`, and — because reconciliation returns early once
    * the roll-up is deselected — the later grants could never undo it. The earlier specs missed it by
    * never flushing the effect while the answer was still unknown.
    */
@@ -1564,7 +1564,7 @@ describe('AccountContextService — family roll-up', () => {
    * Regression, PR #4415 review 11. The effect-driven demotion applied its fallback with a bare
    * `setAccount`, leaving it unpinned — so for a grant-only caller an empty persona re-seed between
    * the demotion and the router settling reset the selection to the placeholder, and the deferred
-   * re-point then read that placeholder and redirected to `/org/not-found` despite the grant.
+   * re-point then read that placeholder and redirected to `/company/not-found` despite the grant.
    */
   it('pins the effect-driven demotion fallback against an empty re-seed', () => {
     currentNavigation = { id: 1 };
@@ -1587,13 +1587,13 @@ describe('AccountContextService — family roll-up', () => {
 
     // So the deferred re-point addresses the organization, not the dead end.
     currentNavigation = null;
-    routerUrl = `/org/${SEGMENT}/people`;
-    routerEvents.next(new NavigationEnd(1, `/org/${SEGMENT}/people`, `/org/${SEGMENT}/people`));
+    routerUrl = `/company/${SEGMENT}/people`;
+    routerEvents.next(new NavigationEnd(1, `/company/${SEGMENT}/people`, `/company/${SEGMENT}/people`));
 
     return Promise.resolve().then(() => {
       expect(navigateSpy).not.toHaveBeenCalled();
       expect(navigateByUrl).toHaveBeenCalledTimes(1);
-      expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/org/${UID_B}/people`);
+      expect(TestBed.inject(UrlSerializer).serialize(navigateByUrl.mock.calls[0][0])).toBe(`/company/${UID_B}/people`);
     });
   });
 });

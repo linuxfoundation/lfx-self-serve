@@ -26,7 +26,7 @@ import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const ACCESS_URL = '/org/people?tab=access';
+const ACCESS_URL = '/company/people?tab=access';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';

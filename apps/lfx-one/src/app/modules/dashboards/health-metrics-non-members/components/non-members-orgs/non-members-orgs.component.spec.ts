@@ -104,7 +104,7 @@ describe('NonMembersOrgsComponent', () => {
 
     expect(getNonMembersOrgs).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', filter: 'all', search: '', offset: 0, pageSize: 10 });
     expect(text(`non-members-orgs-row-${ACCOUNT_ID}-name`)).toBe('Acme Motors');
-    expect(text('non-members-orgs-count')).toBe('412 organizations · 37 new this period');
+    expect(text('non-members-orgs-count')).toBe('412 companies · 37 new this period');
     expect(text('non-members-orgs-provisional')).toContain('provisional');
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(verdicts).toEqual([false]);
@@ -137,8 +137,8 @@ describe('NonMembersOrgsComponent', () => {
     const input = fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement;
 
     expect(input.maxLength).toBe(100);
-    expect(input.placeholder).toBe('Search organization…');
-    expect(headers).toEqual(['Organization', 'Membership', 'Meetings attended', 'People', 'Contributions', 'Last engaged', 'Fit']);
+    expect(input.placeholder).toBe('Search company…');
+    expect(headers).toEqual(['Company', 'Membership', 'Meetings attended', 'People', 'Contributions', 'Last engaged', 'Fit']);
   });
 
   it('carries the design caution note and the all-time caveat in a small warning note', async () => {
@@ -146,7 +146,7 @@ describe('NonMembersOrgsComponent', () => {
     const note = query('non-members-orgs-provisional');
 
     expect(text('non-members-orgs-provisional')).toContain(
-      'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.'
+      'Company matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.'
     );
     expect(note?.querySelector('[data-testid="health-metrics-footnote-note"]')).not.toBeNull();
     expect(note?.querySelector('[data-testid="ui-note-icon"] i')?.classList).toContain('fa-triangle-exclamation');
@@ -157,7 +157,7 @@ describe('NonMembersOrgsComponent', () => {
     await render(response({ totalRecords: 4, scopeTotal: 4 }));
     const chip = query('non-members-orgs-low-confidence');
 
-    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 4 active organizations — too early to rank by fit.');
+    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 4 active companies — too early to rank by fit.');
     expect(chip?.classList).toContain('bg-amber-50');
     expect(chip?.querySelector('[aria-hidden="true"]')?.textContent).toBe('◐');
     expect(query('non-members-orgs-count')?.compareDocumentPosition(chip as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
@@ -167,7 +167,7 @@ describe('NonMembersOrgsComponent', () => {
   it('keeps the low-confidence chip singular for one organization', async () => {
     await render(response({ scopeTotal: 1 }));
 
-    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 1 active organization — too early to rank by fit.');
+    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 1 active company — too early to rank by fit.');
   });
 
   it('shows no low-confidence chip at five or more active organizations', async () => {
@@ -228,7 +228,7 @@ describe('NonMembersOrgsComponent', () => {
   it('shows the filtered count with a clear link that resets the filter and search in one read', async () => {
     await render(response({ totalRecords: 16, scopeTotal: 412 }), { nonFit: 'meetings', nonSearch: 'acme' });
 
-    expect(text('non-members-orgs-count')).toBe('16 of 412 organizations match · clear');
+    expect(text('non-members-orgs-count')).toBe('16 of 412 companies match · clear');
 
     getNonMembersOrgs.mockClear();
     query('non-members-orgs-clear')?.click();
@@ -306,7 +306,7 @@ describe('NonMembersOrgsComponent', () => {
   it('keeps the controls and names the search when it matches nothing', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonSearch: 'zeta' });
 
-    expect(text('non-members-orgs-no-match')).toBe('No organization matches “zeta”.');
+    expect(text('non-members-orgs-no-match')).toBe('No company matches “zeta”.');
     expect(query('non-members-orgs-controls')).not.toBeNull();
     // A filter miss is not an empty period, so the shell must not take the section over.
     expect(verdicts).toEqual([false]);
@@ -315,7 +315,7 @@ describe('NonMembersOrgsComponent', () => {
   it('says the filter matches nothing when no search is set', async () => {
     await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { nonFit: 'high-fit' });
 
-    expect(text('non-members-orgs-no-match')).toBe('No organization matches this filter.');
+    expect(text('non-members-orgs-no-match')).toBe('No company matches this filter.');
   });
 
   // A failed read must not render copy that asserts the foundation had no active organizations.

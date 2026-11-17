@@ -53,13 +53,13 @@ To change only the name, type, parent, join mode, features, or chat channel, you
 2. Select **Add Member**, search for the person by name or email (or paste emails), and confirm. If the group has voting, you can also set the new member's **Voting status** when adding them. Voting status dates can still be set from **Edit**. (This applies when you add members directly, not when you send invitations.) For managers, **Add Member** followed by **Import Members** appears on the right of the member filter pills, above search and dropdown filters. On narrower screens, the controls wrap as needed. Members who can only send invitations see **Invite Someone** instead.
 3. Each row has an actions menu with **Send Message** (opens an email to the member), **Edit** (change role, voting status, or permission), and **Remove** (asks you to confirm).
 
-The roster shows **Name**, **Email** (hidden from visitors), **Organization**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
+The roster shows **Name**, **Email** (hidden from visitors), **Company**, and, when the group has voting, **Role** and **Voting Status**. When engagement metrics are turned on for your account, **Meetings** and **Engagement** columns appear for people with access to them. The last column is **Permission**.
 
 The Members tab loads the complete roster before enabling **Add Member** and **Import Members**. If loading fails, a persistent error offers **Retry**, and those actions stay unavailable instead of treating a partial or failed load as an empty group. A successful empty roster still offers **Add the first member**. If Retry repeatedly reaches the safe loading limit for a very large group, contact support. The separate **Invite Someone** flow for members whose roster is hidden is unchanged.
 
 ### Pending invitations
 
-When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires, or **No expiration** for an older invitation that never expires, which can be revoked but not resent. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and organization from the original.
+When a group has invitations waiting, managers see a **Pending** tab next to **All** on the Members tab, with a count. It lists each pending invitation. Use the invitation's actions menu to revoke it; you confirm in the **Revoke Invitation** dialog. Each invitation shows when it expires, or **No expiration** for an older invitation that never expires, which can be revoked but not resent. Once it has expired it is tagged **Invitation expired**, and its actions menu offers **Resend invitation**, which sends the person a new invitation with a fresh expiry and keeps the role and company from the original.
 
 ### Pending applications
 
@@ -99,7 +99,7 @@ Correct the member values, save as **CSV UTF-8 (comma delimited)**, and choose t
 
 1. When creating a group, select **Create Group** on the **Settings** step to reach **Add Members**. When editing, open **Edit Group** and go to the **Add Members** step.
 2. Select **Import Members** alongside **Invite by email** and **Add with details**.
-3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the form.
+3. Download the template or choose a CSV file, then review the preview. Required company and voting fields reflect the group's current settings in the form.
 4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
 5. Select **Import _N_ members**. As on the Members tab, invalid rows are skipped and the button says how many, for example **Import 27 members (skip 3 invalid)**; use **Download invalid rows** to fix them later. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
 6. Select **Done** (when creating) or **Update Group** (when editing) to save the pending member additions along with your other changes. Cancelling the CSV preview, selecting **Skip For Now**, or leaving without saving does not add those members or revoke their invitations. When creating, the group itself has already been saved; only the pending members are discarded.

@@ -318,7 +318,7 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
     tiles: [
       stat('registrations', 'Registrations', formatAtAGlanceCount(period?.registrations), delta(changes?.registrations)),
       stat('attendees', 'Attendees', formatAtAGlanceCount(period?.attendees), delta(changes?.attendees)),
-      stat('organizations', 'Organizations', formatAtAGlanceCount(period?.organizations), delta(changes?.organizations)),
+      stat('organizations', 'Companies', formatAtAGlanceCount(period?.organizations), delta(changes?.organizations)),
       stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), delta(changes?.speakers)),
       stat('countries', 'Countries', formatAtAGlanceCount(period?.countries), delta(changes?.countries)),
       stat('past-upcoming', 'Past / upcoming', formatPastUpcoming(past, upcoming), noDelta),

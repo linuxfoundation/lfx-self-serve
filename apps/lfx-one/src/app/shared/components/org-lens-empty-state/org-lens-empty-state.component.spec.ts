@@ -78,12 +78,12 @@ describe('OrgLensEmptyStateComponent', () => {
     }
   });
 
-  it('renders the held-organization list as the wrong-organization primary and emits the pick', () => {
+  it('renders the held-company list as the wrong-organization primary and emits the pick', () => {
     const fixture = render('wrong-organization', { orgList: ORG_LIST });
     const picked: string[] = [];
     fixture.componentInstance.orgSelected.subscribe((uid) => picked.push(uid));
 
-    expect(byTestId(fixture, 'primary')?.textContent?.trim()).toBe('Your organizations');
+    expect(byTestId(fixture, 'primary')?.textContent?.trim()).toBe('Your companies');
     expect(byTestId(fixture, 'org-list')?.querySelectorAll('li')).toHaveLength(2);
     // #2533 mockup: the rows come first and the label follows; the label is not a control.
     const list = byTestId(fixture, 'org-list') as HTMLElement;
@@ -102,8 +102,8 @@ describe('OrgLensEmptyStateComponent', () => {
     // Only the person's own profile, plus the staff dead end's way back to the Company Lens overview and the
     // roll-up state's way to Memberships (the page swaps in the roll-up's own address through `primaryRoute`).
     const allowedRoutes: Partial<Record<OrgLensEmptyStateName, string[]>> = {
-      'not-found-staff': ['/org/overview'],
-      'roll-up-unavailable': ['/org/memberships'],
+      'not-found-staff': ['/company/overview'],
+      'roll-up-unavailable': ['/company/memberships'],
     };
     for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY)) {
       expect(copy.reason, `${state}: reason must not mention support (#5447)`).not.toMatch(/support/i);
@@ -119,7 +119,7 @@ describe('OrgLensEmptyStateComponent', () => {
         }
         if (action.href) {
           expect(action.href, `${state}: href must be docs or Insights (#5447)`).toMatch(
-            /^(\/docs\/organization\/[a-z-]+|https:\/\/insights\.linuxfoundation\.org(\/.*)?)$/
+            /^(\/docs\/company\/[a-z-]+|https:\/\/insights\.linuxfoundation\.org(\/.*)?)$/
           );
         }
       }
@@ -145,7 +145,7 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(controls[0].textContent).toContain('How to get access to a company');
     expect(controls[0].tagName).toBe('LFX-BUTTON');
     // The reason must not introduce a list that is not there.
-    expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to an organization that is not on your list.');
+    expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to a company that is not on your list.');
     expect(byTestId(render('wrong-organization', { orgList: ORG_LIST }), 'description')?.textContent).toContain('Here is what you do have access to:');
   });
 
@@ -172,37 +172,37 @@ describe('OrgLensEmptyStateComponent', () => {
     const routed = TestBed.createComponent(OrgLensEmptyStateComponent);
     routed.componentRef.setInput('state', 'roll-up-unavailable');
     routed.componentRef.setInput('testId', TEST_ID);
-    routed.componentRef.setInput('primaryRoute', ['/org', 'family-0014100000RootAAAA', 'memberships']);
+    routed.componentRef.setInput('primaryRoute', ['/company', 'family-0014100000RootAAAA', 'memberships']);
     routed.detectChanges();
 
-    expect(byTestId(routed, 'primary')?.querySelector('a')?.getAttribute('href')).toBe('/org/family-0014100000RootAAAA/memberships');
+    expect(byTestId(routed, 'primary')?.querySelector('a')?.getAttribute('href')).toBe('/company/family-0014100000RootAAAA/memberships');
 
     const retry = TestBed.createComponent(OrgLensEmptyStateComponent);
     retry.componentRef.setInput('state', 'could-not-load');
     retry.componentRef.setInput('testId', TEST_ID);
-    retry.componentRef.setInput('primaryRoute', ['/org', 'family-0014100000RootAAAA', 'memberships']);
+    retry.componentRef.setInput('primaryRoute', ['/company', 'family-0014100000RootAAAA', 'memberships']);
     retry.detectChanges();
 
     expect(byTestId(retry, 'retry')).not.toBeNull();
     expect(byTestId(retry, 'primary')).toBeNull();
   });
 
-  // Staff reach any organization through switcher search, so their not-found state lists none.
-  it('does not list the caller\u2019s organizations on the staff not-found state', () => {
+  // Staff reach any company through switcher search, so their not-found state lists none.
+  it('does not list the caller\u2019s companies on the staff not-found state', () => {
     const fixture = render('not-found-staff', { orgList: ORG_LIST });
 
     expect(byTestId(fixture, 'org-list')).toBeNull();
-    expect(byTestId(fixture, 'primary')?.textContent).toContain('Go to Organization Lens');
+    expect(byTestId(fixture, 'primary')?.textContent).toContain('Go to Company Lens');
   });
 
-  it('ignores an organization list on states that do not render one', () => {
+  it('ignores a company list on states that do not render one', () => {
     const fixture = render('no-access', { orgList: ORG_LIST });
 
     expect(byTestId(fixture, 'org-list')).toBeNull();
   });
 
-  // FR-017 / spec 050 DR-002: an unheld organization is never named, whatever the caller passed.
-  it('never interpolates the organization name into an unheld state', () => {
+  // FR-017 / spec 050 DR-002: an unheld company is never named, whatever the caller passed.
+  it('never interpolates the company name into an unheld state', () => {
     for (const state of ['no-access', 'wrong-organization', 'section-no-access', 'section-could-not-verify'] as OrgLensEmptyStateName[]) {
       const fixture = render(state, { orgName: 'Acme Corp' });
       expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('Acme Corp');
@@ -210,7 +210,7 @@ describe('OrgLensEmptyStateComponent', () => {
     }
   });
 
-  it('interpolates the organization name, noun and period for a held section', () => {
+  it('interpolates the company name, noun and period for a held section', () => {
     const fixture = render('section-empty', { orgName: 'Acme Corp', noun: 'meetings', period: 'the last 30 days' });
 
     expect(byTestId(fixture, 'title')?.textContent?.trim()).toBe('No meetings in this period');
@@ -230,25 +230,25 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('staff-check-failed'), 'description')?.textContent).toContain('Reference: —');
   });
 
-  // FR-002: the reason opens with what Organization Lens is on the states a first-time visitor
+  // FR-002: the reason opens with what Company Lens is on the states a first-time visitor
   // can reach — and nowhere else.
-  // The states a caller can reach before ever seeing Org Lens open with what it is (FR-002); #2961 adds
+  // The states a caller can reach before ever seeing Company Lens open with what it is (FR-002); #2961 adds
   // the contractor who has no grant, #4225 the employee of a member org who was never granted access.
-  // That one says it in the product's own words ("the Organization section of LFX Self-Serve"), so it
+  // That one says it in the product's own words ("the Company section of LFX Self-Serve"), so it
   // is asserted on its own sentence rather than the two older phrasings.
   it('opens the reason with the product sentence only on the first-visit states', () => {
     const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant', 'affiliated-no-grant'];
-    expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
-    expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
-    expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Company Lens shows how a company shows up in open source');
+    expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Company Lens shows a company's open source footprint");
+    expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Company Lens shows a company's open source footprint");
     expect(byTestId(render('affiliated-no-grant'), 'description')?.textContent).toContain(
-      'The "Organization" section of LFX Self-Serve shows how your company is involved with LF projects'
+      'The "Company" section of LFX Self-Serve shows how your company is involved with LF projects'
     );
     const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
     expect(others).toHaveLength(9);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
-      expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Organization Lens shows');
+      expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Company Lens shows');
       fixture.destroy();
     }
   });

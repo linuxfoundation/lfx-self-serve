@@ -47,11 +47,11 @@
     @if (view().measured) {
       <div class="flex flex-col gap-3" data-testid="non-members-conversion-warmest">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Warmest organizations</h4>
+          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Warmest companies</h4>
           <span class="text-[12px] text-gray-400">attend meetings and contribute</span>
         </div>
         @if (view().warmest.length === 0) {
-          <p class="text-[13px] text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
+          <p class="text-[13px] text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit company in the selected period.</p>
         } @else {
           <ul class="flex flex-col gap-[8px]">
             @for (row of view().warmest; track row.accountId; let index = $index) {

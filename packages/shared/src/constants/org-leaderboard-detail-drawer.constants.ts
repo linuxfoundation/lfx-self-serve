@@ -62,19 +62,19 @@ export const ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_KEYS: readonly string[] = 
  * the server withholds without its own copy.
  */
 export const ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS: Record<string, string> = {
-  meeting: 'Meeting attendance comes from private LFX Meetings attendance records, so these figures are only shown for your own organization.',
-  event: 'Event attendance comes from private event registration records, so these figures are only shown for your own organization.',
-  meetup: 'Meetup attendance comes from private registration records, so these figures are only shown for your own organization.',
-  certified: 'Certification records identify individuals, so these figures are only shown for your own organization.',
+  meeting: 'Meeting attendance comes from private LFX Meetings attendance records, so these figures are only shown for your own company.',
+  event: 'Event attendance comes from private event registration records, so these figures are only shown for your own company.',
+  meetup: 'Meetup attendance comes from private registration records, so these figures are only shown for your own company.',
+  certified: 'Certification records identify individuals, so these figures are only shown for your own company.',
 };
 
 /** Tooltip copy for a withheld category with no specific entry in `ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIPS`. */
 export const ORG_LEADERBOARD_DETAIL_WITHHELD_CATEGORY_TOOLTIP_FALLBACK =
-  'This category is based on data that is not publicly available, so these figures are only shown for your own organization.';
+  'This category is based on data that is not publicly available, so these figures are only shown for your own company.';
 
 /** Categories scored without a count — a point award, not a share of project activity. */
 export const ORG_LEADERBOARD_DETAIL_UNCOUNTED_CATEGORY_TOOLTIPS: Record<string, string> = {
-  tier: "Points come from the organization's LF membership tier, so there is no activity count behind this row.",
+  tier: "Points come from the company's LF membership tier, so there is no activity count behind this row.",
 };
 
 /** Condensed "Company influence metrics" methodology copy shown in the drawer, per dimension. */

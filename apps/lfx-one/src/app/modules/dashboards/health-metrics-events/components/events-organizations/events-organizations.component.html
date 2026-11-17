@@ -7,19 +7,19 @@
     <lfx-empty-state
       variant="compact"
       icon="fa-light fa-triangle-exclamation"
-      title="Organizations at events unavailable"
-      subtitle="We could not load the organizations at this foundation's events. Refresh the page to try again."
+      title="Companies at events unavailable"
+      subtitle="We could not load the companies at this foundation's events. Refresh the page to try again."
       data-testid="events-orgs-error" />
   } @else if (!empty()) {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="events-orgs-controls">
       <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <div class="w-full sm:w-64">
-          <label class="sr-only" for="events-orgs-search">Search organization</label>
+          <label class="sr-only" for="events-orgs-search">Search company</label>
           <lfx-input-text
             [form]="searchForm"
             control="search"
             inputId="events-orgs-search"
-            placeholder="Search organization..."
+            placeholder="Search company..."
             icon="fa-light fa-search"
             size="small"
             styleClass="!h-[30px] !rounded-full !border-gray-200 !text-[12px] w-full"
@@ -45,8 +45,8 @@
       <lfx-empty-state
         variant="compact"
         icon="fa-light fa-magnifying-glass"
-        title="No matching organizations"
-        subtitle="No organization matches the selected filter or search. Clear the search or pick another filter."
+        title="No matching companies"
+        subtitle="No company matches the selected filter or search. Clear the search or pick another filter."
         data-testid="events-orgs-no-match" />
     } @else {
       <lfx-table
@@ -66,7 +66,7 @@
         data-testid="events-orgs-table">
         <ng-template #header>
           <tr>
-            <th scope="col">Organization</th>
+            <th scope="col">Company</th>
             <th scope="col">Membership</th>
             <th scope="col" class="w-[150px] text-right">Registrations</th>
             <th scope="col" class="text-right">Sponsorship</th>

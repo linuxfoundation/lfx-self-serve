@@ -44,7 +44,7 @@ export const MEETING_INVITE_PRIMARY_SENTINEL = 'primary';
  * Bound to both `aria-label` and `pTooltip` so accessibility and visible copy can't drift apart.
  */
 export const ORGANIZATION_INFO_TOOLTIP =
-  'Organizations in this list come from Work Experience. Add one there to choose a new organization. An existing saved organization may still appear.';
+  'Companies in this list come from Work Experience. Add one there to choose a new company. An existing saved company may still appear.';
 
 /**
  * Profile tab configuration

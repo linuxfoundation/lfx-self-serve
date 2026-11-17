@@ -4,7 +4,7 @@ description: How to see participation, the Net Promoter Score, comments, and ind
 audience: [maintainer, board-member, executive-director]
 product_area: Surveys
 tags: [surveys, results, nps, responses, comments, delivery status]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Surveys
 ---
 
@@ -75,7 +75,7 @@ The **Responses** tab lists each recipient and what they did. The heading shows 
 Each row shows:
 
 - **Recipient**: name and email address (select the email to open a reminder to them in your mail app)
-- **Organization**: their organization and job title
+- **Company**: their company and job title
 - **Delivery Status**: the latest status of the email, with the time it happened
 - **Response Date**: when they responded
 - **NPS Score**: the score they gave, colored by promoter, passive, or detractor
@@ -90,7 +90,7 @@ Use the controls above the list to narrow it down:
 - **NPS Score**: **All**, **Promoters (9-10)**, **Passives (7-8)**, or **Detractors (0-6)**
 - **Comment**: **All**, **With comment**, or **Without comment**
 - **Delivery Status**: **All**, **Responded**, **Clicked**, **Opened**, **Delivered**, **Failed**, or **Pending**
-- **Search Respondents**: find someone by name, email address, or organization
+- **Search Respondents**: find someone by name, email address, or company
 
 **Delivery Status** helps you find people who haven't responded yet. **Delivered**, **Opened**, and **Clicked** are stages of the invitation email, and **Responded** means they submitted a response. Check **Failed** and **Pending** rows to find invitations that didn't reach someone, so you can follow up another way.
 

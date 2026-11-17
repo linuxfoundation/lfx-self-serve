@@ -4,7 +4,7 @@ description: How to find a past meeting, read its attendance, and watch its reco
 audience: [all]
 product_area: Meetings
 tags: [meetings, past meetings, attendance, participants, recording, transcript, ai summary]
-last_updated: 2026-10-28
+last_updated: 2026-11-05
 intercom_collection: Meetings
 ---
 
@@ -45,7 +45,7 @@ The page also shows the meeting's **Agenda** and its **Resources**, which are th
 The **Participants** table lists everyone who was invited or attended. For each person, it shows:
 
 - **Name**, with an **Organizer** tag on guests an organizer marked as a Meeting Host. The tag marks hosts. It doesn't mean the person can manage the meeting
-- **Email**, **Organization**, and **Title**
+- **Email**, **Company**, and **Title**
 - **Voting Status**, when the meeting was linked to a group that uses voting
 - **Attendance**: **Attended** or **Absent**
 - **Invitation**: **Invited** or **Not invited** (someone who joined without being on the guest list)
