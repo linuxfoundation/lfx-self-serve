@@ -147,7 +147,7 @@ export class OrgEmployeeViewService {
   /**
    * The `employeeView` field for `GET /api/orgs/me/role-grants`, or nothing. Asked only when the flag is on, the caller
    * demonstrably holds no grant on a clean roster and is not staff (the same entry rule as the CLA-only and affiliation
-   * lookups), and the affiliation verdict already says their employer is an LF member, so a caller who cannot qualify
+   * lookups), and the affiliation verdict already says their employer is an LF member (contractors, who get no verdict, skip that pre-filter), so a caller who cannot qualify
    * costs no extra upstream call. Never throws and never blocks past the affiliation budget: a failed or slow lookup
    * answers nothing, which the client reads as today's empty state.
    */
@@ -161,7 +161,10 @@ export class OrgEmployeeViewService {
     }
     const grantedOrgCount = grants.writers.length + grants.auditors.length + grants.cascadingWriters.length + grants.cascadingAuditors.length;
     const rosterAnswered = (grants.lookupOutcome ?? 'ok') === 'ok' && grants.staffCheck !== 'failed';
-    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered) || affiliation?.lookup !== 'ok' || !affiliation.employerIsMember) {
+    // The affiliation verdict is copy-only and `OrgAffiliationService` deliberately omits it for LF contractors, so a
+    // contractor goes straight to the strict lookup; everyone else is pre-filtered by it to avoid a pointless upstream call.
+    const affiliatedMember = affiliation?.lookup === 'ok' && affiliation.employerIsMember;
+    if (!claOnlyEntryApplies(grants.isStaff, grantedOrgCount, rosterAnswered) || (grants.isContractor !== true && !affiliatedMember)) {
       return {};
     }
 
@@ -236,8 +239,10 @@ export class OrgEmployeeViewService {
    * beyond the domain and slug is used or returned.
    */
   private async getCompanyRecord(req: Request, accountId: string): Promise<MemberServiceB2bOrgResponse | null> {
+    // Minted OUTSIDE the try: the token endpoint's HTTP status survives in its MicroserviceError, so a 404 there must reject
+    // (a retriable 503 at the gate), not read as "this company has no record" and be cached as a denial.
+    const bearerToken = await generateM2MToken(req);
     try {
-      const bearerToken = await generateM2MToken(req);
       return await this.proxy.proxyRequest<MemberServiceB2bOrgResponse>(
         req,
         'LFX_V2_SERVICE',

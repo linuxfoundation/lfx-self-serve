@@ -219,6 +219,23 @@ describe('OrgEmployeeViewService.resolve', () => {
     await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true, org: { orgSlug: 'acme-motors' } });
   });
 
+  it('rejects, and does not cache a denial, when the token endpoint answers 404', async () => {
+    const notFound = new MicroserviceError('token endpoint 404', 404, 'M2M_TOKEN_ERROR', { operation: 'generate_m2m_token' });
+    generateM2MToken.mockRejectedValueOnce(notFound);
+    const { svc, proxy } = build({ experiences: experience(CDEV_ORG) });
+
+    await expect(svc.resolve(req(), ORG_UID)).rejects.toBe(notFound);
+    expect(proxy.proxyRequest).not.toHaveBeenCalled();
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toMatchObject({ eligible: true });
+  });
+
+  it('still treats a 404 from the company record itself as no domain on record', async () => {
+    const { svc } = build({ experiences: experience(CDEV_ORG), org: new MicroserviceError('missing', 404, 'NOT_FOUND') });
+
+    await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'company-domains-unknown' });
+  });
+
   it('rejects when the machine token cannot be minted', async () => {
     generateM2MToken.mockRejectedValueOnce(new Error('auth0 down'));
     const { svc } = build({ experiences: experience(CDEV_ORG) });
@@ -349,6 +366,23 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
     const { svc } = build({ experiences: experience(CDEV_ORG), auditor: true });
 
     await expect(svc.getRoleGrantEmployeeView(req(), grants(), member)).resolves.toEqual({ fullAccessOrgUid: ORG_UID });
+  });
+
+  it('lets a grant-less contractor, who has no affiliation verdict, reach the strict lookup', async () => {
+    const { svc } = build({ experiences: experience(CDEV_ORG) });
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants({ isContractor: true }), undefined)).resolves.toEqual({
+      employeeView: { orgUid: ORG_UID, orgName: 'Acme Motors', orgSlug: null },
+    });
+  });
+
+  it('still requires a member verdict from a non-contractor, and a contractor must still qualify', async () => {
+    const { svc, cdp } = build({ experiences: [] });
+
+    await expect(svc.getRoleGrantEmployeeView(req(), grants(), undefined)).resolves.toEqual({});
+    expect(cdp.getWorkExperiencesForKnownUser).not.toHaveBeenCalled();
+    await expect(svc.getRoleGrantEmployeeView(req(), grants({ isContractor: true }), undefined)).resolves.toEqual({});
+    expect(cdp.getWorkExperiencesForKnownUser).toHaveBeenCalledTimes(1);
   });
 
   it('answers nothing, not an error, when the lookup fails', async () => {
