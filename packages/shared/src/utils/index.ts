@@ -28,6 +28,7 @@ export * from './meeting-attendance.utils';
 export * from './meeting-attendee-grid.utils';
 export * from './meeting-guests.utils';
 export * from './meeting-attendee-lock.utils';
+export * from './meeting-self-guest.utils';
 export * from './meeting-privacy.utils';
 export * from './past-meeting-summary.utils';
 export * from './past-meeting.utils';

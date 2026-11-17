@@ -15,7 +15,19 @@
   <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
     <!-- Left Column - Add People -->
     <div class="flex flex-col gap-6">
-      <h4 class="text-neutral-950">Add People</h4>
+      <div class="flex items-center justify-between gap-3">
+        <h4 class="text-neutral-950">Add People</h4>
+        @if (canAddSelf()) {
+          <lfx-button
+            size="small"
+            severity="info"
+            [text]="true"
+            icon="fa-light fa-plus"
+            label="Add myself"
+            data-testid="add-self-button"
+            (onClick)="onAddSelf()" />
+        }
+      </div>
 
       <!-- Search People / Add Guest Form (always visible) -->
       <div class="border border-gray-200 rounded-lg p-4">
@@ -53,7 +65,7 @@
     <div class="flex flex-col gap-4">
       <!-- Stats header -->
       <div class="flex flex-col gap-1">
-        <h4 class="text-neutral-950">Invitation List ({{ registrantCount() }})</h4>
+        <h4 id="registrants-list-heading" class="text-neutral-950" tabindex="-1">Invitation List ({{ registrantCount() }})</h4>
         @if (committeeMemberCount() > 0 || directGuestCount() > 0) {
           <p class="text-sm text-gray-500" data-testid="stats">
             @if (committeeMemberCount() > 0) {

@@ -4,11 +4,20 @@
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
-import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrantWithState, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRegistrantWithState,
+  MeetingSelfGuest,
+  PastMeeting,
+  PastMeetingParticipant,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { of, throwError } from 'rxjs';
+import { BehaviorSubject, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRegistrantsDisplayComponent } from './meeting-registrants-display.component';
@@ -41,6 +50,7 @@ describe('MeetingRegistrantsDisplayComponent — past-participant total', () => 
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -96,6 +106,7 @@ describe('MeetingRegistrantsDisplayComponent — open add form on show', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -160,6 +171,7 @@ describe('MeetingRegistrantsDisplayComponent — guest invite scope', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -234,6 +246,7 @@ describe('MeetingRegistrantsDisplayComponent — organizer filter and collapsibl
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -385,6 +398,7 @@ describe('MeetingRegistrantsDisplayComponent — meeting host toggle', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -526,6 +540,7 @@ describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', 
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest: () => of(null) } },
         { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
         {
           provide: MeetingService,
@@ -584,5 +599,164 @@ describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', 
     expect(desktopButtons.length).toBe(3);
     expect(menuLabels).toEqual(['Resend invite', 'Make host', 'Remove']);
     expect((fixture.nativeElement as HTMLElement).querySelector('[data-testid="registrant-display-actions-r-1"]')).not.toBeNull();
+  });
+});
+
+/**
+ * "Add myself" (#5798) in the guests drawer of a meeting card or the join page.
+ * @description The drawer saves each guest straight away, so the button sends the create call itself:
+ * as a non-host guest carrying the user's LFID and avatar, to the dates the "Invite to" choice names.
+ * It is offered only once the list has loaded and while none of the user's emails is on it, and the
+ * identity lookup waits until the drawer is open, so a page of closed card drawers makes no calls.
+ */
+describe('MeetingRegistrantsDisplayComponent — add myself', () => {
+  const SELF_GUEST: MeetingSelfGuest = {
+    email: 'pat.doe@acme-motors.example',
+    first_name: 'Pat',
+    last_name: 'Doe',
+    job_title: 'Engineer',
+    org_name: 'Acme Motors',
+    username: 'pdoe',
+    avatar_url: 'https://avatars.acme-motors.example/pdoe.png',
+    matchEmails: ['pat.doe@acme-motors.example', 'pat@vendor-corp.example'],
+  };
+  const SUCCESS = { summary: { successful: 1, failed: 0, total: 1 }, successes: [], failures: [] };
+
+  let getMeetingSelfGuest: ReturnType<typeof vi.fn>;
+  let addMeetingRegistrants: ReturnType<typeof vi.fn>;
+  let refreshRequested: ReturnType<typeof vi.fn<(count: number) => void>>;
+
+  const listed = (email: string): MeetingRegistrant =>
+    ({ uid: `reg-${email}`, email, first_name: 'Listed', last_name: 'Guest', type: 'direct', invite_accepted: null }) as MeetingRegistrant;
+
+  async function mount(options: { registrants?: MeetingRegistrant[]; meeting?: Meeting; occurrence?: MeetingOccurrence | null; visible?: boolean } = {}) {
+    TestBed.configureTestingModule({
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: UserService, useValue: { getMeetingSelfGuest } },
+        { provide: CommitteeService, useValue: { getCommitteeMembers: vi.fn().mockReturnValue(of([])) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            createRegistrantFormGroup: () => new FormGroup({}),
+            // The real builder, so these tests see the body that is actually sent.
+            stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => MeetingService.prototype.stripMetadata.call({}, meetingUid, guest),
+            addMeetingRegistrants,
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
+    fixture.componentRef.setInput('meeting', options.meeting ?? ({ id: 'meeting-1', timezone: 'UTC' } as Meeting));
+    fixture.componentRef.setInput('occurrence', options.occurrence ?? null);
+    // A parent-supplied list, as on the join page; the add path is the same either way.
+    fixture.componentRef.setInput('initialRegistrants', options.registrants ?? []);
+    fixture.componentRef.setInput('showAddRegistrant', true);
+    fixture.componentRef.setInput('visible', options.visible ?? true);
+    fixture.componentInstance.refreshRequested.subscribe(refreshRequested);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const button = (): HTMLElement | null => (fixture.nativeElement as HTMLElement).querySelector('[data-testid="registrant-display-add-self"]');
+    return { fixture, button };
+  }
+
+  beforeEach(() => {
+    getMeetingSelfGuest = vi.fn().mockReturnValue(new BehaviorSubject<MeetingSelfGuest | null>(SELF_GUEST));
+    addMeetingRegistrants = vi.fn().mockReturnValue(of(SUCCESS));
+    refreshRequested = vi.fn<(count: number) => void>();
+  });
+
+  it('looks the user up only once the drawer opens', async () => {
+    const { fixture, button } = await mount({ visible: false });
+    expect(getMeetingSelfGuest).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getMeetingSelfGuest).toHaveBeenCalledTimes(1);
+    expect(button()).not.toBeNull();
+  });
+
+  it('is hidden when the user is already listed under another of their emails', async () => {
+    const { button } = await mount({ registrants: [listed('Pat@Vendor-Corp.example')] });
+
+    expect(button()).toBeNull();
+  });
+
+  it('is hidden when the profile lacks a last name, since the add needs both names', async () => {
+    getMeetingSelfGuest.mockReturnValue(of({ ...SELF_GUEST, last_name: '' }));
+    const { button } = await mount();
+
+    expect(button()).toBeNull();
+  });
+
+  it('is hidden when the drawer cannot add guests', async () => {
+    const { fixture, button } = await mount();
+    fixture.componentRef.setInput('showAddRegistrant', false);
+    fixture.detectChanges();
+
+    expect(button()).toBeNull();
+  });
+
+  it('saves the user as a non-host guest with their LFID and avatar, to every occurrence by default', async () => {
+    const { fixture, button } = await mount();
+
+    button()?.querySelector('button')?.click();
+    fixture.detectChanges();
+
+    expect(addMeetingRegistrants).toHaveBeenCalledWith('meeting-1', [
+      {
+        meeting_id: 'meeting-1',
+        email: 'pat.doe@acme-motors.example',
+        first_name: 'Pat',
+        last_name: 'Doe',
+        host: false,
+        job_title: 'Engineer',
+        org_name: 'Acme Motors',
+        username: 'pdoe',
+        avatar_url: 'https://avatars.acme-motors.example/pdoe.png',
+      },
+    ]);
+    expect(refreshRequested).toHaveBeenCalledWith(1);
+  });
+
+  it('invites to the shown occurrence only when that is chosen', async () => {
+    const { fixture } = await mount({ meeting: RECURRING_MEETING, occurrence: OCCURRENCE });
+
+    fixture.componentInstance.inviteScopeForm.setValue({ scope: 'occurrence' });
+    fixture.componentInstance.onAddSelf();
+
+    expect(addMeetingRegistrants.mock.calls[0][1][0]).toMatchObject({ occurrence_id: '1893492000' });
+  });
+
+  it('disappears once added, before the parent list reloads, and leaves the add form alone', async () => {
+    const { fixture, button } = await mount();
+    const form = fixture.componentInstance.addRegistrantForm;
+    const reset = vi.spyOn(form, 'reset');
+
+    fixture.componentInstance.onAddSelf();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(button()).toBeNull();
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it('stays offered when the add fails', async () => {
+    addMeetingRegistrants.mockReturnValue(throwError(() => new Error('upstream down')));
+    const { fixture, button } = await mount();
+
+    fixture.componentInstance.onAddSelf();
+    fixture.detectChanges();
+
+    expect(button()).not.toBeNull();
   });
 });

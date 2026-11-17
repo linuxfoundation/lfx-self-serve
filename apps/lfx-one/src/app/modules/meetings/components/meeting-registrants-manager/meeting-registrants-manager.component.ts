@@ -1,8 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, type Signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { LiveAnnouncer } from '@angular/cdk/a11y';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  OnInit,
+  output,
+  signal,
+  type Signal,
+  WritableSignal,
+} from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
@@ -14,12 +29,14 @@ import {
   CommitteeMember,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  MeetingSelfGuest,
   RegistrantPendingChanges,
   RegistrantState,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId, getShowMeetingAttendeesLockedNote } from '@lfx-one/shared/utils';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
+import { UserService } from '@services/user.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -51,6 +68,10 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly inviteResend = inject(MeetingInviteResendService);
+  private readonly userService = inject(UserService);
+  private readonly liveAnnouncer = inject(LiveAnnouncer);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
+  private readonly injector = inject(Injector);
 
   // Input signals
   public meetingUid = input.required<string>();
@@ -88,6 +109,11 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public readonly memberCount = computed(() => this.visibleRegistrants().filter((r) => r.org_is_member).length);
   public readonly committeeMemberCount = computed(() => this.visibleRegistrants().filter((r) => r.type === 'committee').length);
   public readonly directGuestCount = computed(() => this.visibleRegistrants().filter((r) => r.type === 'direct').length);
+
+  /** The signed-in user as a guest, for "Add myself"; `null` until the lookup resolves, and on the server. */
+  protected readonly selfGuest: Signal<MeetingSelfGuest | null> = toSignal(this.userService.getMeetingSelfGuest(), { initialValue: null });
+  /** Offered once the list has loaded, while the user is not on it under any of their emails. */
+  protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
 
   // Complex computed signals (using private initializers)
   public readonly registrants = signal<MeetingRegistrant[]>([]);
@@ -157,6 +183,59 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
     if (this.addRegistrantForm.valid) {
       this.addRegistrantFromForm();
     }
+  }
+
+  /**
+   * Adds the signed-in user to the invitation list as a regular guest, with their profile details.
+   * @description The add payload requires both names, so a profile missing one fills the add form
+   * instead, for the organizer to finish; that guest is an ordinary one, since only a guest whose
+   * identity came straight from the user's own profile sends its LFID and avatar.
+   */
+  public onAddSelf(): void {
+    const self = this.selfGuest();
+    if (!self) return;
+
+    if (!self.first_name || !self.last_name) {
+      this.addRegistrantForm.patchValue({
+        email: self.email,
+        first_name: self.first_name,
+        last_name: self.last_name,
+        job_title: self.job_title,
+        org_name: self.org_name,
+      });
+      this.addRegistrantForm.markAsDirty();
+      return;
+    }
+
+    const now = new Date().toISOString();
+    this.addRegistrant(
+      {
+        uid: '',
+        meeting_id: this.meetingUid(),
+        occurrence_id: null,
+        email: self.email,
+        first_name: self.first_name,
+        last_name: self.last_name,
+        job_title: self.job_title,
+        org_name: self.org_name,
+        host: false,
+        org_is_member: false,
+        org_is_project_member: false,
+        avatar_url: self.avatar_url,
+        username: self.username,
+        created_at: now,
+        updated_at: now,
+        type: 'direct',
+        invite_accepted: null,
+        attended: null,
+        linkedin_profile: null,
+      },
+      { selfAdded: true }
+    );
+
+    void this.liveAnnouncer.announce('You were added to the invitation list.', 'polite');
+    // The button that held focus is gone with the add; the list it changed takes it. Browser-only, so SSR-safe.
+    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('#registrants-list-heading')?.focus(), { injector: this.injector });
   }
 
   // Simplified registrant event handlers (only receive validated data)
@@ -286,9 +365,18 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
       linkedin_profile: formValue.linkedin_profile || null,
     };
 
+    this.addRegistrant(registrantData);
+
+    // Reset form
+    this.addRegistrantForm.reset();
+  }
+
+  /** Puts a registrant at the top of the list as a new guest and emits the pending changes. */
+  private addRegistrant(registrantData: MeetingRegistrant, extra: Partial<MeetingRegistrantWithState> = {}): void {
     // Create new registrant with temporary ID for immediate UI updates
     const newRegistrant: MeetingRegistrantWithState = {
       ...registrantData,
+      ...extra,
       meeting_id: this.meetingUid(),
       uid: '', // Will be assigned by API
       state: 'new' as RegistrantState,
@@ -301,9 +389,18 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
     // Emit updated registrant updates using the conversion logic
     this.emitRegistrantUpdates();
+  }
 
-    // Reset form
-    this.addRegistrantForm.reset();
+  private initCanAddSelf(): Signal<boolean> {
+    return computed(() => {
+      const self = this.selfGuest();
+      if (!self || this.loading()) {
+        return false;
+      }
+
+      const listed = new Set(this.visibleRegistrants().map((registrant) => registrant.email?.toLowerCase() ?? ''));
+      return !self.matchEmails.some((email) => listed.has(email));
+    });
   }
 
   private initFilteredRegistrants() {

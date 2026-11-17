@@ -3,8 +3,8 @@ title: Manage Participants
 description: How to invite guests, add a group, resend invitations, remove people, and choose who runs a meeting in LFX Self Serve.
 audience: [all]
 product_area: Meetings
-tags: [meetings, participants, guests, invite, registrants, groups, resend invite]
-last_updated: 2026-11-03
+tags: [meetings, participants, guests, invite, registrants, groups, resend invite, add myself]
+last_updated: 2026-11-17
 intercom_collection: Meetings
 ---
 
@@ -17,7 +17,7 @@ The guest list matters beyond invitations. For a **Restricted** meeting, the gue
 You can manage guests in two places:
 
 - **While creating or editing a meeting.** Open the **Invite guests** section of the meeting editor. When you create a meeting, nobody is invited until you save.
-- **From a meeting card.** On an upcoming meeting you organize, **Invite people** opens the guest list with the **Add guest** form already open, and **View all** opens it for browsing.
+- **From a meeting card.** On an upcoming meeting you organize, **Invite people** opens the guest list with the **Add guest** form already open, and **Guests** or **View all** opens it for browsing. Changes you make here are saved straight away.
 
 ## Add guests
 
@@ -31,6 +31,19 @@ You can invite people one at a time, or invite a whole group.
 If you can't find the person, select **Add manually** and fill in the guest's details: name and email, and optionally a job title and organization. Select **Add guest** to add them.
 
 If the person is already on the list, you'll see an **Already invited** message instead of a duplicate.
+
+### Add yourself
+
+Creating a meeting doesn't invite you to it. To get the invitation yourself, select **Add myself**. It's next to the **Invited** count in the meeting editor, beside **Add People** in the classic editor, and next to **Add Guest** in a meeting card's guest list. In the editors you're invited when you save the meeting; in a meeting card's guest list you're invited straight away.
+
+If your meeting details show the redesigned **Guests** tab, **Add myself** is also beside **Add Guests**, including when the list is empty. This works in the meeting-details drawer and on the meeting page, and saves your invitation straight away. For a recurring meeting, choose **A single occurrence** and its date, or **All occurrences**, then confirm **Add myself**. Cancel closes the choice without inviting you.
+
+You're added as a regular guest with your profile details: your name, job title and organization. The invitation goes to your meeting-invitation email if you set one, otherwise to your primary email. If your profile is missing your first or last name, the editors open the guest form with your details filled in so you can complete it. Guest lists outside the editors don't offer **Add myself** in that case, so use **Add Guest** or **Add Guests** instead.
+
+- You're added as a guest, not a Meeting Host. To run the meeting, select **Make host** on your row.
+- When you're editing a single occurrence of a recurring meeting, you're added to that occurrence only.
+- In a meeting card's guest list for a recurring meeting, you're added to every occurrence, unless you've opened **Add Guest** and chosen **Only** that date under **Invite to**.
+- **Add myself** disappears once you're on the list under any of your email addresses. For recurring meetings, this includes an invitation to just one occurrence. If you remove yourself, it comes back.
 
 ### Add a group
 

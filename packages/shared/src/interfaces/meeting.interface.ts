@@ -869,6 +869,34 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
   tempId?: string;
   /** RSVP response status for this registrant */
   rsvpStatus?: RsvpResponse;
+  /** Added through "Add myself"; the only guest whose LFID and avatar go on the create body */
+  selfAdded?: boolean;
+}
+
+/**
+ * The signed-in user as a meeting guest, for the guest editors' "Add myself" action
+ * @description Built by `buildMeetingSelfGuest` from the session claims, the combined profile, the
+ * meeting-invite email preference and the current employer. `email` is the address the invite goes
+ * to; `matchEmails` is every address that identifies the user, so the action can be hidden when they
+ * are already on the list under any of them.
+ */
+export interface MeetingSelfGuest {
+  /** Invite address: the meeting-invite preference, else the profile's primary email, else the session email */
+  email: string;
+  /** First name, or `''` when no source has one */
+  first_name: string;
+  /** Last name, or `''` when no source has one */
+  last_name: string;
+  /** Job title from the profile metadata */
+  job_title: string | null;
+  /** Current employer, else the profile's organization */
+  org_name: string | null;
+  /** LFID */
+  username: string | null;
+  /** Avatar URL */
+  avatar_url: string | null;
+  /** Every known email for the user, lower-cased and de-duplicated */
+  matchEmails: string[];
 }
 
 /**

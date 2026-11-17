@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import {
@@ -29,6 +30,7 @@ import {
   MeetingInviteEmail,
   MeetingRegistrationRemovalResult,
   MeetingRsvp,
+  MeetingSelfGuest,
   PastMeeting,
   ProfileAuthStatus,
   ProfilePictureUploadResponse,
@@ -45,6 +47,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildDisplayName,
+  buildMeetingSelfGuest,
   currentEmployerFromWorkExperiences,
   isRsvpSupersededBy,
   resolveRsvpOccurrenceId,
@@ -57,6 +60,7 @@ import {
   combineLatest,
   distinctUntilChanged,
   EMPTY,
+  forkJoin,
   map,
   Observable,
   of,
@@ -80,6 +84,7 @@ import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
 export class UserService {
   private readonly http = inject(HttpClient);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
@@ -670,6 +675,25 @@ export class UserService {
   }
 
   /**
+   * The signed-in user as a meeting guest, for the guest editors' "Add myself" action. A quiet
+   * read like {@link getCurrentEmployerName}: the profile, meeting-invite email and employer
+   * lookups run in parallel, each bounded by {@link CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS}, and a
+   * failed one falls back to the session claims rather than toasting. `null` on the server, so SSR
+   * makes none of the calls, and when no source has an email.
+   */
+  public getMeetingSelfGuest(): Observable<MeetingSelfGuest | null> {
+    if (!isPlatformBrowser(this.platformId)) {
+      return of(null);
+    }
+
+    return forkJoin([
+      this.quietSelfGuestLookup(this.getCurrentUserProfile(), 'profile'),
+      this.quietSelfGuestLookup(this.getMeetingInviteEmail(), 'meeting-invite email'),
+      this.getCurrentEmployerName(),
+    ]).pipe(map(([profile, inviteEmail, employerName]) => buildMeetingSelfGuest(this.user(), profile, inviteEmail, employerName)));
+  }
+
+  /**
    * Get user's work experiences from CDP
    */
   public getWorkExperiences(): Observable<WorkExperienceEntry[]> {
@@ -898,5 +922,17 @@ export class UserService {
       const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : '';
       return (first + last).toUpperCase();
     });
+  }
+
+  /** One source of {@link getMeetingSelfGuest}: first value only, time-bounded, `null` on failure. */
+  private quietSelfGuestLookup<T>(source: Observable<T>, label: string): Observable<T | null> {
+    return source.pipe(
+      take(1),
+      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      catchError((error) => {
+        console.warn(`[UserService] getMeetingSelfGuest ${label} lookup failed; falling back to the session claims`, error);
+        return of(null);
+      })
+    );
   }
 }
