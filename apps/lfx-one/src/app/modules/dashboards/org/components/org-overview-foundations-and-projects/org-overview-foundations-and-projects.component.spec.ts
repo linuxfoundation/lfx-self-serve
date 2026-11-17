@@ -9,6 +9,7 @@ import type { Account, OrgLensFoundationProject, OrgLensFoundationsAndProjectsRe
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensFoundationsService } from '@services/org-lens-foundations.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { PlausibleService } from '@services/plausible.service';
 import { of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -54,6 +55,8 @@ function response(projects: OrgLensFoundationProject[]): OrgLensFoundationsAndPr
   };
 }
 
+const employeeView = signal(false);
+
 async function render(projects: OrgLensFoundationProject[]): Promise<ComponentFixture<OrgOverviewFoundationsAndProjectsComponent>> {
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
@@ -66,6 +69,7 @@ async function render(projects: OrgLensFoundationProject[]): Promise<ComponentFi
       },
       { provide: OrgLensFoundationsService, useValue: { getFoundationsAndProjects: () => of(response(projects)) } },
       { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
+      { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
       { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
     ],
   }).compileComponents();
@@ -127,5 +131,23 @@ describe('OrgOverviewFoundationsAndProjectsComponent project navigation', () => 
       const keyed = await navigateFrom(url, (component, row) => component.onProjectRowKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), row));
       expect(keyed.mock.calls).toEqual([[['/company', 'projects', 'k8s']]]);
     }
+  });
+});
+
+// Epic #5845: the all employee view has no Memberships page, so the section must not link to it.
+describe('OrgOverviewFoundationsAndProjectsComponent all employee view', () => {
+  const link = (fixture: ComponentFixture<OrgOverviewFoundationsAndProjectsComponent>) =>
+    fixture.nativeElement.querySelector('[data-testid="org-overview-foundations-and-projects-view-all-link"]');
+
+  it('links to the Memberships page for a full-view user', async () => {
+    employeeView.set(false);
+    expect(link(await render([project('k8s')]))).not.toBeNull();
+  });
+
+  it('renders no link to the hidden Memberships page for an employee-view user', async () => {
+    employeeView.set(true);
+    const fixture = await render([project('k8s')]);
+    employeeView.set(false);
+    expect(link(fixture)).toBeNull();
   });
 });
