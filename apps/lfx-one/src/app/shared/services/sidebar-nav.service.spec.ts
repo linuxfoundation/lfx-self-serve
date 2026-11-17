@@ -763,7 +763,7 @@ describe('SidebarNavService', () => {
     expect(findByLink(engagement, '/company/acme-inc/contributions')?.carryQueryParams).not.toContain('participation');
   });
 
-  it('shows Initiatives right after Projects on the org lens only for a direct writer on the selected company', () => {
+  it('shows Initiatives right below Groups on the org lens only for a direct writer on the selected company', () => {
     const orgUid = '001000000000000AAA';
     activeLens.set('org');
     orgSegment.set('acme-inc');
@@ -771,15 +771,17 @@ describe('SidebarNavService', () => {
     const service = TestBed.inject(SidebarNavService);
 
     orgWriterSet.set(new Set(['001000000000000BBB']));
-    expect(findByLink(service.sidebarItems(), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/initiatives')).toBeUndefined();
 
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
     const itemLabels = labels(items);
-    expect(findByLink(items, '/company/acme-inc/initiatives')).toEqual(
+    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/initiatives')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
     );
-    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(itemLabels).not.toContain('Crowdfunding Initiatives');
+    const engagement = labels(sectionItems(items, 'Company Engagement'));
+    expect(engagement.indexOf('Crowdfunding Initiatives')).toBe(engagement.indexOf(COMMITTEE_LABEL.plural) + 1);
   });
 
   describe('the LF Staff Only section', () => {
@@ -810,21 +812,35 @@ describe('SidebarNavService', () => {
     });
   });
 
-  it('shows Donations right after Projects on the org lens with the flag on, without a writer grant (#415)', () => {
+  it('shows Donations right below Groups on the org lens with the flag on, without a writer grant (#415)', () => {
     activeLens.set('org');
     orgSegment.set('acme-inc');
     selectedOrgUid.set('001000000000000AAA');
     const service = TestBed.inject(SidebarNavService);
 
-    expect(findByLink(service.sidebarItems(), '/company/acme-inc/donations')).toBeUndefined();
+    expect(findByLink(sectionItems(service.sidebarItems(), 'Company Engagement'), '/company/acme-inc/donations')).toBeUndefined();
 
     cfOrgDonationsEnabled.set(true);
     const items = service.sidebarItems();
-    expect(findByLink(items, '/company/acme-inc/donations')).toEqual(
+    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/donations')).toEqual(
       expect.objectContaining({ label: 'Crowdfunding Donations', testId: 'sidebar-org-donations' })
     );
-    expect(findByLink(items, '/company/acme-inc/initiatives')).toBeUndefined();
-    expect(labels(items).indexOf('Crowdfunding Donations')).toBe(labels(items).indexOf('Projects') + 1);
+    expect(findByLink(sectionItems(items, 'Company Engagement'), '/company/acme-inc/initiatives')).toBeUndefined();
+    expect(labels(items)).not.toContain('Crowdfunding Donations');
+    const engagement = labels(sectionItems(items, 'Company Engagement'));
+    expect(engagement.indexOf('Crowdfunding Donations')).toBe(engagement.indexOf(COMMITTEE_LABEL.plural) + 1);
+  });
+
+  it('orders Groups, Crowdfunding Initiatives, then Crowdfunding Donations at the end of Company Engagement', () => {
+    activeLens.set('org');
+    orgSegment.set('acme-inc');
+    selectedOrgUid.set('001000000000000AAA');
+    orgWriterSet.set(new Set(['001000000000000AAA']));
+    cfOrgDonationsEnabled.set(true);
+
+    const engagement = labels(sectionItems(TestBed.inject(SidebarNavService).sidebarItems(), 'Company Engagement'));
+
+    expect(engagement.slice(-3)).toEqual([COMMITTEE_LABEL.plural, 'Crowdfunding Initiatives', 'Crowdfunding Donations']);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {

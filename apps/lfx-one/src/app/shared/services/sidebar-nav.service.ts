@@ -291,7 +291,8 @@ export class SidebarNavService {
     // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
     // `orgUid` its SFID validator refuses the sentinel for, so `/org/family-{id}/donations` only errors (#4415, Copilot).
     const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
-    const withInitiatives = this.placeAfterOrgProjects(items, [...initiativesItems, ...donationsItems]);
+    // Both close the Company Engagement section, right below Groups.
+    const withInitiatives = this.placeAfterOrgGroups(items, [...initiativesItems, ...donationsItems]);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
     return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
   });
@@ -1238,12 +1239,15 @@ export class SidebarNavService {
     return relation === 'isMarketingAuditor' ? this.personaService.isMarketingAuditor() : this.personaService.isCampaignManager();
   }
 
-  /** Splices `extra` in right after Projects. Appends when Projects is absent, so it can't jump to the top. */
-  private placeAfterOrgProjects(items: SidebarMenuItem[], extra: SidebarMenuItem[]): SidebarMenuItem[] {
+  /**
+   * Splices `extra` onto the end of the Company Engagement section, right below Groups (its last item).
+   * Appends at the top level when the section is absent, so it can't jump to the top.
+   */
+  private placeAfterOrgGroups(items: SidebarMenuItem[], extra: SidebarMenuItem[]): SidebarMenuItem[] {
     if (extra.length === 0) return items;
-    const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
-    if (projectsIndex === -1) return [...items, ...extra];
-    const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), ...extra, ...items.slice(afterProjects)];
+    const sectionIndex = items.findIndex((item) => item.isSection && item.label === 'Company Engagement');
+    if (sectionIndex === -1) return [...items, ...extra];
+    const section = items[sectionIndex];
+    return items.map((item, index) => (index === sectionIndex ? { ...section, items: [...(section.items ?? []), ...extra] } : item));
   }
 }
