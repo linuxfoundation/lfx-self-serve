@@ -27,7 +27,7 @@ import {
   GROUPS_ENGAGEMENT_ICON_CLASS,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
   HEALTH_METRICS_ENGAGEMENT_RECIPIENT_METRICS,
-  HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
+  HEALTH_METRICS_EVENTS_FORECAST_PACES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
@@ -248,8 +248,8 @@ export default {
     // Events organizations membership text and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).map((m) => m.textClass),
     HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
-    // Events forecast verdict banner accents, tag colours and tints (HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES).flatMap((t) => [t.accentClass, t.textClass, t.tintClass].filter(Boolean)),
+    // Events forecast goal-bar fills (HEALTH_METRICS_EVENTS_FORECAST_PACES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_PACES).map((pace) => pace.fillClass),
     // Events sponsorship progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
     // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].

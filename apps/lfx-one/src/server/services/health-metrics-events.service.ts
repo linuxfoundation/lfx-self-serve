@@ -21,6 +21,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_TAB_OPTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES,
+  HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS,
   HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_L2_RANGES,
   HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS,
@@ -149,6 +150,8 @@ interface ForecastEventRow {
   GOAL: number | null;
   DAYS_LEFT: number | null;
   IS_NEW_EVENT: boolean | null;
+  EVENT_CITY: string | null;
+  EVENT_LOCATION: string | null;
 }
 
 interface RegistrationHistoryRow {
@@ -319,25 +322,37 @@ export class HealthMetricsEventsService {
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
     // First edition is flagged per format, so an event is new only when all of its formats are.
+    // The registrations view adds the city and location, which repeat on each of the event's project rows.
     const sql = `
       SELECT
-        event_id,
-        event_name,
-        event_start_date,
-        event_forecast_registrations_avg AS forecast_avg,
-        event_forecast_registrations_low AS forecast_low,
-        event_forecast_registrations_high AS forecast_high,
-        final_current_cumulative_registrations AS registrations_now,
-        event_registrations_prior_year_same_point AS prior_year_same_point,
-        event_registrations_goal AS goal,
-        days_left,
-        BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
+        f.event_id,
+        f.event_name,
+        f.event_start_date,
+        f.event_forecast_registrations_avg AS forecast_avg,
+        f.event_forecast_registrations_low AS forecast_low,
+        f.event_forecast_registrations_high AS forecast_high,
+        f.final_current_cumulative_registrations AS registrations_now,
+        f.event_registrations_prior_year_same_point AS prior_year_same_point,
+        f.event_registrations_goal AS goal,
+        f.days_left,
+        BOOLAND_AGG(f.is_new_event) OVER (PARTITION BY f.event_id) AS is_new_event,
+        p.event_city,
+        p.event_location
       FROM ${REGISTRATION_FORECAST_VIEW} f
-      WHERE foundation_slug = ?
-        AND is_all_projects = TRUE
+      LEFT JOIN (
+        SELECT
+          event_id,
+          MAX(NULLIF(TRIM(event_city), '')) AS event_city,
+          MAX(NULLIF(TRIM(event_location), '')) AS event_location
+        FROM ${EVENT_REGISTRATIONS_VIEW}
+        WHERE event_is_past = FALSE
+        GROUP BY event_id
+      ) p ON p.event_id = f.event_id
+      WHERE f.foundation_slug = ?
+        AND f.is_all_projects = TRUE
         AND ${FORECAST_EVENT_NOT_ENDED}
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_registration_type ASC NULLS LAST, pred_type ASC, days_to_event ASC) = 1
-      ORDER BY event_start_date ASC, event_name ASC NULLS LAST, event_id ASC
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY f.event_id ORDER BY f.event_registration_type ASC NULLS LAST, f.pred_type ASC, f.days_to_event ASC) = 1
+      ORDER BY f.event_start_date ASC, f.event_name ASC NULLS LAST, f.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}
     `;
 
@@ -1440,7 +1455,18 @@ function mapForecastEvent(row: ForecastEventRow): HealthMetricsEventsForecastEve
     goal: toNullableNumber(row.GOAL),
     daysLeft: toDaysLeft(row.DAYS_LEFT),
     isNewEvent: row.IS_NEW_EVENT === true,
+    ...mapEventPlace(row.EVENT_CITY, row.EVENT_LOCATION),
   };
+}
+
+/** dbt's virtual rule: a city or location naming online or virtual. Such a city is no place, so it is dropped. */
+function mapEventPlace(city: string | null, location: string | null): Pick<HealthMetricsEventsForecastEvent, 'city' | 'isVirtual'> {
+  const trimmed = city?.trim() || null;
+  const virtualCity = trimmed !== null && HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.includes(trimmed.toLowerCase());
+  const place = (location ?? '').toLowerCase();
+  const virtualLocation = HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.some((term) => place.includes(term));
+
+  return { city: virtualCity ? null : trimmed, isVirtual: virtualCity || virtualLocation };
 }
 
 function groupCurveRows(rows: ForecastCurveRow[]): HealthMetricsEventsForecastCurveSeries[] {

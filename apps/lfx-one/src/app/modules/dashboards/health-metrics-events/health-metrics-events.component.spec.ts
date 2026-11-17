@@ -24,7 +24,7 @@ import { EventsSpeakersComponent } from './components/events-speakers/events-spe
 import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 import { HealthMetricsEventsComponent } from './health-metrics-events.component';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsForecastPicker } from '@lfx-one/shared/interfaces';
 
 const GLANCE: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: 4, hasEvents: true };
 
@@ -40,7 +40,9 @@ class AtAGlanceStubComponent {
 /** Stands in for the forecast section, whose reads its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registration-forecast', template: '<div data-testid="events-forecast-stub"></div>' })
 class ForecastStubComponent {
+  public readonly pickedEventId = input<string | null>(null);
   public readonly countsChange = output<string>();
+  public readonly pickerChange = output<HealthMetricsEventsForecastPicker>();
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -250,6 +252,27 @@ describe('HealthMetricsEventsComponent', () => {
     await sectionsReport('2 will miss goal');
 
     expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-forecast"]').textContent).toContain('2 will miss goal');
+  });
+
+  it("puts the forecast's event select in its header once it reports events, and hands a pick back to it", async () => {
+    await setup();
+    const forecast = fixture.debugElement.query(By.directive(ForecastStubComponent)).componentInstance as ForecastStubComponent;
+    expect(fixture.nativeElement.querySelector('[data-testid="events-registration-forecast-event"]')).toBeNull();
+
+    forecast.pickerChange.emit({
+      options: [
+        { eventId: 'evt-1', label: 'Open Source Summit' },
+        { eventId: 'evt-2', label: 'Member Summit' },
+      ],
+      eventId: 'evt-1',
+    });
+    await sectionsReport('');
+    const select = fixture.nativeElement.querySelector('[data-testid="events-controls-forecast"] [data-testid="events-registration-forecast-event"]');
+    expect(select).not.toBeNull();
+
+    fixture.componentInstance['forecastEventId'].set('evt-2');
+    fixture.detectChanges();
+    expect(forecast.pickedEventId()).toBe('evt-2');
   });
 
   it('shows the note Speakers & proposals reports on its sub-nav item', async () => {

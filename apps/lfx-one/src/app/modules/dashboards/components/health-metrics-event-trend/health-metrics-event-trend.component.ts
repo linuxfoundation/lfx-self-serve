@@ -11,12 +11,12 @@ import { buildHealthMetricsOverviewPastTrendView, buildHealthMetricsOverviewTren
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { SkeletonModule } from 'primeng/skeleton';
 
-import { HealthMetricsInfoTipComponent } from '../../../components/health-metrics-info-tip/health-metrics-info-tip.component';
+import { HealthMetricsInfoTipComponent } from '../health-metrics-info-tip/health-metrics-info-tip.component';
 
 import type {
   HealthMetricsEventsForecastCurveSeries,
+  HealthMetricsEventTrendEvent,
   HealthMetricsOverviewCardStatus,
-  HealthMetricsOverviewEvent,
   HealthMetricsOverviewEventTrendReads,
   HealthMetricsOverviewTrendDrag,
   HealthMetricsOverviewTrendView,
@@ -24,24 +24,29 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * The event dialog's Registration trend tab: the event's headline figures and this year's curve against last year's,
- * with the forecast for an upcoming event and none for a past one. It opens on the design's best fit, and a navigator
- * under the chart moves or resizes the visible span. Formats are never summed, so an event with both shows the one with
- * the most registrations. The dialog reads the data, since its header shows the same forecast's days left.
+ * An event's registration trend: its headline figures and this year's curve against last year's, with the forecast for
+ * an upcoming event and none for a past one. It opens on the design's best fit, and a navigator under the chart moves or
+ * resizes the visible span. Formats are never summed, so an event with both shows the one with the most registrations.
+ * The host reads the data: the Overview event dialog, whose header shows the same forecast's days left, and the Events
+ * forecast card, which drops the headline figures for its own metrics row.
  */
 @Component({
-  selector: 'lfx-overview-event-trend',
+  selector: 'lfx-health-metrics-event-trend',
   imports: [HealthMetricsInfoTipComponent, SkeletonModule, UiButtonComponent],
-  templateUrl: './overview-event-trend.component.html',
-  // On a phone the tab takes the dialog's height, and the chart fills what the metrics leave.
+  templateUrl: './health-metrics-event-trend.component.html',
+  // On a phone the dialog's tab takes its height, and the chart fills what the metrics leave.
   host: { class: 'flex min-h-0 flex-auto flex-col' },
 })
-export class OverviewEventTrendComponent {
-  public readonly event = input.required<HealthMetricsOverviewEvent>();
+export class HealthMetricsEventTrendComponent {
+  public readonly event = input.required<HealthMetricsEventTrendEvent>();
   public readonly isPast = input<boolean>(false);
   /** `null` until the read lands, and after it fails. */
   public readonly reads = input<HealthMetricsOverviewEventTrendReads | null>(null);
   public readonly status = input<HealthMetricsOverviewCardStatus>('loading');
+  /** The headline figures over the chart; the Events card shows its own. */
+  public readonly showKpis = input<boolean>(true);
+  /** `dialog` sizes the chart to the window and, on a phone, to what the dialog leaves; `card` holds the design's 280px. */
+  public readonly variant = input<'dialog' | 'card'>('dialog');
 
   protected readonly colors = HEALTH_METRICS_OVERVIEW_TREND_COLORS;
   protected readonly windowDays = HEALTH_METRICS_OVERVIEW_TREND_WINDOW_DAYS;
@@ -58,6 +63,18 @@ export class OverviewEventTrendComponent {
     'max-[640px]:text-[16px] max-[640px]:font-normal max-[640px]:leading-[22px]',
     'max-[640px]:text-[16px] max-[640px]:font-normal max-[640px]:leading-[22px]',
   ];
+  /** Exact px: the dialog's chart follows the window; the card's is the design's fixed 280px at every width. */
+  protected readonly gridClass = computed(() =>
+    this.variant() === 'card'
+      ? 'mt-[8px] grid-rows-[280px_auto_auto]'
+      : 'mt-[20px] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] max-[640px]:mt-[12px] max-[640px]:min-h-min max-[640px]:flex-auto max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto]'
+  );
+  /** The dialog can be closed and opened again; the card can only be refreshed. */
+  protected readonly errorCopy = computed(() =>
+    this.variant() === 'card'
+      ? 'The registration trend could not be loaded. Refresh the page to try again.'
+      : 'The registration trend could not be loaded. Close this and try again.'
+  );
   protected readonly series = computed<HealthMetricsEventsForecastCurveSeries | null>(() => {
     const formats = this.reads()?.curve.formats ?? [];
     const format = pickHealthMetricsEventsForecastFormat(formats);

@@ -65,6 +65,8 @@ function eventRow(overrides: Record<string, unknown> = {}) {
     // The model counts days left from yesterday, negative before the event.
     DAYS_LEFT: -41,
     IS_NEW_EVENT: false,
+    EVENT_CITY: 'Springfield',
+    EVENT_LOCATION: null,
     ...overrides,
   };
 }
@@ -132,9 +134,48 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     expect(sql).toMatch(NOT_ENDED_SCOPE);
     expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}`);
-    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id');
-    expect(sql).not.toContain('GROUP BY');
-    expect(sql).toContain('BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id)');
+    expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY f.event_id');
+    expect(sql).toContain('BOOLAND_AGG(f.is_new_event) OVER (PARTITION BY f.event_id)');
+  });
+
+  it("joins the registrations view's city and location, one row per event so the headline never repeats", async () => {
+    await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('LEFT JOIN (');
+    expect(sql).toContain("MAX(NULLIF(TRIM(event_city), '')) AS event_city");
+    expect(sql).toContain("MAX(NULLIF(TRIM(event_location), '')) AS event_location");
+    expect(sql).toContain('GROUP BY event_id');
+    expect(sql).toContain(') p ON p.event_id = f.event_id');
+  });
+
+  it.each([
+    [
+      { EVENT_CITY: ' Toronto ', EVENT_LOCATION: 'Metro Toronto Convention Centre' },
+      { city: 'Toronto', isVirtual: false },
+    ],
+    [
+      { EVENT_CITY: null, EVENT_LOCATION: 'Virtual Event' },
+      { city: null, isVirtual: true },
+    ],
+    [
+      { EVENT_CITY: 'Online', EVENT_LOCATION: null },
+      { city: null, isVirtual: true },
+    ],
+    [
+      { EVENT_CITY: 'Toronto', EVENT_LOCATION: 'Toronto + online' },
+      { city: 'Toronto', isVirtual: true },
+    ],
+    [
+      { EVENT_CITY: null, EVENT_LOCATION: null },
+      { city: null, isVirtual: false },
+    ],
+  ])("reads %o as %o, calling an event virtual by dbt's rule", async (place, expected) => {
+    execute.mockResolvedValue({ rows: [eventRow(place)] });
+
+    const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    expect(events[0]).toMatchObject(expected);
   });
 
   it('maps a row to the event headline', async () => {
@@ -153,6 +194,8 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
         goal: 1000,
         daysLeft: 40,
         isNewEvent: false,
+        city: 'Springfield',
+        isVirtual: false,
       },
     ]);
   });

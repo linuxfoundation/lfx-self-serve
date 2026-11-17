@@ -10,6 +10,7 @@ import {
   buildHealthMetricsEventsOrganizationRowView,
   buildHealthMetricsEventsForecastNote,
   buildHealthMetricsEventsForecastRowViews,
+  buildHealthMetricsEventsForecastView,
   buildHealthMetricsEventsGeographyView,
   buildHealthMetricsEventsPastView,
   buildHealthMetricsEventsRegistrationsGrowthView,
@@ -19,17 +20,16 @@ import {
   buildHealthMetricsEventsSpeakersYears,
   buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
-  filterHealthMetricsEventsForecastable,
   formatHealthMetricsEventsOrganizationsCountLabel,
   formatHealthMetricsEventsPastClosedLabel,
   formatHealthMetricsEventsRevenue,
   hasHealthMetricsEventsGoal,
+  formatHealthMetricsEventsPlaceLabel,
   pickHealthMetricsEventsForecastFormat,
   resolveHealthMetricsEventsForecastStatus,
   resolveHealthMetricsEventsForecastVerdict,
   resolveHealthMetricsEventsPastStatus,
   sortHealthMetricsEventsForecastRows,
-  truncateHealthMetricsEventsPillName,
 } from './health-metrics-events.utils';
 
 import type {
@@ -65,6 +65,8 @@ function event(overrides: Partial<HealthMetricsEventsForecastEvent> = {}): Healt
     goal: 450,
     daysLeft: 40,
     isNewEvent: false,
+    city: 'Springfield',
+    isVirtual: false,
     ...overrides,
   };
 }
@@ -127,18 +129,24 @@ describe('resolveHealthMetricsEventsForecastStatus', () => {
 
 describe('resolveHealthMetricsEventsForecastVerdict', () => {
   it('reports the margin when on track and the shortfall with days left when short', () => {
-    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 450 }))).toMatchObject({ kind: 'on-track', tone: 'ok', gap: 50 });
-    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 620 }))).toMatchObject({ kind: 'short', tone: 'act', gap: 120, daysLeft: 40 });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 450 }))).toMatchObject({ kind: 'on-track', tone: 'healthy', gap: 50 });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 620 }))).toMatchObject({ kind: 'short', gap: 120, daysLeft: 40 });
+  });
+
+  it('needs action when even the high forecast misses, and attention when only the average does', () => {
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 700 })).tone).toBe('action');
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 550 })).tone).toBe('attention');
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 550, forecastHigh: null })).tone).toBe('attention');
   });
 
   it('calls a goal 3× under the forecast stale rather than a success', () => {
-    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 150 }))).toMatchObject({ kind: 'stale', tone: 'watch' });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 150 }))).toMatchObject({ kind: 'stale', tone: 'attention' });
     expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 170 }))).toMatchObject({ kind: 'on-track' });
     expect(resolveHealthMetricsEventsForecastVerdict(event({ forecastAvg: 300, goal: 100 }))).toMatchObject({ kind: 'stale', ratio: 3 });
   });
 
   it('flags a goal ten times off the forecast, either way, as suspect, matching the withheld chip', () => {
-    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 5000 }))).toMatchObject({ kind: 'goal-suspect', tone: 'watch' });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 5000 }))).toMatchObject({ kind: 'goal-suspect', tone: 'attention' });
     expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 50 }))).toMatchObject({ kind: 'goal-suspect', ratio: 10 });
   });
 
@@ -150,8 +158,81 @@ describe('resolveHealthMetricsEventsForecastVerdict', () => {
   });
 
   it('has nothing to pace against without a goal or a forecast', () => {
-    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: null })).kind).toBe('no-goal');
-    expect(resolveHealthMetricsEventsForecastVerdict(event({ forecastAvg: null })).kind).toBe('no-data');
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: null }))).toMatchObject({ kind: 'no-goal', tone: 'summary' });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ forecastAvg: null }))).toMatchObject({ kind: 'no-data', tone: 'summary' });
+  });
+});
+
+describe('buildHealthMetricsEventsForecastView', () => {
+  it('lays out Current, Goal, Predicted and Days left, with last year and the likely range as descriptions', () => {
+    const { metrics } = buildHealthMetricsEventsForecastView(
+      event({ registrationsNow: 3748, priorYearSamePoint: 3373, goal: 5000, forecastAvg: 3921, forecastLow: 3907, forecastHigh: 3935, daysLeft: 1 })
+    );
+
+    expect(metrics.map(({ key, label, value, description }) => [key, label, value, description])).toEqual([
+      ['current', 'Current', '3,748', 'Same point last year: 3,373'],
+      ['goal', 'Goal', '5,000', undefined],
+      ['predicted', 'Predicted', '3,921', 'High 3,935 · Low 3,907'],
+      ['days-left', 'Days left', '1', undefined],
+    ]);
+    expect(metrics[2].tip).toContain('Where registrations are expected to land');
+  });
+
+  it('dashes what is unmeasured: last year for a first edition, an unset goal, a missing forecast and a running event', () => {
+    const { metrics } = buildHealthMetricsEventsForecastView(event({ isNewEvent: true, goal: 0, forecastAvg: null, daysLeft: null }));
+
+    expect(metrics.map((item) => item.value)).toEqual(['250', '—', '—', '—']);
+    expect(metrics[0].description).toBe('Same point last year: —');
+    expect(metrics[2].description).toBeUndefined();
+  });
+
+  it('writes a shortfall as a note, with the gap in bold and the days left', () => {
+    const { note } = buildHealthMetricsEventsForecastView(event({ goal: 5000, forecastAvg: 3921, forecastHigh: 3935, forecastLow: 3907, daysLeft: 1 }));
+
+    expect(note.tone).toBe('action');
+    expect(note.parts).toEqual([
+      { text: 'Projected to finish about ' },
+      { text: '1,079', bold: true },
+      { text: ' short of the 5,000 goal.' },
+      { text: ' There is 1 day left to close the gap — after that the opportunity is gone.' },
+    ]);
+  });
+
+  it.each([
+    [{ daysLeft: 28 }, ' There are 28 days left to close the gap — after that the opportunity is gone.'],
+    [{ daysLeft: 0 }, ' Today is the last day to close the gap — after that the opportunity is gone.'],
+  ])('counts the days left in the shortfall copy (%o)', (overrides, sentence) => {
+    expect(buildHealthMetricsEventsForecastView(event({ goal: 620, ...overrides })).note.parts.at(-1)).toEqual({ text: sentence });
+  });
+
+  it('drops the days-left sentence once a running event is past its start day', () => {
+    expect(
+      buildHealthMetricsEventsForecastView(event({ goal: 620, daysLeft: null }))
+        .note.parts.map((part) => part.text)
+        .join('')
+    ).toBe('Projected to finish about 120 short of the 620 goal.');
+  });
+
+  it('keeps the shipped copy for on-track, no-goal, no-forecast and stale-goal verdicts', () => {
+    const copy = (overrides: Partial<HealthMetricsEventsForecastEvent>) =>
+      buildHealthMetricsEventsForecastView(event(overrides))
+        .note.parts.map((part) => part.text)
+        .join('');
+
+    expect(copy({ goal: 450 })).toBe('On track to clear the goal by about 50 registrations. No action needed beyond keeping promotion running.');
+    expect(copy({ goal: null })).toBe('No registration goal is set, so there is nothing to pace against. The forecast still projects 500 registrations.');
+    expect(copy({ forecastAvg: null })).toBe('There is no forecast for this event yet.');
+    expect(copy({ goal: 150 })).toContain('is 3.3× the goal of 150 — the goal looks stale');
+    expect(copy({ goal: 5000 })).toContain('is a tenth or less of the goal of 5,000 — the goal looks mis-entered');
+  });
+});
+
+describe('formatHealthMetricsEventsPlaceLabel', () => {
+  it('puts the city before the date, says Virtual for a virtual event with no city, and else shows the date alone', () => {
+    expect(formatHealthMetricsEventsPlaceLabel({ city: 'Toronto', isVirtual: false, eventStartDate: '2026-10-05' })).toBe('Toronto · Oct 5, 2026');
+    expect(formatHealthMetricsEventsPlaceLabel({ city: null, isVirtual: true, eventStartDate: '2026-10-05' })).toBe('Virtual · Oct 5, 2026');
+    expect(formatHealthMetricsEventsPlaceLabel({ city: null, isVirtual: false, eventStartDate: '2026-10-05' })).toBe('Oct 5, 2026');
+    expect(formatHealthMetricsEventsPlaceLabel({ city: 'Toronto', isVirtual: true, eventStartDate: null })).toBe('Toronto');
   });
 });
 
@@ -165,10 +246,6 @@ describe('buildHealthMetricsEventsForecastNote', () => {
 });
 
 describe('forecast table helpers', () => {
-  it('keeps only events with a forecast for the selector', () => {
-    expect(filterHealthMetricsEventsForecastable([event(), event({ eventId: 'evt-2', forecastAvg: null })]).map((e) => e.eventId)).toEqual(['evt-1']);
-  });
-
   it('sorts worst pacing first, with unset goals last', () => {
     const sorted = sortHealthMetricsEventsForecastRows([
       event({ eventId: 'none', goal: null }),
@@ -196,22 +273,48 @@ describe('forecast table helpers', () => {
     expect(buildHealthMetricsEventsForecastRowViews([unmeasured])[0]).toMatchObject({ registrationsLabel: '—' });
   });
 
-  it('resolves labels and flags whether a goal is set', () => {
+  it('resolves the labels and fills the goal bar to registrations over goal, capped at 100%', () => {
     const [row] = buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 1200.4, forecastAvg: 1300, forecastHigh: 1400, goal: 1000 })]);
 
-    expect(row).toMatchObject({ statusLabel: 'On track', registrationsLabel: '1,200', goalLabel: '1,000', hasGoal: true, dateLabel: 'Nov 4, 2026' });
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', hasGoal: false });
+    expect(row).toEqual({
+      eventId: 'evt-1',
+      eventName: 'Summit',
+      placeLabel: 'Springfield · Nov 4, 2026',
+      registrationsLabel: '1,200',
+      goalLabel: 'Goal: 1,000',
+      pct: 100,
+      fillClass: 'bg-emerald-500',
+      paceLabel: 'On track',
+    });
+    expect(buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 250, goal: 1000 })])[0].pct).toBe(25);
   });
 
-  it.each([0, -5])('reads a goal of %i as no goal, labelled with a dash', (goal) => {
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', hasGoal: false });
+  it('colours the bar red when even the high forecast misses, amber when the average does, and gray with no forecast', () => {
+    const pace = (overrides: Partial<HealthMetricsEventsForecastEvent>) => {
+      const [row] = buildHealthMetricsEventsForecastRowViews([event(overrides)]);
+      return [row.fillClass, row.paceLabel];
+    };
+
+    expect(pace({ goal: 700 })).toEqual(['bg-red-400', 'Needs action']);
+    expect(pace({ goal: 550 })).toEqual(['bg-amber-400', 'Needs attention']);
+    expect(pace({ goal: 500 })).toEqual(['bg-emerald-500', 'On track']);
+    expect(pace({ goal: 550, forecastAvg: null, forecastHigh: null })).toEqual(['bg-gray-400', 'No forecast']);
   });
 
-  it('truncates long pill names with an ellipsis', () => {
-    expect(truncateHealthMetricsEventsPillName('Short')).toBe('Short');
-    const long = truncateHealthMetricsEventsPillName('A'.repeat(40));
-    expect(long).toHaveLength(33);
-    expect(long.endsWith('…')).toBe(true);
+  it('keeps the raw colour for a goal ten times off the forecast, which still sorts last', () => {
+    const rows = buildHealthMetricsEventsForecastRowViews([
+      event({ eventId: 'suspect', eventName: 'A suspect', goal: 5000 }),
+      event({ eventId: 'behind', registrationsNow: 50, goal: 450 }),
+    ]);
+
+    expect(rows.map((row) => [row.eventId, row.fillClass])).toEqual([
+      ['behind', 'bg-emerald-500'],
+      ['suspect', 'bg-red-400'],
+    ]);
+  });
+
+  it.each([null, 0, -5])('reads a goal of %s as no goal: no goal label and an empty bar', (goal) => {
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ goalLabel: '', pct: 0, paceLabel: '' });
   });
 
   it('opens the chart on the format with more registrations', () => {

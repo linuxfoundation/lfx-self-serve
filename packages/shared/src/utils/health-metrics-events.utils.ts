@@ -4,9 +4,8 @@
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE,
-  HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX,
+  HEALTH_METRICS_EVENTS_FORECAST_PACES,
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
-  HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
@@ -24,6 +23,7 @@ import {
 } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP } from '../constants/health-metrics-overview.constants';
 import { HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH, HEALTH_METRICS_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -40,6 +40,7 @@ import type {
   HealthMetricsEventsForecastRowView,
   HealthMetricsEventsForecastStatus,
   HealthMetricsEventsForecastVerdict,
+  HealthMetricsEventsForecastView,
   HealthMetricsEventsGeography,
   HealthMetricsEventsGeographyView,
   HealthMetricsEventsOrganization,
@@ -74,6 +75,7 @@ import type {
   HealthMetricsEventsSponsorshipView,
   HealthMetricsEventsSubNavItem,
 } from '../interfaces/health-metrics-events.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsNote } from '../interfaces/health-metrics-l2.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 
 /** Sub-nav items for the Events tab; a section notes only once it reports a note. */
@@ -150,8 +152,8 @@ export function isHealthMetricsEventsForecastGoalSuspect(event: HealthMetricsEve
 }
 
 /**
- * EVT-01: upper forecast below goal is Action required, central below goal is At risk, else On track.
- * The band narrows as the event nears, so the rule calibrates itself.
+ * EVT-01: upper forecast below goal is Action required, central below goal is At risk, else On track. It counts the
+ * sub-nav's misses, which leave out a mis-entered goal; the band narrows as the event nears, so the rule calibrates itself.
  */
 export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastStatus {
   // No forecast outranks no goal: there is nothing to show either way, and the contract says No data.
@@ -164,23 +166,65 @@ export function resolveHealthMetricsEventsForecastStatus(event: HealthMetricsEve
   return 'on-track';
 }
 
-/** The callout under the headline. A goal 3× under the forecast reads as stale, not as success. */
+/** The verdict note under the metrics row. A goal 3× under the forecast reads as stale, not as success. */
 export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastVerdict {
   const base = { forecast: event.forecastAvg, goal: event.goal, gap: 0, ratio: null, daysLeft: event.daysLeft };
 
-  if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'none' };
-  if (!hasHealthMetricsEventsGoal(event.goal)) return { ...base, kind: 'no-goal', tone: 'none' };
+  if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'summary' };
+  if (!hasHealthMetricsEventsGoal(event.goal)) return { ...base, kind: 'no-goal', tone: 'summary' };
 
-  // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
+  // Mis-entered goes first, so a 10× gap reads as the sub-nav count reads it: no miss.
   const ratio = event.forecastAvg / event.goal;
-  if (isHealthMetricsEventsForecastGoalSuspect(event)) return { ...base, kind: 'goal-suspect', tone: 'watch', ratio };
-  if (ratio >= HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO) return { ...base, kind: 'stale', tone: 'watch', ratio };
+  if (isHealthMetricsEventsForecastGoalSuspect(event)) return { ...base, kind: 'goal-suspect', tone: 'attention', ratio };
+  if (ratio >= HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO) return { ...base, kind: 'stale', tone: 'attention', ratio };
 
-  // Branch on the raw values, as the chip does, and round only the gap shown.
+  // Branch on the raw values, as the status does, and round only the gap shown.
   const gap = Math.round(Math.abs(event.forecastAvg - event.goal));
-  if (event.forecastAvg >= event.goal) return { ...base, kind: 'on-track', tone: 'ok', gap };
+  if (event.forecastAvg >= event.goal) return { ...base, kind: 'on-track', tone: 'healthy', gap };
 
-  return { ...base, kind: 'short', tone: 'act', gap };
+  // Even the high forecast missing is the status's Action required; within the band, it needs attention.
+  const hopeless = event.forecastHigh !== null && event.forecastHigh < event.goal;
+  return { ...base, kind: 'short', tone: hopeless ? 'action' : 'attention', gap };
+}
+
+/**
+ * The selected event's metrics row (Current, Goal, Predicted, Days left) and its verdict note. Every unmeasured value
+ * reads "—", and Predicted drops its range with no forecast.
+ */
+export function buildHealthMetricsEventsForecastView(event: HealthMetricsEventsForecastEvent): HealthMetricsEventsForecastView {
+  const goal = hasHealthMetricsEventsGoal(event.goal) ? event.goal : null;
+  const range =
+    event.forecastAvg !== null && event.forecastHigh !== null && event.forecastLow !== null
+      ? `High ${formatHealthMetricsEventsCount(event.forecastHigh)} · Low ${formatHealthMetricsEventsCount(event.forecastLow)}`
+      : '';
+
+  return {
+    metrics: [
+      {
+        key: 'current',
+        label: 'Current',
+        value: formatHealthMetricsEventsCount(event.registrationsNow),
+        description: `Same point last year: ${formatHealthMetricsEventsCount(event.isNewEvent ? null : event.priorYearSamePoint)}`,
+      },
+      { key: 'goal', label: 'Goal', value: formatHealthMetricsEventsCount(goal) },
+      {
+        key: 'predicted',
+        label: 'Predicted',
+        value: formatHealthMetricsEventsCount(event.forecastAvg),
+        ...(range ? { description: range } : {}),
+        tip: HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP,
+      },
+      { key: 'days-left', label: 'Days left', value: formatHealthMetricsEventsCount(event.daysLeft) },
+    ],
+    note: buildForecastVerdictNote(resolveHealthMetricsEventsForecastVerdict(event)),
+  };
+}
+
+/** "{City} · {Mon D, YYYY}"; a virtual event with no city reads "Virtual", and any other shows the date alone. */
+export function formatHealthMetricsEventsPlaceLabel(event: { city: string | null; isVirtual: boolean; eventStartDate: string | null }): string {
+  const place = event.city ?? (event.isVirtual ? 'Virtual' : '');
+  const date = event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '';
+  return [place, date].filter(Boolean).join(' · ');
 }
 
 /** Sub-nav note: events projected under goal, leaving out the ones whose goal looks mis-entered. */
@@ -193,11 +237,6 @@ export function buildHealthMetricsEventsForecastNote(events: HealthMetricsEvents
   return missing > 0 ? `${missing} will miss goal` : '';
 }
 
-/** Events a forecast can be drawn for — the selector's pills. */
-export function filterHealthMetricsEventsForecastable(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastEvent[] {
-  return events.filter((event) => event.forecastAvg !== null);
-}
-
 /** Worst pacing first by registrations against goal; events with no usable goal or count go last. */
 export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastEvent[] {
   const pace = (event: HealthMetricsEventsForecastEvent): number =>
@@ -206,20 +245,24 @@ export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsF
   return [...events].sort((a, b) => pace(a) - pace(b) || a.eventName.localeCompare(b.eventName, 'en-US'));
 }
 
-/** The table's rows with every label resolved, so the template formats nothing per render. */
+/**
+ * "All upcoming events", worst pace first, with every label resolved. The bar fills to registrations over goal and takes
+ * the forecast's colour: red when even the high forecast misses, amber when the average does, else emerald.
+ */
 export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastRowView[] {
   return sortHealthMetricsEventsForecastRows(events).map((event) => {
-    const status = resolveHealthMetricsEventsForecastStatus(event);
+    const goal = hasHealthMetricsEventsGoal(event.goal) ? event.goal : null;
+    const pace = HEALTH_METRICS_EVENTS_FORECAST_PACES[forecastPace(event, goal)];
 
     return {
-      event,
-      status,
-      statusLabel: HEALTH_METRICS_EVENTS_FORECAST_STATUSES[status].label,
-      statusClass: HEALTH_METRICS_EVENTS_FORECAST_STATUSES[status].badgeClass,
-      dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
+      eventId: event.eventId,
+      eventName: event.eventName,
+      placeLabel: formatHealthMetricsEventsPlaceLabel(event),
       registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
-      goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
-      hasGoal: hasHealthMetricsEventsGoal(event.goal),
+      goalLabel: goal === null ? '' : `Goal: ${formatHealthMetricsEventsCount(goal)}`,
+      pct: goal === null ? 0 : Math.min(100, ((event.registrationsNow ?? 0) / goal) * 100),
+      fillClass: pace.fillClass,
+      paceLabel: goal === null ? '' : pace.label,
     };
   });
 }
@@ -227,11 +270,6 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
 /** Rounded, `en-US`-pinned so the server render and the hydrated one agree; `—` for unmeasured. */
 export function formatHealthMetricsEventsCount(value: number | null): string {
   return value === null ? '—' : Math.round(value).toLocaleString('en-US');
-}
-
-/** A pill label, truncated with an ellipsis past the design's length. */
-export function truncateHealthMetricsEventsPillName(name: string): string {
-  return name.length > HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX ? `${name.slice(0, HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX - 2)}…` : name;
 }
 
 /** The format the chart opens on: whichever has registered more people so far. */
@@ -653,6 +691,88 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     hasGoal: hasHealthMetricsEventsGoal(event.goal),
     revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
   };
+}
+
+/**
+ * The goal bar's fill from the raw forecast, as the design colours it, so a mis-entered goal keeps its colour while its
+ * note and sort withhold the pace. An event with no forecast has no verdict, so its bar is gray.
+ */
+function forecastPace(event: HealthMetricsEventsForecastEvent, goal: number | null): keyof typeof HEALTH_METRICS_EVENTS_FORECAST_PACES {
+  if (goal === null || event.forecastAvg === null) return 'none';
+  if (event.forecastHigh !== null && event.forecastHigh < goal) return 'action';
+
+  return event.forecastAvg < goal ? 'atRisk' : 'onTrack';
+}
+
+/** The verdict's copy as note parts, with its key figure in bold. */
+function buildForecastVerdictNote(verdict: HealthMetricsEventsForecastVerdict): HealthMetricsNote {
+  const forecast = formatHealthMetricsEventsCount(verdict.forecast);
+  const goal = formatHealthMetricsEventsCount(verdict.goal);
+  const gap = formatHealthMetricsEventsCount(verdict.gap);
+
+  return { tone: verdict.tone, parts: forecastVerdictParts(verdict, { forecast, goal, gap }) };
+}
+
+function forecastVerdictParts(
+  verdict: HealthMetricsEventsForecastVerdict,
+  labels: { forecast: string; goal: string; gap: string }
+): HealthMetricsFootnotePart[] {
+  const { forecast, goal, gap } = labels;
+  switch (verdict.kind) {
+    case 'no-goal':
+      return [
+        plainPart('No registration goal is set, so there is nothing to pace against. The forecast still projects '),
+        boldPart(forecast),
+        plainPart(' registrations.'),
+      ];
+    case 'no-data':
+      return [plainPart('There is no forecast for this event yet.')];
+    case 'stale':
+      return [
+        plainPart('Forecast of '),
+        boldPart(forecast),
+        plainPart(
+          ` is ${(verdict.ratio ?? 0).toFixed(1)}× the goal of ${goal} — the goal looks stale rather than the event over-performing. Worth re-setting before it is reported as success.`
+        ),
+      ];
+    case 'goal-suspect':
+      return [
+        plainPart('Forecast of '),
+        boldPart(forecast),
+        plainPart(
+          (verdict.ratio ?? 0) >= 1
+            ? ` is ten or more times the goal of ${goal} — the goal looks mis-entered rather than the event over-performing. Worth checking before it is reported as success.`
+            : ` is a tenth or less of the goal of ${goal} — the goal looks mis-entered rather than the event falling short. Worth checking before it is reported as a miss.`
+        ),
+      ];
+    case 'on-track':
+      return verdict.gap === 0
+        ? [plainPart('On track to meet the goal. No action needed beyond keeping promotion running.')]
+        : [plainPart('On track to clear the goal by about '), boldPart(gap), plainPart(' registrations. No action needed beyond keeping promotion running.')];
+    default: {
+      const lead =
+        verdict.gap === 0
+          ? [plainPart(`Projected to finish just short of the ${goal} goal.`)]
+          : [plainPart('Projected to finish about '), boldPart(gap), plainPart(` short of the ${goal} goal.`)];
+      return verdict.daysLeft === null
+        ? lead
+        : [...lead, plainPart(` ${daysLeftLead(verdict.daysLeft)} to close the gap — after that the opportunity is gone.`)];
+    }
+  }
+}
+
+function plainPart(value: string): HealthMetricsFootnotePart {
+  return { text: value };
+}
+
+function boldPart(value: string): HealthMetricsFootnotePart {
+  return { text: value, bold: true };
+}
+
+/** 0 means the event starts today, so it reads as the last day rather than "0 days left". */
+function daysLeftLead(daysLeft: number): string {
+  if (daysLeft === 0) return 'Today is the last day';
+  return daysLeft === 1 ? 'There is 1 day left' : `There are ${formatHealthMetricsEventsCount(daysLeft)} days left`;
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */

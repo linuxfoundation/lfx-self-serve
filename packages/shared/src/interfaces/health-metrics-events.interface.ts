@@ -2,13 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import type {
-  HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
 } from '../constants/health-metrics-events.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
-import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type {
+  HealthMetricsL2Range,
+  HealthMetricsL2SubNavItem,
+  HealthMetricsMetricItem,
+  HealthMetricsNote,
+  HealthMetricsNoteTone,
+} from './health-metrics-l2.interface';
 import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
 import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
 
@@ -20,10 +25,10 @@ export interface HealthMetricsEventsSubNavItem extends HealthMetricsL2SubNavItem
   key: HealthMetricsEventsSectionKey;
 }
 
-/** Pace chip for one upcoming event; see `resolveHealthMetricsEventsForecastStatus` for the rule. */
-export type HealthMetricsEventsForecastStatus = keyof typeof HEALTH_METRICS_EVENTS_FORECAST_STATUSES;
+/** One upcoming event's pace; see `resolveHealthMetricsEventsForecastStatus` for the rule. */
+export type HealthMetricsEventsForecastStatus = 'on-track' | 'at-risk' | 'action' | 'no-goal' | 'no-data';
 
-/** The forecast callout's case; the component owns each case's copy. */
+/** The forecast verdict's case; `buildHealthMetricsEventsForecastView` writes each case's copy. */
 export type HealthMetricsEventsForecastVerdictKind = 'no-goal' | 'no-data' | 'stale' | 'goal-suspect' | 'on-track' | 'short';
 
 /** Foundation scope for the forecast's event list; the period does not change what it reads. */
@@ -55,6 +60,9 @@ export interface HealthMetricsEventsForecastEvent {
   daysLeft: number | null;
   /** True only when every format is a first edition. */
   isNewEvent: boolean;
+  /** `null` when unknown, or when the city only says the event is online. */
+  city: string | null;
+  isVirtual: boolean;
 }
 
 /** `GET /api/analytics/events-registration-forecast` — every upcoming event's headline. */
@@ -84,23 +92,10 @@ export interface HealthMetricsEventsForecastCurve {
   formats: HealthMetricsEventsForecastCurveSeries[];
 }
 
-/** The forecast banner's tone; `none` reads as a neutral summary. */
-export type HealthMetricsEventsForecastVerdictTone = 'none' | 'ok' | 'watch' | 'act';
-
-/** How the forecast banner draws one tone: tag label and icon, left accent, tag colour and tint. */
-export interface HealthMetricsEventsForecastVerdictToneStyle {
-  label: string;
-  icon: string;
-  accentClass: string;
-  textClass: string;
-  /** Empty for the untinted summary. */
-  tintClass: string;
-}
-
-/** The forecast callout: its case plus the figures its copy quotes. */
+/** The forecast verdict: its case, its note's tone, and the figures its copy quotes. */
 export interface HealthMetricsEventsForecastVerdict {
   kind: HealthMetricsEventsForecastVerdictKind;
-  tone: HealthMetricsEventsForecastVerdictTone;
+  tone: HealthMetricsNoteTone;
   forecast: number | null;
   goal: number | null;
   /** Registrations over (on track) or under (short) the goal. */
@@ -110,17 +105,38 @@ export interface HealthMetricsEventsForecastVerdict {
   daysLeft: number | null;
 }
 
-/** An upcoming-events table row with its labels and chip resolved once per response. */
+/** The selected event's metrics row and verdict note. */
+export interface HealthMetricsEventsForecastView {
+  metrics: HealthMetricsMetricItem[];
+  note: HealthMetricsNote;
+}
+
+/** One event in the forecast's header select. */
+export interface HealthMetricsEventsForecastOption {
+  eventId: string;
+  label: string;
+}
+
+/** The forecast's header select: every upcoming event, soonest first, and the one shown (`null` with none). */
+export interface HealthMetricsEventsForecastPicker {
+  options: HealthMetricsEventsForecastOption[];
+  eventId: string | null;
+}
+
+/** An "All upcoming events" row with its labels and goal bar resolved once per response. */
 export interface HealthMetricsEventsForecastRowView {
-  event: HealthMetricsEventsForecastEvent;
-  status: HealthMetricsEventsForecastStatus;
-  statusLabel: string;
-  statusClass: string;
-  dateLabel: string;
+  eventId: string;
+  eventName: string;
+  /** "{City} · {Mon D, YYYY}", see `formatHealthMetricsEventsPlaceLabel`. */
+  placeLabel: string;
   registrationsLabel: string;
+  /** "Goal: {N}"; empty with no goal, which reads "No goal set" and draws no bar. */
   goalLabel: string;
-  /** False reads "no goal set" in place of "/ goal". */
-  hasGoal: boolean;
+  /** Registrations over goal, 0–100. */
+  pct: number;
+  fillClass: string;
+  /** The fill's meaning for a screen reader, e.g. "Needs action"; empty with no goal, which draws no bar. */
+  paceLabel: string;
 }
 
 /** Outcome chip for one closed event; see `resolveHealthMetricsEventsPastStatus` for the rule. */

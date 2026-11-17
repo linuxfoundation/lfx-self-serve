@@ -6,8 +6,6 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
-  HealthMetricsEventsForecastVerdictTone,
-  HealthMetricsEventsForecastVerdictToneStyle,
   HealthMetricsEventsGeography,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsSegmentOption,
@@ -35,8 +33,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     empty: { icon: 'fa-light fa-ticket', source: HEALTH_METRICS_L2_EMPTY_SOURCES.event },
     label: 'Registration forecast',
     heading: 'Registration forecast',
-    description:
-      'The most decision-sensitive view in Events: where registrations will land, while there is still time to act. Plotted against days to event so a small meetup and KubeCon can be read the same way.',
+    description: 'Will each upcoming event reach its registration goal?',
   },
   {
     key: 'past',
@@ -139,60 +136,28 @@ export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {
   orgPage: 'orgPage',
 } as const satisfies Record<string, keyof HealthMetricsEventsQueryParams>;
 
-/** Pace chips, EVT-01. `No data` covers a missing forecast and a goal off by an order of magnitude. */
-export const HEALTH_METRICS_EVENTS_FORECAST_STATUSES = {
-  'on-track': { label: 'On track', badgeClass: 'bg-emerald-50 text-emerald-700' },
-  'at-risk': { label: 'At risk', badgeClass: 'bg-amber-50 text-amber-700' },
-  action: { label: 'Action required', badgeClass: 'bg-red-50 text-red-700' },
-  'no-goal': { label: 'No goal', badgeClass: 'bg-gray-100 text-gray-600' },
-  'no-data': { label: 'No data', badgeClass: 'bg-gray-100 text-gray-500' },
+/**
+ * The goal bar by the forecast against the goal (EVT-01): its fill, gray with no forecast, and the words a screen reader
+ * hears in place of the colour.
+ */
+export const HEALTH_METRICS_EVENTS_FORECAST_PACES = {
+  action: { fillClass: 'bg-red-400', label: 'Needs action' },
+  atRisk: { fillClass: 'bg-amber-400', label: 'Needs attention' },
+  onTrack: { fillClass: 'bg-emerald-500', label: 'On track' },
+  none: { fillClass: 'bg-gray-400', label: 'No forecast' },
 } as const;
 
 /** A forecast this many times its goal reads as a stale goal, not an over-performing event. */
 export const HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO = 3;
 
-/** Goal and forecast this far apart, either way, is a data-entry problem: the chip is withheld. */
+/** Goal and forecast this far apart, either way, is a data-entry problem: the verdict, sort and sub-nav count withhold the pace. */
 export const HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO = 10;
 
-/** The verdict banner per tone, with its urgency icon and colours; `none` is the design's untinted grey Summary. */
-export const HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES: Readonly<
-  Record<HealthMetricsEventsForecastVerdictTone, HealthMetricsEventsForecastVerdictToneStyle>
-> = {
-  ok: {
-    label: 'Healthy',
-    icon: 'fa-light fa-circle-check',
-    accentClass: 'border-l-emerald-500',
-    textClass: 'text-emerald-600',
-    tintClass: 'bg-emerald-50/50',
-  },
-  watch: {
-    label: 'Needs attention',
-    icon: 'fa-light fa-triangle-exclamation',
-    accentClass: 'border-l-amber-500',
-    textClass: 'text-amber-600',
-    tintClass: 'bg-amber-50/50',
-  },
-  act: {
-    label: 'Needs action',
-    icon: 'fa-light fa-circle-exclamation',
-    accentClass: 'border-l-red-500',
-    textClass: 'text-red-600',
-    tintClass: 'bg-red-50/50',
-  },
-  none: {
-    label: 'Summary',
-    icon: 'fa-light fa-circle-info',
-    accentClass: 'border-l-gray-400',
-    textClass: 'text-gray-500',
-    tintClass: '',
-  },
-};
+/** Words in an event's city or location that dbt reads as a virtual event; such a city names no place. */
+export const HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS: readonly string[] = ['online', 'virtual'];
 
-/** Event pills truncate past this many characters. */
-export const HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX = 34;
-
-/** Chart datasets drawn but left out of the legend: the band's floor and the today marker. */
-export const HEALTH_METRICS_EVENTS_FORECAST_HIDDEN_LEGEND_LABELS: readonly string[] = ['Forecast low', 'Today'];
+/** Rows per page of "All upcoming events". */
+export const HEALTH_METRICS_EVENTS_FORECAST_PAGE_SIZE = 10;
 
 /** Upcoming events read per foundation; one past it tells a full scope from a truncated one. */
 export const HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP = 200;
