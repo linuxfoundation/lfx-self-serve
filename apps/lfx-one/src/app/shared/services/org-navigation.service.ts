@@ -57,6 +57,7 @@ export class OrgNavigationService {
 
   /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
   private readonly firstPageLandedGenerationInternal = signal<number>(0);
+  private readonly firstPagePinnedUidInternal = signal<string | null>(null);
 
   /**
    * M3 — a grant holder's CLA-only rows, from the one `cla_only=1` request per reload, unfiltered.
@@ -119,6 +120,8 @@ export class OrgNavigationService {
    * still in flight" from "the viewer is scrolling"; this can.
    */
   public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
+  /** The `selected_uid` the last first page was fetched with: the cookie's company before any selection is recorded (#5804). */
+  public readonly firstPagePinnedUid: Signal<string | null> = this.firstPagePinnedUidInternal.asReadonly();
 
   public constructor() {
     this.claOnlyFetch$
@@ -280,6 +283,7 @@ export class OrgNavigationService {
           loaded.set(true);
           if (page.reset) {
             this.firstPageLandedGenerationInternal.set(generation());
+            this.firstPagePinnedUidInternal.set(page.pinnedUid ?? null);
             this.pageTerm.set(page.term ?? '');
             // One unfiltered request per reload serves every later search, which filters it here.
             if (page.claOnlyDeferred && this.claOnlyStatus() === 'idle') {

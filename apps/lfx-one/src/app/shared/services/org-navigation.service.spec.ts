@@ -730,6 +730,8 @@ describe('OrgNavigationService default selection', () => {
         held.flush(hinted([item(UID_A, 'Acme')]));
         TestBed.tick();
         const selectedBeforeClaOnlyRows = setAccount.mock.calls.map(([account]) => (account as Account).uid);
+        expect(service.firstPagePinnedUid()).toBe(UID_C);
+        expect(service.selectionUndecided()).toBe(true);
 
         flushClaOnly([claOnlyRow(UID_C, 'Gamma')]);
 
