@@ -706,7 +706,7 @@ export class MeetingController {
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting when the authenticated user is one of its registrants or
    * organizers. A registrant who is not an organizer gets `[]` unless `show_meeting_attendees` is on
-   * and the meeting is neither Board nor restricted.
+   * and the meeting is not Board (`isMeetingAttendeeListShared`; restricted meetings share once opted in).
    * `preview=true` serves avatar previews: it tolerates a partial roster and skips committee enrichment.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -863,14 +863,22 @@ export class MeetingController {
       // `getMeetingRegistrants` — group attribution is decoration, and `resolveV2ToV1CommitteeMappings`
       // goes over NATS, so a transient committee-service problem shouldn't cost the caller the guest
       // list. The interface docstring on `MeetingRegistrant.committee_uid` promises this on both paths.
+      //
+      // Organizers only. Group attribution says which committee each guest sits on, with their role
+      // and voting status, which is committee membership rather than the guest list, so a guest of a
+      // meeting that shares its list gets the plain roster — the rule `getMeetingRegistrants` applies
+      // through `assertCommitteeAttributionAllowed`. `meeting.organizer` is that same organizer check,
+      // already resolved server-side by the access-checked meeting fetch above.
       let enrichedRegistrants: MeetingRegistrant[] = registrants;
-      try {
-        enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants, m2mToken);
-      } catch (error) {
-        logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
-          meeting_id: uid,
-          err: error,
-        });
+      if (meeting.organizer) {
+        try {
+          enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants, m2mToken);
+        } catch (error) {
+          logger.warning(req, 'get_my_meeting_registrants', 'Committee enrichment failed, returning unenriched registrants', {
+            meeting_id: uid,
+            err: error,
+          });
+        }
       }
 
       logger.success(req, 'get_my_meeting_registrants', startTime, {

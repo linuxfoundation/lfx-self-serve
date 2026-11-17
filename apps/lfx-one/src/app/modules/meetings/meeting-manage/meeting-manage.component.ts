@@ -61,6 +61,7 @@ import {
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
+  shouldPreserveStoredAttendeeVisibility,
   syncShowMeetingAttendeesLock,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
@@ -706,7 +707,11 @@ export class MeetingManageComponent {
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
-      show_meeting_attendees: formValue.show_meeting_attendees || false,
+      // An invite-only meeting's toggle is locked here but not in the meeting v2 composer, so this form
+      // can't see an opt-in made there. Leave the stored value alone rather than overwrite it (#5438).
+      ...(shouldPreserveStoredAttendeeVisibility(this.isEditMode() ? this.meeting() : null, formValue.meeting_type, formValue.restricted)
+        ? {}
+        : { show_meeting_attendees: formValue.show_meeting_attendees || false }),
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,

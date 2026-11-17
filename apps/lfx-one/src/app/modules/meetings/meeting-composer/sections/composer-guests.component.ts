@@ -23,7 +23,6 @@ import {
   getSavedAttendeeVisibility,
   getShowMeetingAttendeesLockedNote,
   isMeetingInviteResponsesEnabled,
-  isShowMeetingAttendeesLocked,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
@@ -84,22 +83,16 @@ export class ComposerGuestsComponent {
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
     getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue(), COMPOSER_ATTENDEE_LOCK)
   );
-  /** The organizer's saved sharing decision, for the group picker; `null` on a create. */
   /**
    * The loaded meeting's sharing decision for the group picker; `null` when there is none to report.
-   * @description Read through the default (pre-v2) lock, like hydration. A board meeting still reports no
-   * decision, as everywhere else. A restricted meeting — locked before the composer allowed sharing — reads
-   * as decided *off* instead, so a linked group's default can't switch sharing on for an existing meeting
-   * just because it was opened here.
+   * @description Read through the composer lock, like hydration, so the picker and the toggle agree. A
+   * restricted meeting reports its stored choice (a missing flag reads as decided *off*), so a linked
+   * group's default can't switch sharing on for an existing meeting just because it was opened here. A
+   * board meeting reports no decision, as everywhere else; `null` on a create.
    */
-  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => {
-    const meeting = this.formService.meeting();
-    const saved = getSavedAttendeeVisibility(meeting);
-    if (saved !== null || !meeting) {
-      return saved;
-    }
-    return isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted, COMPOSER_ATTENDEE_LOCK) ? null : false;
-  });
+  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() =>
+    getSavedAttendeeVisibility(this.formService.meeting(), COMPOSER_ATTENDEE_LOCK)
+  );
 
   /**
    * The committees currently on the form, for the group manager to render as selected.

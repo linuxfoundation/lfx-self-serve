@@ -812,6 +812,67 @@ describe('MeetingManageComponent', () => {
       await TestBed.inject(ApplicationRef).whenStable();
       expect(component.prepareMeetingData().show_meeting_attendees).toBe(false);
     });
+
+    // #5438: this form locks invite-only meetings, but the v2 composer lets them opt in. A save from here
+    // must not overwrite an opt-in it cannot show.
+    describe('an existing invite-only meeting', () => {
+      const editRestricted = async (overrides: Partial<Meeting> = {}) => {
+        getMeetingDetail.mockReturnValue(
+          of({
+            ...unenrichedMeeting(),
+            show_meeting_attendees: true,
+            meeting_type: 'Technical',
+            restricted: true,
+            start_time: '2099-01-01T00:00:00.000Z',
+            duration: 60,
+            timezone: 'UTC',
+            title: 'Test',
+            ...overrides,
+          } as Meeting)
+        );
+        getProject.mockReturnValue(of(null));
+        const component = (await createComponent()).componentInstance as any;
+        await TestBed.inject(ApplicationRef).whenStable();
+        return component;
+      };
+
+      it('leaves the stored attendee visibility out of the save', async () => {
+        const component = await editRestricted();
+
+        expect(component.form().get('show_meeting_attendees')?.disabled).toBe(true);
+        expect('show_meeting_attendees' in component.prepareMeetingData()).toBe(false);
+      });
+
+      it('still writes false when the edit makes it a Board meeting', async () => {
+        const component = await editRestricted();
+        component.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(component.prepareMeetingData().show_meeting_attendees).toBe(false);
+      });
+    });
+
+    it('still writes false when the edit turns an open meeting invite-only', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          show_meeting_attendees: true,
+          meeting_type: 'Technical',
+          restricted: false,
+          start_time: '2099-01-01T00:00:00.000Z',
+          duration: 60,
+          timezone: 'UTC',
+          title: 'Test',
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+      const component = (await createComponent()).componentInstance as any;
+      await TestBed.inject(ApplicationRef).whenStable();
+      component.form().get('restricted')?.setValue(true);
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(component.prepareMeetingData().show_meeting_attendees).toBe(false);
+    });
   });
   /**
    * Covers what this page hands the group picker as the organizer's saved sharing decision.

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  COMPOSER_ATTENDEE_LOCK,
   IMPORT_REGISTRANTS_MAX,
   MEETING_ROLLUP_QUERY_MAX_PROJECTS,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
@@ -705,13 +706,19 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list. A restricted meeting
-    // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
-    // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
-    if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
+    // to opt a board meeting into sharing its guest list. A restricted (invite-only) meeting is
+    // read and written under the same composer rule (#5438): an explicit choice is forwarded, and a
+    // body that omits the flag leaves the organizer's stored choice alone. The pre-v2 wizard locks
+    // the control for restricted meetings: it omits the flag when editing a meeting that stays
+    // restricted, so a composer opt-in survives, and sends `false` when the edit makes the meeting
+    // Board or turns `restricted` on.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted, COMPOSER_ATTENDEE_LOCK)) {
       updatePayload.show_meeting_attendees = false;
-    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
-      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
+    } else if (
+      meetingData.show_meeting_attendees == null &&
+      isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted, COMPOSER_ATTENDEE_LOCK)
+    ) {
+      // Unlocking a board meeting with no choice of its own. Upstream keeps whatever the body
       // omits, and a row written before the lock existed can still hold `true`, so the stale value
       // would survive the unlock and start sharing the guest list. A locked meeting never carried
       // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.

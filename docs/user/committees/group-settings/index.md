@@ -4,7 +4,7 @@ description: How managers change a group's name, type, join mode, visibility, ma
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, settings, join-mode, mailing-lists, delete]
-last_updated: 2026-11-05
+last_updated: 2026-11-16
 intercom_collection: Committees
 ---
 
@@ -72,7 +72,7 @@ Toggle each feature, then **Save Changes**:
 - **Enable Audit**: tracks and logs group activity for compliance.
 - **Make Group Public**: makes the group visible to all users.
 - **Enable SSO Group**: syncs membership with a Single Sign-On provider.
-- **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board and restricted meetings never share their guest list.
+- **Show Meeting Attendees**: lets guests see who else is invited to the group's meetings. Board meetings never share their guest list.
 
 With **Business Email Required** or **Enable Voting** on, members who join must give an organization name and website.
 
