@@ -4,6 +4,7 @@
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { BehavioralClassDisplayConfig, CommitteeCategoryInfo, CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
+import type { UiTone } from '../interfaces/uikit.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -700,6 +701,16 @@ export const BEHAVIORAL_CLASS_CONFIG: Record<GroupBehavioralClass, BehavioralCla
     color: 'text-gray-700',
     bgColor: 'bg-gray-50',
   },
+};
+
+/** Colour role of each behavioral class, matching the hues of {@link BEHAVIORAL_CLASS_CONFIG}; drives the Groups type tab dots. */
+export const BEHAVIORAL_CLASS_TONE: Record<GroupBehavioralClass, UiTone> = {
+  'governing-board': 'feature',
+  'oversight-committee': 'success',
+  'working-group': 'warning',
+  'special-interest-group': 'accent',
+  'ambassador-program': 'danger',
+  other: 'neutral',
 };
 
 /** Max concurrent create-invite requests when fanning out a bulk committee invite. */

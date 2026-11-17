@@ -461,6 +461,11 @@ export class CommitteeService {
     );
   }
 
+  /** The caller's groups across every project, like {@link getMyCommittees}, but a failed request errors so the caller can show a failure state. */
+  public getMyCommitteesOrError(): Observable<MyCommittee[]> {
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees');
+  }
+
   /** Lightweight alternative to {@link getMyCommittees} — returns only UIDs. Use when only set-membership checks (e.g. member badges) are needed. */
   public getMyCommitteeUids(projectUid?: string): Observable<string[]> {
     let params = new HttpParams();

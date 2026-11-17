@@ -213,6 +213,15 @@ export const NEWSLETTER_ENHANCED_EDITOR_DEFAULT = false;
  */
 export const MEETINGS_REDESIGN_FLAG = 'meetings-redesign';
 /**
+ * Dark-launch gate for the redesigned Home / Me lens Groups page (#5823). Default false: a missing
+ * LaunchDarkly flag keeps everyone on the existing groups dashboard. It only affects the flat `/groups`
+ * route in the Me lens; `/foundation/groups`, `/project/groups` and the org lens stay on the existing page.
+ *
+ * **UI-only** — evaluated in the browser like {@link MEETINGS_REDESIGN_FLAG}: the server renders a loading
+ * state and the browser picks the page. It gates no endpoint.
+ */
+export const GROUPS_REDESIGN_FLAG = 'groups-redesign';
+/**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
  * false: the group stays hidden until LaunchDarkly targeting turns it on.
  *
