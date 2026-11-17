@@ -25,6 +25,8 @@ describe('ProgramReviewComponent', () => {
     codeOfConductUrl: 'https://test-org.example/coc',
     ciiProjectId: '1234',
     skills: ['go', 'kubernetes'],
+    createdOn: '2026-09-15T10:00:00Z',
+    submitter: { name: 'Jane Doe', email: 'jane.doe@example.org', avatarUrl: null },
     hasDetails: true,
     ...overrides,
   });
@@ -91,6 +93,15 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId('mentorship-program-review-choice')).not.toBeNull();
   });
 
+  it('shows the submission date and the program admin who submitted it', () => {
+    build({ load: of(review()) });
+
+    expect(byTestId('mentorship-program-meta-date')?.textContent).toContain('Submitted');
+    expect(byTestId('mentorship-program-meta-date')?.textContent).toContain('Sep 15, 2026');
+    expect(byTestId('mentorship-program-meta-admin-name')?.textContent?.trim()).toBe('Jane Doe');
+    expect(byTestId('mentorship-program-meta-admin-email')?.getAttribute('href')).toBe('mailto:jane.doe@example.org');
+  });
+
   it('renders the description as sanitized HTML', () => {
     build({ load: of(review('pending', { description: '<p>Learn the codebase.</p><script>alert(1)</script>' })) });
 
@@ -135,6 +146,7 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId('mentorship-program-review-details')).toBeNull();
     expect(byTestId('mentorship-program-review-title')?.textContent).toContain('Test Program');
     expect(byTestId('mentorship-program-review-rejected')).not.toBeNull();
+    expect(byTestId('mentorship-program-meta-admin-name')?.textContent?.trim()).toBe('Jane Doe');
   });
 
   it('records an approval on Approve and shows the outcome', () => {
