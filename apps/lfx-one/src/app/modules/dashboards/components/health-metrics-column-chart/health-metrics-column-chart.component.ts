@@ -17,7 +17,7 @@ import type { HealthMetricsColumnChartView, HealthMetricsLineChartTipPlacement }
   imports: [HealthMetricsChartTipComponent],
   templateUrl: './health-metrics-column-chart.component.html',
   // Escape closes the popup however it opened, since hovering a column does not focus it; a resize re-places an open one.
-  host: { class: 'block', '(document:keydown.escape)': 'activeIndex.set(null)', '(window:resize)': 'replaceTip()' },
+  host: { class: 'block', '(document:keydown.escape)': 'closeTip()', '(window:resize)': 'replaceTip()' },
 })
 export class HealthMetricsColumnChartComponent {
   public readonly chart = input.required<HealthMetricsColumnChartView>();
@@ -35,7 +35,11 @@ export class HealthMetricsColumnChartComponent {
   }
 
   protected onLeave(index: number): void {
-    if (this.activeIndex() !== index) return;
+    if (this.activeIndex() === index) this.closeTip();
+  }
+
+  /** Closes the popup and forgets its column, so nothing still points at a column once it is closed. */
+  protected closeTip(): void {
     this.activeIndex.set(null);
     this.activeColumn = null;
   }

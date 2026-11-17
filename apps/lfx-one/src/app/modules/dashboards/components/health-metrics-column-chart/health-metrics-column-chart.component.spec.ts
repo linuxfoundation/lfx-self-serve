@@ -100,6 +100,8 @@ describe('HealthMetricsColumnChartComponent', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     fixture.detectChanges();
     expect(query('chart-tip')).toBeNull();
+    // Escape forgets the column too, so a resize after it re-places nothing.
+    expect(fixture.componentInstance['activeColumn']).toBeNull();
 
     column.dispatchEvent(new Event('focus'));
     fixture.detectChanges();
