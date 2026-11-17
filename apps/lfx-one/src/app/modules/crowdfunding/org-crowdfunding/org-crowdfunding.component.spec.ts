@@ -24,6 +24,9 @@ class StubDonationsComponent {}
 describe('OrgCrowdfundingComponent (#5838)', () => {
   const writerSet = signal(new Set<string>());
   const grantsLoaded = signal(true);
+  const flagReady = signal(true);
+  let flagReadyPromise: Promise<boolean>;
+  let resolveFlagReady: (ready: boolean) => void;
   const donationsEnabled = signal(false);
 
   const tabIds = (root: HTMLElement): string[] =>
@@ -39,6 +42,8 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
   beforeEach(() => {
     writerSet.set(new Set());
     grantsLoaded.set(true);
+    flagReady.set(true);
+    flagReadyPromise = new Promise((resolve) => (resolveFlagReady = resolve));
     donationsEnabled.set(false);
     TestBed.configureTestingModule({
       providers: [
@@ -56,7 +61,12 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
         { provide: OrgRoleGrantsService, useValue: { writerSet, loaded: grantsLoaded, error: signal<string | null>(null) } },
         {
           provide: FeatureFlagService,
-          useValue: { getBooleanFlag: (key: string) => (key === CF_ORG_DONATIONS_FLAG ? donationsEnabled : signal(false)) },
+          useValue: {
+            getBooleanFlag: (key: string) => (key === CF_ORG_DONATIONS_FLAG ? donationsEnabled : signal(false)),
+            getFlagOverride: () => undefined,
+            providerReady: flagReady,
+            waitForReady: () => flagReadyPromise,
+          },
         },
       ],
     });
@@ -161,5 +171,31 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
     const harness = await open('/crowdfunding?tab=donations');
     await harness.fixture.whenStable();
     expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('waits for the feature-flag provider before choosing a non-writer landing tab', async () => {
+    flagReady.set(false);
+    const harness = await open('/crowdfunding');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding');
+
+    donationsEnabled.set(true);
+    resolveFlagReady(true);
+    await flagReadyPromise;
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('shows no tabs, and no New Initiative, while the grants are still loading', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    grantsLoaded.set(false);
+    const harness = await open('/crowdfunding/initiatives');
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual([]);
+    expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).toBeNull();
+
+    grantsLoaded.set(true);
+    harness.detectChanges();
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual(['initiatives']);
   });
 });
