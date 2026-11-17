@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="engagement-newsletter-performance">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="engagement-newsletter-performance">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,114 +13,48 @@
   } @else if (loading()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="engagement-newsletter-performance-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    @let current = view();
-    <lfx-filter-pills
-      variant="track"
-      [options]="modeOptions"
-      [selectedFilter]="mode()"
-      (filterChange)="onModeChange($event)"
-      data-testid="engagement-newsletter-performance-modes" />
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="engagement-newsletter-performance-metrics" />
 
-    <!-- The design's hero: subscribers with their growth inline, then label-over-value side stats. -->
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="engagement-newsletter-performance-kpis">
-      <div class="flex flex-col gap-2" data-testid="engagement-newsletter-performance-headline">
-        <div class="flex items-baseline gap-2">
-          <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="engagement-newsletter-performance-subscribers">{{
-            current.headline.value
-          }}</span>
-          @if (current.headline.delta) {
-            <span
-              class="text-[13px] font-medium tabular-nums"
-              [class.text-emerald-600]="current.headline.deltaDirection === 'up'"
-              [class.text-red-600]="current.headline.deltaDirection === 'down'"
-              data-testid="engagement-newsletter-performance-growth"
-              >{{ current.headline.delta }}</span
-            >
-          }
-        </div>
-        <span class="text-[12px] text-gray-500">{{ current.headline.label }}</span>
-      </div>
-
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="engagement-newsletter-performance-side">
-        @for (kpi of current.side; track kpi.key) {
-          <div class="flex flex-col gap-0.5">
-            <dt class="text-[12px] text-gray-500">{{ kpi.label }}</dt>
-            <dd
-              class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900"
-              [attr.data-testid]="'engagement-newsletter-performance-kpi-' + kpi.key">
-              {{ kpi.value }}
-            </dd>
-          </div>
+    <!-- The switch drives the chart alone, so it sits just above it, left-aligned. -->
+    <div class="flex">
+      <lfx-ui-switch size="small" ariaLabel="View" [value]="mode()" (valueChange)="onModeChange($event)" data-testid="engagement-newsletter-performance-modes">
+        @for (option of modes; track option.key) {
+          <lfx-ui-switch-option [value]="option.key" [label]="option.label" [attr.data-testid]="'engagement-newsletter-performance-mode-' + option.key" />
         }
-      </dl>
+      </lfx-ui-switch>
     </div>
 
     @if (points().length) {
-      <div class="h-56 w-full" role="img" [attr.aria-label]="chartLabel()" data-testid="engagement-newsletter-performance-chart">
-        <lfx-chart type="line" [data]="chartData()" [options]="chartOptions()" height="100%" />
-      </div>
-      <div class="flex flex-wrap items-center gap-x-[14px] gap-y-[6px] text-[12px] text-gray-500" aria-hidden="true">
-        @for (dataset of chartData().datasets; track dataset.label) {
-          <span class="inline-flex items-center gap-[6px]"
-            ><span
-              class="w-[14px] border-t-2"
-              [style.border-top-color]="dataset.borderColor"
-              [style.border-top-style]="dataset.borderDash ? 'dashed' : 'solid'"></span
-            >{{ dataset.label }}</span
-          >
-        }
-      </div>
-      <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip. -->
-      <table class="sr-only" data-testid="engagement-newsletter-performance-chart-table">
-        <caption>
-          {{
-            chartLabel()
-          }}
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Newsletter</th>
-            @for (dataset of chartData().datasets; track dataset.label) {
-              <th scope="col">{{ dataset.label }}</th>
-            }
-          </tr>
-        </thead>
-        <tbody>
-          @for (row of chartRows(); track row.key) {
-            <tr>
-              <th scope="row">{{ row.title }}</th>
-              @for (cell of row.cells; track $index) {
-                <td>{{ cell }}</td>
-              }
-            </tr>
+      <div class="flex flex-col gap-[12px]">
+        <lfx-health-metrics-line-chart [chart]="chart().chart" testId="engagement-newsletter-performance-chart" />
+        <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[6px]" aria-hidden="true" data-testid="engagement-newsletter-performance-legend">
+          @for (item of chart().legend; track item.key) {
+            <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+              ><span class="h-[3px] w-[14px] rounded-full" [style.background]="item.color"></span>{{ item.label }}</span
+            >
           }
-        </tbody>
-      </table>
+        </div>
+      </div>
     } @else {
       <p class="text-[13px] text-gray-500" data-testid="engagement-newsletter-performance-chart-empty">
         No opens or clicks are recorded yet for the newsletters sent in this period.
       </p>
     }
 
-    <!-- No [totalRecords]: p-table keeps only its first value and pins the paginator there, so it counts the rows instead. -->
+    <!-- The design's 700px minimum; a narrower card scrolls the table sideways. Every column after the first is right-aligned. -->
     <lfx-table
       styleClass="hm-table"
       [rowHover]="false"
-      [value]="current.rows"
-      [paginator]="current.rows.length > size()"
-      [rows]="size()"
-      [first]="first()"
-      [showCurrentPageReport]="true"
-      [showFirstLastIcon]="false"
-      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-      (onPage)="onTablePage($event)"
+      [value]="pageRows()"
+      [paginator]="false"
+      [tableStyle]="{ 'min-width': '700px' }"
       data-testid="engagement-newsletter-performance-table">
       <ng-template #header>
         <tr>
           <th scope="col">Newsletter</th>
           <th scope="col" class="text-right">Recipients</th>
           <th scope="col" class="text-right">Unique opens</th>
-          <th scope="col">Open rate</th>
+          <th scope="col" class="text-right">Open rate</th>
           <th scope="col" class="text-right">Unique clicks</th>
           <th scope="col" class="text-right">Click rate</th>
           <th scope="col" class="text-right">Click-to-open</th>
@@ -129,55 +63,31 @@
 
       <ng-template #body let-row>
         <tr [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key">
-          <td class="min-w-[260px]">
-            <div class="flex flex-col">
-              <span class="text-[13px] font-semibold text-gray-900">{{ row.name }}</span>
-              @if (row.sentLabel) {
-                <span class="text-[12px] text-gray-500">{{ row.sentLabel }}</span>
-              }
-            </div>
-          </td>
-          <td class="text-right">
-            <div class="flex flex-col">
-              <span class="text-[13px] tabular-nums text-gray-900">{{ row.recipientsLabel }}</span>
-              @if (row.failedLabel) {
-                <span class="text-[12px] tabular-nums text-gray-500">{{ row.failedLabel }}</span>
-              }
-            </div>
-          </td>
-          <td class="text-right">
-            <div class="flex flex-col">
-              <span class="text-[13px] tabular-nums text-gray-900">{{ row.uniqueOpensLabel }}</span>
-              @if (row.totalOpensLabel) {
-                <span class="text-[12px] tabular-nums text-gray-500">{{ row.totalOpensLabel }}</span>
-              }
-            </div>
-          </td>
           <td>
-            <!-- The design's bar cell: a 62×6px track beside the rate, as the attendance bar draws it. -->
-            <div class="flex items-center gap-[9px]" [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key + '-open-rate'">
-              <div class="h-[6px] w-[62px] shrink-0 overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
-                <div class="h-full rounded-full bg-blue-500" [style.width.%]="row.openRateWidthPct"></div>
+            <lfx-health-metrics-cell [text]="row.name" [description]="row.sentLabel" />
+          </td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.recipientsLabel" [description]="row.failedLabel" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.uniqueOpensLabel" [description]="row.totalOpensLabel" /></td>
+          <td>
+            @if (row.openRatePct === null) {
+              <lfx-health-metrics-cell class="items-end" [text]="row.openRateLabel" />
+            } @else {
+              <!-- The design's rate over a 6px bar, at most 56px wide, both right-aligned. -->
+              <div class="flex flex-col items-end gap-[4px]" [attr.data-testid]="'engagement-newsletter-performance-row-' + row.key + '-open-rate'">
+                <span class="text-[14px] text-gray-900">{{ row.openRateLabel }}</span>
+                <span class="block h-[6px] w-full max-w-[56px] overflow-hidden rounded-full bg-gray-100" aria-hidden="true"
+                  ><span class="block h-full rounded-full bg-blue-500" [style.width.%]="row.openRatePct"></span
+                ></span>
               </div>
-              <span class="text-[13px] font-semibold tabular-nums text-gray-900">{{ row.openRateLabel }}</span>
-            </div>
+            }
           </td>
-          <td class="text-right">
-            <div class="flex flex-col">
-              <span class="text-[13px] tabular-nums text-gray-900">{{ row.uniqueClicksLabel }}</span>
-              @if (row.totalClicksLabel) {
-                <span class="text-[12px] tabular-nums text-gray-500">{{ row.totalClicksLabel }}</span>
-              }
-            </div>
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] tabular-nums text-gray-900">{{ row.clickRateLabel }}</span>
-          </td>
-          <td class="text-right">
-            <span class="text-[13px] tabular-nums text-gray-900">{{ row.clickToOpenLabel }}</span>
-          </td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.uniqueClicksLabel" [description]="row.totalClicksLabel" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.clickRateLabel" /></td>
+          <td><lfx-health-metrics-cell class="items-end" [text]="row.clickToOpenLabel" /></td>
         </tr>
       </ng-template>
     </lfx-table>
+
+    <lfx-ui-pagination [total]="view().rows.length" [pageSize]="size" [(page)]="page" />
   }
 </div>

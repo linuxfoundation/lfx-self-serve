@@ -7,7 +7,7 @@ import { expect, Page, Route, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 
-const PEOPLE_KEY_CONTACTS_URL = '/org/people?tab=contacts';
+const PEOPLE_KEY_CONTACTS_URL = '/company/people?tab=contacts';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TOAST_TIMEOUT = 10_000;
 

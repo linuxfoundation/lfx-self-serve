@@ -43,6 +43,10 @@ class ComboboxHostComponent {
   public readonly size = input<UiInputSize>('medium');
   public readonly disabled = input<boolean>(false);
   public readonly required = input<boolean>(false);
+  public readonly freeText = input<boolean>(false);
+  public readonly serverSearch = input<boolean>(false);
+  public readonly loading = input<boolean>(false);
+  public readonly queries: string[] = [];
   public readonly control = new FormControl<string | null>('envoy');
 }
 
@@ -114,6 +118,16 @@ describe('UiComboboxComponent', () => {
     expect(field().getAttribute('aria-controls')).toBeNull();
     expect(field().getAttribute('aria-labelledby')).toBe(label.id);
     expect(label.getAttribute('for')).toBe(field().id);
+  });
+
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-combobox-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('uses ariaLabel when there is no visible label', async () => {
@@ -539,6 +553,137 @@ describe('UiComboboxComponent', () => {
       formFixture.componentInstance.control.reset();
       await formFixture.whenStable();
       expect(formField().value).toBe('');
+    });
+  });
+
+  describe('free text and server search', () => {
+    const typedRow = (): HTMLElement | null => document.querySelector('[data-testid="ui-combobox-typed-option"]');
+    const blur = async (): Promise<void> => {
+      field().dispatchEvent(new FocusEvent('blur'));
+      await fixture.whenStable();
+    };
+
+    beforeEach(async () => {
+      await set('freeText', true);
+      field().focus();
+    });
+
+    it('puts a highlighted row for the typed text first, and Enter makes it the value', async () => {
+      await type('  Acme Labs ');
+
+      expect(typedRow()?.textContent?.trim()).toBe('Use “Acme Labs”');
+      expect(field().getAttribute('aria-activedescendant')).toBe(typedRow()?.id);
+
+      await press('Enter');
+
+      expect(fixture.componentInstance.value()).toBe('Acme Labs');
+      expect(field().value).toBe('Acme Labs');
+    });
+
+    it('keeps the typed text as the value when focus leaves', async () => {
+      await type('Acme');
+      await blur();
+
+      expect(fixture.componentInstance.value()).toBe('Acme');
+      expect(field().value).toBe('Acme');
+    });
+
+    it('clears the value when the text is cleared and focus leaves', async () => {
+      await set('value', 'envoy');
+      await type('');
+      await blur();
+
+      expect(fixture.componentInstance.value()).toBeNull();
+    });
+
+    it('hides the typed-text row when an option already has that label', async () => {
+      await type('envoy');
+
+      expect(typedRow()).toBeNull();
+      expect(visibleRows()).toEqual(['Envoy']);
+    });
+
+    it('keeps a picked option rather than the text typed before it', async () => {
+      await type('kube');
+      optionEls()
+        .find((el) => el.textContent?.trim() === 'KubeEdge')
+        ?.click();
+      await fixture.whenStable();
+      await blur();
+
+      expect(fixture.componentInstance.value()).toBe('kubeedge');
+      expect(field().value).toBe('KubeEdge');
+    });
+
+    it('leaves the rows to the page and reports the typed text when the page searches', async () => {
+      await set('serverSearch', true);
+      await type(' zz ');
+
+      expect(visibleRows()).toEqual(['Kubernetes', 'KEDA', 'KubeEdge', 'Envoy', 'KubeVirt']);
+      expect(fixture.componentInstance.queries).toEqual(['zz']);
+    });
+
+    it('keeps the Enter that picks from reaching a surrounding form', async () => {
+      const formHeard = vi.fn();
+      host.addEventListener('keydown', formHeard);
+      await type('Acme');
+      await press('Enter');
+
+      expect(formHeard).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.value()).toBe('Acme');
+    });
+
+    it('uses the option spelling when the typed text matches its label, on Enter with nothing highlighted', async () => {
+      await set('serverSearch', true);
+      await set('options', []);
+      await type('acme motors');
+      await set('options', [{ value: 'acme', label: 'Acme Motors' }]);
+
+      expect(typedRow()).toBeNull();
+      await press('Enter');
+
+      expect(fixture.componentInstance.value()).toBe('acme');
+      expect(field().value).toBe('Acme Motors');
+    });
+
+    it('makes text kept by Escape the value before Enter reaches a form', async () => {
+      await type('Acme');
+      await press('Escape');
+      let valueWhenHeard: string | null = null;
+      host.addEventListener('keydown', () => (valueWhenHeard = fixture.componentInstance.value()));
+      await press('Enter');
+
+      expect(valueWhenHeard).toBe('Acme');
+    });
+
+    it('keeps text that matches a disabled option as plain free text', async () => {
+      await type('keda');
+
+      expect(typedRow()?.textContent?.trim()).toBe('Use “keda”');
+      await blur();
+
+      expect(fixture.componentInstance.value()).toBe('keda');
+    });
+
+    it('takes rows the page adds while the list is open', async () => {
+      await set('serverSearch', true);
+      await set('options', []);
+      await type('Ac');
+      await set('options', [{ value: 'acme', label: 'Acme' }]);
+
+      expect(visibleRows()).toEqual(['Acme']);
+      expect(field().getAttribute('aria-activedescendant')).toBe(typedRow()?.id);
+      await press('ArrowDown');
+      await press('Enter');
+      expect(fixture.componentInstance.value()).toBe('acme');
+    });
+
+    it('shows and announces a searching message while the page loads rows', async () => {
+      await set('loading', true);
+      await type('Acme');
+
+      expect(document.querySelector('[data-testid="ui-combobox-loading"]')?.textContent?.trim()).toBe('Searching…');
+      expect(host.querySelector('[data-testid="ui-combobox-status"]')?.textContent?.trim()).toBe('Searching…');
     });
   });
 });

@@ -23,7 +23,7 @@ export const MKTG_OS_FLAG_DEFAULTS: Readonly<Record<string, boolean>> = {
  *
  * `addInitScript`, not a post-load write: `FeatureFlagService.getBooleanFlag` consults the override ahead of its own
  * readiness check, so a value present at document start is what the very first read returns, with no window in which
- * the other branch renders (mirrors `pinFlag` in `meetings-v2-flag.helper.ts`). Because a stored value outranks the
+ * the other branch renders (mirrors `pinFlag` in `meetings-redesign-flag.helper.ts`). Because a stored value outranks the
  * defaults, a spec turns one flag off by calling this with that override *before* its page helper, whose own default
  * pin then leaves the stored value alone; the page helpers navigate by `pushState`, so a pin added after them would
  * wait for a reload.

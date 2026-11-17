@@ -18,6 +18,7 @@ export class SelectButtonComponent {
   public readonly options = input<any[]>([]);
   public readonly optionLabel = input<string>('label');
   public readonly optionValue = input<string>('value');
+  public readonly optionDisabled = input<string | undefined>(undefined);
 
   public readonly size = input<'small' | 'large'>('small');
   public readonly unselectable = input<boolean>(true);

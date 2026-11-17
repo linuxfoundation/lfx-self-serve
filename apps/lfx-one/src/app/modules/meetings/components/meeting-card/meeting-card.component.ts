@@ -20,7 +20,7 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 
 import {
   MeetingDeleteConfirmationComponent,
@@ -61,7 +61,6 @@ import {
   MeetingOccurrence,
   MeetingRsvp,
   MeetingRecurrence,
-  MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
   MeetingHostCandidate,
@@ -91,8 +90,6 @@ import { SummaryModalComponent } from '@components/summary-modal/summary-modal.c
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
-import { FeatureFlagService } from '@services/feature-flag.service';
-import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingSelfRemovalService } from '@services/meeting-self-removal.service';
 import { MeetingService } from '@services/meeting.service';
@@ -128,7 +125,6 @@ import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/mee
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
 import { RecurringMeetingEditOptionsComponent } from '../../components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
-import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 
 @Component({
   selector: 'lfx-meeting-card',
@@ -171,8 +167,6 @@ export class MeetingCardComponent implements OnInit {
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
   private readonly composer = inject(MeetingComposerService);
-  private readonly featureFlagService = inject(FeatureFlagService);
-  private readonly router = inject(Router);
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
@@ -278,8 +272,8 @@ export class MeetingCardComponent implements OnInit {
   // The tier-prefixed admin details route (and its flat fallback) both run projectQueryParamGuard,
   // which seeds active project/foundation context from `?project=<slug>` and fails open otherwise
   // (project-query-param.guard.ts:36-37) — without it, Manage-role viewers opening a past meeting
-  // from a non-project lens get the right meeting but stale/default surrounding nav context. Mirrors
-  // editQueryParams above; only the admin (organizer) branch of meetingDetailUrl needs it.
+  // from a non-project lens get the right meeting but stale/default surrounding nav context. Only the
+  // admin (organizer) branch of meetingDetailUrl needs it.
   public readonly meetingDetailQueryParams: Signal<Record<string, string>> = computed(() => {
     const meeting = this.meetingInput();
     const params: Record<string, string> = {};
@@ -347,34 +341,6 @@ export class MeetingCardComponent implements OnInit {
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
   protected readonly pastMeetingResourceId: Signal<string> = computed(() => getPastMeetingResourceId(this.meeting()));
-
-  /**
-   * Whether meetings v2 is the edit surface for this user.
-   * @description Read as a signal so the card settles on its own once LaunchDarkly resolves, and
-   * defaulted to `false` so a slow or unreachable provider sends the edit button to the pre-v2
-   * full-page editor rather than a composer this user isn't targeted for. See
-   * `MEETING_V2_ENABLED_FLAG`.
-   */
-  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
-
-  // The two signals below are the flag-off edit target. They carry the same URL and query params
-  // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
-  // them after the permission probe resolves, instead of the template binding them as a
-  // `routerLink`. Query params matter: `writerGuard` resolves write access from `?project=`, and
-  // the pre-v2 editor reads `?committee_uid=` for committee-scoped meetings.
-  public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting();
-    const params: Record<string, string> = {};
-    if (meeting.project_slug) params['project'] = meeting.project_slug;
-    const committeeUid = meeting.committees?.[0]?.uid;
-    if (committeeUid) params['committee_uid'] = committeeUid;
-    return params;
-  });
-  // Canonical edit URL derives from the MEETING's project tier (is_foundation), not the viewer's
-  // active lens; falls back to the flat path (lensRedirectGuard) when the tier is unenriched.
-  public readonly editCommands: Signal<string[]> = computed(
-    () => getEntityCommands('meetings', this.meeting().id, this.meeting().is_foundation, 'edit') ?? ['/meetings', this.meeting().id, 'edit']
-  );
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -794,14 +760,6 @@ export class MeetingCardComponent implements OnInit {
   }
 
   private openSeriesEditor(meeting: Meeting): void {
-    // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
-    // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
-    // full-page editor through the router, which is what this button did before v2.
-    if (!this.meetingsV2Enabled()) {
-      void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
-      return;
-    }
-
     this.composer.open({
       mode: 'edit',
       meetingUid: meeting.id,
@@ -865,50 +823,13 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  /**
-   * Opens the editor for one occurrence of a recurring meeting.
-   * @description Same `MEETING_V2_ENABLED_FLAG` split as {@link openSeriesEditor}: flag on opens the
-   * composer drawer narrowed to that occurrence, flag off keeps the pre-v2 reschedule dialog.
-   */
+  /** Opens the composer drawer narrowed to one occurrence of a recurring meeting. */
   private openOccurrenceEditor(meeting: Meeting, occurrence: MeetingOccurrence): void {
-    if (!this.meetingsV2Enabled()) {
-      this.showRescheduleOccurrenceModal(meeting, occurrence);
-      return;
-    }
-
     this.composer.open({
       mode: 'edit',
       meetingUid: meeting.id,
       projectUid: meeting.project_uid,
       occurrenceId: occurrence.occurrence_id,
-    });
-  }
-
-  private showRescheduleOccurrenceModal(meeting: Meeting, occurrence: MeetingOccurrence): void {
-    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
-      header: 'Edit Occurrence',
-      width: '520px',
-      modal: true,
-      closable: true,
-      dismissableMask: false,
-      data: { meeting, occurrence },
-    }) as DynamicDialogRef;
-
-    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
-      if (!result?.confirmed) {
-        return;
-      }
-
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Occurrence updated',
-        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
-      });
-      // Not every host binds `meetingDeleted` (the committee meetings list doesn't), so the card
-      // re-reads the series itself to show the occurrence under its new start time (also its new id).
-      // The emit still lets a listening parent re-sort its list.
-      this.refreshMeeting();
-      this.meetingDeleted.emit();
     });
   }
 

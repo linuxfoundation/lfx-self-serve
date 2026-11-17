@@ -19,6 +19,7 @@
     } @else if (page(); as programPage) {
       <lfx-mentorship-program-detail-header
         [program]="programPage.program"
+        [submitter]="programPage.submitter"
         [tabCounts]="tabCounts()"
         [activeTab]="activeTab()"
         (tabChange)="onTabChange($event)"

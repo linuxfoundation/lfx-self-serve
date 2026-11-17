@@ -390,13 +390,13 @@ describe('OrgSelectorComponent navbar card', () => {
   });
   describe('a CLA-only organization (#5557)', () => {
     const claOnlyB: OrgItem = { ...rowB, slug: null, claOnly: true };
-    const CLA_ONLY_TOOLTIP = 'You are a CLA Manager or initial CLA Manager designee for this organization. Only its EasyCLA page opens.';
+    const CLA_ONLY_TOOLTIP = 'You are a CLA Manager or initial CLA Manager designee for this company. Only its EasyCLA page opens.';
 
     it('labels a CLA-only row listed after a held one, and keeps the panel openable', async () => {
       const card = await createCard({ items: [rowA, claOnlyB], writers: [UID_A] });
 
       expect(card.displayedItems().map((row) => [row.item.uid, row.roleLabel, row.roleTooltip])).toEqual([
-        [UID_A, 'Org Admin Editor', ''],
+        [UID_A, 'Company Admin Editor', ''],
         [UID_B, 'CLA Manager', CLA_ONLY_TOOLTIP],
       ]);
       expect(card.isSingleOrg()).toBe(false);
@@ -436,8 +436,8 @@ describe('OrgSelectorComponent navbar card', () => {
     it('lets a held grant win over a CLA-only flag on the same row', async () => {
       const card = await createCard({ items: [{ ...rowA, claOnly: true }], writers: [UID_A], claManagerOrgs: [UID_A] });
 
-      expect(card.selectedRoleLabel()).toBe('Org Admin Editor');
-      expect(card.displayedItems()[0].roleLabel).toBe('Org Admin Editor');
+      expect(card.selectedRoleLabel()).toBe('Company Admin Editor');
+      expect(card.displayedItems()[0].roleLabel).toBe('Company Admin Editor');
     });
   });
 });
@@ -581,9 +581,9 @@ describe('OrgSelectorComponent family roll-ups', () => {
   it('names each entry after its family and describes its own set', async () => {
     const [acmeRow, charlieRow] = (await create({ families: [acmeFamily, charlieFamily] })).rollUpRows();
     expect(acmeRow).toEqual(
-      expect.objectContaining({ name: 'All Acme Organizations', subtitle: 'Combined view of related organizations · 4 organizations', organizationCount: 4 })
+      expect.objectContaining({ name: 'All Acme Companies', subtitle: 'Combined view of related companies · 4 companies', organizationCount: 4 })
     );
-    expect(charlieRow).toEqual(expect.objectContaining({ name: 'All Charlie Organizations', organizationCount: 2 }));
+    expect(charlieRow).toEqual(expect.objectContaining({ name: 'All Charlie Companies', organizationCount: 2 }));
   });
 
   /**
@@ -597,7 +597,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
 
     expect(view.showRollUpRow()).toBe(true);
     expect(view.rollUpRows()).toEqual([
-      { rootUid: UID_A, name: ROLLUP_ACCOUNT_NAME, subtitle: 'Combined view of related organizations', organizationCount: 0, isSelected: true },
+      { rootUid: UID_A, name: ROLLUP_ACCOUNT_NAME, subtitle: 'Combined view of related companies', organizationCount: 0, isSelected: true },
       expect.objectContaining({ rootUid: UID_C, isSelected: false }),
     ]);
   });
@@ -605,7 +605,7 @@ describe('OrgSelectorComponent family roll-ups', () => {
   // The service renames the selection once the family lands, so the trigger reads the selection
   // and agrees with every page heading.
   it('names the trigger from the selection', async () => {
-    expect((await create({ families: [acmeFamily], selectedRootUid: UID_A, selected: acmeRollUp })).displayName()).toBe('All Acme Organizations');
+    expect((await create({ families: [acmeFamily], selectedRootUid: UID_A, selected: acmeRollUp })).displayName()).toBe('All Acme Companies');
     expect((await create({ families: [], selectedRootUid: UID_A, selected: orgRollUpAccount(UID_A, null) })).displayName()).toBe(ROLLUP_ACCOUNT_NAME);
   });
 
@@ -679,9 +679,9 @@ describe('OrgSelectorComponent family roll-ups', () => {
 
   // Regression, PR #4415 review: the count is rendered during the optimistic restore window, where
   // the grants have not landed and it can still read 1.
-  it('agrees with the noun at one organization', async () => {
+  it('agrees with the noun at one company', async () => {
     const view = await create({ families: [], selectedRootUid: UID_A, count: 1 });
-    expect(view.rollUpTriggerSubtitle()).toBe('1 organization');
+    expect(view.rollUpTriggerSubtitle()).toBe('1 company');
   });
 
   /**

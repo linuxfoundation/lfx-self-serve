@@ -30,6 +30,7 @@ import { AuthenticationError } from './errors';
 import { authMiddleware } from './middleware/auth.middleware';
 import { createBrowserAssetsMiddleware } from './middleware/browser-assets.middleware';
 import { clearIntercomCookies } from './middleware/clear-intercom-cookies.middleware';
+import { redirectLegacyUrls } from './middleware/redirect-legacy-urls.middleware';
 import { endGatewazeSessionOnLogout } from './middleware/end-gatewaze-session-on-logout.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { openprofileRedirect } from './middleware/openprofile-redirect.middleware';
@@ -105,6 +106,7 @@ import {
   refreshExpiredSsrAccessToken,
 } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
+import { checkBrowserBundleReady } from './utils/readiness';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
@@ -221,9 +223,12 @@ app.get('/livez', (_req: Request, res: Response) => {
 });
 
 // Readiness endpoint for Kubernetes (LFXV2-1640).
-// Signals that this pod can accept HTTP traffic: Express is listening and the
-// Angular SSR engine loaded successfully (constructed at module load above —
-// a load failure crashes the process before reaching this point).
+// Signals that this pod can serve the app: Express is listening, the Angular
+// SSR engine loaded successfully (constructed at module load above — a load
+// failure crashes the process before reaching this point), and the browser
+// dist has the HTML shell plus the entry script and stylesheet (hashed or not).
+// checkBrowserBundleReady caches its first success, so a ready pod does no
+// filesystem work per probe.
 // Intentionally does NOT probe NATS / Snowflake / microservice-proxy: those
 // clients are lazy-initialized and report not-connected at startup even
 // though many SSR pages render fine without them. Per-feature dependency
@@ -234,6 +239,13 @@ app.get('/readyz', (_req: Request, res: Response) => {
     res.status(503).json({ status: 'shutting_down' });
     return;
   }
+
+  const bundle = checkBrowserBundleReady(browserDistFolder);
+  if (!bundle.ready) {
+    res.status(503).json({ status: 'not_ready', reason: bundle.reason });
+    return;
+  }
+
   res.status(200).json({ status: 'ready' });
 });
 
@@ -248,6 +260,12 @@ app.use(sitemapRouter);
 
 // Bundle misses terminate here, before OIDC can redirect an unavailable asset to SSO.
 app.use(createBrowserAssetsMiddleware(browserDistFolder));
+
+// Company Lens moved from `/org/…` to `/company/…` (#5064). Old bookmarks and already-sent emails hit this as a
+// full page load, so answer with a permanent redirect here, ahead of auth and SSR (the address carries nothing
+// to protect, and a viewer who is not signed in should land on the new address, then sign in to it). The
+// docs portal has no redirect mechanism, so the moved `/docs/organization/…` pages are redirected here too.
+app.use(redirectLegacyUrls);
 
 const httpLogger = pinoHttp({
   logger: serverLogger,

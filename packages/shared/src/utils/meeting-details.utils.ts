@@ -53,8 +53,8 @@ export function getMeetingDetailsState(
 
 /**
  * Whether the viewer may see the meeting's guests, or its participants once it ended.
- * @description Organizers always can; an invitee only when the guest list is shared, which Board and restricted meetings never
- * are. The same rule `GET /api/meetings/:uid/my-meeting-registrants` applies, and the meeting page uses it for past meetings too.
+ * @description Organizers always can; an invitee only when the guest list is shared, which Board meetings never are (a
+ * restricted meeting shares once its organizer opts in). The same rule `GET /api/meetings/:uid/my-meeting-registrants` applies, and the meeting page uses it for past meetings too.
  */
 export function canViewMeetingGuests(
   meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'>,

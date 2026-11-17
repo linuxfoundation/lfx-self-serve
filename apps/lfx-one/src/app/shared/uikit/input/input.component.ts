@@ -50,7 +50,7 @@ export class UiInputComponent implements ControlValueAccessor {
   public readonly rounded = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Shows the value without letting it be edited; it stays focusable and is still read and submitted. */
   public readonly readonly = input<boolean, unknown>(false, { transform: booleanAttribute });

@@ -388,6 +388,29 @@ export interface MentorshipUpstreamProgram {
   status: MentorshipUpstreamProgramStatus;
   /** Name of the program's LF project; absent when the program has none. */
   project_name?: string;
+  /** When the program was submitted (ISO timestamp). */
+  created_on?: string;
+}
+
+/**
+ * Upstream `GET /mentorship/v1/programs/{id}/submitter`: the user who submitted the program. Only the program's admins
+ * and the approver team may read it, since it carries the email. Upstream omits a field the user has no value for.
+ */
+export interface MentorshipUpstreamProgramSubmitter {
+  lfid: string;
+  name?: string;
+  email?: string;
+  avatar_url?: string;
+}
+
+/**
+ * The user who submitted a program, as the admin program page and the review page show it. `name` falls back to the
+ * LFID; `email` is `null` when unknown, and `avatarUrl` is `null` unless it is an http(s) URL.
+ */
+export interface MentorshipProgramSubmitter {
+  name: string;
+  email: string | null;
+  avatarUrl: string | null;
 }
 
 /** Upstream body for `POST /mentorship/v1/programs/{id}/decision`. */
@@ -427,6 +450,10 @@ export interface MentorshipProgramReview {
   codeOfConductUrl: string | null;
   ciiProjectId: string | null;
   skills: string[];
+  /** When the program was submitted (ISO timestamp); `null` when upstream did not send it. */
+  createdOn: string | null;
+  /** Who submitted the program; `null` when it could not be read. */
+  submitter: MentorshipProgramSubmitter | null;
   /**
    * `false` when upstream's catalog does not serve the program (it serves only pending and published
    * ones), so only its status, name and project are known; the page then leaves out the details.

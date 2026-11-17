@@ -280,7 +280,7 @@ export class UserService {
 
     // Validate organization if provided (basic length check)
     if (metadata?.organization && metadata.organization.length > 200) {
-      throw new Error('Organization name is too long');
+      throw new Error('Company name is too long');
     }
 
     // Validate job title if provided (basic length check)

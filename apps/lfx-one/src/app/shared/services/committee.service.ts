@@ -201,7 +201,7 @@ export class CommitteeService {
   /**
    * Fetches a committee by ID without updating shared service state. Shares the short-TTL
    * detail cache via {@link getCommitteeDetail} so tap-free probes (writerGuard, committee
-   * sub-pages, meeting-manage's committee check) don't duplicate an in-flight detail fetch.
+   * sub-pages) don't duplicate an in-flight detail fetch.
    */
   public fetchCommittee(id: string): Observable<Committee> {
     return this.getCommitteeDetail(id);

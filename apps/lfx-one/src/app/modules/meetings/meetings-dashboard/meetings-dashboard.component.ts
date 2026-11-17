@@ -19,8 +19,8 @@ import {
   MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
   MEETING_ROLLUP_ALL_PROJECTS,
   MEETING_TYPE_CONFIGS,
+  MEETING_ROLLUP_QUERY_MAX_PROJECTS,
   MY_MEETINGS_STATS_WINDOW_DAYS,
-  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   QUERY_SERVICE_MAX_PAGE_SIZE,
 } from '@lfx-one/shared/constants';
 import {
@@ -57,8 +57,6 @@ import {
   resolveMeetingCalendarClickRoute,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
-import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { LensService } from '@services/lens.service';
 import { MeetingRollupPreferenceService } from '@services/meeting-rollup-preference.service';
 import { MeetingService } from '@services/meeting.service';
@@ -117,7 +115,6 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 })
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
@@ -228,9 +225,9 @@ export class MeetingsDashboardComponent {
       const projectUids = this.rollupProjectsFilter();
       const committeeUid = this.groupFilter();
       const groupType = this.groupTypeFilter();
-      // One query takes at most one OR batch of projects, so a larger hand-picked selection shows the root's
-      // own meetings, as the server does for an oversized "all projects" scope.
-      const oversized = mode === 'subset' && projectUids.length > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE;
+      // One query takes at most MEETING_ROLLUP_QUERY_MAX_PROJECTS projects, so a larger hand-picked selection shows
+      // the root's own meetings, as the server does for an oversized "all projects" scope.
+      const oversized = mode === 'subset' && projectUids.length > MEETING_ROLLUP_QUERY_MAX_PROJECTS;
       return {
         includeSubProjects: true,
         ...((mode === 'default' || oversized) && { rootOnly: true }),
@@ -245,14 +242,6 @@ export class MeetingsDashboardComponent {
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly canWriteMeetings: Signal<boolean> = this.projectContextService.canWriteMeetings;
-  /**
-   * Whether meetings v2 is the create surface for this user.
-   * @description Read as a signal so the header settles on its own once LaunchDarkly resolves, and
-   * defaulted to `false` so a slow or unreachable provider leaves the pre-v2 `/meetings/create`
-   * button in place rather than a dropdown into a composer this user isn't targeted for. See
-   * `MEETING_V2_ENABLED_FLAG`.
-   */
-  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
   protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
@@ -1301,7 +1290,7 @@ export class MeetingsDashboardComponent {
       // More projects than one query takes fall back to the root's own meetings (here and on the server),
       // so, like the default, only the root's own groups can match.
       const selectedCount = mode === 'all' ? projects.length : this.rollupProjectsFilter().length;
-      const rootOnly = mode === 'default' || selectedCount > QUERY_SERVICE_FILTERS_OR_BATCH_SIZE;
+      const rootOnly = mode === 'default' || selectedCount > MEETING_ROLLUP_QUERY_MAX_PROJECTS;
       if (mode === 'all' && !rootOnly) return groups;
       const selected = new Set(rootOnly ? [this.project()?.uid] : this.rollupProjectsFilter());
       return groups.filter((group) => selected.has(group.project_uid));

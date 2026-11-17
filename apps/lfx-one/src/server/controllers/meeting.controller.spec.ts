@@ -374,19 +374,25 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingById.mockResolvedValue({ committees: [{ uid: V2_COMMITTEE_UID }] });
     });
 
-    // GH-1463: upstream stores a v1 SFID and derives type: 'committee' from it. Forwarding the v2
-    // UID the picker works in would persist a bogus committee reference.
-    it('rewrites a group guest committee_uid from the v2 UID to the v1 SFID', async () => {
+    // lfx-self-serve-ops#1514: lfx-v2-meeting-service owns the v2→v1 translation for this field
+    // internally (CreateRegistrant/UpdateRegistrant call mapCommitteeFieldV2ToV1 on whatever
+    // committee_uid they receive, and translate the response back to v2). Substituting the v1 SFID
+    // here too, as this used to, was a double translation: upstream's own resolver then tried to
+    // translate the already-v1 SFID as if it were still v2, which can never succeed, and surfaced
+    // in production as "invalid ID: mapping not found for committee.uid.<v1_sfid>". The resolution
+    // lookup itself still runs (and still gates a committee with no v1 counterpart) — only the
+    // substitution of its resolved value is gone.
+    it('forwards a group guest committee_uid as the v2 UID once it resolves, instead of substituting the v1 SFID', async () => {
       resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]), confirmedUnresolved: new Set() });
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V1_COMMITTEE_SFID }));
+      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V2_COMMITTEE_UID }));
     });
 
     // A caller can attribute a guest to any committee UID it likes; only the ones the meeting is
-    // actually scoped to may be resolved, or the v1 lookup becomes an unauthorized cross-project read.
+    // actually scoped to may be resolved, or the lookup becomes an unauthorized cross-project read.
     it('strips a committee_uid the meeting is not scoped to without looking it up', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: 'cmte-v2-someone-elses' }] });
 
@@ -973,12 +979,35 @@ describe('MeetingController', () => {
       generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
     });
 
-    it('enriches committee metadata for a registrant of the meeting', async () => {
+    it('enriches committee metadata for an organizer of the meeting', async () => {
       const res = buildRes();
 
       await controller.getMyMeetingRegistrants(buildReq(), res, next);
 
       expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ committee_name: 'TAC', committee_uid: V2_COMMITTEE_UID })]);
+    });
+
+    // Group attribution is committee membership (role, voting status, appointment), not the guest list,
+    // so a guest of a meeting that shares its list gets the plain roster, as on `getMeetingRegistrants`.
+    it.each([
+      ['an open meeting', {}],
+      ['an invite-only meeting', { restricted: true }],
+    ])('returns the plain roster without committee lookups to a guest of %s that shares its list', async (_label, access) => {
+      meetingSvc.getMeetingById.mockResolvedValue({
+        uid: MEETING_ID,
+        organizer: false,
+        show_meeting_attendees: true,
+        committees: [{ uid: V2_COMMITTEE_UID }],
+        ...access,
+      });
+      const res = buildRes();
+
+      await controller.getMyMeetingRegistrants(buildReq(), res, next);
+
+      expect(res.json).toHaveBeenCalledWith([registrant]);
+      expect(resolveCommitteeV2UidsToV1IdsMock).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeBase).not.toHaveBeenCalled();
+      expect(committeeSvc.getCommitteeMembers).not.toHaveBeenCalled();
     });
 
     // Card avatar previews only draw a few faces, so they skip the committee fan-out and accept a
@@ -1028,17 +1057,24 @@ describe('MeetingController', () => {
         expect(res.json).toHaveBeenCalledWith([registrant]);
       });
 
-      it.each([
-        ['a Board meeting', { meeting_type: 'Board' }],
-        ['a restricted meeting', { restricted: true }],
-      ])('returns no roster to an invitee of %s that still carries a legacy opt-in', async (_label, lock) => {
-        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], ...lock });
+      it('returns no roster to an invitee of a Board meeting that still carries a legacy opt-in', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], meeting_type: 'Board' });
         const res = buildRes();
 
         await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
 
         expect(res.json).toHaveBeenCalledWith([]);
         expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+      });
+
+      // #5438: an invite-only meeting can opt in from the composer, so the roster honours it.
+      it('returns the roster to an invitee of a restricted meeting that shares its attendees', async () => {
+        meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: false, show_meeting_attendees: true, committees: [], restricted: true });
+        const res = buildRes();
+
+        await controller.getMyMeetingRegistrants(buildReq({ query: { preview: 'true' } }), res, next);
+
+        expect(res.json).toHaveBeenCalledWith([registrant]);
       });
 
       it('returns the roster to an organizer even when the meeting hides its attendees', async () => {

@@ -33,6 +33,8 @@ export class HealthMetricsCellComponent {
   public readonly tier = input<HealthMetricsMembersReservedTier | null>(null);
   /** An 8px status dot before the text, e.g. `bg-emerald-500`. */
   public readonly dotClass = input<string>('');
+  /** Classes for the text alone, such as a muted or italic value; the `td` rule otherwise sets its ink. */
+  public readonly textClass = input<string>('');
 
   protected readonly isDash: Signal<boolean> = computed(() => this.text() === HEALTH_METRICS_TABLE_DASH);
   // Exact px: the icon tile's text indents 38px, a person's 42px; a company's description lines up under its name.

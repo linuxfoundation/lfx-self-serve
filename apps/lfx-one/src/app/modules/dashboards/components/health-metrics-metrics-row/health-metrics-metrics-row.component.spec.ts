@@ -126,6 +126,12 @@ describe('HealthMetricsMetricsRowComponent', () => {
     expect((el('row-a-description') as HTMLElement).querySelector('.text-gray-400')?.textContent).toBe('+0.0pp');
   });
 
+  it('shows a coloured lead on its own when there is no description', async () => {
+    await render([metric('a', { descriptionLead: '+21%', descriptionLeadTone: 'up' })]);
+
+    expect((el('row-a-description') as HTMLElement).textContent?.trim()).toBe('+21%');
+  });
+
   it('draws the mini bar at its width with its caption', async () => {
     await render([metric('a', { bar: { pct: 40, fillClass: 'bg-blue-500', label: '{N} of {M}' } })]);
     const bar = el('row-a-bar') as HTMLElement;

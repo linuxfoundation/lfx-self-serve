@@ -34,33 +34,34 @@ describe('orgRollUpUnavailablePageGuard', () => {
     return TestBed.runInInjectionContext(() => orgRollUpUnavailablePageGuard({}, []) as boolean);
   };
 
-  it.each([['/org/family-0014100000RootAAAA/people'], ['/org/family-0014100000RootAAAA/roi/projects/k8s'], ['/org/FAMILY-0014100000RootAAAA/events']])(
-    'matches a roll-up address before the selection has adopted it (%s)',
-    (url) => {
-      expect(run(url)).toBe(true);
-    }
-  );
+  it.each([
+    ['/company/family-0014100000RootAAAA/people'],
+    ['/company/family-0014100000RootAAAA/roi/projects/k8s'],
+    ['/company/FAMILY-0014100000RootAAAA/events'],
+  ])('matches a roll-up address before the selection has adopted it (%s)', (url) => {
+    expect(run(url)).toBe(true);
+  });
 
   // A cookie may still hold a roll-up while the address names one organization: the address wins.
   it('lets an addressed organization through, whatever the selection', () => {
     isRollUp.set(true);
-    expect(run('/org/acme-inc/people')).toBe(false);
+    expect(run('/company/acme-inc/people')).toBe(false);
   });
 
   it('decides the legacy address from the restored selection', () => {
-    expect(run('/org/people')).toBe(false);
+    expect(run('/company/people')).toBe(false);
     isRollUp.set(true);
-    expect(run('/org/people')).toBe(true);
+    expect(run('/company/people')).toBe(true);
   });
 
-  // A redirect off bare `/org` leaves the URL being recognized as `/org`, so it is selection-based as well.
-  it('decides bare /org from the restored selection', () => {
-    expect(run('/org')).toBe(false);
+  // A redirect off bare `/company` leaves the URL being recognized as `/company`, so it is selection-based as well.
+  it('decides bare /company from the restored selection', () => {
+    expect(run('/company')).toBe(false);
     isRollUp.set(true);
-    expect(run('/org')).toBe(true);
+    expect(run('/company')).toBe(true);
   });
 
-  it.each([['/org/%20FAMILY-0014100000RootAAAA%20/people'], ['/org/Family-0014100000RootAAAA']])(
+  it.each([['/company/%20FAMILY-0014100000RootAAAA%20/people'], ['/company/Family-0014100000RootAAAA']])(
     'normalizes the segment before the roll-up check (%s)',
     (url) => {
       expect(run(url)).toBe(true);

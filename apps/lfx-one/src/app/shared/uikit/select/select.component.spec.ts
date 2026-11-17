@@ -135,6 +135,16 @@ describe('UiSelectComponent', () => {
     expect(trigger().tabIndex).toBe(0);
   });
 
+  it('marks a required field with a red asterisk that screen readers skip', async () => {
+    const mark = (): HTMLElement | null => host.querySelector('[data-testid="ui-select-required"]');
+    expect(mark()).toBeNull();
+
+    await set('required', true);
+
+    expect(mark()?.textContent).toBe(' *');
+    expect(mark()?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('uses ariaLabel when there is no visible label', async () => {
     const bare = TestBed.createComponent(UiSelectComponent);
     bare.componentRef.setInput('ariaLabel', 'Foundation');

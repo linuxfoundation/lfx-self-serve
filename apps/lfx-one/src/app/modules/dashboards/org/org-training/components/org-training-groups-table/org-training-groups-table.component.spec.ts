@@ -163,7 +163,7 @@ describe('OrgTrainingGroupsTableComponent', () => {
 
     it.each([
       ['the range or filters change', 'query', { ...QUERY, range: '90d' }],
-      ['the organization switches', 'orgUid', 'org-2'],
+      ['the company switches', 'orgUid', 'org-2'],
     ])('hides the previous totals, the scope note and the tile text when %s, and shows the new ones once they arrive', async (_name, input, value) => {
       const { fixture, trainingService } = await render('certifications');
       expect(text('org-training-groups-totals-courses-taken')).toBe('20');

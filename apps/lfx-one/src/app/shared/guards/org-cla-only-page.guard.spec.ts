@@ -24,7 +24,7 @@ describe('orgClaOnlyPageGuard', () => {
   let routerUrl: string;
   let routerEvents: Subject<unknown>;
 
-  /** `/org/{segment}/{page}[/{child}]` as the router hands it to a CanActivateChild on `:orgSegment`. */
+  /** `/company/{segment}/{page}[/{child}]` as the router hands it to a CanActivateChild on `:orgSegment`. */
   const routeFor = (segment: string, page: string, child?: string): ActivatedRouteSnapshot => {
     const orgSegment = { routeConfig: { path: ':orgSegment' }, paramMap: convertToParamMap({ orgSegment: segment }), parent: { routeConfig: { path: 'org' } } };
     const pageRoute = { routeConfig: { path: page }, parent: orgSegment };
@@ -69,9 +69,9 @@ describe('orgClaOnlyPageGuard', () => {
     });
   });
 
-  it('redirects any non-CLA page of a CLA-only organization to its EasyCLA page', async () => {
+  it('redirects any non-CLA page of a CLA-only company to its EasyCLA page', async () => {
     for (const page of ['overview', 'memberships', 'people', 'profile']) {
-      expect(await run(routeFor(CLA_ONLY_UID, page))).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+      expect(await run(routeFor(CLA_ONLY_UID, page))).toEqual({ redirected: `/company/${CLA_ONLY_UID}/easycla` });
     }
   });
 
@@ -81,7 +81,7 @@ describe('orgClaOnlyPageGuard', () => {
     expect(await run(routeFor(CLA_ONLY_UID, 'easycla', ':claGroupId'))).toBe(true);
   });
 
-  it('leaves every page of an organization the caller holds through a grant alone', async () => {
+  it('leaves every page of a company the caller holds through a grant alone', async () => {
     selectedUid.set('0014100000OtherOrg');
 
     expect(await run(routeFor('other-org', 'overview'))).toBe(true);
@@ -99,7 +99,7 @@ describe('orgClaOnlyPageGuard', () => {
     loaded.set(true);
     TestBed.tick();
 
-    expect(await pending).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+    expect(await pending).toEqual({ redirected: `/company/${CLA_ONLY_UID}/easycla` });
   });
 
   /** Runs the guard with role grants unanswered past the wait. */
@@ -122,8 +122,8 @@ describe('orgClaOnlyPageGuard', () => {
     expect(await runPastWait(routeFor('other-org', 'overview'))).toBe(true);
   });
 
-  it('redirects past the wait when the resolver already recorded the organization as CLA-only', async () => {
-    expect(await runPastWait(routeFor(CLA_ONLY_UID, 'overview'))).toEqual({ redirected: `/org/${CLA_ONLY_UID}/easycla` });
+  it('redirects past the wait when the resolver already recorded the company as CLA-only', async () => {
+    expect(await runPastWait(routeFor(CLA_ONLY_UID, 'overview'))).toEqual({ redirected: `/company/${CLA_ONLY_UID}/easycla` });
   });
 
   describe('when role grants answer after the wait', () => {
@@ -134,30 +134,30 @@ describe('orgClaOnlyPageGuard', () => {
     });
 
     it('redirects a caller still on the admitted page once the late answer confirms CLA-only', async () => {
-      routerUrl = `/org/${LATE_UID}/people`;
+      routerUrl = `/company/${LATE_UID}/people`;
       expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
 
       claOnly.add(LATE_UID);
       loaded.set(true);
       TestBed.tick();
 
-      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/org/${LATE_UID}/easycla` }, { replaceUrl: true });
+      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/company/${LATE_UID}/easycla` }, { replaceUrl: true });
     });
 
     it('redirects even before this navigation has updated the router URL', async () => {
-      routerUrl = '/org/previous-org/overview';
+      routerUrl = '/company/previous-org/overview';
       expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
 
       claOnly.add(LATE_UID);
       loaded.set(true);
       TestBed.tick();
 
-      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/org/${LATE_UID}/easycla` }, { replaceUrl: true });
+      expect(navigateByUrl).toHaveBeenCalledWith({ redirected: `/company/${LATE_UID}/easycla` }, { replaceUrl: true });
     });
 
-    it('judges the organization this navigation addressed, not one the caller has since switched to', async () => {
+    it('judges the company this navigation addressed, not one the caller has since switched to', async () => {
       const OTHER_UID = '0014100000OtherClaO';
-      routerUrl = `/org/${LATE_UID}/people`;
+      routerUrl = `/company/${LATE_UID}/people`;
       expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
 
       selectedUid.set(OTHER_UID);
@@ -169,10 +169,10 @@ describe('orgClaOnlyPageGuard', () => {
     });
 
     it('stops waiting once another navigation starts', async () => {
-      routerUrl = `/org/${LATE_UID}/people`;
+      routerUrl = `/company/${LATE_UID}/people`;
       expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
 
-      routerEvents.next(new NavigationStart(2, `/org/${LATE_UID}/projects`));
+      routerEvents.next(new NavigationStart(2, `/company/${LATE_UID}/projects`));
       claOnly.add(LATE_UID);
       loaded.set(true);
       TestBed.tick();
@@ -186,7 +186,7 @@ describe('orgClaOnlyPageGuard', () => {
         loaded.set(false);
         const pending = run(routeFor(LATE_UID, 'people'));
         TestBed.tick();
-        routerEvents.next(new NavigationStart(2, `/org/${LATE_UID}/projects`));
+        routerEvents.next(new NavigationStart(2, `/company/${LATE_UID}/projects`));
         await vi.advanceTimersByTimeAsync(ORG_CLA_ONLY_GRANTS_WAIT_MS);
         expect(await pending).toBe(true);
       } finally {
@@ -201,7 +201,7 @@ describe('orgClaOnlyPageGuard', () => {
     });
 
     it('leaves the page when the late answer is not CLA-only', async () => {
-      routerUrl = `/org/${LATE_UID}/people`;
+      routerUrl = `/company/${LATE_UID}/people`;
       expect(await runPastWait(routeFor(LATE_UID, 'people'))).toBe(true);
 
       loaded.set(true);

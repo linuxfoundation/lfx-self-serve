@@ -20,7 +20,7 @@ import {
   MeetingsHomeFeedOptions,
 } from '../fixtures/mock-data';
 import { suppressCookieBanner } from './account-settings-email.helper';
-import { stubMeetingsRedesignFlag } from './meetings-v2-flag.helper';
+import { stubMeetingsRedesignFlag } from './meetings-redesign-flag.helper';
 
 export const MEETINGS_HOME_LOAD_TIMEOUT = 30_000;
 
