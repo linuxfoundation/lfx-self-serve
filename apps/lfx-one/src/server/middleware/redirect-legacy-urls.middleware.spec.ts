@@ -21,6 +21,8 @@ describe('redirectLegacyUrls', () => {
     ['/org/acme-inc/projects?employees=1', '/company/acme-inc/projects?employees=1'],
     ['/org/0014100000MgaAAAAA/easycla/g1?org=0014100000MgaAAAAA&signed=1', '/company/0014100000MgaAAAAA/easycla/g1?company=0014100000MgaAAAAA&signed=1'],
     ['/org/overview', '/company/overview'],
+    ['/organization/google-llc/profile', '/company/google-llc/profile'],
+    ['/organization/google-llc/easycla', '/company/google-llc/easycla'],
     ['/docs/organization/choose-an-organization', '/docs/company/choose-a-company'],
     ['/docs/organization/projects', '/docs/company/projects'],
     ['/docs/dashboards/organization-involvement', '/docs/dashboards/company-involvement'],
@@ -42,7 +44,7 @@ describe('redirectLegacyUrls', () => {
     ['/org/overview', 'POST'],
     ['/company/overview', 'GET'],
     ['/api/orgs/x/lens/groups', 'GET'],
-    ['/organization', 'GET'],
+    ['/organizations', 'GET'],
     ['/docs/company/faq', 'GET'],
   ])('passes %s (%s) through', (url, method) => {
     const { redirect, next } = run(url, method);
