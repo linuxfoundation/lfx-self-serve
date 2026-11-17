@@ -186,6 +186,8 @@ export interface PendingInvitation {
   committee_name: string;
   /** Project display name — enriched (optional) */
   project_name?: string | null;
+  /** Project logo URL — enriched (optional) */
+  project_logo_url?: string | null;
   /** Owning project slug — enriched (optional); drives the `?project=` query param on the invitation's view link (GH-1566). */
   project_slug?: string | null;
   /** Whether the owning project is a foundation — enriched (optional); drives the `/foundation` vs `/project` tier prefix on the view link. Null/absent means tier unknown → callers keep the flat `/groups/:uid` fallback (GH-1566). */
@@ -482,6 +484,8 @@ export interface Committee {
   is_foundation?: boolean;
   /** Parent project UID (for subprojects under a foundation) */
   parent_project_uid?: string;
+  /** Project logo URL (populated from project data) */
+  project_logo_url?: string;
   /** Foundation name this committee belongs to (populated from project hierarchy) */
   foundation_name?: string;
   /** Calendar visibility settings */
