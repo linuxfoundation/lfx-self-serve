@@ -4,7 +4,7 @@ description: Pick the company you are viewing in the Company lens, switch to ano
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, switcher, switch-company, url, not-found, access]
-last_updated: 2026-11-12
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 
@@ -38,14 +38,14 @@ After a switch, the browser's Back button returns you to the company you were vi
 
 The line under the company's name in the switcher is your role on that company. Hover over it to see what it lets you do.
 
-| Role in the switcher               | What it means                                                                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Org Admin Editor**               | You can view and edit this company's profile, members and settings                                                             |
-| **Org Admin Viewer**               | You can view this company's details, but not edit them                                                                         |
-| **Org Admin Editor (Inherited)**   | You can view and edit this company through your admin access to a related company                                              |
-| **Org Admin Viewer (Inherited)**   | You can view this company through your access to a related company                                                             |
-| **(Original)** after a direct role | Your role was granted directly on this company. The label is added when some of your other access comes from related companies |
-| **CLA Manager**                    | You are a CLA Manager or initial CLA Manager designee for this company. Only its **EasyCLA** page opens                        |
+| Role in the switcher                 | What it means                                                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Company Admin Editor**             | You can view and edit this company's profile, members and settings                                                             |
+| **Company Admin Viewer**             | You can view this company's details, but not edit them                                                                         |
+| **Company Admin Editor (Inherited)** | You can view and edit this company through your admin access to a related company                                              |
+| **Company Admin Viewer (Inherited)** | You can view this company through your access to a related company                                                             |
+| **(Original)** after a direct role   | Your role was granted directly on this company. The label is added when some of your other access comes from related companies |
+| **CLA Manager**                      | You are a CLA Manager or initial CLA Manager designee for this company. Only its **EasyCLA** page opens                        |
 
 In the list of companies, hovering over an inherited role shows **Inherited from your access to** followed by the related company's name. If the line says **Company** instead of a role, you have no admin role on that company.
 

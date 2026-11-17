@@ -156,6 +156,10 @@ describe('companyLensRedirectTarget', () => {
     [`/org/${UID}/memberships/linux-foundation`, `/company/${UID}/memberships/linux-foundation`],
     ['/org/overview', '/company/overview'],
     ['/org/projects/uepf', '/company/projects/uepf'],
+    ['/organization', '/company'],
+    ['/organization/google-llc/profile', '/company/google-llc/profile'],
+    ['/organization/google-llc/easycla', '/company/google-llc/easycla'],
+    [`/organization/${UID}/memberships/linux-foundation`, `/company/${UID}/memberships/linux-foundation`],
   ])('moves %s to %s', (from, to) => {
     expect(companyLensRedirectTarget(from)).toBe(to);
   });
@@ -163,6 +167,7 @@ describe('companyLensRedirectTarget', () => {
   it('keeps the query string verbatim', () => {
     expect(companyLensRedirectTarget('/org/acme/people?employees=a%20b&tab=board')).toBe('/company/acme/people?employees=a%20b&tab=board');
     expect(companyLensRedirectTarget('/org?x=1')).toBe('/company?x=1');
+    expect(companyLensRedirectTarget('/organization/google-llc/profile?tab=a')).toBe('/company/google-llc/profile?tab=a');
   });
 
   it('renames the pre-rename EasyCLA return parameter on both EasyCLA mounts', () => {
@@ -175,9 +180,12 @@ describe('companyLensRedirectTarget', () => {
     expect(companyLensRedirectTarget('/org/easycla/g1?org=old&company=new')).toBe('/company/easycla/g1?company=new');
   });
 
-  it.each(['/', '/organization', '/orgs', '/org-x', '/api/orgs/x', '/company/overview', '//org/overview', '/docs/org'])('does not match %s', (path) => {
-    expect(companyLensRedirectTarget(path)).toBeNull();
-  });
+  it.each(['/', '/organizations', '/organization-x', '/orgs', '/org-x', '/api/orgs/x', '/company/overview', '//org/overview', '/docs/org'])(
+    'does not match %s',
+    (path) => {
+      expect(companyLensRedirectTarget(path)).toBeNull();
+    }
+  );
 });
 
 describe('easyclaReturnOrgParam', () => {

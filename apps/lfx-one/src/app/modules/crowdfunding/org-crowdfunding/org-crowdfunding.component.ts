@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -13,6 +13,7 @@ import { OrgCrowdfundingTab, OrgCrowdfundingTabItem } from '@lfx-one/shared/inte
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { runWhenRouterIdle } from '@shared/utils/router-idle.util';
 import { filter, map, startWith } from 'rxjs/operators';
 
 /**
@@ -30,6 +31,7 @@ export class OrgCrowdfundingComponent {
   // ─── Private Injections ────────────────────────────────────────────────────
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -77,19 +79,15 @@ export class OrgCrowdfundingComponent {
     // - A tab the viewer cannot use (an old Initiatives link, or a switch to a company they only view) moves to the first.
     // - A viewer with no tab at all keeps Initiatives, whose page explains the missing access.
     effect(() => {
-      if (!this.settled()) return;
-      const tabs = this.tabs();
-      const active = this.activeTab();
-      let target: OrgCrowdfundingTab | null = null;
-      if (active === '') {
-        const requested = this.route.snapshot.queryParamMap.get('tab');
-        target = tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? 'initiatives';
-      } else if (tabs.length > 0 && !tabs.some((tab) => tab.id === active)) {
-        target = tabs[0].id;
-      }
-      if (target) {
-        void this.router.navigate([target], { relativeTo: this.route, replaceUrl: true, queryParams: { tab: null }, queryParamsHandling: 'merge' });
-      }
+      if (!this.settled() || !this.landingTarget()) return;
+      // Not while a navigation is in flight: a relative `navigate` builds on this page's route, so issued during an
+      // All Companies switch it would supersede the switch. The target is recomputed once the router is idle.
+      runWhenRouterIdle(this.router, this.destroyRef, () => {
+        const target = this.landingTarget();
+        if (target) {
+          void this.router.navigate([target], { relativeTo: this.route, replaceUrl: true, queryParams: { tab: null }, queryParamsHandling: 'merge' });
+        }
+      });
     });
   }
 
@@ -124,5 +122,16 @@ export class OrgCrowdfundingComponent {
       return;
     }
     void this.featureFlagService.waitForReady({ guard: 'orgCrowdfundingTabs', flag: CF_ORG_DONATIONS_FLAG }).finally(() => this.flagSettled.set(true));
+  }
+
+  // The tab to move to, or null when the current address is fine.
+  private landingTarget(): OrgCrowdfundingTab | null {
+    const tabs = this.tabs();
+    const active = this.activeTab();
+    if (active === '') {
+      const requested = this.route.snapshot.queryParamMap.get('tab');
+      return tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? 'initiatives';
+    }
+    return tabs.length > 0 && !tabs.some((tab) => tab.id === active) ? tabs[0].id : null;
   }
 }

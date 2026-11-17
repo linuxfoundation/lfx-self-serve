@@ -27,6 +27,8 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
   const flagReady = signal(true);
   let flagReadyPromise: Promise<boolean>;
   let resolveFlagReady: (ready: boolean) => void;
+  let otherGate: Promise<boolean>;
+  let releaseOther: (allow: boolean) => void;
   const donationsEnabled = signal(false);
 
   const tabIds = (root: HTMLElement): string[] =>
@@ -43,11 +45,14 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
     writerSet.set(new Set());
     grantsLoaded.set(true);
     flagReady.set(true);
+    otherGate = new Promise((resolve) => (releaseOther = resolve));
     flagReadyPromise = new Promise((resolve) => (resolveFlagReady = resolve));
     donationsEnabled.set(false);
     TestBed.configureTestingModule({
       providers: [
         provideRouter([
+          // A destination held pending until `releaseOther`, standing in for an All Companies switch in flight.
+          { path: 'other', component: StubDonationsComponent, canActivate: [() => otherGate] },
           {
             path: 'crowdfunding',
             component: OrgCrowdfundingComponent,
@@ -197,5 +202,23 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
     grantsLoaded.set(true);
     harness.detectChanges();
     expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual(['initiatives']);
+  });
+
+  it('does not navigate against the old route while another navigation is in flight (All Companies switch)', async () => {
+    donationsEnabled.set(true);
+    grantsLoaded.set(false);
+    const harness = await open('/crowdfunding/initiatives');
+    const router = TestBed.inject(Router);
+
+    const pending = router.navigateByUrl('/other');
+    grantsLoaded.set(true);
+    harness.detectChanges();
+    await Promise.resolve();
+    expect(router.getCurrentNavigation()?.finalUrl?.toString() ?? '/other').toBe('/other');
+
+    releaseOther(true);
+    await pending;
+    await harness.fixture.whenStable();
+    expect(router.url).toBe('/other');
   });
 });
