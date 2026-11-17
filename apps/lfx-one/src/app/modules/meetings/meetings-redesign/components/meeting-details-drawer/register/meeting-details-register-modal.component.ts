@@ -5,14 +5,17 @@ import { DIALOG_DATA, DialogRef } from '@angular/cdk/dialog';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { MeetingRegisterDialogData, PublicMeetingRegistrationResponse, User } from '@lfx-one/shared/interfaces';
+import { MeetingRegisterDialogData, OrganizationSuggestion, PublicMeetingRegistrationResponse, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { OrganizationService } from '@services/organization.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiModalComponent } from '@shared/uikit/modal/modal.component';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
-import { map, startWith } from 'rxjs';
+import { debounceTime, defer, distinctUntilChanged, finalize, map, startWith, Subject, switchMap } from 'rxjs';
 
 /**
  * Register for Meeting dialog of the meeting details drawer: the signed-in profile fills the form, and the email stays the account's.
@@ -20,7 +23,7 @@ import { map, startWith } from 'rxjs';
  */
 @Component({
   selector: 'lfx-meeting-details-register-modal',
-  imports: [ReactiveFormsModule, UiButtonComponent, UiInputComponent, UiModalComponent],
+  imports: [ReactiveFormsModule, UiButtonComponent, UiComboboxComponent, UiInputComponent, UiModalComponent, UiOptionComponent],
   templateUrl: './meeting-details-register-modal.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -29,6 +32,8 @@ export class MeetingDetailsRegisterModalComponent {
   private readonly data = inject<MeetingRegisterDialogData>(DIALOG_DATA);
   private readonly meetingService = inject(MeetingService);
   private readonly toast = inject(UiToastService);
+  private readonly organizationService = inject(OrganizationService);
+  private readonly orgQueries = new Subject<string>();
 
   protected readonly meetingTitle = this.data.meetingTitle;
   /** The BFF registers the account behind the session, so an address typed here would be ignored; editable only without one. */
@@ -41,6 +46,9 @@ export class MeetingDetailsRegisterModalComponent {
     org_name: new FormControl('', { nonNullable: true }),
   });
   public readonly submitting = signal(false);
+  protected readonly orgSearching = signal(false);
+  /** Companies matching the typed text; the field also keeps a name that is not in the list. */
+  protected readonly orgSuggestions: Signal<OrganizationSuggestion[]> = this.initOrgSuggestions();
   /** Bumps on every value, status, touched or dirty change, so the messages below follow the form. */
   private readonly formState = toSignal(
     this.form.events.pipe(
@@ -57,6 +65,10 @@ export class MeetingDetailsRegisterModalComponent {
 
   public constructor() {
     this.form.patchValue({ ...this.profileName(this.data.user), email: this.data.user?.email ?? '' });
+  }
+
+  protected searchOrgs(query: string): void {
+    this.orgQueries.next(query);
   }
 
   protected cancel(): void {
@@ -108,6 +120,21 @@ export class MeetingDetailsRegisterModalComponent {
       return { first_name: first, last_name: rest.join(' ') };
     }
     return { first_name: user.given_name || user.first_name || '', last_name: user.family_name || user.last_name || '' };
+  }
+
+  private initOrgSuggestions(): Signal<OrganizationSuggestion[]> {
+    const results = this.orgQueries.pipe(
+      debounceTime(300),
+      distinctUntilChanged(),
+      // switchMap drops the previous search before starting the next, so its finalize cannot clear the new search's flag.
+      switchMap((query) =>
+        defer(() => {
+          this.orgSearching.set(query.length >= 2);
+          return this.organizationService.searchOrganizations(query);
+        }).pipe(finalize(() => this.orgSearching.set(false)))
+      )
+    );
+    return toSignal(results, { initialValue: [] });
   }
 
   /** A field's message shows once it has been edited and left, as on the meeting page. */

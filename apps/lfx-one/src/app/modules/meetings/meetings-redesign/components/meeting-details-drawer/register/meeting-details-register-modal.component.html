@@ -42,12 +42,27 @@
         autocomplete="organization-title"
         formControlName="job_title"
         data-testid="meeting-details-register-job-title" />
-      <lfx-ui-input
+      <lfx-ui-combobox
         label="Company"
         placeholder="Enter company"
-        autocomplete="organization"
+        emptyText="Type your company name"
         formControlName="org_name"
-        data-testid="meeting-details-register-company" />
+        freeText
+        serverSearch
+        [loading]="orgSearching()"
+        (queryChange)="searchOrgs($event)"
+        data-testid="meeting-details-register-company">
+        @for (org of orgSuggestions(); track org.name + org.domain) {
+          <lfx-ui-option [value]="org.name" [label]="org.name">
+            <span class="flex min-w-0 flex-col">
+              <span class="truncate">{{ org.name }}</span>
+              @if (org.domain) {
+                <span class="copy-12 truncate text-ui-neutral-600">{{ org.domain }}</span>
+              }
+            </span>
+          </lfx-ui-option>
+        }
+      </lfx-ui-combobox>
     </div>
   </form>
 

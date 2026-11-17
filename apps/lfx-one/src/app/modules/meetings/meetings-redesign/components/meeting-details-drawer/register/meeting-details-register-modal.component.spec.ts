@@ -6,6 +6,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MeetingRegisterDialogData, User } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
+import { OrganizationService } from '@services/organization.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,6 +17,7 @@ describe('MeetingDetailsRegisterModalComponent', () => {
   let close: ReturnType<typeof vi.fn>;
   let show: ReturnType<typeof vi.fn>;
   let registerForPublicMeeting: ReturnType<typeof vi.fn>;
+  let searchOrganizations: ReturnType<typeof vi.fn>;
 
   const render = async (user: Partial<User> | null): Promise<ComponentFixture<MeetingDetailsRegisterModalComponent>> => {
     const data: MeetingRegisterDialogData = { meetingId: 'synthetic-meeting', meetingTitle: 'Synthetic sync', user: user as User | null };
@@ -24,6 +26,7 @@ describe('MeetingDetailsRegisterModalComponent', () => {
         { provide: DIALOG_DATA, useValue: data },
         { provide: DialogRef, useValue: { id: 'synthetic-dialog', close } },
         { provide: MeetingService, useValue: { registerForPublicMeeting } },
+        { provide: OrganizationService, useValue: { searchOrganizations } },
         { provide: UiToastService, useValue: { show } },
       ],
     });
@@ -40,6 +43,7 @@ describe('MeetingDetailsRegisterModalComponent', () => {
     close = vi.fn();
     show = vi.fn();
     registerForPublicMeeting = vi.fn(() => of({ uid: 'registrant-1' }));
+    searchOrganizations = vi.fn(() => of([{ name: 'Acme Motors', domain: 'acme.example' }]));
   });
 
   it('fills the form from the profile and locks the email to the account', async () => {
@@ -78,6 +82,7 @@ describe('MeetingDetailsRegisterModalComponent', () => {
     const org = field(fixture, 'meeting-details-register-company');
     org.value = 'Acme Motors';
     org.dispatchEvent(new Event('input'));
+    org.dispatchEvent(new FocusEvent('blur'));
     await fixture.whenStable();
     submit(fixture).click();
 
@@ -95,6 +100,30 @@ describe('MeetingDetailsRegisterModalComponent', () => {
       description: 'You have been registered for this meeting',
     });
     expect(close).toHaveBeenCalledWith({ uid: 'registrant-1' });
+  });
+
+  it('searches companies as you type and registers the one picked', async () => {
+    const fixture = await render({ name: 'Ada Lovelace', email: 'ada@example.test' });
+    const org = field(fixture, 'meeting-details-register-company');
+    org.focus();
+    org.value = 'acm';
+    org.dispatchEvent(new Event('input'));
+    // Past the 300ms search debounce.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await fixture.whenStable();
+
+    expect(searchOrganizations).toHaveBeenCalledWith('acm');
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('Acme Motors');
+    expect(rows[0].textContent).toContain('acme.example');
+    expect(document.querySelector('[data-testid="ui-combobox-typed-option"]')?.textContent?.trim()).toBe('Use “acm”');
+
+    rows[0].click();
+    await fixture.whenStable();
+    submit(fixture).click();
+
+    expect(registerForPublicMeeting).toHaveBeenCalledWith(expect.objectContaining({ org_name: 'Acme Motors' }));
   });
 
   it("keeps the dialog open behind an error toast with the server's reason", async () => {
