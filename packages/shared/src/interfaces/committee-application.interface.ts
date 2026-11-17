@@ -74,6 +74,10 @@ export interface MyPendingApplication extends CommitteeJoinApplication {
   is_foundation?: boolean;
   /** Committee project slug — used by getEntityCommands / ?project= query param. */
   project_slug?: string;
+  /** Committee project display name. */
+  project_name?: string;
+  /** Committee project logo URL. */
+  project_logo_url?: string;
 }
 
 /**

@@ -4,7 +4,7 @@ description: How the Company lens Events page and People → Event Attendees cou
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, events, event-attendees, registered, attended, employee-match, company-email, filters, all-employees, speakers]
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 
@@ -38,6 +38,8 @@ Open **Events** in the Company lens sidebar. The three tiles at the top, **Upcom
 
 The **Event Attendees** column header and cells explain what the number counts when you point at them. Select an attendee count to open the people behind it.
 
+If the page cannot read the event data, it says so instead of showing zero. The tiles show **Event counts could not be loaded.**, and the Upcoming or Past table shows **Events could not be loaded** with a **Retry** button that reads the counts, the foundation list and the open tab again.
+
 ### What do the attendees and speakers panels show?
 
 Selecting an event's attendee count or speaker count opens a panel that names the company's people at that event. Both panels have a **Search people...** box that matches names and job titles, and list each person with their job title when known. Email addresses are never shown.
@@ -47,7 +49,7 @@ Selecting an event's attendee count or speaker count opens a panel that names th
 | Attendees | The **Event Attendees** count                                                  | The title is the company's name followed by **Attendees**, and the line under it is the event name and how many people are counted, such as **14 counted**. Everyone counted is listed by name, so the list matches the count (see [Who is listed](#who-is-listed)). Each person carries the **Count** you picked: **Registered or attended**, **Registered** or **Attended**. A count of **0** cannot be selected |
 | Speakers  | The **Event Speakers** count, shown as accepted / submitted, such as **2 / 5** | The title is the company's name followed by **Speakers**, and the line under it is the event name and how many of the company's speaker proposals were accepted and submitted, such as **2 accepted of 5 submitted**. Each speaker is marked **Accepted** or **Submitted**. A count of **0 / 0** cannot be selected                                                                                                |
 
-When a panel has no one to show, it says **No attendees found for this event.** or **No speakers found for this event.** A search that matches no one says **No attendees match your search.** or **No speakers match your search.** If the attendees panel fails to load, it says **Could not load attendees. Close this panel and open it again to retry.** The speakers panel has no separate error message: if it fails to load, it shows **No speakers found for this event.**, so close it and open it again before you rely on an empty list.
+When a panel has no one to show, it says **No attendees found for this event.** or **No speakers found for this event.** A search that matches no one says **No attendees match your search.** or **No speakers match your search.** If a panel fails to load, it says **Could not load attendees. Close this panel and open it again to retry.** or **Could not load speakers. Close this panel and open it again to retry.**
 
 The filters are kept in the page address (`?range=`, `?foundation=`, `?participation=`, `?eventScope=`), left out while they are at their defaults, and carried when you switch between the Upcoming and Past tabs. **Clear filters** returns all of them, and the search and status, to their defaults.
 

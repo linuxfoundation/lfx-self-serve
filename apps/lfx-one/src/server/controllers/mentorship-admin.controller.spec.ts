@@ -571,12 +571,21 @@ describe('MentorshipAdminController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('forwards only the LFID, never an email or a user id', async () => {
+    it('forwards only the LFID, never a user id', async () => {
       const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockResolvedValue('mem_1');
 
-      await controller.inviteProgramMentor(buildWrite({ lfid: 'ada', email: 'ada@example.org', user_id: 'u1' }), writeRes, next);
+      await controller.inviteProgramMentor(buildWrite({ lfid: 'ada', user_id: 'u1' }), writeRes, next);
 
       expect(invite).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { lfid: 'ada' });
+    });
+
+    it('invites the trimmed email of someone with no LF account and answers 204', async () => {
+      const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor').mockResolvedValue('mem_1');
+
+      await controller.inviteProgramMentor(buildWrite({ email: ' new.mentor@example.org ', user_id: 'u1' }), writeRes, next);
+
+      expect(invite).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, { email: 'new.mentor@example.org' });
+      expect(writeRes.status).toHaveBeenCalledWith(204);
     });
 
     it.each([
@@ -584,6 +593,9 @@ describe('MentorshipAdminController', () => {
       ['a blank lfid', { lfid: '   ' }, { programId: PROGRAM_ID }],
       ['a non-string lfid', { lfid: 42 }, { programId: PROGRAM_ID }],
       ['an lfid over 100 characters', { lfid: 'a'.repeat(101) }, { programId: PROGRAM_ID }],
+      ['both an lfid and an email', { lfid: 'ada', email: 'ada@example.org' }, { programId: PROGRAM_ID }],
+      ['an invalid email', { email: 'not an email' }, { programId: PROGRAM_ID }],
+      ['an email over 254 characters', { email: `${'a'.repeat(250)}@example.org` }, { programId: PROGRAM_ID }],
       ['a programId that is not a UUID', { lfid: 'ada' }, { programId: 'not-a-uuid' }],
     ])('rejects %s with a 400', async (_label, body, params) => {
       const invite = vi.spyOn(MentorshipAdminService.prototype, 'inviteProgramMentor');
