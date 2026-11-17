@@ -6,11 +6,17 @@ import {
   HEALTH_METRICS_LINE_CHART_QUARTER_STEPS,
   HEALTH_METRICS_LINE_CHART_VIEW_WIDTH,
 } from '../constants/health-metrics-line-chart.constants';
+import {
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX,
+  HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX,
+} from '../constants/health-metrics-overview.constants';
 
 import type { HealthMetricsChartTipView } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsLineChartInput,
   HealthMetricsLineChartTickView,
+  HealthMetricsLineChartTipPlacement,
   HealthMetricsLineChartView,
 } from '../interfaces/health-metrics-line-chart.interface';
 
@@ -143,4 +149,19 @@ function lineChartTickAlign(index: number, count: number): HealthMetricsLineChar
 /** "Title, Label value, Label value": the popup as one line, for the column's accessible name. */
 function lineChartTipLabel(tip: HealthMetricsChartTipView): string {
   return [tip.title, ...tip.rows.map((row) => `${row.label} ${row.value}`)].join(', ');
+}
+
+/**
+ * The design's popup placement beside a point `offsetPct` across its column: 12px right of it, or left of it when only
+ * the left has room in the viewport. A screen with room on neither side shifts it to stay 8px inside.
+ */
+export function placeHealthMetricsChartTip(offsetPct: number, pointPx: number, viewportPx: number): HealthMetricsLineChartTipPlacement {
+  if (viewportPx - pointPx >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: `calc(${offsetPct}% + 12px)`, right: null };
+  if (pointPx >= HEALTH_METRICS_OVERVIEW_CHART_TIP_ROOM_PX) return { left: null, right: `calc(${100 - offsetPct}% + 12px)` };
+
+  const left = Math.max(
+    HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX,
+    viewportPx - HEALTH_METRICS_OVERVIEW_CHART_TIP_EDGE_PX - HEALTH_METRICS_OVERVIEW_CHART_TIP_WIDTH_PX
+  );
+  return { left: `calc(${offsetPct}% + ${Math.round(left - pointPx)}px)`, right: null };
 }

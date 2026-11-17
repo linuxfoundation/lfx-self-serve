@@ -13,7 +13,7 @@ import {
   buildHealthMetricsEventsForecastView,
   buildHealthMetricsEventsGeographyView,
   buildHealthMetricsEventsPastView,
-  buildHealthMetricsEventsRegistrationsGrowthView,
+  buildHealthMetricsEventsRegistrationsGrowthChart,
   buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSpeakersView,
   buildHealthMetricsEventsSpeakersYears,
@@ -722,7 +722,7 @@ describe('buildHealthMetricsEventsRevenueView', () => {
   });
 });
 
-describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
+describe('buildHealthMetricsEventsRegistrationsGrowthChart', () => {
   function growthYear(overrides: Partial<HealthMetricsEventsRegistrationsGrowthYear> = {}): HealthMetricsEventsRegistrationsGrowthYear {
     return {
       year: 2023,
@@ -737,90 +737,47 @@ describe('buildHealthMetricsEventsRegistrationsGrowthView', () => {
     };
   }
 
-  it('lists every year oldest first, whatever order the read returned', () => {
-    const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2024 }), growthYear({ year: 2023 })] }, 'registrations');
+  const chart = (years: HealthMetricsEventsRegistrationsGrowthYear[], metric: 'registrations' | 'attendees' = 'registrations') =>
+    buildHealthMetricsEventsRegistrationsGrowthChart({ years }, metric, 2026);
 
-    expect(view.rows.map((row) => row.year)).toEqual([2023, 2024]);
-    expect(view.yearCount).toBe(2);
+  it('draws every year oldest first, in-person under virtual, with the total above and the current year at full colour', () => {
+    const view = chart([growthYear({ year: 2026, isPartialYear: true }), growthYear({ year: 2025 })]);
+
+    expect(view.columns.map((column) => [column.label, column.sub, column.total, column.opacity])).toEqual([
+      ['2025', '', '1.2K', 0.35],
+      ['2026', 'partial', '1.2K', 1],
+    ]);
+    expect(view.columns[0].segments.map((segment) => segment.key)).toEqual(['in-person', 'virtual']);
+    expect(view.series.map((series) => [series.label, series.color])).toEqual([
+      ['In-person', '#009AFF'],
+      ['Virtual', '#8E51FF'],
+    ]);
+    expect([view.heightPx, view.barWidthPx]).toEqual([260, 40]);
+  });
+
+  it('tops the axis at the largest total plus 8%, rounded up to a clean step, as the design draws 24K for 18,772', () => {
+    expect(chart([growthYear({ inPersonRegistrations: 1210, virtualRegistrations: 17562 })]).yTicks).toEqual(['24K', '18K', '12K', '6K', '0']);
   });
 
   it('switches every figure between registrations and attendees', () => {
-    const registrations = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'registrations').rows[0];
-    const attendees = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear()] }, 'attendees').rows[0];
-
-    expect([registrations.totalLabel, registrations.inPersonLabel, registrations.virtualLabel]).toEqual(['1,200', '1,000', '200']);
-    expect([attendees.totalLabel, attendees.inPersonLabel, attendees.virtualLabel]).toEqual(['900', '800', '100']);
+    expect(chart([growthYear()], 'attendees').columns[0].tip.rows.map((row) => [row.label, row.value])).toEqual([
+      ['In-person', '800'],
+      ['Virtual', '100'],
+      ['Total', '900'],
+    ]);
+    expect(chart([growthYear()], 'attendees').ariaLabel).toBe('Attendees by year, in person and virtual');
   });
 
-  it('fills a gap year as unrecorded, never as zero', () => {
-    const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2021 }), growthYear({ year: 2023 })] }, 'registrations');
-    const gap = view.rows[1];
+  it('titles the popup with the year, "partial year", or "no events recorded" for a gap year that keeps its empty slot', () => {
+    const view = chart([growthYear({ year: 2023 }), growthYear({ year: 2025, isPartialYear: true })]);
 
-    expect(view.rows.map((row) => row.year)).toEqual([2021, 2022, 2023]);
-    expect(view.yearCount).toBe(3);
-    expect(gap).toMatchObject({ year: 2022, recorded: false, total: null, inPerson: null, virtual: null });
-    expect([gap.totalLabel, gap.inPersonLabel, gap.virtualLabel]).toEqual(['—', '—', '—']);
+    expect(view.columns.map((column) => column.tip.title)).toEqual(['2023', '2024 · no events recorded', '2025 · partial year']);
+    expect(view.columns[1]).toMatchObject({ total: '', segments: [] });
+    expect(view.columns[1].tip.rows).toEqual([]);
   });
 
-  it('dashes a zero virtual count but keeps a zero total', () => {
-    const row = buildHealthMetricsEventsRegistrationsGrowthView(
-      { years: [growthYear({ totalRegistrations: 0, inPersonRegistrations: 0, virtualRegistrations: 0 })] },
-      'registrations'
-    ).rows[0];
-
-    expect([row.totalLabel, row.inPersonLabel, row.virtualLabel]).toEqual(['0', '0', '—']);
-    expect(row.virtual).toBe(0);
-  });
-
-  it('dashes an unmeasured count', () => {
-    const row = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ totalAttendees: null })] }, 'attendees').rows[0];
-
-    expect(row.total).toBeNull();
-    expect(row.totalLabel).toBe('—');
-  });
-
-  it('flags a partial year', () => {
-    const view = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(), growthYear({ year: 2024, isPartialYear: true })] }, 'registrations');
-
-    expect(view.rows.map((row) => row.isPartialYear)).toEqual([false, true]);
-  });
-
-  it('explains the pandemic years only when one was mostly virtual for the metric', () => {
-    const mostlyVirtual = {
-      year: 2021,
-      totalRegistrations: 1000,
-      inPersonRegistrations: 400,
-      virtualRegistrations: 600,
-      totalAttendees: 800,
-      virtualAttendees: 100,
-    };
-    const registrations = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(mostlyVirtual), growthYear()] }, 'registrations');
-    const attendees = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear(mostlyVirtual), growthYear()] }, 'attendees');
-    const smallVirtual = buildHealthMetricsEventsRegistrationsGrowthView(
-      { years: [growthYear({ year: 2020, totalRegistrations: 5000, inPersonRegistrations: 4990, virtualRegistrations: 10 }), growthYear()] },
-      'registrations'
-    );
-    const unmeasured = buildHealthMetricsEventsRegistrationsGrowthView(
-      { years: [growthYear({ year: 2020, totalAttendees: 100, virtualAttendees: null }), growthYear()] },
-      'attendees'
-    );
-    const spannedOnly = buildHealthMetricsEventsRegistrationsGrowthView({ years: [growthYear({ year: 2019 }), growthYear({ year: 2022 })] }, 'registrations');
-
-    expect(registrations.pandemicNote).toBe(
-      '2020–21 registrations were mostly virtual during the pandemic, so the years since read as a return to in-person rather than a collapse.'
-    );
-    expect(attendees.pandemicNote).toBeNull();
-    expect(smallVirtual.pandemicNote).toBeNull();
-    expect(unmeasured.pandemicNote).toBeNull();
-    expect(spannedOnly.pandemicNote).toBeNull();
-  });
-
-  it('returns no rows for no years', () => {
-    expect(buildHealthMetricsEventsRegistrationsGrowthView({ years: [] }, 'registrations')).toEqual({
-      rows: [],
-      yearCount: 0,
-      pandemicNote: null,
-    });
+  it('draws nothing for a foundation with no year', () => {
+    expect(chart([]).columns).toEqual([]);
   });
 });
 
@@ -1091,93 +1048,45 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     return { periods: periods.length ? periods : [sponsorshipPeriod()] };
   }
 
-  it('builds the headline, side stats, progress and tier rows', () => {
+  it('lays out revenue with its change, the goal with how much of it was reached, tier packages and add-ons', () => {
     const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'YTD');
 
-    expect(view.foundationMeasured).toBe(true);
-    expect(view.measured).toBe(true);
-    expect(view.packagesLabel).toBe('12 packages sold');
-    expect(view.headline).toMatchObject({ label: 'Sponsorship revenue', value: '$750K', delta: '+25%', deltaDirection: 'up' });
-    expect(view.side.map((stat) => [stat.label, stat.value])).toEqual([
-      ['Goal', '$1M'],
-      ['Tier packages', '12'],
-      ['Add-ons', '3'],
-    ]);
-    expect(view.goalSet).toBe(true);
-    expect(view.progress).toEqual({ pctLabel: '75%', widthPct: 75 });
-    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel])).toEqual([
-      ['Gold', '5'],
-      ['Silver', '5'],
-      ['Platinum', '2'],
+    expect(view).toMatchObject({ foundationMeasured: true, measured: true });
+    expect(view.metrics.map(({ key, label, value, trend, description }) => [key, label, value, trend, description])).toEqual([
+      ['revenue', 'Sponsorship revenue', '$750K', '+25%', undefined],
+      ['goal', 'Goal', '$1M', undefined, '75% reached'],
+      ['tier-packages', 'Tier packages', '12', undefined, undefined],
+      ['add-ons', 'Add-ons', '3', undefined, undefined],
     ]);
   });
 
-  it('shows no progress bar when the goal is not set or zero', () => {
-    for (const goalUsd of [null, 0]) {
-      const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ goalUsd })), 'YTD');
+  it('reads Goal as "—" with no description when no goal is set, and draws no change for an uncompared period', () => {
+    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ goalUsd: null, progressToGoal: null, changes: null })), 'YTD');
 
-      expect(view.goalSet).toBe(false);
-      expect(view.progress).toBeNull();
-      expect(view.side[0].value).toBe('not set');
-    }
+    expect(view.metrics[1]).toEqual({ key: 'goal', label: 'Goal', value: '—' });
+    expect(view.metrics[0].trend).toBeUndefined();
   });
 
-  it('caps the bar at full while the label keeps the real percent', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ revenueUsd: 1250000, progressToGoal: 1.25 })), 'YTD');
+  it('draws each tier as a bar against the most sold, with the tier icon for Diamond to Silver and the ticket for any other package', () => {
+    const tiers = [
+      { name: 'Gold', packages: 65 },
+      { name: 'Startup', packages: 64 },
+      { name: 'Silver', packages: 48 },
+    ];
+    const rows = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tiers })), 'YTD').tiers;
 
-    expect(view.progress).toEqual({ pctLabel: '125%', widthPct: 100 });
+    expect(rows.map(({ label, value, tier, icon }) => [label, value, tier, icon])).toEqual([
+      ['Gold', '65', 'gold', ''],
+      ['Startup', '64', null, 'fa-light fa-ticket'],
+      ['Silver', '48', 'silver', ''],
+    ]);
+    expect(rows[0].pct).toBe(100);
+    expect(Math.round(rows[2].pct)).toBe(74);
   });
 
-  it('draws no bar for a goal the view models no progress for, without calling the goal unset', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(
-      sponsorship(sponsorshipPeriod({ range: 'COMPLETED_YEAR_2', progressToGoal: null })),
-      'COMPLETED_YEAR_2'
-    );
-
-    expect(view.goalSet).toBe(true);
-    expect(view.progress).toBeNull();
-  });
-
-  it('carries no delta for a period that is not compared', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ range: 'COMPLETED_YEAR_3', changes: null })), 'COMPLETED_YEAR_3');
-
-    expect(view.headline).toMatchObject({ delta: null, deltaDirection: 'neutral' });
-  });
-
-  it('marks a compared period with no prior value as not available', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ changes: { revenue: null } })), 'YTD');
-
-    expect(view.headline).toMatchObject({ delta: 'not available', deltaDirection: 'neutral' });
-  });
-
-  it('uses the singular for one package', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 1, addOns: 0 })), 'YTD');
-
-    expect(view.packagesLabel).toBe('1 package sold');
-  });
-
-  it('counts tier packages only in the packages pill, keeping add-ons out', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(sponsorshipPeriod({ tierPackages: 5, addOns: 7 })), 'YTD');
-
-    expect(view.packagesLabel).toBe('5 packages sold');
-  });
-
-  it('reads as unmeasured for a period missing from the response', () => {
-    const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'COMPLETED_YEAR');
-
-    expect(view.foundationMeasured).toBe(true);
-    expect(view.measured).toBe(false);
-    expect(view.packagesLabel).toBe('');
-    expect(view.headline.value).toBe('not available');
-    expect(view.progress).toBeNull();
-    expect(view.tiers).toEqual([]);
-  });
-
-  it('reads as unmeasured for a foundation with no sponsorship', () => {
-    const view = buildHealthMetricsEventsSponsorshipView({ periods: [] }, 'YTD');
-
-    expect(view.foundationMeasured).toBe(false);
-    expect(view.measured).toBe(false);
+  it('marks a period missing from the read, and a foundation with no period, as unmeasured', () => {
+    expect(buildHealthMetricsEventsSponsorshipView(sponsorship(), 'COMPLETED_YEAR')).toMatchObject({ foundationMeasured: true, measured: false });
+    expect(buildHealthMetricsEventsSponsorshipView({ periods: [] }, 'YTD')).toMatchObject({ foundationMeasured: false, measured: false });
   });
 });
 

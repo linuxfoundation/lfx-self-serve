@@ -11,23 +11,28 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
-  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
-  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
-  HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET,
+  HEALTH_METRICS_EVENTS_SPONSORSHIP_PACKAGE_ICON,
 } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
 import { HEALTH_METRICS_OVERVIEW_TREND_PREDICTED_TIP } from '../constants/health-metrics-overview.constants';
-import { HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH, HEALTH_METRICS_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-members.constants';
+import {
+  HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH,
+  HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
+  HEALTH_METRICS_MEMBERS_RESERVED_TIERS,
+} from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-non-members.constants';
 import { HEALTH_METRICS_TABLE_DASH } from '../constants/health-metrics-table.constants';
 import { formatIsoDateLabel } from './date-time.utils';
+import { buildHealthMetricsColumnChart, formatHealthMetricsChartCompact } from './health-metrics-column-chart.utils';
 import { formatCurrency } from './number.utils';
 
 import type {
@@ -55,8 +60,6 @@ import type {
   HealthMetricsEventsPastView,
   HealthMetricsEventsRegistrationsGrowth,
   HealthMetricsEventsRegistrationsGrowthMetric,
-  HealthMetricsEventsRegistrationsGrowthRowView,
-  HealthMetricsEventsRegistrationsGrowthView,
   HealthMetricsEventsRevenue,
   HealthMetricsEventsRevenueEvent,
   HealthMetricsEventsRevenueRowView,
@@ -73,12 +76,12 @@ import type {
   HealthMetricsEventsSpeakersView,
   HealthMetricsEventsSpeakersYearView,
   HealthMetricsEventsSponsorship,
-  HealthMetricsEventsSponsorshipProgressView,
   HealthMetricsEventsSponsorshipView,
   HealthMetricsEventsSubNavItem,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsFootnotePart, HealthMetricsL2Range, HealthMetricsMetricItem, HealthMetricsNote } from '../interfaces/health-metrics-l2.interface';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
+import type { HealthMetricsColumnChartView } from '../interfaces/health-metrics-column-chart.interface';
 
 /** Sub-nav items for the Events tab; a section notes only once it reports a note. */
 export function buildHealthMetricsEventsSubNavItems(notes: Partial<Record<HealthMetricsEventsSectionKey, string>> = {}): HealthMetricsEventsSubNavItem[] {
@@ -429,48 +432,50 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
   };
 }
 
-/** Every year from the first to the last with events, oldest first; a gap year is left unrecorded, never zeroed. */
-export function buildHealthMetricsEventsRegistrationsGrowthView(
+/**
+ * Registrations or attendees by year, every year from the first to the last with events: In-person stacked under
+ * Virtual, the current year at full colour and the rest at 35%, each with its total above it. A gap year keeps its slot.
+ */
+export function buildHealthMetricsEventsRegistrationsGrowthChart(
   growth: HealthMetricsEventsRegistrationsGrowth,
-  metric: HealthMetricsEventsRegistrationsGrowthMetric
-): HealthMetricsEventsRegistrationsGrowthView {
+  metric: HealthMetricsEventsRegistrationsGrowthMetric,
+  currentYear: number
+): HealthMetricsColumnChartView {
   const byYear = new Map(growth.years.map((year) => [year.year, year]));
   const years = [...byYear.keys()];
-  if (years.length === 0) return { rows: [], yearCount: 0, pandemicNote: null };
+  const first = years.length ? Math.min(...years) : currentYear;
+  const span = years.length ? Math.max(...years) - first + 1 : 0;
+  const attendees = metric === 'attendees';
+  const columns = Array.from({ length: span }, (_, index) => {
+    const year = first + index;
+    const data = byYear.get(year) ?? null;
+    const values = data && [attendees ? data.inPersonAttendees : data.inPersonRegistrations, attendees ? data.virtualAttendees : data.virtualRegistrations];
+    return {
+      key: String(year),
+      label: String(year),
+      sub: data?.isPartialYear ? 'partial' : '',
+      values,
+      muted: year !== currentYear,
+      tipTitle: registrationsGrowthTipTitle(year, data),
+    };
+  });
+  const totals = columns.map((column) => (column.values ?? []).reduce<number>((sum, value) => sum + (value ?? 0), 0));
 
-  const first = Math.min(...years);
-  const last = Math.max(...years);
-  const rows = Array.from({ length: last - first + 1 }, (_, index) =>
-    buildRegistrationsGrowthRowView(first + index, byYear.get(first + index) ?? null, metric)
-  );
-
-  return {
-    rows,
-    yearCount: rows.length,
-    pandemicNote: formatRegistrationsGrowthPandemicNote(rows, metric),
-  };
+  return buildHealthMetricsColumnChart({
+    series: [...HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES],
+    columns,
+    peak: Math.max(0, ...totals) * HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM,
+    heightPx: 260,
+    barWidthPx: 40,
+    formatTotal: formatHealthMetricsChartCompact,
+    formatValue: formatHealthMetricsEventsCount,
+    ariaLabel: `${attendees ? 'Attendees' : 'Registrations'} by year, in person and virtual`,
+  });
 }
 
-/** Explains the pandemic years only when one was mostly virtual, so a small virtual count never reads as a peak. */
-function formatRegistrationsGrowthPandemicNote(
-  rows: HealthMetricsEventsRegistrationsGrowthRowView[],
-  metric: HealthMetricsEventsRegistrationsGrowthMetric
-): string | null {
-  const years = HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS;
-  const mostlyVirtual = rows.some(
-    (row) =>
-      years.includes(row.year) &&
-      row.virtual !== null &&
-      row.total !== null &&
-      row.total > 0 &&
-      row.virtual / row.total >= HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE
-  );
-  if (!mostlyVirtual) return null;
-
-  const first = Math.min(...years);
-  const last = Math.max(...years);
-  const label = first === last ? `${first}` : `${first}–${String(last).slice(-2)}`;
-  return `${label} ${metric} were mostly virtual during the pandemic, so the years since read as a return to in-person rather than a collapse.`;
+function registrationsGrowthTipTitle(year: number, data: HealthMetricsEventsRegistrationsGrowthYear | null): string {
+  if (data === null) return `${year} · no events recorded`;
+  return data.isPartialYear ? `${year} · partial year` : String(year);
 }
 
 /** One period's speakers section; the tab picks the count beside the tabs and the proposals listed. */
@@ -560,40 +565,52 @@ export function buildHealthMetricsEventsSpeakersYears(speakers: HealthMetricsEve
   });
 }
 
-/** One period's sponsorship section. Progress shows only against a goal that is set, so no goal never reads as a full bar. */
+/**
+ * One period's sponsorship: the metrics row (revenue with its change, the goal with how much of it was reached, tier
+ * packages and add-ons), then each tier's packages as bars, most sold first, Diamond to Silver with their tier icon.
+ */
 export function buildHealthMetricsEventsSponsorshipView(
   sponsorship: HealthMetricsEventsSponsorship,
   range: HealthMetricsRange
 ): HealthMetricsEventsSponsorshipView {
   const period = sponsorship.periods.find((candidate) => candidate.range === range) ?? null;
   const changes = period?.changes ?? null;
-  const stat = (key: string, label: string, value: string, change?: HealthMetricsEventsAtAGlanceDelta): HealthMetricsEventsAtAGlanceStatView => ({
-    key,
-    label,
-    value,
-    ...(change ?? { delta: null, deltaDirection: 'neutral' }),
-  });
-  const tierPackages = period?.tierPackages ?? null;
-  const addOns = period?.addOns ?? null;
+  const goal = period?.goalUsd ? period.goalUsd : null;
+  const reached = goal !== null && period?.progressToGoal !== null && period?.progressToGoal !== undefined ? Math.round(period.progressToGoal * 100) : null;
+  const tiers = period?.tiers ?? [];
+  const most = Math.max(0, ...tiers.map((tier) => tier.packages));
 
   return {
     foundationMeasured: sponsorship.periods.length > 0,
     measured: period !== null && period.revenueUsd !== null,
-    packagesLabel: formatSponsorshipPackagesLabel(tierPackages),
-    headline: stat(
-      'revenue',
-      'Sponsorship revenue',
-      formatHealthMetricsEventsRevenue(period?.revenueUsd ?? null),
-      changes ? formatAtAGlanceDelta(changes.revenue, 'pct') : undefined
-    ),
-    side: [
-      stat('goal', 'Goal', period?.goalUsd ? formatCurrency(period.goalUsd) : HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET),
-      stat('tier-packages', 'Tier packages', formatAtAGlanceCount(tierPackages)),
-      stat('add-ons', 'Add-ons', formatAtAGlanceCount(addOns)),
+    metrics: [
+      {
+        key: 'revenue',
+        label: 'Sponsorship revenue',
+        value: period?.revenueUsd === null || period?.revenueUsd === undefined ? HEALTH_METRICS_TABLE_DASH : formatCurrency(period.revenueUsd),
+        ...(changes ? metricTrend(changes.revenue) : {}),
+      },
+      {
+        key: 'goal',
+        label: 'Goal',
+        value: goal === null ? HEALTH_METRICS_TABLE_DASH : formatCurrency(goal),
+        ...(reached === null ? {} : { description: `${reached}% reached` }),
+      },
+      { key: 'tier-packages', label: 'Tier packages', value: formatDashCount(period?.tierPackages) },
+      { key: 'add-ons', label: 'Add-ons', value: formatDashCount(period?.addOns) },
     ],
-    goalSet: !!period?.goalUsd,
-    progress: period?.goalUsd ? resolveSponsorshipProgress(period.progressToGoal) : null,
-    tiers: buildRankedRows((period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages }))),
+    tiers: tiers.map((tier) => {
+      const reserved = HEALTH_METRICS_MEMBERS_RESERVED_TIERS.find((candidate) => candidate === tier.name.toLowerCase()) ?? null;
+      return {
+        key: tier.name,
+        label: tier.name,
+        value: formatHealthMetricsEventsCount(tier.packages),
+        pct: most > 0 ? (tier.packages / most) * 100 : 0,
+        tier: reserved,
+        icon: reserved ? '' : HEALTH_METRICS_EVENTS_SPONSORSHIP_PACKAGE_ICON,
+        company: null,
+      };
+    }),
   };
 }
 
@@ -798,41 +815,6 @@ function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number |
   return event.registrationsNow / event.goal;
 }
 
-function buildRegistrationsGrowthRowView(
-  year: number,
-  data: HealthMetricsEventsRegistrationsGrowthYear | null,
-  metric: HealthMetricsEventsRegistrationsGrowthMetric
-): HealthMetricsEventsRegistrationsGrowthRowView {
-  if (data === null) {
-    return { year, recorded: false, isPartialYear: false, total: null, inPerson: null, virtual: null, totalLabel: '—', inPersonLabel: '—', virtualLabel: '—' };
-  }
-
-  const attendees = metric === 'attendees';
-  const total = attendees ? data.totalAttendees : data.totalRegistrations;
-  const inPerson = attendees ? data.inPersonAttendees : data.inPersonRegistrations;
-  const virtual = attendees ? data.virtualAttendees : data.virtualRegistrations;
-
-  return {
-    year,
-    recorded: true,
-    isPartialYear: data.isPartialYear,
-    total,
-    inPerson,
-    virtual,
-    totalLabel: formatHealthMetricsEventsCount(total),
-    inPersonLabel: formatHealthMetricsEventsCount(inPerson),
-    // The design dashes a year with no virtual count, since most in-person-only years record zero.
-    virtualLabel: virtual === 0 ? '—' : formatHealthMetricsEventsCount(virtual),
-  };
-}
-
-/** Empty when unmeasured, since the section then renders no pill. */
-function formatSponsorshipPackagesLabel(value: number | null): string {
-  if (value === null) return '';
-
-  return `${value.toLocaleString('en-US')} ${value === 1 ? 'package' : 'packages'} sold`;
-}
-
 /** Empty when unmeasured, since the section then renders no pill. */
 function formatGeographyCountriesLabel(value: number | null): string {
   if (value === null) return '';
@@ -854,14 +836,6 @@ function formatWholePercent(fraction: number | null): string {
 /** Ranked-list rows, name and value only; an unmeasured value reads as not available. */
 function buildRankedRows(items: HealthMetricsEventsRankedRowInput[]): HealthMetricsEventsRankedRowView[] {
   return items.map((item) => ({ key: item.key, label: item.label, valueLabel: formatAtAGlanceCount(item.value) }));
-}
-
-/** `null` without a modelled progress; the width stops at full while the label keeps the real percent. */
-function resolveSponsorshipProgress(progress: number | null): HealthMetricsEventsSponsorshipProgressView | null {
-  if (progress === null) return null;
-
-  const pct = Math.round(progress * 100);
-  return { pctLabel: `${pct}%`, widthPct: Math.min(Math.max(pct, 0), 100) };
 }
 
 /** Most recent first; the proposal key breaks ties so the order is stable. */

@@ -15,6 +15,7 @@ import type {
   HealthMetricsNoteTone,
 } from './health-metrics-l2.interface';
 import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
+import type { HealthMetricsBarListRow } from './health-metrics-table.interface';
 import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
 import type { UiBadgeTone } from './uikit.interface';
 
@@ -312,30 +313,6 @@ export type HealthMetricsEventsRegistrationsGrowthMetric = 'registrations' | 'at
 /** A toggle pill whose id is the metric it selects. */
 export interface HealthMetricsEventsRegistrationsGrowthMetricOption extends FilterPillOption {
   id: HealthMetricsEventsRegistrationsGrowthMetric;
-}
-
-/** One year of the chart and table; a gap year between the first and last is dashed, never zeroed. */
-export interface HealthMetricsEventsRegistrationsGrowthRowView {
-  year: number;
-  /** `false` for a gap year, which the table dashes and the chart leaves empty rather than zeroed. */
-  recorded: boolean;
-  isPartialYear: boolean;
-  total: number | null;
-  inPerson: number | null;
-  virtual: number | null;
-  totalLabel: string;
-  inPersonLabel: string;
-  /** A dash when no virtual count was recorded, per the design. */
-  virtualLabel: string;
-}
-
-/** The section for one metric, with every year from the first to the last. */
-export interface HealthMetricsEventsRegistrationsGrowthView {
-  rows: HealthMetricsEventsRegistrationsGrowthRowView[];
-  /** Years spanned, gap years included, so the count matches the table. */
-  yearCount: number;
-  /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
-  pandemicNote: string | null;
 }
 
 /** Foundation scope for event revenue; every period ships in one read, so the range stays client-side. */
@@ -677,29 +654,15 @@ export interface HealthMetricsEventsSponsorship {
   periods: HealthMetricsEventsSponsorshipPeriod[];
 }
 
-/** Progress to a goal that is set; the bar stops at full while the label keeps the real figure. */
-export interface HealthMetricsEventsSponsorshipProgressView {
-  /** e.g. `62%`. */
-  pctLabel: string;
-  /** 0–100. */
-  widthPct: number;
-}
-
-/** The section for one period, with every label ready to render. */
+/** The section for one period: its metrics row and each tier's packages as bars. */
 export interface HealthMetricsEventsSponsorshipView {
   /** `false` when the read carried no period at all. */
   foundationMeasured: boolean;
   /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
   measured: boolean;
-  /** Tier packages only, e.g. `30 packages sold`; add-ons are counted separately. Empty when unmeasured. */
-  packagesLabel: string;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
-  /** `false` when no goal is set, so the section says so instead of drawing a bar. */
-  goalSet: boolean;
-  /** `null` without a goal or a modelled progress, so a missing goal never renders as a full bar. */
-  progress: HealthMetricsEventsSponsorshipProgressView | null;
-  tiers: HealthMetricsEventsRankedRowView[];
+  metrics: HealthMetricsMetricItem[];
+  /** Most sold first, as the view ranks them. */
+  tiers: HealthMetricsBarListRow[];
 }
 
 /** Foundation scope for geography; every period ships in one read, so the range stays client-side. */

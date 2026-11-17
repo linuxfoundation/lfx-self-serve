@@ -8,6 +8,7 @@ import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED,
   HEALTH_METRICS_EVENTS_BLANK,
   HEALTH_METRICS_EVENTS_DATA_SECTIONS,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS,
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
@@ -16,6 +17,8 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsL2SectionControlsDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section-controls.directive';
@@ -35,6 +38,7 @@ import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsAtAGlanceStatus,
   HealthMetricsEventsForecastPicker,
+  HealthMetricsEventsRegistrationsGrowthMetric,
   HealthMetricsEventsSubNavItem,
 } from '@lfx-one/shared/interfaces';
 
@@ -59,6 +63,8 @@ import type {
     HealthMetricsL2ShellComponent,
     UiOptionComponent,
     UiSelectComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
   ],
   templateUrl: './health-metrics-events.component.html',
 })
@@ -77,12 +83,20 @@ export class HealthMetricsEventsComponent {
   // The forecast's event select sits in its card header, so the tab holds the pick and the forecast reports its events.
   protected readonly forecastEventId = signal<string | null>(null);
   protected readonly forecastPicker = signal<HealthMetricsEventsForecastPicker>({ options: [], eventId: null });
+  protected readonly growthMetrics = HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS;
+  /** Registrations & growth's header switch. */
+  protected readonly growthMetric = signal<HealthMetricsEventsRegistrationsGrowthMetric>('registrations');
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() => buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }));
 
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
+
+  protected onGrowthMetricChange(id: string | null): void {
+    const option = this.growthMetrics.find((candidate) => candidate.id === id);
+    if (option) this.growthMetric.set(option.id);
+  }
 
   private initGlance(): Signal<HealthMetricsEventsAtAGlance> {
     if (!isPlatformBrowser(this.platformId)) {

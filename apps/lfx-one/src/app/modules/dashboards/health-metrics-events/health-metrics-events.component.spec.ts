@@ -57,6 +57,7 @@ class PastStubComponent {
 /** Stands in for Registrations & growth, whose read its own spec covers; the test drives its outputs. */
 @Component({ selector: 'lfx-events-registrations-growth', template: '<div data-testid="events-reg-stub"></div>' })
 class RegistrationsGrowthStubComponent {
+  public readonly metric = input<string>('registrations');
   public readonly settled = output<boolean | null>();
   public readonly reading = output<void>();
 }
@@ -271,6 +272,22 @@ describe('HealthMetricsEventsComponent', () => {
     fixture.componentInstance['forecastEventId'].set('evt-2');
     fixture.detectChanges();
     expect(forecast.pickedEventId()).toBe('evt-2');
+  });
+
+  it('puts the Registrations / Attendees switch in the growth header and hands the pick to the section', async () => {
+    await setup();
+    await sectionsReport('');
+    const growth = fixture.debugElement.query(By.directive(RegistrationsGrowthStubComponent)).componentInstance as RegistrationsGrowthStubComponent;
+    expect(fixture.nativeElement.querySelector('[data-testid="events-controls-reg"] [data-testid="events-registrations-growth-metric"]')).not.toBeNull();
+    expect(growth.metric()).toBe('registrations');
+
+    fixture.componentInstance['onGrowthMetricChange']('attendees');
+    fixture.detectChanges();
+    expect(growth.metric()).toBe('attendees');
+
+    fixture.componentInstance['onGrowthMetricChange']('bogus');
+    fixture.detectChanges();
+    expect(growth.metric()).toBe('attendees');
   });
 
   it("shows only the forecast's note in the sub-nav, as the design does", async () => {
