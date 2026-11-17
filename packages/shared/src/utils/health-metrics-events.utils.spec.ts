@@ -15,7 +15,6 @@ import {
   buildHealthMetricsEventsPastView,
   buildHealthMetricsEventsRegistrationsGrowthView,
   buildHealthMetricsEventsRevenueView,
-  buildHealthMetricsEventsSpeakersNote,
   buildHealthMetricsEventsSpeakersView,
   buildHealthMetricsEventsSpeakersYears,
   buildHealthMetricsEventsSponsorshipView,
@@ -962,40 +961,6 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
 
     expect(missing).toMatchObject({ foundationMeasured: true, measured: false, countLabel: '' });
     expect(empty.foundationMeasured).toBe(false);
-  });
-});
-
-describe('buildHealthMetricsEventsSpeakersNote', () => {
-  function withChange(speakersChange: number | null): HealthMetricsEventsSpeakers {
-    return {
-      periods: [
-        {
-          range: 'YTD',
-          submitted: 10,
-          accepted: 1,
-          inReview: 5,
-          declined: 4,
-          speakers: 8,
-          acceptanceRate: 0.1,
-          changes: { speakers: speakersChange },
-        },
-      ],
-      organizations: [],
-      unaffiliated: [],
-      proposals: [],
-    };
-  }
-
-  it('notes a steep fall and stays empty otherwise', () => {
-    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'YTD')).toBe('down 42% YoY');
-    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.14), 'YTD')).toBe('');
-    expect(buildHealthMetricsEventsSpeakersNote(withChange(null), 'YTD')).toBe('');
-    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.42), 'COMPLETED_YEAR')).toBe('');
-  });
-
-  it('stays empty at exactly the threshold and notes a fall just past it', () => {
-    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3), 'YTD')).toBe('');
-    expect(buildHealthMetricsEventsSpeakersNote(withChange(-0.3004), 'YTD')).toBe('down 30% YoY');
   });
 });
 

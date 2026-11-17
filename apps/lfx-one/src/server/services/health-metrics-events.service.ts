@@ -107,15 +107,21 @@ const FORECAST_EVENT_NOT_ENDED = `EXISTS (
             AND r.event_is_past = FALSE
         )`;
 
-/** Each event's city and location, which the registrations view repeats on every project row; joined as `p` on `event_id`. */
-const EVENT_PLACES = `(
+/**
+ * Each event's city and location, which the registrations view repeats on every project row; joined as `p` on `event_id`.
+ * It reads only the foundation's events in `view`, so it binds the slug once, ahead of the outer query's own binds.
+ */
+function eventPlaces(view: string): string {
+  return `(
         SELECT
           event_id,
           MAX(NULLIF(TRIM(event_city), '')) AS event_city,
           MAX(NULLIF(TRIM(event_location), '')) AS event_location
         FROM ${EVENT_REGISTRATIONS_VIEW}
+        WHERE event_id IN (SELECT event_id FROM ${view} WHERE foundation_slug = ?)
         GROUP BY event_id
       ) p`;
+}
 
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
@@ -352,7 +358,7 @@ export class HealthMetricsEventsService {
         p.event_city,
         p.event_location
       FROM ${REGISTRATION_FORECAST_VIEW} f
-      LEFT JOIN ${EVENT_PLACES} ON p.event_id = f.event_id
+      LEFT JOIN ${eventPlaces(REGISTRATION_FORECAST_VIEW)} ON p.event_id = f.event_id
       WHERE f.foundation_slug = ?
         AND f.is_all_projects = TRUE
         AND ${FORECAST_EVENT_NOT_ENDED}
@@ -361,7 +367,8 @@ export class HealthMetricsEventsService {
       LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<ForecastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    // The place join's slug comes first, as its subquery precedes the outer WHERE.
+    const result = await executeSnowflakeViewRead<ForecastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
       view: REGISTRATION_FORECAST_VIEW,
       operation: 'get_events_registration_forecast',
       clientMessage: 'The registration forecast is unavailable right now.',
@@ -568,7 +575,7 @@ export class HealthMetricsEventsService {
         p.event_location,
         ${periodColumns}
       FROM ${PAST_EVENTS_VIEW} e
-      LEFT JOIN ${EVENT_PLACES} ON p.event_id = e.event_id
+      LEFT JOIN ${eventPlaces(PAST_EVENTS_VIEW)} ON p.event_id = e.event_id
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (${inAnyPeriod})
@@ -576,7 +583,8 @@ export class HealthMetricsEventsService {
       LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<PastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    // The place join's slug comes first, as its subquery precedes the outer WHERE.
+    const result = await executeSnowflakeViewRead<PastEventRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
       view: PAST_EVENTS_VIEW,
       operation: 'get_events_past',
       clientMessage: 'Past events are unavailable right now.',
@@ -687,14 +695,15 @@ export class HealthMetricsEventsService {
         p.event_location,
         ${periodColumns}
       FROM ${REVENUE_VIEW} e
-      LEFT JOIN ${EVENT_PLACES} ON p.event_id = e.event_id
+      LEFT JOIN ${eventPlaces(REVENUE_VIEW)} ON p.event_id = e.event_id
       WHERE foundation_slug = ?
       -- Past events in a period fill the cap before upcoming ones, so history never gives way to upcoming events.
       ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, e.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
     `;
 
-    const result = await executeSnowflakeViewRead<RevenueRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+    // The place join's slug comes first, as its subquery precedes the outer WHERE.
+    const result = await executeSnowflakeViewRead<RevenueRow>(this.snowflakeService, req, sql, [query.foundationSlug, query.foundationSlug], {
       view: REVENUE_VIEW,
       operation: 'get_events_revenue',
       clientMessage: 'Event revenue is unavailable right now.',

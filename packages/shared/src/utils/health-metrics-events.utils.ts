@@ -4,7 +4,6 @@
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPANIES_TIP,
-  HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE,
   HEALTH_METRICS_EVENTS_FORECAST_PACES,
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
@@ -356,9 +355,7 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
   });
   const count = (field: 'registrations' | 'attendees' | 'organizations' | 'speakers' | 'countries') => (candidate: HealthMetricsEventsAtAGlancePeriod | null) =>
     formatDashCount(candidate?.[field]);
-  const showUp = (candidate: HealthMetricsEventsAtAGlancePeriod | null) =>
-    candidate?.showUpRate === null || candidate?.showUpRate === undefined ? HEALTH_METRICS_TABLE_DASH : `${Math.round(candidate.showUpRate * 100)}%`;
-  const showUpRate = showUp(period);
+  const showUpRate = formatShowUpRate(period);
   const eventsDescription = ytd ? `${formatDashCount(past)} past · ${formatDashCount(upcoming)} upcoming` : `${formatDashCount(past)} past`;
 
   return {
@@ -384,7 +381,7 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
       },
     ],
     periodHeading: ytd ? `${year} (YTD)` : `${year}`,
-    // Until the view carries same-point values, year to date is compared with the whole of last year, as its heading says.
+    // The view's year-to-date changes compare with the whole last completed year, so the column and badge agree.
     comparisonHeading: ytd ? `${year - 1} (full year)` : `${year - 1}`,
     rows: [
       row('registrations', 'Registrations', count('registrations'), changes?.registrations),
@@ -392,7 +389,7 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
       row('companies', 'Participating companies', count('organizations'), changes?.organizations),
       row('speakers', 'Speakers', count('speakers'), changes?.speakers),
       row('countries', 'Countries', count('countries'), changes?.countries),
-      row('show-up-rate', 'Show-up rate', showUp, changes?.showUpRatePts, 'pp'),
+      row('show-up-rate', 'Show-up rate', formatShowUpRate, changes?.showUpRatePts, 'pp'),
     ],
   };
 }
@@ -563,14 +560,6 @@ export function buildHealthMetricsEventsSpeakersYears(speakers: HealthMetricsEve
   });
 }
 
-/** The sub-nav note, set only when speakers fell steeply against the year before. */
-export function buildHealthMetricsEventsSpeakersNote(speakers: HealthMetricsEventsSpeakers, range: HealthMetricsRange): string {
-  const change = speakers.periods.find((candidate) => candidate.range === range)?.changes?.speakers ?? null;
-  if (change === null || change >= HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE) return '';
-
-  return `down ${Math.round(Math.abs(change) * 100)}% YoY`;
-}
-
 /** One period's sponsorship section. Progress shows only against a goal that is set, so no goal never reads as a full bar. */
 export function buildHealthMetricsEventsSponsorshipView(
   sponsorship: HealthMetricsEventsSponsorship,
@@ -635,7 +624,7 @@ function formatAtAGlanceCount(value: number | null | undefined): string {
 }
 
 function formatShowUpRate(period: HealthMetricsEventsAtAGlancePeriod | null): string {
-  return period?.showUpRate === null || period?.showUpRate === undefined ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : `${Math.round(period.showUpRate * 100)}%`;
+  return period?.showUpRate === null || period?.showUpRate === undefined ? HEALTH_METRICS_TABLE_DASH : `${Math.round(period.showUpRate * 100)}%`;
 }
 
 /** A change as a whole percent (`−25%`) or, for a rate, points at one decimal (`+2.2 pp`); the sign follows the rounded value. */

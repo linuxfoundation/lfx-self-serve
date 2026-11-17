@@ -127,11 +127,12 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     execute.mockResolvedValue({ rows: [eventRow()] });
   });
 
-  it('binds only the foundation, keeps events that have not ended, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events that have not ended, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toMatch(NOT_ENDED_SCOPE);
     expect(sql).not.toContain('event_start_date >= CURRENT_DATE()');
@@ -444,11 +445,12 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     execute.mockResolvedValue({ rows: [pastRow()] });
   });
 
-  it('binds only the foundation, keeps events in some period, newest first, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, keeps events in some period, newest first, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(sql).toContain('MARKETING_EVENT_PAST_EVENTS');
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toContain('is_in_period_3rd_last_completed_year OR is_in_period_prev_completed_year OR is_in_period_last_completed_year OR is_in_period_ytd');
@@ -462,6 +464,7 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
 
     const [sql] = execute.mock.calls[0];
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS e');
+    expect(sql).toContain('WHERE event_id IN (SELECT event_id FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS WHERE foundation_slug = ?)');
     expect(sql).toContain('GROUP BY event_id\n      ) p ON p.event_id = e.event_id');
     expect(sql).toContain('p.event_city,');
   });
@@ -888,11 +891,12 @@ describe('HealthMetricsEventsService.getRevenue', () => {
     expect(events[0]).toMatchObject({ city: null, isVirtual: true });
   });
 
-  it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
+  it('binds only the foundation, twice, sorts older events and those outside every period last, and reads one past the cap', async () => {
     await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
 
     const [sql, binds] = execute.mock.calls[0];
-    expect(binds).toEqual(['acme']);
+    // The place join binds the slug ahead of the outer query.
+    expect(binds).toEqual(['acme', 'acme']);
     expect(execute).toHaveBeenCalledTimes(1);
     expect(sql).toContain('MARKETING_EVENT_REVENUE');
     expect(sql).toContain("event_start_date >= DATE_TRUNC('YEAR', CURRENT_DATE()) AND event_start_date < CURRENT_DATE()) AS in_period_ytd");
