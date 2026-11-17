@@ -61,6 +61,7 @@ import {
   isMentorshipRichTextOverRawMax,
   mentorshipDescriptionLength,
   mentorshipSkillSuggestions,
+  toMentorshipHttpUrl,
 } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { MentorshipService } from '@services/mentorship.service';
@@ -377,6 +378,13 @@ export class EnrollDetailsStepComponent {
           this.lfLoadMore$.next();
         }
       });
+  }
+
+  /** Gives a link typed without a scheme its `https://` when the admin leaves the field, so they see the link that is saved. */
+  protected completeUrl(control: 'repositoryUrl' | 'websiteUrl' | 'codeOfConductUrl'): void {
+    const field = this.form().controls[control];
+    const completed = toMentorshipHttpUrl(String(field.value ?? ''));
+    if (completed !== field.value) field.setValue(completed);
   }
 
   protected retryNameLookup(): void {
