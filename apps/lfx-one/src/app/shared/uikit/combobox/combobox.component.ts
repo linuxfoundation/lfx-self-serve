@@ -87,7 +87,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** The `value` of the picked option, or `null` for none. Supports two-way binding with `[(value)]`. */
   public readonly value = model<string | null>(null);
