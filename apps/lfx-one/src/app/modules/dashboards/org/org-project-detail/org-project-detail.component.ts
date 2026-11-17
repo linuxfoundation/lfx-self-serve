@@ -11,6 +11,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -43,6 +44,7 @@ import {
   HEALTH_SCORE_LABELS,
   PD_HEALTH_TAG,
   PD_NON_LF_MARKER,
+  PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS,
   PD_VALID_DRAWER_CARD_KEYS,
   lfxColors,
   PD_METRIC_OPTIONS,
@@ -121,6 +123,9 @@ export class OrgProjectDetailComponent {
   private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
+  // All employee view (epic #5845, #5849): the Ecosystem Influence cards and the ecosystem leaderboard rows keep their
+  // numbers and charts but open nothing. UX only; the BFF answers 403 for the same panels.
+  protected readonly isEmployeeView = inject(OrgLensViewModeService).isEmployeeView;
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
@@ -526,7 +531,18 @@ export class OrgProjectDetailComponent {
     });
   }
 
+  /** False for a card whose detail panel the all employee view blocks: every card outside the Technical Influence section. */
+  protected canOpenCard(key: string): boolean {
+    return !this.isEmployeeView() || PD_EMPLOYEE_VIEW_TECHNICAL_CARD_KEYS.has(key);
+  }
+
+  /** False for the ecosystem leaderboard row panel in the all employee view. */
+  protected canOpenLeaderboardDetail(dimension: LeaderboardDimension): boolean {
+    return !this.isActivityMode() && (dimension === 'technical' || !this.isEmployeeView());
+  }
+
   protected openCardDetail(card: InfluenceCardVm): void {
+    if (!this.canOpenCard(card.key)) return;
     this.selectedCardKey.set(card.key);
     this.drawerOpen.set(true);
     this.resetRoster();
@@ -551,7 +567,7 @@ export class OrgProjectDetailComponent {
    * within a project, so keying by one can open another company's figures).
    */
   protected openLeaderboardDetail(dimension: LeaderboardDimension, row: BoardDisplayRow): void {
-    if (this.isActivityMode() || !row.organizationId) return;
+    if (!this.canOpenLeaderboardDetail(dimension) || !row.organizationId) return;
     this.leaderboardDetailDimension.set(dimension);
     this.leaderboardDetailOrganizationId.set(row.organizationId);
     this.leaderboardDetailOrgName.set(row.orgName);

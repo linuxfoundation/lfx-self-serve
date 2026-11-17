@@ -22,6 +22,8 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
+import { blockEmployeeViewEcosystemCard } from '../middleware/block-employee-view-ecosystem-card.middleware';
 import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 import { requireOrgLensRoiAudience } from '../middleware/require-org-lens-roi-audience.middleware';
 
@@ -245,12 +247,16 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/technical/organizations/:organizationId', (req, res, next) =>
     orgLensProjectDetailController.getTechnicalBreakdown(req, res, next)
   );
-  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId', (req, res, next) =>
+  router.get('/:orgUid/lens/projects/:projectSlug/leaderboard/ecosystem/organizations/:organizationId', blockEmployeeView, (req, res, next) =>
     orgLensProjectDetailController.getEcosystemBreakdown(req, res, next)
   );
   // LFXV2-1885 DN9 — per-card drawer roster (server-side paginated), fetched lazily on drawer open.
-  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', (req, res, next) => orgLensProjectDetailController.getCardRoster(req, res, next));
-  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey', (req, res, next) => orgLensProjectDetailController.getCardDrawer(req, res, next));
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey/roster', blockEmployeeViewEcosystemCard, (req, res, next) =>
+    orgLensProjectDetailController.getCardRoster(req, res, next)
+  );
+  router.get('/:orgUid/lens/projects/:projectSlug/cards/:cardKey', blockEmployeeViewEcosystemCard, (req, res, next) =>
+    orgLensProjectDetailController.getCardDrawer(req, res, next)
+  );
   router.get('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.getWorkspaces(req, res, next));
   router.post('/:orgUid/lens/workspaces', (req, res, next) => orgLensProjectsController.createWorkspace(req, res, next));
   router.put('/:orgUid/lens/workspaces/:workspaceId', (req, res, next) => orgLensProjectsController.renameWorkspace(req, res, next));

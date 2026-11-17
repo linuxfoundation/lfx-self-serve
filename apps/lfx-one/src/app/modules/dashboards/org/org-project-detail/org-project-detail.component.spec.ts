@@ -13,6 +13,7 @@ import { IntercomService } from '@services/intercom.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { MessageService } from 'primeng/api';
@@ -20,6 +21,9 @@ import { BehaviorSubject, EMPTY, of } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import { OrgProjectDetailComponent } from './org-project-detail.component';
+
+// Drives the all employee view for every suite below; off unless a test flips it.
+const employeeView = signal(false);
 
 // The page-level classifier's surface, with the state under test's control.
 function emptyStateStub(pageState: WritableSignal<OrgLensEmptyStateName | null>) {
@@ -75,6 +79,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment: signal('acme') } },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
@@ -184,6 +189,7 @@ describe('OrgProjectDetailComponent — page-level empty state', () => {
           useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
         },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(state)) },
         // The page-level state's own actions (copy reference, contact support).
         MessageService,
@@ -284,6 +290,7 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
           useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
         },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
@@ -407,6 +414,7 @@ describe('OrgProjectDetailComponent — organization scope', () => {
           useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
         },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
@@ -583,5 +591,80 @@ describe('OrgProjectDetailComponent — organization scope', () => {
 
     component['loadRosterPage']('commits', 0, 10);
     expect(detail['getCardRoster']).toHaveBeenLastCalledWith('acc-1', 'Test Org', 'k8s', 'commits', expect.any(String), 0, 10, 'all');
+  });
+});
+
+describe('OrgProjectDetailComponent — all employee view', () => {
+  let component: OrgProjectDetailComponent;
+
+  beforeEach(async () => {
+    employeeView.set(true);
+    await TestBed.configureTestingModule({
+      imports: [OrgProjectDetailComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'a', accountName: 'Acme', uid: 'a' }), selectedUrlSegment: signal('acme') },
+        },
+        { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateStub(signal(null)) },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
+        {
+          provide: OrgLensProjectDetailService,
+          useValue: {
+            getHero: vi.fn(() => of(null)),
+            getInfluenceBlock: vi.fn(() => of(null)),
+            getTrendBlock: vi.fn(() => of(null)),
+            getTechnicalBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            getEcosystemBoard: vi.fn(() => of({ rows: [], total: 0 })),
+            getLeaderboardBreakdown: vi.fn(() => of(null)),
+            getCardDrawer: vi.fn(() => of(null)),
+            getCardRoster: vi.fn(() => of(null)),
+          },
+        },
+        { provide: PersonDetailDrawerService, useValue: { open: vi.fn(), close: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn(), events: EMPTY, createUrlTree: vi.fn(() => ({}) as UrlTree), serializeUrl: vi.fn(() => '') } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            paramMap: new BehaviorSubject<ParamMap>(convertToParamMap({ projectSlug: 'k8s' })).asObservable(),
+            queryParamMap: of(convertToParamMap({})),
+            snapshot: { queryParamMap: convertToParamMap({}) },
+          },
+        },
+      ],
+    }).compileComponents();
+    component = TestBed.createComponent(OrgProjectDetailComponent).componentInstance;
+  });
+
+  const card = (key: string) => ({ key, title: key }) as never;
+
+  it.each(['maintainers', 'contributors', 'commits', 'pull-requests', 'avg-merge-time'])('opens the %s technical panel', (key) => {
+    expect(component['canOpenCard'](key)).toBe(true);
+    component['openCardDetail'](card(key));
+    expect(component['drawerOpen']()).toBe(true);
+  });
+
+  it.each(['collaboration', 'meeting-attendance', 'board-members', 'a-future-card'])('opens nothing for the %s ecosystem card', (key) => {
+    expect(component['canOpenCard'](key)).toBe(false);
+    component['openCardDetail'](card(key));
+    expect(component['drawerOpen']()).toBe(false);
+  });
+
+  it('keeps the technical leaderboard row panel and blocks the ecosystem one', () => {
+    const row = { organizationId: 'org-1', orgName: 'Acme' } as BoardDisplayRow;
+    component['openLeaderboardDetail']('ecosystem', row);
+    expect(component['leaderboardDetailOpen']()).toBe(false);
+    component['openLeaderboardDetail']('technical', row);
+    expect(component['leaderboardDetailOpen']()).toBe(true);
+  });
+
+  it('leaves every card and row panel open in the full view', () => {
+    employeeView.set(false);
+    expect(component['canOpenCard']('board-members')).toBe(true);
+    expect(component['canOpenLeaderboardDetail']('ecosystem')).toBe(true);
   });
 });
