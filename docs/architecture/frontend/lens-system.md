@@ -349,6 +349,8 @@ Rule 1 before 2–3 is the #2216 fix (a present grant is authoritative whatever 
 
 **CLA-only rows for a grant holder** (#5557) — a caller who holds any Org Lens grant gets their CLA-only organizations from the switcher, not from role-grants: `GET /api/nav/org-items` answers their held rows without the CLA-manager lookup and sets `cla_only_deferred`, and `OrgNavigationService` fetches `cla_only=1` once per reload and lists those rows after the held ones, filtered by the search term on the client.
 
+A restored selection that the held page does not list waits for those rows before the default is decided. This covers a cookie that names a company before it is the selected account. That happens for a caller with no persona organizations, whose cookie only reaches the list as its `selected_uid` pin. Once the rows land, a pinned company that is CLA-only stays selected and is written into a legacy `/org/{page}` address (#5804). Any other pin falls back to the authority-first default, which never ranks a CLA-only row above a held one.
+
 ## Putting it together
 
 The lens system is designed so that **route depth never reflects context** — every feature lives at a flat top-level route (`/meetings`, `/votes`, etc.) and reads its context at runtime from `LensService` + `ProjectContextService`. This keeps routing simple and lets lens switches change the whole dashboard without a re-route.

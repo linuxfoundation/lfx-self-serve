@@ -79,6 +79,8 @@ const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETIN
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
+/** One row per Salesforce account, so a left join on `account_id` adds its logo without adding rows. */
+const ACCOUNT_LOGO_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING';
 
 /** The summary's per-period columns this section reads, each suffixed by period. */
 const NEWSLETTER_SUMMARY_COLUMNS = [
@@ -151,6 +153,7 @@ interface OrgParticipationRow {
   LAST_ENGAGED_DATE: Date | string | null;
   DAYS_SINCE_LAST_ENGAGED: number | null;
   IS_LAPSED_180D: boolean | null;
+  LOGO_URL: string | null;
   SCOPE_ORGS_COUNT: number | null;
   SCOPE_LAPSED_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
@@ -159,7 +162,7 @@ interface OrgParticipationRow {
 interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
-  MEMBERSHIP_STATUS: string | null;
+  LOGO_URL: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -168,7 +171,7 @@ interface RepresentativesRow {
   PERSON_DISPLAY_NAME: string | null;
   IS_IDENTITY_UNRESOLVED: boolean | null;
   ACCOUNT_NAME: string | null;
-  MEMBERSHIP_TIER: string | null;
+  PERSON_JOB_TITLE: string | null;
   COMMITTEE_NAME: string | null;
   LAST_ATTENDED_DATE: Date | string | null;
   [periodColumn: string]: unknown;
@@ -418,8 +421,8 @@ export class HealthMetricsEngagementService {
   }
 
   /**
-   * The trailing twelve months of all-meeting attendance, oldest first. The view zero-fills every
-   * month of the window, so a quiet month arrives as a row with a null rate rather than a missing one.
+   * Every month of all-meeting attendance the view holds, oldest first; the client cuts the selected year out of
+   * it. The view zero-fills its window, so a quiet month arrives as a row with a null rate rather than a missing one.
    */
   public async getAttendanceTrend(req: Request, query: HealthMetricsEngagementAttendanceTrendQuery): Promise<HealthMetricsEngagementAttendanceTrend> {
     const sql = `
@@ -468,24 +471,27 @@ export class HealthMetricsEngagementService {
     // periods; the sentinel parks an org the view left unranked behind every ranked one.
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
-    // The caption counts are denormalized onto every row and cover the whole scope, so they are
+    // The scope counts are denormalized onto every row and cover the whole scope, so they are
     // read off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    // The mapping shares `account_id`, `account_name` and `is_member`, so the view's own columns are qualified.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        membership_tier,
-        is_member,
-        last_engaged_date,
-        days_since_last_engaged,
-        is_lapsed_180d,
-        scope_orgs_count,
-        scope_lapsed_orgs_count,
+        v.account_id,
+        v.account_name,
+        v.membership_tier,
+        v.is_member,
+        v.last_engaged_date,
+        v.days_since_last_engaged,
+        v.is_lapsed_180d,
+        v.scope_orgs_count,
+        v.scope_lapsed_orgs_count,
+        logos.logo_url,
         ${periodColumns}
-      FROM ${ORG_PARTICIPATION_VIEW}
-      WHERE foundation_slug = ?
+      FROM ${ORG_PARTICIPATION_VIEW} v
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = v.account_id
+      WHERE v.foundation_slug = ?
         AND ${PROJECT_SCOPE_PREDICATE}
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
@@ -497,7 +503,7 @@ export class HealthMetricsEngagementService {
       {
         view: ORG_PARTICIPATION_VIEW,
         operation: 'get_engagement_org_participation',
-        clientMessage: 'Organization participation is unavailable right now.',
+        clientMessage: 'Company participation is unavailable right now.',
       }
     );
 
@@ -531,16 +537,18 @@ export class HealthMetricsEngagementService {
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // `scope_orgs_count_<period>` is denormalized onto every row and covers the whole scope, so it is
-    // read off a row rather than counted here — the unsuffixed column is all time, not a period caption.
+    // read off a row rather than counted here — the unsuffixed column is all time, not a period count.
+    // The mapping shares `account_id` and `account_name`, so the view's own columns are qualified.
     const sql = `
       SELECT
-        account_id,
-        account_name,
-        membership_status,
+        v.account_id,
+        v.account_name,
+        logos.logo_url,
         ${periodColumns}
-      FROM ${NON_MEMBER_PARTICIPATION_VIEW}
-      WHERE foundation_slug = ?
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      FROM ${NON_MEMBER_PARTICIPATION_VIEW} v
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = v.account_id
+      WHERE v.foundation_slug = ?
+      ORDER BY ${bestSortRank} ASC, v.account_name ASC NULLS LAST, v.account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}
     `;
 
@@ -579,14 +587,14 @@ export class HealthMetricsEngagementService {
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // Caption counts are deduped to (person, committee) upstream while project rows are per project,
-    // so a rep on one committee under two projects is two rows the caption counts once.
+    // so a rep on one committee under two projects is two rows the scope count treats as one.
     const sql = `
       SELECT
         _key AS rep_key,
         person_display_name,
         is_identity_unresolved,
         account_name,
-        membership_tier,
+        person_job_title,
         committee_name,
         last_attended_date,
         ${periodColumns}
@@ -760,7 +768,7 @@ export class HealthMetricsEngagementService {
       row_count: capped.length,
     });
 
-    // Truncating leaves the table short of the caption's own count, so say so out loud.
+    // Truncating leaves the table short of the view's own scope count, so say so out loud.
     if (truncated) {
       logger.warning(req, context.operation, `${context.noun} rows hit the read cap`, {
         foundation_slug: context.foundationSlug,
@@ -825,12 +833,13 @@ function mapOrgRow(row: OrgParticipationRow): HealthMetricsEngagementOrgRow {
     accountId: row.ACCOUNT_ID ?? '',
     accountName: row.ACCOUNT_NAME ?? '',
     // Rendered as the view reports it: this view is not member-only, so `Non-Member` is a real tier
-    // here and filtering it out would desync the caption's own denormalized org count.
+    // here and filtering it out would desync the view's own denormalized org count.
     membershipTier: row.MEMBERSHIP_TIER ?? '',
     isMember: row.IS_MEMBER === true,
     lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
     daysSinceLastEngaged: toNullableNumber(row.DAYS_SINCE_LAST_ENGAGED),
     lapsed: row.IS_LAPSED_180D === true,
+    logoUrl: row.LOGO_URL ?? '',
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapOrgPeriod(row, range)),
   };
 }
@@ -854,7 +863,7 @@ function mapOrgPeriod(row: OrgParticipationRow, range: SupportedEngagementRange)
 
 /**
  * Both counts are period-agnostic and identical on every row, so any row answers for the scope.
- * A null count over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ * A null count over rows that exist is unmeasured — reporting 0 there would call a full table empty.
  */
 function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCounts | null {
   const orgs = toNullableNumber(row.SCOPE_ORGS_COUNT);
@@ -872,9 +881,7 @@ function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagemen
   return {
     accountId: row.ACCOUNT_ID ?? '',
     accountName: row.ACCOUNT_NAME ?? '',
-    // Rendered as the view reports it; the organization-matching gap the footnote warns about is a
-    // data problem upstream, not something to paper over by rewriting the status here.
-    membershipStatus: row.MEMBERSHIP_STATUS ?? '',
+    logoUrl: row.LOGO_URL ?? '',
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapNonMemberPeriod(row, range)),
   };
 }
@@ -892,7 +899,7 @@ function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEnga
 
 /**
  * Each period's count is identical on every row, so any row answers for the scope. A null count
- * over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ * over rows that exist is unmeasured — reporting 0 there would call a full table empty.
  */
 function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => ({
@@ -956,8 +963,8 @@ function participationOrder(group: string | null): number {
 }
 
 /**
- * One period's columns as the view publishes them. A roll-up row captions the whole foundation and
- * a project row its project, so the caption reads whichever scope the row belongs to.
+ * One period's columns as the view publishes them. A roll-up row counts the whole foundation and
+ * a project row its project, so the counts read whichever scope the row belongs to.
  */
 function repSelectList(suffix: string): string {
   return [
@@ -977,7 +984,7 @@ function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
     personName: row.PERSON_DISPLAY_NAME ?? '',
     identityUnresolved: row.IS_IDENTITY_UNRESOLVED === true,
     accountName: row.ACCOUNT_NAME ?? '',
-    membershipTier: row.MEMBERSHIP_TIER,
+    jobTitle: row.PERSON_JOB_TITLE,
     committeeName: row.COMMITTEE_NAME ?? '',
     lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapRepPeriod(row, range)),
@@ -998,8 +1005,8 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
 }
 
 /**
- * Unlike the org caption, this view counts its scope per period, so every period ships its own pair.
- * A null anywhere is unmeasured — reporting 0 there would caption a full table.
+ * Unlike the org counts, this view counts its scope per period, so every period ships its own pair.
+ * A null anywhere is unmeasured — reporting 0 there would call a full table empty.
  */
 function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => {

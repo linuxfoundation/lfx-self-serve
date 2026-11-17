@@ -4,7 +4,7 @@ description: How to find a project's groups, join an open group, apply to join, 
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, groups, join, apply, invitation, leave, membership, find, browse, public, calendar]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Committees
 ---
 
@@ -44,7 +44,7 @@ Managers pick **Apply & Review** in Settings, and the group itself shows that mo
 
 1. Open the group from **Groups**, or from a link someone shared. See [Find a group to join](#find-a-group-to-join).
 2. Select **Join Group**.
-3. If the group has voting or requires a business email, a **Confirm Organization** dialog asks for your organization name and website. It starts with your current employer from your profile when LFX can find one. Confirm or correct it.
+3. If the group has voting or requires a business email, a **Confirm Company** dialog asks for your company name and website. It starts with your current employer from your profile when LFX can find one. Confirm or correct it.
 4. A "Joined" message confirms, and the page refreshes with your membership badge.
 
 If joining fails, an "Unable to Join" message explains why.
@@ -52,7 +52,7 @@ If joining fails, an "Unable to Join" message explains why.
 ## Apply to join
 
 1. Open the group and select **Apply to Join**.
-2. If the group asks for an organization, confirm it in the **Confirm Organization** dialog.
+2. If the group asks for a company, confirm it in the **Confirm Company** dialog.
 3. In the **Request to Join** dialog, optionally write a message introducing yourself (up to 2,000 characters), then select **Submit Application**.
 4. A confirmation says an admin will review your request. Your badge changes to **Application Pending**, and **Apply to Join** is no longer offered.
 
@@ -66,7 +66,7 @@ In a **Closed** group, **Contact Admin** shows a reminder to ask a group admin f
 
 When you're invited to a group, a banner at the top of the group's page says "You've been invited to _group name_", with who invited you and when the invitation expires when that's known. The invitation also appears with your pending actions on your dashboard.
 
-- **Accept** adds you to the group. If the group needs an organization, you confirm it first.
+- **Accept** adds you to the group. If the group needs a company, you confirm it first.
 - **Decline** hides the invitation and shows an "Invitation declined" message with **Undo**. You have about five seconds to select **Undo** before the decline is sent. After that, ask the group's manager to invite you again.
 
 If you open an invited group's link before accepting, you may see an access message with **Accept Invitation** and **Decline** buttons in place of the group.

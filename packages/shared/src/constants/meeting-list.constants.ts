@@ -128,6 +128,13 @@ export const MEETING_DETAILS_OPENED_EVENT = 'Meeting Details Opened';
  */
 export const MEETING_ROLLUP_MAX_PROJECTS = 200;
 
+/**
+ * Most projects a meetings roll-up sends to query-service in one `filters_or` request (GH-5807). Measured in
+ * production: 150 projects work, 200 fail. A larger scope falls back to the root project's own meetings, so a
+ * selection of 151 to MEETING_ROLLUP_MAX_PROJECTS projects is accepted but shows the root only.
+ */
+export const MEETING_ROLLUP_QUERY_MAX_PROJECTS = 150;
+
 /** User-service preference app name for the meetings roll-up project selection (GH-5566). */
 export const MEETING_ROLLUP_PROJECTS_PREFERENCE_APP_NAME = 'LFXOne';
 

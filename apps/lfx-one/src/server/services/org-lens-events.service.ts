@@ -110,9 +110,8 @@ export class OrgLensEventsService {
         isEventRowArray
       );
     } catch (error) {
-      // Every outage exit shapes the response identically; #4408 turns these into a labelled-unavailable surface.
-      logger.warning(req, 'get_org_lens_events', 'Snowflake query failed, returning empty events', { err: error, account_id: accountId });
-      return { data: [], total: 0, pageSize, offset };
+      logger.warning(req, 'get_org_lens_events', 'Snowflake query failed', { err: error, account_id: accountId });
+      throw error;
     }
 
     const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
@@ -155,11 +154,11 @@ export class OrgLensEventsService {
       );
       row = rows[0];
     } catch (error) {
-      logger.warning(req, 'get_org_lens_events_summary', 'Snowflake query failed, returning zero counts', {
+      logger.warning(req, 'get_org_lens_events_summary', 'Snowflake query failed', {
         err: error,
         account_id: accountId,
       });
-      return { totalEvents: 0, pastEvents: 0, upcomingEvents: 0 };
+      throw error;
     }
 
     const pastEvents = row?.PAST_EVENTS ?? 0;
@@ -193,8 +192,8 @@ export class OrgLensEventsService {
       );
       return { data: distinctFoundationOptions(rows).map((row) => ({ id: row.FOUNDATION_ID, name: row.FOUNDATION_NAME })) };
     } catch (error) {
-      logger.warning(req, 'get_org_lens_event_foundations', 'Snowflake query failed, returning no foundations', { err: error, account_id: accountId });
-      return { data: [] };
+      logger.warning(req, 'get_org_lens_event_foundations', 'Snowflake query failed', { err: error, account_id: accountId });
+      throw error;
     }
   }
 
@@ -302,12 +301,12 @@ export class OrgLensEventsService {
         isSpeakerRowArray
       );
     } catch (error) {
-      logger.warning(req, 'get_event_speakers', 'Snowflake query failed, returning empty speakers', {
+      logger.warning(req, 'get_event_speakers', 'Snowflake query failed', {
         err: error,
         account_id: accountId,
         event_id: eventId,
       });
-      return { eventId, eventName: '', acceptedCount: 0, submittedCount: 0, data: [] };
+      throw error;
     }
 
     const eventName = rows[0]?.EVENT_NAME ?? '';

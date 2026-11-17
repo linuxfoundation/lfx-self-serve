@@ -991,8 +991,8 @@ export class OrgProjectsComponent {
   }
 
   private initAddProjectDisabledReason(): string | undefined {
-    if (!this.hasCompany()) return 'Select an organization first';
-    if (!this.canManageWorkspaces()) return 'You have view-only access to this organization';
+    if (!this.hasCompany()) return 'Select a company first';
+    if (!this.canManageWorkspaces()) return 'You have view-only access to this company';
     if (this.loading()) return 'Projects are still loading';
     if (this.error()) return 'Resolve the loading error first';
     if (!this.selectedWorkspace()) return 'No workspace is selected';
@@ -1009,13 +1009,13 @@ export class OrgProjectsComponent {
         return {
           icon: 'fa-light fa-folder-open',
           title: 'No projects in this workspace yet',
-          subtitle: 'An administrator of this organization can add projects to this workspace.',
+          subtitle: 'An administrator of this company can add projects to this workspace.',
         };
       }
       return {
         icon: 'fa-light fa-folder-plus',
         title: 'No projects in this workspace yet',
-        subtitle: 'Add projects from your organization catalog to start tracking this workspace.',
+        subtitle: 'Add projects from your company catalog to start tracking this workspace.',
         ctaLabel: 'Add Project',
         ctaIcon: 'fa-light fa-plus',
         action: 'addProject',
@@ -1036,7 +1036,7 @@ export class OrgProjectsComponent {
       return {
         icon: 'fa-light fa-folder-open',
         title: 'No projects with activity yet',
-        subtitle: 'Projects will appear here once this organization has activity in the catalog.',
+        subtitle: 'Projects will appear here once this company has activity in the catalog.',
       };
     }
 

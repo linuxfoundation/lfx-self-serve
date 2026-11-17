@@ -352,7 +352,7 @@ export function buildSurveyFollowUpMailto(survey: Survey, item: SurveyResponseIt
  * @returns Rows ready for `downloadCsv`
  */
 export function buildSurveyResponsesCsvRows(survey: Survey, rows: readonly SurveyResponseItem[]): (string | number)[][] {
-  const header = ['Name', 'Email', 'Organization', 'Committee', 'Role', 'Delivery Status', 'Delivered', 'Opened', 'Clicked', 'Responded At', 'NPS', 'Comment'];
+  const header = ['Name', 'Email', 'Company', 'Committee', 'Role', 'Delivery Status', 'Delivered', 'Opened', 'Clicked', 'Responded At', 'NPS', 'Comment'];
   const yesNo = (value: boolean): string => (value ? 'Yes' : 'No');
 
   const body = rows.map((row) => {

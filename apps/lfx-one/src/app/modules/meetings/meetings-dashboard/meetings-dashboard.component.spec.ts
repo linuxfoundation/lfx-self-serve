@@ -22,7 +22,6 @@ import type {
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -1180,8 +1179,24 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         expect(lastOptions()).toEqual({ includeSubProjects: true, pageSize: 1000 });
       });
 
-      it('shows the root only for a selection larger than one OR batch', () => {
-        const many = Array.from({ length: 101 }, (_, i) => `p${i}`);
+      it('rolls up a selection of up to the roll-up project limit', () => {
+        const many = Array.from({ length: 123 }, (_, i) => `p${i}`);
+        route.snapshot.queryParamMap = convertToParamMap({ projects: many.join(',') });
+        vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
+          of({
+            projects: [{ uid: 'scope', name: 'Synthetic scope', slug: 'scope' }, ...many.map((uid) => ({ uid, name: uid, slug: uid }))],
+            groups: [],
+            complete: true,
+          })
+        );
+        const component = mount();
+        openScope(component);
+
+        expect(lastOptions()).toEqual({ includeSubProjects: true, projectUids: many, pageSize: 1000 });
+      });
+
+      it('shows the root only for a selection larger than the roll-up project limit', () => {
+        const many = Array.from({ length: 151 }, (_, i) => `p${i}`);
         route.snapshot.queryParamMap = convertToParamMap({ projects: many.join(',') });
         vi.mocked(meetings.getRollupFilterOptions).mockReturnValue(
           of({
@@ -1196,7 +1211,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
         const component = mount();
         openScope(component);
 
-        expect(component.rollupProjectsFilter()).toHaveLength(101);
+        expect(component.rollupProjectsFilter()).toHaveLength(151);
         expect(lastOptions()).toEqual({ includeSubProjects: true, rootOnly: true, pageSize: 1000 });
         // The groups follow the root-only fallback, so every offered group can match.
         expect(component['groupOptions']().map((option: { value: string }) => option.value)).toEqual(['board']);
@@ -1417,18 +1432,13 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
 });
 
 /**
- * Covers the Create Meeting button's two shapes across `MEETING_V2_ENABLED_FLAG`.
+ * Covers the Create Meeting button in the dashboard header.
  *
- * This is the busiest of the seven entry points and the one a targeted user is most likely to reach
- * first, so both shapes are asserted on a real render rather than on the flag read. The point of the
- * flag-off case is that the button is not merely present but still *navigates*: the pre-v2 create
- * page is a route, and a button that only toggles an absent dropdown would look identical in a
- * screenshot while doing nothing at all.
+ * This is the busiest of the create entry points, so the button is asserted on a real render: it
+ * has to announce and open the type picker rather than navigate, and mount exactly one dropdown
+ * beside it.
  */
-describe('MeetingsDashboardComponent — create button per flag', () => {
-  /** `MEETING_V2_ENABLED_FLAG`. Stated per test: the real service answers `false` in a TestBed. */
-  let meetingsV2Enabled: WritableSignal<boolean>;
-
+describe('MeetingsDashboardComponent — create button', () => {
   async function mount(): Promise<import('@angular/core/testing').ComponentFixture<MeetingsDashboardComponent>> {
     TestBed.configureTestingModule({
       providers: [
@@ -1468,7 +1478,6 @@ describe('MeetingsDashboardComponent — create button per flag', () => {
         },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
         { provide: DialogService, useValue: { open: vi.fn() } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
       ],
     });
     // A no-op override on the dashboard itself, and it is load-bearing. Its template defers the
@@ -1487,43 +1496,21 @@ describe('MeetingsDashboardComponent — create button per flag', () => {
     return fixture;
   }
 
-  beforeEach(() => {
-    meetingsV2Enabled = signal(false);
-  });
-
-  it('renders a navigating Create Meeting button while the flag is off', async () => {
+  it('renders the Create Meeting button as a dropdown trigger', async () => {
     const fixture = await mount();
 
     const button = fixture.debugElement.query(By.css('[data-testid="meeting-create-button"]')).componentInstance as ButtonComponent;
 
-    expect(button.routerLink()).toEqual(['/meetings', 'create']);
-    expect(button.ariaHaspopup()).toBeUndefined();
-    // Absent, not hidden: an untargeted user should not mount the composer's create menu at all.
-    expect(fixture.debugElement.query(By.directive(MeetingCreateMenuComponent))).toBeNull();
-  });
-
-  it('renders the same button as a dropdown trigger once the flag is on', async () => {
-    meetingsV2Enabled.set(true);
-    const fixture = await mount();
-
-    const button = fixture.debugElement.query(By.css('[data-testid="meeting-create-button"]')).componentInstance as ButtonComponent;
-
-    // `menu`, and no `routerLink`: this branch opens the type picker over the list, and a router
+    // `menu`, and no `routerLink`: the button opens the type picker over the list, and a router
     // link here would put a destination in the status bar that the click never goes to.
     expect(button.ariaHaspopup()).toBe('menu');
     expect(button.routerLink()).toBeUndefined();
     expect(fixture.debugElement.query(By.directive(MeetingCreateMenuComponent))).not.toBeNull();
   });
 
-  it('keeps the button findable by the same test id on both branches', async () => {
-    const off = await mount();
-    expect(off.nativeElement.querySelectorAll('[data-testid="meeting-create-button"]')).toHaveLength(1);
+  it('renders a single trigger under the create-button test id', async () => {
+    const fixture = await mount();
 
-    TestBed.resetTestingModule();
-    meetingsV2Enabled.set(true);
-    const on = await mount();
-
-    // One trigger either way: consumers use the same test id regardless of the flag.
-    expect(on.nativeElement.querySelectorAll('[data-testid="meeting-create-button"]')).toHaveLength(1);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="meeting-create-button"]')).toHaveLength(1);
   });
 });

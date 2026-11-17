@@ -45,7 +45,7 @@
       </th>
       <th scope="col" class="text-xs font-medium" [attr.title]="attendeesCaption()" data-testid="org-events-attendees-header">
         <span class="text-gray-500">Event Attendees</span>
-        <span class="block text-gray-400 font-normal">My Org{{ showGoal() ? ' / Goal' : '' }}</span>
+        <span class="block text-gray-400 font-normal">My Company{{ showGoal() ? ' / Goal' : '' }}</span>
       </th>
       <th scope="col" class="text-xs font-medium">
         <span class="text-gray-500">Event Speakers</span>
@@ -180,13 +180,30 @@
     <tr>
       <td [attr.colspan]="columnCount()" class="text-center py-10">
         <div class="flex items-center justify-center p-16">
-          <div class="text-center max-w-md">
-            <div class="text-gray-400 mb-4">
-              <i [class]="emptyStateIcon() + ' text-3xl mb-4'"></i>
-              <h3 class="text-gray-600 mt-2">{{ emptyStateTitle() }}</h3>
-              <p class="text-sm text-gray-400 mt-1">{{ emptyStateSubtitle() }}</p>
+          @if (loadFailed()) {
+            <div class="text-center max-w-md" role="alert" data-testid="org-events-load-error">
+              <div class="text-gray-400 mb-4">
+                <i class="fa-light fa-triangle-exclamation text-3xl mb-4" aria-hidden="true"></i>
+                <h3 class="text-gray-600 mt-2">Events could not be loaded</h3>
+                <p class="text-sm text-gray-500 mt-1">Something went wrong reading your company's events.</p>
+              </div>
+              <button
+                type="button"
+                class="text-sm font-medium text-blue-600 hover:underline focus-visible:underline focus-visible:outline-none"
+                data-testid="org-events-retry"
+                (click)="retry.emit()">
+                Retry
+              </button>
             </div>
-          </div>
+          } @else {
+            <div class="text-center max-w-md">
+              <div class="text-gray-400 mb-4">
+                <i [class]="emptyStateIcon() + ' text-3xl mb-4'"></i>
+                <h3 class="text-gray-600 mt-2">{{ emptyStateTitle() }}</h3>
+                <p class="text-sm text-gray-400 mt-1">{{ emptyStateSubtitle() }}</p>
+              </div>
+            </div>
+          }
         </div>
       </td>
     </tr>

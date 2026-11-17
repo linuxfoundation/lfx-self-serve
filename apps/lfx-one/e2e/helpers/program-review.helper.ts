@@ -40,6 +40,8 @@ export function reviewProgram(overrides: Partial<MentorshipProgramReview> = {}):
     codeOfConductUrl: 'https://test-org.example/coc',
     ciiProjectId: '1234',
     skills: ['go', 'kubernetes'],
+    createdOn: '2026-09-15T10:00:00Z',
+    submitter: { name: 'Test Admin', email: 'test.admin@example.org', avatarUrl: null },
     hasDetails: true,
     ...overrides,
   };

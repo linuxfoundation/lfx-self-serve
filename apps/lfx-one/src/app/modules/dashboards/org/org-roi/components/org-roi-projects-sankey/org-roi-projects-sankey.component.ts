@@ -111,9 +111,9 @@ export class OrgRoiProjectsSankeyComponent {
 
   protected readonly chartSummaryLabel: Signal<string> = computed(() => {
     if (this.measure() === 'return') {
-      return `Flow diagram of modelled return from ${this.drawnProjects().length} projects back to your organization. The same figures are listed below.`;
+      return `Flow diagram of modelled return from ${this.drawnProjects().length} projects back to your company. The same figures are listed below.`;
     }
-    return `Flow diagram of modelled investment from your organization, through contribution categories, out to ${this.drawnProjects().length} projects. The same figures are listed below.`;
+    return `Flow diagram of modelled investment from your company, through contribution categories, out to ${this.drawnProjects().length} projects. The same figures are listed below.`;
   });
 
   /** The accessible equivalent of the canvas: every flow as real text, with nodes resolved to names. */

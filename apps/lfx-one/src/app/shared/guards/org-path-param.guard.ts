@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_LENS_SWITCH_PARAMS_RESET, ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
+import { ORG_LENS_SWITCH_PARAMS_RESET, ORG_LENS_URL_ROOT, ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgRollUpRootUid, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
@@ -200,7 +200,7 @@ function canonicalizeAddress(router: Router, url: string, addressed: string, org
   }
   const tree = router.parseUrl(url);
   const primary = tree.root.children['primary'];
-  if (primary && primary.segments.length >= 2 && primary.segments[0].path === 'org') {
+  if (primary && primary.segments.length >= 2 && primary.segments[0].path === ORG_LENS_URL_ROOT) {
     primary.segments[1].path = canonical;
     primary.segments[1].parameters = {};
   }

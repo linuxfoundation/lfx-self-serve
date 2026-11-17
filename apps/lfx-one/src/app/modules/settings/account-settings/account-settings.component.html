@@ -206,15 +206,14 @@
                       data-testid="send-code-button">
                     </lfx-button>
                   </form>
-                  <p class="text-xs text-slate-500 mt-1">If this address can be added to your account, we'll send a 6-digit verification code to it.</p>
+                  <p class="text-xs text-slate-500 mt-1">Confirm you own the email address before we check whether it can be linked to your account.</p>
                 } @else {
                   <!-- Step 2: Enter OTP -->
                   <div class="flex flex-col gap-3" data-testid="otp-step">
                     <div>
                       <p class="text-sm font-medium text-slate-700">Enter verification code</p>
                       <p class="text-xs text-slate-500 mt-0.5">
-                        If this address can be added to your account, a 6-digit code has been sent to <strong>{{ pendingEmail() }}</strong
-                        >. Enter it below to verify and add the address.
+                        Check <strong>{{ pendingEmail() }}</strong> for a 6-digit verification code. {{ verificationInstructions }}
                       </p>
                     </div>
                     <form [formGroup]="otpForm" (ngSubmit)="verifyAndLink()" class="flex flex-col gap-3 sm:flex-row sm:items-start" data-testid="otp-form">

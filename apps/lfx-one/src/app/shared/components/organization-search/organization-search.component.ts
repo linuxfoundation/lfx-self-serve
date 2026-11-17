@@ -25,7 +25,7 @@ export class OrganizationSearchComponent {
   public form = input.required<FormGroup>();
   public nameControl = input<string>();
   public domainControl = input<string>();
-  public placeholder = input<string>('Search organizations...');
+  public placeholder = input<string>('Search companies...');
   public styleClass = input<string>();
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();

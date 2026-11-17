@@ -105,7 +105,7 @@ export class OrgLensEmptyStateService {
     if (!this.orgNavigation.selectionUndecided()) {
       return false;
     }
-    const uid = this.accountContext.selectedAccount().uid;
+    const uid = this.accountContext.selectedAccount().uid || this.orgNavigation.firstPagePinnedUid();
     return !!uid && !isOrgRollUpSegment(uid) && !this.selectedHeld() && !this.selectedClaOnly();
   });
 

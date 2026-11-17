@@ -37,9 +37,9 @@ import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROLLUP_ENABLED_FLAG } from 
 import { expect, Page, test } from '@playwright/test';
 
 // The org-selector trigger only renders (data-visible=true) while the active lens is 'org'; on the
-// default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/org` sets the
+// default 'me' lens the sidebar keeps it in the DOM but CSS-hidden. Navigating to `/company` sets the
 // active lens deterministically so these tests never depend on a per-user cookie preference.
-const APP_HOME = '/org';
+const APP_HOME = '/company';
 const SIDEBAR_TIMEOUT = 30_000;
 
 test.setTimeout(120_000);
@@ -140,7 +140,7 @@ test.describe('Org Selector — accessibility contract', () => {
     await expect(trigger).toHaveAttribute('aria-controls', 'org-selector-listbox');
     // aria-label carries the currently active organization; the exact copy is bounded but not asserted
     // verbatim so a future rename of the account-name signal doesn't break the a11y spec.
-    await expect(trigger).toHaveAttribute('aria-label', /Organization switcher, currently /i);
+    await expect(trigger).toHaveAttribute('aria-label', /Company switcher, currently /i);
   });
 
   test('A2 + A3: panel is modeled as listbox; rows carry aria-selected on the active row', async ({ page }) => {

@@ -50,7 +50,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   protected readonly maintainerRolesLabel = ORG_LF_MAINTAINER_ROLES_LABEL;
   protected readonly maintainerRolesDefinition = ORG_LF_PROJECT_MAINTAINER_ROLES_DEFINITION;
 
-  protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
+  protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Company');
 
   private readonly orgUid$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.uid));
   private readonly retryTrigger$ = toObservable(this.retryTrigger);

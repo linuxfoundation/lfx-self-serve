@@ -7,13 +7,22 @@ import {
   HEALTH_METRICS_ENGAGEMENT_BLANK,
   HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementSubNavItems, parseHealthMetricsEngagementGroupType } from '@lfx-one/shared/utils';
+import {
+  buildHealthMetricsEngagementSubNavItems,
+  parseHealthMetricsEngagementGroupType,
+  parseHealthMetricsEngagementOrgFilter,
+  parseHealthMetricsEngagementRepFilter,
+} from '@lfx-one/shared/utils';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 
 import { HealthMetricsL2SectionControlsDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
@@ -30,7 +39,9 @@ import { EngagementRepresentativesComponent } from './components/engagement-repr
 import type {
   HealthMetricsEngagementGroupNoteCounts,
   HealthMetricsEngagementGroupTypeFilter,
+  HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgNoteCounts,
+  HealthMetricsEngagementRepFilter,
   HealthMetricsEngagementRepNoteCounts,
   HealthMetricsEngagementSubNavItem,
 } from '@lfx-one/shared/interfaces';
@@ -56,6 +67,8 @@ import type {
     HealthMetricsL2ShellComponent,
     UiOptionComponent,
     UiSelectComponent,
+    UiSwitchComponent,
+    UiSwitchOptionComponent,
   ],
   templateUrl: './health-metrics-engagement.component.html',
 })
@@ -71,6 +84,16 @@ export class HealthMetricsEngagementComponent {
   /** Group attendance's cut, set from the header select and that section's Reset filters; Group attendance keeps it in the URL. */
   protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(
     parseHealthMetricsEngagementGroupType(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupType))
+  );
+  protected readonly orgFilters = HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS;
+  protected readonly repFilters = HEALTH_METRICS_ENGAGEMENT_REP_FILTERS;
+
+  // The header switches live in the sections' controls, so the page owns each cut; the section keeps it in the URL.
+  protected readonly orgFilter = signal<HealthMetricsEngagementOrgFilter>(
+    parseHealthMetricsEngagementOrgFilter(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.orgFilter))
+  );
+  protected readonly repFilter = signal<HealthMetricsEngagementRepFilter>(
+    parseHealthMetricsEngagementRepFilter(this.route.snapshot.queryParamMap.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter))
   );
 
   // `null` until that section reports, which renders no note rather than a premature one.
@@ -89,5 +112,13 @@ export class HealthMetricsEngagementComponent {
 
   protected onGroupTypeChange(value: string | null): void {
     this.groupType.set(parseHealthMetricsEngagementGroupType(value));
+  }
+
+  protected onOrgFilterChange(value: string | null): void {
+    this.orgFilter.set(parseHealthMetricsEngagementOrgFilter(value));
+  }
+
+  protected onRepFilterChange(value: string | null): void {
+    this.repFilter.set(parseHealthMetricsEngagementRepFilter(value));
   }
 }

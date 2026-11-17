@@ -359,7 +359,7 @@ export class AddMemberDialogComponent {
       this.messageService.add({
         severity: 'warn',
         summary: 'Add one member at a time',
-        detail: 'This group requires an organization for each member. Add people individually so each organization is recorded correctly.',
+        detail: 'This group requires a company for each member. Add people individually so each company is recorded correctly.',
         life: 6000,
       });
       return;
@@ -679,12 +679,12 @@ export class AddMemberDialogComponent {
       }
       const formValue = this.organizationFormValue();
       if (this.organizationRequiredForDirectAdd() && !formValue.organization.trim()) {
-        return 'Organization is required. Search for an organization or enter the name and website.';
+        return 'Company is required. Search for a company or enter the name and website.';
       }
       if (this.organizationSearch()?.manualMode()) {
-        return 'Enter the organization name and a valid https:// website.';
+        return 'Enter the company name and a valid https:// website.';
       }
-      return 'Select an organization from the search results, or enter the name and website.';
+      return 'Select a company from the search results, or enter the name and website.';
     });
   }
 

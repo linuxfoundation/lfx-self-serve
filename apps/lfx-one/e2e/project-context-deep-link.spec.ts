@@ -12,9 +12,9 @@
  *   - Entity detail routes with a route param (`/foundation/groups/:id`) are exempt from the
  *     backfill — they resolve context from the entity itself via `syncEntityProjectContext`.
  *   - A context-less meeting EDIT link (`/project/meetings/:id/edit` with no
- *     `?project=`) resolves context from the loaded meeting — via the BFF-enriched project
- *     fields, or via the component's resolve-by-uid fallback when enrichment failed — instead
- *     of the stale cookie-restored context.
+ *     `?project=`) opens the edit composer over the meetings list and resolves context from the
+ *     loaded meeting — via the BFF-enriched project fields, or via the composer host's
+ *     resolve-by-uid fallback when enrichment failed — instead of the stale cookie-restored context.
  *   - The same for a context-less mailing-list EDIT link (`/project/mailing-lists/:uid/edit`,
  *     GH-1567): context syncs from the loaded list (enriched payload or uid fallback), and
  *     writerGuard authorizes against the list's own project via its entity probe.
@@ -285,6 +285,8 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
   });
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}/attachments`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  // The composer loads the saved guest list alongside the meeting; the detail glob below does not cross `/`.
+  await page.route(`**/api/meetings/${MOCK_MEETING_UID}/registrants*`, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
   await page.route(`**/api/meetings/${MOCK_MEETING_UID}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(meeting) });
@@ -293,7 +295,7 @@ async function stubMeetingEditDetail(page: Page, meeting: ReturnType<typeof buil
 
 /**
  * Same route shapes as stubMeetingEditDetail, but the detail GET fulfills an error status —
- * exercises meeting-manage's non-404 inline error state and 404 eject (GH-2037).
+ * exercises the edit composer's non-404 inline error state and 404 close (GH-2037).
  */
 async function stubMeetingEditDetailError(page: Page, status: number): Promise<void> {
   await page.route('**/api/meetings*', (route) => {
@@ -509,8 +511,8 @@ function skipWhenAuthMissing(): void {
  *
  * A full `page.goto()` of an entity URL SSRs the route on the Express server — server-side
  * data fetches bypass `page.route` stubs and hit the real BFF, where the stubbed entity does
- * not exist, so the component's error path (e.g. meeting-manage's navigateBack) redirects away
- * before the client ever boots. Booting on `/` first and then navigating via
+ * not exist, so the component's error path (e.g. the edit composer closing on a 404) leaves the
+ * page before the client ever boots. Booting on `/` first and then navigating via
  * pushState + popstate keeps the router client-side, where every fetch is intercepted.
  *
  * Also note Playwright glob semantics: `*` does not cross `/`, so `**\/api/meetings*` matches
@@ -614,6 +616,28 @@ test.describe('Foundation/project context deep-linking (LFXV2-2837)', () => {
   });
 });
 
+/**
+ * The composer route opens the edit drawer and replaces `/:id/edit` with the meetings list it sits over.
+ * @description Waits on the hydrated title rather than the header: the header renders while the
+ * detail fetch is still in flight, and the project-context sync only runs once the meeting has loaded.
+ */
+async function expectEditComposerOverList(page: Page): Promise<void> {
+  await expect(page.getByTestId('meeting-composer-header')).toContainText('Edit meeting', { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page.getByTestId('composer-title-input').locator('input')).toHaveValue('Test Foundation Board Sync', { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page).toHaveURL(/\/project\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
+}
+
+/**
+ * The list URL the composer leaves behind must not keep pointing at the stale cookie project.
+ * @description The redirect carries the edit link's query params (none here), and the list page may
+ * backfill `?project=` from whatever context is active when it lands — which is still the cookie's
+ * until the meeting loads. Once the correction has run, the URL either carries no slug or the
+ * meeting's own.
+ */
+async function expectListUrlNotOnStaleProject(page: Page): Promise<void> {
+  await expect.poll(() => new URL(page.url()).searchParams.get('project'), { timeout: ELEMENT_TIMEOUT }).not.toBe(OTHER_PROJECT_SLUG);
+}
+
 test.describe('Meeting edit deep-link resolves the meeting’s project context (gh-1432)', () => {
   test.beforeEach(async ({ page }) => {
     // Mirror the issue: the user was last working in an unrelated PROJECT (cookie-restored),
@@ -642,17 +666,13 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expectEditComposerOverList(page);
 
-    // The sync derives context from the loaded meeting (Test Foundation), replacing the
+    // The composer host derives context from the loaded meeting (Test Foundation), replacing the
     // cookie-restored Other Project — the selector and sidebar links follow the correction.
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
-
-    // The context correction must NOT inject ?project= into the entity URL (syncUrl guard) —
-    // give any NavigationEnd-driven backfill a tick to (not) fire before asserting absence.
-    await page.waitForTimeout(500);
-    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+    await expectListUrlNotOnStaleProject(page);
   });
 
   test('writerGuard authorizes the edit page against the meeting’s project, not the stale context (Bug 2)', async ({ page }) => {
@@ -676,10 +696,8 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-
-    // Still on the edit page (no access-denied redirect), and the context follows the meeting.
-    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    // The composer opened (no access-denied redirect to /project/overview), and the context follows the meeting.
+    await expectEditComposerOverList(page);
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
   });
 
@@ -707,20 +725,18 @@ test.describe('Meeting edit deep-link resolves the meeting’s project context (
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expectEditComposerOverList(page);
 
     await expect(page.getByTestId('project-selector')).toContainText('Test Foundation', { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('sidebar-item-meetings')).toHaveAttribute('href', /[?&]project=test-foundation/, { timeout: ELEMENT_TIMEOUT });
-
-    await page.waitForTimeout(500);
-    expect(new URL(page.url()).searchParams.has('project')).toBe(false);
+    await expectListUrlNotOnStaleProject(page);
   });
 });
 
 test.describe('Meeting edit load failure (GH-2037)', () => {
   test.beforeEach(async ({ page }) => {
     // Same shape as the gh-1432 meeting block: ED persona skips the writerGuard entity probe,
-    // so the component's own detail-fetch error branch is what runs.
+    // so the composer's own detail-fetch error branch is what runs.
     await setPersonaAndLensCookies(page, ['executive-director'], 'project');
     await setProjectCookie(page, OTHER_PROJECT_UID, OTHER_PROJECT_SLUG, 'Other Project');
     await stubPersona(page, ['executive-director']);
@@ -729,7 +745,7 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
     await stubLensItems(page);
   });
 
-  test('transient detail-load failure stays mounted with retry/back instead of ejecting (AC-1)', async ({ page }) => {
+  test('transient detail-load failure keeps the composer open with a retry instead of closing (AC-1)', async ({ page }) => {
     await stubMeetingEditDetailError(page, 500);
 
     await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
@@ -739,17 +755,17 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
       foundation: false,
     });
 
-    // Inline error state replaces the skeleton; no "not found" toast; URL stays on /edit.
-    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('meeting-manage-back')).toBeVisible();
-    await expect(page.getByTestId('meeting-manage-loading')).not.toBeVisible();
+    // Inline error state replaces the loading line inside a composer that stays open; no "not found" toast.
+    await expect(page.getByTestId('meeting-composer-load-error')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-retry')).toBeVisible();
+    await expect(page.getByTestId('meeting-composer-loading')).toHaveCount(0);
     // Give a (never-fired) toast a render window — negative assertions pass instantly otherwise.
     await page.waitForTimeout(500);
-    await expect(page.locator('.p-toast')).not.toBeVisible();
-    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    await expect(page.locator('.p-toast')).not.toContainText('Meeting not found');
+    await expect(page.getByTestId('meeting-composer-header')).toContainText('Edit meeting');
   });
 
-  test('Retry after a transient failure re-fetches the meeting and renders the form (AC-1, AC-3)', async ({ page }) => {
+  test('Try again after a transient failure re-fetches the meeting and renders the form (AC-1, AC-3)', async ({ page }) => {
     await stubMeetingEditDetailError(page, 500);
 
     await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
@@ -758,19 +774,19 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
       name: 'Other Project',
       foundation: false,
     });
-    await expect(page.getByTestId('meeting-manage-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-retry')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 
     // "Backend recovered": re-registering the detail route takes precedence over the error
     // stub (Playwright matches in reverse registration order), so the retry fetch gets a 200.
+    // The detail cache evicts on error, so the retry reaches the network rather than a cached failure.
     await stubMeetingEditDetail(page, buildMeetingStub(true));
-    await page.getByTestId('meeting-manage-retry').click();
+    await page.getByTestId('meeting-composer-load-retry').locator('button').click();
 
-    await expect(page.getByTestId('meeting-manage-stepper')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page.getByTestId('meeting-manage-load-error')).not.toBeVisible();
-    expect(page.url()).toContain(`/project/meetings/${MOCK_MEETING_UID}/edit`);
+    await expect(page.getByTestId('composer-title-input').locator('input')).toHaveValue('Test Foundation Board Sync', { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-load-error')).toHaveCount(0);
   });
 
-  test('a real 404 still ejects to the meetings list with the not-found toast (AC-2)', async ({ page }) => {
+  test('a real 404 closes the composer over the meetings list with the not-found toast (AC-2)', async ({ page }) => {
     await stubMeetingEditDetailError(page, 404);
 
     await gotoSpa(page, `/project/meetings/${MOCK_MEETING_UID}/edit`, {
@@ -780,12 +796,12 @@ test.describe('Meeting edit load failure (GH-2037)', () => {
       foundation: false,
     });
 
-    // Toast first: it fires synchronously with the eject and expires (default p-toast life)
-    // before a URL-first assertion would observe it.
-    await expect(page.locator('.p-toast')).toContainText('Meeting not found or you do not have permission to access it', {
-      timeout: PAGE_LOAD_TIMEOUT,
-    });
-    await expect(page).toHaveURL(/\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
+    // Toast first: it fires synchronously with the close and expires (default p-toast life)
+    // before a URL-first assertion would observe it. `getMeetingDetail` retries a 404 for
+    // propagation lag, so the toast lands a little after the first response.
+    await expect(page.locator('.p-toast')).toContainText('Meeting not found', { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-composer-header')).toBeHidden();
+    await expect(page).toHaveURL(/\/project\/meetings(\?|$)/, { timeout: ELEMENT_TIMEOUT });
   });
 
   test('non-ED writer persona: a transient probe failure redirects to the project overview with an error toast (guard fail-closed)', async ({ page }) => {

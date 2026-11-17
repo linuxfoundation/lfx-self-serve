@@ -59,6 +59,8 @@ import {
   tap,
 } from 'rxjs';
 
+import { ProgramMetaComponent } from '../components/program-meta/program-meta.component';
+
 /**
  * Review page for a program awaiting approval: `/mentorship/program-review/<program id>`.
  *
@@ -72,7 +74,7 @@ import {
  */
 @Component({
   selector: 'lfx-mentorship-program-review',
-  imports: [ButtonComponent, EmptyStateComponent, RouteLoadingComponent],
+  imports: [ButtonComponent, EmptyStateComponent, ProgramMetaComponent, RouteLoadingComponent],
   templateUrl: './program-review.component.html',
 })
 export class ProgramReviewComponent {

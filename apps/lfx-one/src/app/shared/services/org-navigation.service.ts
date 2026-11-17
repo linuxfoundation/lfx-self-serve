@@ -57,6 +57,7 @@ export class OrgNavigationService {
 
   /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
   private readonly firstPageLandedGenerationInternal = signal<number>(0);
+  private readonly firstPagePinnedUidInternal = signal<string | null>(null);
 
   /**
    * M3 — a grant holder's CLA-only rows, from the one `cla_only=1` request per reload, unfiltered.
@@ -119,6 +120,8 @@ export class OrgNavigationService {
    * still in flight" from "the viewer is scrolling"; this can.
    */
   public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
+  /** The `selected_uid` the last first page was fetched with: the cookie's company before any selection is recorded (#5804). */
+  public readonly firstPagePinnedUid: Signal<string | null> = this.firstPagePinnedUidInternal.asReadonly();
 
   public constructor() {
     this.claOnlyFetch$
@@ -280,6 +283,7 @@ export class OrgNavigationService {
           loaded.set(true);
           if (page.reset) {
             this.firstPageLandedGenerationInternal.set(generation());
+            this.firstPagePinnedUidInternal.set(page.pinnedUid ?? null);
             this.pageTerm.set(page.term ?? '');
             // One unfiltered request per reload serves every later search, which filters it here.
             if (page.claOnlyDeferred && this.claOnlyStatus() === 'idle') {
@@ -333,7 +337,7 @@ export class OrgNavigationService {
       if (activeGeneration() === pageGeneration) loading.set(false);
     };
     return this.fetchPage(term, pageToken, selectedUid).pipe(
-      map((response) => ({ page: this.toOrgListPage(response, reset, term.trim()), generation: pageGeneration })),
+      map((response) => ({ page: this.toOrgListPage(response, reset, term.trim(), pageToken ? null : selectedUid), generation: pageGeneration })),
       tap(clearLoadingIfActive),
       catchError(() => {
         // Reset failures emit an empty page so handleEmptyOrgResponse can redirect;
@@ -365,7 +369,7 @@ export class OrgNavigationService {
     return this.http.get<OrgItemsResponse>('/api/nav/org-items', { params });
   }
 
-  private toOrgListPage(response: OrgItemsResponse, reset: boolean, term: string): OrgListPage {
+  private toOrgListPage(response: OrgItemsResponse, reset: boolean, term: string, pinnedUid: string | null): OrgListPage {
     return {
       items: response.items,
       nextPageToken: response.next_page_token,
@@ -373,6 +377,7 @@ export class OrgNavigationService {
       reset,
       term,
       claOnlyDeferred: response.cla_only_deferred === true,
+      pinnedUid,
     };
   }
 
@@ -406,8 +411,9 @@ export class OrgNavigationService {
   private selectionOwedToClaOnlyRows(page: OrgListPage): boolean {
     if (page.items.length === 0) return true;
     const current = this.accountContextService.selectedAccount();
-    if (!current.uid) return false;
-    return !page.items.some((item) => item.uid === current.uid || (!!current.accountId && item.accountId === current.accountId));
+    const uid = current.uid || page.pinnedUid;
+    if (!uid) return false;
+    return !page.items.some((item) => item.uid === uid || (!!current.accountId && item.accountId === current.accountId));
   }
 
   /** Fires once per first-page response when a reload is pending; routes empty pages through the FR-004 "No access" toast+redirect. */
@@ -529,6 +535,12 @@ export class OrgNavigationService {
         this.writeDefaultAddress();
         return;
       }
+    }
+
+    const restoredClaOnlyItem = !current.uid && page.pinnedUid ? page.items.find((item) => item.uid === page.pinnedUid && item.claOnly === true) : undefined;
+    if (restoredClaOnlyItem) {
+      this.selectDefaultOrg(restoredClaOnlyItem);
+      return;
     }
 
     const matchingAccountItem = current.accountId ? page.items.find((item) => item.accountId === current.accountId) : undefined;
@@ -679,8 +691,8 @@ export class OrgNavigationService {
     // state as fact the one thing the server could not determine. Reported as an outage instead.
     const toast =
       page.upstreamFailed || this.orgRoleGrantsService.degraded()
-        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
-        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
+        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your companies. Please try again in a moment.' }
+        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any companies.' };
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();
@@ -689,7 +701,7 @@ export class OrgNavigationService {
     // to /org/overview), keep them there so they see the empty state instead of bouncing back to /.
     // The redirect-to-/ still fires from other entry points (sidebar background refresh on /), where
     // staying put would be confusing.
-    if (this.router.url.startsWith('/org')) {
+    if (this.router.url.startsWith(LENS_DEFAULT_ROUTES.org)) {
       return;
     }
 

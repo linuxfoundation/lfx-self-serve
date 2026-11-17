@@ -116,6 +116,12 @@ export const MENTORSHIP_TASK_FILE_RANGE_PATTERN = /^bytes=(\d{1,15}-\d{0,15}|-\d
  */
 export const MENTORSHIP_PROGRAMS_PATH = '/mentorship/v1/programs';
 
+/**
+ * Statuses of the program submitter read that are expected rather than a fault, so they are logged at debug: 404 (no
+ * submitter) and 401/403 (a caller who may open the page but not read its submitter).
+ */
+export const MENTORSHIP_PROGRAM_SUBMITTER_EXPECTED_STATUSES: readonly number[] = [401, 403, 404];
+
 /** Upstream public mentor profiles; `/{userId}` is one mentor's programs, mentees and counts, keyed by local user id. */
 export const MENTORSHIP_MENTORS_PATH = '/mentorship/v1/mentors';
 
