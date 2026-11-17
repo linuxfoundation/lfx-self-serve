@@ -44,6 +44,7 @@ import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavai
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
@@ -73,7 +74,7 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'easycla',
       // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'EasyCLA',

@@ -628,6 +628,22 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/company/family-0014100000RootAAAA/easycla')).toBeUndefined();
   });
 
+  // Epic #5845 (#5857): the all employee view hides EasyCLA entirely; the full view keeps it.
+  it('drops the EasyCLA item in the all employee view and keeps it in the full view', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    const grants = TestBed.inject(OrgRoleGrantsService);
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('EasyCLA');
+
+    (grants.employeeViewOrgUids as unknown as { set(uids: ReadonlySet<string>): void }).set(new Set(['0014100000MgaAAAAA']));
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).not.toContain('EasyCLA');
+    expect(findByLink(items, '/company/easycla')).toBeUndefined();
+    expect(labels(items)).toContain('Company Profile');
+  });
+
   // Crowdfunding Donations is single-company too: its endpoint takes one `orgUid` (#4415, Copilot).
   it('drops Crowdfunding Donations in roll-up mode even with the flag on', () => {
     activeLens.set('org');
