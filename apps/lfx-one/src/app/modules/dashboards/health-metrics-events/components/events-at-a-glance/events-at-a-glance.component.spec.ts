@@ -75,6 +75,10 @@ describe('EventsAtAGlanceComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
   }
 
+  function cells(testId: string): string[] {
+    return [...(query(testId)?.querySelectorAll('td') ?? [])].map((cell) => cell.textContent?.trim() ?? '');
+  }
+
   function text(testId: string): string {
     return query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   }
@@ -84,52 +88,41 @@ describe('EventsAtAGlanceComponent', () => {
     verdicts = [];
   });
 
-  it('renders the period control line, headline and side stats from the view', async () => {
+  it('lays out the metrics row from the view, and settles', async () => {
     await render();
 
-    expect(text('events-at-a-glance-control')).toBe('9 events · 6 past · 3 upcoming');
-    expect(text('events-at-a-glance-headline-value')).toBe('12,400');
-    expect(text('events-at-a-glance-headline-delta')).toBe('−12%');
-    expect(text('events-at-a-glance-side-show-up-rate-value')).toBe('75%');
-    expect(text('events-at-a-glance-side-show-up-rate-delta')).toBe('+2.2 pp');
+    expect(text('events-at-a-glance-metrics-registrations-value')).toBe('12,400');
+    expect(text('events-at-a-glance-metrics-registrations-trend')).toBe('−12%');
+    expect(text('events-at-a-glance-metrics-attendees-description')).toBe('75% show-up rate');
+    expect(text('events-at-a-glance-metrics-events-value')).toBe('9');
+    expect(text('events-at-a-glance-metrics-events-description')).toBe('6 past · 3 upcoming');
+    expect(query('events-at-a-glance-metrics-companies-tip')).not.toBeNull();
+    expect(query('events-at-a-glance-control')).toBeNull();
     expect(verdicts).toEqual([false]);
   });
 
-  it('compares against the same point last year, with no warning icon on a steep fall', async () => {
-    await render();
+  it('compares each figure with last year in a table, its change as a badge', async () => {
+    const year = new Date().getFullYear();
+    await render('ready', glance({ periods: [period(), period({ range: 'COMPLETED_YEAR', registrations: 14000 })] }));
 
-    expect(text('events-at-a-glance-tile-attendees-delta')).toBe('−35%');
-    expect(query('events-at-a-glance-tile-attendees')?.querySelector('.fa-triangle-exclamation')).toBeNull();
-    expect(text('events-at-a-glance-baseline')).toBe('all against the same point last year');
+    expect(text('events-at-a-glance-period-heading')).toBe(`${year} (YTD)`);
+    expect(text('events-at-a-glance-comparison-heading')).toBe(`${year - 1} (full year)`);
+    expect(cells('events-at-a-glance-row-registrations')).toEqual(['Registrations', '12,400', '14,000', '−12%']);
+    expect(query('events-at-a-glance-row-registrations-change')?.textContent?.trim()).toBe('−12%');
+    expect(text('events-at-a-glance-row-show-up-rate-change')).toBe('+2.2pp');
+    expect(query('events-at-a-glance-tiles')).toBeNull();
   });
 
-  it('shows Events as past plus upcoming, with no year-over-year delta', async () => {
-    await render();
-
-    expect(query('events-at-a-glance-side-events')?.querySelector('dt')?.textContent?.trim()).toBe('Events');
-    expect(text('events-at-a-glance-side-events-value')).toBe('9');
-    expect(query('events-at-a-glance-side-events-delta')).toBeNull();
-  });
-
-  it('draws the hero and the metric tiles unboxed, each tile labelled above its value', async () => {
-    await render();
-
-    expect(query('events-at-a-glance-hero')?.classList).not.toContain('border');
-    const tile = query('events-at-a-glance-tile-attendees');
-    expect(tile?.classList).not.toContain('border');
-    expect(tile?.firstElementChild?.textContent?.trim()).toBe('Attendees');
-  });
-
-  it('re-projects a period change without deltas for an uncompared year, and settles again', async () => {
+  it('re-projects a period change, with "—" for a year the view does not compare, and settles again', async () => {
     await render();
 
     TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_2');
     await settle();
 
-    expect(text('events-at-a-glance-headline-value')).toBe('8,000');
-    expect(query('events-at-a-glance-headline-delta')).toBeNull();
-    expect(query('events-at-a-glance-tile-registrations-delta')).toBeNull();
-    expect(text('events-at-a-glance-baseline')).toBe('no year-over-year comparison for this period');
+    expect(text('events-at-a-glance-metrics-registrations-value')).toBe('8,000');
+    expect(query('events-at-a-glance-metrics-registrations-trend')).toBeNull();
+    expect(cells('events-at-a-glance-row-registrations')).toEqual(['Registrations', '8,000', '—', '—']);
+    expect(query('events-at-a-glance-row-registrations-change')).toBeNull();
     expect(lifecycle).toEqual(['settled', 'settled']);
   });
 
@@ -140,8 +133,8 @@ describe('EventsAtAGlanceComponent', () => {
     await settle();
 
     expect(verdicts).toEqual([false, true]);
-    expect(query('events-at-a-glance-headline')).toBeNull();
-    expect(query('events-at-a-glance-tiles')).toBeNull();
+    expect(query('events-at-a-glance-metrics')).toBeNull();
+    expect(query('events-at-a-glance-table')).toBeNull();
   });
 
   it('settles empty, with no body, for a zero-filled period with nothing upcoming', async () => {
@@ -150,15 +143,14 @@ describe('EventsAtAGlanceComponent', () => {
     await render('ready', glance({ periods: [quiet], upcomingEvents: 0 }));
 
     expect(verdicts).toEqual([true]);
-    expect(query('events-at-a-glance-control')).toBeNull();
-    expect(query('events-at-a-glance-headline')).toBeNull();
+    expect(query('events-at-a-glance-metrics')).toBeNull();
   });
 
   it('keeps the body for a period with no events counted but attendees measured', async () => {
     await render('ready', glance({ periods: [period({ events: null, pastEvents: null, registrations: null, attendees: 120 })], upcomingEvents: 0 }));
 
     expect(verdicts).toEqual([false]);
-    expect(query('events-at-a-glance-headline')).not.toBeNull();
+    expect(query('events-at-a-glance-metrics')).not.toBeNull();
   });
 
   it('keeps the body for a quiet year to date that has events upcoming', async () => {
@@ -166,7 +158,7 @@ describe('EventsAtAGlanceComponent', () => {
     await render('ready', glance({ periods: [quiet], upcomingEvents: 2 }));
 
     expect(verdicts).toEqual([false]);
-    expect(query('events-at-a-glance-headline')).not.toBeNull();
+    expect(query('events-at-a-glance-metrics')).not.toBeNull();
   });
 
   it('holds the skeleton and reports a read in flight while loading, then settles when it lands', async () => {
@@ -178,7 +170,7 @@ describe('EventsAtAGlanceComponent', () => {
     fixture.componentRef.setInput('status', 'ready');
     await settle();
 
-    expect(query('events-at-a-glance-headline')).not.toBeNull();
+    expect(query('events-at-a-glance-metrics')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
@@ -186,7 +178,7 @@ describe('EventsAtAGlanceComponent', () => {
     await render('failed');
 
     expect(query('events-at-a-glance-error')).not.toBeNull();
-    expect(query('events-at-a-glance-headline')).toBeNull();
+    expect(query('events-at-a-glance-metrics')).toBeNull();
     expect(lifecycle).toEqual(['settled']);
     expect(verdicts).toEqual([false]);
   });

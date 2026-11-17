@@ -16,6 +16,7 @@ import type {
 } from './health-metrics-l2.interface';
 import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
 import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
+import type { UiBadgeTone } from './uikit.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
@@ -164,6 +165,9 @@ export interface HealthMetricsEventsPastEvent {
   paceStatus: string | null;
   /** The periods this event closed in. */
   ranges: HealthMetricsL2Range[];
+  /** `null` when unknown, or when the city only says the event is online. */
+  city: string | null;
+  isVirtual: boolean;
 }
 
 /** One period's header figures, as the view totals them — never re-summed from the table. */
@@ -181,30 +185,24 @@ export interface HealthMetricsEventsPast {
   events: HealthMetricsEventsPastEvent[];
 }
 
-/** A past-events table row with its labels and chip resolved once per period. */
+/** A past-events table row with its labels and status pill resolved once per period. */
 export interface HealthMetricsEventsPastRowView {
-  event: HealthMetricsEventsPastEvent;
+  eventId: string;
+  eventName: string;
+  /** "{City} · {Mon D, YYYY}", see `formatHealthMetricsEventsPlaceLabel`. */
+  placeLabel: string;
+  registrationsLabel: string;
+  /** " / {goal} (goal)", or " / no goal set". */
+  goalSuffix: string;
+  revenueLabel: string;
   status: HealthMetricsEventsPastStatus;
   statusLabel: string;
-  statusClass: string;
-  dateLabel: string;
-  registrationsLabel: string;
-  goalLabel: string;
-  /** False reads "no goal set" in place of "/ goal". */
-  hasGoal: boolean;
-  revenueLabel: string;
+  statusTone: UiBadgeTone;
 }
 
-/** The section for one period: the view's header figures and the events that closed in it. */
+/** The section for one period: its metrics row and the events that closed in it, most recent first. */
 export interface HealthMetricsEventsPastView {
-  eventCount: number | null;
-  registrations: number | null;
-  /** Listed events whose chip reads "Hit goal" — the X in "Hit goal: X of Y". */
-  goalMetCount: number;
-  /** Listed events with a goal set and a measured outcome — the Y, so X and Y share the chips' rule. */
-  goalSetCount: number;
-  /** Whether any listed event has a goal, so goals with no measured outcome never read as unset. */
-  hasGoals: boolean;
+  metrics: HealthMetricsMetricItem[];
   rows: HealthMetricsEventsPastRowView[];
 }
 
@@ -267,15 +265,22 @@ export interface HealthMetricsEventsAtAGlanceStatView extends HealthMetricsEvent
   value: string;
 }
 
-/** The section for one period, with every label ready to render. */
+/** One comparison-table row: the period's value, the comparison period's, and the change as a badge (`null` reads "—"). */
+export interface HealthMetricsEventsAtAGlanceRowView {
+  key: string;
+  label: string;
+  value: string;
+  comparison: string;
+  change: string | null;
+  changeTone: UiBadgeTone;
+}
+
+/** The section for one period: its metrics row and the comparison table with its two period headings. */
 export interface HealthMetricsEventsAtAGlanceView {
-  /** `false` when the read carried no figures for the period, so nothing reads as a measured zero. */
-  measured: boolean;
-  controlLabel: string;
-  baselineLabel: string;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
-  tiles: HealthMetricsEventsAtAGlanceStatView[];
+  metrics: HealthMetricsMetricItem[];
+  periodHeading: string;
+  comparisonHeading: string;
+  rows: HealthMetricsEventsAtAGlanceRowView[];
 }
 
 /** Foundation scope for registrations & growth; the section is not period-scoped, so every year ships. */
@@ -382,6 +387,9 @@ export interface HealthMetricsEventsRevenueEvent {
   goalMet: boolean | null;
   /** The periods a past event falls in; empty for an upcoming one. */
   ranges: HealthMetricsL2Range[];
+  /** `null` when unknown, or when the city only says the event is online. */
+  city: string | null;
+  isVirtual: boolean;
 }
 
 /** `GET /api/analytics/events-revenue` — each period's headline, every past event in the four periods and every upcoming event. */
@@ -395,16 +403,18 @@ export interface HealthMetricsEventsRevenue {
 
 /** A revenue-by-event row with its labels resolved once per period. */
 export interface HealthMetricsEventsRevenueRowView {
-  event: HealthMetricsEventsRevenueEvent;
-  dateLabel: string;
+  eventId: string;
+  eventName: string;
+  /** "{City} · {Mon D, YYYY}", see `formatHealthMetricsEventsPlaceLabel`. */
+  placeLabel: string;
   registrationLabel: string;
-  /** Empty when no goal is set; says so when the goal is withheld for its currency. */
-  registrationGoalLabel: string;
+  /** " / {goal} (goal)", " / no goal set", or the withheld goal's note. */
+  registrationGoalSuffix: string;
   sponsorshipLabel: string;
-  sponsorshipGoalLabel: string;
+  sponsorshipGoalSuffix: string;
 }
 
-/** The section for one period, with every label ready to render. */
+/** The section for one period: its metrics row and its events, with whether there is anything to show. */
 export interface HealthMetricsEventsRevenueView {
   /** `false` when the read carried no period at all, so the section says so rather than pointing at another period. */
   foundationMeasured: boolean;
@@ -412,16 +422,11 @@ export interface HealthMetricsEventsRevenueView {
   measured: boolean;
   /** `false` when the period lists no event, has no non-zero figure and no unconverted revenue, so it reads as empty. */
   hasRevenue: boolean;
-  headline: HealthMetricsEventsAtAGlanceStatView;
-  side: HealthMetricsEventsAtAGlanceStatView[];
+  metrics: HealthMetricsMetricItem[];
   /** Upcoming events soonest first (current-year view only, as they fall in no period), then the period's past events latest first. */
   rows: HealthMetricsEventsRevenueRowView[];
   /** `false` when the foundation has totals but no per-event figures, so an empty list is not read as no events. */
   eventsMeasured: boolean;
-  /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
-  hasUnconverted: boolean;
-  /** Whether the period's totals leave out unconverted revenue, so the headline and registration stat are marked. */
-  headlineUnconverted: boolean;
 }
 
 /** Foundation scope for speakers and proposals; every period ships in one read, so the range stays client-side. */

@@ -275,11 +275,12 @@ describe('HealthMetricsEventsComponent', () => {
     expect(forecast.pickedEventId()).toBe('evt-2');
   });
 
-  it('shows the note Speakers & proposals reports on its sub-nav item', async () => {
+  it("shows only the forecast's note in the sub-nav, as the design does", async () => {
     await setup();
-    await sectionsReport('', 'down 30% YoY');
+    await sectionsReport('2 will miss goal', 'down 30% YoY');
 
-    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk"]').textContent).toContain('down 30% YoY');
+    expect(fixture.nativeElement.querySelector('[data-testid="events-sub-nav-spk-note"]')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('[data-testid$="-note"][data-testid^="events-sub-nav-"]').length).toBe(1);
   });
 
   it('scrolls to the section a deep link names', async () => {

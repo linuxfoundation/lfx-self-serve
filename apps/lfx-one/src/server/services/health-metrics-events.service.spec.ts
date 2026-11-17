@@ -95,6 +95,8 @@ function pastRow(overrides: Record<string, unknown> = {}) {
     GOAL_MET: false,
     REVENUE_USD: 0,
     PACE_STATUS: 'needs_attention',
+    EVENT_CITY: 'Springfield',
+    EVENT_LOCATION: null,
     IS_IN_PERIOD_YTD: true,
     SCOPE_PAST_EVENTS_COUNT_YTD: 4,
     SCOPE_REGISTRATIONS_COUNT_YTD: 2400,
@@ -455,6 +457,15 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}`);
   });
 
+  it("joins each event's city and location from the registrations view, one row per event", async () => {
+    await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_PAST_EVENTS e');
+    expect(sql).toContain('GROUP BY event_id\n      ) p ON p.event_id = e.event_id');
+    expect(sql).toContain('p.event_city,');
+  });
+
   it('maps an event with the periods it closed in, keeping $0 revenue as measured', async () => {
     const { events } = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
@@ -469,6 +480,8 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
         revenueUsd: 0,
         paceStatus: 'needs_attention',
         ranges: ['YTD'],
+        city: 'Springfield',
+        isVirtual: false,
       },
     ]);
   });
@@ -832,6 +845,8 @@ function revenueRow(overrides: Record<string, unknown> = {}) {
     COMBINED_REVENUE_GOAL: 200000,
     IS_PAST_EVENT: true,
     IS_REVENUE_GOAL_MET: false,
+    EVENT_CITY: null,
+    EVENT_LOCATION: 'Virtual',
     FOUNDATION_TOTAL_REVENUE_USD_YTD: 258000,
     FOUNDATION_REGISTRATION_REVENUE_USD_YTD: 180000,
     FOUNDATION_SPONSORSHIP_REVENUE_USD_YTD: 78000,
@@ -862,6 +877,15 @@ describe('HealthMetricsEventsService.getRevenue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     execute.mockResolvedValue({ rows: [revenueRow()] });
+  });
+
+  it("joins each event's city and location, reading a location that says virtual as a virtual event", async () => {
+    const { events } = await new HealthMetricsEventsService().getRevenue(req, { foundationSlug: 'acme' });
+
+    const [sql] = execute.mock.calls[0];
+    expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_REVENUE e');
+    expect(sql).toContain(') p ON p.event_id = e.event_id');
+    expect(events[0]).toMatchObject({ city: null, isVirtual: true });
   });
 
   it('binds only the foundation, sorts older events and those outside every period last, and reads one past the cap', async () => {
@@ -903,6 +927,8 @@ describe('HealthMetricsEventsService.getRevenue', () => {
         isPastEvent: true,
         goalMet: false,
         ranges: ['YTD'],
+        city: null,
+        isVirtual: true,
       },
     ]);
   });

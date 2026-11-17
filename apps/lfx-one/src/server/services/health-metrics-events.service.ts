@@ -107,6 +107,16 @@ const FORECAST_EVENT_NOT_ENDED = `EXISTS (
             AND r.event_is_past = FALSE
         )`;
 
+/** Each event's city and location, which the registrations view repeats on every project row; joined as `p` on `event_id`. */
+const EVENT_PLACES = `(
+        SELECT
+          event_id,
+          MAX(NULLIF(TRIM(event_city), '')) AS event_city,
+          MAX(NULLIF(TRIM(event_location), '')) AS event_location
+        FROM ${EVENT_REGISTRATIONS_VIEW}
+        GROUP BY event_id
+      ) p`;
+
 /**
  * Mirrors dbt's `health_metrics_period_filter`, which the headline totals use. The view has no
  * per-event period flags yet; once it does, read those columns and delete this.
@@ -208,6 +218,8 @@ interface PastEventRow {
   GOAL_MET: boolean | null;
   REVENUE_USD: number | null;
   PACE_STATUS: string | null;
+  EVENT_CITY: string | null;
+  EVENT_LOCATION: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -242,6 +254,8 @@ interface RevenueRow {
   COMBINED_REVENUE_GOAL: number | null;
   IS_PAST_EVENT: boolean | null;
   IS_REVENUE_GOAL_MET: boolean | null;
+  EVENT_CITY: string | null;
+  EVENT_LOCATION: string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -322,7 +336,6 @@ export class HealthMetricsEventsService {
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
     // First edition is flagged per format, so an event is new only when all of its formats are.
-    // The registrations view adds the city and location, which repeat on each of the event's project rows.
     const sql = `
       SELECT
         f.event_id,
@@ -339,15 +352,7 @@ export class HealthMetricsEventsService {
         p.event_city,
         p.event_location
       FROM ${REGISTRATION_FORECAST_VIEW} f
-      LEFT JOIN (
-        SELECT
-          event_id,
-          MAX(NULLIF(TRIM(event_city), '')) AS event_city,
-          MAX(NULLIF(TRIM(event_location), '')) AS event_location
-        FROM ${EVENT_REGISTRATIONS_VIEW}
-        WHERE event_is_past = FALSE
-        GROUP BY event_id
-      ) p ON p.event_id = f.event_id
+      LEFT JOIN ${EVENT_PLACES} ON p.event_id = f.event_id
       WHERE f.foundation_slug = ?
         AND f.is_all_projects = TRUE
         AND ${FORECAST_EVENT_NOT_ENDED}
@@ -550,7 +555,7 @@ export class HealthMetricsEventsService {
 
     const sql = `
       SELECT
-        event_id,
+        e.event_id,
         event_name,
         event_start_date,
         registrations_count AS registrations,
@@ -559,12 +564,15 @@ export class HealthMetricsEventsService {
         is_registrations_goal_met AS goal_met,
         total_event_revenue_usd AS revenue_usd,
         pace_status,
+        p.event_city,
+        p.event_location,
         ${periodColumns}
-      FROM ${PAST_EVENTS_VIEW}
+      FROM ${PAST_EVENTS_VIEW} e
+      LEFT JOIN ${EVENT_PLACES} ON p.event_id = e.event_id
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
         AND (${inAnyPeriod})
-      ORDER BY event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      ORDER BY event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, e.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}
     `;
 
@@ -663,7 +671,7 @@ export class HealthMetricsEventsService {
 
     const sql = `
       SELECT
-        event_id,
+        e.event_id,
         event_name,
         event_start_date,
         registration_revenue_usd,
@@ -675,11 +683,14 @@ export class HealthMetricsEventsService {
         combined_revenue_goal,
         is_past_event,
         is_revenue_goal_met,
+        p.event_city,
+        p.event_location,
         ${periodColumns}
-      FROM ${REVENUE_VIEW}
+      FROM ${REVENUE_VIEW} e
+      LEFT JOIN ${EVENT_PLACES} ON p.event_id = e.event_id
       WHERE foundation_slug = ?
       -- Past events in a period fill the cap before upcoming ones, so history never gives way to upcoming events.
-      ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, event_id ASC
+      ORDER BY IFF(${listed}, 0, 1), IFF(is_past_event = FALSE, 1, 0), event_start_date DESC NULLS LAST, event_name ASC NULLS LAST, e.event_id ASC
       LIMIT ${HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP + 1}
     `;
 
@@ -1211,6 +1222,7 @@ function mapPastEvent(row: PastEventRow): HealthMetricsEventsPastEvent | null {
     revenueUsd: toNullableNumber(row.REVENUE_USD),
     paceStatus: hasGoal ? row.PACE_STATUS : null,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IS_IN_PERIOD', range)] === true),
+    ...mapEventPlace(row.EVENT_CITY, row.EVENT_LOCATION),
   };
 }
 
@@ -1282,6 +1294,7 @@ function mapRevenueEvent(row: RevenueRow): HealthMetricsEventsRevenueEvent | nul
     isPastEvent,
     goalMet,
     ranges: HEALTH_METRICS_L2_RANGES.filter((range) => row[periodColumn('IN_PERIOD', range)] === true),
+    ...mapEventPlace(row.EVENT_CITY, row.EVENT_LOCATION),
   };
 }
 
@@ -1460,7 +1473,7 @@ function mapForecastEvent(row: ForecastEventRow): HealthMetricsEventsForecastEve
 }
 
 /** dbt's virtual rule: a city or location naming online or virtual. Such a city is no place, so it is dropped. */
-function mapEventPlace(city: string | null, location: string | null): Pick<HealthMetricsEventsForecastEvent, 'city' | 'isVirtual'> {
+function mapEventPlace(city: string | null, location: string | null): Pick<HealthMetricsEventsPastEvent, 'city' | 'isVirtual'> {
   const trimmed = city?.trim() || null;
   const virtualCity = trimmed !== null && HEALTH_METRICS_EVENTS_VIRTUAL_PLACE_TERMS.includes(trimmed.toLowerCase());
   const place = (location ?? '').toLowerCase();
