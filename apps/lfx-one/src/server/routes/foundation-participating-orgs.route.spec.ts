@@ -46,8 +46,11 @@ vi.mock('../services/foundation-participating-orgs.snowflake-source', () => ({
         ],
       };
     }
+    // One line, so the by-project export has a row to write (a company with no project line is left out of that file).
     public async getProjectLines() {
-      return [];
+      return [
+        { companyKey: 'synthetic-company', projectSlug: 'synthetic-project', commits: 3, commitsChange: null, contributors: 1, contributorsChange: null },
+      ];
     }
   },
 }));
