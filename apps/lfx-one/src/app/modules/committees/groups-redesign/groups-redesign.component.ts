@@ -21,12 +21,16 @@ import { GroupBehavioralClass, GroupsHomeTab, UiTabItem } from '@lfx-one/shared/
 import { CreateArtifactDialogService } from '@services/create-artifact-dialog.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
+import { UiChipGroupComponent } from '@shared/uikit/chip/chip-group.component';
+import { UiChipComponent } from '@shared/uikit/chip/chip.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
+import { UiSearchInputComponent } from '@shared/uikit/search-input/search-input.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
 import { UiTabsComponent } from '@shared/uikit/tabs/tabs.component';
 import { EMPTY, Observable, switchMap } from 'rxjs';
 
 import { GroupCardComponent } from './components/group-card/group-card.component';
+import { GroupsFiltersComponent } from './components/groups-filters/groups-filters.component';
 import { GroupsHomeStore } from './services/groups-home.store';
 
 /**
@@ -37,7 +41,18 @@ import { GroupsHomeStore } from './services/groups-home.store';
  */
 @Component({
   selector: 'lfx-groups-redesign',
-  imports: [NgTemplateOutlet, UiButtonComponent, UiEmptyStateComponent, UiSkeletonComponent, UiTabsComponent, GroupCardComponent],
+  imports: [
+    NgTemplateOutlet,
+    UiButtonComponent,
+    UiChipComponent,
+    UiChipGroupComponent,
+    UiEmptyStateComponent,
+    UiSearchInputComponent,
+    UiSkeletonComponent,
+    UiTabsComponent,
+    GroupCardComponent,
+    GroupsFiltersComponent,
+  ],
   templateUrl: './groups-redesign.component.html',
   providers: [GroupsHomeStore],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -58,6 +73,8 @@ export class GroupsRedesignComponent {
   private readonly toolbar = viewChild<ElementRef<HTMLElement>>('toolbar');
   private readonly panels = viewChild<ElementRef<HTMLElement>>('panels');
   private readonly loadMoreTrigger = viewChild<ElementRef<HTMLElement>>('loadMoreTrigger');
+  /** Takes focus when the last filter chip is removed. */
+  protected readonly filtersControl = viewChild(GroupsFiltersComponent);
 
   protected readonly idPrefix = 'groups-redesign';
   protected readonly pageSize = GROUPS_HOME_PAGE_SIZE;
@@ -72,6 +89,7 @@ export class GroupsRedesignComponent {
   protected readonly toolbarStuck = signal(false);
   protected readonly hasGroups: Signal<boolean> = computed(() => !this.store.loading() && this.store.groups().length > 0);
   protected readonly tabs: Signal<UiTabItem[]> = this.initTabs();
+  protected readonly noResultsDescription: Signal<string> = this.initNoResultsDescription();
 
   public constructor() {
     this.initLoadMore();
@@ -122,6 +140,15 @@ export class GroupsRedesignComponent {
         .filter((type) => counts[type] > 0)
         .map((type) => ({ value: type, label: BEHAVIORAL_CLASS_CONFIG[type].label, count: counts[type], dotTone: BEHAVIORAL_CLASS_TONE[type] }));
       return [{ value: 'all', label: 'All', count: this.store.groups().length }, ...types];
+    });
+  }
+
+  private initNoResultsDescription(): Signal<string> {
+    return computed(() => {
+      const filtered = this.store.filterChips().length > 0;
+      const searched = this.store.search().trim() !== '';
+      if (filtered) return searched ? 'No groups match your filters' : 'Try adjusting your filter criteria';
+      return searched ? 'No groups match your search' : 'No groups in this category';
     });
   }
 

@@ -4,8 +4,18 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { BEHAVIORAL_CLASS_CONFIG, GROUPS_HOME_PAGE_SIZE, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
-import { GroupBehavioralClass, GroupsHomeMetric, GroupsHomeTab, MyCommittee, StatCardItem } from '@lfx-one/shared/interfaces';
+import { BEHAVIORAL_CLASS_CONFIG, GROUPS_HOME_DEFAULT_FILTERS, GROUPS_HOME_PAGE_SIZE, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  FilterOption,
+  GroupBehavioralClass,
+  GroupsHomeFilterChip,
+  GroupsHomeFilters,
+  GroupsHomeMetric,
+  GroupsHomeTab,
+  GroupsHomeVotingCounts,
+  MyCommittee,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
 import { buildEngagementStatCards, getGroupBehavioralClass } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -13,8 +23,9 @@ import { catchError, filter, finalize, map, of, switchMap, take } from 'rxjs';
 
 /**
  * State of the Me lens groups page, provided by the page component.
- * @description Loads the viewer's groups once, sorted A–Z with their type resolved, then filters them by the type tab
- * and shows {@link GROUPS_HOME_PAGE_SIZE} groups at a time. Metrics and tab counts cover every group.
+ * @description Loads the viewer's groups once, sorted A–Z with their type resolved, then narrows them by foundation or
+ * project, search, type tab and voting, in that order, and shows {@link GROUPS_HOME_PAGE_SIZE} groups at a time.
+ * Metrics and tab counts cover every group.
  */
 @Injectable()
 export class GroupsHomeStore {
@@ -25,12 +36,19 @@ export class GroupsHomeStore {
   private readonly failedState: WritableSignal<boolean> = signal(false);
   private readonly reloadState: WritableSignal<number> = signal(0);
   private readonly tabState: WritableSignal<GroupsHomeTab> = signal<GroupsHomeTab>('all');
-  private readonly visibleCountState: WritableSignal<number> = linkedSignal({ source: this.tabState, computation: () => GROUPS_HOME_PAGE_SIZE });
+  private readonly searchState: WritableSignal<string> = signal('');
+  private readonly filtersState: WritableSignal<GroupsHomeFilters> = signal(GROUPS_HOME_DEFAULT_FILTERS);
+  private readonly visibleCountState: WritableSignal<number> = linkedSignal({
+    source: () => ({ tab: this.tabState(), search: this.searchState(), filters: this.filtersState() }),
+    computation: () => GROUPS_HOME_PAGE_SIZE,
+  });
 
   public readonly loading: Signal<boolean> = this.loadingState.asReadonly();
   /** True when the groups failed to load. */
   public readonly failed: Signal<boolean> = this.failedState.asReadonly();
   public readonly tab: Signal<GroupsHomeTab> = this.tabState.asReadonly();
+  public readonly search: Signal<string> = this.searchState.asReadonly();
+  public readonly filters: Signal<GroupsHomeFilters> = this.filtersState.asReadonly();
   /** Every group the viewer belongs to, A–Z, with `behavioralClass` and `classDisplay` set. */
   public readonly groups: Signal<MyCommittee[]> = this.initGroups();
   /** Groups per behavioral class, over every group. */
@@ -39,16 +57,42 @@ export class GroupsHomeStore {
   /** Unique people active across the viewer's groups, with its freshness, sample-data or coverage note; `null` while the flag is off or the stats load. */
   private readonly activeMembers: Signal<StatCardItem | null> = this.initActiveMembers();
   public readonly metrics: Signal<GroupsHomeMetric[]> = this.initMetrics();
-  /** Groups in the selected tab. */
-  public readonly filteredGroups: Signal<MyCommittee[]> = computed(() => {
-    const tab = this.tab();
-    return tab === 'all' ? this.groups() : this.groups().filter((group) => group.behavioralClass === tab);
+  /** Foundations A–Z, then projects A–Z, from every group. */
+  public readonly scopeOptions: Signal<FilterOption<string>[]> = this.initScopeOptions();
+  /** Groups matching the foundation or project and the search, before the tab and voting. */
+  private readonly searchedGroups: Signal<MyCommittee[]> = this.initSearchedGroups();
+  /** Voting enabled and disabled counts for the Voting capability options, before the tab. */
+  public readonly votingCounts: Signal<GroupsHomeVotingCounts> = computed(() => {
+    const enabled = this.searchedGroups().filter((group) => !!group.enable_voting).length;
+    return { enabled, disabled: this.searchedGroups().length - enabled };
   });
+  /** Groups matching every filter and the tab. */
+  public readonly filteredGroups: Signal<MyCommittee[]> = this.initFilteredGroups();
   public readonly visibleGroups: Signal<MyCommittee[]> = computed(() => this.filteredGroups().slice(0, this.visibleCountState()));
   public readonly hasMore: Signal<boolean> = computed(() => this.visibleCountState() < this.filteredGroups().length);
+  public readonly filterChips: Signal<GroupsHomeFilterChip[]> = this.initFilterChips();
 
   public setTab(tab: GroupsHomeTab): void {
     this.tabState.set(tab);
+  }
+
+  public setSearch(search: string): void {
+    this.searchState.set(search);
+  }
+
+  public setFilters(filters: GroupsHomeFilters): void {
+    this.filtersState.set(filters);
+  }
+
+  public clearFilter(key: keyof GroupsHomeFilters): void {
+    this.filtersState.update((filters) => ({ ...filters, [key]: null }));
+  }
+
+  /** Clears the search, tab and filters. */
+  public resetFilters(): void {
+    this.searchState.set('');
+    this.tabState.set('all');
+    this.filtersState.set(GROUPS_HOME_DEFAULT_FILTERS);
   }
 
   /** Fetches the groups again, after a failure or a change to the viewer's memberships. */
@@ -126,6 +170,55 @@ export class GroupsHomeStore {
           subLine: activeMembers?.subLine,
         },
       ];
+    });
+  }
+
+  private initScopeOptions(): Signal<FilterOption<string>[]> {
+    return computed(() => {
+      const foundations = new Map<string, string>();
+      const projects = new Map<string, string>();
+      for (const group of this.groups()) {
+        if (group.project_uid) (group.is_foundation ? foundations : projects).set(group.project_uid, group.project_name || group.project_uid);
+      }
+      const sorted = (entities: Map<string, string>): FilterOption<string>[] =>
+        [...entities].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+      return [...sorted(foundations), ...sorted(projects)];
+    });
+  }
+
+  private initSearchedGroups(): Signal<MyCommittee[]> {
+    return computed(() => {
+      const scope = this.filters().scope;
+      const isFoundation = !!scope && this.groups().some((group) => group.is_foundation && group.project_uid === scope);
+      const search = this.search().trim().toLowerCase();
+      return this.groups().filter(
+        (group) =>
+          (!scope || group.project_uid === scope || (isFoundation && !group.is_foundation && group.parent_project_uid === scope)) &&
+          (!search || [group.name, group.description, group.category].some((text) => text?.toLowerCase().includes(search)))
+      );
+    });
+  }
+
+  private initFilteredGroups(): Signal<MyCommittee[]> {
+    return computed(() => {
+      const tab = this.tab();
+      const voting = this.filters().voting;
+      return this.searchedGroups().filter(
+        (group) => (tab === 'all' || group.behavioralClass === tab) && (!voting || !!group.enable_voting === (voting === 'enabled'))
+      );
+    });
+  }
+
+  private initFilterChips(): Signal<GroupsHomeFilterChip[]> {
+    return computed(() => {
+      const { scope, voting } = this.filters();
+      const chips: GroupsHomeFilterChip[] = [];
+      if (scope) {
+        const scopeGroup = this.groups().find((group) => group.project_uid === scope);
+        chips.push({ key: 'scope', prefix: scopeGroup?.is_foundation ? 'Foundation:' : 'Project:', label: scopeGroup?.project_name || scope });
+      }
+      if (voting) chips.push({ key: 'voting', prefix: 'Voting:', label: voting === 'enabled' ? 'Enabled' : 'Disabled' });
+      return chips;
     });
   }
 }

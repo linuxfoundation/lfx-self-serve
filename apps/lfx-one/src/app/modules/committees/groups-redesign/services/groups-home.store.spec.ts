@@ -162,4 +162,100 @@ describe('GroupsHomeStore', () => {
     store.loadMore();
     expect(store.visibleGroups()).toHaveLength(45);
   });
+
+  describe('search and filters', () => {
+    const scoped = (): MyCommittee[] => [
+      group('f', 'Board', { name: 'Foundation Board', project_uid: 'fdn', project_name: 'Synthetic Foundation', is_foundation: true, enable_voting: true }),
+      group('p', 'Working Group', {
+        name: 'Docs WG',
+        project_uid: 'prj',
+        project_name: 'Synthetic Project',
+        parent_project_uid: 'fdn',
+        description: 'Writes the docs',
+      }),
+      group('o', 'Working Group', {
+        name: 'Other WG',
+        project_uid: 'oth',
+        project_name: 'Another Project',
+        parent_project_uid: 'elsewhere',
+        enable_voting: true,
+      }),
+    ];
+    const uids = (store: GroupsHomeStore): string[] => store.filteredGroups().map((g) => g.uid);
+
+    it('lists foundations A–Z, then projects A–Z', () => {
+      groups$ = of(scoped());
+      const store = create();
+
+      expect(store.scopeOptions().map((o) => o.label)).toEqual(['Synthetic Foundation', 'Another Project', 'Synthetic Project']);
+    });
+
+    it("matches a foundation's own groups and its projects' groups, or one project's groups", () => {
+      groups$ = of(scoped());
+      const store = create();
+
+      store.setFilters({ scope: 'fdn', voting: null });
+      expect(uids(store)).toEqual(['p', 'f']);
+      store.setFilters({ scope: 'prj', voting: null });
+      expect(uids(store)).toEqual(['p']);
+    });
+
+    it('searches name, description and category, ignoring case', () => {
+      groups$ = of(scoped());
+      const store = create();
+
+      store.setSearch('DOCS');
+      expect(uids(store)).toEqual(['p']);
+      store.setSearch('board');
+      expect(uids(store)).toEqual(['f']);
+    });
+
+    it('counts voting options after the scope and search but before the tab, and filters voting after the tab', () => {
+      groups$ = of(scoped());
+      const store = create();
+      store.setTab('working-group');
+
+      expect(store.votingCounts()).toEqual({ enabled: 2, disabled: 1 });
+      store.setFilters({ scope: null, voting: 'enabled' });
+      expect(uids(store)).toEqual(['o']);
+    });
+
+    it('counts and filters a group without a voting flag as voting disabled', () => {
+      groups$ = of([group('n', 'Board', { enable_voting: undefined })]);
+      const store = create();
+
+      expect(store.votingCounts()).toEqual({ enabled: 0, disabled: 1 });
+      store.setFilters({ scope: null, voting: 'disabled' });
+      expect(uids(store)).toEqual(['n']);
+    });
+
+    it('names each applied filter in a chip, and a chip removes its filter', () => {
+      groups$ = of(scoped());
+      const store = create();
+
+      store.setFilters({ scope: 'fdn', voting: 'disabled' });
+      expect(store.filterChips()).toEqual([
+        { key: 'scope', prefix: 'Foundation:', label: 'Synthetic Foundation' },
+        { key: 'voting', prefix: 'Voting:', label: 'Disabled' },
+      ]);
+      store.setFilters({ scope: 'prj', voting: null });
+      expect(store.filterChips()).toEqual([{ key: 'scope', prefix: 'Project:', label: 'Synthetic Project' }]);
+
+      store.clearFilter('scope');
+      expect(store.filterChips()).toEqual([]);
+    });
+
+    it('resets the search, tab and filters together', () => {
+      groups$ = of(scoped());
+      const store = create();
+      store.setSearch('nothing matches');
+      store.setTab('governing-board');
+      store.setFilters({ scope: 'prj', voting: 'enabled' });
+      expect(uids(store)).toEqual([]);
+
+      store.resetFilters();
+      expect(store.tab()).toBe('all');
+      expect(uids(store)).toHaveLength(3);
+    });
+  });
 });

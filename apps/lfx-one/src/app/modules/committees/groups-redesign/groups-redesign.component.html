@@ -110,7 +110,31 @@
         [value]="store.tab()"
         (valueChange)="onTabChange($event)"
         data-testid="groups-redesign-tabs" />
+      <div class="mt-[20px] flex flex-wrap items-center gap-[8px]">
+        <lfx-ui-search-input
+          class="w-full min-[641px]:w-auto min-[641px]:flex-[1_1_240px]"
+          placeholder="Search groups"
+          ariaLabel="Search groups"
+          [value]="store.search()"
+          (valueChange)="store.setSearch($event)"
+          data-testid="groups-redesign-search" />
+        <lfx-groups-filters
+          class="w-full min-[641px]:w-auto"
+          [scopeOptions]="store.scopeOptions()"
+          [votingCounts]="store.votingCounts()"
+          [filters]="store.filters()"
+          (filtersChange)="store.setFilters($event)" />
+      </div>
     </div>
+
+    @if (store.filterChips().length) {
+      <!-- -6px pulls the chips toward the toolbar, per the design -->
+      <lfx-ui-chip-group class="-mt-[6px]" ariaLabel="Active filters" [fallbackFocus]="filtersControl() ?? null" data-testid="groups-redesign-chips">
+        @for (chip of store.filterChips(); track chip.key) {
+          <lfx-ui-chip size="md" [prefix]="chip.prefix" [label]="chip.label" (dismissed)="store.clearFilter(chip.key)" data-testid="groups-redesign-chip" />
+        }
+      </lfx-ui-chip-group>
+    }
 
     <!-- One tabpanel per tab, so every aria-controls resolves; only the active one renders the grid -->
     <div #panels class="flex flex-col">
@@ -133,28 +157,49 @@
 </div>
 
 <ng-template #grid>
-  <p class="sr-only" role="status" data-testid="groups-redesign-grid-status">
-    Showing {{ store.visibleGroups().length }} of {{ store.filteredGroups().length }} groups
-  </p>
-  <!-- At most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px -->
-  <div class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]" data-testid="groups-redesign-grid">
-    @for (group of store.visibleGroups(); track group.uid) {
-      <lfx-group-card [group]="group" />
+  @if (!store.filteredGroups().length) {
+    <lfx-ui-empty-state
+      class="mt-[16px]"
+      icon="fa-light fa-eyes"
+      heading="No results found"
+      [description]="noResultsDescription()"
+      data-testid="groups-redesign-no-results">
+      <lfx-ui-button
+        empty-state-action
+        variant="tertiary-accent"
+        size="large"
+        icon="fa-light fa-arrow-rotate-left"
+        (click)="store.resetFilters()"
+        data-testid="groups-redesign-no-results-reset">
+        Reset filters
+      </lfx-ui-button>
+    </lfx-ui-empty-state>
+  } @else {
+    <p class="sr-only" role="status" data-testid="groups-redesign-grid-status">
+      Showing {{ store.visibleGroups().length }} of {{ store.filteredGroups().length }} groups
+    </p>
+    <!-- At most 3 columns, then 2 and 1 as the width falls below 3 and 2 times 220px -->
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]" data-testid="groups-redesign-grid">
+      @for (group of store.visibleGroups(); track group.uid) {
+        <lfx-group-card [group]="group" />
+      }
+    </div>
+    @if (store.hasMore()) {
+      <!-- Re-created per batch so skeletons still in view after a batch loads fire again. -->
+      @for (count of [store.visibleGroups().length]; track count) {
+        <div
+          #loadMoreTrigger
+          class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]"
+          aria-hidden="true"
+          data-testid="groups-redesign-load-more">
+          <ng-container [ngTemplateOutlet]="skeletons" />
+        </div>
+      }
+    } @else if (store.filteredGroups().length > pageSize) {
+      <p class="py-[4px] text-center text-[12px] text-gray-500" data-testid="groups-redesign-all-loaded">
+        All {{ store.filteredGroups().length }} groups loaded
+      </p>
     }
-  </div>
-  @if (store.hasMore()) {
-    <!-- Re-created per batch so skeletons still in view after a batch loads fire again. -->
-    @for (count of [store.visibleGroups().length]; track count) {
-      <div
-        #loadMoreTrigger
-        class="grid grid-cols-[repeat(auto-fill,minmax(max(220px,calc((100%_-_32px)/3)),1fr))] gap-[16px]"
-        aria-hidden="true"
-        data-testid="groups-redesign-load-more">
-        <ng-container [ngTemplateOutlet]="skeletons" />
-      </div>
-    }
-  } @else if (store.filteredGroups().length > pageSize) {
-    <p class="py-[4px] text-center text-[12px] text-gray-500" data-testid="groups-redesign-all-loaded">All {{ store.filteredGroups().length }} groups loaded</p>
   }
 </ng-template>
 

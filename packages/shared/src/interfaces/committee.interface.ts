@@ -74,6 +74,27 @@ export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | '
 /** Type tab on the redesigned Groups page: every group, or one behavioral class. */
 export type GroupsHomeTab = GroupBehavioralClass | 'all';
 
+/** Applied filters on the redesigned Groups page. */
+export interface GroupsHomeFilters {
+  /** A foundation's or project's uid; a foundation also matches its projects' groups. */
+  scope: string | null;
+  voting: 'enabled' | 'disabled' | null;
+}
+
+/** Groups with voting enabled and disabled, for the Voting capability filter options. */
+export interface GroupsHomeVotingCounts {
+  enabled: number;
+  disabled: number;
+}
+
+/** An applied filter shown as a removable chip on the redesigned Groups page. */
+export interface GroupsHomeFilterChip {
+  key: keyof GroupsHomeFilters;
+  /** Filter name with its colon, e.g. "Project:". */
+  prefix: string;
+  label: string;
+}
+
 /** One figure in the redesigned Groups page metrics row. */
 export interface GroupsHomeMetric {
   label: string;

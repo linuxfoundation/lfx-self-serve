@@ -13,6 +13,7 @@ import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GroupsRedesignComponent } from './groups-redesign.component';
+import { GroupsHomeStore } from './services/groups-home.store';
 
 const group = (uid: string, category: string, extra: Partial<MyCommittee> = {}): MyCommittee =>
   ({ uid, name: `Group ${uid}`, category, public: true, enable_voting: false, total_members: 4, my_role: 'Member', ...extra }) as MyCommittee;
@@ -148,5 +149,29 @@ describe('GroupsRedesignComponent', () => {
 
     expect(one(fixture, 'groups-redesign-load-more')).toBeNull();
     expect(text(one(fixture, 'groups-redesign-all-loaded'))).toBe('All 45 groups loaded');
+  });
+
+  it('shows no results for a search, and Reset filters clears it', async () => {
+    const fixture = await render([group('a', 'Board'), group('b', 'Working Group')]);
+    const store = fixture.debugElement.injector.get(GroupsHomeStore);
+
+    store.setSearch('zzz');
+    await fixture.whenStable();
+    expect(text(one(fixture, 'groups-redesign-no-results'))).toContain('No groups match your search');
+
+    one(fixture, 'groups-redesign-no-results-reset')?.querySelector('button')?.click();
+    await fixture.whenStable();
+    expect(all(fixture, 'groups-home-card')).toHaveLength(2);
+  });
+
+  it('shows a chip per applied filter', async () => {
+    const fixture = await render([group('a', 'Board', { enable_voting: true }), group('b', 'Working Group')]);
+    const store = fixture.debugElement.injector.get(GroupsHomeStore);
+
+    store.setFilters({ scope: null, voting: 'enabled' });
+    await fixture.whenStable();
+
+    expect(all(fixture, 'groups-redesign-chip').map(text)).toEqual([expect.stringContaining('Voting: Enabled')]);
+    expect(all(fixture, 'groups-home-card-name').map(text)).toEqual(['Group a']);
   });
 });
