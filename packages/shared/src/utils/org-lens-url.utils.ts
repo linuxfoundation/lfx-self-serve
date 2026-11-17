@@ -7,6 +7,7 @@ import {
   ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_LENS_LEGACY_URL_ROOT,
+  ORG_LENS_LEGACY_URL_ROOTS,
   ORG_LENS_PAGE_SEGMENTS,
   ORG_LENS_URL_ROOT,
   ORG_ROLLUP_SEGMENT_PATTERN,
@@ -209,15 +210,15 @@ export function easyclaReturnOrgParam(get: (name: string) => string | null | und
  * parameter is renamed to `?company=`. The fragment never reaches a server, and a browser re-applies it to a
  * redirect target that carries none, so callers that see one (the Angular router) pass it through themselves.
  *
- * Only the exact segment `org` matches: `/organization`, `/orgs` and `/org-x` are other addresses. The result
+ * Only the exact segments in `ORG_LENS_LEGACY_URL_ROOTS` (`org`, `organization`) match: `/orgs` and `/org-x` are other addresses. The result
  * is always a same-origin path (it starts with a single `/company`), so it cannot be turned into an open redirect.
  */
 export function companyLensRedirectTarget(pathAndQuery: string): string | null {
   const queryStart = pathAndQuery.indexOf('?');
   const path = queryStart === -1 ? pathAndQuery : pathAndQuery.slice(0, queryStart);
   const query = queryStart === -1 ? '' : pathAndQuery.slice(queryStart);
-  const legacyRoot = `/${ORG_LENS_LEGACY_URL_ROOT}`;
-  if (path !== legacyRoot && !path.startsWith(`${legacyRoot}/`)) {
+  const legacyRoot = ORG_LENS_LEGACY_URL_ROOTS.map((root) => `/${root}`).find((root) => path === root || path.startsWith(`${root}/`));
+  if (!legacyRoot) {
     return null;
   }
   const rest = path.slice(legacyRoot.length);

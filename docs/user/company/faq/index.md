@@ -31,7 +31,7 @@ tags:
     leaderboard,
     crowdfunding,
   ]
-last_updated: 2026-11-12
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 
@@ -93,11 +93,11 @@ The Groups page lists the working groups, committees and other groups across Lin
 
 ## What does the Company Profile page show, and who can edit it?
 
-The Company Profile page shows the selected company's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the company, such as an **Org Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The company name and the addresses cannot be changed on this page. Changes save to the company's record, so everyone who can open the company sees them. See [Who can edit the company profile?](../company-profile/#who-can-edit-the-company-profile).
+The Company Profile page shows the selected company's logo, name, description, website, number of employees, industry, sector, and its **Primary Address** and **Billing Address**. Anyone who can open the company in the Company lens can see it, except a CLA Manager or initial CLA Manager designee with no other role on it. Only someone who can edit the company, such as a **Company Admin Editor**, sees **Edit Profile**. In the edit form you can change the website, number of employees, Crunchbase profile, industry, technology sector and description, then select **Save Changes**. A new logo must be an SVG (Scalable Vector Graphics) image file of 2MB or less, and it saves as soon as it uploads, separately from **Save Changes**. The company name and the addresses cannot be changed on this page. Changes save to the company's record, so everyone who can open the company sees them. See [Who can edit the company profile?](../company-profile/#who-can-edit-the-company-profile).
 
 ## Why don't I see Crowdfunding Initiatives in the Company lens?
 
-You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, under **Company Engagement** below **Groups**, only for an **Admin** (Org Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
+You see **Crowdfunding Initiatives** in the Company lens only if you are an Admin granted directly on that company. It appears in the sidebar, under **Company Engagement** below **Groups**, only for an **Admin** (Company Admin – Editor) added on the company's own **Company Lens Access** tab. A **Viewer** role does not show it, and neither does Admin access to a parent or other related company. To get it, ask one of the company's Admins to make you an Admin. See [Lens-scoped Initiatives](../../crowdfunding/lens-initiatives/#who-sees-it).
 
 ## Why can't I edit this corporate CLA?
 

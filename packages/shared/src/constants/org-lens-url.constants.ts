@@ -17,6 +17,13 @@ export const ORG_LENS_URL_ROOT = 'company';
 /** Root of the pre-rename addresses (`/org/…`). Never generated; every such address redirects permanently to `/company/…` (#5064). */
 export const ORG_LENS_LEGACY_URL_ROOT = 'org';
 
+/**
+ * Every pre-rename root that redirects to `/company/…`: the short `/org` form, and `/organization` — the address the
+ * product used before Company Lens (e.g. `/organization/{slug}/profile`, `/organization/{slug}/easycla`), still found in
+ * bookmarks and sent emails. Exact segments only: `/orgs` and `/org-x` are other addresses.
+ */
+export const ORG_LENS_LEGACY_URL_ROOTS: readonly string[] = [ORG_LENS_LEGACY_URL_ROOT, 'organization'];
+
 /** Route parameter carrying the organization segment on the addressed mount (`/company/:orgSegment/…`). The router declares it as `':' + ORG_SEGMENT_PARAM`; guards and pages read it by this name. */
 export const ORG_SEGMENT_PARAM = 'orgSegment';
 
