@@ -511,7 +511,7 @@ const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide a com
 
 /**
  * Committee settings features for Step 2 form
- * @description Feature toggles for committee settings (follows MEETING_FEATURES pattern)
+ * @description Feature toggles for committee settings
  */
 export const COMMITTEE_SETTINGS_FEATURES = [
   {

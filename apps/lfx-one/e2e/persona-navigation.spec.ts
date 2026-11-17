@@ -610,7 +610,7 @@ test.describe('S9: Route guard — writerGuard redirects contributor without wri
 });
 
 test.describe('S10: Route guard — writerGuard fast path for ED persona', () => {
-  test('ED (synchronous fast path) navigating to /project/meetings/create is NOT redirected', async ({ page }) => {
+  test('ED (synchronous fast path) navigating to /project/meetings/create opens the composer instead of being redirected away', async ({ page }) => {
     await stubPersona(page, ['executive-director']);
     await stubNavLensItems(page, 'project');
     await stubProjectApi(page, MOCK_PROJECT_SLUG, true);
@@ -622,10 +622,16 @@ test.describe('S10: Route guard — writerGuard fast path for ED persona', () =>
     await page.goto(`/project/meetings/create?project=${MOCK_PROJECT_SLUG}`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    // writerGuard returns true synchronously for ED (no project API call needed)
-    await expect(page, 'persona=executive-director should remain on /project/meetings/create').toHaveURL(/\/project\/meetings\/create/, {
+    // writerGuard returns true synchronously for ED (no project API call needed), so the composer
+    // route activates: it opens the create composer and replaces the URL with the meetings list,
+    // keeping `?project=`. A guard rejection would land on /project/overview instead.
+    await expect(page.getByTestId('meeting-composer-header'), 'persona=executive-director should get the create composer').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
+    await expect(page, 'persona=executive-director should land on the meetings list under the composer').toHaveURL(
+      new RegExp(`/project/meetings\\?project=${MOCK_PROJECT_SLUG}$`),
+      { timeout: ELEMENT_TIMEOUT }
+    );
   });
 });
 
