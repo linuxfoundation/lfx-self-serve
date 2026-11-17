@@ -13,6 +13,7 @@ import {
   VOTE_BALLOT_FINAL_NOTICE,
   VOTE_BALLOT_FINAL_STATE,
   VOTE_CHANGE_NOT_ALLOWED,
+  VOTE_LAST_VOTER_CONFIRMATION,
   VOTE_LINK_NOT_AWAITING_RESPONSE,
   VOTE_LINK_NOT_RESPONDED,
   VOTE_LINK_TOKEN_FRAGMENT_PARAM,
@@ -22,6 +23,8 @@ import { buildVoteAnswerSummary, canChangeSubmittedBallot, isVoteChangeAllowed, 
 import { LinkifyHtmlPipe } from '@pipes/linkify-html.pipe';
 import { VoteService } from '@services/vote.service';
 import { ExternalLinksDirective } from '@shared/directives/external-links.directive';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { fromEvent, Subject, takeUntil } from 'rxjs';
 import { VoteBallotFormComponent } from '../components/vote-ballot-form/vote-ballot-form.component';
 import { VoteLinkHeaderComponent } from '../components/vote-link-header/vote-link-header.component';
@@ -39,6 +42,7 @@ import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vot
   selector: 'lfx-vote-link-ballot',
   imports: [
     ButtonComponent,
+    ConfirmDialogModule,
     ExternalLinksDirective,
     LinkifyHtmlPipe,
     VoteDescriptionPipe,
@@ -47,10 +51,13 @@ import { VoteLinkThankYouComponent } from '../components/vote-link-thank-you/vot
     VoteLinkMarkComponent,
     VoteLinkThankYouComponent,
   ],
+  // Scoped instance for the last-voter dialog (#4726).
+  providers: [ConfirmationService],
   templateUrl: './vote-link-ballot.component.html',
 })
 export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   private readonly voteService = inject(VoteService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly meta = inject(Meta);
@@ -75,6 +82,10 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
   protected readonly project = signal<PublicProjectSummary | null>(null);
   /** What the voter just submitted, kept in memory only to recap it on the thank-you screen. */
   private readonly lastSubmission = signal<VoteBallotSubmission | null>(null);
+  /** The voter confirmed that this first submission ends the vote (#4726). */
+  private readonly endsVote = signal<boolean>(false);
+  /** The confirmed last-voter submission succeeded, so the vote has ended and the thank-you screen offers no change (#4726). */
+  protected readonly endedVoteOnSubmit = signal<boolean>(false);
 
   protected readonly answerLines = computed(() => {
     const submission = this.lastSubmission();
@@ -158,7 +169,31 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
 
     this.submitting.set(true);
     this.lastSubmission.set(submission);
-    this.send(body, this.updateMode(), true);
+    this.endsVote.set(false);
+
+    // Changing a ballot never ends a vote; only a first submission re-reads the ballot to check (#4726). Fails open.
+    if (this.updateMode() || this.ballot()?.ballot.already_voted) {
+      this.send(body, this.updateMode(), true);
+      return;
+    }
+
+    this.voteService
+      .getLinkWouldEndVote(token)
+      .pipe(takeUntil(this.cancel$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((wouldEndVote) => {
+        if (!wouldEndVote) {
+          this.send(body, false, true);
+          return;
+        }
+        this.confirmationService.confirm({
+          ...VOTE_LAST_VOTER_CONFIRMATION,
+          accept: () => {
+            this.endsVote.set(true);
+            this.send(body, false, true);
+          },
+          reject: () => this.submitting.set(false),
+        });
+      });
   }
 
   /** Sends the ballot; a state mismatch (POST on an already-voted ballot, or PUT on an unvoted one) flips the verb once and retries. */
@@ -170,6 +205,7 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
         next: () => {
           this.submitting.set(false);
           this.abstainedLast.set(body.abstain);
+          this.endedVoteOnSubmit.set(!update && this.endsVote());
           this.state.set(update ? 'updated' : 'submitted');
         },
         error: (err: unknown) => {
@@ -283,6 +319,8 @@ export class VoteLinkBallotComponent implements OnInit, OnDestroy {
     this.errorMessage.set(null);
     this.abstainedLast.set(false);
     this.changeBlocked.set(false);
+    this.endsVote.set(false);
+    this.endedVoteOnSubmit.set(false);
     this.token.set(null);
 
     const token = this.consumeFragmentToken();

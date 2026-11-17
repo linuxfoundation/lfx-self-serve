@@ -4,7 +4,7 @@ description: Frequently asked questions about creating, voting on, and managing 
 audience: [all]
 product_area: Votes
 tags: [votes, faq, governance, elections, abstain, results, present, clone]
-last_updated: 2026-11-12
+last_updated: 2026-11-17
 intercom_collection: Votes
 ---
 
@@ -21,6 +21,10 @@ The person who creates the vote picks **Eligible Participants** from the vote's 
 It depends on the vote. When its creator allows changes (the default), you can change your choices, comment or abstention until the vote ends: go to **Me → Votes**, select **Review**, edit your recorded ballot and select **Update Vote**, or use your personalized ballot link if you received one. When the creator turned changes off, your ballot is final once you submit it. You see a notice saying so before you submit, and the **Review** drawer says **Your vote is final and can't be changed.** and keeps your recorded ballot read-only.
 
 The creator's management page has no ballot-changing controls. Invited voters who also manage the vote must use **Me → Votes → Review** to change their own ballot. Management access does not allow changing anyone else's ballot. In the Me-lens **Review** drawer, and on personalized links for named votes, a comment-only change preserves your recorded ranking; include previously unranked options in a ranked multiple-selection question only by selecting **Add to ranking**. Pseudo-anonymous links do not prefill previous answers: enter your intended choices again. To replace a recorded ranked single-selection abstention, clear **Abstain from this vote**, then select **Rank all options** and reorder.
+
+## Why did I see "Submitting will end this vote"?
+
+A vote ends as soon as every invited member has responded. If you are the last member who hasn't, your ballot ends the vote, so LFX Self Serve asks you to confirm before submitting it. Select **Submit and end vote** to submit, or **Go back** to keep your ballot open. The last responder's ballot can't be changed afterward, even on a vote that allows changes, because the vote has ended. The check happens when you select **Submit Vote**, so if another member responds at the same moment, you might not see the dialog.
 
 ## Can I follow a description link without leaving my ballot?
 

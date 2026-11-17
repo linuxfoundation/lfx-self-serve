@@ -22,6 +22,7 @@ import {
   VOTE_COMMENT_RESPONSE_MAX_LENGTH,
   VOTE_IMPERSONATION_PRIVATE_NOTICE,
   VOTE_IMPERSONATION_READ_ONLY_NOTICE,
+  VOTE_LAST_VOTER_CONFIRMATION,
 } from '@lfx-one/shared/constants';
 import {
   CommentResponseFormData,
@@ -53,8 +54,9 @@ import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { CheckboxModule } from 'primeng/checkbox';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -71,6 +73,7 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     VoteDescriptionPipe,
     SkeletonModule,
     CheckboxModule,
+    ConfirmDialogModule,
     DragDropModule,
     TooltipModule,
     ReactiveFormsModule,
@@ -85,6 +88,8 @@ import { ExternalLinksDirective } from '@shared/directives/external-links.direct
     LongTimezonePipe,
     VoteDeadlinePipe,
   ],
+  // Scoped so the last-voter dialog (#4726) never renders through a host's own <p-confirmDialog>.
+  providers: [ConfirmationService],
   templateUrl: './vote-cast-drawer.component.html',
   styleUrl: './vote-cast-drawer.component.scss',
 })
@@ -93,6 +98,7 @@ export class VoteCastDrawerComponent {
   private readonly voteService = inject(VoteService);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -332,39 +338,20 @@ export class VoteCastDrawerComponent {
       return;
     }
 
+    // A first ballot re-checks at submit time whether it would end the vote (#4726); the read fails open to false.
     this.voteService
-      .submitMyResponse(vote.uid, {
-        abstain: isAbstain,
-        userVoteContent,
-        commentResponses,
-      })
-      .pipe(
-        takeUntil(this.cancelSubmit$),
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.submitting.set(false))
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Vote submitted',
-            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
-            life: 3000,
-          });
-          this.voteSubmitted.emit(vote.uid);
-          this.visible.set(false);
-        },
-        error: (err: unknown) => {
-          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
-          this.messageService.add({
-            severity: 'error',
-            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
-            detail: isInvitationMissing
-              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
-              : 'Something went wrong submitting your ballot. Please try again.',
-            life: 5000,
-          });
-        },
+      .getMyWouldEndVote(vote.uid)
+      .pipe(takeUntil(this.cancelSubmit$), takeUntilDestroyed(this.destroyRef))
+      .subscribe((wouldEndVote) => {
+        if (!wouldEndVote) {
+          this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses);
+          return;
+        }
+        this.confirmationService.confirm({
+          ...VOTE_LAST_VOTER_CONFIRMATION,
+          accept: () => this.submitFirstBallot(vote, isAbstain, userVoteContent, commentResponses),
+          reject: () => this.submitting.set(false),
+        });
       });
   }
 
@@ -677,6 +664,49 @@ export class VoteCastDrawerComponent {
       this.commentForm.get(promptId)?.setValue(text, { emitEvent: false });
     }
     this.bumpFormVersion();
+  }
+
+  /** Submits a first ballot (POST); called directly or once the voter confirms the last-voter dialog (#4726). */
+  private submitFirstBallot(
+    vote: Vote,
+    isAbstain: boolean,
+    userVoteContent: VoteAnswerInput[] | undefined,
+    commentResponses: CommentResponseInput[] | undefined
+  ): void {
+    this.voteService
+      .submitMyResponse(vote.uid, {
+        abstain: isAbstain,
+        userVoteContent,
+        commentResponses,
+      })
+      .pipe(
+        takeUntil(this.cancelSubmit$),
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.submitting.set(false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Vote submitted',
+            detail: `Your ${isAbstain ? 'abstention' : 'ballot'} has been recorded.`,
+            life: 3000,
+          });
+          this.voteSubmitted.emit(vote.uid);
+          this.visible.set(false);
+        },
+        error: (err: unknown) => {
+          const isInvitationMissing = err instanceof Error && !(err instanceof HttpErrorResponse) && err.message === INVITATION_NOT_FOUND;
+          this.messageService.add({
+            severity: 'error',
+            summary: isInvitationMissing ? 'Unable to find your invitation' : 'Unable to submit vote',
+            detail: isInvitationMissing
+              ? 'We could not find your vote invitation for this ballot. Please refresh and try again.'
+              : 'Something went wrong submitting your ballot. Please try again.',
+            life: 5000,
+          });
+        },
+      });
   }
 
   /** Saves a changed ballot (#4723). Comments are always sent so a cleared comment replaces the stored one. */

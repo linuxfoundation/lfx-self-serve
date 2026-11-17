@@ -69,7 +69,7 @@
             [abstained]="abstainedLast()"
             [secret]="b.pseudo_anonymity !== false"
             [answers]="answerLines()"
-            [canChange]="changeAllowed()"
+            [canChange]="changeAllowed() && !endedVoteOnSubmit()"
             data-testid="vote-link-submitted" />
         }
       }
@@ -139,3 +139,4 @@
     }
   </div>
 </main>
+<p-confirmDialog />

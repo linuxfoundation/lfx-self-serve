@@ -4,8 +4,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { VOTE_LAST_VOTER_CONFIRMATION } from '@lfx-one/shared/constants';
 import { PublicProjectSummary, VoteBallotSubmission, VoteLinkBallot } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
+import { Confirmation, ConfirmationService } from 'primeng/api';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -65,7 +67,11 @@ describe('VoteLinkBallotComponent (#4363)', () => {
     getPublicProjectSummary = vi.fn(() => of(null));
     TestBed.configureTestingModule({
       imports: [VoteLinkBallotComponent],
-      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getPublicProjectSummary } }],
+      providers: [
+        provideNoopAnimations(),
+        // The last-voter check (#4726) defaults to "not the last voter" so first submissions go straight through.
+        { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getPublicProjectSummary, getLinkWouldEndVote: vi.fn(() => of(false)) } },
+      ],
     });
   });
 
@@ -605,7 +611,13 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     submitLinkResponse = vi.fn(() => of(undefined));
     TestBed.configureTestingModule({
       imports: [VoteLinkBallotComponent],
-      providers: [provideNoopAnimations(), { provide: VoteService, useValue: { getLinkBallot: vi.fn(), submitLinkResponse, getPublicProjectSummary } }],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: VoteService,
+          useValue: { getLinkBallot: vi.fn(), submitLinkResponse, getPublicProjectSummary, getLinkWouldEndVote: vi.fn(() => of(false)) },
+        },
+      ],
     });
   });
 
@@ -729,5 +741,111 @@ describe('VoteLinkBallotComponent branding and thank-you (#4692)', () => {
     submit({ abstain: true });
 
     expect(text('vote-link-thank-you-abstained')).toBe('You abstained');
+  });
+});
+
+describe('VoteLinkBallotComponent last-voter confirmation (#4726)', () => {
+  let fixture: ComponentFixture<VoteLinkBallotComponent>;
+  let getLinkBallot: ReturnType<typeof vi.fn>;
+  let submitLinkResponse: ReturnType<typeof vi.fn>;
+  let getLinkWouldEndVote: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.spyOn>;
+
+  const state = () => (fixture.componentInstance as unknown as { state: () => string }).state();
+  const testId = (id: string) => fixture.nativeElement.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
+  const submit = (submission = SUBMISSION) => {
+    (fixture.componentInstance as unknown as { onSubmit: (s: VoteBallotSubmission) => void }).onSubmit(submission);
+    fixture.detectChanges();
+  };
+  const submitting = () => (fixture.componentInstance as unknown as { submitting: () => boolean }).submitting();
+  const lastConfirmation = () => confirm.mock.calls.at(-1)?.[0] as Confirmation;
+
+  async function open(ballot: VoteLinkBallot, wouldEndVote: Observable<boolean>): Promise<void> {
+    getLinkBallot.mockReturnValue(of(ballot));
+    getLinkWouldEndVote.mockReturnValue(wouldEndVote);
+    window.history.replaceState(null, '', `${PATH}#vote_token=${TOKEN}`);
+    fixture = TestBed.createComponent(VoteLinkBallotComponent);
+    // The page's own scoped instance.
+    confirm = vi.spyOn(fixture.debugElement.injector.get(ConfirmationService), 'confirm');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  beforeEach(() => {
+    getLinkBallot = vi.fn();
+    submitLinkResponse = vi.fn(() => of(undefined));
+    getLinkWouldEndVote = vi.fn();
+    TestBed.configureTestingModule({
+      imports: [VoteLinkBallotComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { getLinkBallot, submitLinkResponse, getLinkWouldEndVote, getPublicProjectSummary: vi.fn(() => of(null)) } },
+      ],
+    });
+  });
+
+  afterEach(() => window.history.replaceState(null, '', '/'));
+
+  it('re-reads the ballot with the token and asks before a first submission that would end the vote', async () => {
+    await open(BALLOT, of(true));
+    submit();
+
+    expect(getLinkWouldEndVote).toHaveBeenCalledExactlyOnceWith(TOKEN);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(lastConfirmation()).toMatchObject(VOTE_LAST_VOTER_CONFIRMATION);
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+    expect(submitting()).toBe(true);
+  });
+
+  it('goes back without submitting when the voter rejects', async () => {
+    await open(BALLOT, of(true));
+    submit();
+    lastConfirmation().reject?.();
+    fixture.detectChanges();
+
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+    expect(submitting()).toBe(false);
+    expect(state()).toBe('ready');
+  });
+
+  it('POSTs once accepted, and the thank-you screen offers no change on the vote it just ended', async () => {
+    await open(BALLOT, of(true));
+    submit();
+    lastConfirmation().accept?.();
+    fixture.detectChanges();
+
+    expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith({ vote_token: TOKEN, abstain: false, user_vote_content: SUBMISSION.userVoteContent }, false);
+    expect(state()).toBe('submitted');
+    expect(testId('vote-link-thank-you-deadline')?.textContent).not.toContain('You can change your vote');
+  });
+
+  it('POSTs without asking when the submission would not end the vote, and still offers a change', async () => {
+    await open(BALLOT, of(false));
+    submit();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitLinkResponse).toHaveBeenCalledOnce();
+    expect(state()).toBe('submitted');
+    expect(testId('vote-link-thank-you-deadline')?.textContent).toContain('You can change your vote');
+  });
+
+  it('still asks on a vote that makes submitted ballots final (AC-4)', async () => {
+    await open({ ...BALLOT, allow_vote_change: false }, of(true));
+    submit();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(submitLinkResponse).not.toHaveBeenCalled();
+  });
+
+  it('never checks when changing an already-submitted ballot', async () => {
+    await open({ ...BALLOT, ballot: { ...BALLOT.ballot, already_voted: true, can_change_vote: true } }, of(true));
+    (fixture.componentInstance as unknown as { onStartUpdate: () => void }).onStartUpdate();
+    fixture.detectChanges();
+    submit();
+
+    expect(getLinkWouldEndVote).not.toHaveBeenCalled();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(submitLinkResponse).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ vote_token: TOKEN }), true);
   });
 });
