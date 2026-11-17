@@ -75,4 +75,12 @@ Each page story applies these to **one** page. Nothing is exposed by default.
 
 **Client flags are employee-only flags.** `employeeView` on role-grants, the selector row and the resolver is published through `resolveReduced`, which also asks the authorizer for `b2b_org#auditor` on that company. A caller who holds it (an authorizer-only reader such as a key contact absent from the roster) resolves `full` at the read gate, so they get no employee flag and the client keeps the full view. An authorizer failure publishes nothing.
 
-The same overlap needs a positive signal, because the client never stores authorizer entitlements in its grant sets: for such a caller `resolveReduced` returns `holds-full-access` with the company, and the server publishes it as `RoleGrantsResponse.fullAccessOrgUid`, an `OrgItem.fullAccess` selector row (with the company slug) and `OrgResolveResponse.fullAccess`. The client records it (`OrgLensViewModeService.noteFullAccessAddressed`, `fullAccessOrgUids`) so CLA-only classification, addressability, the empty state and the view mode all treat the company as full, even when the caller also manages its CLAs.
+# The same overlap needs a positive signal, because the client never stores authorizer entitlements in its grant sets: for such a caller `resolveReduced` returns `holds-full-access` with the company, and the server publishes it as `RoleGrantsResponse.fullAccessOrgUid`, an `OrgItem.fullAccess` selector row (with the company slug) and `OrgResolveResponse.fullAccess`. The client records it (`OrgLensViewModeService.noteFullAccessAddressed`, `fullAccessOrgUids`) so CLA-only classification, addressability, the empty state and the view mode all treat the company as full, even when the caller also manages its CLAs.
+
+## Hidden pages
+
+### People (#5856)
+
+Hidden entirely: `people` is in `ORG_LENS_EMPLOYEE_VIEW_HIDDEN_PAGES` (no left-nav link), the `people` route carries `orgLensFullViewOnlyGuard()`, and `blockEmployeeView` is mounted with `router.use` on two prefixes in `orgs.route.ts`: `/:orgUid/lens/people` (every tab, the person drawers, the Event Attendees and Trainees tabs, the reassign writes) and `/:orgUid/lens/access` (the Company Lens Access tab). A prefix mount means a route added later under either prefix is blocked by default. Not blocked here because other pages share them: `/lens/employees`, `/lens/key-contacts/*` (Memberships page and its reassign / key contact modals).
+
+> > > > > > > a23369b25b (feat(company-lens): hide the people page in the all employee view)

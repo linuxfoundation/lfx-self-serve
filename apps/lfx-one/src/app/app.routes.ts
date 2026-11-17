@@ -23,6 +23,7 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
@@ -209,6 +210,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'people',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your company.', icon: 'fa-light fa-users' },
       loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
     },

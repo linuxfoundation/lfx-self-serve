@@ -3,7 +3,17 @@
 
 import { Component, inject, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter, RedirectFunction, Router, UrlSegment } from '@angular/router';
+import {
+  ActivatedRoute,
+  ActivatedRouteSnapshot,
+  CanActivateFn,
+  provideRouter,
+  RedirectFunction,
+  Router,
+  RouterStateSnapshot,
+  UrlSegment,
+  UrlTree,
+} from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { HEALTH_METRICS_TABS, ORG_LENS_URL_ROOT, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
@@ -30,6 +40,8 @@ import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-m
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { AccountContextService } from './shared/services/account-context.service';
 import { LensService } from './shared/services/lens.service';
+import { OrgLensViewModeService } from './shared/services/org-lens-view-mode.service';
+import { OrgRoleGrantsService } from './shared/services/org-role-grants.service';
 
 import type { Route } from '@angular/router';
 
@@ -370,5 +382,34 @@ describe('Org Lens roll-up routes', () => {
       expect(await visitBareOrg(true, { path: '', pathMatch: 'full', redirectTo: 'overview' })).toBe('Roll-up unavailable');
       expect(TestBed.inject(Router).url).toBe('/company/overview');
     });
+  });
+});
+
+// #5856 — the People page is hidden in the all employee view (epic #5845): its route redirects to Overview there.
+describe('Company Lens People route (all employee view)', () => {
+  it('is guarded so the employee view redirects to Overview, and the full view opens it', async () => {
+    // The page route itself, not its roll-up stand-in (same path, match guards only), on the legacy mount.
+    const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
+    const peopleRoute = org.children!.find((route) => route.path === 'people' && !!route.loadComponent);
+    expect(peopleRoute?.canActivate).toHaveLength(1);
+
+    const isEmployeeView = signal(true);
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      ],
+    });
+    const router = TestBed.inject(Router);
+    const verdict = async (): Promise<unknown> =>
+      TestBed.runInInjectionContext(() =>
+        (peopleRoute?.canActivate?.[0] as CanActivateFn)({} as ActivatedRouteSnapshot, { url: '/company/acme-inc/people' } as RouterStateSnapshot)
+      );
+
+    expect(router.serializeUrl((await verdict()) as UrlTree)).toBe('/company/acme-inc/overview');
+
+    isEmployeeView.set(false);
+    expect(await verdict()).toBe(true);
   });
 });
