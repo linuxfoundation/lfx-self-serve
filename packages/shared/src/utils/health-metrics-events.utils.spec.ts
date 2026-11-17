@@ -785,6 +785,13 @@ describe('buildHealthMetricsEventsRegistrationsGrowthChart', () => {
     expect(view.columns[1].tip.rows.map((row) => row.value)).toEqual(['—', '—', '—']);
   });
 
+  it('sizes the axis to the drawn formats when a year has no total, so its bar fits', () => {
+    const view = chart([growthYear({ totalRegistrations: null, inPersonRegistrations: 1000, virtualRegistrations: 0 })]);
+
+    expect(view.yTicks[0]).toBe('1.2K');
+    expect(view.columns[0].total).toBe('');
+  });
+
   it('draws nothing for a foundation with no year', () => {
     expect(chart([]).columns).toEqual([]);
   });

@@ -49,6 +49,32 @@ describe('HealthMetricsColumnChartComponent', () => {
     expect((query('chart-segment-2026-in-person')?.parentElement as HTMLElement).style.opacity).toBe('1');
   });
 
+  it('rounds the top corners of each stack on its highest segment', async () => {
+    await render();
+
+    expect(query('chart-segment-2025-virtual')?.className).toContain('rounded-t-[4px]');
+    expect(query('chart-segment-2025-in-person')?.className).not.toContain('rounded-t-[4px]');
+    // 2026 has no virtual registrations, so its in-person segment is the top of the stack.
+    expect(query('chart-segment-2026-in-person')?.className).toContain('rounded-t-[4px]');
+  });
+
+  it('places an open popup again when the window resizes', async () => {
+    await render();
+    const column = query('chart-column-2025') as HTMLElement;
+    column.dispatchEvent(new Event('mouseenter'));
+    fixture.detectChanges();
+
+    const placements: unknown[] = [];
+    placements.push(fixture.componentInstance['tipPlacement']());
+    window.dispatchEvent(new Event('resize'));
+    fixture.detectChanges();
+    placements.push(fixture.componentInstance['tipPlacement']());
+
+    expect(query('chart-tip')).not.toBeNull();
+    expect(placements[1]).toEqual(placements[0]);
+    expect(placements[1]).not.toBeNull();
+  });
+
   it('labels the y axis, the years with their sub-line, and the legend', async () => {
     await render();
 

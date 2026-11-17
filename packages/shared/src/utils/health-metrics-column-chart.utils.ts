@@ -36,7 +36,8 @@ export function healthMetricsColumnChartCeiling(peak: number): number {
 
 /** The design's chart label: `24K`, `1.6K` or `800`; one decimal under 100K, none above, and `1M` rather than `1000K`. */
 export function formatHealthMetricsChartCompact(value: number): string {
-  if (value >= 999_950) return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  // The no-decimal K branch rounds 999,500 up to 1000K, so M starts there.
+  if (value >= 999_500) return `${(value / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
   if (value >= 1e3) return `${(value / 1e3).toFixed(value >= 1e5 ? 0 : 1).replace(/\.0$/, '')}K`;
   return String(Math.round(value));
 }
@@ -48,11 +49,14 @@ function buildColumn(input: HealthMetricsColumnChartInput, column: HealthMetrics
   const segments = values
     ? input.series.map((series, index) => {
         const value = values[index] ?? 0;
-        const segment = { key: series.key, color: series.color, bottomPct: pct(stacked), heightPct: pct(value) };
+        const segment = { key: series.key, color: series.color, bottomPct: pct(stacked), heightPct: pct(value), top: false };
         stacked += Math.max(0, value);
         return segment;
       })
     : [];
+  // The design rounds the stack's top corners, which the highest drawn segment carries.
+  const topmost = segments.map((segment) => segment.heightPct > 0).lastIndexOf(true);
+  if (topmost >= 0) segments[topmost].top = true;
   const total = values ? column.total : null;
   const rows: HealthMetricsChartTipRowView[] = values
     ? [

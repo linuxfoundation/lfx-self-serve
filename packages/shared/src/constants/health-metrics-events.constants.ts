@@ -227,6 +227,12 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES: readonly HealthM
 /** The y axis tops out at the largest total plus 8% before it rounds to a clean step. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM = 1.08;
 
+/** Registrations & growth's plot height, as the design draws it. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEIGHT_PX = 260;
+
+/** The design's column width on the Events charts. */
+export const HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX = 40;
+
 /** Event rows read per foundation, in-period events first; one more is read so a dropped in-period event is flagged. */
 export const HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP = 500;
 

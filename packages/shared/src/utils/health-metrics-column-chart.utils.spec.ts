@@ -39,6 +39,13 @@ describe('buildHealthMetricsColumnChart', () => {
     expect([first.total, round(first.totalBottomPct), first.opacity]).toEqual(['1,105', 69.063, 0.35]);
   });
 
+  it('rounds the top of the highest drawn segment only, so the stack keeps its rounded corners', () => {
+    const [first, second] = buildHealthMetricsColumnChart(input()).columns;
+
+    expect(first.segments.map((segment) => segment.top)).toEqual([false, true]);
+    expect(second.segments.map((segment) => segment.top)).toEqual([true, false]);
+  });
+
   it('labels the y axis top down in quarters', () => {
     expect(buildHealthMetricsColumnChart(input()).yTicks).toEqual(['1.6K', '1.2K', '800', '400', '0']);
   });
@@ -99,6 +106,7 @@ describe('formatHealthMetricsChartCompact', () => {
     [800, '800'],
     [1500000, '1.5M'],
     [999960, '1M'],
+    [999600, '1M'],
   ])('writes %s as %s, as the design does', (value, label) => {
     expect(formatHealthMetricsChartCompact(value)).toBe(label);
   });

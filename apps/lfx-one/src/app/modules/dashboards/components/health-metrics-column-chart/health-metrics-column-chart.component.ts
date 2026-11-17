@@ -16,8 +16,8 @@ import type { HealthMetricsColumnChartView, HealthMetricsLineChartTipPlacement }
   selector: 'lfx-health-metrics-column-chart',
   imports: [HealthMetricsChartTipComponent],
   templateUrl: './health-metrics-column-chart.component.html',
-  // Escape closes the popup however it opened, since hovering a column does not focus it.
-  host: { class: 'block', '(document:keydown.escape)': 'activeIndex.set(null)' },
+  // Escape closes the popup however it opened, since hovering a column does not focus it; a resize re-places an open one.
+  host: { class: 'block', '(document:keydown.escape)': 'activeIndex.set(null)', '(window:resize)': 'replaceTip()' },
 })
 export class HealthMetricsColumnChartComponent {
   public readonly chart = input.required<HealthMetricsColumnChartView>();
@@ -25,14 +25,28 @@ export class HealthMetricsColumnChartComponent {
 
   protected readonly activeIndex = signal<number | null>(null);
   protected readonly tipPlacement = signal<HealthMetricsLineChartTipPlacement | null>(null);
+  /** The open column, kept so a resize can place its popup again. */
+  private activeColumn: HTMLElement | null = null;
 
   protected onEnter(index: number, event: Event): void {
-    const column = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.activeColumn = event.currentTarget as HTMLElement;
     this.activeIndex.set(index);
-    this.tipPlacement.set(placeHealthMetricsChartTip(50, column.left + column.width / 2, document.documentElement.clientWidth));
+    this.tipPlacement.set(this.placeTip(this.activeColumn));
   }
 
   protected onLeave(index: number): void {
-    if (this.activeIndex() === index) this.activeIndex.set(null);
+    if (this.activeIndex() !== index) return;
+    this.activeIndex.set(null);
+    this.activeColumn = null;
+  }
+
+  protected replaceTip(): void {
+    if (this.activeIndex() !== null && this.activeColumn) this.tipPlacement.set(this.placeTip(this.activeColumn));
+  }
+
+  /** Beside the column's centre, as the design places it; see `placeHealthMetricsChartTip`. */
+  private placeTip(column: HTMLElement): HealthMetricsLineChartTipPlacement {
+    const box = column.getBoundingClientRect();
+    return placeHealthMetricsChartTip(50, box.left + box.width / 2, document.documentElement.clientWidth);
   }
 }

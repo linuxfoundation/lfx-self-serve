@@ -44,6 +44,8 @@ export interface HealthMetricsColumnChartSegmentView {
   color: string;
   bottomPct: number;
   heightPct: number;
+  /** The highest drawn segment, which takes the stack's rounded top corners. */
+  top: boolean;
 }
 
 /** One column, laid out: its segments, the total above it and its popup. */

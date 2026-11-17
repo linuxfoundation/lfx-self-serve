@@ -11,7 +11,9 @@ import {
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
+  HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM,
+  HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEIGHT_PX,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
@@ -457,14 +459,20 @@ export function buildHealthMetricsEventsRegistrationsGrowthChart(
       tipTitle: registrationsGrowthTipTitle(year, data),
     };
   });
-  const totals = columns.map((column) => column.total ?? 0);
+  // A year with no total still draws its known formats, so the axis fits whichever is taller.
+  const heights = columns.map((column) =>
+    Math.max(
+      column.total ?? 0,
+      (column.values ?? []).reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    )
+  );
 
   return buildHealthMetricsColumnChart({
     series: [...HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES],
     columns,
-    peak: Math.max(0, ...totals) * HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM,
-    heightPx: 260,
-    barWidthPx: 40,
+    peak: Math.max(0, ...heights) * HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM,
+    heightPx: HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEIGHT_PX,
+    barWidthPx: HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
     formatTotal: formatHealthMetricsChartCompact,
     formatValue: formatHealthMetricsEventsCount,
     ariaLabel: `${attendees ? 'Attendees' : 'Registrations'} by year, in person and virtual`,

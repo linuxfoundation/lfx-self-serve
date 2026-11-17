@@ -32,11 +32,12 @@
               (mouseleave)="onLeave(index)"
               (blur)="onLeave(index)">
               <div class="relative h-full max-w-[70%]" aria-hidden="true" [style.width.px]="chart().barWidthPx">
-                <!-- A 1px white line parts the segments; the stack's top corners round. -->
-                <div class="absolute inset-0 overflow-hidden rounded-t-[4px]" [style.opacity]="column.opacity">
+                <!-- A 1px white line parts the segments; the highest one rounds the stack's top corners. -->
+                <div class="absolute inset-0" [style.opacity]="column.opacity">
                   @for (segment of column.segments; track segment.key) {
                     <div
                       class="absolute inset-x-0 shadow-[inset_0_1px_0_white]"
+                      [class]="segment.top ? 'rounded-t-[4px]' : ''"
                       [style.bottom.%]="segment.bottomPct"
                       [style.height.%]="segment.heightPct"
                       [style.background-color]="segment.color"
