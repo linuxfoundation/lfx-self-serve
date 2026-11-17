@@ -321,7 +321,7 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
 
     await expect(new OrgSlugResolverService().resolveSegment(req, UID_A)).resolves.toEqual({
       outcome: 'hit',
-      org: { uid: UID_A, slug: null, name: 'Acme Motors', employeeView: true },
+      org: { uid: UID_A, slug: 'acme-inc', name: 'Acme Motors', employeeView: true },
       cache: 'bypass',
     });
   });
@@ -332,7 +332,7 @@ describe('OrgSlugResolverService — all employee view company (#5845)', () => {
 
     const result = await new OrgSlugResolverService().resolveSegment(req, 'acme-inc');
 
-    expect(result).toMatchObject({ outcome: 'hit', org: { uid: UID_A, employeeView: true } });
+    expect(result).toMatchObject({ outcome: 'hit', org: { uid: UID_A, slug: 'acme-inc', employeeView: true } });
     expect(cachePredicates().storable({ outcome: 'hit', org: { uid: UID_A, slug: null, name: 'x', employeeView: true } })).toBe(true);
   });
 
