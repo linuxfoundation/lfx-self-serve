@@ -67,6 +67,7 @@ export class SidebarNavService {
 
   /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'Engagement';
+  private readonly orgEngagementSectionLabel = 'Company Engagement';
 
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
@@ -1002,7 +1003,7 @@ export class SidebarNavService {
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
       // top-level item or a section when re-enabled.
       {
-        label: 'Company Engagement',
+        label: this.orgEngagementSectionLabel,
         isSection: true,
         expanded: true,
         items: [
@@ -1245,7 +1246,7 @@ export class SidebarNavService {
    */
   private placeAfterOrgGroups(items: SidebarMenuItem[], extra: SidebarMenuItem[]): SidebarMenuItem[] {
     if (extra.length === 0) return items;
-    const sectionIndex = items.findIndex((item) => item.isSection && item.label === 'Company Engagement');
+    const sectionIndex = items.findIndex((item) => item.isSection && item.label === this.orgEngagementSectionLabel);
     if (sectionIndex === -1) return [...items, ...extra];
     const section = items[sectionIndex];
     return items.map((item, index) => (index === sectionIndex ? { ...section, items: [...(section.items ?? []), ...extra] } : item));
