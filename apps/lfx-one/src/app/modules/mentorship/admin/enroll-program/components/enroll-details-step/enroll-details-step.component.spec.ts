@@ -795,3 +795,53 @@ describe('EnrollDetailsStepComponent — lens project scope (lfx-mentorship#398)
     expect(fixture.componentInstance.project()).toBeNull();
   });
 });
+
+describe('EnrollDetailsStepComponent — link fields', () => {
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+
+  /** Types `value` into the field and leaves it, as tabbing away does; `focusout` bubbles from the input to the field. */
+  const typeAndLeave = (control: string, value: string): unknown => {
+    form.controls[control].setValue(value);
+    const field = (fixture.nativeElement as HTMLElement).querySelector(`lfx-input-text[control="${control}"]`);
+    expect(field).not.toBeNull();
+    field!.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    return form.controls[control].value;
+  };
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        { provide: MentorshipAdminService, useValue: { getPrograms: () => of({ data: [] }) } },
+        {
+          provide: MentorshipService,
+          useValue: {
+            getLfProjects: () => of({ data: [] }),
+            getCiiBadge: () => of(null),
+            isProgramNameAvailable: () => of({ available: true }),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+  });
+
+  it.each(['repositoryUrl', 'websiteUrl', 'codeOfConductUrl'])('gives %s its https:// when the admin leaves the field (lfx-mentorship#456)', (control) => {
+    expect(typeAndLeave(control, ' github.com/org/repo ')).toBe('https://github.com/org/repo');
+  });
+
+  it('leaves a full URL, a blank field and a value that is not a link as typed', () => {
+    expect(typeAndLeave('repositoryUrl', 'http://example.org/repo')).toBe('http://example.org/repo');
+    expect(typeAndLeave('websiteUrl', '')).toBe('');
+    expect(typeAndLeave('codeOfConductUrl', 'rocket')).toBe('rocket');
+  });
+});
