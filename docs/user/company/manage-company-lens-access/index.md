@@ -16,8 +16,8 @@ These steps apply to Admins and Viewers of the company. Only an Admin can make c
 
 | Role                             | Shown as    | What they can do                                                                                                 |
 | -------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Org Admin – Editor**           | **Admin**   | Full access to the company's Company Lens, including adding, changing and removing other people's access.        |
-| **Org Admin – Viewer**           | **Viewer**  | Read-only access. They can view all data and reports, but cannot make changes or manage access for other people. |
+| **Company Admin – Editor**       | **Admin**   | Full access to the company's Company Lens, including adding, changing and removing other people's access.        |
+| **Company Admin – Viewer**       | **Viewer**  | Read-only access. They can view all data and reports, but cannot make changes or manage access for other people. |
 | Someone who has not yet accepted | **Invited** | Nothing yet. They appear as **Invited** next to their name until they accept the invite.                         |
 
 A company must always keep at least one Admin.
@@ -31,7 +31,7 @@ A company must always keep at least one Admin.
 
 The tab shows **Total Users**, **Administrators** and **Viewers**, then a table with each person's name and type. If no one has been granted access yet, the table says "No one has elevated Company Lens access for this company yet."
 
-To find someone, type in **Search by name, title, or email...**, or filter by type (**All types**, **Org Admin - Editor**, **Org Admin - Viewer** or **Invited**) or by **Employment**. Select **Clear filters** to reset them. Select a person's name to open their details.
+To find someone, type in **Search by name, title, or email...**, or filter by type (**All types**, **Company Admin - Editor**, **Company Admin - Viewer** or **Invited**) or by **Employment**. Select **Clear filters** to reset them. Select a person's name to open their details.
 
 ## Add someone
 
