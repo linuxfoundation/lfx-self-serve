@@ -4,11 +4,11 @@ description: How to read and edit the Company lens Company Profile page — the 
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, profile, company-profile, logo, website, crunchbase, industry, sector, address, edit]
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 
-These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). Only someone who can edit the company, such as an **Company Admin Editor**, can change the profile. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Company Profile**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
+These steps apply to anyone who can open a company in the Company lens, such as a company admin (editor or viewer). Only someone who can edit the company, such as a **Company Admin Editor**, can change the profile. A CLA (Contributor License Agreement) Manager or initial CLA Manager designee (the person nominated to sign the company's corporate CLA and become its first CLA Manager) with no other role on a company sees only its **EasyCLA** page, not **Company Profile**. To pick the company the page shows, see [Choose and switch a company](../choose-a-company/).
 
 ## What is the Company Profile page?
 
@@ -38,9 +38,9 @@ When you cannot open the company, the page is replaced by the same access messag
 
 ## Who can edit the company profile?
 
-You can edit the company profile when you can edit the company, for example as an **Company Admin Editor**, including one inherited from a related company. Only then does the page show **Edit Profile**, under **Last Updated:**.
+You can edit the company profile when you can edit the company, for example as a **Company Admin Editor**, including one inherited from a related company. Only then does the page show **Edit Profile**, under **Last Updated:**.
 
-An **Company Admin Viewer** sees the same profile without **Edit Profile**. Every save is checked again when you select **Save Changes**, so if your access was removed after you opened the page, the save is refused with **Permission denied**. For what each role in the company switcher means, see [What does my role in the company switcher mean?](../choose-a-company/#what-does-my-role-in-the-company-switcher-mean).
+A **Company Admin Viewer** sees the same profile without **Edit Profile**. Every save is checked again when you select **Save Changes**, so if your access was removed after you opened the page, the save is refused with **Permission denied**. For what each role in the company switcher means, see [What does my role in the company switcher mean?](../choose-a-company/#what-does-my-role-in-the-company-switcher-mean).
 
 ## How do I edit the company profile?
 
@@ -82,7 +82,7 @@ The line under **Upload Logo** reads **SVG only, not more than 2MB. SVGs are san
 | **Logo too large** — **Logo must be 2MB or smaller.**                                       | The file is larger than 2MB                     | Choose a smaller SVG file                     |
 | **Logo rejected**, with a reason or **This image could not be used. Try a different file.** | The SVG cannot be used, and retrying won't help | Fix what the reason names, or use another SVG |
 | **Upload failed**, with a reason or **Unable to upload logo. Please try again.**            | The upload did not complete                     | Try again                                     |
-| **Permission denied** — **You no longer have permission to edit this company.**             | You can no longer edit the company              | Ask an **Company Admin Editor** to change it  |
+| **Permission denied** — **You no longer have permission to edit this company.**             | You can no longer edit the company              | Ask a **Company Admin Editor** to change it   |
 
 ## Why can't I edit the company name or addresses?
 
@@ -95,15 +95,15 @@ The company name and the addresses cannot be changed on the Company Profile page
 
 The Company Profile page shows an error message when the profile does not load, a field is not valid, or a save fails, and each one says what went wrong. A failed save keeps your changes in the form, so you can try again.
 
-| What you see                                                                               | What it means                                       | What to do                                         |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------------- | -------------------------------------------------- |
-| **Unable to load company profile** — **There was a problem reaching the company service.** | The profile did not load                            | Select **Retry**                                   |
-| **Number of employees must be 0 or greater.**                                              | **Number of Employees** is below 0                  | Enter 0 or more                                    |
-| **Crunchbase URL must be a valid `https://` address.**                                     | **Crunchbase Profile** is not an `https://` address | Enter an address that starts with `https://`       |
-| **Description must be 2000 characters or fewer.**                                          | **Company Description** is too long                 | Shorten it                                         |
-| **Save failed** — **Unable to save changes. Please try again.**                            | The save did not reach the company's record         | Select **Save Changes** again                      |
-| **Save failed** — **Something went wrong while saving. Please try again.**                 | The save failed for another reason                  | Select **Save Changes** again                      |
-| **Permission denied** — **You no longer have permission to edit this company.**            | Your edit access was removed                        | Ask an **Company Admin Editor** to make the change |
+| What you see                                                                               | What it means                                       | What to do                                        |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------- |
+| **Unable to load company profile** — **There was a problem reaching the company service.** | The profile did not load                            | Select **Retry**                                  |
+| **Number of employees must be 0 or greater.**                                              | **Number of Employees** is below 0                  | Enter 0 or more                                   |
+| **Crunchbase URL must be a valid `https://` address.**                                     | **Crunchbase Profile** is not an `https://` address | Enter an address that starts with `https://`      |
+| **Description must be 2000 characters or fewer.**                                          | **Company Description** is too long                 | Shorten it                                        |
+| **Save failed** — **Unable to save changes. Please try again.**                            | The save did not reach the company's record         | Select **Save Changes** again                     |
+| **Save failed** — **Something went wrong while saving. Please try again.**                 | The save failed for another reason                  | Select **Save Changes** again                     |
+| **Permission denied** — **You no longer have permission to edit this company.**            | Your edit access was removed                        | Ask a **Company Admin Editor** to make the change |
 
 ## Related sections
 

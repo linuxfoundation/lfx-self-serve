@@ -4,7 +4,7 @@ description: How to read the Projects table for the selected company, filter and
 audience: [all]
 product_area: Company
 tags: [company, org, org-lens, projects, project-detail, workspaces, influence, leaderboard, score-breakdown, health, contributors, participants]
-last_updated: 2026-11-16
+last_updated: 2026-11-17
 intercom_collection: Company
 ---
 

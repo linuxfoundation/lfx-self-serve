@@ -4,7 +4,7 @@ description: View the crowdfunding initiatives run on behalf of a project, found
 audience: [all]
 product_area: Crowdfunding
 tags: [crowdfunding, initiatives, project, foundation, company, attribution, lens]
-last_updated: 2026-11-06
+last_updated: 2026-11-17
 intercom_collection: Crowdfunding
 ---
 
