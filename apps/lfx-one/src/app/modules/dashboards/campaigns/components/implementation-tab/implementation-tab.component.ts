@@ -698,6 +698,20 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCreativeAvailable = computed<boolean>(() => this.googleCreativeEnabled() === true);
 
   /**
+   * The LinkedIn ad account is decided by the connection, not by this form (#5809).
+   *
+   * When campaign-service owns the create (`googleCreativeEnabled` is `cutoverOwnsCreate()`
+   * server-side), `buildLinkedInConfig` drops `linkedInConfig.adAccountId`, so the campaign is
+   * created in the account stored on the project's LinkedIn connection, else the LF system row's.
+   * A dropdown there offers a choice the create ignores. On 17 Nov it sent two prod test creates
+   * to an account on billing hold while the picker named another. So on an explicit yes the
+   * selector is replaced with a read-only line, and the account gate below does not block on it.
+   * `false` or unknown keeps the selector: the legacy creator still reads the chosen account.
+   * Choosing the account for real arrives with lfx-v2-campaign-service#581's account grants.
+   */
+  protected readonly linkedInAccountSetByConnection = computed<boolean>(() => this.googleCreativeEnabled() === true);
+
+  /**
    * Whether the Google image slots may offer the brief's stored-image LIBRARY
    * (`CampaignListResult.googleAssetUploadEnabled`) — upload into it, or pick a stored image that
    * fits. Read only together with `googleCreativeAvailable()`, as `metaAssetUploadEnabled` is with
@@ -3764,7 +3778,10 @@ export class ImplementationTabComponent implements OnInit {
     // loading false with an empty catalog, which is exactly when this matters most. It also
     // covers the blank id for free. The gate is scoped to LinkedIn, so a Google-only or
     // Reddit-only create is unaffected by an ad-account endpoint being down.
-    if (linkedInSelected && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId())) return 'LinkedIn Ads: choose an ad account.';
+    // Skipped when the connection decides the account (#5809): the selector is not shown, and the
+    // create does not send the account, so its catalog cannot block a create it has no part in.
+    if (linkedInSelected && !this.linkedInAccountSetByConnection() && !this.linkedInAccounts().some((a) => a.accountId === this.linkedInAccountId()))
+      return 'LinkedIn Ads: choose an ad account.';
     if (metaSelected && this.metaBudgetUsd() < 1) return 'Meta Ads: set a budget of at least $1.';
     // No usable geo at all: every chip ineligible (or none) AND no usable countryCode. The request
     // would otherwise carry nothing and let the server default to US — spending on a country the
