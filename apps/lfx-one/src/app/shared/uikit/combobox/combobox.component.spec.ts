@@ -646,6 +646,15 @@ describe('UiComboboxComponent', () => {
       expect(valueWhenHeard).toBe('Acme');
     });
 
+    it('keeps text that matches a disabled option as plain free text', async () => {
+      await type('keda');
+
+      expect(typedRow()?.textContent?.trim()).toBe('Use “keda”');
+      await blur();
+
+      expect(fixture.componentInstance.value()).toBe('keda');
+    });
+
     it('takes rows the page adds while the list is open', async () => {
       await set('serverSearch', true);
       await set('options', []);

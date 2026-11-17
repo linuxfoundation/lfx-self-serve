@@ -357,11 +357,11 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     this.closePanel();
   }
 
-  // An option whose label is the typed text, ignoring case, wins over the text, so the value keeps the option's spelling.
+  // An enabled option whose label is the typed text, ignoring case, wins over the text, so the value keeps the option's spelling.
   private commitTyped(): void {
     const text = this.queryText();
     const lower = text.toLowerCase();
-    const match = this.options().find((option) => option.label.toLowerCase() === lower);
+    const match = this.options().find((option) => !option.disabled && option.label.toLowerCase() === lower);
     this.commit(match?.value ?? (text || null));
     this.query.set(null);
   }
@@ -390,7 +390,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     return computed(() => {
       const text = this.queryText().toLowerCase();
       if (!this.freeText() || !text) return null;
-      return this.options().some((option) => option.label.toLowerCase() === text) ? null : row;
+      return this.options().some((option) => !option.disabled && option.label.toLowerCase() === text) ? null : row;
     });
   }
 
