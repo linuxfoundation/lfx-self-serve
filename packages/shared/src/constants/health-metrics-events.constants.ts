@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import { HEALTH_METRICS_L2_EMPTY_SOURCES } from './health-metrics-l2.constants';
 import type {
   HealthMetricsEventsAtAGlance,
@@ -22,6 +23,7 @@ import type {
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsL2Blank, HealthMetricsL2Range, HealthMetricsL2Section } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsColumnChartSeries } from '../interfaces/health-metrics-column-chart.interface';
 import type { UiBadgeTone } from '../interfaces/uikit.interface';
 
 /**
@@ -201,7 +203,7 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP = 100;
 /** Read-failed / no-foundation value: no years, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_UNMEASURED: HealthMetricsEventsRegistrationsGrowth = { years: [] };
 
-/** The toggle over the chart and table; the first option is the default. */
+/** Registrations & growth's header switch; the first option is the default. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_METRIC_OPTIONS: readonly HealthMetricsEventsRegistrationsGrowthMetricOption[] = [
   { id: 'registrations', label: 'Registrations' },
   { id: 'attendees', label: 'Attendees' },
@@ -213,11 +215,23 @@ export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MIN_YEAR = 2000;
 /** Upper bound of that window, as years past the current UTC year. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_MAX_YEARS_AHEAD = 5;
 
-/** Years whose virtual peak the pandemic callout explains; the callout's year label is built from them. */
-export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS: readonly number[] = [2020, 2021];
+/** The icon before a sponsorship package that is not a Diamond, Platinum, Gold or Silver tier. */
+export const HEALTH_METRICS_EVENTS_SPONSORSHIP_PACKAGE_ICON = 'fa-light fa-ticket';
 
-/** Share of a pandemic year's total that must be virtual before the callout calls it a virtual peak. */
-export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE = 0.5;
+/** Registrations & growth's stacked series, bottom up: in-person blue-500, virtual violet-500. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_SERIES: readonly HealthMetricsColumnChartSeries[] = [
+  { key: 'in-person', label: 'In-person', color: lfxColors.blue[500] },
+  { key: 'virtual', label: 'Virtual', color: lfxColors.violet[500] },
+];
+
+/** The y axis tops out at the largest total plus 8% before it rounds to a clean step. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEADROOM = 1.08;
+
+/** Registrations & growth's plot height, as the design draws it. */
+export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_HEIGHT_PX = 260;
+
+/** The design's column width on the Events charts. */
+export const HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX = 40;
 
 /** Event rows read per foundation, in-period events first; one more is read so a dropped in-period event is flagged. */
 export const HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP = 500;
@@ -297,12 +311,6 @@ export const HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED: HealthMetricsEventsSp
 
 /** Periods the sponsorship view models progress to goal for; the older years carry none. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES: readonly HealthMetricsL2Range[] = ['YTD', 'COMPLETED_YEAR'];
-
-/** Stands in for a goal that is not set, so it never reads as a goal of zero. */
-export const HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET = 'not set';
-
-/** Fill for the progress-to-goal bar. */
-export const HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS = 'bg-blue-500';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeography = { periods: [] };

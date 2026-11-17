@@ -1,0 +1,90 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px, not rem: the design's `cols`, with 16px above the plot, 8px beside the y labels and 6px above the x labels. -->
+<div class="flex flex-col gap-[16px]" [attr.data-testid]="testId()">
+  <div class="flex gap-[8px] pt-[16px]">
+    <!-- The labels run 6px past the plot at either end, so each centres on its rule. -->
+    <div
+      class="-my-[6px] flex flex-col justify-between text-right text-[11px] leading-[12px] text-gray-400"
+      aria-hidden="true"
+      [style.height.px]="chart().heightPx + 12"
+      [attr.data-testid]="testId() + '-y'">
+      @for (tick of chart().yTicks; track $index) {
+        <span>{{ tick }}</span>
+      }
+    </div>
+    <div class="flex min-w-0 flex-1 flex-col gap-[6px]">
+      <div
+        class="relative border-b border-gray-200 bg-[linear-gradient(theme(colors.gray.100)_1px,transparent_1px)] bg-[length:100%_25%]"
+        [style.height.px]="chart().heightPx">
+        <div class="absolute inset-0 flex" role="list" [attr.aria-label]="chart().ariaLabel" [attr.data-testid]="testId() + '-columns'">
+          @for (column of chart().columns; track column.key; let index = $index) {
+            <div
+              class="relative flex h-full min-w-0 flex-1 justify-center rounded-[6px] outline-none transition-colors duration-ui-fast hover:bg-[var(--ui-neutral-alpha-50)] focus-visible:ring-2 focus-visible:ring-blue-500"
+              role="listitem"
+              tabindex="0"
+              [class.z-20]="activeIndex() === index"
+              [attr.aria-label]="column.ariaLabel"
+              [attr.data-testid]="testId() + '-column-' + column.key"
+              (mouseenter)="onEnter(index, $event)"
+              (focus)="onEnter(index, $event)"
+              (mouseleave)="onLeave(index)"
+              (blur)="onLeave(index)">
+              <div class="relative h-full max-w-[70%]" aria-hidden="true" [style.width.px]="chart().barWidthPx">
+                <!-- A 1px white line parts the segments; the highest one rounds the stack's top corners. -->
+                <div class="absolute inset-0" [style.opacity]="column.opacity">
+                  @for (segment of column.segments; track segment.key) {
+                    <div
+                      class="absolute inset-x-0 shadow-[inset_0_1px_0_white]"
+                      [class]="segment.top ? 'rounded-t-[4px]' : ''"
+                      [style.bottom.%]="segment.bottomPct"
+                      [style.height.%]="segment.heightPct"
+                      [style.background-color]="segment.color"
+                      [attr.data-testid]="testId() + '-segment-' + column.key + '-' + segment.key"></div>
+                  }
+                </div>
+                @if (column.total) {
+                  <span
+                    class="absolute left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] font-medium text-gray-900"
+                    [style.bottom]="'calc(' + column.totalBottomPct + '% + 4px)'"
+                    [attr.data-testid]="testId() + '-total-' + column.key"
+                    >{{ column.total }}</span
+                  >
+                }
+              </div>
+              @if (activeIndex() === index) {
+                <!-- Exact px: the popup sits 12px off the column's centre. -->
+                <lfx-health-metrics-chart-tip
+                  class="pointer-events-none absolute top-1/2 z-10 -translate-y-1/2"
+                  [style.left]="tipPlacement()?.left ?? null"
+                  [style.right]="tipPlacement()?.right ?? null"
+                  aria-hidden="true"
+                  [tip]="column.tip"
+                  [attr.data-testid]="testId() + '-tip'" />
+              }
+            </div>
+          }
+        </div>
+      </div>
+      <div class="flex" aria-hidden="true" [attr.data-testid]="testId() + '-x'">
+        @for (column of chart().columns; track column.key) {
+          <div class="flex min-w-0 flex-1 flex-col items-center text-center text-[11px] text-gray-500">
+            <span class="max-w-full truncate">{{ column.label }}</span>
+            @if (column.sub) {
+              <span class="text-gray-400">{{ column.sub }}</span>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+  <!-- The design's legend: an 8px round swatch per series, centred under the chart. -->
+  <div class="flex flex-wrap justify-center gap-x-[16px] gap-y-[6px]" aria-hidden="true" [attr.data-testid]="testId() + '-legend'">
+    @for (series of chart().series; track series.key) {
+      <span class="inline-flex items-center gap-[6px] text-[12px] text-gray-500"
+        ><span class="h-[8px] w-[8px] rounded-full" [style.background-color]="series.color"></span>{{ series.label }}</span
+      >
+    }
+  </div>
+</div>

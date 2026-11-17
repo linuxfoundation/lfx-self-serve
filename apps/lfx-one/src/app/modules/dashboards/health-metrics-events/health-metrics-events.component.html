@@ -44,8 +44,20 @@
   <ng-template lfxHealthMetricsL2Section="past">
     <lfx-events-past-events (reading)="shell.sectionReading('past')" (settled)="shell.sectionSettled('past', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="reg">
+    <lfx-ui-switch
+      size="small"
+      ariaLabel="View"
+      [value]="growthMetric()"
+      (valueChange)="onGrowthMetricChange($event)"
+      data-testid="events-registrations-growth-metric">
+      @for (option of growthMetrics; track option.id) {
+        <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'events-registrations-growth-metric-' + option.id" />
+      }
+    </lfx-ui-switch>
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="reg">
-    <lfx-events-registrations-growth (reading)="shell.sectionReading('reg')" (settled)="shell.sectionSettled('reg', $event)" />
+    <lfx-events-registrations-growth [metric]="growthMetric()" (reading)="shell.sectionReading('reg')" (settled)="shell.sectionSettled('reg', $event)" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="rev">
     <lfx-events-revenue (reading)="shell.sectionReading('rev')" (settled)="shell.sectionSettled('rev', $event)" />
