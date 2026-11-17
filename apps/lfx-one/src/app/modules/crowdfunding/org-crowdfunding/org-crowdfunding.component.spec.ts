@@ -133,4 +133,33 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
     await harness.fixture.whenStable();
     expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
   });
+
+  it('moves a viewer off a tab they cannot use once the grants load', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/initiatives');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('keeps Initiatives for a viewer with no tab at all, so its page can explain', async () => {
+    const harness = await open('/crowdfunding/initiatives');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+    expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).toBeNull();
+  });
+
+  it('honours ?tab= on the bare address when that tab is available', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding?tab=donations');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('ignores an unavailable ?tab= and lands on the first tab', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    const harness = await open('/crowdfunding?tab=donations');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+  });
 });

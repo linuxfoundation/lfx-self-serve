@@ -53,20 +53,34 @@ export class OrgCrowdfundingComponent {
     { initialValue: '' as OrgCrowdfundingTab | '' }
   );
   // A tab shows for the viewers its nav entry used to: Initiatives for a direct writer on the company, Donations behind
-  // `cf-org-donations`. The tab being viewed always shows, so a deep link never leaves the bar without its own tab.
+  // `cf-org-donations`. A viewer who lands on a tab they cannot use is moved to one they can (see the constructor).
   protected readonly tabs = computed(() => {
     const isWriter = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '');
     const available: Record<OrgCrowdfundingTab, boolean> = { initiatives: isWriter, donations: this.isDonationsEnabled() };
-    return this.allTabs.filter((tab) => available[tab.id] || tab.id === this.activeTab());
+    return this.allTabs.filter((tab) => available[tab.id]);
   });
+  protected readonly showNewInitiative = computed(() => this.activeTab() === 'initiatives' && this.tabs().some((tab) => tab.id === 'initiatives'));
 
   constructor() {
-    // The bare `/crowdfunding` address lands on the viewer's first tab. It waits for the role grants: before they load the
-    // writer set is empty, which would send a direct writer to Donations — or, with the flag off, to the company overview.
+    // Picks the tab once the role grants have loaded: before that the writer set is empty, which would send a direct
+    // writer to Donations — or, with the flag off, to the company overview.
+    // - The bare `/crowdfunding` address lands on `?tab=` when that tab is available, else the first tab.
+    // - A tab the viewer cannot use (an old Initiatives link, or a switch to a company they only view) moves to the first.
+    // - A viewer with no tab at all keeps Initiatives, whose page explains the missing access.
     effect(() => {
-      if (this.activeTab() !== '' || (!this.orgRoleGrants.loaded() && !this.orgRoleGrants.error())) return;
-      const first = this.tabs()[0]?.id ?? 'initiatives';
-      void this.router.navigate([first], { relativeTo: this.route, replaceUrl: true, queryParamsHandling: 'preserve' });
+      if (!this.orgRoleGrants.loaded() && !this.orgRoleGrants.error()) return;
+      const tabs = this.tabs();
+      const active = this.activeTab();
+      let target: OrgCrowdfundingTab | null = null;
+      if (active === '') {
+        const requested = this.route.snapshot.queryParamMap.get('tab');
+        target = tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? 'initiatives';
+      } else if (tabs.length > 0 && !tabs.some((tab) => tab.id === active)) {
+        target = tabs[0].id;
+      }
+      if (target) {
+        void this.router.navigate([target], { relativeTo: this.route, replaceUrl: true, queryParams: { tab: null }, queryParamsHandling: 'merge' });
+      }
     });
   }
 

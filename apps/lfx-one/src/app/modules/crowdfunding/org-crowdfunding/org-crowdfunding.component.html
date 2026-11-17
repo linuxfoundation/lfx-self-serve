@@ -3,7 +3,7 @@
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-crowdfunding">
   <lfx-page-header [title]="'Crowdfunding — ' + companyName()" titleTestId="org-crowdfunding-title">
-    @if (activeTab() === 'initiatives') {
+    @if (showNewInitiative()) {
       <div pageHeaderActions class="flex items-center gap-6">
         <lfx-button
           label="New Initiative"
