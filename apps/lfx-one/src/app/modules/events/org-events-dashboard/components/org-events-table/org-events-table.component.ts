@@ -17,6 +17,7 @@ import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortC
 export class OrgEventsTableComponent {
   public readonly eventsResponse = input.required<OrgEventsResponse>();
   public readonly loading = input<boolean>(false);
+  public readonly loadFailed = input<boolean>(false);
   public readonly sortField = input<string>('EVENT_START_DATE');
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
   // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
@@ -31,6 +32,7 @@ export class OrgEventsTableComponent {
   public readonly sortChange = output<SortChangeEvent>();
   public readonly attendeesClick = output<OrgEvent>();
   public readonly speakersClick = output<OrgEvent>();
+  public readonly retry = output<void>();
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
 
