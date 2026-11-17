@@ -421,8 +421,8 @@ export class HealthMetricsEngagementService {
   }
 
   /**
-   * The trailing twelve months of all-meeting attendance, oldest first. The view zero-fills every
-   * month of the window, so a quiet month arrives as a row with a null rate rather than a missing one.
+   * Every month of all-meeting attendance the view holds, oldest first; the client cuts the selected year out of
+   * it. The view zero-fills its window, so a quiet month arrives as a row with a null rate rather than a missing one.
    */
   public async getAttendanceTrend(req: Request, query: HealthMetricsEngagementAttendanceTrendQuery): Promise<HealthMetricsEngagementAttendanceTrend> {
     const sql = `

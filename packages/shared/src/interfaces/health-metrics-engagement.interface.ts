@@ -207,7 +207,7 @@ export interface HealthMetricsEngagementParticipationQuery {
   range: HealthMetricsRange;
 }
 
-/** One month of the trailing twelve-month attendance trend, as the view reports it. */
+/** One month of all-meeting attendance, as the view reports it. */
 export interface HealthMetricsEngagementAttendanceMonth {
   /** ISO date of the month's first day. */
   monthStartDate: string;
@@ -220,13 +220,13 @@ export interface HealthMetricsEngagementAttendanceMonth {
   attendanceChangePp: number | null;
 }
 
-/** `GET /api/analytics/engagement-attendance-trend` — the trailing twelve months, oldest first. */
+/** `GET /api/analytics/engagement-attendance-trend` — every month the view holds, oldest first. */
 export interface HealthMetricsEngagementAttendanceTrend {
   months: HealthMetricsEngagementAttendanceMonth[];
 }
 
-/** Wire query for `GET /api/analytics/engagement-attendance-trend`. The trend always covers the last
- * twelve months, so the period selector never reaches the wire. */
+/** Wire query for `GET /api/analytics/engagement-attendance-trend`. The client cuts the selected year out of
+ * every month the view holds, so the period selector never reaches the wire. */
 export interface HealthMetricsEngagementAttendanceTrendQuery {
   foundationSlug: string;
   /** Absent or `null` reads the view's all-projects roll-up rows. The client no longer sends it;
@@ -237,7 +237,7 @@ export interface HealthMetricsEngagementAttendanceTrendQuery {
 /** One chart point. `rate` is a percent (0-100), `null` for a gap in the line. */
 export interface HealthMetricsEngagementAttendanceTrendPointView {
   monthStartDate: string;
-  /** Axis label, e.g. `Oct 25`. */
+  /** Axis label, e.g. `Oct`. */
   label: string;
   /** Long label for the tooltip and the screen-reader table, e.g. `October 2025 (to date)`. */
   monthLabel: string;
@@ -248,22 +248,22 @@ export interface HealthMetricsEngagementAttendanceTrendPointView {
   isInProgress: boolean;
 }
 
-/** Which body the Attendance trend renders: nothing rated, a single rated month, or a line. */
-export type HealthMetricsEngagementAttendanceTrendState = 'empty' | 'insufficient' | 'trend';
+/**
+ * Which body the Attendance trend renders: `january` before January closes in year to date, `unavailable` when the view
+ * lacks part of a completed year, `insufficient` with fewer than two full months with a rate, else the trend.
+ */
+export type HealthMetricsEngagementAttendanceTrendState = 'empty' | 'january' | 'unavailable' | 'insufficient' | 'trend';
 
-/** The Attendance trend headline, side stats and low-confidence note. */
-export interface HealthMetricsEngagementAttendanceTrendSummaryView {
+/** The Attendance trend for the selected year: metrics row, line chart, low-confidence note and screen-reader rows. */
+export interface HealthMetricsEngagementAttendanceTrendView {
   state: HealthMetricsEngagementAttendanceTrendState;
-  /** Months with a reportable rate, the month in progress included. */
-  ratedMonths: number;
-  latestLabel: string;
-  /** The month the headline describes, e.g. `September 2026`. */
-  latestCaption: string;
-  deltaLabel: string;
-  deltaDirection: 'up' | 'down' | 'neutral';
-  rangeChangeLabel: string;
-  rangeHighLabel: string;
-  rangeLowLabel: string;
+  year: number;
+  /** The "Not enough data to chart a trend" subtitle; empty in the `trend` and `empty` states. */
+  notice: string;
+  metrics: HealthMetricsMetricItem[];
+  /** January to the current month in year to date, else January to December. */
+  points: HealthMetricsEngagementAttendanceTrendPointView[];
+  chart: HealthMetricsLineChartView | null;
   isLowConfidence: boolean;
   lowConfidenceNote: string;
 }
