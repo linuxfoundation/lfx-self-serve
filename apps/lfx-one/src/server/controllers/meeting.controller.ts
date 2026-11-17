@@ -45,8 +45,8 @@ import {
   UNDECLARED_UPSTREAM_REGISTRANT_KEYS,
   UPSTREAM_PASSTHROUGH_REGISTRANT_KEYS,
 } from '../constants';
-import { resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
-import { ServiceValidationError } from '../errors';
+import { resolveCommitteeV2UidMappings, resolveCommitteeV2UidsToV1Ids } from '../helpers/committee-v1-mapping.helper';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { parseRollupProjectsPreference, readRollupProjectsPreferenceRequest, setRollupProjectsPreference } from '../helpers/meeting-rollup-preference.helper';
 import { readRollupRootUid } from '../helpers/meeting-rollup.helper';
@@ -994,7 +994,7 @@ export class MeetingController {
       // downstream re-checks it.
       const hasCommitteeAttribution = registrantData.some((registrant: CreateMeetingRegistrantRequest) => !!registrant.committee_uid);
       const allowedCommitteeUids = hasCommitteeAttribution ? await this.getMeetingCommitteeUids(req, uid) : new Set<string>();
-      const resolvedRegistrants = this.resolveRegistrantCommitteeUids(req, registrantData, allowedCommitteeUids);
+      const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData, allowedCommitteeUids);
 
       // Process registrants with fail-fast for 403 errors
       // This will stop the processing if a 403 error is encountered
@@ -2532,50 +2532,103 @@ export class MeetingController {
   }
 
   /**
-   * Validates each registrant's `committee_uid` against the meeting's own committees and forwards
-   * it unchanged, as the v2 UID the client (and the rest of this BFF) works in.
+   * Validates each registrant's `committee_uid` against the meeting's own committees, confirms
+   * upstream can actually attribute a guest to it, and forwards the v2 UID the client (and the rest
+   * of this BFF) works in — unchanged.
    *
    * This used to *also* resolve the v2 UID to upstream's v1 SFID and substitute it before
-   * forwarding — on the theory that upstream only understands v1. It doesn't: `lfx-v2-meeting-service`
-   * (`internal/service/itx/registrant_service.go::CreateRegistrant`/`UpdateRegistrant`) already calls
-   * `mapCommitteeFieldV2ToV1` on whatever `committee_uid` it receives, and translates the response's
-   * `committee_uid` back to v2 before returning it. Resolving here too was a double translation: this
-   * function would resolve a v2 UID to the correct v1 SFID, and upstream's own resolver would then
-   * try to resolve that SFID *again*, treating it as if it were still v2 — a lookup that can never
-   * succeed, since the `committee.uid.<v2>` mapping namespace has no entry keyed by a v1 value. That
-   * surfaced in production as `invalid ID: mapping not found for committee.uid.<v1_sfid>`
-   * (lfx-self-serve-ops#1514). Upstream owns the v2↔v1 translation for this field; the BFF's job here
-   * is authorization, not translation.
+   * forwarding, on the theory that upstream only understands v1. It doesn't need the substitution:
+   * `lfx-v2-meeting-service` (`internal/service/itx/registrant_service.go::CreateRegistrant`/
+   * `UpdateRegistrant`) already calls `mapCommitteeFieldV2ToV1` on whatever `committee_uid` it
+   * receives, and translates the response's `committee_uid` back to v2 before returning it.
+   * Substituting the v1 SFID here too was a double translation: this function would resolve a v2
+   * UID to the correct v1 SFID, and upstream's own resolver would then try to resolve that SFID
+   * *again*, treating it as if it were still v2 — a lookup that can never succeed, since the
+   * `committee.uid.<v2>` mapping namespace has no entry keyed by a v1 value. That surfaced in
+   * production as `invalid ID: mapping not found for committee.uid.<v1_sfid>`
+   * (lfx-self-serve-ops#1514).
+   *
+   * The resolution step itself still runs and is still load-bearing: it is what tells apart a
+   * committee upstream can actually attribute this guest to from one it cannot, which checking
+   * `allowedV2Uids` alone cannot, now that the map's resolved values are no longer the thing
+   * forwarded. An unresolvable UID is stripped rather than forwarded — upstream would derive
+   * `type: 'committee'` from a v2 UID its own translation can never resolve either, which is worse
+   * than the guest landing as `direct`. Stripped means the key is deleted, not nulled: upstream's
+   * `CreateItxRegistrantRequestBody` declares `committee_uid` as a non-nullable optional `string`,
+   * so an explicit `null` is off-contract even though omission is fine. A `null` arriving from the
+   * client is dropped for the same reason.
+   *
+   * "Unresolvable" means *confirmed* unresolvable — the lookup answered, and this committee has no v1
+   * counterpart. An allowlisted UID the lookup could not answer for (a NATS timeout, an `error:`
+   * reply, the batch budget cutting the loop short) fails the whole request instead, for the same
+   * reason `getMeetingCommitteeUids` lets its own read error out: nothing has been written yet, so
+   * failing here is recoverable by a retry, whereas downgrading writes a `direct` row and answers
+   * 201, and `UpdateMeetingRegistrantRequest` declares no `committee_uid` to repair it with. Two
+   * outcomes that read identically as "absent from the map" are opposite decisions once a write
+   * depends on them, which is why this path reads the batch's `confirmedUnresolved` set rather than
+   * the map-only wrapper the read paths use.
    *
    * `allowedV2Uids` is the meeting's own `committees[].uid` set, and a UID outside it is stripped
-   * rather than forwarded — without that gate a meeting editor could attribute a guest to a committee
-   * the meeting has nothing to do with, inflating `committee_members_count` against it, and upstream
-   * applies no authorization of its own to whatever `committee_uid` it's given. Stripped means the key
-   * is deleted, not nulled: upstream's `CreateItxRegistrantRequestBody` declares `committee_uid` as a
-   * non-nullable optional `string`, so an explicit `null` is off-contract even though omission is
-   * fine. A `null` arriving from the client is dropped for the same reason.
+   * before any lookup. Without that gate the resolver would happily resolve any committee UID the
+   * caller cared to send — `resolveCommitteeV2UidMappings` goes over NATS with the BFF's own
+   * credentials and applies no authorization of its own — and upstream derives `type: 'committee'`
+   * from whatever UID it receives once translated. That would let a meeting editor attribute a guest
+   * to a committee the meeting has nothing to do with, inflating `committee_members_count` against it.
    */
-  private resolveRegistrantCommitteeUids(
+  private async resolveRegistrantCommitteeUids(
     req: Request,
     registrants: CreateMeetingRegistrantRequest[],
     allowedV2Uids: Set<string>
-  ): CreateMeetingRegistrantRequest[] {
+  ): Promise<CreateMeetingRegistrantRequest[]> {
     const requestedUids = [...new Set(registrants.map((registrant) => registrant.committee_uid).filter((value): value is string => !!value))];
-    const allowedUids = requestedUids.filter((uid) => allowedV2Uids.has(uid));
+    const v2Uids = requestedUids.filter((uid) => allowedV2Uids.has(uid));
 
-    if (allowedUids.length < requestedUids.length) {
+    if (v2Uids.length < requestedUids.length) {
       logger.warning(req, 'resolve_registrant_committee_uids', 'Dropped committee UIDs not associated with this meeting', {
         requested: requestedUids.length,
-        associated: allowedUids.length,
+        associated: v2Uids.length,
         // Counts only. `committee_uid` is unvalidated client content on an unbounded batch behind a
         // 15mb body limit, and `logger.warning` passes metadata through untruncated — logging the
         // values would let one request push megabytes of attacker-chosen strings into CloudWatch.
-        unassociated_count: requestedUids.length - allowedUids.length,
+        unassociated_count: requestedUids.length - v2Uids.length,
+      });
+    }
+
+    // Still fall through to the map when there's nothing to resolve — a client that sent an explicit
+    // `committee_uid: null` needs the key dropped, and only the map below does that.
+    const { resolved: v2ToV1Map, confirmedUnresolved } =
+      v2Uids.length > 0
+        ? await resolveCommitteeV2UidMappings(req, this.natsService, v2Uids)
+        : { resolved: new Map<string, string>(), confirmedUnresolved: new Set<string>() };
+
+    const indeterminate = v2Uids.filter((uid) => !v2ToV1Map.has(uid) && !confirmedUnresolved.has(uid));
+
+    if (indeterminate.length > 0) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Committee UID lookup did not answer; failing before any registrant write', {
+        requested: v2Uids.length,
+        resolved: v2ToV1Map.size,
+        // Counts only, for the same reason as the allowlist warning above.
+        indeterminate_count: indeterminate.length,
+      });
+
+      throw new MicroserviceError('Could not confirm group attribution for these guests. Please try again.', 503, 'SERVICE_UNAVAILABLE', {
+        operation: 'resolve_registrant_committee_uids',
+        service: 'committee-service',
+      });
+    }
+
+    if (confirmedUnresolved.size > 0) {
+      logger.warning(req, 'resolve_registrant_committee_uids', 'Some committee UIDs have no v1 SFID; adding those guests without attribution', {
+        requested: v2Uids.length,
+        resolved: v2ToV1Map.size,
       });
     }
 
     return registrants.map((registrant) => {
-      if (registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid)) {
+      const isResolvable = !!registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) && v2ToV1Map.has(registrant.committee_uid);
+
+      if (isResolvable) {
+        // Forward the v2 UID unchanged — upstream owns the v2→v1 translation itself.
         return registrant;
       }
 
