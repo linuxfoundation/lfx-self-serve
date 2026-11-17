@@ -159,7 +159,7 @@ export class OrgSlugResolverService {
       try {
         const verdict = await this.employeeView.resolveReduced(req);
         if (verdict.eligible && matches(verdict.org)) {
-          return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug, name: verdict.org.orgName, employeeView: true };
+          return { uid: verdict.org.orgUid, slug: verdict.org.orgSlug ?? null, name: verdict.org.orgName, employeeView: true };
         }
       } catch (error) {
         employeeViewError = error;
