@@ -613,6 +613,39 @@ describe('UiComboboxComponent', () => {
       expect(fixture.componentInstance.queries).toEqual(['zz']);
     });
 
+    it('keeps the Enter that picks from reaching a surrounding form', async () => {
+      const formHeard = vi.fn();
+      host.addEventListener('keydown', formHeard);
+      await type('Acme');
+      await press('Enter');
+
+      expect(formHeard).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.value()).toBe('Acme');
+    });
+
+    it('uses the option spelling when the typed text matches its label, on Enter with nothing highlighted', async () => {
+      await set('serverSearch', true);
+      await set('options', []);
+      await type('acme motors');
+      await set('options', [{ value: 'acme', label: 'Acme Motors' }]);
+
+      expect(typedRow()).toBeNull();
+      await press('Enter');
+
+      expect(fixture.componentInstance.value()).toBe('acme');
+      expect(field().value).toBe('Acme Motors');
+    });
+
+    it('makes text kept by Escape the value before Enter reaches a form', async () => {
+      await type('Acme');
+      await press('Escape');
+      let valueWhenHeard: string | null = null;
+      host.addEventListener('keydown', () => (valueWhenHeard = fixture.componentInstance.value()));
+      await press('Enter');
+
+      expect(valueWhenHeard).toBe('Acme');
+    });
+
     it('takes rows the page adds while the list is open', async () => {
       await set('serverSearch', true);
       await set('options', []);

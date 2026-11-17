@@ -9,7 +9,7 @@ import { MeetingService } from '@services/meeting.service';
 import { OrganizationService } from '@services/organization.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsRegisterModalComponent } from './meeting-details-register-modal.component';
 
@@ -45,6 +45,23 @@ describe('MeetingDetailsRegisterModalComponent', () => {
     registerForPublicMeeting = vi.fn(() => of({ uid: 'registrant-1' }));
     searchOrganizations = vi.fn(() => of([{ name: 'Acme Motors', domain: 'acme.example' }]));
   });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
+
+  // Virtual time for the search debounce only; Angular keeps its real timeout and frame scheduling.
+  const typeCompany = async (fixture: ComponentFixture<unknown>, text: string): Promise<HTMLInputElement> => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    const org = field(fixture, 'meeting-details-register-company');
+    org.focus();
+    org.value = text;
+    org.dispatchEvent(new Event('input'));
+    vi.advanceTimersByTime(300);
+    await fixture.whenStable();
+    return org;
+  };
 
   it('fills the form from the profile and locks the email to the account', async () => {
     const fixture = await render({ name: ' Ada  King Lovelace', email: 'ada@example.test' });
@@ -104,13 +121,7 @@ describe('MeetingDetailsRegisterModalComponent', () => {
 
   it('searches companies as you type and registers the one picked', async () => {
     const fixture = await render({ name: 'Ada Lovelace', email: 'ada@example.test' });
-    const org = field(fixture, 'meeting-details-register-company');
-    org.focus();
-    org.value = 'acm';
-    org.dispatchEvent(new Event('input'));
-    // Past the 300ms search debounce.
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    await fixture.whenStable();
+    await typeCompany(fixture, 'acm');
 
     expect(searchOrganizations).toHaveBeenCalledWith('acm');
     const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="ui-option"]'));
@@ -123,6 +134,17 @@ describe('MeetingDetailsRegisterModalComponent', () => {
     await fixture.whenStable();
     submit(fixture).click();
 
+    expect(registerForPublicMeeting).toHaveBeenCalledWith(expect.objectContaining({ org_name: 'Acme Motors' }));
+  });
+
+  it('registers a company typed in full and entered, in the spelling of the match', async () => {
+    const fixture = await render({ name: 'Ada Lovelace', email: 'ada@example.test' });
+    const org = await typeCompany(fixture, 'acme motors');
+    org.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+
+    expect(registerForPublicMeeting).not.toHaveBeenCalled();
+    submit(fixture).click();
     expect(registerForPublicMeeting).toHaveBeenCalledWith(expect.objectContaining({ org_name: 'Acme Motors' }));
   });
 

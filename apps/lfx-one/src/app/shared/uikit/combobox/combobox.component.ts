@@ -125,6 +125,10 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   protected readonly selected: Signal<UiOption | null> = computed(() => this.options().find((option) => option.value === this.value()) ?? null);
   /** The row that uses the typed text, when free text is on and no option already has that label. */
   protected readonly typedOption: Signal<UiOption | null> = this.initTypedOption();
+  protected readonly typedSelected: Signal<boolean> = computed(() => {
+    const typed = this.typedOption();
+    return !!typed && this.isSelected(typed);
+  });
   /** The rows that match the typed text, in document order after the typed-text row. The keyboard moves through these. */
   protected readonly navigable: Signal<UiOption[]> = computed(() => {
     const rows = this.options().filter((option) => this.matches(option));
@@ -140,6 +144,10 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
   });
   protected readonly emptyMessage: Signal<string> = computed(() => (this.queryText() ? `${this.emptyText()} “${this.queryText()}”` : this.emptyText()));
   protected readonly activeOption: Signal<UiOption | null> = this.initActiveOption();
+  protected readonly typedActive: Signal<boolean> = computed(() => {
+    const typed = this.typedOption();
+    return !!typed && this.activeOption() === typed;
+  });
   protected readonly activeDescendant: Signal<string | null> = computed(() => this.activeOption()?.id ?? null);
   protected readonly describedBy: Signal<string | null> = computed(() => {
     if (this.error()) return this.errorId;
@@ -236,6 +244,8 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     // Keys that belong to an input method composition are not ours.
     if (this.isDisabled() || event.isComposing || event.keyCode === 229) return;
     if (!this.open()) {
+      // Free text typed and left open by Escape becomes the value before a form hears the Enter.
+      if (event.key === 'Enter' && this.freeText() && this.query() !== null) this.commitTyped();
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         this.openPanel();
@@ -250,7 +260,12 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
       this.closePanel(true);
     } else if (event.key === 'Enter') {
       event.preventDefault();
-      if (!event.repeat) this.select(this.activeOption());
+      // Enter in an open list picks; it must not also submit a surrounding form.
+      event.stopPropagation();
+      if (event.repeat) return;
+      const active = this.activeOption();
+      if (active) this.select(active);
+      else if (this.freeText()) this.closePanel();
     } else if (event.key === 'Tab') {
       this.closePanel();
     } else {
@@ -275,7 +290,7 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     this.activeItem.set(null);
     this.keyManager.updateActiveItem(-1);
     // Free text keeps what was typed as the value; otherwise typed text that was not picked is dropped, so the field shows the picked option again.
-    if (!keepText && this.freeText() && this.query() !== null) this.commit(this.queryText() || null);
+    if (!keepText && this.freeText() && this.query() !== null) this.commitTyped();
     if (!keepText) this.query.set(null);
     if (wasOpen) this.openChange.emit(false);
   }
@@ -340,6 +355,15 @@ export class UiComboboxComponent extends UiOptionHost implements ControlValueAcc
     // The pick replaces the typed text, so closing does not keep that text as a free-text value.
     this.query.set(null);
     this.closePanel();
+  }
+
+  // An option whose label is the typed text, ignoring case, wins over the text, so the value keeps the option's spelling.
+  private commitTyped(): void {
+    const text = this.queryText();
+    const lower = text.toLowerCase();
+    const match = this.options().find((option) => option.label.toLowerCase() === lower);
+    this.commit(match?.value ?? (text || null));
+    this.query.set(null);
   }
 
   private commit(value: string | null): void {
