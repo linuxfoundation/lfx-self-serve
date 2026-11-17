@@ -24,8 +24,7 @@ apps/lfx-one/src/app/modules/
 │   ├── meetings-entry/         # Route entry for /meetings: picks the dashboard or the redesign (flag + Me lens)
 │   ├── meetings-dashboard/     # Existing meetings page (also the only page at /foundation/meetings and /project/meetings)
 │   ├── meetings-redesign/      # Me lens meetings home page redesign (flag-gated)
-│   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
-│   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
+│   ├── meeting-composer/       # Create/edit composer, a drawer over the current page
 │   ├── meeting-join/           # Public meeting join page
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
@@ -59,9 +58,9 @@ apps/lfx-one/src/app/modules/
 
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
 >
-> **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard; `meeting-composer/` is the v2 drawer. The `meeting-v2-enabled` (`MEETING_V2_ENABLED_FLAG`) or `meetings-redesign` (`MEETINGS_REDESIGN_FLAG`) LaunchDarkly flag, read together through `meetingsV2EnabledSignal`, decides which one a user gets at every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks, the create-artifact dialog, and the `/meetings/create` and `/meetings/:id/edit` deep links. Each deep link is a pair of routes on the same path — a composer entry (`MeetingComposerRouteComponent`) behind the `meetingsV2Guard` CanMatch, then the wizard — so turning both flags off sends the same URL back to the wizard with no deploy. With no answer from LaunchDarkly the browser uses `MEETING_V2_ENABLED_DEFAULT` (`false`). Retiring the wizard means dropping each pair's wizard entry, the guard and the flag.
+> **Meetings create/edit**: `meeting-composer/` is the only create/edit surface, a drawer mounted once by `AppComponent` and raised from every entry point: the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog. The `/meetings/create` and `/meetings/:id/edit` deep links load `MeetingComposerRouteComponent`, which opens the composer in the browser and replaces the URL with the meetings list; on the server it renders nothing and does not redirect (an SSR redirect would become an HTTP 302 and drop the deep link).
 >
-> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait. The same flag also turns on the v2 composer above.
+> **Meetings page**: the flat `/meetings` route loads `MeetingsEntryComponent`, a thin wrapper that renders a loading state on the server and until LaunchDarkly is ready, then either `MeetingsDashboardComponent` or, when `MEETINGS_REDESIGN_FLAG` is on, the active lens is `me` and the URL is the flat `/meetings`, the `@defer`-loaded `MeetingsRedesignComponent`. The same routes are mounted at `/foundation/meetings` and `/project/meetings`, where the wrapper renders the dashboard immediately (server included) with no loader or flag wait.
 
 ### Key Principles
 
