@@ -20,7 +20,9 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
-  HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
+  HEALTH_METRICS_EVENTS_SPEAKERS_CHART_HEIGHT_PX,
+  HEALTH_METRICS_EVENTS_SPEAKERS_SERIES,
+  HEALTH_METRICS_EVENTS_SPEAKERS_UNIQUE_TIP,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_PACKAGE_ICON,
 } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
@@ -73,10 +75,7 @@ import type {
   HealthMetricsEventsRankedRowView,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersProposalRowView,
-  HealthMetricsEventsSpeakersStatusGroup,
-  HealthMetricsEventsSpeakersTab,
   HealthMetricsEventsSpeakersView,
-  HealthMetricsEventsSpeakersYearView,
   HealthMetricsEventsSponsorship,
   HealthMetricsEventsSponsorshipView,
   HealthMetricsEventsSubNavItem,
@@ -484,91 +483,60 @@ function registrationsGrowthTipTitle(year: number, data: HealthMetricsEventsRegi
   return data.isPartialYear ? `${year} · partial year` : String(year);
 }
 
-/** One period's speakers section; the tab picks the count beside the tabs and the proposals listed. */
-export function buildHealthMetricsEventsSpeakersView(
-  speakers: HealthMetricsEventsSpeakers,
-  range: HealthMetricsRange,
-  tab: HealthMetricsEventsSpeakersTab
-): HealthMetricsEventsSpeakersView {
+/**
+ * One period's speakers and proposals: the metrics row, the proposals by year as stacked status columns (every year the
+ * view holds, the current one at full colour), the latest proposals, and the companies that submitted the most.
+ */
+export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEventsSpeakers, range: HealthMetricsRange): HealthMetricsEventsSpeakersView {
   const period = speakers.periods.find((candidate) => candidate.range === range) ?? null;
   const changes = period?.changes ?? null;
-  const stat = (
-    key: string,
-    label: string,
-    value: string,
-    change: HealthMetricsEventsAtAGlanceDelta = { delta: null, deltaDirection: 'neutral' }
-  ): HealthMetricsEventsAtAGlanceStatView => ({
-    key,
-    label,
-    value,
-    ...change,
-  });
-  const tabCounts: Record<HealthMetricsEventsSpeakersTab, number | null> = {
-    all: period?.submitted ?? null,
-    accepted: period?.accepted ?? null,
-    'in-review': period?.inReview ?? null,
-  };
-  const statusCounts: Record<HealthMetricsEventsSpeakersStatusGroup, number | null> = {
-    accepted: period?.accepted ?? null,
-    'in-review': period?.inReview ?? null,
-    declined: period?.declined ?? null,
-  };
-  const organizations = speakers.organizations
+  const acceptance = period?.acceptanceRate ?? null;
+  const companies = speakers.organizations
     .flatMap((organization) => {
       const entry = organization.periods.find((candidate) => candidate.range === range);
-      return entry
-        ? [
-            {
-              key: organization.accountId,
-              label: organization.accountName,
-              rank: entry.rank,
-              value: entry.submitted,
-            },
-          ]
-        : [];
+      return entry ? [{ organization, rank: entry.rank, submitted: entry.submitted }] : [];
     })
     .sort((a, b) => a.rank - b.rank)
     .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS);
-  const individual = speakers.unaffiliated.find((candidate) => candidate.range === range)?.submitted ?? null;
+  // An unmeasured count reads "—" with no bar, never as 0.
+  const most = Math.max(0, ...companies.map((company) => company.submitted ?? 0));
 
   return {
     foundationMeasured: speakers.periods.length > 0,
     measured: period !== null && period.submitted !== null,
-    countLabel: formatProposalCount(tabCounts[tab]),
-    headline: stat('accepted', 'Accepted proposals', formatAtAGlanceCount(period?.accepted)),
-    side: [
-      stat('total', 'Total proposals', formatAtAGlanceCount(period?.submitted)),
-      stat('acceptance-rate', 'Acceptance rate', formatWholePercent(period?.acceptanceRate ?? null)),
-      stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), changes ? formatAtAGlanceDelta(changes.speakers, 'pct') : undefined),
+    metrics: [
+      { key: 'total', label: 'Total proposals', value: formatDashCount(period?.submitted) },
+      {
+        key: 'accepted',
+        label: 'Accepted proposals',
+        value: formatDashCount(period?.accepted),
+        ...(acceptance === null ? {} : { description: `${Math.round(acceptance * 100)}% acceptance rate` }),
+      },
+      { key: 'in-review', label: 'In review', value: formatDashCount(period?.inReview) },
+      {
+        key: 'speakers',
+        label: 'Unique speakers',
+        value: formatDashCount(period?.speakers),
+        tip: HEALTH_METRICS_EVENTS_SPEAKERS_UNIQUE_TIP,
+        ...(changes ? metricTrend(changes.speakers) : {}),
+      },
     ],
-    statusRows: buildRankedRows(
-      (Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS) as HealthMetricsEventsSpeakersStatusGroup[])
-        .map((group) => ({
-          key: group,
-          label: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].label,
-          value: statusCounts[group],
-        }))
-        .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
-    ),
-    organizations: buildRankedRows(organizations),
-    individualLabel: individual ? `${formatProposalCount(individual)} submitted` : null,
+    chart: buildSpeakersChart(speakers),
     proposals: speakers.proposals
-      .filter((proposal) => proposal.range === range && (tab === 'all' || proposal.statusGroup === tab))
+      .filter((proposal) => proposal.range === range)
       .sort(compareProposalsByRecency)
       .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS)
       .map(buildSpeakersProposalRowView),
+    companies: companies.map(({ organization, submitted }) => ({
+      key: organization.accountId,
+      label: organization.accountName,
+      value: submitted === null ? HEALTH_METRICS_TABLE_DASH : `${formatHealthMetricsEventsCount(submitted)} ${submitted === 1 ? 'proposal' : 'proposals'}`,
+      pct: submitted !== null && most > 0 ? (submitted / most) * 100 : 0,
+      tier: null,
+      icon: '',
+      company: { kind: 'company', name: organization.accountName, logoUrl: organization.logoUrl },
+    })),
   };
-}
-
-/** Proposals per year, oldest first; independent of the period and tab, so the chart survives both. */
-export function buildHealthMetricsEventsSpeakersYears(speakers: HealthMetricsEventsSpeakers): HealthMetricsEventsSpeakersYearView[] {
-  return HEALTH_METRICS_L2_RANGES.map((yearRange) => {
-    const year = getYearForRange(yearRange);
-    const submitted = speakers.periods.find((candidate) => candidate.range === yearRange)?.submitted ?? null;
-    const isPartialYear = yearRange === 'YTD';
-
-    return { year, submitted, isPartialYear, yearLabel: isPartialYear ? `${year} (partial year)` : `${year}`, submittedLabel: formatAtAGlanceCount(submitted) };
-  });
 }
 
 /**
@@ -828,17 +796,6 @@ function formatGeographyCountriesLabel(value: number | null): string {
   return `${value.toLocaleString('en-US')} ${value === 1 ? 'country' : 'countries'}`;
 }
 
-/** Empty when unmeasured, since the section then renders no figures at all. */
-function formatProposalCount(value: number | null): string {
-  if (value === null) return '';
-
-  return `${value.toLocaleString('en-US')} ${value === 1 ? 'proposal' : 'proposals'}`;
-}
-
-function formatWholePercent(fraction: number | null): string {
-  return fraction === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : `${Math.round(fraction * 100)}%`;
-}
-
 /** Ranked-list rows, name and value only; an unmeasured value reads as not available. */
 function buildRankedRows(items: HealthMetricsEventsRankedRowInput[]): HealthMetricsEventsRankedRowView[] {
   return items.map((item) => ({ key: item.key, label: item.label, valueLabel: formatAtAGlanceCount(item.value) }));
@@ -850,16 +807,57 @@ function compareProposalsByRecency(a: HealthMetricsEventsSpeakersProposal, b: He
   return byDate !== 0 ? byDate : a.proposalKey.localeCompare(b.proposalKey);
 }
 
+/** Proposals by year, one column per year the view holds, Accepted under In review under Declined; independent of the period. */
+function buildSpeakersChart(speakers: HealthMetricsEventsSpeakers): HealthMetricsColumnChartView {
+  const columns = HEALTH_METRICS_L2_RANGES.map((yearRange) => {
+    const year = getYearForRange(yearRange);
+    const period = speakers.periods.find((candidate) => candidate.range === yearRange) ?? null;
+    const current = yearRange === 'YTD';
+    return {
+      key: String(year),
+      label: String(year),
+      sub: '',
+      values: period && [period.accepted, period.inReview, period.declined],
+      total: period?.submitted ?? null,
+      muted: !current,
+      tipTitle: current ? `${year} · partial year` : String(year),
+    };
+  });
+
+  // A year with no total still draws its known statuses, so the axis fits whichever is taller.
+  const heights = columns.map((column) =>
+    Math.max(
+      column.total ?? 0,
+      (column.values ?? []).reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    )
+  );
+
+  return buildHealthMetricsColumnChart({
+    series: [...HEALTH_METRICS_EVENTS_SPEAKERS_SERIES],
+    columns,
+    peak: Math.max(0, ...heights),
+    heightPx: HEALTH_METRICS_EVENTS_SPEAKERS_CHART_HEIGHT_PX,
+    barWidthPx: HEALTH_METRICS_EVENTS_CHART_BAR_WIDTH_PX,
+    formatTotal: formatHealthMetricsEventsCount,
+    formatValue: formatHealthMetricsEventsCount,
+    ariaLabel: 'Proposals by year, by status',
+  });
+}
+
 function buildSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersProposal): HealthMetricsEventsSpeakersProposalRowView {
-  let organizationLabel = proposal.organizationName ?? '—';
-  if (proposal.unaffiliated) organizationLabel = 'Individual';
+  // Only the view's flag makes a speaker an individual; a company with no name reads "—".
+  const company = proposal.unaffiliated ? 'Individual' : (proposal.organizationName ?? HEALTH_METRICS_TABLE_DASH);
+  const group = proposal.statusGroup ? HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[proposal.statusGroup] : null;
 
   return {
-    proposal,
-    organizationLabel,
-    dateLabel: proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : '—',
-    statusClass: proposal.statusGroup
-      ? HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[proposal.statusGroup].badgeClass
-      : HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
+    key: proposal.proposalKey,
+    // The speaker is shown by job title, never by name; with none, the session title leads.
+    title: proposal.jobTitle ?? proposal.sessionTitle,
+    description: proposal.jobTitle ? proposal.sessionTitle : '',
+    company: { kind: 'company', name: company, logoUrl: proposal.unaffiliated ? '' : proposal.logoUrl },
+    eventName: proposal.eventName,
+    dateLabel: proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : HEALTH_METRICS_TABLE_DASH,
+    statusLabel: group?.label ?? proposal.status,
+    statusTone: group?.tone ?? 'neutral',
   };
 }

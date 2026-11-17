@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
-<div class="flex flex-col gap-4" data-testid="events-speakers">
+<!-- Exact px sizes from the design; the 14px root makes the rem scale undershoot them. -->
+<div class="flex flex-col gap-[16px]" data-testid="events-speakers">
   @if (loadFailed()) {
     <lfx-empty-state
       variant="compact"
@@ -13,167 +13,69 @@
   } @else if (loading()) {
     <p-skeleton height="24rem" borderRadius="0.5rem" data-testid="events-speakers-loading" aria-hidden="true" />
   } @else if (!empty()) {
-    <div class="flex flex-wrap items-center justify-between gap-2" data-testid="events-speakers-controls">
-      <lfx-filter-pills
-        variant="track"
-        [options]="tabOptions"
-        [selectedFilter]="tab()"
-        (filterChange)="onTabChange($event)"
-        data-testid="events-speakers-tab-pills" />
-      <span class="text-[13px] text-gray-500" data-testid="events-speakers-count">{{ view().countLabel }}</span>
-    </div>
+    <lfx-health-metrics-metrics-row [items]="view().metrics" testId="events-speakers-metrics" />
 
-    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-speakers-hero">
-      <div class="flex flex-col gap-2" data-testid="events-speakers-headline">
-        <span class="text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900" data-testid="events-speakers-headline-value">{{
-          view().headline.value
-        }}</span>
-        <span class="text-[12px] text-gray-500">{{ view().headline.label }}</span>
-      </div>
+    <h3 class="m-0 mt-[4px] text-[11px] font-semibold uppercase tracking-[0.06em] text-gray-500" data-testid="events-speakers-years-heading">
+      Proposals by year
+    </h3>
+    <lfx-health-metrics-column-chart [chart]="view().chart" testId="events-speakers-chart" />
 
-      <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-speakers-side">
-        @for (stat of view().side; track stat.key) {
-          <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-speakers-side-' + stat.key">
-            <dt class="text-[12px] text-gray-500">{{ stat.label }}</dt>
-            <dd class="flex items-baseline gap-1.5 text-[24px] font-semibold leading-[1.2] tabular-nums text-gray-900">
-              <span [attr.data-testid]="'events-speakers-side-' + stat.key + '-value'">{{ stat.value }}</span>
-              @if (stat.delta !== null) {
-                <span
-                  class="text-[12px] font-medium"
-                  [class.text-emerald-600]="stat.deltaDirection === 'up'"
-                  [class.text-red-600]="stat.deltaDirection === 'down'"
-                  [class.text-gray-400]="stat.deltaDirection === 'neutral'"
-                  [attr.data-testid]="'events-speakers-side-' + stat.key + '-delta'">
-                  {{ stat.delta }}
-                </span>
-              }
-            </dd>
-          </div>
+    <!-- The design's switch under the chart, left-aligned. -->
+    <div class="flex">
+      <lfx-ui-switch size="small" ariaLabel="Proposals view" [value]="list()" (valueChange)="onListChange($event)" data-testid="events-speakers-list">
+        @for (option of listOptions; track option.id) {
+          <lfx-ui-switch-option [value]="option.id" [label]="option.label" [attr.data-testid]="'events-speakers-list-' + option.id" />
         }
-      </dl>
+      </lfx-ui-switch>
     </div>
 
-    <!-- Stacked, as the design draws them. -->
-    <div class="flex flex-col gap-[24px]" data-testid="events-speakers-breakdown">
-      <div class="flex flex-col gap-3" data-testid="events-speakers-status">
-        <div class="flex flex-wrap items-baseline justify-between gap-2">
-          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Proposals by status</h4>
-          <span class="text-[12px] text-gray-400">count</span>
-        </div>
-        <ul class="flex flex-col gap-[8px]">
-          @for (row of view().statusRows; track row.key) {
-            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'events-speakers-status-' + row.key">
-              <span class="text-gray-600">{{ row.label }}</span>
-              <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-status-' + row.key + '-value'">{{ row.valueLabel }}</span>
-            </li>
-          }
-        </ul>
-      </div>
-
-      <div class="flex flex-col gap-3" data-testid="events-speakers-by-year">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Proposals per year</h4>
-        <div class="h-40" role="img" [attr.aria-label]="chartSummaryLabel()" data-testid="events-speakers-chart">
-          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%" />
-        </div>
-        <!-- Screen-reader equivalent: the canvas exposes its values only via a pointer tooltip -->
-        <table class="sr-only" data-testid="events-speakers-chart-table">
-          <thead>
-            <tr>
-              <th scope="col">Year</th>
-              <th scope="col">Proposals</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (year of years(); track year.year) {
-              <tr>
-                <th scope="row">{{ year.yearLabel }}</th>
-                <td>{{ year.submittedLabel }}</td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="flex flex-col gap-3" data-testid="events-speakers-organizations">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Most active companies</h4>
-        <span class="text-[12px] text-gray-400">proposals submitted</span>
-      </div>
-      @if (view().organizations.length === 0) {
-        <p class="text-[13px] text-gray-500" data-testid="events-speakers-organizations-empty">No company submitted a proposal in the selected period.</p>
-      } @else {
-        <ul class="flex flex-col gap-[8px]">
-          @for (row of view().organizations; track row.key) {
-            <li
-              class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]"
-              [attr.data-testid]="'events-speakers-organization-' + row.key">
-              <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
-              <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-organization-' + row.key + '-value'">{{ row.valueLabel }}</span>
-            </li>
-          }
-        </ul>
-      }
-      @if (view().individualLabel; as individualLabel) {
-        <p class="flex items-baseline justify-between gap-2 border-t border-gray-100 pt-2 text-[13px]" data-testid="events-speakers-individual">
-          <span class="text-gray-500">Individual speakers</span>
-          <span class="tabular-nums text-gray-700" data-testid="events-speakers-individual-value">{{ individualLabel }}</span>
-        </p>
-      }
-    </div>
-
-    <div class="flex flex-col gap-2" data-testid="events-speakers-proposals">
-      <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Recent proposals</h4>
+    @if (list() === 'proposals') {
       @if (view().proposals.length === 0) {
-        <p class="text-[13px] text-gray-500" data-testid="events-speakers-proposals-empty">No proposal in the selected period.</p>
+        <p class="m-0 text-[13px] text-gray-500" data-testid="events-speakers-proposals-empty">No proposal in the selected period.</p>
       } @else {
-        <lfx-table styleClass="hm-table" [rowHover]="false" [value]="view().proposals" data-testid="events-speakers-table">
+        <!-- The design's 700px minimum; a narrower card scrolls the table sideways. -->
+        <lfx-table
+          styleClass="hm-table"
+          [rowHover]="false"
+          [value]="view().proposals"
+          [paginator]="false"
+          [tableStyle]="{ 'min-width': '700px' }"
+          data-testid="events-speakers-proposals">
           <ng-template #header>
             <tr>
               <th scope="col">Speaker</th>
               <th scope="col">Company</th>
               <th scope="col">Event</th>
-              <th scope="col">Submitted</th>
+              <th scope="col" class="text-right">Submitted</th>
               <th scope="col">Status</th>
             </tr>
           </ng-template>
 
           <ng-template #body let-row>
-            <tr [attr.data-testid]="'events-speakers-row-' + row.proposal.proposalKey">
-              <!-- The speaker is shown by role, never by name -->
+            <tr [attr.data-testid]="'events-speakers-proposal-' + row.key">
+              <td><lfx-health-metrics-cell [text]="row.title" [description]="row.description" /></td>
+              <td><lfx-health-metrics-cell [text]="row.company.name" [lead]="row.company" /></td>
+              <td><lfx-health-metrics-cell [text]="row.eventName" /></td>
+              <td><lfx-health-metrics-cell class="items-end" textClass="text-gray-500" [text]="row.dateLabel" /></td>
               <td>
-                <div class="flex flex-col gap-0.5">
-                  @if (row.proposal.jobTitle) {
-                    <span class="text-[13px] font-medium text-gray-900" [attr.data-testid]="'events-speakers-job-title-' + row.proposal.proposalKey">{{
-                      row.proposal.jobTitle
-                    }}</span>
-                  }
-                  <span class="text-[12px] text-gray-500">{{ row.proposal.sessionTitle }}</span>
-                </div>
-              </td>
-              <td>
-                <span class="text-[13px] text-gray-900" [attr.data-testid]="'events-speakers-organization-label-' + row.proposal.proposalKey">{{
-                  row.organizationLabel
-                }}</span>
-              </td>
-              <td>
-                <span class="text-[13px] text-gray-900">{{ row.proposal.eventName }}</span>
-              </td>
-              <td>
-                <span class="text-[13px] tabular-nums text-gray-900">{{ row.dateLabel }}</span>
-              </td>
-              <td>
-                <span
-                  class="inline-flex h-[20px] items-center rounded-full px-[8px] text-[11px] font-medium"
-                  [class]="row.statusClass"
-                  [attr.data-testid]="'events-speakers-status-badge-' + row.proposal.proposalKey"
-                  >{{ row.proposal.status }}</span
-                >
+                <lfx-ui-badge [tone]="row.statusTone" [attr.data-testid]="'events-speakers-proposal-' + row.key + '-status'">{{
+                  row.statusLabel
+                }}</lfx-ui-badge>
               </td>
             </tr>
           </ng-template>
         </lfx-table>
       }
-    </div>
+    } @else if (view().companies.length === 0) {
+      <p class="m-0 text-[13px] text-gray-500" data-testid="events-speakers-companies-empty">No company submitted a proposal in the selected period.</p>
+    } @else {
+      <!-- Exact px: the design's minmax(200px,300px) 1fr 100px grid, with names at 500. It needs 324px, more than a phone's
+           card holds, so on a phone the name shrinks (its full text in the truncation tip) and the count takes its own width. -->
+      <lfx-health-metrics-bar-list
+        [rows]="view().companies"
+        gridClass="grid-cols-[minmax(200px,300px)_1fr_100px] max-[640px]:grid-cols-[minmax(0,1fr)_minmax(48px,0.6fr)_auto]"
+        labelClass="font-medium"
+        testId="events-speakers-companies" />
+    }
   }
 </div>
