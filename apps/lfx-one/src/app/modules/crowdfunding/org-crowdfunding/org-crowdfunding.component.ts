@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, effect, inject, PLATFORM_ID, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
@@ -71,6 +71,18 @@ export class OrgCrowdfundingComponent {
   });
   protected readonly showNewInitiative = computed(() => this.activeTab() === 'initiatives' && this.tabs().some((tab) => tab.id === 'initiatives'));
 
+  // The tab to move to, or null when the current address is fine (and until the grants and the flag settle).
+  private readonly landingTarget = computed((): OrgCrowdfundingTab | null => {
+    if (!this.settled()) return null;
+    const tabs = this.tabs();
+    const active = this.activeTab();
+    if (active === '') {
+      const requested = this.route.snapshot.queryParamMap.get('tab');
+      return tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? 'initiatives';
+    }
+    return tabs.length > 0 && !tabs.some((tab) => tab.id === active) ? tabs[0].id : null;
+  });
+
   constructor() {
     this.settleFlag();
     // Picks the tab once the role grants and the donations flag have settled: before that the writer set is empty and the
@@ -78,17 +90,21 @@ export class OrgCrowdfundingComponent {
     // - The bare `/crowdfunding` address lands on `?tab=` when that tab is available, else the first tab.
     // - A tab the viewer cannot use (an old Initiatives link, or a switch to a company they only view) moves to the first.
     // - A viewer with no tab at all keeps Initiatives, whose page explains the missing access.
-    effect(() => {
-      if (!this.settled() || !this.landingTarget()) return;
+    toObservable(this.landingTarget)
+      .pipe(
+        filter((target): target is OrgCrowdfundingTab => !!target),
+        takeUntilDestroyed(this.destroyRef)
+      )
       // Not while a navigation is in flight: a relative `navigate` builds on this page's route, so issued during an
       // All Companies switch it would supersede the switch. The target is recomputed once the router is idle.
-      runWhenRouterIdle(this.router, this.destroyRef, () => {
-        const target = this.landingTarget();
-        if (target) {
-          void this.router.navigate([target], { relativeTo: this.route, replaceUrl: true, queryParams: { tab: null }, queryParamsHandling: 'merge' });
-        }
-      });
-    });
+      .subscribe(() =>
+        runWhenRouterIdle(this.router, this.destroyRef, () => {
+          const target = this.landingTarget();
+          if (target) {
+            void this.router.navigate([target], { relativeTo: this.route, replaceUrl: true, queryParams: { tab: null }, queryParamsHandling: 'merge' });
+          }
+        })
+      );
   }
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
@@ -122,16 +138,5 @@ export class OrgCrowdfundingComponent {
       return;
     }
     void this.featureFlagService.waitForReady({ guard: 'orgCrowdfundingTabs', flag: CF_ORG_DONATIONS_FLAG }).finally(() => this.flagSettled.set(true));
-  }
-
-  // The tab to move to, or null when the current address is fine.
-  private landingTarget(): OrgCrowdfundingTab | null {
-    const tabs = this.tabs();
-    const active = this.activeTab();
-    if (active === '') {
-      const requested = this.route.snapshot.queryParamMap.get('tab');
-      return tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id ?? 'initiatives';
-    }
-    return tabs.length > 0 && !tabs.some((tab) => tab.id === active) ? tabs[0].id : null;
   }
 }
