@@ -143,8 +143,8 @@ export class FoundationParticipatingOrgsService {
     let budget = 0;
     for (const row of rows) {
       companyKeys.push(row.participantKey);
-      // Each company holds at least one line, so this admits no more companies than the cap could hold; the live read's own limit and
-      // the ordering by position decide where the file stops.
+      // One per company, so this admits at most the cap plus one companies; a company with no line costs the file nothing and is skipped
+      // below, and the live read's own limit and the ordering by position decide where the file stops.
       budget += 1;
       if (budget > maxRows) break;
     }

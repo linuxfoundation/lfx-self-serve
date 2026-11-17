@@ -119,6 +119,15 @@ describe('FoundationParticipatingOrgsService', () => {
     expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Nothing to export' }));
   });
 
+  it('says an empty by-project file means no project-level activity, not that no company matches', () => {
+    setup();
+    service.exportCsv(FILTERS, 'by-project').subscribe();
+    http.expectOne((req) => req.url === `${BASE}/export`).flush(null, { status: 204, statusText: 'No Content' });
+    expect(add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'info', summary: 'Nothing to export', detail: expect.stringContaining('project-level') })
+    );
+  });
+
   it('toasts an error and returns null when the export fails', () => {
     setup();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

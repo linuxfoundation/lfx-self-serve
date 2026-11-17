@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import {
+  FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_EMPTY_MESSAGE,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_EMPTY_MESSAGE,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_ERROR_MESSAGE,
   FOUNDATION_PARTICIPATING_ORGS_EXPORT_TRUNCATED_HEADER,
@@ -72,7 +73,11 @@ export class FoundationParticipatingOrgsService {
       map((response) => {
         const blob = response.body;
         if (response.status === 204 || !blob || blob.size === 0) {
-          this.toast('info', 'Nothing to export', FOUNDATION_PARTICIPATING_ORGS_EXPORT_EMPTY_MESSAGE);
+          this.toast(
+            'info',
+            'Nothing to export',
+            kind === 'by-project' ? FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_EMPTY_MESSAGE : FOUNDATION_PARTICIPATING_ORGS_EXPORT_EMPTY_MESSAGE
+          );
           return null;
         }
         const fileName = parseContentDispositionFilename(response.headers.get('Content-Disposition')) ?? 'participating-companies.csv';

@@ -279,6 +279,14 @@ describe('FoundationParticipatingOrgsService', () => {
       expect(truncated).toBe(false);
     });
 
+    it('does not flag a foundation-only company after a file that exactly fills the cap as a cut', async () => {
+      // Alpha's two lines fill the cap of 2; Beta and Gamma come after it and have no line, so they are skipped rather than cutting the file.
+      getProjectLines.mockResolvedValue(LINES.filter((entry) => entry.companyKey === 'alpha'));
+      const { items, truncated } = await service.getExportRows(req, base, 'by-project', 2);
+      expect(items.map((item) => item.row.name)).toEqual(['Alpha Inc']);
+      expect(truncated).toBe(false);
+    });
+
     it('does not query the warehouse when no company matches the filters', async () => {
       const { items, truncated } = await service.getExportRows(req, { ...base, search: 'zzz' }, 'by-project');
       expect(items).toEqual([]);

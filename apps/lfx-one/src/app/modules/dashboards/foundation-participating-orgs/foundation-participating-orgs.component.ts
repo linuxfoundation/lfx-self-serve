@@ -585,7 +585,8 @@ export class FoundationParticipatingOrgsComponent {
       {
         id: 'foundation-participating-orgs-export-by-project',
         label: 'Companies by project',
-        title: 'One row per company and project',
+        // Under a project scope each company has only that project's line.
+        title: this.projectSlug() ? `One row per company · ${this.selectedProjectName()} only` : 'One row per company and project',
         command: () => this.export('by-project'),
       },
     ];

@@ -124,7 +124,10 @@ export interface FoundationParticipatingOrgProjectLine {
   shareOfCompanyCommits: number;
 }
 
-/** The "Other N projects" row that keeps a large company's breakdown adding up. Contributors are not summed (people count once). */
+/**
+ * The "Other N projects" row for the projects folded past the top N. It carries only the count: the warehouse's project lines are
+ * ancestor rollups, so summing folded lines could count a parent and its child twice.
+ */
 export interface FoundationParticipatingOrgOtherProjects {
   count: number;
 }

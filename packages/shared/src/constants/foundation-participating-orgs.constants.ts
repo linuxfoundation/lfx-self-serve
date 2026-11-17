@@ -80,6 +80,9 @@ export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_HEADER: readonly st
 
 export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_EMPTY_MESSAGE = 'No companies match these filters, so there is nothing to export.';
 
+/** The by-project file holds only companies with a project line, so an empty one does not mean no company matches. */
+export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_BY_PROJECT_EMPTY_MESSAGE = 'No project-level activity matches these filters, so there is nothing to export.';
+
 export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_ERROR_MESSAGE = 'Unable to export participating companies. Please try again.';
 
 export const FOUNDATION_PARTICIPATING_ORGS_EXPORT_TRUNCATED_MESSAGE = `The export holds only the first ${FOUNDATION_PARTICIPATING_ORGS_EXPORT_MAX_ROWS.toLocaleString('en-US')} rows.`;

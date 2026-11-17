@@ -278,6 +278,19 @@ describe('FoundationParticipatingOrgsComponent', () => {
     expect(fixture.componentInstance['viewState']()).toBe('empty');
   });
 
+  it('labels the Members subline and both export items by the project scope, and by the foundation without one', async () => {
+    await render();
+    const members = (): string | undefined => fixture.componentInstance['tiles']().find((tile) => tile.label === 'Members')?.subLine;
+    const titles = (): (string | undefined)[] => fixture.componentInstance['exportMenu']().map((item) => item['title']);
+    expect(members()).toBe('3 contributing');
+    expect(titles()).toEqual(['One row per company · foundation totals', 'One row per company and project']);
+
+    fixture.componentInstance['filterForm'].controls.project.setValue('project-1');
+    await settle();
+    expect(members()).toBe('3 contributing to this project');
+    expect(titles()).toEqual(['One row per company · Synthetic Project 1 figures', 'One row per company · Synthetic Project 1 only']);
+  });
+
   it('keeps the tier list through a reload of the same foundation', async () => {
     await render();
     const before = fixture.componentInstance['tierOptions']().map((option) => option.value);
