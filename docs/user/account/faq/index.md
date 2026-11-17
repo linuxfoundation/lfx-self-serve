@@ -31,11 +31,11 @@ Developer settings are in the **Settings** tab (`/profile/settings`) > **Develop
 
 ## Can I use the LFX API or MCP Server?
 
-Yes. You'll find your API token in **Settings** > **Developer Settings**. To get started with the LFX MCP Server, see the [lfx-mcp repository](https://github.com/linuxfoundation/lfx-mcp).
+Yes. You'll find your API token in **Settings** > **Developer Settings**. The LFX MCP Server needs its own access, separate from your LFX roles. To request access and get started, see the [lfx-mcp repository](https://github.com/linuxfoundation/lfx-mcp).
 
 A few things to know:
 
-- The API and MCP Server let you see and do the same things you can in LFX Self Serve. If you need access to a project or company, the admins for that project or company can help.
+- The API and MCP Server work from your LFX roles and permissions, so they don't give you access to projects or companies you aren't part of. If you need access to a project or company, the admins for that project or company can help.
 - The API and MCP Server are still evolving, so things may change over time.
 - We aren't able to help with API or MCP setup, authentication, or errors here, and we can't confirm whether a token has the access a particular integration needs.
 
