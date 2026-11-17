@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterOutlet } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -59,6 +59,16 @@ export class OrgCrowdfundingComponent {
     const available: Record<OrgCrowdfundingTab, boolean> = { initiatives: isWriter, donations: this.isDonationsEnabled() };
     return this.allTabs.filter((tab) => available[tab.id] || tab.id === this.activeTab());
   });
+
+  constructor() {
+    // The bare `/crowdfunding` address lands on the viewer's first tab. It waits for the role grants: before they load the
+    // writer set is empty, which would send a direct writer to Donations — or, with the flag off, to the company overview.
+    effect(() => {
+      if (this.activeTab() !== '' || (!this.orgRoleGrants.loaded() && !this.orgRoleGrants.error())) return;
+      const first = this.tabs()[0]?.id ?? 'initiatives';
+      void this.router.navigate([first], { relativeTo: this.route, replaceUrl: true, queryParamsHandling: 'preserve' });
+    });
+  }
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected switchTab(tab: OrgCrowdfundingTab): void {

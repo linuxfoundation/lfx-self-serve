@@ -56,7 +56,6 @@ import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
 import { AccountContextService } from './shared/services/account-context.service';
-import { OrgRoleGrantsService } from './shared/services/org-role-grants.service';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 const loadOrgRollUpUnavailablePage = () =>
@@ -112,20 +111,10 @@ function orgLensPageRoutes(): Routes {
       canActivate: [orgRollUpSingleOrgPageGuard],
       children: [
         {
+          // The bare address has no tab child: the shell lands on the viewer's first tab once their grants have loaded.
           path: '',
           loadComponent: () => import('./modules/crowdfunding/org-crowdfunding/org-crowdfunding.component').then((m) => m.OrgCrowdfundingComponent),
           children: [
-            {
-              // Lands on the first tab the viewer has: Initiatives for a direct writer on the company, else Donations.
-              path: '',
-              pathMatch: 'full',
-              redirectTo: () => {
-                const isWriter = inject(OrgRoleGrantsService)
-                  .writerSet()
-                  .has(inject(AccountContextService).selectedAccount().uid ?? '');
-                return isWriter ? 'initiatives' : 'donations';
-              },
-            },
             {
               // `data` sits on each tab: a child of a component route only inherits it from an empty-path parent.
               path: 'initiatives',

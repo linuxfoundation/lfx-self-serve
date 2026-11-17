@@ -23,6 +23,7 @@ class StubDonationsComponent {}
 
 describe('OrgCrowdfundingComponent (#5838)', () => {
   const writerSet = signal(new Set<string>());
+  const grantsLoaded = signal(true);
   const donationsEnabled = signal(false);
 
   const tabIds = (root: HTMLElement): string[] =>
@@ -37,6 +38,7 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
 
   beforeEach(() => {
     writerSet.set(new Set());
+    grantsLoaded.set(true);
     donationsEnabled.set(false);
     TestBed.configureTestingModule({
       providers: [
@@ -51,7 +53,7 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
           },
         ]),
         { provide: AccountContextService, useValue: { selectedAccount: signal({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID }) } },
-        { provide: OrgRoleGrantsService, useValue: { writerSet } },
+        { provide: OrgRoleGrantsService, useValue: { writerSet, loaded: grantsLoaded, error: signal<string | null>(null) } },
         {
           provide: FeatureFlagService,
           useValue: { getBooleanFlag: (key: string) => (key === CF_ORG_DONATIONS_FLAG ? donationsEnabled : signal(false)) },
@@ -111,5 +113,24 @@ describe('OrgCrowdfundingComponent (#5838)', () => {
     await harness.navigateByUrl('/crowdfunding/donations');
     harness.detectChanges();
     expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).toBeNull();
+  });
+
+  it('lands the bare address on Initiatives for a direct writer, waiting for the grants to load', async () => {
+    donationsEnabled.set(true);
+    grantsLoaded.set(false);
+    const harness = await open('/crowdfunding');
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding');
+
+    writerSet.set(new Set([ORG_UID]));
+    grantsLoaded.set(true);
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('lands the bare address on Donations for a viewer who is not a writer', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
   });
 });
