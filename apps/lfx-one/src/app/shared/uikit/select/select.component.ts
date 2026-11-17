@@ -99,7 +99,7 @@ export class UiSelectComponent extends UiOptionHost implements ControlValueAcces
   public readonly size = input<UiInputSize>('medium');
   /** Disables the field. Forms can also disable it. */
   public readonly disabled = input<boolean, unknown>(false, { transform: booleanAttribute });
-  /** Marks the field as required for assistive technology. */
+  /** Marks the field as required for assistive technology and adds a red asterisk to the visible label. */
   public readonly required = input<boolean, unknown>(false, { transform: booleanAttribute });
   /** Font Awesome class string for a leading icon, e.g. `fa-light fa-globe`. A picked option's own icon replaces it. For other content use the `lfxUiSelectPrefix` slot. */
   public readonly prefixIcon = input<string>('');

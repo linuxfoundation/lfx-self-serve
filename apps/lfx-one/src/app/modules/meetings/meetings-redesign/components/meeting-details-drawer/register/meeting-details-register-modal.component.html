@@ -9,7 +9,7 @@
     </p>
     <div class="grid grid-cols-1 gap-[16px] sm:grid-cols-2">
       <lfx-ui-input
-        label="First Name *"
+        label="First Name"
         placeholder="Enter first name"
         autocomplete="given-name"
         formControlName="first_name"
@@ -17,7 +17,7 @@
         [error]="errors().first_name"
         data-testid="meeting-details-register-first-name" />
       <lfx-ui-input
-        label="Last Name *"
+        label="Last Name"
         placeholder="Enter last name"
         autocomplete="family-name"
         formControlName="last_name"
@@ -26,7 +26,7 @@
         data-testid="meeting-details-register-last-name" />
       <lfx-ui-input
         class="sm:col-span-2"
-        label="Email *"
+        label="Email"
         type="email"
         placeholder="Enter email address"
         autocomplete="email"
