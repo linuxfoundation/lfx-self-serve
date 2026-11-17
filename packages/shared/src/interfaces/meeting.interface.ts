@@ -315,8 +315,7 @@ export interface Meeting {
    * Share the guest list with guests in LFX. Calendar invites never list other guests, whatever
    * this is set to — each guest's invite names only the recipient. Board meetings can never
    * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
-   * write. A restricted (invite-only) meeting can opt in like any other (#5438): only the meeting v2
-   * composer can switch it on, since the pre-v2 wizard locks the control, and a write that omits
+   * write. A restricted (invite-only) meeting can opt in like any other (#5438), and a write that omits
    * the field keeps the stored value. In LFX it also decides whether an invitee who is not an
    * organizer can see the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]`
    * to them when it is off, and always for Board meetings, whatever they store; the meeting card,
@@ -1565,8 +1564,7 @@ export interface MeetingDeleteTypeResult {
   deleteType: MeetingDeleteType;
   /**
    * The occurrence picked in the dialog's picker.
-   * @description Set for `'occurrence'` while `meeting-v2-enabled` is on. The pre-v2 dialog has no picker and
-   * omits it, so the caller cancels the occurrence it opened the dialog on — never assume it is populated.
+   * @description Set for `'occurrence'`; omitted for `'series'`.
    */
   occurrenceId?: string;
 }
@@ -2365,8 +2363,8 @@ export interface MeetingComposerEditScope {
 export interface ShowMeetingAttendeesLockOptions {
   /**
    * Let restricted (invite-only) meetings opt in — only board meetings lock.
-   * @description Meeting v2 composer only (`meeting-v2-enabled`). Everything else — the pre-v2 wizard and
-   * every read of a stored meeting — keeps the default rule, so existing meetings are unaffected.
+   * @description Meeting composer only. Every read of a stored meeting keeps the default rule, so
+   * existing meetings are unaffected.
    */
   allowRestricted?: boolean;
 }

@@ -127,7 +127,7 @@ export class SurveyManageComponent {
 
   public constructor() {
     // Sync context from the loaded survey itself — an edit deep link can arrive with no
-    // `?project=` under a stale cookie-restored context (GH-1569). Mirrors meeting-manage (gh-1432).
+    // `?project=` under a stale cookie-restored context (GH-1569, gh-1432).
     // canonicalizeRoute rewrites a wrong-tier URL (/project/* vs /foundation/*) to the survey's own
     // tier so copied wizard links reflect ownership — mirrors vote-manage/mailing-list-manage.
     syncEntityProjectContext(this.surveyEntityContext, this.projectContextService, this.router, this.destroyRef, {

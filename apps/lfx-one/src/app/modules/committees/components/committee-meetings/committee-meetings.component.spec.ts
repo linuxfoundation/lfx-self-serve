@@ -7,7 +7,6 @@ import { Router } from '@angular/router';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CommitteeService } from '@services/committee.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -21,18 +20,13 @@ import { CommitteeMeetingsComponent } from './committee-meetings.component';
 const COMMITTEE = { uid: 'committee-1', project_slug: 'acme', project_uid: 'project-1', writer: true } as Committee;
 
 /**
- * Covers "Schedule meeting" on the group's meetings tab across both sides of
- * `MEETING_V2_ENABLED_FLAG`.
+ * Covers "Schedule meeting" on the group's meetings tab.
  *
- * Two things have to stay true no matter which surface the flag picks. The freshness re-check has to
- * run on both branches — it is a permission probe, not a v2 feature, and a member demoted since the
- * tab rendered must be turned away whichever create screen they were heading for. And the group and
- * project context has to survive the handoff: the pre-v2 page reads it out of the URL, the composer
- * takes it as arguments, so the same click has to produce equivalent context in two different shapes.
+ * The freshness re-check has to run before the composer opens — a member demoted since the tab
+ * rendered must be turned away rather than handed a create surface. And the group and project
+ * context has to survive the handoff into the composer, which takes it as arguments.
  */
-describe('CommitteeMeetingsComponent — create surface per flag', () => {
-  /** `MEETING_V2_ENABLED_FLAG`. Stated per test: the real service answers `false` in a TestBed. */
-  let meetingsV2Enabled: ReturnType<typeof signal<boolean>>;
+describe('CommitteeMeetingsComponent — schedule meeting', () => {
   let activeLens: ReturnType<typeof signal<string>>;
   let fetchCommittee: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
@@ -52,7 +46,6 @@ describe('CommitteeMeetingsComponent — create surface per flag', () => {
         { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn().mockReturnValue(of([])) } },
         { provide: Router, useValue: { navigate } },
         { provide: MeetingComposerService, useValue: { open: composerOpen } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
         { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
@@ -73,26 +66,13 @@ describe('CommitteeMeetingsComponent — create surface per flag', () => {
   const schedule = (component: CommitteeMeetingsComponent): void => (component as unknown as { onScheduleMeeting: () => void }).onScheduleMeeting();
 
   beforeEach(() => {
-    meetingsV2Enabled = signal(false);
     activeLens = signal('project');
     fetchCommittee = vi.fn().mockReturnValue(of(COMMITTEE));
     navigate = vi.fn();
     composerOpen = vi.fn();
   });
 
-  it('sends the organizer to the pre-v2 create page with the group in the URL while the flag is off', async () => {
-    const component = await mount();
-
-    schedule(component);
-
-    // The pre-v2 page has no ambient group context, so `committee_uid` and `project` are the only
-    // things carrying it over — `project` is also what `writerGuard` resolves write access from.
-    expect(navigate).toHaveBeenCalledWith(['/meetings', 'create'], { queryParams: { committee_uid: 'committee-1', project: 'acme' } });
-    expect(composerOpen).not.toHaveBeenCalled();
-  });
-
-  it('opens the composer over the tab once the flag is on', async () => {
-    meetingsV2Enabled.set(true);
+  it('opens the composer over the tab', async () => {
     const component = await mount();
 
     schedule(component);
@@ -103,32 +83,15 @@ describe('CommitteeMeetingsComponent — create surface per flag', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('re-checks write access before either surface opens', async () => {
-    const component = await mount();
-    schedule(component);
-    expect(fetchCommittee).toHaveBeenCalledWith('committee-1');
-
-    fetchCommittee.mockClear();
-    meetingsV2Enabled.set(true);
-    schedule(component);
-
-    // Same probe on the v2 side. Skipping it there would make turning the flag on quietly weaken a
-    // permission check, which is the one thing a display flag must never do.
-    expect(fetchCommittee).toHaveBeenCalledWith('committee-1');
-  });
-
-  it('turns away a member whose write access was revoked since the tab rendered, flag off', async () => {
-    fetchCommittee.mockReturnValue(of({ ...COMMITTEE, writer: false }));
+  it('re-checks write access before the composer opens', async () => {
     const component = await mount();
 
     schedule(component);
 
-    expect(navigate).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'meetings', project: 'acme' } });
-    expect(composerOpen).not.toHaveBeenCalled();
+    expect(fetchCommittee).toHaveBeenCalledWith('committee-1');
   });
 
-  it('turns away the same revoked member with the flag on', async () => {
-    meetingsV2Enabled.set(true);
+  it('turns away a member whose write access was revoked since the tab rendered', async () => {
     fetchCommittee.mockReturnValue(of({ ...COMMITTEE, writer: false }));
     const component = await mount();
 
@@ -149,7 +112,6 @@ describe('CommitteeMeetingsComponent — create surface per flag', () => {
   });
 
   it('denies rather than opens when the freshness probe itself fails', async () => {
-    meetingsV2Enabled.set(true);
     fetchCommittee.mockReturnValue(throwError(() => new Error('network')));
     const component = await mount();
 
@@ -158,15 +120,5 @@ describe('CommitteeMeetingsComponent — create surface per flag', () => {
     // Failing closed: an unanswerable permission question is not a yes.
     expect(composerOpen).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith(['/project/overview'], { queryParams: { _notice: 'meetings', project: 'acme' } });
-  });
-
-  it('omits the project param for a group whose project slug is unknown', async () => {
-    const component = await mount({ uid: 'committee-1', project_uid: 'project-1', writer: true } as Committee);
-
-    schedule(component);
-
-    // An empty `project=` would resolve to no project at all in the guard, which is worse than
-    // leaving it out and letting the page fall back to the committee.
-    expect(navigate).toHaveBeenCalledWith(['/meetings', 'create'], { queryParams: { committee_uid: 'committee-1' } });
   });
 });
