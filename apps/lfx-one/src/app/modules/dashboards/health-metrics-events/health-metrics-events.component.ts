@@ -14,8 +14,11 @@ import {
 import { buildHealthMetricsEventsSubNavItems } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsL2SectionControlsDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { EventsAtAGlanceComponent } from './components/events-at-a-glance/events-at-a-glance.component';
@@ -28,7 +31,12 @@ import { EventsRevenueComponent } from './components/events-revenue/events-reven
 import { EventsSpeakersComponent } from './components/events-speakers/events-speakers.component';
 import { EventsSponsorshipComponent } from './components/events-sponsorship/events-sponsorship.component';
 
-import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsSubNavItem } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEventsAtAGlance,
+  HealthMetricsEventsAtAGlanceStatus,
+  HealthMetricsEventsForecastPicker,
+  HealthMetricsEventsSubNavItem,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Events (Level 2) — nine anchored sections in the shared Level 2 shell, which swaps them for the Events blank card when none
@@ -46,8 +54,11 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
     EventsRevenueComponent,
     EventsSpeakersComponent,
     EventsSponsorshipComponent,
+    HealthMetricsL2SectionControlsDirective,
     HealthMetricsL2SectionDirective,
     HealthMetricsL2ShellComponent,
+    UiOptionComponent,
+    UiSelectComponent,
   ],
   templateUrl: './health-metrics-events.component.html',
 })
@@ -64,6 +75,9 @@ export class HealthMetricsEventsComponent {
   // Empty until the forecast reports, which renders no note rather than a premature one.
   protected readonly forecastNote = signal<string>('');
   protected readonly speakersNote = signal<string>('');
+  // The forecast's event select sits in its card header, so the tab holds the pick and the forecast reports its events.
+  protected readonly forecastEventId = signal<string | null>(null);
+  protected readonly forecastPicker = signal<HealthMetricsEventsForecastPicker>({ options: [], eventId: null });
   // Owned here and handed to the at-a-glance section as inputs.
   protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 

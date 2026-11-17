@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 
-import { OverviewEventTrendComponent } from './overview-event-trend.component';
+import { HealthMetricsEventTrendComponent } from './health-metrics-event-trend.component';
 
 import type { HealthMetricsEventsForecastCurve, HealthMetricsOverviewCardStatus, HealthMetricsOverviewEvent } from '@lfx-one/shared/interfaces';
 
@@ -34,6 +34,8 @@ const HEADLINE = {
   goal: 1000,
   daysLeft: 46,
   isNewEvent: false,
+  city: null,
+  isVirtual: false,
 };
 const point = (daysToEvent: number, actual: number | null, forecast: number | null) => ({
   daysToEvent,
@@ -44,12 +46,12 @@ const point = (daysToEvent: number, actual: number | null, forecast: number | nu
   priorYear: 100,
 });
 
-describe('OverviewEventTrendComponent', () => {
-  let fixture: ComponentFixture<OverviewEventTrendComponent>;
+describe('HealthMetricsEventTrendComponent', () => {
+  let fixture: ComponentFixture<HealthMetricsEventTrendComponent>;
 
   async function render(curve: HealthMetricsEventsForecastCurve | null, isPast = false, status: HealthMetricsOverviewCardStatus = 'ready'): Promise<void> {
-    await TestBed.configureTestingModule({ imports: [OverviewEventTrendComponent] }).compileComponents();
-    fixture = TestBed.createComponent(OverviewEventTrendComponent);
+    await TestBed.configureTestingModule({ imports: [HealthMetricsEventTrendComponent] }).compileComponents();
+    fixture = TestBed.createComponent(HealthMetricsEventTrendComponent);
     fixture.componentRef.setInput('event', EVENT);
     fixture.componentRef.setInput('isPast', isPast);
     const forecast = isPast ? null : { events: [HEADLINE] };
@@ -173,6 +175,24 @@ describe('OverviewEventTrendComponent', () => {
     expect(query('overview-trend-kpi-last-year')?.className).toContain('max-[640px]:row-start-2');
     expect(query('overview-trend-kpi-current-value')?.className).toContain('max-[640px]:text-[40px]');
     expect(query('overview-trend-kpi-predicted-range')?.className).toContain('max-[640px]:hidden');
+  });
+
+  it('drops the headline figures and holds the 280px chart at every width in the Events card', async () => {
+    await TestBed.configureTestingModule({ imports: [HealthMetricsEventTrendComponent] }).compileComponents();
+    fixture = TestBed.createComponent(HealthMetricsEventTrendComponent);
+    fixture.componentRef.setInput('event', EVENT);
+    fixture.componentRef.setInput('reads', { forecast: { events: [HEADLINE] }, curve: oneFormat });
+    fixture.componentRef.setInput('status', 'ready');
+    fixture.componentRef.setInput('showKpis', false);
+    fixture.componentRef.setInput('variant', 'card');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(query('overview-trend-kpis')).toBeNull();
+    expect(query('overview-trend-chart')).not.toBeNull();
+    expect(query('overview-trend-grid')?.className).toContain('grid-rows-[280px_auto_auto]');
+    expect(query('overview-trend-grid')?.className).toContain('max-[640px]:grid-cols-[0_1fr]');
+    expect(query('overview-trend-grid')?.className).not.toContain('max-[640px]:grid-rows');
   });
 
   it("shows a past event's history with its final count and no forecast", async () => {

@@ -18,8 +18,25 @@
       (reading)="shell.sectionReading('kpi')"
       (settled)="shell.sectionSettled('kpi', $event)" />
   </ng-template>
+  <ng-template lfxHealthMetricsL2SectionControls="forecast">
+    <!-- The forecast reports its events only in year to date, once read. -->
+    @if (forecastPicker().options.length) {
+      <lfx-ui-select
+        size="small"
+        ariaLabel="Event"
+        [value]="forecastPicker().eventId"
+        (valueChange)="forecastEventId.set($event)"
+        data-testid="events-registration-forecast-event">
+        @for (option of forecastPicker().options; track option.eventId) {
+          <lfx-ui-option [value]="option.eventId" [label]="option.label" />
+        }
+      </lfx-ui-select>
+    }
+  </ng-template>
   <ng-template lfxHealthMetricsL2Section="forecast">
     <lfx-events-registration-forecast
+      [pickedEventId]="forecastEventId()"
+      (pickerChange)="forecastPicker.set($event)"
       (countsChange)="forecastNote.set($event)"
       (reading)="shell.sectionReading('forecast')"
       (settled)="shell.sectionSettled('forecast', $event)" />

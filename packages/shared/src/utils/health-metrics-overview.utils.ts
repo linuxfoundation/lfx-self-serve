@@ -46,6 +46,7 @@ import type {
 } from '../interfaces/health-metrics-events.interface';
 import type { HealthMetricsBlankCopy, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 import type {
+  HealthMetricsEventTrendEvent,
   HealthMetricsOverviewBalanceView,
   HealthMetricsOverviewBoard,
   HealthMetricsOverviewBoardRowView,
@@ -523,7 +524,7 @@ export function buildHealthMetricsOverviewScrollFadeMask(fadeTop: boolean, fadeB
  * 180 days before the event. Either input may be missing, which leaves its parts out.
  */
 export function buildHealthMetricsOverviewTrendView(
-  row: HealthMetricsOverviewEvent,
+  row: HealthMetricsEventTrendEvent,
   headline: HealthMetricsEventsForecastEvent | null,
   series: HealthMetricsEventsForecastCurveSeries | null,
   window: HealthMetricsOverviewTrendWindow | null = null
@@ -551,7 +552,7 @@ export function buildHealthMetricsOverviewTrendView(
  * final count adds each format's last day, which the formats share once registration closes.
  */
 export function buildHealthMetricsOverviewPastTrendView(
-  row: HealthMetricsOverviewEvent,
+  row: HealthMetricsEventTrendEvent,
   curve: HealthMetricsEventsForecastCurve | null,
   series: HealthMetricsEventsForecastCurveSeries | null,
   window: HealthMetricsOverviewTrendWindow | null = null

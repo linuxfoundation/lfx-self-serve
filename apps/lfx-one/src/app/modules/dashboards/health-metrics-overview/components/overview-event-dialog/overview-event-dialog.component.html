@@ -99,7 +99,7 @@
         aria-labelledby="overview-event-dialog-tab-trend"
         [hidden]="tab() !== 'trend'"
         data-testid="overview-event-dialog-panel-trend">
-        <lfx-overview-event-trend [event]="event" [isPast]="isPast" [reads]="reads()" [status]="status()" />
+        <lfx-health-metrics-event-trend [event]="event" [isPast]="isPast" [reads]="reads()" [status]="status()" />
       </div>
       @if (snapshotShown()) {
         <!-- 674px is the Snapshot tables' own desktop minimum, which a capture widens the panel to. -->

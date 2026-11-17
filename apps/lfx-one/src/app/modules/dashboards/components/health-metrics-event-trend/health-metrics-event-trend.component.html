@@ -12,50 +12,56 @@
     }
     @default {
       <!-- The design's metrics row: Current, Same point last year, and Predicted with its likely range; two columns on a phone. -->
-      <div
-        class="flex flex-none flex-wrap border-y border-gray-200 max-[640px]:grid max-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[640px]:grid-rows-[auto_auto]"
-        data-testid="overview-trend-kpis">
-        @for (kpi of view().kpis; track kpi.key; let index = $index) {
-          <div class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[32px]" [class]="kpiItemClasses[index]" [attr.data-testid]="'overview-trend-kpi-' + kpi.key">
-            <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500 max-[640px]:text-[11px] max-[640px]:leading-[14px]"
-              >{{ kpi.label }}
-              @if (kpi.tip; as tip) {
-                <lfx-health-metrics-info-tip [text]="tip" [testId]="'overview-trend-kpi-' + kpi.key + '-tip'" />
-              }
-            </span>
-            <div class="flex items-center gap-[12px] max-[640px]:flex-wrap max-[640px]:gap-x-[8px] max-[640px]:gap-y-[2px]">
-              <span
-                class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900"
-                [class]="kpiValueClasses[index]"
-                [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-value'"
-                >{{ kpi.value }}</span
-              >
-              @if (kpi.range; as range) {
-                <!-- Phones drop the likely range. -->
-                <div
-                  class="flex flex-col gap-[2px] text-[12px] leading-[16px] max-[640px]:hidden"
-                  [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-range'">
-                  <span class="inline-flex items-center gap-[6px] text-gray-600"
-                    ><span class="h-[6px] w-[6px] rounded-full bg-emerald-500" aria-hidden="true"></span>High:
-                    <b class="font-medium text-gray-900">{{ range.high }}</b></span
-                  >
-                  <span class="inline-flex items-center gap-[6px] text-gray-600"
-                    ><span class="h-[6px] w-[6px] rounded-full bg-red-500" aria-hidden="true"></span>Low:
-                    <b class="font-medium text-gray-900">{{ range.low }}</b></span
-                  >
-                </div>
-              }
+      @if (showKpis()) {
+        <div
+          class="flex flex-none flex-wrap border-y border-gray-200 max-[640px]:grid max-[640px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] max-[640px]:grid-rows-[auto_auto]"
+          data-testid="overview-trend-kpis">
+          @for (kpi of view().kpis; track kpi.key; let index = $index) {
+            <div
+              class="flex min-w-0 flex-col gap-[2px] py-[18px] pr-[32px]"
+              [class]="kpiItemClasses[index]"
+              [attr.data-testid]="'overview-trend-kpi-' + kpi.key">
+              <span class="inline-flex items-center gap-[6px] text-[12px] font-medium text-gray-500 max-[640px]:text-[11px] max-[640px]:leading-[14px]"
+                >{{ kpi.label }}
+                @if (kpi.tip; as tip) {
+                  <lfx-health-metrics-info-tip [text]="tip" [testId]="'overview-trend-kpi-' + kpi.key + '-tip'" />
+                }
+              </span>
+              <div class="flex items-center gap-[12px] max-[640px]:flex-wrap max-[640px]:gap-x-[8px] max-[640px]:gap-y-[2px]">
+                <span
+                  class="text-[34px] font-light leading-[1.1] tracking-[-0.01em] text-gray-900"
+                  [class]="kpiValueClasses[index]"
+                  [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-value'"
+                  >{{ kpi.value }}</span
+                >
+                @if (kpi.range; as range) {
+                  <!-- Phones drop the likely range. -->
+                  <div
+                    class="flex flex-col gap-[2px] text-[12px] leading-[16px] max-[640px]:hidden"
+                    [attr.data-testid]="'overview-trend-kpi-' + kpi.key + '-range'">
+                    <span class="inline-flex items-center gap-[6px] text-gray-600"
+                      ><span class="h-[6px] w-[6px] rounded-full bg-emerald-500" aria-hidden="true"></span>High:
+                      <b class="font-medium text-gray-900">{{ range.high }}</b></span
+                    >
+                    <span class="inline-flex items-center gap-[6px] text-gray-600"
+                      ><span class="h-[6px] w-[6px] rounded-full bg-red-500" aria-hidden="true"></span>Low:
+                      <b class="font-medium text-gray-900">{{ range.low }}</b></span
+                    >
+                  </div>
+                }
+              </div>
             </div>
-          </div>
-        }
-      </div>
+          }
+        </div>
+      }
 
       @if (hasCurve()) {
         <div class="flex min-h-0 min-w-0 flex-auto flex-col gap-[16px]">
-          <!-- The chart's height follows the window, so the dialog never scrolls; on a phone it fills what the metrics leave,
-               down to its tracks' minimum, and the y numbers' column closes. -->
+          <!-- In the dialog the chart's height follows the window, so the dialog never scrolls (see `gridClass`); on a phone
+               the y numbers' column closes. -->
           <div
-            class="mt-[20px] grid grid-cols-[44px_1fr] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] gap-x-[6px] max-[640px]:mt-[12px] max-[640px]:min-h-min max-[640px]:flex-auto max-[640px]:grid-cols-[0_1fr] max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto] max-[640px]:gap-x-0"
+            class="grid grid-cols-[44px_1fr] gap-x-[6px] max-[640px]:grid-cols-[0_1fr] max-[640px]:gap-x-0"
+            [class]="gridClass()"
             data-testid="overview-trend-grid">
             <div class="relative max-[640px]:invisible" aria-hidden="true" data-testid="overview-trend-y-ticks">
               @for (tick of view().yTicks; track tick.pct) {

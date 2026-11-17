@@ -1067,6 +1067,8 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     goal: 1000,
     daysLeft: 46,
     isNewEvent: false,
+    city: null,
+    isVirtual: false,
   };
   const point = (daysToEvent: number, actual: number | null, forecast: number | null, priorYear: number | null) => ({
     daysToEvent,
@@ -1340,6 +1342,8 @@ describe('buildHealthMetricsOverviewEventDialogBadges', () => {
       goal: 1200,
       daysLeft: 1,
       isNewEvent: false,
+      city: null,
+      isVirtual: false,
     };
 
     expect(buildHealthMetricsOverviewEventDialogBadges(row, false, null)).toEqual({
