@@ -460,12 +460,9 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
 /** Longest trimmed search `POST .../mentor-candidates` accepts: the longest valid email address. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
 
-/** Helper text under the Mentors tab invite search. */
-export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
-
 /**
- * The invite search panel's starting empty text, and the toast for an upstream 422 with no known reason (an LF username
- * with no account). A full-email search that finds no one shows `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE`.
+ * The toast for an invite upstream refuses with a 422 and no known reason (an LF username with no account). A full-email
+ * search that finds no one shows `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE` and offers an email invite.
  */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
   'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
@@ -488,30 +485,36 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS: readonly Mentorship
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE =
   'No one matches that search. Name search only finds people already in Mentorship; try their exact LF username or full email address.';
 
-/** Heading of the search panel when a full-email search finds no one: no LF account uses the address. */
+/** Shown in the Invite a mentor dialog when a full-email search finds no one: no LF account uses the address. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE = 'No LF account uses this email';
 
-/** Under "Invite {email}" in the search panel: what inviting the address by email does. */
-export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_HINT = "They'll get an email to join LFX and accept";
+/** The Mentors tab button that opens the Invite a mentor dialog. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_BUTTON_LABEL = 'Invite mentor';
 
-/** Header of the dialog that confirms an invitation by email. */
-export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_DIALOG_HEADER = 'Invite by email';
+/** Header of the Invite a mentor dialog. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_HEADER = 'Invite a mentor';
 
-/** Heading of the steps the invited address must take, in the invite-by-email dialog. */
-export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS_HEADING = "What they'll need to do";
+/** Under the Invite a mentor dialog's header: the two ways to invite. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_SUBTITLE = 'Search LF users, or enter an email to invite someone new.';
 
-/** The steps the invitation email lists, in order; the dialog shows the same ones. */
+/** Placeholder of the Invite a mentor dialog's search. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER = 'Name, LFID or email';
+
+/** The Invite a mentor dialog's empty state, before a search of at least two characters. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT = 'Start typing a name, LFID or email.';
+
+/** The steps the invitation email lists, in order; the Invite a mentor dialog shows the same ones for an email invite. */
 export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS: readonly string[] = [
   'Create an LF account with this email',
   'Set up a mentor profile',
   'Accept the invitation',
 ];
 
-/** Under the steps in the invite-by-email dialog: where the invitation shows until it is accepted. */
-export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_LIST_NOTE = 'They’ll show as “Invited” in the Mentors list until they accept.';
+/** Send button of the Invite a mentor dialog with an LF user picked. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEND_LABEL = 'Send invite';
 
-/** Confirm button of the invite-by-email dialog. */
-export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_SEND_LABEL = 'Send invite';
+/** Send button of the Invite a mentor dialog when it offers an email with no LF account. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_SEND_LABEL = 'Send email invite';
 
 /** Shown once an invitation is sent to an email address with no LF account. */
 export const MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE = 'Invitation sent. They need to create an LF account with this email address to accept it.';

@@ -277,12 +277,22 @@ export interface MentorshipAdminDeclinePendingResponse {
 }
 
 /**
- * Data of the Mentors tab's invite-by-email dialog: the address no LF account uses and the program it is invited to.
- * The dialog closes with `true` on Send invite, or nothing when cancelled or dismissed.
+ * Data of the Mentors tab's Invite a mentor dialog: the program to invite to. The dialog searches LF users and sends the
+ * invite itself, closing with `true` when the Mentors list changed (an invite sent, or one upstream says already
+ * exists), or with nothing when cancelled or dismissed.
  */
-export interface MentorshipEmailInviteDialogData {
-  email: string;
-  programName: string;
+export interface MentorshipInviteMentorDialogData {
+  programId: string;
+}
+
+/**
+ * One answered search of the Invite a mentor dialog: the trimmed text it was for, the candidates upstream found, and
+ * the failure when the search failed (then `data` is empty).
+ */
+export interface MentorshipInviteMentorSearchResult {
+  search: string;
+  data: MentorshipAdminMentorCandidate[];
+  error: unknown;
 }
 
 /** Data of the Accept dialog: the mentee being accepted. The dialog closes with the chosen attendance type, or nothing when dismissed. */
