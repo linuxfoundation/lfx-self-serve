@@ -18,6 +18,7 @@ import type {
 import { CommitteeService } from '@services/committee.service';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
+import { OrganizationService } from '@services/organization.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SearchService } from '@services/search.service';
 import { UserService } from '@services/user.service';
@@ -124,6 +125,8 @@ describe('add myself', () => {
                 last_name: new FormControl(''),
                 job_title: new FormControl(''),
                 org_name: new FormControl(''),
+                host: new FormControl(false),
+                linkedin_profile: new FormControl(''),
               }),
             getMeetingRegistrants: () => registrants$,
             stripMetadata: (meetingUid: string, registrant: MeetingRegistrantWithState) => ({ ...registrant, meeting_id: meetingUid }),
@@ -134,6 +137,8 @@ describe('add myself', () => {
         { provide: SearchService, useValue: {} },
         { provide: UserService, useValue: { getMeetingSelfGuest: () => selfGuest$ } },
         { provide: LiveAnnouncer, useValue: { announce } },
+        // The add form's organization field, rendered once it leaves search mode.
+        { provide: OrganizationService, useValue: { searchOrganizations: vi.fn(), registerSessionOrg: vi.fn(), resolveOrganization: vi.fn() } },
         { provide: ProjectContextService, useValue: { activeContextUid: () => 'project-1' } },
         { provide: CommitteeService, useValue: { getCommitteesByProjectOrThrow: () => of([]), getCommitteeMembers: () => of([]) } },
         provideNoopAnimations(),
@@ -156,6 +161,26 @@ describe('add myself', () => {
     await load(fixture, [listed('Pat@Example.org')]);
 
     expect(button()).toBeNull();
+  });
+
+  it('is hidden when the user is listed under another address with their LFID', async () => {
+    const { fixture, button } = await render();
+
+    await load(fixture, [{ ...listed('work@example.com'), username: 'PDoe' }]);
+
+    expect(button()).toBeNull();
+  });
+
+  it('is hidden when the invitation list failed to load, since it may be incomplete', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { fixture, button } = await render();
+
+    registrants$.error(new HttpErrorResponse({ status: 503 }));
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.loading()).toBe(false);
+    expect(button()).toBeNull();
+    error.mockRestore();
   });
 
   it('adds the user as a direct, non-host series guest carrying their LFID and avatar', async () => {
@@ -197,8 +222,45 @@ describe('add myself', () => {
     await fixture.whenStable();
 
     const form = fixture.componentInstance.addRegistrantForm;
-    expect(form.getRawValue()).toEqual({ email: 'pat.doe@example.com', first_name: '', last_name: 'Doe', job_title: 'Engineer', org_name: 'Example Org' });
+    expect(form.getRawValue()).toEqual({
+      email: 'pat.doe@example.com',
+      first_name: '',
+      last_name: 'Doe',
+      job_title: 'Engineer',
+      org_name: 'Example Org',
+      host: false,
+      linkedin_profile: '',
+    });
     expect(form.dirty).toBe(true);
+    // The add form leaves search mode for its fields, so the organizer can fill in the missing name.
+    expect(fixture.nativeElement.querySelector('[data-testid="registrant-form-firstname-input"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="registrant-form-search-container"]')).toBeNull();
     expect(updates).not.toHaveBeenCalled();
+  });
+
+  describe('editing the self-added row', () => {
+    const addSelfAndEdit = async (changes: Partial<MeetingRegistrant>) => {
+      const { fixture, updates, button } = await render();
+      await load(fixture, []);
+      button()?.querySelector('button')?.click();
+      await fixture.whenStable();
+
+      const row = fixture.componentInstance.registrantsWithState()[0];
+      // What the registrant card emits on save: the row, its form values, and the identity it kept.
+      fixture.componentInstance.handleRegistrantUpdate({ id: row.tempId as string, data: { ...row, ...changes } });
+      return updates.mock.lastCall?.[0].toAdd[0];
+    };
+
+    it('stops sending the LFID and avatar once the email is changed to someone else', async () => {
+      const added = await addSelfAndEdit({ email: 'colleague@example.com', first_name: 'Sam', last_name: 'Lee' });
+
+      expect(added).toEqual(expect.objectContaining({ email: 'colleague@example.com', selfAdded: false }));
+    });
+
+    it('keeps them when only the name changes', async () => {
+      const added = await addSelfAndEdit({ email: ' PAT.DOE@example.com', first_name: 'Patricia' });
+
+      expect(added).toEqual(expect.objectContaining({ first_name: 'Patricia', username: 'pdoe', selfAdded: true }));
+    });
   });
 });

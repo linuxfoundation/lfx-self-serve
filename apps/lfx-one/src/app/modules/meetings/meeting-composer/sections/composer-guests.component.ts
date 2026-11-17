@@ -24,6 +24,7 @@ import {
   getSavedAttendeeVisibility,
   getShowMeetingAttendeesLockedNote,
   isMeetingInviteResponsesEnabled,
+  isMeetingSelfGuestListed,
   isShowMeetingAttendeesLocked,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
@@ -234,8 +235,8 @@ export class ComposerGuestsComponent {
   /**
    * Whether to offer "Add myself".
    * @description Hidden while the list is loading or failed to load, since it may be incomplete, and when
-   * the user is already invited under any of their emails, so they can't get a second invite at another
-   * address. Checked against every live guest, like the duplicate guard in `addDirectGuest`.
+   * the user is already invited under one of their known emails or their LFID, so they can't get a second
+   * invite at another address. Checked against every live guest, like the duplicate guard in `addDirectGuest`.
    */
   protected readonly canAddSelf: Signal<boolean> = computed(() => {
     const self = this.selfGuest();
@@ -243,8 +244,10 @@ export class ComposerGuestsComponent {
       return false;
     }
 
-    const invited = this.invitedEmails();
-    return !self.matchEmails.some((email) => invited.has(email));
+    return !isMeetingSelfGuestListed(
+      self,
+      this.formService.guests().filter((guest) => guest.state !== 'deleted')
+    );
   });
 
   /**

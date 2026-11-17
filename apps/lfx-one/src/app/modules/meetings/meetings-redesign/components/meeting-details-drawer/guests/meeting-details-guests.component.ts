@@ -51,6 +51,7 @@ import {
   getOfferedMeetingGuestFilters,
   isBatchRegistrantOperationResponse,
   isMeetingInviteResponsesEnabled,
+  isMeetingSelfGuestListed,
   isSameOccurrenceId,
   occurrenceIdToSeconds,
   resortMeetingGuestRows,
@@ -319,8 +320,15 @@ export class MeetingDetailsGuestsComponent {
     return computed(() => {
       const self = this.selfGuest();
       if (!this.canAddGuests() || !this.context.canViewGuests() || this.load().status !== 'ready' || !self?.first_name || !self.last_name) return false;
-      const listed = new Set(this.rows().map((row) => row.registrant?.email?.trim().toLowerCase() ?? ''));
-      return !self.matchEmails.some((email) => listed.has(email));
+      // A row already marked as the viewer ("You") is the user too, whatever address it lists.
+      const rows = this.rows();
+      return (
+        !rows.some((row) => row.you) &&
+        !isMeetingSelfGuestListed(
+          self,
+          rows.flatMap((row) => (row.registrant ? [row.registrant] : []))
+        )
+      );
     });
   }
 

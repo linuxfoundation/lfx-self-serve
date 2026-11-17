@@ -17,7 +17,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingRegistrantsDisplayComponent } from './meeting-registrants-display.component';
@@ -606,8 +606,9 @@ describe('MeetingRegistrantsDisplayComponent — guest rows on mobile (#4864)', 
  * "Add myself" (#5798) in the guests drawer of a meeting card or the join page.
  * @description The drawer saves each guest straight away, so the button sends the create call itself:
  * as a non-host guest carrying the user's LFID and avatar, to the dates the "Invite to" choice names.
- * It is offered only once the list has loaded and while none of the user's emails is on it, and the
- * identity lookup waits until the drawer is open, so a page of closed card drawers makes no calls.
+ * It is offered only once the list has loaded and while the user is not on it under a known email or
+ * their LFID, and the identity lookup waits until the drawer is open, so a page of closed card drawers
+ * makes no calls.
  */
 describe('MeetingRegistrantsDisplayComponent — add myself', () => {
   const SELF_GUEST: MeetingSelfGuest = {
@@ -629,7 +630,16 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
   const listed = (email: string): MeetingRegistrant =>
     ({ uid: `reg-${email}`, email, first_name: 'Listed', last_name: 'Guest', type: 'direct', invite_accepted: null }) as MeetingRegistrant;
 
-  async function mount(options: { registrants?: MeetingRegistrant[]; meeting?: Meeting; occurrence?: MeetingOccurrence | null; visible?: boolean } = {}) {
+  async function mount(
+    options: {
+      registrants?: MeetingRegistrant[];
+      meeting?: Meeting;
+      occurrence?: MeetingOccurrence | null;
+      visible?: boolean;
+      /** The drawer's own fetch, as on a meeting card, instead of a parent-supplied list. */
+      fetched?: Observable<MeetingRegistrant[]>;
+    } = {}
+  ) {
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
@@ -643,7 +653,7 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
             // The real builder, so these tests see the body that is actually sent.
             stripMetadata: (meetingUid: string, guest: MeetingRegistrantWithState) => MeetingService.prototype.stripMetadata.call({}, meetingUid, guest),
             addMeetingRegistrants,
-            getMeetingRegistrants: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(options.fetched ?? of([])),
             getMyMeetingRegistrants: vi.fn().mockReturnValue(of([])),
           },
         },
@@ -654,8 +664,10 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
     const fixture = TestBed.createComponent(MeetingRegistrantsDisplayComponent);
     fixture.componentRef.setInput('meeting', options.meeting ?? ({ id: 'meeting-1', timezone: 'UTC' } as Meeting));
     fixture.componentRef.setInput('occurrence', options.occurrence ?? null);
-    // A parent-supplied list, as on the join page; the add path is the same either way.
-    fixture.componentRef.setInput('initialRegistrants', options.registrants ?? []);
+    // A parent-supplied list, as on the join page, unless the test has the drawer fetch its own.
+    if (!options.fetched) {
+      fixture.componentRef.setInput('initialRegistrants', options.registrants ?? []);
+    }
     fixture.componentRef.setInput('showAddRegistrant', true);
     fixture.componentRef.setInput('visible', options.visible ?? true);
     fixture.componentInstance.refreshRequested.subscribe(refreshRequested);
@@ -687,6 +699,24 @@ describe('MeetingRegistrantsDisplayComponent — add myself', () => {
 
   it('is hidden when the user is already listed under another of their emails', async () => {
     const { button } = await mount({ registrants: [listed('Pat@Vendor-Corp.example')] });
+
+    expect(button()).toBeNull();
+  });
+
+  it('is hidden when the user is listed under another address with their LFID', async () => {
+    const { button } = await mount({ registrants: [{ ...listed('work@acme-motors.example'), username: 'PDoe' }] });
+
+    expect(button()).toBeNull();
+  });
+
+  it('is offered once the drawer fetch loads without the user', async () => {
+    const { button } = await mount({ fetched: of([listed('someone@acme-motors.example')]) });
+
+    expect(button()).not.toBeNull();
+  });
+
+  it('is hidden when the drawer fetch failed, since the list may be incomplete', async () => {
+    const { button } = await mount({ fetched: throwError(() => new Error('upstream down')) });
 
     expect(button()).toBeNull();
   });

@@ -890,7 +890,7 @@ describe('ComposerGuestsComponent', () => {
     expect(component['guestRows']().map((row) => [row.scopeLabel, row.removable])).toEqual([[null, true]]);
   });
 
-  /** "Add myself" (#5798): offered until the signed-in user is on the list under any of their emails. */
+  /** "Add myself" (#5798): offered until the signed-in user is on the list under a known email or their LFID. */
   describe('add myself', () => {
     const canAddSelf = (): boolean => component['canAddSelf']();
 
@@ -902,6 +902,12 @@ describe('ComposerGuestsComponent', () => {
 
     it('is hidden when the user is invited under any of their emails, whatever the case', () => {
       formService.setGuests([{ ...savedGroupGuest, email: 'Pat@Example.org' }]);
+
+      expect(canAddSelf()).toBe(false);
+    });
+
+    it('is hidden when the user is invited under another address with their LFID, as a group member', () => {
+      formService.setGuests([{ ...savedGroupGuest, email: 'work@example.com', username: 'PDoe' }]);
 
       expect(canAddSelf()).toBe(false);
     });

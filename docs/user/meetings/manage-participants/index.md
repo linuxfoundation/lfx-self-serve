@@ -34,16 +34,16 @@ If the person is already on the list, you'll see an **Already invited** message 
 
 ### Add yourself
 
-Creating a meeting doesn't invite you to it. To get the invitation yourself, select **Add myself**. It's next to the **Invited** count in the meeting editor, beside **Add People** in the classic editor, and next to **Add Guest** in a meeting card's guest list. In the editors you're invited when you save the meeting; in a meeting card's guest list you're invited straight away.
+Creating a meeting doesn't invite you to it. To get the invitation yourself, select **Add myself**. It's next to the **Invited** count in the meeting editor, beside **Add People** in the classic editor, and next to **Add Guest** in the guest list of a meeting card or the join page. In the editors you're invited when you save the meeting; in a meeting card's or the join page's guest list you're invited straight away.
 
 If your meeting details show the redesigned **Guests** tab, **Add myself** is also beside **Add Guests**, including when the list is empty. This works in the meeting-details drawer and on the meeting page, and saves your invitation straight away. For a recurring meeting, choose **A single occurrence** and its date, or **All occurrences**, then confirm **Add myself**. Cancel closes the choice without inviting you.
 
-You're added as a regular guest with your profile details: your name, job title and organization. The invitation goes to your meeting-invitation email if you set one, otherwise to your primary email. If your profile is missing your first or last name, the editors open the guest form with your details filled in so you can complete it. Guest lists outside the editors don't offer **Add myself** in that case, so use **Add Guest** or **Add Guests** instead.
+You're added as a regular guest with your profile details: your name, job title and organization. The invitation goes to your meeting-invitation email if you set one, otherwise to your primary email. If your meeting-invitation email setting can't be loaded, **Add myself** isn't offered, so the invitation never goes to the wrong address. If your profile is missing your first or last name, the editors open the guest form with your details filled in so you can complete it. Guest lists outside the editors don't offer **Add myself** in that case, so use **Add Guest** or **Add Guests** instead.
 
 - You're added as a guest, not a Meeting Host. To run the meeting, select **Make host** on your row.
 - When you're editing a single occurrence of a recurring meeting, you're added to that occurrence only.
-- In a meeting card's guest list for a recurring meeting, you're added to every occurrence, unless you've opened **Add Guest** and chosen **Only** that date under **Invite to**.
-- **Add myself** disappears once you're on the list under any of your email addresses. For recurring meetings, this includes an invitation to just one occurrence. If you remove yourself, it comes back.
+- In a meeting card's or the join page's guest list for a recurring meeting, you're added to every occurrence, unless you've opened **Add Guest** and chosen **Only** that date under **Invite to**.
+- **Add myself** disappears once you're on the list, whether under your meeting-invitation, primary or sign-in email, or under another address listed with your LFID, as a group member's invitation is. For recurring meetings, this includes an invitation to just one occurrence. If you remove yourself, it comes back.
 
 ### Add a group
 

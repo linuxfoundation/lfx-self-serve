@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CombinedProfile, MeetingInviteEmail, User } from '../interfaces';
-import { buildMeetingSelfGuest } from './meeting-self-guest.utils';
+import { buildMeetingSelfGuest, isMeetingSelfGuestListed } from './meeting-self-guest.utils';
 
 const session = (overrides: Partial<User> = {}): User =>
   ({
@@ -116,5 +116,26 @@ describe('buildMeetingSelfGuest', () => {
 
     expect(guest?.first_name).toBe('');
     expect(guest?.last_name).toBe('');
+  });
+});
+
+describe('isMeetingSelfGuestListed', () => {
+  const self = { matchEmails: ['invites@example.com', 'primary@example.com'], username: 'pdoe' };
+
+  it('matches any known email in any case', () => {
+    expect(isMeetingSelfGuestListed(self, [{ email: ' Primary@Example.com ', username: null }])).toBe(true);
+  });
+
+  it('matches the LFID when the guest is listed under another address', () => {
+    expect(isMeetingSelfGuestListed(self, [{ email: 'work@example.com', username: 'PDoe' }])).toBe(true);
+  });
+
+  it('is false when neither an email nor the LFID matches', () => {
+    expect(isMeetingSelfGuestListed(self, [{ email: 'someone@example.com', username: 'someone' }])).toBe(false);
+  });
+
+  it('never matches on a missing email or LFID', () => {
+    expect(isMeetingSelfGuestListed({ matchEmails: ['primary@example.com'], username: null }, [{ email: null, username: null }])).toBe(false);
+    expect(isMeetingSelfGuestListed({ matchEmails: ['primary@example.com'], username: null }, [{ email: '', username: 'pdoe' }])).toBe(false);
   });
 });

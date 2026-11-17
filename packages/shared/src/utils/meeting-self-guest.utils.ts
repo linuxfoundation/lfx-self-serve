@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CombinedProfile, MeetingInviteEmail, MeetingSelfGuest, User } from '../interfaces';
+import type { CombinedProfile, MeetingHostCandidate, MeetingInviteEmail, MeetingSelfGuest, User } from '../interfaces';
 
 /**
  * Builds the signed-in user as a meeting guest for the "Add myself" action.
@@ -41,6 +41,21 @@ export function buildMeetingSelfGuest(
     avatar_url: firstNonEmpty(metadata?.picture, session?.picture),
     matchEmails: [...new Set(candidateEmails.filter((candidate) => candidate !== '').map((candidate) => candidate.toLowerCase()))],
   };
+}
+
+/**
+ * Whether the signed-in user is already on a guest list, so "Add myself" would invite them twice.
+ * @description A guest matches on any of the user's known emails, in any case, or on their LFID the way
+ * `isMeetingGuestViewer` identifies the viewer: a guest added through a group can be listed under
+ * an address none of the user's lookups returned.
+ */
+export function isMeetingSelfGuestListed(
+  self: Pick<MeetingSelfGuest, 'matchEmails' | 'username'>,
+  people: readonly Pick<MeetingHostCandidate, 'email' | 'username'>[]
+): boolean {
+  const emails = new Set(self.matchEmails);
+  const username = self.username?.trim().toLowerCase();
+  return people.some((person) => emails.has(person.email?.trim().toLowerCase() ?? '') || (!!username && person.username?.trim().toLowerCase() === username));
 }
 
 function firstNonEmpty(...values: (string | null | undefined)[]): string | null {

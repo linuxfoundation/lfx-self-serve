@@ -877,8 +877,8 @@ export interface MeetingRegistrantWithState extends MeetingRegistrant {
  * The signed-in user as a meeting guest, for the guest editors' "Add myself" action
  * @description Built by `buildMeetingSelfGuest` from the session claims, the combined profile, the
  * meeting-invite email preference and the current employer. `email` is the address the invite goes
- * to; `matchEmails` is every address that identifies the user, so the action can be hidden when they
- * are already on the list under any of them.
+ * to; `matchEmails` holds the addresses those lookups returned, which `isMeetingSelfGuestListed`
+ * checks together with `username` to hide the action once the user is on the list.
  */
 export interface MeetingSelfGuest {
   /** Invite address: the meeting-invite preference, else the profile's primary email, else the session email */
@@ -895,7 +895,7 @@ export interface MeetingSelfGuest {
   username: string | null;
   /** Avatar URL */
   avatar_url: string | null;
-  /** Every known email for the user, lower-cased and de-duplicated */
+  /** The user's emails the lookups returned (invite, primary, session), lower-cased and de-duplicated */
   matchEmails: string[];
 }
 

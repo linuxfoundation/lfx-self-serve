@@ -9,6 +9,7 @@ import { MessageService } from 'primeng/api';
 import {
   CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS,
   EMAIL_LINKED_SUPPORT_HANDLE_PATTERN,
+  MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS,
   USER_MEETINGS_INCLUDE_ATTENDANCE,
   USER_PAST_MEETINGS_INCLUDE_ARTIFACTS,
 } from '@lfx-one/shared/constants';
@@ -677,9 +678,12 @@ export class UserService {
   /**
    * The signed-in user as a meeting guest, for the guest editors' "Add myself" action. A quiet
    * read like {@link getCurrentEmployerName}: the profile, meeting-invite email and employer
-   * lookups run in parallel, each bounded by {@link CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS}, and a
-   * failed one falls back to the session claims rather than toasting. `null` on the server, so SSR
-   * makes none of the calls, and when no source has an email.
+   * lookups run in parallel, the first two each bounded by {@link MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS},
+   * and none toasts. A failed profile lookup falls back to the session claims. A failed
+   * meeting-invite email lookup gives `null` instead, as {@link getMeetingInviteEmail} asks: the
+   * preferred address is unknown, so the invite could go to the wrong one and the user could be
+   * listed under it already. `null` on the server, so SSR makes none of the calls, and when no
+   * source has an email.
    */
   public getMeetingSelfGuest(): Observable<MeetingSelfGuest | null> {
     if (!isPlatformBrowser(this.platformId)) {
@@ -687,10 +691,11 @@ export class UserService {
     }
 
     return forkJoin([
-      this.quietSelfGuestLookup(this.getCurrentUserProfile(), 'profile'),
-      this.quietSelfGuestLookup(this.getMeetingInviteEmail(), 'meeting-invite email'),
+      this.quietSelfGuestLookup(this.getCurrentUserProfile(), 'profile', 'falling back to the session claims'),
+      // Wrapped so a confirmed "no override" (`null` fields) stays distinct from a failed lookup.
+      this.quietSelfGuestLookup(this.getMeetingInviteEmail().pipe(map((inviteEmail) => ({ inviteEmail }))), 'meeting-invite email', 'not offering Add myself'),
       this.getCurrentEmployerName(),
-    ]).pipe(map(([profile, inviteEmail, employerName]) => buildMeetingSelfGuest(this.user(), profile, inviteEmail, employerName)));
+    ]).pipe(map(([profile, invite, employerName]) => (invite ? buildMeetingSelfGuest(this.user(), profile, invite.inviteEmail, employerName) : null)));
   }
 
   /**
@@ -925,12 +930,12 @@ export class UserService {
   }
 
   /** One source of {@link getMeetingSelfGuest}: first value only, time-bounded, `null` on failure. */
-  private quietSelfGuestLookup<T>(source: Observable<T>, label: string): Observable<T | null> {
+  private quietSelfGuestLookup<T>(source: Observable<T>, label: string, outcome: string): Observable<T | null> {
     return source.pipe(
       take(1),
-      timeout(CURRENT_EMPLOYER_LOOKUP_TIMEOUT_MS),
+      timeout(MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS),
       catchError((error) => {
-        console.warn(`[UserService] getMeetingSelfGuest ${label} lookup failed; falling back to the session claims`, error);
+        console.warn(`[UserService] getMeetingSelfGuest ${label} lookup failed; ${outcome}`, error);
         return of(null);
       })
     );

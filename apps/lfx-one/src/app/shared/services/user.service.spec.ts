@@ -4,6 +4,7 @@
 import { ApplicationRef, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
+import { MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, Meeting, MeetingRsvp, MeetingSelfGuest, PastMeeting, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { defer, NEVER, of, Subject, throwError } from 'rxjs';
@@ -1193,12 +1194,45 @@ describe('UserService', () => {
       warn.mockRestore();
     });
 
-    it('invites the primary email when the meeting-invite lookup fails', () => {
+    it('invites the primary email when the user set no meeting-invite email', () => {
+      respond();
+      const answered = httpGet.getMockImplementation() as (url: string) => unknown;
+      httpGet.mockImplementation((url: string) => (url === '/api/profile/emails/meeting-invite' ? of({ email_id: null, email: null }) : answered(url)));
+
+      const guest = lookup() as MeetingSelfGuest;
+
+      expect(guest.email).toBe('primary@example.com');
+      expect(guest.matchEmails).toEqual(['primary@example.com', 'session@example.com']);
+    });
+
+    it('returns null, without a toast, when the meeting-invite lookup fails, since the invite address is unknown', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       respond(['/api/profile/emails/meeting-invite']);
 
-      expect((lookup() as MeetingSelfGuest).email).toBe('primary@example.com');
+      expect(lookup()).toBeNull();
+      expect(TestBed.inject(MessageService).add).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+
+    it('returns null when the meeting-invite lookup does not settle in time', () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      try {
+        respond();
+        const answered = httpGet.getMockImplementation() as (url: string) => unknown;
+        httpGet.mockImplementation((url: string) => (url === '/api/profile/emails/meeting-invite' ? NEVER : answered(url)));
+
+        let result: MeetingSelfGuest | null | 'unset' = 'unset';
+        service.getMeetingSelfGuest().subscribe((value) => (result = value));
+        expect(result).toBe('unset');
+
+        vi.advanceTimersByTime(MEETING_SELF_GUEST_LOOKUP_TIMEOUT_MS);
+
+        expect(result).toBeNull();
+      } finally {
+        warn.mockRestore();
+        vi.useRealTimers();
+      }
     });
 
     it('returns null on the server without making any request', () => {

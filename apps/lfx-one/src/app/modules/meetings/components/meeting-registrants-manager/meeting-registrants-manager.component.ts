@@ -15,6 +15,7 @@ import {
   output,
   signal,
   type Signal,
+  viewChild,
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -33,7 +34,7 @@ import {
   RegistrantPendingChanges,
   RegistrantState,
 } from '@lfx-one/shared/interfaces';
-import { generateTempId, getShowMeetingAttendeesLockedNote } from '@lfx-one/shared/utils';
+import { generateTempId, getShowMeetingAttendeesLockedNote, isMeetingSelfGuestListed } from '@lfx-one/shared/utils';
 import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -98,6 +99,8 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
+  /** The last invitation list fetch failed, so the empty list shown may be incomplete. */
+  private readonly loadFailed: WritableSignal<boolean> = signal(false);
   public editingRegistrantId = signal<string | null>(null);
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
@@ -112,8 +115,10 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
   /** The signed-in user as a guest, for "Add myself"; `null` until the lookup resolves, and on the server. */
   protected readonly selfGuest: Signal<MeetingSelfGuest | null> = toSignal(this.userService.getMeetingSelfGuest(), { initialValue: null });
-  /** Offered once the list has loaded, while the user is not on it under any of their emails. */
+  /** Offered once the list has loaded, while the user is not on it under a known email or their LFID. */
   protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
+  /** The add form, which "Add myself" switches to its fields when the profile is missing a name. */
+  private readonly addRegistrantFormRef: Signal<RegistrantFormComponent | undefined> = viewChild(RegistrantFormComponent);
 
   // Complex computed signals (using private initializers)
   public readonly registrants = signal<MeetingRegistrant[]>([]);
@@ -188,8 +193,8 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   /**
    * Adds the signed-in user to the invitation list as a regular guest, with their profile details.
    * @description The add payload requires both names, so a profile missing one fills the add form
-   * instead, for the organizer to finish; that guest is an ordinary one, since only a guest whose
-   * identity came straight from the user's own profile sends its LFID and avatar.
+   * and opens its fields instead, for the organizer to finish; that guest is an ordinary one, since
+   * only a guest whose identity came straight from the user's own profile sends its LFID and avatar.
    */
   public onAddSelf(): void {
     const self = this.selfGuest();
@@ -203,7 +208,9 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
         job_title: self.job_title,
         org_name: self.org_name,
       });
-      this.addRegistrantForm.markAsDirty();
+      // The form treats this like a search pick with a missing name: it shows its fields, keeping
+      // the values, and flags the missing name rather than adding the guest.
+      this.addRegistrantFormRef()?.handleUserSelection();
       return;
     }
 
@@ -245,6 +252,9 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
         if (r.uid === updateData.id || r.tempId === updateData.id) {
           return {
             ...updateData.data,
+            // The user's LFID and avatar belong to the address "Add myself" filled in; an edit that
+            // changes it is someone else, so the row stops sending them.
+            selfAdded: r.selfAdded === true && updateData.data.email?.trim().toLowerCase() === r.email?.trim().toLowerCase(),
             state: r.state === 'existing' ? ('modified' as RegistrantState) : r.state,
             originalData: r.originalData,
             tempId: r.tempId,
@@ -394,12 +404,11 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   private initCanAddSelf(): Signal<boolean> {
     return computed(() => {
       const self = this.selfGuest();
-      if (!self || this.loading()) {
+      if (!self || this.loading() || this.loadFailed()) {
         return false;
       }
 
-      const listed = new Set(this.visibleRegistrants().map((registrant) => registrant.email?.toLowerCase() ?? ''));
-      return !self.matchEmails.some((email) => listed.has(email));
+      return !isMeetingSelfGuestListed(self, this.visibleRegistrants());
     });
   }
 
@@ -453,12 +462,14 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
     const uid = this.meetingUid();
     if (!uid) return;
 
+    this.loadFailed.set(false);
     this.meetingService
       .getMeetingRegistrants(uid, false)
       .pipe(
         take(1),
         catchError((error) => {
           console.error('Error', error);
+          this.loadFailed.set(true);
           return of([]);
         }),
         finalize(() => {

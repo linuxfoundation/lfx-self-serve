@@ -54,6 +54,7 @@ import {
   registrantDisplayName,
   getPastMeetingResourceId,
   isMeetingInviteResponsesEnabled,
+  isMeetingSelfGuestListed,
   markFormControlsAsTouched,
   resolveMeetingBaseCount,
   resolveMeetingGuestRole,
@@ -134,6 +135,8 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly resolvedHostsChange: OutputEmitterRef<MeetingHostCandidate[]> = output<MeetingHostCandidate[]>();
 
   private readonly internalLoading: WritableSignal<boolean> = signal(true);
+  // The last registrants fetch this component made failed, so the empty list shown may be incomplete.
+  private readonly internalLoadFailed: WritableSignal<boolean> = signal(false);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   private readonly optimisticRegistrants: WritableSignal<MeetingRegistrant[]> = signal<MeetingRegistrant[]>([]);
   // UIDs removed by the organizer — filtered immediately from the displayed list so the guest
@@ -205,7 +208,7 @@ export class MeetingRegistrantsDisplayComponent {
 
   /** The signed-in user as a guest, for "Add myself"; looked up the first time the drawer opens with adding allowed. */
   protected readonly selfGuest: Signal<MeetingSelfGuest | null> = this.initSelfGuest();
-  /** Offered once the list has loaded, while the user is not on it under any of their emails. */
+  /** Offered once the list has loaded, while the user is not on it under a known email or their LFID. */
   protected readonly canAddSelf: Signal<boolean> = this.initCanAddSelf();
   protected readonly selfSubmitting: Signal<boolean> = computed(() => this.submittingGuestIds().has(this.selfSubmitId));
 
@@ -734,6 +737,7 @@ export class MeetingRegistrantsDisplayComponent {
             filter((refresh) => refresh && !this.pastMeeting() && !this.externallyManaged()),
             switchMap(() => {
               this.internalLoading.set(true);
+              this.internalLoadFailed.set(false);
               // Resolve RSVPs against the occurrence the card / drawer is representing, so a
               // per-occurrence `single` RSVP doesn't shadow the series-wide `all` RSVP on
               // unrelated occurrences. Falls back to newest RSVP when no occurrence is
@@ -752,7 +756,10 @@ export class MeetingRegistrantsDisplayComponent {
                 : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, undefined, true, allDatesOnly);
 
               return registrantsObservable.pipe(
-                catchError(() => of([])),
+                catchError(() => {
+                  this.internalLoadFailed.set(true);
+                  return of([]);
+                }),
                 map((registrants) => registrants.sort((a, b) => compareMeetingPeopleByHostThenName(a, b)) as MeetingRegistrant[]),
                 tap((registrants) => {
                   // The fetch returned a fresh list — any pending deletions are now reflected.
@@ -1004,18 +1011,25 @@ export class MeetingRegistrantsDisplayComponent {
 
   /**
    * Whether to offer "Add myself".
-   * @description Hidden while the list loads, since it may be incomplete, and once any of the user's
-   * emails is on it. A profile without both names is never offered: the add payload requires them.
+   * @description Hidden while the list loads or after its fetch failed, since it may be incomplete, and
+   * once the user is on it under a known email or their LFID. A profile without both names is never
+   * offered: the add payload requires them.
    */
   private initCanAddSelf(): Signal<boolean> {
     return computed(() => {
       const self = this.selfGuest();
-      if (!self?.first_name || !self.last_name || this.pastMeeting() || !this.showAddRegistrant() || this.registrantsLoading()) {
+      if (
+        !self?.first_name ||
+        !self.last_name ||
+        this.pastMeeting() ||
+        !this.showAddRegistrant() ||
+        this.registrantsLoading() ||
+        (!this.externallyManaged() && this.internalLoadFailed())
+      ) {
         return false;
       }
 
-      const listed = new Set(this.registrants().map((registrant) => registrant.email?.trim().toLowerCase() ?? ''));
-      return !self.matchEmails.some((email) => listed.has(email));
+      return !isMeetingSelfGuestListed(self, this.registrants());
     });
   }
 

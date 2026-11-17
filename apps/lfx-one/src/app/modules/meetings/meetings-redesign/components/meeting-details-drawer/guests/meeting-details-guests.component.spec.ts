@@ -811,6 +811,13 @@ describe('MeetingDetailsGuestsComponent', () => {
       expect(query('meeting-details-guests-add-self')).toBeNull();
     });
 
+    it('hides when the user is listed under another address with their LFID, as the "You" row shows', async () => {
+      meetingService['getMyMeetingRegistrants'].mockReturnValue(of([{ ...registrants[1], email: 'work@acme-motors.example', username: 'Viewer' }]));
+      await render();
+      expect(names()).toContain(`${registrants[1].first_name} ${registrants[1].last_name} (You)`);
+      expect(query('meeting-details-guests-add-self')).toBeNull();
+    });
+
     it.each(['invitee', 'ended', 'hidden', 'loading', 'error', 'missing name', 'missing identity'])('does not offer or submit for %s', async (condition) => {
       if (condition === 'invitee') organizer.set(false);
       if (condition === 'ended') state.set('ended');
