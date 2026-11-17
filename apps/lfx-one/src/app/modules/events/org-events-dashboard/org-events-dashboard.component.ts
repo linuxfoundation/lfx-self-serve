@@ -393,13 +393,21 @@ export class OrgEventsDashboardComponent {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
-        return accountId ? { accountId, eventScope: this.scope() } : null;
+        const retry = this.retryCount();
+        return accountId ? { accountId, eventScope: this.scope(), retry } : null;
       })
-    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope));
+    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope && a?.retry === b?.retry));
     return toSignal(
       query$.pipe(
         filter((query): query is NonNullable<typeof query> => query !== null),
-        switchMap(({ accountId, ...params }) => this.eventsService.getOrgEventFoundations(accountId, params).pipe(catchError(() => of(null))))
+        switchMap(({ accountId, eventScope }) =>
+          this.eventsService.getOrgEventFoundations(accountId, { eventScope }).pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to load the event foundations', error);
+              return of(null);
+            })
+          )
+        )
       ),
       { initialValue: null }
     );

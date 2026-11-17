@@ -197,6 +197,7 @@ describe('OrgEventsDashboardComponent', () => {
     expect(el.textContent).not.toContain('No upcoming events');
     const listCalls = eventsService.getOrgEvents.mock.calls.length;
     const summaryCalls = eventsService.getOrgEventsSummary.mock.calls.length;
+    const foundationCalls = eventsService.getOrgEventFoundations.mock.calls.length;
 
     (el.querySelector('[data-testid="org-events-retry"]') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -205,6 +206,7 @@ describe('OrgEventsDashboardComponent', () => {
 
     expect(eventsService.getOrgEvents.mock.calls.length).toBe(listCalls + 1);
     expect(eventsService.getOrgEventsSummary.mock.calls.length).toBe(summaryCalls + 1);
+    expect(eventsService.getOrgEventFoundations.mock.calls.length).toBe(foundationCalls + 1);
   });
 
   it('keeps the empty state when the organization has no events', async () => {
