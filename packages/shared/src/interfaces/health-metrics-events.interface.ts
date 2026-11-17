@@ -135,6 +135,8 @@ export interface HealthMetricsEventsForecastRowView {
   /** Registrations over goal, 0–100. */
   pct: number;
   fillClass: string;
+  /** The fill's meaning for a screen reader, e.g. "Needs action"; empty with no goal, which draws no bar. */
+  paceLabel: string;
 }
 
 /** Outcome chip for one closed event; see `resolveHealthMetricsEventsPastStatus` for the rule. */

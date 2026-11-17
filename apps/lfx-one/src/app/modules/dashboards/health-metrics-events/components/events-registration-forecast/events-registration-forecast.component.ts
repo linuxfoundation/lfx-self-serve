@@ -115,9 +115,12 @@ export class EventsRegistrationForecastComponent {
     return event ? buildHealthMetricsEventsForecastView(event) : null;
   });
 
+  /** With no forecast, Predicted reads "—" and the chart shows its empty message, so no curve is read. */
+  protected readonly noForecast = computed(() => this.selectedEvent()?.forecastAvg === null);
+
   protected readonly curveQuery: Signal<HealthMetricsEventsForecastCurveQuery> = computed(() => ({
     foundationSlug: this.query().foundationSlug,
-    eventId: this.selectedEvent()?.eventId ?? '',
+    eventId: this.noForecast() ? '' : (this.selectedEvent()?.eventId ?? ''),
   }));
   protected readonly curve: Signal<HealthMetricsEventsForecastCurve> = this.initCurve();
 

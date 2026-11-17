@@ -8,7 +8,7 @@
       <p-skeleton height="300px" borderRadius="8px" aria-hidden="true" data-testid="overview-trend-loading" />
     }
     @case ('failed') {
-      <p class="m-0 text-[13px] text-gray-500" data-testid="overview-trend-error">The registration trend could not be loaded. Close this and try again.</p>
+      <p class="m-0 text-[13px] text-gray-500" data-testid="overview-trend-error">{{ errorCopy() }}</p>
     }
     @default {
       <!-- The design's metrics row: Current, Same point last year, and Predicted with its likely range; two columns on a phone. -->

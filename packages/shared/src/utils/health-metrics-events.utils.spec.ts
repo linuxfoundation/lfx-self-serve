@@ -284,17 +284,21 @@ describe('forecast table helpers', () => {
       goalLabel: 'Goal: 1,000',
       pct: 100,
       fillClass: 'bg-emerald-500',
+      paceLabel: 'On track',
     });
     expect(buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 250, goal: 1000 })])[0].pct).toBe(25);
   });
 
   it('colours the bar red when even the high forecast misses, amber when the average does, and gray with no forecast', () => {
-    const fill = (overrides: Partial<HealthMetricsEventsForecastEvent>) => buildHealthMetricsEventsForecastRowViews([event(overrides)])[0].fillClass;
+    const pace = (overrides: Partial<HealthMetricsEventsForecastEvent>) => {
+      const [row] = buildHealthMetricsEventsForecastRowViews([event(overrides)]);
+      return [row.fillClass, row.paceLabel];
+    };
 
-    expect(fill({ goal: 700 })).toBe('bg-red-400');
-    expect(fill({ goal: 550 })).toBe('bg-amber-400');
-    expect(fill({ goal: 500 })).toBe('bg-emerald-500');
-    expect(fill({ goal: 550, forecastAvg: null, forecastHigh: null })).toBe('bg-gray-400');
+    expect(pace({ goal: 700 })).toEqual(['bg-red-400', 'Needs action']);
+    expect(pace({ goal: 550 })).toEqual(['bg-amber-400', 'Needs attention']);
+    expect(pace({ goal: 500 })).toEqual(['bg-emerald-500', 'On track']);
+    expect(pace({ goal: 550, forecastAvg: null, forecastHigh: null })).toEqual(['bg-gray-400', 'No forecast']);
   });
 
   it('keeps the raw colour for a goal ten times off the forecast, which still sorts last', () => {
@@ -310,7 +314,7 @@ describe('forecast table helpers', () => {
   });
 
   it.each([null, 0, -5])('reads a goal of %s as no goal: no goal label and an empty bar', (goal) => {
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ goalLabel: '', pct: 0 });
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ goalLabel: '', pct: 0, paceLabel: '' });
   });
 
   it('opens the chart on the format with more registrations', () => {

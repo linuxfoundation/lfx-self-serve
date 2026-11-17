@@ -1183,6 +1183,11 @@ describe('buildHealthMetricsOverviewTrendView', () => {
     expect(view.bandHighPath.startsWith('M446.7')).toBe(true);
     expect(view.bandLowPath.startsWith('M446.7')).toBe(true);
     expect([view.todayX, view.todayPct]).toEqual(['446.7', '74.44']);
+
+    // Past its start day a running event has no days left, and its curve's last day is not today.
+    const running = buildHealthMetricsOverviewTrendView(row, { ...headline, daysLeft: null }, series, whole);
+    expect([running.todayX, running.todayPct]).toEqual([null, null]);
+    expect(running.predictedPath).toBe(view.predictedPath);
   });
 
   it('fills the gap to last year up to today, green where this year is ahead and red where it is behind', () => {

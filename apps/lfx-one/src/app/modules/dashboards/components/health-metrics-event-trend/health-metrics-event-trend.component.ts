@@ -69,6 +69,12 @@ export class HealthMetricsEventTrendComponent {
       ? 'mt-[8px] grid-rows-[280px_auto_auto]'
       : 'mt-[20px] grid-rows-[clamp(120px,calc(100vh-560px),320px)_auto_auto] max-[640px]:mt-[12px] max-[640px]:min-h-min max-[640px]:flex-auto max-[640px]:grid-rows-[minmax(100px,1fr)_auto_auto]'
   );
+  /** The dialog can be closed and opened again; the card can only be refreshed. */
+  protected readonly errorCopy = computed(() =>
+    this.variant() === 'card'
+      ? 'The registration trend could not be loaded. Refresh the page to try again.'
+      : 'The registration trend could not be loaded. Close this and try again.'
+  );
   protected readonly series = computed<HealthMetricsEventsForecastCurveSeries | null>(() => {
     const formats = this.reads()?.curve.formats ?? [];
     const format = pickHealthMetricsEventsForecastFormat(formats);

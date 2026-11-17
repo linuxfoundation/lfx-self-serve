@@ -4,7 +4,7 @@
 import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import {
   HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE,
-  HEALTH_METRICS_EVENTS_FORECAST_FILLS,
+  HEALTH_METRICS_EVENTS_FORECAST_PACES,
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
@@ -252,6 +252,7 @@ export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsF
 export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastRowView[] {
   return sortHealthMetricsEventsForecastRows(events).map((event) => {
     const goal = hasHealthMetricsEventsGoal(event.goal) ? event.goal : null;
+    const pace = HEALTH_METRICS_EVENTS_FORECAST_PACES[forecastPace(event, goal)];
 
     return {
       eventId: event.eventId,
@@ -260,7 +261,8 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
       registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
       goalLabel: goal === null ? '' : `Goal: ${formatHealthMetricsEventsCount(goal)}`,
       pct: goal === null ? 0 : Math.min(100, ((event.registrationsNow ?? 0) / goal) * 100),
-      fillClass: forecastFillClass(event, goal),
+      fillClass: pace.fillClass,
+      paceLabel: goal === null ? '' : pace.label,
     };
   });
 }
@@ -695,11 +697,11 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
  * The goal bar's fill from the raw forecast, as the design colours it, so a mis-entered goal keeps its colour while its
  * note and sort withhold the pace. An event with no forecast has no verdict, so its bar is gray.
  */
-function forecastFillClass(event: HealthMetricsEventsForecastEvent, goal: number | null): string {
-  if (goal === null || event.forecastAvg === null) return HEALTH_METRICS_EVENTS_FORECAST_FILLS.none;
-  if (event.forecastHigh !== null && event.forecastHigh < goal) return HEALTH_METRICS_EVENTS_FORECAST_FILLS.action;
+function forecastPace(event: HealthMetricsEventsForecastEvent, goal: number | null): keyof typeof HEALTH_METRICS_EVENTS_FORECAST_PACES {
+  if (goal === null || event.forecastAvg === null) return 'none';
+  if (event.forecastHigh !== null && event.forecastHigh < goal) return 'action';
 
-  return event.forecastAvg < goal ? HEALTH_METRICS_EVENTS_FORECAST_FILLS.atRisk : HEALTH_METRICS_EVENTS_FORECAST_FILLS.onTrack;
+  return event.forecastAvg < goal ? 'atRisk' : 'onTrack';
 }
 
 /** The verdict's copy as note parts, with its key figure in bold. */

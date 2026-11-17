@@ -25,7 +25,12 @@
       <lfx-health-metrics-footnote [tone]="v.note.tone" [parts]="v.note.parts" data-testid="events-registration-forecast-verdict" />
     }
 
-    @if (trendEvent(); as event) {
+    @if (noForecast()) {
+      <!-- With nothing forecast, the chart has nothing to project, so it shows its empty message. -->
+      <p class="m-0 py-[24px] text-center text-[13px] text-gray-500" data-testid="events-registration-forecast-trend-empty">
+        There is no registration curve for this event yet.
+      </p>
+    } @else if (trendEvent(); as event) {
       <lfx-health-metrics-event-trend
         variant="card"
         [event]="event"
@@ -66,6 +71,8 @@
                 [fillClass]="row.fillClass"
                 [maxWidthPx]="220"
                 [attr.data-testid]="'events-registration-forecast-goal-' + row.eventId" />
+              <!-- The bar's colour carries the pace, so screen readers get it in words. -->
+              <span class="sr-only" [attr.data-testid]="'events-registration-forecast-pace-' + row.eventId">{{ row.paceLabel }}</span>
             } @else {
               <!-- No goal draws no bar. -->
               <span class="flex max-w-[220px] items-baseline justify-between gap-[8px]" [attr.data-testid]="'events-registration-forecast-goal-' + row.eventId">

@@ -136,12 +136,15 @@ export const HEALTH_METRICS_EVENTS_QUERY_PARAMS = {
   orgPage: 'orgPage',
 } as const satisfies Record<string, keyof HealthMetricsEventsQueryParams>;
 
-/** The goal bar's fill by the forecast against the goal (EVT-01); gray when the event has no forecast. */
-export const HEALTH_METRICS_EVENTS_FORECAST_FILLS = {
-  action: 'bg-red-400',
-  atRisk: 'bg-amber-400',
-  onTrack: 'bg-emerald-500',
-  none: 'bg-gray-400',
+/**
+ * The goal bar by the forecast against the goal (EVT-01): its fill, gray with no forecast, and the words a screen reader
+ * hears in place of the colour.
+ */
+export const HEALTH_METRICS_EVENTS_FORECAST_PACES = {
+  action: { fillClass: 'bg-red-400', label: 'Needs action' },
+  atRisk: { fillClass: 'bg-amber-400', label: 'Needs attention' },
+  onTrack: { fillClass: 'bg-emerald-500', label: 'On track' },
+  none: { fillClass: 'bg-gray-400', label: 'No forecast' },
 } as const;
 
 /** A forecast this many times its goal reads as a stale goal, not an over-performing event. */

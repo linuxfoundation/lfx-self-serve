@@ -155,12 +155,12 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('overview-trend-grid')?.className).toContain('grid-rows-[280px_auto_auto]');
   });
 
-  it('keeps the metrics when only the curve read fails, and says so in the chart', async () => {
+  it('keeps the metrics when only the curve read fails, and says so in the chart with a step the card offers', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     await render({ events: [event()] }, new Error('boom'));
 
     expect(text('events-registration-forecast-metrics')).toContain('500');
-    expect(query('overview-trend-error')).not.toBeNull();
+    expect(text('overview-trend-error')).toBe('The registration trend could not be loaded. Refresh the page to try again.');
   });
 
   it('reports the header select its events, soonest first, and the one shown', async () => {
@@ -205,6 +205,10 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(text('events-registration-forecast-metrics')).not.toContain('High');
     expect(text('events-registration-forecast-verdict')).toContain('Summary:');
     expect(text('events-registration-forecast-verdict')).toContain('There is no forecast for this event yet.');
+    // The chart shows its empty message in place of a curve with nothing projected, and reads none.
+    expect(query('events-registration-forecast-trend')).toBeNull();
+    expect(text('events-registration-forecast-trend-empty')).toBe('There is no registration curve for this event yet.');
+    expect(getEventsRegistrationForecastCurve).not.toHaveBeenCalled();
   });
 
   it('reports the miss count for the sub-nav note and settles once the list lands', async () => {
@@ -270,7 +274,10 @@ describe('EventsRegistrationForecastComponent', () => {
 
     expect(text('events-registration-forecast-goal-behind')).toContain('Goal: 700');
     expect(query('events-registration-forecast-goal-behind')?.querySelector('[data-testid="health-metrics-progress-fill"]')?.className).toContain('bg-red-400');
+    expect(text('events-registration-forecast-pace-behind')).toBe('Needs action');
+    expect(query('events-registration-forecast-pace-behind')?.className).toContain('sr-only');
     expect(text('events-registration-forecast-goal-none')).toContain('No goal set');
+    expect(query('events-registration-forecast-pace-none')).toBeNull();
     expect(query('events-registration-forecast-goal-none')?.querySelector('[data-testid="health-metrics-progress-fill"]')).toBeNull();
   });
 
