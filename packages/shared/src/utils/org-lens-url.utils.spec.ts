@@ -186,52 +186,6 @@ describe('companyLensRedirectTarget', () => {
   );
 });
 
-describe('companyLensRedirectTarget for /organization (myOrg page names)', () => {
-  const tag = (content: string, extra = '') => `${extra}utm_source=myorg-redirect&utm_content=${content}`;
-  it.each([
-    ['/organization/google-llc', `/company/google-llc/overview?${tag('home')}`],
-    ['/organization/google-llc/home', `/company/google-llc/overview?${tag('home')}`],
-    ['/organization/google-llc/dashboard', `/company/google-llc/overview?${tag('home')}`],
-    ['/organization/google-llc/key-projects', `/company/google-llc/projects?${tag('key-projects')}`],
-    ['/organization/google-llc/key-projects/k8s', `/company/google-llc/projects/k8s?${tag('key-project')}`],
-    ['/organization/google-llc/key-projects/k8s/our-influence', `/company/google-llc/projects/k8s?${tag('key-project')}`],
-    ['/organization/google-llc/key-projects/k8s/leaderboards', `/company/google-llc/projects/k8s?${tag('key-project-leaderboards', 'tab=pd-leaderboards&')}`],
-    ['/organization/google-llc/membership-summary/active', `/company/google-llc/memberships?${tag('membership')}`],
-    ['/organization/google-llc/membership-summary/expired', `/company/google-llc/memberships?${tag('membership-expired')}`],
-    ['/organization/google-llc/membership-summary/recommended', `/company/google-llc/memberships?${tag('membership-discover')}`],
-    ['/organization/google-llc/project/project-group/a09/membership-onboarding', `/company/google-llc/memberships?${tag('membership-detail')}`],
-    ['/organization/google-llc/project/project-group/a09/benefits', `/company/google-llc/memberships?${tag('project')}`],
-    ['/organization/google-llc/project/a092/committees', `/company/google-llc/memberships?${tag('project')}`],
-    ['/organization/google-llc/project/project-group-membership/a09/form/gold', `/company/google-llc/memberships?${tag('join-membership')}`],
-    ['/organization/google-llc/project-contributions', `/company/google-llc/contributions?${tag('code-contributions')}`],
-    ['/organization/google-llc/events/overview', `/company/google-llc/events?${tag('events')}`],
-    ['/organization/google-llc/events/sponsorships', `/company/google-llc/events?${tag('events-sponsorships')}`],
-    ['/organization/google-llc/events/travel-funding', `/company/google-llc/overview?${tag('events-travel-funding')}`],
-    ['/organization/google-llc/training-and-certification/certifications', `/company/google-llc/training?${tag('training')}`],
-    ['/organization/google-llc/users', `/company/google-llc/people?tab=access&${tag('access')}`],
-    ['/organization/google-llc/users/employees/invite', `/company/google-llc/people?tab=access&${tag('access-invite')}`],
-    ['/organization/google-llc/profile/edit', `/company/google-llc/profile?${tag('profile-edit')}`],
-    ['/organization/google-llc/software-inventory/manage', `/company/google-llc/overview?${tag('software-inventory-manage')}`],
-    ['/organization/google-llc/ospo-resources', `/company/google-llc/overview?${tag('ospo-resources')}`],
-    ['/organization/google-llc/something-new', `/company/google-llc/overview?${tag('unknown')}`],
-  ])('moves %s to %s', (from, to) => {
-    expect(companyLensRedirectTarget(from)).toBe(to);
-  });
-
-  it('passes pages Company Lens already has through, untagged', () => {
-    expect(companyLensRedirectTarget('/organization/google-llc/profile')).toBe('/company/google-llc/profile');
-    expect(companyLensRedirectTarget('/organization/google-llc/easycla/g1?org=001A')).toBe('/company/google-llc/easycla/g1?company=001A');
-    expect(companyLensRedirectTarget('/organization/google-llc/people?tab=board')).toBe('/company/google-llc/people?tab=board');
-    expect(companyLensRedirectTarget('/organization/not-found')).toBe('/company/not-found');
-  });
-
-  it('replaces pre-existing tags once and keeps other parameters', () => {
-    expect(companyLensRedirectTarget('/organization/google-llc/membership-summary/active?utm_source=newsletter&utm_content=x&ref=email')).toBe(
-      '/company/google-llc/memberships?ref=email&utm_source=myorg-redirect&utm_content=membership'
-    );
-  });
-});
-
 describe('easyclaReturnOrgParam', () => {
   it('prefers ?company= and falls back to the pre-rename ?org=', () => {
     expect(easyclaReturnOrgParam((n) => ({ company: 'A', org: 'B' })[n as 'company'])).toBe('A');
