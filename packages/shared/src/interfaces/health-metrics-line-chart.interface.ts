@@ -15,6 +15,8 @@ export interface HealthMetricsLineChartSeries {
   fill?: boolean;
   /** A dashed line with no dots, as the design draws a derived series. */
   dashed?: boolean;
+  /** One dot on the last point alone, as the design marks a month still in progress. */
+  dotLast?: boolean;
 }
 
 /** What a Health Metrics line chart plots: one x position per label, on a 0 to `max` y axis in quarters. */

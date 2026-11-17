@@ -33,8 +33,7 @@ import {
   HealthMetricsEngagementSubNavCounts,
 } from '../interfaces/health-metrics-engagement.interface';
 import {
-  buildHealthMetricsEngagementAttendanceTrendPoints,
-  buildHealthMetricsEngagementAttendanceTrendSummary,
+  buildHealthMetricsEngagementAttendanceTrendView,
   buildHealthMetricsEngagementGroupRowView,
   buildHealthMetricsEngagementNonMemberRowView,
   buildHealthMetricsEngagementOrgRowView,
@@ -819,101 +818,199 @@ describe('buildHealthMetricsEngagementRepRowView', () => {
   });
 });
 
-describe('attendance trend rules', () => {
-  // The view's window ends with the current month, so "today" decides which month is still collecting meetings.
+describe('buildHealthMetricsEngagementAttendanceTrendView', () => {
+  // The design's 2026 sample: October is still collecting meetings.
   const today = new Date('2026-10-20T12:00:00Z');
+  const design: [number, number][] = [
+    [63, 9],
+    [48, 21],
+    [32, 39],
+    [21, 48],
+    [19, 40],
+    [18, 65],
+    [14, 66],
+    [12, 74],
+    [9, 72],
+    [7, 50],
+  ];
 
-  function month(
-    monthStartDate: string,
-    attendancePct: number | null,
-    overrides: Partial<HealthMetricsEngagementAttendanceMonth> = {}
-  ): HealthMetricsEngagementAttendanceMonth {
-    return { monthStartDate, meetingsHeld: 10, invited: 100, attended: 50, attendancePct, attendanceChangePp: null, ...overrides };
+  function months(year: number, rows: readonly [number | null, number][]): HealthMetricsEngagementAttendanceMonth[] {
+    return rows.map(([pct, meetings], index) => ({
+      monthStartDate: `${year}-${String(index + 1).padStart(2, '0')}-01`,
+      meetingsHeld: meetings,
+      invited: 100,
+      attended: 50,
+      attendancePct: pct === null ? null : pct / 100,
+      attendanceChangePp: null,
+    }));
   }
 
-  /** Twelve months ending October 2026, every one rated at 40% + 1pp per month. */
-  function fullYear(): HealthMetricsEngagementAttendanceMonth[] {
-    return Array.from({ length: 12 }, (_, index) => {
-      const date = new Date(Date.UTC(2025, 10 + index, 1)).toISOString().slice(0, 10);
-      return month(date, 0.4 + index * 0.01, { attendanceChangePp: index === 0 ? null : 0.01 });
-    });
+  /** The design's sample with some months made thin (2 meetings, below the rate rule). */
+  function thin(...indexes: number[]): HealthMetricsEngagementAttendanceMonth[] {
+    return months(
+      2026,
+      design.map(([pct, meetings], index) => [pct, indexes.includes(index) ? 2 : meetings])
+    );
   }
 
-  it('labels each point and marks the current month as to date', () => {
-    const points = buildHealthMetricsEngagementAttendanceTrendPoints(fullYear(), today);
+  it('runs year to date from January to the month in progress, as the design does', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(months(2026, design), 'YTD', 2026, today);
 
-    expect(points[0]).toMatchObject({ label: 'Nov 25', monthLabel: 'November 2025', rateLabel: '40%', meetingsLabel: '10 meetings', isInProgress: false });
-    expect(points[0]?.rate).toBeCloseTo(40);
-    expect(points[11]).toMatchObject({ label: 'Oct 26', monthLabel: 'October 2026 (to date)', isInProgress: true });
+    expect(view.state).toBe('trend');
+    expect(view.metrics).toEqual([
+      { key: 'latest', label: 'Previous month (Sep 2026)', value: '9%', descriptionLead: '−3pp', description: 'vs August', descriptionLeadTone: 'down' },
+      {
+        key: 'change',
+        label: 'Change since January',
+        value: '−54pp',
+        description: '63% in Jan → 9% in Sep',
+        tip: 'Difference in attendance rate between January and the last full month of the selected year, in percentage points.',
+      },
+      { key: 'high', label: 'Highest rate', value: '63%', description: 'January 2026' },
+      { key: 'low', label: 'Lowest rate', value: '9%', description: 'September 2026' },
+    ]);
+    expect(view.isLowConfidence).toBe(false);
   });
 
-  // A gap, not a collapse to 0%: no invited population and a thin month both leave the line.
-  it('gaps a month with no invited population, and one with too few meetings to report a rate', () => {
-    const months = [
-      month('2026-08-01', null, { meetingsHeld: 0 }),
-      month('2026-09-01', 0.8, { meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 }),
-    ];
-    const points = buildHealthMetricsEngagementAttendanceTrendPoints(months, today);
+  it('draws the full months filled and the month in progress as a dashed run ending on a hollow dot', () => {
+    const chart = buildHealthMetricsEngagementAttendanceTrendView(months(2026, design), 'YTD', 2026, today).chart;
 
-    expect(points.map((point) => point.rate)).toEqual([null, null]);
-    expect(points.map((point) => point.rateLabel)).toEqual(['—', 'No data']);
-    expect(points[0]?.meetingsLabel).toBe('0 meetings');
+    expect(chart?.ticks.map((tick) => tick.label)).toEqual(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct']);
+    expect(chart?.yTicks).toEqual(['100%', '75%', '50%', '25%', '0%']);
+    expect(chart?.paths.map((path) => [path.key, path.dashed])).toEqual([
+      ['attendance', false],
+      ['in-progress', true],
+    ]);
+    expect(chart?.paths[1].d.split(' M').length).toBe(1);
+    expect(chart?.area?.color).toBe('#009AFF');
+    expect(chart?.dots.map((dot) => dot.key).slice(-2)).toEqual(['attendance-8', 'in-progress-9']);
+    expect(chart?.ariaLabel).toBe('All-meeting attendance by month, 2026');
+    expect(chart?.columns[9].tip).toEqual({
+      title: 'October 2026 (to date)',
+      rows: [{ label: 'Attendance', value: '7% · 50 meetings', color: '#009AFF', separated: false, inline: true }],
+    });
+    expect(chart?.columns[0].tip.title).toBe('January 2026');
   });
 
-  it('reads the headline off the latest full month, with its change from the view', () => {
-    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(fullYear(), today);
+  it('runs a completed year from January to December, led by December', () => {
+    const year = months(2025, [
+      [66, 6],
+      [68, 8],
+      [65, 10],
+      [69, 9],
+      [67, 12],
+      [64, 14],
+      [62, 11],
+      [63, 9],
+      [66, 15],
+      [71, 6],
+      [70, 3],
+      [60, 4],
+    ]);
+    const view = buildHealthMetricsEngagementAttendanceTrendView(year, 'COMPLETED_YEAR', 2025, today);
 
-    // October is in progress, so September (50%) leads and the range runs November to September.
-    expect(summary).toMatchObject({
-      state: 'trend',
-      ratedMonths: 12,
-      latestLabel: '50%',
-      latestCaption: 'September 2026',
-      deltaLabel: '+1.0pp',
-      deltaDirection: 'up',
-      rangeChangeLabel: '+10.0pp',
-      rangeHighLabel: '50%',
-      rangeLowLabel: '40%',
-      isLowConfidence: false,
+    expect(view.points).toHaveLength(12);
+    expect(view.points.some((point) => point.isInProgress)).toBe(false);
+    expect(view.metrics[0]).toMatchObject({ label: 'December 2025', value: '60%', descriptionLead: '−10pp', description: 'vs November' });
+    expect(view.metrics[2]).toMatchObject({ value: '71%', description: 'October 2025' });
+    expect(view.chart?.paths.map((path) => path.key)).toEqual(['attendance']);
+  });
+
+  it('shows a completed year only when the view holds all twelve of its months', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(months(2025, design), 'COMPLETED_YEAR', 2025, today);
+
+    expect(view).toMatchObject({ state: 'unavailable', notice: 'Attendance history for 2025 is not available yet.', metrics: [], chart: null });
+  });
+
+  it('waits for January to close in year to date', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(months(2026, [[40, 10]]), 'YTD', 2026, new Date('2026-01-12T00:00:00Z'));
+
+    expect(view).toMatchObject({ state: 'january', notice: 'The trend starts once January closes.', chart: null });
+  });
+
+  it('shows "No data" for a thin last full month, with the change measured to the latest rated month', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(thin(8), 'YTD', 2026, today);
+
+    expect(view.metrics[0]).toEqual({ key: 'latest', label: 'Previous month (Sep 2026)', value: 'No data' });
+    expect(view.metrics[1]).toMatchObject({
+      value: '−51pp',
+      description: '63% in Jan → 12% in Aug',
+      tip: 'Difference in attendance rate between January and August of the selected year, in percentage points.',
+    });
+    expect(view.chart?.paths[0].d).not.toContain('600.0');
+  });
+
+  it('leaves the comparison out when the month before the last full month is thin', () => {
+    expect(buildHealthMetricsEngagementAttendanceTrendView(thin(7), 'YTD', 2026, today).metrics[0]).toEqual({
+      key: 'latest',
+      label: 'Previous month (Sep 2026)',
+      value: '9%',
     });
   });
 
-  // The view's change is measured against a rate the hero hides, so it must not headline.
-  it('drops the change when the previous month has no reportable rate', () => {
-    const months = fullYear();
-    months[9] = month('2026-08-01', 0.9, { meetingsHeld: 1 });
-
-    expect(buildHealthMetricsEngagementAttendanceTrendSummary(months, today)).toMatchObject({ deltaLabel: '—', deltaDirection: 'neutral' });
+  it('measures the change from the first rated month when January is thin', () => {
+    expect(buildHealthMetricsEngagementAttendanceTrendView(thin(0), 'YTD', 2026, today).metrics[1]).toMatchObject({
+      label: 'Change since February',
+      value: '−39pp',
+      description: '48% in Feb → 9% in Sep',
+      tip: 'Difference in attendance rate between February and the last full month of the selected year, in percentage points.',
+    });
   });
 
-  it('reports no rated month as empty, and one as too little to chart', () => {
-    const quiet = fullYear().map((entry) => ({ ...entry, attendancePct: null, meetingsHeld: 0 }));
-    expect(buildHealthMetricsEngagementAttendanceTrendSummary(quiet, today)).toMatchObject({
-      state: 'empty',
-      ratedMonths: 0,
-      latestLabel: '—',
-      rangeHighLabel: '—',
+  it('gives a tie for highest or lowest to the earlier month, and greys a flat change', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(
+      months(2026, [
+        [40, 10],
+        [55, 10],
+        [40, 10],
+        [55, 10],
+        [55, 10],
+        [20, 10],
+      ]),
+      'YTD',
+      2026,
+      new Date('2026-06-03T00:00:00Z')
+    );
+
+    expect(view.metrics[0]).toMatchObject({ descriptionLead: '0pp', descriptionLeadTone: 'flat' });
+    expect(view.metrics[2]).toMatchObject({ value: '55%', description: 'February 2026' });
+    expect(view.metrics[3]).toMatchObject({ value: '40%', description: 'January 2026' });
+  });
+
+  it('flags a year with fewer than six rated months as low confidence', () => {
+    const view = buildHealthMetricsEngagementAttendanceTrendView(months(2026, design.slice(0, 5)), 'YTD', 2026, new Date('2026-05-03T00:00:00Z'));
+
+    expect(view.isLowConfidence).toBe(true);
+    expect(view.lowConfidenceNote).toBe('Only 5 months in 2026 have attendance from 3 or more meetings, so the trend is indicative, not reliable.');
+  });
+
+  it('needs two rated full months to chart a trend', () => {
+    const one = months(2026, [
+      [40, 10],
+      [null, 0],
+      [30, 10],
+    ]);
+    expect(buildHealthMetricsEngagementAttendanceTrendView(one, 'YTD', 2026, new Date('2026-03-03T00:00:00Z'))).toMatchObject({
+      state: 'insufficient',
+      notice: 'Only one month in 2026 has attendance from 3 or more meetings.',
     });
 
-    const single = quiet.map((entry, index) => (index === 6 ? month(entry.monthStartDate, 0.5) : entry));
-    expect(buildHealthMetricsEngagementAttendanceTrendSummary(single, today)).toMatchObject({ state: 'insufficient', ratedMonths: 1 });
+    const none = months(2026, [
+      [null, 0],
+      [null, 0],
+      [30, 10],
+    ]);
+    expect(buildHealthMetricsEngagementAttendanceTrendView(none, 'YTD', 2026, new Date('2026-03-03T00:00:00Z')).notice).toBe(
+      'No full month in 2026 has attendance from 3 or more meetings yet.'
+    );
   });
 
-  // Short history still draws the line, under a banner, so two points do not read as a pattern.
-  it('flags fewer than six rated months as low confidence, with the count in the note', () => {
-    const months = fullYear().map((entry, index) => (index < 8 ? { ...entry, attendancePct: null, meetingsHeld: 0 } : entry));
-    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
+  it('reads as empty with no rated month, and treats a month the view lacks as one without meetings', () => {
+    expect(buildHealthMetricsEngagementAttendanceTrendView([], 'YTD', 2026, today).state).toBe('empty');
 
-    expect(summary).toMatchObject({ state: 'trend', ratedMonths: 4, isLowConfidence: true });
-    expect(summary.lowConfidenceNote).toBe('Only 4 of the last 12 months have attendance from 3 or more meetings, so the trend is indicative, not reliable.');
-  });
-
-  // The month in progress counts toward having a trend, but never toward the full-month headline.
-  it('leaves the headline unset when the only rated full month is missing', () => {
-    const months = [month('2026-09-01', null, { meetingsHeld: 0 }), month('2026-10-01', 0.6)];
-    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
-
-    expect(summary).toMatchObject({ state: 'insufficient', latestLabel: '—', latestCaption: 'No full month with attendance yet', rangeChangeLabel: '—' });
+    const gap = months(2026, design).filter((month) => month.monthStartDate !== '2026-05-01');
+    const view = buildHealthMetricsEngagementAttendanceTrendView(gap, 'YTD', 2026, today);
+    expect(view.points[4]).toMatchObject({ rate: null, rateLabel: '—', meetingsLabel: '—' });
   });
 });
 

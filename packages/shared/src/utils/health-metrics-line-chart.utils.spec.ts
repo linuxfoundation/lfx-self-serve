@@ -56,6 +56,13 @@ describe('buildHealthMetricsLineChart', () => {
     expect(dots[1]).toMatchObject({ leftPct: 50, topPct: 50, color: '#009AFF' });
   });
 
+  it('dots only the last plotted value of a dashed series marked to end on a dot', () => {
+    const series = [{ key: 'now', label: 'In progress', color: '#009AFF', values: [null, 50, 20, null], dashed: true, dotLast: true }];
+    const dots = buildHealthMetricsLineChart(input({ xLabels: ['Jan', 'Feb', 'Mar', 'Apr'], series })).dots;
+
+    expect(dots.map((dot) => dot.key)).toEqual(['now-2']);
+  });
+
   it('labels the y axis top to bottom in quarters, and rules the top and each quarter', () => {
     const chart = buildHealthMetricsLineChart(input());
 

@@ -64,14 +64,15 @@ export function buildHealthMetricsLineChart(input: HealthMetricsLineChartInput):
     baseY: height,
     area: filled && filledIndexes.length ? { d: areaPath(filled.values), color: filled.color } : null,
     paths: input.series.map((series) => ({ key: series.key, d: path(series.values), color: series.color, dashed: !!series.dashed })),
-    // The design leaves a dashed series without dots, so it reads as derived from the solid ones.
-    dots: input.series
-      .filter((series) => !series.dashed)
-      .flatMap((series) =>
-        series.values.flatMap((value, index) =>
-          value === null ? [] : [{ key: `${series.key}-${index}`, leftPct: (x(index) / width) * 100, topPct: (y(value) / height) * 100, color: series.color }]
-        )
-      ),
+    // The design leaves a dashed series without dots, so it reads as derived from the solid ones; `dotLast` marks its end.
+    dots: input.series.flatMap((series) =>
+      series.values.flatMap((value, index) => {
+        const drawn = series.dotLast ? index === lineChartLastIndex(series.values) : !series.dashed;
+        return value === null || !drawn
+          ? []
+          : [{ key: `${series.key}-${index}`, leftPct: (x(index) / width) * 100, topPct: (y(value) / height) * 100, color: series.color }];
+      })
+    ),
     columns: input.xLabels.map((label, index) => {
       const tip = input.tips[index] ?? { title: label, rows: [] };
       // Cut off at the plot's edges, so an end column never covers the y labels or the card beside the chart.
@@ -106,6 +107,14 @@ export function healthMetricsLineChartCountCeiling(peak: number): number {
   const magnitude = 10 ** Math.floor(Math.log10(quarter));
   const step = HEALTH_METRICS_LINE_CHART_QUARTER_STEPS.find((candidate) => candidate * magnitude >= quarter) ?? 10;
   return step * magnitude * 4;
+}
+
+/** The index of the last plotted value, or -1 when there is none. */
+function lineChartLastIndex(values: readonly (number | null)[]): number {
+  for (let index = values.length - 1; index >= 0; index--) {
+    if (values[index] !== null) return index;
+  }
+  return -1;
 }
 
 /** The indexes of each unbroken run of values, in order. */
