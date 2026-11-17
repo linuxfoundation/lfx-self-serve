@@ -56,11 +56,11 @@ function build(opts: Setup = {}) {
       .mockImplementation(() =>
         opts.org instanceof Error
           ? Promise.reject(opts.org)
-          : Promise.resolve(opts.org ?? { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme.example' })
+          : Promise.resolve(opts.org ?? { uid: ORG_UID, name: 'Acme Motors', primary_domain: 'acme-motors.example' })
       ),
   };
   resolveVerifiedUserEmails.mockImplementation(() =>
-    opts.emails instanceof Error ? Promise.reject(opts.emails) : Promise.resolve(opts.emails ?? ['dev@acme.example'])
+    opts.emails instanceof Error ? Promise.reject(opts.emails) : Promise.resolve(opts.emails ?? ['dev@acme-motors.example'])
   );
   const svc = new OrgEmployeeViewService({ cdp: cdp as never, organizations: organizations as never, emailVerification: {} as never, proxy: proxy as never });
   return { svc, cdp, organizations, proxy };
@@ -123,7 +123,10 @@ describe('OrgEmployeeViewService.resolve', () => {
   });
 
   it('denies a caller whose verified email is on another company domain', async () => {
-    const { svc } = build({ experiences: experience(CDEV_ORG), emails: ['dev@gmail.com', 'dev@notacme.example', 'dev@acme.example.evil.test'] });
+    const { svc } = build({
+      experiences: experience(CDEV_ORG),
+      emails: ['dev@example.com', 'dev@notacme-motors.example', 'dev@acme-motors.example.evil.test'],
+    });
 
     await expect(svc.resolve(req(), ORG_UID)).resolves.toEqual({ eligible: false, reason: 'no-verified-company-email' });
   });
@@ -246,18 +249,18 @@ describe('OrgEmployeeViewService.getRoleGrantEmployeeView', () => {
 
 describe('domain helpers', () => {
   it('normalizes a domain or URL to a bare host', () => {
-    expect(normalizeCompanyDomain('https://www.Acme.com/careers')).toBe('acme.com');
-    expect(normalizeCompanyDomain('acme.com/about')).toBe('acme.com');
+    expect(normalizeCompanyDomain('https://www.Acme-Motors.example/careers')).toBe('acme-motors.example');
+    expect(normalizeCompanyDomain('acme-motors.example/about')).toBe('acme-motors.example');
     expect(normalizeCompanyDomain('not a host')).toBeNull();
     expect(normalizeCompanyDomain('')).toBeNull();
     expect(normalizeCompanyDomain(null)).toBeNull();
   });
 
   it('matches on a whole label boundary only', () => {
-    expect(emailBelongsToCompanyDomain('a@acme.com', ['acme.com'])).toBe(true);
-    expect(emailBelongsToCompanyDomain('a@eng.acme.com', ['acme.com'])).toBe(true);
-    expect(emailBelongsToCompanyDomain('a@notacme.com', ['acme.com'])).toBe(false);
-    expect(emailBelongsToCompanyDomain('a@acme.com.evil.test', ['acme.com'])).toBe(false);
-    expect(emailBelongsToCompanyDomain('no-at-sign', ['acme.com'])).toBe(false);
+    expect(emailBelongsToCompanyDomain('a@acme-motors.example', ['acme-motors.example'])).toBe(true);
+    expect(emailBelongsToCompanyDomain('a@eng.acme-motors.example', ['acme-motors.example'])).toBe(true);
+    expect(emailBelongsToCompanyDomain('a@notacme-motors.example', ['acme-motors.example'])).toBe(false);
+    expect(emailBelongsToCompanyDomain('a@acme-motors.example.evil.test', ['acme-motors.example'])).toBe(false);
+    expect(emailBelongsToCompanyDomain('no-at-sign', ['acme-motors.example'])).toBe(false);
   });
 });

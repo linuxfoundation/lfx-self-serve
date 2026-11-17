@@ -48,10 +48,10 @@ describe('stripPersonalFields', () => {
 
   it('never mutates its input and passes primitives, null and dates through', () => {
     const date = new Date('2026-01-01');
-    const input = { email: 'a@b.co', date, none: null };
+    const input = { email: 'user@example.com', date, none: null };
 
     expect(stripPersonalFields(input, page)).toEqual({ date, none: null });
-    expect(input.email).toBe('a@b.co');
+    expect(input.email).toBe('user@example.com');
     expect(stripPersonalFields('text', page)).toBe('text');
     expect(stripPersonalFields(null, page)).toBeNull();
   });
@@ -77,12 +77,12 @@ describe('redactForEmployeeView', () => {
   it('strips in the employee view', () => {
     mocks.getOrgLensViewMode.mockReturnValue('employee');
 
-    expect(redactForEmployeeView(req, 'org', { email: 'a@b.co', n: 1 }, page)).toEqual({ n: 1 });
+    expect(redactForEmployeeView(req, 'org', { email: 'user@example.com', n: 1 }, page)).toEqual({ n: 1 });
   });
 
   it('returns the response untouched in the full view', () => {
     mocks.getOrgLensViewMode.mockReturnValue('full');
-    const data = { email: 'a@b.co', n: 1 };
+    const data = { email: 'user@example.com', n: 1 };
 
     expect(redactForEmployeeView(req, 'org', data, page)).toBe(data);
   });
