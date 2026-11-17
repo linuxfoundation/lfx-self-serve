@@ -53,6 +53,13 @@ vi.mock('../services/microservice-proxy.service', () => ({
 }));
 // #3136: the edit decision has its own unit spec; here only the route's wiring and mapping are asserted.
 vi.mock('../helpers/org-lens-edit-access.helper', () => ({ resolveOrgLensEdit }));
+
+// The all employee view's route guard is covered by its own spec; here only that the right routes mount it matters.
+let employeeViewStub = false;
+vi.mock('../middleware/block-employee-view.middleware', () => ({
+  blockEmployeeView: (_req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) =>
+    employeeViewStub ? res.status(403).json({ code: 'EMPLOYEE_VIEW_FORBIDDEN' }) : next(),
+}));
 // `isImpersonating` is needed because the LFXV2-3288 logo route now runs `blockDuringImpersonation`
 // before its raw body parser (mirrors profile.route.ts's picture-upload gate). A partial mock that
 // omitted it would make the middleware call `undefined(req)` and 500 every test in this file.
@@ -98,6 +105,7 @@ afterAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   impersonatingStub = false;
+  employeeViewStub = false;
   lfStaffStub = false;
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -391,5 +399,24 @@ describe('orgs router — POST /uid/:uid/logo', () => {
     expect(res.status).toBe(403);
     expect(proxyRequest).not.toHaveBeenCalled();
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+});
+
+describe('orgs router — Training & Certification in the all employee view', () => {
+  const learnerDrillDown = `/lens/training/groups/employees?groupBy=course&groupValue=x&tab=certifications&status=completed`;
+
+  it('answers 403 on the learner drill-down (it lists names) in the employee view', async () => {
+    employeeViewStub = true;
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}${learnerDrillDown}`);
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+  });
+
+  it('leaves the drill-down open to a full-view caller', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}${learnerDrillDown}`);
+
+    expect(res.status).not.toBe(403);
   });
 });

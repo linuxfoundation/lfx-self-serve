@@ -6,6 +6,7 @@ import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { OrgIdentityController } from '../controllers/org-identity.controller';
 import { MicroserviceError } from '../errors/microservice.error';
+import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 import { OrgLensAccessController } from '../controllers/org-lens-access.controller';
 import { OrgLensBoardCommitteeController } from '../controllers/org-lens-board-committee.controller';
@@ -195,7 +196,7 @@ function buildOrgsRouter(): Router {
   // Shared Training / Trainees view: one stats call, one options call, one group-by table + drawer.
   router.get('/:orgUid/lens/training/stats', (req, res, next) => orgLensTrainingController.getTrainingStats(req, res, next));
   router.get('/:orgUid/lens/training/filter-options', (req, res, next) => orgLensTrainingController.getFilterOptions(req, res, next));
-  router.get('/:orgUid/lens/training/groups/employees', (req, res, next) => orgLensTrainingController.getGroupEmployees(req, res, next));
+  router.get('/:orgUid/lens/training/groups/employees', blockEmployeeView, (req, res, next) => orgLensTrainingController.getGroupEmployees(req, res, next));
   router.get('/:orgUid/lens/training/groups', (req, res, next) => orgLensTrainingController.getGroups(req, res, next));
 
   // LFXV2-2014 — Org Lens Groups page (working groups / committees the org's employees participate in).
