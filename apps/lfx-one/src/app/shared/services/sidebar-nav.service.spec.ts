@@ -57,6 +57,7 @@ describe('SidebarNavService', () => {
   const selectedOrgUid = signal<string | null>(null);
   const orgWriterSet = signal(new Set<string>());
   const claManagerOrgSet = signal(new Set<string>());
+  const employeeViewOrgUids = signal<ReadonlySet<string>>(new Set());
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const activeProject = signal<{ uid: string; parent_uid?: string } | null>(null);
@@ -119,6 +120,7 @@ describe('SidebarNavService', () => {
     authenticated.set(false);
     writerGrantsResolved.set(true);
     grantsByScope.set(new Map());
+    employeeViewOrgUids.set(new Set());
     writerLookupFailed.set(false);
     retrySummary = vi.fn((): Observable<void> => of(undefined));
     refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
@@ -213,7 +215,7 @@ describe('SidebarNavService', () => {
             claManagerOrgSet,
             claManagerLookupFailed: signal(false),
             employeeViewOrgUid: signal<string | null>(null),
-            employeeViewOrgUids: signal<ReadonlySet<string>>(new Set()),
+            employeeViewOrgUids,
             fullAccessOrgUid: signal<string | null>(null),
             fullAccessOrgUids: signal<ReadonlySet<string>>(new Set()),
             noteEmployeeViewAddressed: vi.fn(),
@@ -644,6 +646,19 @@ describe('SidebarNavService', () => {
     selectedOrgUid.set('0014100000MgaAAAAA');
 
     expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Company Profile');
+  });
+
+  // Epic #5845 (#5858): the all employee view hides the company Profile page entirely.
+  it('drops Company Profile in the all employee view, and keeps it for a caller who holds a grant', () => {
+    activeLens.set('org');
+    selectedOrgUid.set('0014100000MgaAAAAA');
+    employeeViewOrgUids.set(new Set(['0014100000MgaAAAAA']));
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Company Profile');
+
+    orgWriterSet.set(new Set(['0014100000MgaAAAAA']));
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toContain('Company Profile');
+    orgWriterSet.set(new Set());
   });
 
   it('places EasyCLA as a top-level item directly before Company Profile, under the org-admin divider', () => {

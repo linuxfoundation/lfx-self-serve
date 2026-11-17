@@ -39,6 +39,7 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
@@ -261,7 +262,7 @@ function orgLensPageRoutes(): Routes {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
       // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       loadComponent: loadOrgProfilePage,
     },
   ]);

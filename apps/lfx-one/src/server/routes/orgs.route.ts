@@ -22,6 +22,8 @@ import { OrgLensProjectsController } from '../controllers/org-lens-projects.cont
 import { OrgLensRoiController } from '../controllers/org-lens-roi.controller';
 import { OrgLensGroupsController } from '../controllers/org-lens-groups.controller';
 import { OrgLensTrainingController } from '../controllers/org-lens-training.controller';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
+import { blockEmployeeView } from '../middleware/block-employee-view.middleware';
 import { requireOrgLensAccess } from '../middleware/require-org-lens-access.middleware';
 import { requireOrgLensRoiAudience } from '../middleware/require-org-lens-roi-audience.middleware';
 
@@ -43,6 +45,22 @@ function handleLogoUploadParseError(err: unknown, req: Request, _res: Response, 
     return;
   }
   next(err);
+}
+
+/**
+ * Epic #5845 (#5858) — the company Profile page is hidden in the all employee view, and its API (the canonical record
+ * read and edit, the addresses read, the logo upload) lives outside `/:orgUid/lens`, keyed `:uid` / `:id`. This adapts
+ * those params to `blockEmployeeView`, which reads `:orgUid`. A no-op while the rollout flag is off, so these routes
+ * behave exactly as before until the view is switched on; with it on, a caller the read gate refuses gets that gate's
+ * 403/503 instead of reaching member-service.
+ */
+function blockEmployeeViewOnOrgRecord(req: Request, res: Response, next: NextFunction): void {
+  if (!isServerFeatureEnabled(ServerFeatureFlag.OrgLensEmployeeView)) {
+    next();
+    return;
+  }
+  req.params['orgUid'] = req.params['uid'] ?? req.params['id'] ?? '';
+  void blockEmployeeView(req, res, next);
 }
 
 function buildOrgsRouter(): Router {
@@ -67,14 +85,14 @@ function buildOrgsRouter(): Router {
   // Spec 020 — org-selector identity & role-grants endpoints.
   router.get('/me/role-grants', (req, res, next) => orgIdentityController.getRoleGrants(req, res, next));
   router.get('/me/roll-up-set', (req, res, next) => orgIdentityController.getRollUpSet(req, res, next));
-  router.get('/uid/:uid', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
+  router.get('/uid/:uid', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   // Spec 050 — Org Lens address-segment resolver (slug or SFID → org the caller can read). Auth-only:
   // per-row FGA is applied upstream by query-service with the caller's context (contracts/
   // bff-org-slug-transport.md §3, DR-002). Do NOT mount `require-auditor.middleware.ts` here — that is
   // the root-scoped, staff-only Formations-queue guard. Declared before `/:orgUid/lens` on purpose.
   router.get('/resolve/:segment', (req, res, next) => orgIdentityController.resolveSegment(req, res, next));
-  router.put('/uid/:uid', (req, res, next) => orgIdentityController.updateOrg(req, res, next));
-  router.get('/uid/:uid/addresses', (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
+  router.put('/uid/:uid', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.updateOrg(req, res, next));
+  router.get('/uid/:uid/addresses', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.getOrgAddresses(req, res, next));
   // LFXV2-3288 — Org logo upload proxy. Body is the raw image bytes (not multipart), forwarded as-is
   // to member-service's `POST /b2b_orgs/{uid}/logo`.
   //
@@ -85,6 +103,7 @@ function buildOrgsRouter(): Router {
   // own contract (`impersonation-readonly.middleware.ts`). Reads (GET canonical) remain available.
   router.post(
     '/uid/:uid/logo',
+    blockEmployeeViewOnOrgRecord,
     blockDuringImpersonation,
     express.raw({ type: [...ALLOWED_ORG_LOGO_MIME_TYPES], limit: MAX_ORG_LOGO_SIZE_BYTES }),
     handleLogoUploadParseError,
@@ -261,7 +280,7 @@ function buildOrgsRouter(): Router {
   );
 
   // Must stay last so specific /uid and /:orgUid/lens routes match first.
-  router.get('/:id', (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
+  router.get('/:id', blockEmployeeViewOnOrgRecord, (req, res, next) => orgIdentityController.getCanonicalRecord(req, res, next));
   return router;
 }
 

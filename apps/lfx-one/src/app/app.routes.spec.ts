@@ -22,6 +22,7 @@ import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { meetupsLensGuard } from './shared/guards/meetups-lens.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
+import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
@@ -370,5 +371,23 @@ describe('Org Lens roll-up routes', () => {
       expect(await visitBareOrg(true, { path: '', pathMatch: 'full', redirectTo: 'overview' })).toBe('Roll-up unavailable');
       expect(TestBed.inject(Router).url).toBe('/company/overview');
     });
+  });
+});
+
+// Epic #5845 (#5858): the company Profile page redirects to Overview in the all employee view. The redirect itself is
+// `orgLensFullViewOnlyGuard`'s own spec; this pins that both mounts of the page carry it beside the roll-up redirect.
+describe('Org Lens Profile route in the all employee view', () => {
+  const org = shellRoute.children!.find((route) => route.path === ORG_LENS_URL_ROOT)!;
+  const addressed = org.children!.find((route) => route.path === `:${ORG_SEGMENT_PARAM}`)!;
+
+  it.each([
+    ['legacy', org.children!],
+    ['addressed', addressed.children!],
+  ])('keeps the roll-up redirect and adds the full-view-only guard (%s mount)', (_mount, children) => {
+    const profile = children.find((route) => route.path === 'profile')!;
+
+    expect(profile.canActivate).toHaveLength(2);
+    expect(profile.canActivate![0]).toBe(orgRollUpSingleOrgPageGuard);
+    expect(typeof profile.canActivate![1]).toBe('function');
   });
 });
