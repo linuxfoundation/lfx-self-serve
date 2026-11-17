@@ -6,6 +6,7 @@ import {
   ORG_EASYCLA_LEGACY_RETURN_ORG_PARAM,
   ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_LENS_LEGACY_URL_ALIAS_ROOT,
   ORG_LENS_LEGACY_URL_ROOT,
   ORG_LENS_LEGACY_URL_ROOTS,
   ORG_LENS_PAGE_SEGMENTS,
@@ -222,8 +223,100 @@ export function companyLensRedirectTarget(pathAndQuery: string): string | null {
     return null;
   }
   const rest = path.slice(legacyRoot.length);
+  if (legacyRoot === `/${ORG_LENS_LEGACY_URL_ALIAS_ROOT}`) {
+    return legacyOrganizationRedirectTarget(rest, query);
+  }
   return `/${ORG_LENS_URL_ROOT}${rest}${isEasyclaAddress(rest) ? renameLegacyEasyclaOrgParam(query) : query}`;
 }
+
+/** Where a pre-rename myOrg page lands in Company Lens: the page path below the company, and the `utm_content` key it is counted under. */
+interface LegacyOrganizationPage {
+  path: string;
+  content: string;
+}
+
+/**
+ * Maps the page part of `/organization/{company}/{page}` — the Organization Dashboard (myOrg) route — to its Company Lens
+ * page, following the route map in lfx-self-serve-ops#1511. Pages Company Lens already has under the same name
+ * (`easycla`, `people`, `profile`, …) pass through untagged. A myOrg page with no Company Lens page (software inventory,
+ * OSPO resources, travel funding) and any unknown page land on the company's Overview, counted under its own key.
+ * Deep links that need a lookup (a project-group id to a foundation slug) land on Memberships.
+ */
+function mapLegacyOrganizationPage(parts: string[]): LegacyOrganizationPage | null {
+  const [first = '', second = '', third = ''] = parts.map((part) => part.toLowerCase());
+  const page = (path: string, content: string, extraQuery = ''): LegacyOrganizationPage => ({ path: `${path}${extraQuery}`, content });
+  switch (first) {
+    case '':
+    case 'dashboard':
+    case 'home':
+      return page('/overview', 'home');
+    case 'key-projects':
+      if (!second) return page('/projects', 'key-projects');
+      if (third === 'leaderboards') return page(`/projects/${parts[1]}`, 'key-project-leaderboards', '?tab=pd-leaderboards');
+      return page(`/projects/${parts[1]}`, 'key-project');
+    case 'membership-summary':
+      return page('/memberships', second === 'expired' ? 'membership-expired' : second === 'recommended' ? 'membership-discover' : 'membership');
+    case 'project':
+      if (second === 'project-group-membership') return page('/memberships', 'join-membership');
+      if (second === 'project-group' && parts[3]?.toLowerCase() === 'membership-onboarding') return page('/memberships', 'membership-detail');
+      return page('/memberships', 'project');
+    case 'project-contributions':
+      return page('/contributions', 'code-contributions');
+    case 'events':
+      if (second === 'sponsorships') return page('/events', 'events-sponsorships');
+      if (second === 'travel-funding') return page('/overview', 'events-travel-funding');
+      if (!second || second === 'overview') return page('/events', 'events');
+      return null;
+    case 'training-and-certification':
+      return page('/training', 'training');
+    case 'users':
+      return page('/people', second === 'employees' && third === 'invite' ? 'access-invite' : 'access', '?tab=access');
+    case 'profile':
+      return page('/profile', second === 'edit' ? 'profile-edit' : 'profile');
+    case 'software-inventory':
+      return page('/overview', second === 'manage' ? 'software-inventory-manage' : 'software-inventory');
+    case 'ospo-resources':
+      return page('/overview', 'ospo-resources');
+    default:
+      return null;
+  }
+}
+
+/**
+ * `/organization/{company}[/{page}…]` → `/company/{company}/{page}`, with the old myOrg page names translated and the
+ * closing-day tags (`utm_source=myorg-redirect&utm_content={page}`, lfx-self-serve-ops#1511 DD-19) set on a translated
+ * page. A page Company Lens already has passes through unchanged and untagged. The old URL's own query and every
+ * other parameter travel along; the three tag parameters are replaced, never duplicated.
+ */
+function legacyOrganizationRedirectTarget(rest: string, query: string): string {
+  const [, company = '', ...parts] = rest.split('/');
+  if (!company) {
+    return `/${ORG_LENS_URL_ROOT}${query}`;
+  }
+  const base = `/${ORG_LENS_URL_ROOT}/${company}`;
+  if (company.toLowerCase() === 'not-found' && parts.length === 0) {
+    return `${base}${query}`;
+  }
+  const trailing = parts[parts.length - 1] === '' ? parts.slice(0, -1) : parts;
+  const firstPage = trailing[0]?.toLowerCase() ?? '';
+  const sameName =
+    ORG_LENS_PAGE_SEGMENTS[firstPage] === true && !(firstPage === 'events' && trailing.length > 1) && !(firstPage === 'profile' && trailing.length > 1);
+  if (sameName) {
+    return `${base}/${trailing.join('/')}${isEasyclaAddress(`/${company}/${trailing.join('/')}`) ? renameLegacyEasyclaOrgParam(query) : query}`;
+  }
+  const target = mapLegacyOrganizationPage(trailing) ?? { path: '/overview', content: 'unknown' };
+  const [targetPath, targetQuery = ''] = target.path.split('?');
+  const pairs = [
+    ...(query ? query.slice(1).split('&') : []).filter((pair) => !LEGACY_TAG_PARAMS.includes(pair.split('=')[0])),
+    ...(targetQuery ? [targetQuery] : []),
+    `utm_source=myorg-redirect`,
+    `utm_content=${target.content}`,
+  ];
+  return `${base}${targetPath}?${pairs.join('&')}`;
+}
+
+/** Tracking parameters the legacy-organization redirect owns (DD-19): it sets each, replacing any value the old URL carried. */
+const LEGACY_TAG_PARAMS: readonly string[] = ['utm_source', 'utm_content', 'utm_term'];
 
 /** True for `/easycla…` (leftover mount) and `/{segment}/easycla…` (addressed mount) once the root is stripped. */
 function isEasyclaAddress(rest: string): boolean {
