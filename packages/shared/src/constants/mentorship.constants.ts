@@ -460,10 +460,10 @@ export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MIN_SEARCH_LENGTH = 2;
 /** Longest trimmed search `POST .../mentor-candidates` accepts: the longest valid email address. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH = 254;
 
-/** Helper text under the Mentors tab invite search. */
-export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_HELP_TEXT = 'Search by name, LF username, or full email address.';
-
-/** Shown when a full-email search finds no one: that address has no LF account. */
+/**
+ * The toast for an invite upstream refuses with a 422 and no known reason (an LF username with no account). A full-email
+ * search that finds no one shows `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE` and offers an email invite.
+ */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE =
   'No LF account found. Ask them to create one at sso.linuxfoundation.org, then invite them by email or username.';
 
@@ -484,6 +484,46 @@ export const MENTORSHIP_ADMIN_MENTOR_INVITE_REFUSED_REASONS: readonly Mentorship
  */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE =
   'No one matches that search. Name search only finds people already in Mentorship; try their exact LF username or full email address.';
+
+/** Shown in the Invite a mentor dialog when a full-email search finds no one: no LF account uses the address. */
+export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_EMAIL_INVITE_MESSAGE = 'No LF account uses this email';
+
+/** The Mentors tab button that opens the Invite a mentor dialog. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_BUTTON_LABEL = 'Invite mentor';
+
+/** Header of the Invite a mentor dialog. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_HEADER = 'Invite a mentor';
+
+/** Under the Invite a mentor dialog's header: the two ways to invite. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_DIALOG_SUBTITLE = 'Search LF users, or enter an email to invite someone new.';
+
+/** Placeholder of the Invite a mentor dialog's search. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEARCH_PLACEHOLDER = 'Name, LFID or email';
+
+/** The Invite a mentor dialog's empty state, before a search of at least two characters. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_PROMPT = 'Start typing a name, LFID or email.';
+
+/** The steps the invitation email lists, in order; the Invite a mentor dialog shows the same ones for an email invite. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_STEPS: readonly string[] = [
+  'Create an LF account with this email',
+  'Set up a mentor profile',
+  'Accept the invitation',
+];
+
+/** Send button of the Invite a mentor dialog with an LF user picked. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_SEND_LABEL = 'Send invite';
+
+/** Send button of the Invite a mentor dialog when it offers an email with no LF account. */
+export const MENTORSHIP_ADMIN_MENTOR_EMAIL_INVITE_SEND_LABEL = 'Send email invite';
+
+/** Shown once an invitation is sent to an email address with no LF account. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITED_BY_EMAIL_MESSAGE = 'Invitation sent. They need to create an LF account with this email address to accept it.';
+
+/** Under the address of a Mentors tab row invited by email: the invitee has no LF account yet. */
+export const MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL = 'Awaiting LF account';
+
+/** Longest email address the BFF forwards on an invite. */
+export const MENTORSHIP_ADMIN_MENTOR_INVITE_EMAIL_MAX_LENGTH = 254;
 
 /** Shown, without a request, when a pasted search is longer than `MENTORSHIP_ADMIN_MENTOR_CANDIDATES_MAX_SEARCH_LENGTH`. */
 export const MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE = 'That search is too long. Use at most 254 characters.';

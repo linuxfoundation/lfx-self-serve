@@ -1,15 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output, OutputEmitterRef, signal } from '@angular/core';
+import { Component, model, output, OutputEmitterRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
 import { HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
+import { UiOptionComponent } from '@shared/uikit/select/option.component';
+import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
+import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HealthMetricsL2SectionControlsDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section-controls.directive';
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
@@ -26,6 +31,7 @@ import type {
 // in HttpClient and the analytics read.
 @Component({ selector: 'lfx-engagement-group-attendance', template: '' })
 class GroupAttendanceStubComponent {
+  public readonly groupType = model<string>('all');
   public readonly countsChange = output<HealthMetricsEngagementGroupNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
@@ -49,6 +55,7 @@ class AttendanceTrendStubComponent {
 // Same stand-in for Organization participation.
 @Component({ selector: 'lfx-engagement-org-participation', template: '' })
 class OrgParticipationStubComponent {
+  public readonly filter = model<string>('all');
   public readonly countsChange = output<HealthMetricsEngagementOrgNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
@@ -57,6 +64,7 @@ class OrgParticipationStubComponent {
 // Same stand-in for Representatives.
 @Component({ selector: 'lfx-engagement-representatives', template: '' })
 class RepresentativesStubComponent {
+  public readonly filter = model<string>('all');
   public readonly countsChange = output<HealthMetricsEngagementRepNoteCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<boolean | null>();
@@ -157,7 +165,7 @@ describe('HealthMetricsEngagementComponent', () => {
       providers: [
         HealthMetricsChromeService,
         { provide: UserService, useValue: { impersonating: signal(false) } },
-        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
+        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable(), snapshot: { queryParamMap: convertToParamMap({ repFilter: 'never' }) } } },
       ],
     })
       .overrideComponent(HealthMetricsEngagementComponent, {
@@ -165,6 +173,7 @@ describe('HealthMetricsEngagementComponent', () => {
           imports: [
             AttendanceTrendStubComponent,
             GroupAttendanceStubComponent,
+            HealthMetricsL2SectionControlsDirective,
             HealthMetricsL2SectionDirective,
             HealthMetricsL2ShellComponent,
             MeetingParticipationStubComponent,
@@ -173,6 +182,10 @@ describe('HealthMetricsEngagementComponent', () => {
             NonMemberParticipationStubComponent,
             OrgParticipationStubComponent,
             RepresentativesStubComponent,
+            UiOptionComponent,
+            UiSelectComponent,
+            UiSwitchComponent,
+            UiSwitchOptionComponent,
           ],
         },
       })
@@ -198,12 +211,51 @@ describe('HealthMetricsEngagementComponent', () => {
     }
   });
 
-  // The design drops every plain footnote; only the non-member caution is left, as a warning note.
-  it('carries a note on the non-member section only, as a caution', () => {
-    const noted = HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => 'note' in section).map((section) => [section.key, section.note.tone]);
+  it('puts the Group type select in the Group attendance header and binds its type into the section', async () => {
+    const controls = fixture.nativeElement.querySelector('[data-testid="engagement-controls-committees"]');
+    const select = controls?.querySelector('[data-testid="engagement-group-attendance-type"]');
+    expect(select).not.toBeNull();
+    expect(select.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Group type');
 
-    expect(noted).toEqual([['nonmem', 'caution']]);
-    expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
+    const page = fixture.componentInstance as unknown as { onGroupTypeChange: (value: string | null) => void };
+    const stub = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
+    page.onGroupTypeChange('wg');
+    fixture.detectChanges();
+    expect(stub.groupType()).toBe('wg');
+
+    // The section's Reset filters writes back through the two-way binding.
+    stub.groupType.set('all');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['groupType']()).toBe('all');
+  });
+
+  // The design drops every footnote; the non-member caution moves above its table, inside that section.
+  it('carries no section note', () => {
+    expect(HEALTH_METRICS_ENGAGEMENT_SECTIONS.filter((section) => 'note' in section)).toEqual([]);
+  });
+
+  it('puts the activity and representative switches in their section headers, bound into each section', () => {
+    const orgSwitch = fixture.nativeElement.querySelector('[data-testid="engagement-controls-orgs"] [data-testid="engagement-org-participation-filter"]');
+    const repSwitch = fixture.nativeElement.querySelector('[data-testid="engagement-controls-reps"] [data-testid="engagement-representatives-filter"]');
+    expect(orgSwitch?.textContent).toContain('No activity in 180 days');
+    expect(repSwitch?.textContent).toContain('Never attended');
+    expect(repSwitch?.textContent).toContain('Lapsed');
+
+    const org = fixture.debugElement.query(By.directive(OrgParticipationStubComponent)).componentInstance as OrgParticipationStubComponent;
+    const reps = fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
+    // The page reads the URL's cut on arrival and binds it in.
+    expect(reps.filter()).toBe('never');
+    expect(org.filter()).toBe('all');
+
+    const page = fixture.componentInstance as unknown as { onOrgFilterChange: (value: string | null) => void };
+    page.onOrgFilterChange('lapsed');
+    fixture.detectChanges();
+    expect(org.filter()).toBe('lapsed');
+
+    // A section's Reset filters writes back through the two-way binding.
+    reps.filter.set('all');
+    fixture.detectChanges();
+    expect(fixture.componentInstance['repFilter']()).toBe('all');
   });
 
   it('starts with the first section active and no note before any section reports', () => {

@@ -84,14 +84,16 @@
               </td>
               <td class="py-3 px-4 text-gray-500">{{ ml.type | mailingListType }}</td>
               @if (syncEnabled()) {
-                @let disabledReason = ml | mailingListDirectionDisabledReason: selectedMailingListUids() : activeAutoSyncUid() : mailingLists;
+                @let disabledReason = ml | mailingListDirectionDisabledReason: selectedMailingListUids() : directionConflicts()[ml.uid] : mailingLists;
+                @let rowOptions = directionOptions | mailingListDirectionOptions: directionConflicts()[ml.uid];
                 <td class="py-3 px-4" data-testid="settings-ml-picker-direction-cell" (click)="$event.stopPropagation()" (keydown)="$event.stopPropagation()">
                   <lfx-select
                     [form]="mlDirectionForm"
                     [control]="ml.uid"
-                    [options]="directionOptions"
+                    [options]="rowOptions"
                     optionLabel="label"
                     optionValue="value"
+                    optionDisabled="disabled"
                     size="small"
                     styleClass="w-full !text-[12px]"
                     [tooltip]="disabledReason"
@@ -156,10 +158,10 @@
     }
   </div>
 
-  @if (syncEnabled() && activeAutoSyncUid()) {
+  @if (syncEnabled() && activeMlToCList(); as activeMlToC) {
     <p class="text-[11.5px] text-gray-400 -mt-2">
-      Only one mailing list per {{ committeeLabel.singular.toLowerCase() }} can have automatic sync configured at a time — set it back to Manual before choosing
-      a direction for another list.
+      <strong>{{ activeMlToC.title || activeMlToC.group_name }}</strong> already syncs Mailing List → {{ committeeLabel.singular }}. Only one list can sync in
+      that direction at a time, and no other list can sync while it's active.
     </p>
   }
 </div>

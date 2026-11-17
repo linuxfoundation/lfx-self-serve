@@ -83,3 +83,27 @@ export function parseGithubUrlTarget(githubUrl: string): GithubUrlTarget | null 
   }
   return { kind: 'repository', owner, repo };
 }
+
+/**
+ * Normalizes a warehouse `github_username` value to a bare handle: `@handle` and `handle` stay `handle`, and a
+ * `github.com/<handle>` URL yields `<handle>`. Returns null for a blank value or a URL on another host.
+ */
+export function parseGithubUsername(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed.includes('/')) {
+    return trimmed.replace(/^@/, '') || null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  if (!GITHUB_HOSTS.has(parsed.hostname.toLowerCase())) {
+    return null;
+  }
+  return parsed.pathname.split('/').filter(Boolean)[0] ?? null;
+}

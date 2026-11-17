@@ -43,6 +43,10 @@ test.describe('Program review — program details', () => {
     await expect(page.getByTestId('mentorship-program-review-title')).toHaveText('Test Program', { timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-program-review-status')).toContainText('Pending review');
     await expect(page.getByTestId('mentorship-program-review-project')).toContainText('Test Foundation');
+    await expect(page.getByTestId('mentorship-program-meta-date')).toContainText('Submitted');
+    await expect(page.getByTestId('mentorship-program-meta-date')).toContainText('Sep 15, 2026');
+    await expect(page.getByTestId('mentorship-program-meta-admin-name')).toHaveText('Test Admin');
+    await expect(page.getByTestId('mentorship-program-meta-admin-email')).toHaveAttribute('href', 'mailto:test.admin@example.org');
     await expect(page.getByTestId('mentorship-program-review-description')).toContainText('Learn the codebase.');
     await expect(page.getByTestId('mentorship-program-review-skills-count')).toContainText('2 skills');
     await expect(page.getByTestId('mentorship-program-review-repo-link')).toHaveAttribute('href', 'https://github.com/test-org/test-repo');

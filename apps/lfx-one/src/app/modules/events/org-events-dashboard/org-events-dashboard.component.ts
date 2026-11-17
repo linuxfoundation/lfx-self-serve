@@ -5,7 +5,6 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { MessageService } from 'primeng/api';
 import { InputTextModule } from 'primeng/inputtext';
 import { SelectModule } from 'primeng/select';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -102,7 +101,6 @@ export class OrgEventsDashboardComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly eventsService = inject(EventsService);
-  private readonly messageService = inject(MessageService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
 
   // === Public injections ===
@@ -140,6 +138,10 @@ export class OrgEventsDashboardComponent {
   public readonly pastEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   public readonly pastSortField = signal('EVENT_START_DATE');
   public readonly pastSortOrder = signal<'ASC' | 'DESC'>('DESC');
+  public readonly summaryLoadFailed = signal(false);
+  public readonly upcomingLoadFailed = signal(false);
+  public readonly pastLoadFailed = signal(false);
+  private readonly retryCount = signal(0);
 
   // === Computed / toSignal ===
   // Debounced search feeds the server-side query so typing doesn't fire a request per keystroke.
@@ -207,8 +209,8 @@ export class OrgEventsDashboardComponent {
     sortField: this.upcomingSortField,
     sortOrder: this.upcomingSortOrder,
     loading: this.upcomingEventsLoading,
+    loadFailed: this.upcomingLoadFailed,
     isPast: false,
-    errorDetail: 'Failed to load upcoming events. Please try again.',
   });
   public readonly pastEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({
     tab: 'past',
@@ -216,8 +218,8 @@ export class OrgEventsDashboardComponent {
     sortField: this.pastSortField,
     sortOrder: this.pastSortOrder,
     loading: this.pastEventsLoading,
+    loadFailed: this.pastLoadFailed,
     isPast: true,
-    errorDetail: 'Failed to load past events. Please try again.',
   });
   public readonly tabPillOptions = computed<FilterPillOption[]>(() => {
     const summary = this.eventsSummary();
@@ -252,8 +254,7 @@ export class OrgEventsDashboardComponent {
         else control.disable({ emitEvent: false });
       });
 
-    // A foundation the options no longer offer (another "Show") is cleared once the options have loaded. An empty
-    // list proves nothing: the BFF answers an upstream failure with no options, so the pick is left alone.
+    // A foundation the options no longer offer (another "Show") is cleared once the options have loaded.
     toObservable(this.foundationsResponse)
       .pipe(
         filter((response): response is OrgEventFoundationsResponse => response !== null),
@@ -316,6 +317,10 @@ export class OrgEventsDashboardComponent {
     this.speakersDrawerVisible.set(true);
   }
 
+  public retryLoad(): void {
+    this.retryCount.update((count) => count + 1);
+  }
+
   public onUpcomingPageChange(event: PageChangeEvent): void {
     this.upcomingEventsLoading.set(true);
     this.upcomingEventsPage.set(event);
@@ -361,13 +366,23 @@ export class OrgEventsDashboardComponent {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
+        this.retryCount();
         return accountId ? { accountId, ...this.tileFilters() } : null;
       })
     );
     return toSignal(
       query$.pipe(
         filter((query): query is NonNullable<typeof query> => query !== null),
-        switchMap(({ accountId, ...params }) => this.eventsService.getOrgEventsSummary(accountId, params).pipe(catchError(() => of(null))))
+        tap(() => this.summaryLoadFailed.set(false)),
+        switchMap(({ accountId, ...params }) =>
+          this.eventsService.getOrgEventsSummary(accountId, params).pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to load the events summary', error);
+              this.summaryLoadFailed.set(true);
+              return of(null);
+            })
+          )
+        )
       ),
       { initialValue: null }
     );
@@ -378,13 +393,21 @@ export class OrgEventsDashboardComponent {
     const query$ = toObservable(
       computed(() => {
         const accountId = this.contentVisible() ? this.accountContext.selectedAccount().accountId : null;
-        return accountId ? { accountId, eventScope: this.scope() } : null;
+        const retry = this.retryCount();
+        return accountId ? { accountId, eventScope: this.scope(), retry } : null;
       })
-    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope));
+    ).pipe(distinctUntilChanged((a, b) => a?.accountId === b?.accountId && a?.eventScope === b?.eventScope && a?.retry === b?.retry));
     return toSignal(
       query$.pipe(
         filter((query): query is NonNullable<typeof query> => query !== null),
-        switchMap(({ accountId, ...params }) => this.eventsService.getOrgEventFoundations(accountId, params).pipe(catchError(() => of(null))))
+        switchMap(({ accountId, eventScope }) =>
+          this.eventsService.getOrgEventFoundations(accountId, { eventScope }).pipe(
+            catchError((error: unknown) => {
+              console.error('Failed to load the event foundations', error);
+              return of(null);
+            })
+          )
+        )
       ),
       { initialValue: null }
     );
@@ -397,16 +420,17 @@ export class OrgEventsDashboardComponent {
     sortField: Signal<string>;
     sortOrder: Signal<'ASC' | 'DESC'>;
     loading: WritableSignal<boolean>;
+    loadFailed: WritableSignal<boolean>;
     isPast: boolean;
-    errorDetail: string;
   }): Signal<OrgEventsResponse> {
-    const { tab, page, sortField, sortOrder, loading, isPast, errorDetail } = opts;
+    const { tab, page, sortField, sortOrder, loading, loadFailed, isPast } = opts;
     return toSignal(
       toObservable(
         computed(() => {
           if (this.activeTab() !== tab) return null;
           const accountId = this.accountContext.selectedAccount().accountId;
           if (!accountId || !this.contentVisible()) return null;
+          this.retryCount();
           return {
             accountId,
             ...page(),
@@ -424,15 +448,15 @@ export class OrgEventsDashboardComponent {
       ).pipe(
         debounceTime(0),
         filter((params): params is NonNullable<typeof params> => params !== null),
-        tap(() => loading.set(true)),
+        tap(() => {
+          loading.set(true);
+          loadFailed.set(false);
+        }),
         switchMap(({ accountId, ...params }) =>
           this.eventsService.getOrgEvents(accountId, { ...params, isPast }).pipe(
-            catchError(() => {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: errorDetail,
-              });
+            catchError((error: unknown) => {
+              console.error(`Failed to load ${tab} events`, error);
+              loadFailed.set(true);
               const { pageSize, offset } = page();
               return of({ ...EMPTY_ORG_EVENTS_RESPONSE, pageSize, offset });
             }),

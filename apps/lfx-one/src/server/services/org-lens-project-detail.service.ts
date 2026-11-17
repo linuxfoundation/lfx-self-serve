@@ -446,7 +446,7 @@ export class OrgLensProjectDetailService {
       platformField: 'PR_PLATFORMS',
     },
     'avg-merge-time': {
-      text: "Average time from when a pull request is opened to when it is merged, for your organization's contributors.",
+      text: "Average time from when a pull request is opened to when it is merged, for your company's contributors.",
       totalType: 'average',
       columns: ['Repo', 'Our Contributors', 'PR Name', 'Date', 'Merge Time'],
       totalField: 'TECH_AVG_MERGE_TIME_SECONDS',
@@ -496,7 +496,7 @@ export class OrgLensProjectDetailService {
       ecoDataSource: 'LFX',
     },
     'event-sponsorships': {
-      text: 'Events where your organization sponsored, co-sponsored, or provided in-kind support.',
+      text: 'Events where your company sponsored, co-sponsored, or provided in-kind support.',
       totalType: 'count',
       columns: ['Event name', 'Date', 'Sponsorship level', 'Reach'],
       totalField: 'ECO_EVENT_SPONSORSHIPS_TOTAL',
@@ -2323,7 +2323,7 @@ export class OrgLensProjectDetailService {
         'Meeting Attendance',
         projectName,
         this.countCaption(meetings, { prefix: 'Our company has no meeting attendance for this project.', emphasis: '', suffix: '' }, (n) => ({
-          prefix: 'Org reps attended ',
+          prefix: 'Company reps attended ',
           emphasis: `${n}`,
           suffix: ` project ${this.plural(n, 'meeting', 'meetings')}.`,
         })),
@@ -2334,7 +2334,7 @@ export class OrgLensProjectDetailService {
         'board-members',
         'Board Members',
         foundation,
-        this.countCaption(board, { prefix: `Your organization holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }, (n) => ({
+        this.countCaption(board, { prefix: `Your company holds no board seats in ${foundation}.`, emphasis: '', suffix: '' }, (n) => ({
           prefix: 'Our company employs ',
           emphasis: `${n} board ${this.plural(n, 'member', 'members')}`,
           suffix: ` for ${foundation}.`,

@@ -30,6 +30,13 @@
               (onClick)="onRespond('accept')"
               data-testid="mentorship-mentor-invite-accept-button" />
           </div>
+          @if (!hasProfile()) {
+            <p class="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-gray-700" data-testid="mentorship-mentor-invite-profile-hint">
+              You don't have a mentor profile yet.
+              <a [routerLink]="profileRoute" class="font-medium text-blue-600 hover:text-blue-700 hover:underline">Create your mentor profile</a>
+              first so program admins and mentees can see who you are, then open this link again.
+            </p>
+          }
         </div>
       </lfx-card>
     } @else {
@@ -55,7 +62,7 @@
             <lfx-empty-state
               icon="fa-light fa-lock"
               title="This invitation is for a different account"
-              subtitle="Sign in with the LFX account the invitation email was sent to, then open the link again."
+              subtitle="Sign in with the LF account the invitation email was sent to. If it was sent to an email address, use the LF account that has that address. Then open the link again."
               ctaLabel="Back to Mentorship"
               [ctaRoute]="programsRoute" />
           }

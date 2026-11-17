@@ -349,7 +349,7 @@ export class OrgLensAccessService {
         originalError: decision.error instanceof Error ? decision.error : undefined,
       });
     }
-    throw new MicroserviceError('You do not have permission to manage Org Lens access for this organization.', 403, 'FORBIDDEN', {
+    throw new MicroserviceError('You do not have permission to manage Company Lens access for this company.', 403, 'FORBIDDEN', {
       operation,
       service: 'LFX_V2_MEMBER_SERVICE',
       path: `/b2b_orgs/${orgUid}/settings/users`,

@@ -7,9 +7,9 @@
     titleTestId="org-easycla-title"
     data-testid="org-easycla-header">
     <span pageHeaderDescription class="flex flex-col gap-1">
-      <span data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</span>
+      <span data-testid="org-easycla-subtitle">The corporate CLAs your company holds across Linux Foundation projects.</span>
       <a
-        href="/docs/organization/easycla"
+        href="/docs/company/easycla"
         target="_blank"
         rel="noopener noreferrer"
         class="self-start text-xs text-blue-600 hover:underline"
@@ -53,8 +53,8 @@
     <lfx-empty-state
       data-testid="org-easycla-no-company-empty-state"
       icon="fa-light fa-building"
-      title="No org selected"
-      subtitle="Select an organization to view its CLAs." />
+      title="No company selected"
+      subtitle="Select a company to view its CLAs." />
   } @else {
     @if (showToolbar()) {
       <!-- Survives both empty states on purpose: a viewer whose search matched nothing needs the
@@ -103,7 +103,7 @@
         data-testid="org-easycla-error-state"
         icon="fa-light fa-triangle-exclamation"
         title="We couldn't load your CLAs"
-        subtitle="Something went wrong fetching this organization's corporate CLAs. Refresh the page to try again." />
+        subtitle="Something went wrong fetching this company's corporate CLAs. Refresh the page to try again." />
     } @else if (showNoClasEmptyState()) {
       <lfx-empty-state
         data-testid="org-easycla-empty-state"

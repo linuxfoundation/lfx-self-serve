@@ -5,7 +5,7 @@
   <!-- Page Header -->
   <lfx-page-header
     [title]="companyName() && contentVisible() ? 'Events — ' + companyName() : 'Events'"
-    description="Your organization's event footprint across LF events."
+    description="Your company's event footprint across LF events."
     titleTestId="org-events-title"
     descriptionTestId="org-events-subtitle"
     data-testid="org-events-header">
@@ -98,6 +98,12 @@
           </div>
         </button>
       </div>
+      @if (summaryLoadFailed()) {
+        <p class="border-t border-gray-200 px-4 py-2 text-sm text-gray-500" role="status" data-testid="org-events-stat-error">
+          <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+          Event counts could not be loaded.
+        </p>
+      }
     </lfx-card>
 
     <!-- Events Card: tabs + search + table all in one -->
@@ -199,11 +205,13 @@
             <lfx-org-events-table
               [eventsResponse]="upcomingEvents()"
               [loading]="upcomingEventsLoading()"
+              [loadFailed]="upcomingLoadFailed()"
               [sortField]="upcomingSortField()"
               [sortOrder]="upcomingSortOrder()"
               [attendeesCaption]="upcomingAttendeesCaption()"
               (pageChange)="onUpcomingPageChange($event)"
               (sortChange)="onUpcomingSortChange($event)"
+              (retry)="retryLoad()"
               (attendeesClick)="onAttendeesClick($event)"
               (speakersClick)="onSpeakersClick($event)"
               data-testid="org-events-upcoming-table" />
@@ -215,15 +223,17 @@
             <lfx-org-events-table
               [eventsResponse]="pastEvents()"
               [loading]="pastEventsLoading()"
+              [loadFailed]="pastLoadFailed()"
               [sortField]="pastSortField()"
               [sortOrder]="pastSortOrder()"
               [attendeesCaption]="pastAttendeesCaption()"
               [showAction]="false"
               emptyStateTitle="No past events"
-              emptyStateSubtitle="No past events were found for your organization."
+              emptyStateSubtitle="No past events were found for your company."
               emptyStateIcon="fa-light fa-calendar-check"
               (pageChange)="onPastPageChange($event)"
               (sortChange)="onPastSortChange($event)"
+              (retry)="retryLoad()"
               (attendeesClick)="onAttendeesClick($event)"
               (speakersClick)="onSpeakersClick($event)"
               data-testid="org-events-past-table" />

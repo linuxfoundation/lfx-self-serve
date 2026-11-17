@@ -4,7 +4,7 @@ description: Frequently asked questions about joining, leaving, creating, and ma
 audience: [all]
 product_area: Mailing Lists
 tags: [mailing-lists, faq, join, leave, settings, subscribers, newsletters]
-last_updated: 2026-11-02
+last_updated: 2026-11-05
 intercom_collection: Mailing Lists
 ---
 
@@ -60,7 +60,7 @@ Open the list's page, select **Add Subscriber**, and fill in their name, email a
 
 ## Can I change a subscriber's name or email address?
 
-No. You can change a subscriber's title and organization, their delivery mode, and their role. To fix a wrong name or email address, remove the subscriber and add them again. See [Manage Subscribers](../manage-subscribers/).
+No. You can change a subscriber's title and company, their delivery mode, and their role. To fix a wrong name or email address, remove the subscriber and add them again. See [Manage Subscribers](../manage-subscribers/).
 
 ## What are Individual, Digest, and None?
 

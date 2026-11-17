@@ -100,7 +100,7 @@ When you open a newsletter, two counts sit to the left of it (above it on a smal
 
 If you aren't a member of any Newsletter group, the page says "No newsletters yet". Join a foundation or project's Newsletter group to see its newsletters.
 
-From a newsletter or a foundation card you can select **Invite a colleague** or **Invite** to invite a colleague to the foundation's newsletter. To send an invitation, you must be a member of the foundation's newsletter group and have a verified email at one of the member organizations named in the invite dialog. Your colleague's company email must also be at one of those member organizations.
+From a newsletter or a foundation card you can select **Invite a colleague** or **Invite** to invite a colleague to the foundation's newsletter. To send an invitation, you must be a member of the foundation's newsletter group and have a verified email at one of the member companies named in the invite dialog. Your colleague's company email must also be at one of those member companies.
 
 ### Reading without an LFX account
 

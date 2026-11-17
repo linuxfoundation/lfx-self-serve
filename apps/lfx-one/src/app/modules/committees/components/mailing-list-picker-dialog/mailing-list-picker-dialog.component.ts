@@ -19,7 +19,7 @@ import {
   MEMBER_ROLES,
 } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus, MailingListSyncMode } from '@lfx-one/shared/enums';
-import { GroupsIOMailingList, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, MailingListDirectionConflict, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
 import { getMailingListCommitteeSync, getMailingListEmail } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -31,6 +31,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { finalize, map, Observable, of, switchMap, take } from 'rxjs';
 
 import { MailingListDirectionDisabledReasonPipe } from '../../pipes/mailing-list-direction-disabled-reason.pipe';
+import { MailingListDirectionOptionsPipe } from '../../pipes/mailing-list-direction-options.pipe';
 import { MailingListEmailPipe } from '../../pipes/mailing-list-email.pipe';
 import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-list-type.pipe';
 
@@ -46,6 +47,7 @@ import { MailingListTypePipe } from '../committee-settings-tab/pipes/mailing-lis
     TagComponent,
     TooltipModule,
     MailingListDirectionDisabledReasonPipe,
+    MailingListDirectionOptionsPipe,
     MailingListEmailPipe,
     MailingListTypePipe,
   ],
@@ -105,23 +107,38 @@ export class MailingListPickerDialogComponent {
   public mlCommitteeFilterForm = new FormGroup<Record<string, FormControl<CommitteeMemberVotingStatus[]>>>({});
   public mlCommitteeRoleFilterForm = new FormGroup<Record<string, FormControl<string[]>>>({});
   // Mirrors mlDirectionForm's value, including disabled controls (`getRawValue()`), so
-  // activeAutoSyncUid can see a direction set on a list the user can't currently write (#4026).
+  // directionConflicts can see a direction set on a list the user can't currently write (#4026).
   public syncDirections = signal<Record<string, MailingListSyncMode>>({});
 
-  // Only one mailing list per committee may have an automatic direction configured at a time
-  // (matches MailingListSyncSettingsComponent's "only one auto direction per committee" rule) —
-  // resolves which *selected* list, if any, currently holds that slot, so every other row's
-  // direction control gets disabled until it's freed up.
-  public activeAutoSyncUid = computed<string | null>(() => {
+  // Matches the backend's asymmetric CheckSyncModeConflict rule (#5786): a selected list running
+  // Mailing List → Committee locks every other selected list out of BOTH auto directions, while a
+  // selected list running Committee → Mailing List only locks others out of Mailing List →
+  // Committee — multiple Committee → Mailing List lists are allowed per committee. Keyed per-uid
+  // (rather than a single "active" slot) so the picker's per-option disabling and the committee
+  // settings tab's drawer can each read the conflict for their own list.
+  public directionConflicts = computed<Record<string, MailingListDirectionConflict>>(() => {
     const dirs = this.syncDirections();
     const selected = this.selectedMailingListUids();
+    const mlToCUid = this.mailingLists.find((m) => selected.has(m.uid) && dirs[m.uid] === MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE)?.uid ?? null;
+    const cToMlUids = this.mailingLists
+      .filter((m) => selected.has(m.uid) && dirs[m.uid] === MailingListSyncMode.AUTO_COMMITTEE_TO_MAILING_LIST)
+      .map((m) => m.uid);
+
+    const result: Record<string, MailingListDirectionConflict> = {};
     for (const ml of this.mailingLists) {
-      const direction = dirs[ml.uid];
-      if (selected.has(ml.uid) && direction && direction !== MailingListSyncMode.MANUAL) {
-        return ml.uid;
-      }
+      result[ml.uid] = {
+        mlToCUid: mlToCUid && mlToCUid !== ml.uid ? mlToCUid : null,
+        cToMlUid: cToMlUids.find((uid) => uid !== ml.uid) ?? null,
+      };
     }
-    return null;
+    return result;
+  });
+
+  // Drives the footer helper note: the one list (if any) currently running Mailing List →
+  // Committee, which full-locks every other selected list out of both auto directions (#5786).
+  protected readonly activeMlToCList = computed<GroupsIOMailingList | null>(() => {
+    const uid = Object.values(this.directionConflicts()).find((c) => c.mlToCUid)?.mlToCUid ?? null;
+    return uid ? (this.mailingLists.find((m) => m.uid === uid) ?? null) : null;
   });
 
   public filteredMailingLists = computed(() => {
@@ -173,13 +190,14 @@ export class MailingListPickerDialogComponent {
     this.mlCommitteeFilterForm = new FormGroup(committeeFilterControls);
     this.mlCommitteeRoleFilterForm = new FormGroup(committeeRoleFilterControls);
 
-    // Keep each direction control's enabled state in sync with write access, link state, and the
-    // "only one auto direction per committee" rule. Uses emitEvent: false so this never feeds back
-    // into the valueChanges subscription above. The paired committee-filter controls (#4026
-    // criterion 3) follow the same enabled state, further gated on the row actually being in
-    // auto_c_to_ml mode — they're invisible otherwise, but disabling keeps getRawValue() consistent.
+    // Keep each direction control's enabled state in sync with write access and link state. Per-option
+    // disabling (via directionConflicts, #5786) handles the asymmetric auto-direction conflict rule, so
+    // this no longer disables the whole control just because another list has a direction set. Uses
+    // emitEvent: false so this never feeds back into the valueChanges subscription above. The paired
+    // committee-filter controls (#4026 criterion 3) follow the same enabled state, further gated on the
+    // row actually being in auto_c_to_ml mode — they're invisible otherwise, but disabling keeps
+    // getRawValue() consistent.
     effect(() => {
-      const activeUid = this.activeAutoSyncUid();
       const selected = this.selectedMailingListUids();
       const directions = this.syncDirections();
       for (const ml of this.mailingLists) {
@@ -187,7 +205,7 @@ export class MailingListPickerDialogComponent {
         const filterControl = this.mlCommitteeFilterForm.get(ml.uid);
         const roleFilterControl = this.mlCommitteeRoleFilterForm.get(ml.uid);
         if (!control) continue;
-        const shouldDisable = !this.canModify(ml) || !selected.has(ml.uid) || (activeUid !== null && activeUid !== ml.uid);
+        const shouldDisable = !this.canModify(ml) || !selected.has(ml.uid);
         if (shouldDisable && control.enabled) {
           control.disable({ emitEvent: false });
         } else if (!shouldDisable && control.disabled) {

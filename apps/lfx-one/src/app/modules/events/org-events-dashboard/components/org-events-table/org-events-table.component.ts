@@ -17,6 +17,7 @@ import type { OrgEvent, OrgEventRowVm, OrgEventsResponse, PageChangeEvent, SortC
 export class OrgEventsTableComponent {
   public readonly eventsResponse = input.required<OrgEventsResponse>();
   public readonly loading = input<boolean>(false);
+  public readonly loadFailed = input<boolean>(false);
   public readonly sortField = input<string>('EVENT_START_DATE');
   public readonly sortOrder = input<'ASC' | 'DESC'>('ASC');
   // Past tab (LFXV2-1900) drops the Action column; upcoming keeps it.
@@ -24,13 +25,14 @@ export class OrgEventsTableComponent {
   // What the Event Attendees number counts and who it is credited to (the shared caption phrases), as the column's tooltip.
   public readonly attendeesCaption = input<string>('');
   public readonly emptyStateTitle = input<string>('No upcoming events');
-  public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your organization.');
+  public readonly emptyStateSubtitle = input<string>('No upcoming events were found for your company.');
   public readonly emptyStateIcon = input<string>('fa-light fa-calendar-plus');
 
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<SortChangeEvent>();
   public readonly attendeesClick = output<OrgEvent>();
   public readonly speakersClick = output<OrgEvent>();
+  public readonly retry = output<void>();
 
   protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
 

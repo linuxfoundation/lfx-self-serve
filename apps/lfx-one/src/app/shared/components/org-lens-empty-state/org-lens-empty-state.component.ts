@@ -43,6 +43,12 @@ export class OrgLensEmptyStateComponent {
   public readonly testId = input.required<string>();
   /** True while the Retry this state offers is in flight — the control shows a spinner and cannot be re-fired. */
   public readonly retrying = input(false);
+  /**
+   * Router commands that replace a route primary's registry route, for a destination only the caller can
+   * address — the current selection's own page, which the environment-agnostic registry cannot name.
+   * Ignored when the primary is not a route.
+   */
+  public readonly primaryRoute = input<string[] | undefined>(undefined);
 
   public readonly retry = output<void>();
   public readonly resetFilters = output<void>();
@@ -117,7 +123,7 @@ export class OrgLensEmptyStateComponent {
   private interpolate(template: string): string {
     const values = this.values();
     // FR-017: an unheld organization is never named, whatever the caller passed.
-    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This organization' : values.orgName?.trim() || 'This organization';
+    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This company' : values.orgName?.trim() || 'This company';
     // #4314 — the caller's own employer. Falls back to the generic noun rather than leaving the token
     // visible, so a profile that answers late or blank still renders a sentence.
     const employerName = values.employerName?.trim() || 'your employer';

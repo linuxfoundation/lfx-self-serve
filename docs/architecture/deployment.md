@@ -115,6 +115,13 @@ absent, so a missing `dist-docs` copy fails the smoke test. A missing
 `pdf-templates` directory remains uncovered, since it's only touched by a
 different request path.
 
+In a running pod, the Kubernetes readiness probe (`/readyz`) additionally
+checks that the browser dist has the HTML shell, `main.js` and `styles.css`
+(content-hashed in production, staging and dev-cluster builds, and accepted
+either way). A pod missing them returns 503 and stays out of the Service
+endpoints, so a rollout stalls instead of replacing healthy pods. The smoke
+test above still polls `/livez`.
+
 ## Workflow Details
 
 ### Main branch — persistent dev deployment

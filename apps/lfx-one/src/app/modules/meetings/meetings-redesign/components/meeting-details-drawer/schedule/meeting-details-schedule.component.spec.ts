@@ -10,7 +10,7 @@ import { MeetingRsvpService } from '@services/meeting-rsvp.service';
 import { UserService } from '@services/user.service';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingsHomeJoinService } from '../../../services/meetings-home-join.service';
@@ -74,6 +74,9 @@ describe('MeetingDetailsScheduleComponent', () => {
   let meeting: WritableSignal<Meeting>;
   let source: { -readonly [K in keyof MeetingDetailsSource]?: MeetingDetailsSource[K] };
   let toastShow: ReturnType<typeof vi.fn>;
+  let shownRow: WritableSignal<MeetingHomeRow>;
+  let signedIn: WritableSignal<boolean>;
+  let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
 
   const render = async (): Promise<ComponentFixture<MeetingDetailsScheduleComponent>> => {
     const fixture = TestBed.createComponent(MeetingDetailsScheduleComponent);
@@ -95,13 +98,16 @@ describe('MeetingDetailsScheduleComponent', () => {
     meeting = signal(MEETING);
     source = { upcomingRows };
     toastShow = vi.fn();
+    shownRow = signal(ROW);
+    signedIn = signal(true);
+    getPublicMeetingJoinUrl = vi.fn(() => of({ link: 'https://zoom.example.test/j/9' }));
     TestBed.configureTestingModule({
       providers: [
         {
           provide: MeetingDetailsContext,
           useValue: {
             row: signal(ROW),
-            shownRow: signal(ROW),
+            shownRow,
             meeting,
             occurrence: signal(null),
             state,
@@ -109,16 +115,29 @@ describe('MeetingDetailsScheduleComponent', () => {
             organizer: signal(false),
             invited,
             markRegistered,
+            signedIn,
+            signIn: vi.fn(),
           },
         },
         { provide: MeetingDetailsSource, useValue: source },
         { provide: UiToastService, useValue: { show: toastShow } },
         { provide: MeetingsHomeJoinService, useValue: { joinLink: () => link } },
-        { provide: UserService, useValue: { authenticated: signal(true), user: signal({ name: 'Ada Lovelace', email: 'ada@example.test' }) } },
+        {
+          provide: UserService,
+          useValue: {
+            authenticated: signal(true),
+            user: signal({ name: 'Ada Lovelace', email: 'ada@example.test' }),
+            meetingJoinIdentity: signal({ name: 'Ada Lovelace', email: 'ada@example.test' }),
+          },
+        },
         { provide: UiModalService, useValue: { open } },
         {
           provide: MeetingService,
-          useValue: { removedRegistrationMeetingIds: signal(new Set()), getPublicMeetingOccurrences: vi.fn(() => of({ past: [], future: [] })) },
+          useValue: {
+            removedRegistrationMeetingIds: signal(new Set()),
+            getPublicMeetingJoinUrl,
+            getPublicMeetingOccurrences: vi.fn(() => of({ past: [], future: [] })),
+          },
         },
         { provide: MeetingRsvpService, useValue: { submittingMeetingIds: signal(new Set()) } },
       ],
@@ -132,6 +151,15 @@ describe('MeetingDetailsScheduleComponent', () => {
     expect(text(fixture, 'meeting-details-schedule-long-date')).toMatch(/^[A-Z][a-z]+day, Nov [56], 2026$/);
     expect(text(fixture, 'meeting-details-schedule-time')).toMatch(/· 30 min$/);
     expect(text(fixture, 'meeting-details-schedule-recurrence')).toBe('Weekly on Thursday, for 4 occurrences');
+  });
+
+  it("shows a passcode guest's copy without its date or the window note", async () => {
+    shownRow.set({ ...ROW, startTime: '' });
+    const fixture = await render();
+
+    expect(query(fixture, 'meeting-details-schedule-when')).toBeNull();
+    expect(query(fixture, 'meeting-details-schedule-join-window')).toBeNull();
+    expect(query(fixture, 'meeting-details-schedule-join')?.querySelector('button')?.disabled).toBe(true);
   });
 
   it('keeps Join off before its window and says when it opens', async () => {
@@ -212,9 +240,8 @@ describe('MeetingDetailsScheduleComponent', () => {
     expect(query(fixture, 'meeting-details-schedule-join')?.querySelector('button')?.getAttribute('aria-busy')).toBeNull();
   });
 
-  it('on a page, joins with another email in place', async () => {
-    const joinWithOtherEmail = vi.fn();
-    source.joinWithOtherEmail = joinWithOtherEmail;
+  it('on a page, joins with another email in place, with the viewer name filled in', async () => {
+    source.guestJoinInPlace = true;
     state.set('soon');
     link.set({ url: null, error: 'You are not registered for this meeting', code: 'NOT_REGISTERED_FOR_MEETING' });
     const fixture = await render();
@@ -222,7 +249,82 @@ describe('MeetingDetailsScheduleComponent', () => {
     const other = query(fixture, 'meeting-details-schedule-join-other-email');
     expect(other?.tagName).toBe('BUTTON');
     other?.click();
-    expect(joinWithOtherEmail).toHaveBeenCalled();
+    await fixture.whenStable();
+
+    expect(query(fixture, 'meeting-details-schedule-join')).toBeNull();
+    expect((query(fixture, 'meeting-details-guest-name')?.querySelector('input') as HTMLInputElement).value).toBe('Ada Lovelace');
+  });
+
+  describe('signed out', () => {
+    const settle = async (fixture: ComponentFixture<unknown>): Promise<void> => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await fixture.whenStable();
+    };
+    const type = (fixture: ComponentFixture<unknown>, testId: string, value: string): void => {
+      const input = query(fixture, testId)?.querySelector('input') as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+    };
+
+    beforeEach(() => signedIn.set(false));
+
+    it('offers Sign In and the guest form, closed until the join window', async () => {
+      const fixture = await render();
+      type(fixture, 'meeting-details-guest-name', 'Grace Hopper');
+      type(fixture, 'meeting-details-guest-email', 'grace@example.test');
+      await settle(fixture);
+
+      expect(query(fixture, 'meeting-details-schedule-sign-in')).not.toBeNull();
+      expect(text(fixture, 'meeting-details-guest-join')).toContain('Join as a guest');
+      expect(query(fixture, 'meeting-details-guest-join-button')?.querySelector('button')?.disabled).toBe(true);
+      expect(text(fixture, 'meeting-details-schedule-join-window')).toBe('You may only join the meeting up to 15 minutes before the start time.');
+      expect(query(fixture, 'meeting-details-schedule-register')).toBeNull();
+      expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
+    });
+
+    it('fetches the join link with the passcode once the form is valid, naming the guest in Zoom', async () => {
+      state.set('live');
+      const fixture = await render();
+      type(fixture, 'meeting-details-guest-name', 'Grace Hopper');
+      await settle(fixture);
+      expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
+
+      type(fixture, 'meeting-details-guest-email', 'grace@example.test');
+      type(fixture, 'meeting-details-guest-organization', 'Navy');
+      await settle(fixture);
+
+      expect(getPublicMeetingJoinUrl).toHaveBeenCalledTimes(1);
+      expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith('synthetic-meeting', 'pw', { email: 'grace@example.test' });
+      const href = query(fixture, 'meeting-details-guest-join-button')?.querySelector('a')?.getAttribute('href') ?? '';
+      expect(new URL(href).searchParams.get('uname')).toBe('Grace Hopper (Navy)');
+      expect(text(fixture, 'meeting-details-schedule-in-progress')).toBe('The meeting is in progress.');
+    });
+
+    it('keeps what the guest typed when the join window opens', async () => {
+      const fixture = await render();
+      type(fixture, 'meeting-details-guest-name', 'Grace Hopper');
+      type(fixture, 'meeting-details-guest-email', 'grace@example.test');
+      await settle(fixture);
+
+      state.set('soon');
+      await settle(fixture);
+
+      expect((query(fixture, 'meeting-details-guest-name')?.querySelector('input') as HTMLInputElement).value).toBe('Grace Hopper');
+      expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith('synthetic-meeting', 'pw', { email: 'grace@example.test' });
+    });
+
+    it('shows the server error under the form', async () => {
+      state.set('soon');
+      getPublicMeetingJoinUrl.mockReturnValue(throwError(() => ({ error: { error: 'Invalid password' } })));
+      const fixture = await render();
+      type(fixture, 'meeting-details-guest-name', 'Grace Hopper');
+      type(fixture, 'meeting-details-guest-email', 'grace@example.test');
+      await settle(fixture);
+
+      expect(text(fixture, 'meeting-details-guest-join-error')).toBe(
+        'Invalid password. Please contact the meeting organizer or support team if you believe this is an error.'
+      );
+    });
   });
 
   describe('opening Zoom as the page loads', () => {

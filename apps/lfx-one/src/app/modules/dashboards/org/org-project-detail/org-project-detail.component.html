@@ -14,13 +14,13 @@
          flashes before the page-level classifier has answered. -->
     <ng-container [ngTemplateOutlet]="heroLoading"></ng-container>
   } @else if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view project details." data-testid="project-detail-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company to view project details." data-testid="project-detail-no-company-empty-state" />
   } @else if (heroState().status === 'notFound') {
     <!-- B1 is the sole page-level gate: a 404 hero is the whole-page not-found. -->
     <lfx-empty-state
       icon="fa-light fa-folder-open"
       title="Project not found"
-      subtitle="We couldn't find that project for your organization."
+      subtitle="We couldn't find that project for your company."
       ctaLabel="Back to Projects"
       ctaIcon="fa-light fa-arrow-left"
       [ctaRoute]="projectsLink()"
@@ -354,7 +354,7 @@
                 @default {
                   @if (techBoard().total === 0 && !techBoard().loading) {
                     <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-technical-empty">
-                      {{ techSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
+                      {{ techSearchHasQuery() ? 'No companies match your search.' : 'No ranked companies for this project yet.' }}
                     </p>
                   } @else {
                     <lfx-table
@@ -378,7 +378,7 @@
                       <ng-template #header>
                         <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
                           <th scope="col" class="w-12 px-3 py-3">#</th>
-                          <th scope="col" class="px-3 py-3">Organization</th>
+                          <th scope="col" class="px-3 py-3">Company</th>
                           <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ technicalColumnLabel() }}</th>
                         </tr>
                       </ng-template>
@@ -490,7 +490,7 @@
                 @default {
                   @if (ecoBoard().total === 0 && !ecoBoard().loading) {
                     <p class="py-8 text-center text-sm text-gray-500" data-testid="project-detail-leaderboard-ecosystem-empty">
-                      {{ ecoSearchHasQuery() ? 'No organizations match your search.' : 'No ranked organizations for this project yet.' }}
+                      {{ ecoSearchHasQuery() ? 'No companies match your search.' : 'No ranked companies for this project yet.' }}
                     </p>
                   } @else {
                     <lfx-table
@@ -514,7 +514,7 @@
                       <ng-template #header>
                         <tr class="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
                           <th scope="col" class="w-12 px-3 py-3">#</th>
-                          <th scope="col" class="px-3 py-3">Organization</th>
+                          <th scope="col" class="px-3 py-3">Company</th>
                           <th scope="col" class="whitespace-nowrap px-3 py-3 text-right">{{ ecosystemColumnLabel() }}</th>
                         </tr>
                       </ng-template>

@@ -65,7 +65,7 @@ async function render(projects: OrgLensFoundationProject[]): Promise<ComponentFi
         useValue: { selectedAccount: signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors', membershipTier: '', uid: 'org-uid-1', slug: 'acme' }) },
       },
       { provide: OrgLensFoundationsService, useValue: { getFoundationsAndProjects: () => of(response(projects)) } },
-      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/org', ...segments] } },
+      { provide: OrgLensNavigationService, useValue: { orgLensLink: (...segments: string[]) => ['/company', ...segments] } },
       { provide: PlausibleService, useValue: { trackEvent: vi.fn() } },
     ],
   }).compileComponents();
@@ -122,10 +122,10 @@ describe('OrgOverviewFoundationsAndProjectsComponent project navigation', () => 
   it('opens the project with no organization scope, by click and by keyboard, whatever the address names', async () => {
     for (const url of ['/', '/?orgScope=all']) {
       const clicked = await navigateFrom(url, (component, row) => component.onProjectRowClick(row));
-      expect(clicked.mock.calls).toEqual([[['/org', 'projects', 'k8s']]]);
+      expect(clicked.mock.calls).toEqual([[['/company', 'projects', 'k8s']]]);
 
       const keyed = await navigateFrom(url, (component, row) => component.onProjectRowKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), row));
-      expect(keyed.mock.calls).toEqual([[['/org', 'projects', 'k8s']]]);
+      expect(keyed.mock.calls).toEqual([[['/company', 'projects', 'k8s']]]);
     }
   });
 });

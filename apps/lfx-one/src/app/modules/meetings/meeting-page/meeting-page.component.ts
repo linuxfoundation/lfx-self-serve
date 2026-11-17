@@ -6,7 +6,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { MEETING_PAGE_CANCELLED_COPY, MEETING_PAGE_LEGACY_STATE } from '@lfx-one/shared/constants';
-import { Meeting, MeetingHomeRow, MeetingPageCancelledLink, MeetingPageView, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingDetailsState, MeetingHomeRow, MeetingPageCancelledLink, MeetingPageView, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import {
   getMeetingDetailsState,
   getMeetingPageCancelledLink,
@@ -29,13 +29,13 @@ import { MeetingPageFooterComponent } from './footer/meeting-page-footer.compone
 import { MeetingPageTopBarComponent } from './top-bar/meeting-page-top-bar.component';
 
 /**
- * The redesigned `/meetings/:id` page, matched by `meetingPageRedesignGuard`: the meeting details for a signed-in viewer
- * with full access, with loading and error states. Not-found goes to `/meetings/not-found` like the legacy page.
- * @description Fallback rule: a meeting the signed-in viewer fully sees renders here, upcoming, live or ended; a viewer
- * without full access (such as a password-only guest) and a series with no date left re-navigate the same URL to the
- * legacy page, on the server too, so hydration keeps the page it rendered. A link to a cancelled date shows the date the
- * page falls back to under a note; a series whose every date is cancelled shows its series fields under a note while its
- * start is still ahead of the join window.
+ * The redesigned `/meetings/:id` page, matched by `meetingPageRedesignGuard`: the meeting details, with loading and error
+ * states. Not-found, such as a wrong passcode, goes to `/meetings/not-found` like the legacy page.
+ * @description Every viewer renders here, with what their access allows: a signed-out visitor joins through the guest
+ * form, and a passcode guest sees the meeting without its date. A series with no date left, or fully cancelled past its start, re-navigates the same URL to
+ * the legacy page, on the server too, so hydration keeps the page it rendered. A link to a cancelled date shows the date
+ * the page falls back to under a note; a series whose every date is cancelled shows its series fields under a note while
+ * its start is still ahead of the join window.
  */
 @Component({
   selector: 'lfx-meeting-page',
@@ -106,16 +106,20 @@ export class MeetingPageComponent implements MeetingPageRowHost {
       if (!loaded || !this.pageData.meetingMatchesRoute()) return null;
       // The public payload carries its project apart; the details read the flattened fields.
       const { project } = loaded;
+      // A guest's copy drops the passcode, so the links and Join reuse the one this page loaded with.
+      const password = loaded.password || this.pageData.password();
       const meeting = {
         ...loaded,
         project_name: loaded.project_name || project?.name,
         project_slug: loaded.project_slug || project?.slug,
         project_logo_url: loaded.project_logo_url || project?.logo_url,
+        project_uid: loaded.project_uid || project?.uid,
+        ...(password ? { password } : {}),
       };
       if (this.pageData.loadedViaPastMeetingId()) {
-        return this.pageData.pastMeetingFullAccess() && isPastMeetingCalendarRow(meeting) ? toPastMeetingHomeRow(meeting) : null;
+        return isPastMeetingCalendarRow(meeting) ? toPastMeetingHomeRow(meeting) : null;
       }
-      if (!this.pageData.liveMeetingFullAccess()) return null;
+      if (!this.pageData.liveMeetingFullAccess()) return this.guestRow(meeting);
       if (this.cancelledLink()?.kind === 'series') return this.cancelledSeriesRow(meeting);
       return toUpcomingMeetingHomeRow(meeting, this.pageData.resolveOccurrence(meeting));
     });
@@ -153,11 +157,18 @@ export class MeetingPageComponent implements MeetingPageRowHost {
   /** Every date cancelled: the series fields while the start is still ahead of the join window, so it never reads as ended. */
   private cancelledSeriesRow(meeting: Meeting): MeetingHomeRow | null {
     const series = toCancelledSeriesHomeRow(meeting);
-    if (!series) return null;
-    const state = getMeetingDetailsState(series.startTime, series.durationMinutes, new Date(this.pageData.clock()), {
-      earlyJoinMinutes: meeting.early_join_time_minutes,
+    return series && this.rowState(series) === 'far' ? series : null;
+  }
+
+  /** A passcode guest's copy: title, type, visibility and groups, with no date (MD-084); the server answers whether Join is open. */
+  private guestRow(meeting: Meeting): MeetingHomeRow {
+    return { key: meeting.id, meeting, occurrence: null, title: meeting.title, occurrenceId: null, startTime: '', durationMinutes: 0 };
+  }
+
+  private rowState(row: MeetingHomeRow): MeetingDetailsState {
+    return getMeetingDetailsState(row.startTime, row.durationMinutes, new Date(this.pageData.clock()), {
+      earlyJoinMinutes: row.meeting.early_join_time_minutes,
     });
-    return state === 'far' ? series : null;
   }
 
   // The guard skips this page for a navigation carrying the legacy state, and records that for hydration on the server.

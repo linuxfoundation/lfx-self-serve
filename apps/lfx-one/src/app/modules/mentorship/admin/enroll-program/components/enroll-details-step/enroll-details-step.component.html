@@ -190,7 +190,7 @@
       }
     </div>
 
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-1" (focusout)="completeUrl('repositoryUrl')">
       <label class="text-sm font-medium text-gray-700" for="repositoryUrl">Repository URL <span class="text-red-500">*</span></label>
       <lfx-input-text
         [form]="form()"
@@ -204,7 +204,7 @@
       }
     </div>
 
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-1" (focusout)="completeUrl('websiteUrl')">
       <label class="text-sm font-medium text-gray-700" for="websiteUrl">Website URL</label>
       <lfx-input-text
         [form]="form()"
@@ -277,7 +277,7 @@
       <h2 class="text-lg font-semibold text-gray-900">Code of Conduct</h2>
       <p class="text-sm text-gray-600 leading-5">{{ cocIntro }}</p>
     </div>
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-1" (focusout)="completeUrl('codeOfConductUrl')">
       <label class="text-sm font-medium text-gray-700" for="codeOfConductUrl">Code of Conduct URL</label>
       <lfx-input-text
         [form]="form()"

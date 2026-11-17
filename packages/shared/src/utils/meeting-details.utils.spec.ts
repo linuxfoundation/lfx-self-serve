@@ -67,9 +67,12 @@ describe('canViewMeetingGuests', () => {
     expect(canViewMeetingGuests(shared, { organizer: false, invited: false })).toBe(false);
   });
 
-  it('never shares a Board or restricted list with invitees', () => {
+  it('never shares a Board list with invitees', () => {
     expect(canViewMeetingGuests({ ...shared, meeting_type: 'Board' }, { organizer: false, invited: true })).toBe(false);
-    expect(canViewMeetingGuests({ ...shared, restricted: true }, { organizer: false, invited: true })).toBe(false);
+  });
+
+  it('shares a restricted list with invitees when the organizer opted in (#5438)', () => {
+    expect(canViewMeetingGuests({ ...shared, restricted: true }, { organizer: false, invited: true })).toBe(true);
   });
 });
 

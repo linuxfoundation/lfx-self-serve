@@ -63,6 +63,8 @@ interface Harness {
   listLoading: WritableSignal<boolean>;
   listUpstreamFailed: WritableSignal<boolean>;
   selectionUndecided: WritableSignal<boolean>;
+  /** `OrgNavigationService.firstPagePinnedUid` — the cookie's company the first page was fetched with. */
+  firstPagePinnedUid: WritableSignal<string | null>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
@@ -109,6 +111,7 @@ function setup(): Harness {
   const listLoading = signal(false);
   const listUpstreamFailed = signal(false);
   const selectionUndecided = signal(false);
+  const firstPagePinnedUid = signal<string | null>(null);
   const listGeneration = signal(0);
   const startListFetch = (): number => {
     listGeneration.update((g) => g + 1);
@@ -180,6 +183,7 @@ function setup(): Harness {
           loading: listLoading,
           upstreamFailed: listUpstreamFailed,
           selectionUndecided,
+          firstPagePinnedUid,
           generation: listGeneration,
           firstPageLandedGeneration: firstPageLanded,
           refreshList,
@@ -218,6 +222,7 @@ function setup(): Harness {
     listLoading,
     listUpstreamFailed,
     selectionUndecided,
+    firstPagePinnedUid,
     grantsLoading,
     refreshList,
     startListFetch,
@@ -1093,6 +1098,27 @@ describe('OrgLensEmptyStateService — a selection the CLA-only rows have not cl
 
   it('never holds a selection the caller already holds', () => {
     h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('holds the page on a cookie-only pin until the rows answer, with no account selected yet (#5804)', () => {
+    h.selectedAccount.set(account(''));
+    h.firstPagePinnedUid.set(OTHER);
+
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageReady()).toBe(false);
+
+    h.claOnlyUids.set(new Set([OTHER]));
+    h.selectedAccount.set(account(OTHER));
+    h.selectionUndecided.set(false);
+
+    expect(h.service.pageReady()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('does not hold the page with no account selected and no pin', () => {
+    h.selectedAccount.set(account(''));
 
     expect(h.service.pageReady()).toBe(true);
   });

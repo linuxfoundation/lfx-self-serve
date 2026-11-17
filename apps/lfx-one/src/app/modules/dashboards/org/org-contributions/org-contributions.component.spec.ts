@@ -148,6 +148,42 @@ describe('OrgContributionsComponent', () => {
     );
   });
 
+  it('keeps GitHub-handle search and the linked Username column on the Commits tab', async () => {
+    const response: OrgContributionsResponse = {
+      ...EMPTY_ORG_CONTRIBUTIONS_RESPONSE,
+      accountId: 'org-uid-1',
+      totalRecords: 1,
+      commits: [
+        {
+          commitSha: 'abc123',
+          contributorId: 'member-one',
+          personKey: 'person-one',
+          projectName: 'Widgets',
+          committerName: 'Mary Somerville',
+          committerAvatarUrl: null,
+          committerTitle: null,
+          username: 'example-gh-user',
+          source: 'github',
+          committedTs: '2026-10-01T00:00:00Z',
+          message: 'Fix widget',
+          commitUrl: 'https://github.com/example/widgets/commit/abc123',
+        },
+      ],
+    };
+    const { fixture, getContributions } = await render(null, { queryParams: { view: 'commits' }, response });
+
+    fixture.componentInstance['filterForm'].controls.search.setValue('example-gh-user');
+    await pastDebounce(fixture);
+    fixture.detectChanges();
+
+    expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ view: 'commits', search: 'example-gh-user' }));
+    const el = fixture.nativeElement as HTMLElement;
+    expect(Array.from(el.querySelectorAll('th')).some((header) => header.textContent?.includes('Username'))).toBe(true);
+    const handle = el.querySelector<HTMLAnchorElement>('a[href="https://github.com/example-gh-user"]');
+    expect(handle?.textContent?.trim()).toBe('@example-gh-user');
+    expect(handle?.getAttribute('aria-label')).toBe('Open example-gh-user on GitHub');
+  });
+
   it('trims an over-cap filter selection (e.g. keyboard select-all past selectionLimit) to the cap in the form itself', async () => {
     const { fixture } = await render(null);
     const { projects, employees } = fixture.componentInstance['filterForm'].controls;
@@ -277,7 +313,7 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('insights');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'insights' }));
-    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights organization");
+    expect(fixture.componentInstance['windowCaption']()).toContain("Only the company's LFX Insights page");
   });
 
   it('reads ?orgScope=all from a shared link into the picker and the request', async () => {
@@ -285,7 +321,7 @@ describe('OrgContributionsComponent', () => {
 
     expect(fixture.componentInstance['filterForm'].controls.orgScope.value).toBe('all');
     expect(getContributions).toHaveBeenLastCalledWith('org-uid-1', expect.objectContaining({ orgScope: 'all' }));
-    expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');
+    expect(fixture.componentInstance['windowCaption']()).toContain('Every company related to this one');
   });
 
   it('writes ?orgScope=all when All related organizations is picked, and drops it again for the Insights organization', async () => {
@@ -308,7 +344,7 @@ describe('OrgContributionsComponent', () => {
       orgScopeInfo: { accountId: 'acc-1', hasInsightsOrg: false, insightsOrgId: null, insightsOrgName: null, relatedOrgCount: 3 },
     });
 
-    expect(fixture.componentInstance['windowCaption']()).toContain('Every organization related to the company');
+    expect(fixture.componentInstance['windowCaption']()).toContain('Every company related to this one');
   });
 
   it.each([

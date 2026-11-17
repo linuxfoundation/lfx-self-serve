@@ -462,14 +462,10 @@ describe('OrgLensEventsService summary tiles', () => {
     });
   });
 
-  it('returns zero counts when the read fails', async () => {
+  it('rejects, rather than returning zero counts, when the read fails', async () => {
     execute.mockRejectedValueOnce(new Error('warehouse down'));
 
-    expect(await service.getOrgEventsSummary(REQ, 'acct-failing', filters)).toEqual({
-      totalEvents: 0,
-      pastEvents: 0,
-      upcomingEvents: 0,
-    });
+    await expect(service.getOrgEventsSummary(REQ, 'acct-failing', filters)).rejects.toThrow('warehouse down');
   });
 });
 
@@ -707,11 +703,21 @@ describe('OrgLensEventsService caching', () => {
 });
 
 describe('OrgLensEventsService outage', () => {
-  it('returns an empty list when the read fails', async () => {
+  it('rejects, rather than returning an empty list, when the list read fails', async () => {
     execute.mockRejectedValue(new Error('warehouse down'));
 
-    const list = await service.getOrgEvents(REQ, 'acct-failing', listOptions());
+    await expect(service.getOrgEvents(REQ, 'acct-failing', listOptions())).rejects.toThrow('warehouse down');
+  });
 
-    expect(list).toEqual({ data: [], total: 0, pageSize: 25, offset: 0 });
+  it('rejects, rather than returning no foundations, when the foundations read fails', async () => {
+    execute.mockRejectedValue(new Error('warehouse down'));
+
+    await expect(service.getOrgEventFoundations(REQ, 'acct-failing', { scope: 'activity' })).rejects.toThrow('warehouse down');
+  });
+
+  it('rejects, rather than returning no speakers, when the speakers read fails', async () => {
+    execute.mockRejectedValue(new Error('warehouse down'));
+
+    await expect(service.getEventSpeakers(REQ, 'acct-failing', 'event-one')).rejects.toThrow('warehouse down');
   });
 });

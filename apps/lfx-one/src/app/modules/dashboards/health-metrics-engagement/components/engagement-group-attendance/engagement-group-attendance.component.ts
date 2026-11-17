@@ -2,53 +2,51 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, model, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
-import { TagComponent } from '@components/tag/tag.component';
 import {
+  HEALTH_METRICS_ENGAGEMENT_DORMANT_TIP,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
-  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementGroupTrend, formatIsoDateLabel, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
+import { buildHealthMetricsEngagementGroupRowView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiPaginationComponent } from '@shared/uikit/pagination/pagination.component';
+import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
-import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
-import { EngagementGroupAttendanceDrawerComponent } from '../engagement-group-attendance-drawer/engagement-group-attendance-drawer.component';
-import { EngagementSparklineComponent } from '../engagement-sparkline/engagement-sparkline.component';
+import { HealthMetricsCellComponent } from '../../../components/health-metrics-cell/health-metrics-cell.component';
+import { HealthMetricsValueBarComponent } from '../../../components/health-metrics-value-bar/health-metrics-value-bar.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
-  FilterPillOption,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupNoteCounts,
   HealthMetricsEngagementGroupQuery,
-  HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementGroupRowView,
   HealthMetricsEngagementGroupTypeFilter,
 } from '@lfx-one/shared/interfaces';
 
 /**
  * `#committees` — every group ranked dormant-first then lowest attendance. The rank is the view's
- * `SORT_RANK_<period>` applied server-side: sorting the page client-side would only rank 25 rows.
+ * `SORT_RANK_<period>` applied server-side: sorting the page client-side would only rank 10 rows.
  */
 @Component({
   selector: 'lfx-engagement-group-attendance',
   imports: [
     EmptyStateComponent,
-    FilterPillsComponent,
+    HealthMetricsCellComponent,
+    HealthMetricsValueBarComponent,
     TableComponent,
-    TagComponent,
-    EngagementAttendanceBarComponent,
-    EngagementGroupAttendanceDrawerComponent,
-    EngagementSparklineComponent,
+    UiBadgeComponent,
+    UiPaginationComponent,
+    UiTooltipDirective,
   ],
   templateUrl: './engagement-group-attendance.component.html',
 })
@@ -70,9 +68,13 @@ export class EngagementGroupAttendanceComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  /** The header's Group type select lives in the page's section controls, so the page owns the cut. */
+  public readonly groupType = model<HealthMetricsEngagementGroupTypeFilter>('all');
+
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
-  protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(this.parseInitialGroupType());
+  protected readonly dormantTip = HEALTH_METRICS_ENGAGEMENT_DORMANT_TIP;
+  protected readonly size = HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE;
   /**
    * Every scope change restarts paging. The period and foundation come from the page header, which
    * cannot know this table's page, and a page from the wider scope sits past the end of a smaller one.
@@ -81,44 +83,22 @@ export class EngagementGroupAttendanceComponent {
     source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`),
     computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
   });
-  protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly selectedRow = signal<HealthMetricsEngagementGroupRow | null>(null);
-  protected readonly drawerVisible = signal<boolean>(false);
 
   protected readonly query: Signal<HealthMetricsEngagementGroupQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementGroupAttendance> = this.initResponse();
 
-  /** Labels only, as the design draws them; the per-type counts stay off the pills. */
-  protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({ id: filter.key, label: filter.label }));
-  protected readonly rows = computed(() => this.response().rows);
-  // Resolved here rather than per cell: the template only reads signals, and the period lookup and
-  // trend build run once per row per response instead of on every change-detection pass.
-  protected readonly rowViews = computed<HealthMetricsEngagementGroupRowView[]>(() => {
+  protected readonly rowViews: Signal<HealthMetricsEngagementGroupRowView[]> = computed(() => {
     const range = this.chrome.selectedRange();
-    return this.rows().map((row) => ({
-      row,
-      period: selectHealthMetricsEngagementGroupPeriod(row, range),
-      trend: buildHealthMetricsEngagementGroupTrend(row),
-      lastMetLabel: row.lastMetDate ? formatIsoDateLabel(row.lastMetDate) : '—',
-    }));
+    return this.response().rows.map((row) => buildHealthMetricsEngagementGroupRowView(row, range));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  /** `null` means the foundation has no groups at all; a chip with zero matches keeps its
-   * own counts, so this is not the same signal as `totalRecords() === 0`. */
-  protected readonly counts = computed(() => this.response().counts);
   /** No group was recorded for the period; the shell shows the section's empty state instead. */
-  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.counts() === null);
-  protected readonly first = computed(() => (this.page() - 1) * this.size());
-  // Follows the selected chip, as in the design; the sub-nav note stays scope-wide.
-  protected readonly countLabel = computed(() => {
-    if (this.counts() === null) return '—';
-
-    const total = this.totalRecords();
-    return `${total.toLocaleString('en-US')} ${total === 1 ? 'group' : 'groups'}`;
-  });
+  protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && this.response().counts === null);
+  /** The pager counts pages from 0; the URL and the read count them from 1. */
+  protected readonly pageIndex = computed(() => this.page() - 1);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -134,19 +114,12 @@ export class EngagementGroupAttendanceComponent {
     }
   }
 
-  protected onFilterChange(key: string): void {
-    this.groupType.set(this.toGroupType(key));
+  protected onPageChange(index: number): void {
+    this.page.set(index + 1);
   }
 
-  protected onTablePage(event: { first?: number; rows?: number }): void {
-    const rows = event.rows ?? this.size();
-    this.size.set(rows);
-    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
-  }
-
-  protected onRowSelect(row: HealthMetricsEngagementGroupRow): void {
-    this.selectedRow.set(row);
-    this.drawerVisible.set(true);
+  protected onResetFilters(): void {
+    this.groupType.set('all');
   }
 
   private initQuery(): HealthMetricsEngagementGroupQuery {
@@ -155,7 +128,7 @@ export class EngagementGroupAttendanceComponent {
       groupType: this.groupType(),
       range: this.chrome.selectedRange(),
       page: this.page(),
-      size: this.size(),
+      size: this.size,
     };
   }
 
@@ -229,28 +202,19 @@ export class EngagementGroupAttendanceComponent {
 
   /**
    * A `?groupPage=` past the end of the filtered set selects nothing while the totals join still
-   * reports the real count — an empty table under "34 groups". Land on the last page that has rows,
-   * and report the clamp so the caller can hold this read open for the page that replaces it.
+   * reports the real count. Land on the last page that has rows, and report the clamp so the caller
+   * can hold this read open for the page that replaces it.
    */
   private clampPage(totalRecords: number): boolean {
-    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size));
     if (totalRecords === 0 || this.page() <= lastPage) return false;
 
     this.page.set(lastPage);
     return true;
   }
 
-  private parseInitialGroupType(): HealthMetricsEngagementGroupTypeFilter {
-    return this.toGroupType(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupType) ?? 'all');
-  }
-
   private parseInitialPage(): number {
     const page = Number(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupPage));
     return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-  }
-
-  private toGroupType(key: string): HealthMetricsEngagementGroupTypeFilter {
-    const match = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.find((filter) => filter.key === key);
-    return match ? match.key : 'all';
   }
 }

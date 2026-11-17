@@ -35,6 +35,9 @@ export * from './session-store.interface';
 // Object store (S3 or file-backed) interfaces
 export * from './object-store.interface';
 
+// Browser dist readiness (/readyz) interfaces
+export * from './browser-assets.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
@@ -210,6 +213,9 @@ export * from './health-metrics-events.interface';
 // Health Metrics Level 2 tab shell interfaces
 export * from './health-metrics-l2.interface';
 
+// Health Metrics shared line chart
+export * from './health-metrics-line-chart.interface';
+
 // Health Metrics Members page interfaces
 export * from './health-metrics-members.interface';
 
@@ -334,6 +340,7 @@ export * from './org-events-filters.interface';
 
 // Org Events internal backend query-row shapes
 export * from './org-events-internal.interface';
+export * from './org-memberships.internal.interface';
 
 // Newsletter interfaces
 export * from './newsletter.interface';

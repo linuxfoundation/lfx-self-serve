@@ -333,6 +333,14 @@ describe('MentorshipMentorService — read error mapping', () => {
       expect(completed).toBe(true);
     });
 
+    it('sends the reason with a request for changes', () => {
+      service.reviewMenteeTask('tsk-1', 'incomplete', 'Add tests.').subscribe();
+
+      const req = http.expectOne('/api/mentorship/mentor/tasks/tsk-1/review');
+      expect(req.request.body).toEqual({ status: 'incomplete', reason: 'Add tests.' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
     it('propagates a failed review as the raw HttpErrorResponse', () => {
       let error: HttpErrorResponse | undefined;
       service.reviewMenteeTask('tsk-1', 'complete').subscribe({ error: (err: HttpErrorResponse) => (error = err) });

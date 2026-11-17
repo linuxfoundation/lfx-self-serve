@@ -18,6 +18,7 @@ import type {
   MentorshipMenteeStatus,
   MentorshipProgramApplicant,
   MentorshipProgramPersonBase,
+  MentorshipProgramSubmitter,
 } from './mentorship.interface';
 import type { MentorshipUpstreamProgramTerm, MentorshipUpstreamTaskStatus } from './mentorship-mentee.interface';
 
@@ -135,9 +136,13 @@ export interface MentorshipAdminMentorStatusUpdate {
   status: MentorshipAdminMentorUpdateStatus;
 }
 
-/** Body of `POST /api/mentorship/admin/programs/:programId/mentors`: the LFID of the picked candidate, invited as a mentor. */
+/**
+ * Body of `POST /api/mentorship/admin/programs/:programId/mentors`, with exactly one field set: the LFID of the picked
+ * candidate, or an email address no LF account uses yet, which upstream invites by email.
+ */
 export interface MentorshipAdminMentorInviteRequest {
-  lfid: string;
+  lfid?: string;
+  email?: string;
 }
 
 /** One action on a Mentors tab row: `key` names its copy, `status` is what it sets. */
@@ -153,6 +158,8 @@ export interface MentorshipProgramMentor extends MentorshipProgramPersonBase {
   /** ISO `YYYY-MM-DD` date the mentor was added or asked to join. */
   invitedOn?: string;
   profileCreated?: boolean;
+  /** True for an invitation sent by email to someone with no LF account yet; the row shows only its email. */
+  accountPending?: boolean;
 }
 
 /** Term lifecycle on the admin program-detail Terms tab. */
@@ -270,6 +277,26 @@ export interface MentorshipAdminDeclinePendingResponse {
   declinedCount: number;
 }
 
+/**
+ * Data of the Mentors tab's Invite a mentor dialog: the program to invite to, and what to call when the Mentors list
+ * changed (an invite sent, or one upstream says already exists). The dialog searches LF users and sends the invite
+ * itself; the send is not tied to the dialog, so `onListChanged` runs even when the dialog was dismissed mid-send.
+ */
+export interface MentorshipInviteMentorDialogData {
+  programId: string;
+  onListChanged: () => void;
+}
+
+/**
+ * One answered search of the Invite a mentor dialog: the trimmed text it was for, the candidates upstream found, and
+ * the failure when the search failed (then `data` is empty).
+ */
+export interface MentorshipInviteMentorSearchResult {
+  search: string;
+  data: MentorshipAdminMentorCandidate[];
+  error: unknown;
+}
+
 /** Data of the Accept dialog: the mentee being accepted. The dialog closes with the chosen attendance type, or nothing when dismissed. */
 export interface MentorshipAcceptDialogData {
   personName: string;
@@ -310,6 +337,8 @@ export interface MentorshipAdminProgramPage {
   tabCounts: MentorshipAdminProgramTabCounts;
   /** Open and closed terms of the program; empty when the terms read failed. */
   terms: MentorshipAdminTermOption[];
+  /** Who submitted the program, shown in the header; `null` when it could not be read. */
+  submitter: MentorshipProgramSubmitter | null;
 }
 
 /** One page of a program's mentees, from `GET /api/mentorship/admin/programs/:programId/mentees`. */
@@ -384,6 +413,8 @@ export interface MentorshipUpstreamMemberManagementRow {
   created_on: string;
   updated_on: string;
   profile_created: boolean;
+  /** True for an invitation sent by email to someone with no LF account yet; its `user_id` is empty. */
+  pending_account?: boolean;
 }
 
 /** One row of upstream `GET /mentorship/v1/programs/{id}/mentor-candidates`. `name` and `avatar_url` may be missing. */

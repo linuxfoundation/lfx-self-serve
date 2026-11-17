@@ -1651,10 +1651,16 @@ describe('MeetingComposerFormService \u2014 edit-mode hydration', () => {
 
   // Upstream types the field as a free-form string, so a stored value this build has no card for is
   // possible. Blanking it would silently rewrite the organizer's meeting on the next save.
-  // Existing restricted meetings are untouched by composer v2: a stored `true` saved before the composer
-  // allowed sharing opens as off, so a save can't re-assert it.
-  it('opens an existing restricted meeting with attendee sharing off, whatever it stored', () => {
-    const service = openEdit({ restricted: true, show_meeting_attendees: true }, of([]));
+  // #5438: the composer writes a restricted meeting's opt-in, so reopening it must show the stored choice.
+  it("reopens an existing restricted meeting with the organizer's stored attendee sharing", () => {
+    const shared = openEdit({ restricted: true, show_meeting_attendees: true }, of([]));
+
+    expect(shared.form().get('show_meeting_attendees')?.value).toBe(true);
+    expect(shared.form().get('show_meeting_attendees')?.disabled).toBe(false);
+  });
+
+  it('reopens an existing restricted meeting with sharing off when it stored none', () => {
+    const service = openEdit({ restricted: true, show_meeting_attendees: undefined }, of([]));
 
     expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
     expect(service.form().get('show_meeting_attendees')?.disabled).toBe(false);

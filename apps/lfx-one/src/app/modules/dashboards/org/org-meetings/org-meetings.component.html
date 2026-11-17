@@ -4,7 +4,7 @@
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-meetings-page">
   <lfx-page-header
     title="Meetings"
-    description="How your organization's employees engage across Linux Foundation projects."
+    description="How your company's employees engage across Linux Foundation projects."
     titleTestId="org-meetings-title"
     descriptionTestId="org-meetings-subtitle"
     data-testid="org-meetings-header">
@@ -34,7 +34,7 @@
       </div>
     </section>
   } @else if (!hasCompany()) {
-    <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view meeting insights." data-testid="org-meetings-no-company-empty-state" />
+    <lfx-empty-state icon="fa-light fa-building" title="Select a company to view meeting insights." data-testid="org-meetings-no-company-empty-state" />
   } @else if (!hasAnalyticsId()) {
     <!-- A company is selected but its analytics id never resolved, so no section can load. Say so
          rather than leaving three skeletons on screen forever. -->

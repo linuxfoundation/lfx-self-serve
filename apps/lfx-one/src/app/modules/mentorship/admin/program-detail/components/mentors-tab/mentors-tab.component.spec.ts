@@ -6,16 +6,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { environment } from '@environments/environment';
 import {
+  MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL,
   MENTORSHIP_ADMIN_MENTOR_ACTIONS_BY_STATUS,
-  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE,
-  MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_CHANGED_MESSAGE,
   MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS,
   MENTORSHIP_ADMIN_MENTOR_STATUSES,
@@ -23,16 +15,16 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipAdminMentorAction,
-  MentorshipAdminMentorCandidatesResponse,
-  MentorshipAdminMentorInviteRequest,
   MentorshipAdminMentorsQuery,
   MentorshipAdminMentorsResponse,
   MentorshipAdminMentorStatusUpdate,
+  MentorshipInviteMentorDialogData,
   MentorshipProgramMentor,
 } from '@lfx-one/shared/interfaces';
 import { buildMentorshipPublicUrl } from '@lfx-one/shared/utils';
 import { MentorshipAdminService } from '@services/mentorship-admin.service';
 import { ConfirmationService, MessageService, ToastMessageOptions } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -58,8 +50,7 @@ describe('MentorsTabComponent', () => {
   let fixture: ComponentFixture<MentorsTabComponent>;
   let getProgramMentors: ReturnType<typeof vi.fn<(programId: string, query: MentorshipAdminMentorsQuery) => Observable<MentorshipAdminMentorsResponse>>>;
   let updateProgramMentor: ReturnType<typeof vi.fn<(programId: string, memberId: string, body: MentorshipAdminMentorStatusUpdate) => Observable<void>>>;
-  let getMentorCandidates: ReturnType<typeof vi.fn<(programId: string, search: string) => Observable<MentorshipAdminMentorCandidatesResponse>>>;
-  let inviteProgramMentor: ReturnType<typeof vi.fn<(programId: string, body: MentorshipAdminMentorInviteRequest) => Observable<void>>>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
 
   /** Runs the effects that start a read, then renders what it wrote. */
   const settle = (): void => {
@@ -70,15 +61,7 @@ describe('MentorsTabComponent', () => {
   beforeEach(() => {
     getProgramMentors = vi.fn().mockReturnValue(of(firstPage()));
     updateProgramMentor = vi.fn().mockReturnValue(of(undefined));
-    inviteProgramMentor = vi.fn().mockReturnValue(of(undefined));
-    getMentorCandidates = vi.fn().mockReturnValue(
-      of({
-        data: [
-          { lfid: 'priya', name: 'Priya Natarajan', avatarUrl: 'https://cdn.example.com/priya.png' },
-          { lfid: 'dsouza', name: 'dsouza' },
-        ],
-      })
-    );
+    dialogOpen = vi.fn(() => ({ onClose: of(undefined) }));
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
@@ -86,7 +69,8 @@ describe('MentorsTabComponent', () => {
       providers: [
         provideNoopAnimations(),
         MessageService,
-        { provide: MentorshipAdminService, useValue: { getProgramMentors, updateProgramMentor, getMentorCandidates, inviteProgramMentor } },
+        { provide: DialogService, useValue: { open: dialogOpen } },
+        { provide: MentorshipAdminService, useValue: { getProgramMentors, updateProgramMentor } },
       ],
     });
 
@@ -186,80 +170,6 @@ describe('MentorsTabComponent', () => {
     expect(lastQuery()).toMatchObject({ search: 'Diego', offset: 0 });
   });
 
-  describe('invite search', () => {
-    const search = (query: string): void => {
-      fixture.componentInstance['onCandidateSearch']({ originalEvent: new Event('input'), query });
-    };
-
-    it('asks upstream for the trimmed search of this program and offers each candidate by name and LFID, with no email', () => {
-      search('  priya ');
-
-      expect(getMentorCandidates).toHaveBeenCalledWith('prog_1', 'priya');
-      const options = fixture.componentInstance['candidateOptions']();
-      expect(options.map((option) => option.name)).toEqual(['Priya Natarajan', 'dsouza']);
-      expect(options[0]).toMatchObject({ lfid: 'priya', initials: 'PN' });
-      expect(JSON.stringify(options)).not.toContain('@');
-    });
-
-    it('does not send a pasted search over 254 characters, and says it is too long rather than blaming the program', () => {
-      search(`${'a'.repeat(250)}@example.org`);
-
-      expect(getMentorCandidates).not.toHaveBeenCalled();
-      expect(fixture.componentInstance['candidatesEmptyMessage']()).toBe(MENTORSHIP_ADMIN_MENTOR_CANDIDATES_TOO_LONG_MESSAGE);
-    });
-
-    it('does not send a single emoji, which upstream counts as one character', () => {
-      search('😀');
-
-      expect(getMentorCandidates).not.toHaveBeenCalled();
-    });
-
-    it('does not ask upstream below two trimmed characters', () => {
-      search(' p ');
-
-      expect(getMentorCandidates).not.toHaveBeenCalled();
-      expect(fixture.componentInstance['candidateOptions']()).toEqual([]);
-    });
-
-    it.each([
-      ['alice@example.org', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
-      ['alice', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
-      ['Priya', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
-      ['Alice Example', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
-      ['alice@example', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_MATCH_MESSAGE],
-    ])('says why %s found no one', (query, message) => {
-      getMentorCandidates.mockReturnValue(of({ data: [] }));
-
-      search(query);
-
-      expect(fixture.componentInstance['candidatesEmptyMessage']()).toBe(message);
-    });
-
-    it.each([
-      [400, MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE],
-      [503, MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE],
-      [500, MENTORSHIP_ADMIN_MENTOR_CANDIDATES_FAILED_MESSAGE],
-    ])('on a %s offers no one and says the search failed', (status, message) => {
-      search('priya');
-      getMentorCandidates.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
-
-      search('priyan');
-
-      expect(fixture.componentInstance['candidateOptions']()).toEqual([]);
-      expect(fixture.componentInstance['candidatesEmptyMessage']()).toBe(message);
-    });
-
-    it('enables Invite only once a candidate is picked, not for typed text', () => {
-      const invitee = fixture.componentInstance['form'].controls.invitee;
-
-      invitee.setValue('priya');
-      expect(fixture.componentInstance['canInvite']()).toBe(false);
-
-      invitee.setValue({ lfid: 'priya', name: 'Priya Natarajan' });
-      expect(fixture.componentInstance['canInvite']()).toBe(true);
-    });
-  });
-
   it('shows an inline error with Retry when the read fails, and reads the same page again on Retry', () => {
     getProgramMentors.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
     fixture.componentInstance['onRetry']();
@@ -276,110 +186,77 @@ describe('MentorsTabComponent', () => {
     expect(fixture.componentInstance['rows']().length).toBe(2);
   });
 
-  describe('invite', () => {
-    const toasts = () => vi.spyOn(TestBed.inject(MessageService), 'add');
-    const pick = (): void => fixture.componentInstance['form'].controls.invitee.setValue({ lfid: 'priya', name: 'Priya Natarajan' });
+  describe('invite mentor', () => {
+    it('offers an Invite mentor button that opens the Invite a mentor dialog for this program', () => {
+      const button = element().querySelector('[data-testid="mentorship-mentors-invite"]');
+      expect(button?.textContent).toContain('Invite mentor');
+      expect(element().querySelector('#mentorship-mentors-invitee-input')).toBeNull();
 
-    it('sends the picked LFID, clears the field, toasts, reloads the page and has the parent refresh the counts', () => {
-      const toast = toasts();
+      button?.querySelector('button')?.click();
+
+      expect(dialogOpen).toHaveBeenCalledTimes(1);
+      const config = dialogOpen.mock.calls[0][1] as { header: string; data: MentorshipInviteMentorDialogData };
+      expect(config.header).toBe('Invite a mentor');
+      expect(config.data.programId).toBe('prog_1');
+    });
+
+    const openedData = (): MentorshipInviteMentorDialogData => {
+      fixture.componentInstance['onOpenInvite']();
+      return (dialogOpen.mock.calls[0][1] as { data: MentorshipInviteMentorDialogData }).data;
+    };
+
+    it('reloads the page and has the parent refresh the counts when the dialog says the list changed', () => {
       const refresh = vi.fn();
       fixture.componentRef.setInput('countsRefresh', refresh);
       const reads = getProgramMentors.mock.calls.length;
-      pick();
 
-      fixture.componentInstance['onInviteMentor']();
+      openedData().onListChanged();
       settle();
 
-      expect(inviteProgramMentor).toHaveBeenCalledWith('prog_1', { lfid: 'priya' });
-      expect(fixture.componentInstance['form'].controls.invitee.value).toBeNull();
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'success', detail: MENTORSHIP_ADMIN_MENTOR_INVITED_MESSAGE });
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(getProgramMentors.mock.calls.length).toBe(reads + 1);
     });
 
-    it('sends nothing for text typed and not picked', () => {
-      fixture.componentInstance['form'].controls.invitee.setValue('priya');
-
-      fixture.componentInstance['onInviteMentor']();
-
-      expect(inviteProgramMentor).not.toHaveBeenCalled();
-    });
-
-    it('on a 409 says the person is already on the program, clears the field and reloads the page', () => {
-      inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409 })));
-      const toast = toasts();
-      const reads = getProgramMentors.mock.calls.length;
-      pick();
-
-      fixture.componentInstance['onInviteMentor']();
-      settle();
-
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: MENTORSHIP_ADMIN_MENTOR_INVITE_CONFLICT_MESSAGE });
-      expect(fixture.componentInstance['form'].controls.invitee.value).toBeNull();
-      expect(getProgramMentors.mock.calls.length).toBe(reads + 1);
-    });
-
-    it.each([
-      [400, MENTORSHIP_ADMIN_MENTOR_INVITE_UNPUBLISHED_MESSAGE],
-      [422, MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
-      [503, MENTORSHIP_ADMIN_MENTOR_CANDIDATES_UNAVAILABLE_MESSAGE],
-      [500, MENTORSHIP_ADMIN_MENTOR_INVITE_FAILED_MESSAGE],
-    ])('on a %s shows its message and keeps the pick so the admin can retry', (status, message) => {
-      inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status })));
-      const toast = toasts();
+    it('reloads nothing until the dialog says the list changed, whatever it closes with', () => {
       const refresh = vi.fn();
       fixture.componentRef.setInput('countsRefresh', refresh);
-      pick();
+      const reads = getProgramMentors.mock.calls.length;
 
-      fixture.componentInstance['onInviteMentor']();
+      openedData();
+      settle();
 
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: message });
-      expect(fixture.componentInstance['form'].controls.invitee.value).toMatchObject({ lfid: 'priya' });
       expect(refresh).not.toHaveBeenCalled();
-      expect(fixture.componentInstance['canInvite']()).toBe(true);
+      expect(getProgramMentors.mock.calls.length).toBe(reads);
     });
 
-    it.each([
-      ['lfid "priya" has no LF account', MENTORSHIP_ADMIN_MENTOR_CANDIDATES_NO_ACCOUNT_MESSAGE],
-      [
-        'the primary email of lfid "priya" belongs to another Mentorship user',
-        "This person's LF email address is already used by another Mentorship account, so they can't be invited.",
-      ],
-    ])('on a 422 for "%s" names that reason', (reason, message) => {
-      const body = { error: `eligibility criteria not met: ${reason}`, code: 'VALIDATION_ERROR' };
-      inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 422, error: body })));
-      const toast = toasts();
-      pick();
+    it('still refreshes the parent counts, but reloads no table, when the list changes after the tab is gone', () => {
+      const refresh = vi.fn();
+      fixture.componentRef.setInput('countsRefresh', refresh);
+      const data = openedData();
+      const reads = getProgramMentors.mock.calls.length;
 
-      fixture.componentInstance['onInviteMentor']();
+      fixture.destroy();
+      data.onListChanged();
 
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: message });
-      expect(fixture.componentInstance['form'].controls.invitee.value).toMatchObject({ lfid: 'priya' });
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(getProgramMentors.mock.calls.length).toBe(reads);
     });
 
-    it('shows the server text when the invite is refused during impersonation', () => {
-      const body = { code: MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE, message: 'Read only while impersonating.' };
-      inviteProgramMentor.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: body })));
-      const toast = toasts();
-      pick();
+    it('marks a row invited by email as awaiting an LF account', () => {
+      getProgramMentors.mockReturnValue(
+        of({
+          data: [mentor({ id: 'mem_7', name: 'new.mentor@example.org', status: 'invited', profileCreated: false, userId: undefined, accountPending: true })],
+          total: 1,
+        })
+      );
+      fixture.componentInstance['onRetry']();
+      settle();
 
-      fixture.componentInstance['onInviteMentor']();
-
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'error', detail: 'Read only while impersonating.' });
-    });
-
-    it('disables Invite while the invite is in flight and sends one at a time', () => {
-      const pending = new Subject<void>();
-      inviteProgramMentor.mockReturnValue(pending);
-      const toast = toasts();
-      pick();
-
-      fixture.componentInstance['onInviteMentor']();
-      expect(fixture.componentInstance['canInvite']()).toBe(false);
-      fixture.componentInstance['onInviteMentor']();
-
-      expect(inviteProgramMentor).toHaveBeenCalledTimes(1);
-      expect(toast.mock.calls[0][0]).toMatchObject({ severity: 'info', summary: 'Please wait' });
+      expect(element().querySelector('[data-testid="mentorship-mentor-account-pending-mem_7"]')?.textContent).toContain(
+        MENTORSHIP_ADMIN_MENTOR_ACCOUNT_PENDING_LABEL
+      );
+      expect(element().querySelector('[data-testid="mentorship-mentor-account-pending-mem_1"]')).toBeNull();
+      expect(element().querySelector('[data-testid="mentorship-mentor-link-mem_7"]')).toBeNull();
     });
   });
 

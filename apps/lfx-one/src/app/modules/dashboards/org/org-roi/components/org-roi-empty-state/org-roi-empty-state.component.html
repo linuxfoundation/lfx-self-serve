@@ -8,20 +8,20 @@
 
   @if (isUnmapped()) {
     <div class="flex max-w-xl flex-col gap-3" data-testid="org-roi-empty-state-unmapped">
-      <h2 class="text-lg font-semibold text-gray-900">ROI metrics aren't available for this organization</h2>
+      <h2 class="text-lg font-semibold text-gray-900">ROI metrics aren't available for this company</h2>
       <p class="text-sm text-gray-600">
-        ROI is estimated from open source contribution activity, and this organization isn't linked to a contributor community record. Without that link there's
-        no activity to price, so there are no figures to show.
+        ROI is estimated from open source contribution activity, and this company isn't linked to a contributor community record. Without that link there's no
+        activity to price, so there are no figures to show.
       </p>
       <p class="text-sm text-gray-500">
-        This is how the data stands today rather than a problem with your account — most organizations across the Linux Foundation are in the same position.
+        This is how the data stands today rather than a problem with your account — most companies across the Linux Foundation are in the same position.
       </p>
     </div>
   } @else {
     <div class="flex max-w-xl flex-col gap-3" data-testid="org-roi-empty-state-not-estimated">
-      <h2 class="text-lg font-semibold text-gray-900">We couldn't produce ROI figures for this organization</h2>
+      <h2 class="text-lg font-semibold text-gray-900">We couldn't produce ROI figures for this company</h2>
       <p class="text-sm text-gray-600">
-        This organization is linked to a contributor community record, but the model didn't produce ROI figures for it. That usually means there wasn't enough
+        This company is linked to a contributor community record, but the model didn't produce ROI figures for it. That usually means there wasn't enough
         contribution activity attributed to it to estimate a return.
       </p>
       <!-- Must not promise the figures may appear later. ROI is estimated at organization-NAME
@@ -29,10 +29,10 @@
            them and a later pipeline run reproduces that rather than correcting it. -->
 
       <p class="text-sm text-gray-500">
-        Activity recorded under a differently-named or related organization is counted there instead, so it won't roll up to this one. If you think that's
-        what's happened,
+        Activity recorded under a differently-named or related company is counted there instead, so it won't roll up to this one. If you think that's what's
+        happened,
         <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-roi-empty-contact-support">contact us</button>
-        and we can look at how your organization's activity is attributed.
+        and we can look at how your company's activity is attributed.
       </p>
     </div>
   }

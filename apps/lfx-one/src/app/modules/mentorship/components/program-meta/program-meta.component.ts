@@ -1,0 +1,47 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, input, linkedSignal } from '@angular/core';
+import { MentorshipProgramSubmitter } from '@lfx-one/shared/interfaces';
+import { isMailtoSafeEmail, mentorshipPersonAvatarClass, mentorshipPersonInitials, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
+
+/**
+ * The line under a program's title on the admin program page and the review page: when the program was created or
+ * submitted, and the program admin who submitted it, with their avatar and a mailto link. Either half is left out
+ * when it is unknown, and the line is left out when both are.
+ *
+ * The avatar is drawn here rather than with `lfx-avatar`, which shows one letter: the design shows two initials.
+ */
+@Component({
+  selector: 'lfx-mentorship-program-meta',
+  imports: [DatePipe],
+  templateUrl: './program-meta.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class ProgramMetaComponent {
+  /** The date's label, e.g. "Created" on the admin page and "Submitted" on the review page. */
+  public readonly dateLabel = input.required<string>();
+  /** ISO timestamp or date-only `YYYY-MM-DD`; `null` leaves the date out. */
+  public readonly date = input<string | null>(null);
+  /** `null` leaves the program admin out. */
+  public readonly submitter = input<MentorshipProgramSubmitter | null>(null);
+
+  /**
+   * The date as an instant for `DatePipe` in UTC. `DatePipe` reads a date-only value as local midnight, which shows the
+   * previous day east of UTC, so a date-only value becomes its UTC midnight first.
+   */
+  protected readonly dateInstant = computed(() => {
+    const date = this.date();
+    return date ? toMentorshipUtcInstant(date) : null;
+  });
+  /** Set when the avatar image fails to load, so the initials show instead; reset when the submitter changes. */
+  protected readonly avatarFailed = linkedSignal<MentorshipProgramSubmitter | null, boolean>({ source: this.submitter, computation: () => false });
+  protected readonly initials = computed(() => mentorshipPersonInitials(this.submitter()?.name ?? ''));
+  protected readonly avatarStyleClass = computed(() => mentorshipPersonAvatarClass(this.submitter()?.name ?? ''));
+  /** The email's `mailto:` link, or `null` when the address could add recipients or headers; it then shows as text. */
+  protected readonly emailHref = computed(() => {
+    const email = this.submitter()?.email;
+    return isMailtoSafeEmail(email) ? `mailto:${email}` : null;
+  });
+}

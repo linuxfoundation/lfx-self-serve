@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, program-admin, programs, status, admin, logo, public-page]
 last_generated: 2026-10-26
-last_updated: 2026-11-09
+last_updated: 2026-11-17
 intercom_collection: Mentorship
 ---
 
@@ -33,6 +33,10 @@ A program in **Pending Review**, **Accepting**, **In Progress**, **Upcoming** or
 2. Pick a JPG or PNG file, 420 × 420 px, 2 MB or smaller.
 
 You see **Logo added.** and the list reloads.
+
+## Program page header
+
+Under the program's name and status, the header shows the date the program was **Created** and the **Program admin** who submitted it, with their email.
 
 ## Program page actions
 

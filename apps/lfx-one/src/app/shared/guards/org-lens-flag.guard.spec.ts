@@ -46,7 +46,7 @@ describe('cfOrgDonationsGuard', () => {
         })
     );
 
-    targetUrl = '/org/donations';
+    targetUrl = '/company/donations';
     router = {
       createUrlTree: vi.fn().mockImplementation((commands: string[]) => ({ redirected: commands.join('/') })),
       parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
@@ -73,9 +73,9 @@ describe('cfOrgDonationsGuard', () => {
           useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag, waitForReady },
         },
         { provide: Router, useValue: router },
-        // Spec 050: on the legacy address the fallback carries the *selected* organization; this suite
+        // Spec 050: on the legacy address the fallback carries the *selected* company; this suite
         // pins the redirect rules, so the address builder is stubbed to the org-aware form.
-        { provide: OrgLensNavigationService, useValue: { orgLensLink: (page: string) => ['/org', 'acme-inc', page] } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: (page: string) => ['/company', 'acme-inc', page] } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     });
@@ -101,14 +101,14 @@ describe('cfOrgDonationsGuard', () => {
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
-  it('redirects to the selected organization overview when the local override says the flag is off, without waiting for READY', async () => {
+  it('redirects to the selected company overview when the local override says the flag is off, without waiting for READY', async () => {
     getFlagOverride.mockReturnValue(false);
     providerReady.set(false);
 
     const result = await runGuard();
 
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company', 'acme-inc', 'overview']);
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
@@ -120,16 +120,16 @@ describe('cfOrgDonationsGuard', () => {
     expect(result).toBe(true);
   });
 
-  it('redirects to the selected organization overview once the provider is ready and the flag is off', async () => {
+  it('redirects to the selected company overview once the provider is ready and the flag is off', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
 
     const result = await runGuard();
 
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company', 'acme-inc', 'overview']);
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
   });
 
-  it('fails closed to the selected organization overview when the provider never becomes ready', async () => {
+  it('fails closed to the selected company overview when the provider never becomes ready', async () => {
     vi.useFakeTimers();
     providerReady.set(false);
 
@@ -139,20 +139,20 @@ describe('cfOrgDonationsGuard', () => {
 
     vi.useRealTimers();
 
-    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
-    expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/company', 'acme-inc', 'overview']);
+    expect(result).toEqual({ redirected: '/company/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
 
-  it('keeps the addressed organization when the flag is off on an org-addressed page', async () => {
-    targetUrl = '/org/other-org/donations';
+  it('keeps the addressed company when the flag is off on an org-addressed page', async () => {
+    targetUrl = '/company/other-org/donations';
     getFlagOverride.mockReturnValue(false);
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/other-org/overview');
+    expect(router.parseUrl).toHaveBeenCalledWith('/company/other-org/overview');
     expect(router.createUrlTree).not.toHaveBeenCalled();
-    expect(result).toEqual({ redirected: '/org/other-org/overview' });
+    expect(result).toEqual({ redirected: '/company/other-org/overview' });
   });
 
   it('evaluates its own flag', async () => {

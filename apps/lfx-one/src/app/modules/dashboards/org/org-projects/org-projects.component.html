@@ -5,7 +5,7 @@
   <!-- Page Header -->
   <lfx-page-header
     [title]="contentVisible() && companyName() ? 'Projects — ' + companyName() : 'Projects'"
-    description="The open source projects your organization influences, contributes to, and depends on."
+    description="The open source projects your company influences, contributes to, and depends on."
     titleTestId="org-projects-title"
     descriptionTestId="org-projects-subtitle"
     data-testid="org-projects-header" />
@@ -40,8 +40,8 @@
   } @else if (!hasCompany()) {
     <lfx-empty-state
       icon="fa-light fa-building"
-      title="No org selected"
-      subtitle="Select an organization to view projects."
+      title="No company selected"
+      subtitle="Select a company to view projects."
       data-testid="org-projects-no-company-empty-state" />
   } @else {
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-table-card">

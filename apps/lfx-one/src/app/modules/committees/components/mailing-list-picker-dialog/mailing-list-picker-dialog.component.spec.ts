@@ -293,21 +293,28 @@ describe('MailingListPickerDialogComponent sync direction', () => {
     expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.value).toBe(MailingListSyncMode.MANUAL);
   });
 
-  it('disables every other direction control once one list has an automatic direction', async () => {
+  it('leaves other direction controls enabled but blocks the Mailing List -> Committee option once a list syncs Committee -> Mailing List', async () => {
     await setup(true);
 
-    expect(fixture.componentInstance.activeAutoSyncUid()).toBe('ml-synced');
-    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.disabled).toBe(true);
+    // ml-synced runs Committee -> Mailing List, which only blocks siblings out of the reverse
+    // direction (#5786) — the whole control for ml-manual stays enabled so it can still pick
+    // Committee -> Mailing List itself (multiple such lists are allowed per committee).
+    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.disabled).toBe(false);
+    expect(fixture.componentInstance.directionConflicts()['ml-manual']).toEqual({ mlToCUid: null, cToMlUid: 'ml-synced' });
   });
 
-  it('frees the active-sync slot once that list is set back to manual', async () => {
+  it('full-locks every other list once one list syncs Mailing List -> Committee, and frees it once set back to manual', async () => {
     await setup(true);
+
+    fixture.componentInstance.mlDirectionForm.get('ml-synced')?.setValue(MailingListSyncMode.AUTO_MAILING_LIST_TO_COMMITTEE);
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.directionConflicts()['ml-manual']).toEqual({ mlToCUid: 'ml-synced', cToMlUid: null });
 
     fixture.componentInstance.mlDirectionForm.get('ml-synced')?.setValue(MailingListSyncMode.MANUAL);
     await fixture.whenStable();
 
-    expect(fixture.componentInstance.activeAutoSyncUid()).toBeNull();
-    expect(fixture.componentInstance.mlDirectionForm.get('ml-manual')?.disabled).toBe(false);
+    expect(fixture.componentInstance.directionConflicts()['ml-manual']).toEqual({ mlToCUid: null, cToMlUid: null });
   });
 
   it('disables the direction control for a list that is not linked', async () => {

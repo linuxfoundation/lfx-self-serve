@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Lens, LensOption, NavLens } from '../interfaces';
+import { ORG_LENS_URL_ROOT } from './org-lens-url.constants';
 
 export const LENS_COOKIE_KEY = 'lfx-active-lens';
 
@@ -16,7 +17,7 @@ export const LENS_DEFAULT_ROUTES: Readonly<Record<Lens, string>> = {
   me: '/',
   foundation: '/foundation/overview',
   project: '/project/overview',
-  org: '/org',
+  org: `/${ORG_LENS_URL_ROOT}`,
 } as const;
 
 export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
@@ -49,8 +50,8 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   },
   org: {
     id: 'org',
-    label: 'Organization',
-    shortLabel: 'Organiz.',
+    label: 'Company',
+    shortLabel: 'Company',
     icon: 'fa-light fa-building',
     activeIcon: 'fa-solid fa-building',
     defaultRoute: LENS_DEFAULT_ROUTES.org,

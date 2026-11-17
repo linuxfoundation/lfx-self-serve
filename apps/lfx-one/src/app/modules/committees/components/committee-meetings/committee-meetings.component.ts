@@ -25,8 +25,6 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CommitteeService } from '@services/committee.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
-import { meetingsV2EnabledSignal } from '@shared/utils/meetings-v2-flag.util';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -64,7 +62,6 @@ export class CommitteeMeetingsComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly composer = inject(MeetingComposerService);
-  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -91,19 +88,6 @@ export class CommitteeMeetingsComponent {
   // Convenience computed signals — avoids repeating viewMode() === '...' in template
   public isListView = computed(() => this.viewMode() === 'list');
   public isCalendarView = computed(() => this.viewMode() === 'calendar');
-
-  /**
-   * Whether meetings v2 is the create surface for this user.
-   * @description Read as a signal so the tab settles on its own once LaunchDarkly resolves, and
-   * defaulted to `false` so a slow or unreachable provider routes "Schedule meeting" to the pre-v2
-   * create page rather than a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
-   */
-  protected readonly meetingsV2Enabled: Signal<boolean> = meetingsV2EnabledSignal(this.featureFlagService);
-
-  // Query params for the create-meeting route. Includes project slug so writerGuard
-  // can resolve write access — without it the guard redirects to the lens overview.
-  // Only used on the flag-off side: the composer takes the committee as context instead of a URL.
-  public createMeetingQueryParams: Signal<Record<string, string>> = this.initCreateMeetingQueryParams();
 
   // Form for search + filter controls (bound in template)
   public searchForm = new FormGroup({
@@ -218,14 +202,6 @@ export class CommitteeMeetingsComponent {
             deny();
             return;
           }
-          // The freshness re-check above runs on both sides of `MEETING_V2_ENABLED_FLAG`; only the
-          // surface differs. Flag off navigates to the pre-v2 create page carrying the committee
-          // and project context in the URL, which is what this button did before v2.
-          if (!this.meetingsV2Enabled()) {
-            void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
-            return;
-          }
-
           this.composer.open({ mode: 'create', committeeUid: committee.uid, projectUid: fresh.project_uid });
         },
         error: () => deny(),
@@ -233,17 +209,6 @@ export class CommitteeMeetingsComponent {
   }
 
   // Private initializer functions
-
-  private initCreateMeetingQueryParams(): Signal<Record<string, string>> {
-    return computed(() => {
-      const committee = this.committee();
-      const params: Record<string, string> = { committee_uid: committee.uid };
-      if (committee.project_slug) {
-        params['project'] = committee.project_slug;
-      }
-      return params;
-    });
-  }
 
   private initUpcomingMeetings(): Signal<Meeting[]> {
     return computed(() => {

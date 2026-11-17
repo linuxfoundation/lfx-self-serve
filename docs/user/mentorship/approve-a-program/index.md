@@ -5,7 +5,7 @@ audience: [all]
 product_area: Mentorship
 tags: [mentorship, review, approve, reject, program, email]
 last_generated: 2026-10-26
-last_updated: 2026-11-04
+last_updated: 2026-11-17
 intercom_collection: Mentorship
 ---
 
@@ -20,7 +20,7 @@ Only members of the mentorship approver team can approve or reject a program. An
 1. Open a link in the review email.
 2. Sign in at [app.lfx.dev](https://app.lfx.dev) if prompted.
 3. Review the program on the page:
-   - **Header** — the program logo, name, status and the project it belongs to.
+   - **Header** — the program logo, name, status and the project it belongs to, the date the program was **Submitted**, and the **Program admin** who submitted it, with their email. Select the email to write to them.
    - **Program description** and **Program skills**.
    - **Links and compliance** — the GitHub repository, the Code of Conduct and the OpenSSF Best Practices (CII) badge. Each shows **Not provided** when the program has none.
 4. Decide in the **Review request** card:
