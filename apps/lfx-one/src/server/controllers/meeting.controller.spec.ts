@@ -374,19 +374,25 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingById.mockResolvedValue({ committees: [{ uid: V2_COMMITTEE_UID }] });
     });
 
-    // GH-1463: upstream stores a v1 SFID and derives type: 'committee' from it. Forwarding the v2
-    // UID the picker works in would persist a bogus committee reference.
-    it('rewrites a group guest committee_uid from the v2 UID to the v1 SFID', async () => {
+    // lfx-self-serve-ops#1514: lfx-v2-meeting-service owns the v2→v1 translation for this field
+    // internally (CreateRegistrant/UpdateRegistrant call mapCommitteeFieldV2ToV1 on whatever
+    // committee_uid they receive, and translate the response back to v2). Substituting the v1 SFID
+    // here too, as this used to, was a double translation: upstream's own resolver then tried to
+    // translate the already-v1 SFID as if it were still v2, which can never succeed, and surfaced
+    // in production as "invalid ID: mapping not found for committee.uid.<v1_sfid>". The resolution
+    // lookup itself still runs (and still gates a committee with no v1 counterpart) — only the
+    // substitution of its resolved value is gone.
+    it('forwards a group guest committee_uid as the v2 UID once it resolves, instead of substituting the v1 SFID', async () => {
       resolveCommitteeV2UidMappingsMock.mockResolvedValue({ resolved: new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]), confirmedUnresolved: new Set() });
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: V2_COMMITTEE_UID }] });
 
       await controller.addMeetingRegistrants(req, buildRes(), next);
 
-      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V1_COMMITTEE_SFID }));
+      expect(meetingSvc.addMeetingRegistrant).toHaveBeenCalledWith(req, expect.objectContaining({ committee_uid: V2_COMMITTEE_UID }));
     });
 
     // A caller can attribute a guest to any committee UID it likes; only the ones the meeting is
-    // actually scoped to may be resolved, or the v1 lookup becomes an unauthorized cross-project read.
+    // actually scoped to may be resolved, or the lookup becomes an unauthorized cross-project read.
     it('strips a committee_uid the meeting is not scoped to without looking it up', async () => {
       const req = buildReq({ body: [{ email: 'a@example.com', committee_uid: 'cmte-v2-someone-elses' }] });
 

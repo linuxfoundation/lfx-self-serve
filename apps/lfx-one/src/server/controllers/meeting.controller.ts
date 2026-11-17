@@ -988,9 +988,10 @@ export class MeetingController {
       }
 
       // Group-added guests arrive carrying the v2 committee UID the picker works in; upstream
-      // stores a v1 SFID and derives `type: 'committee'` from it. The meeting is loaded first so a
-      // UID that isn't one of this meeting's own committees can be stripped before it's resolved —
-      // the client is the only source of that field, and nothing downstream re-checks it.
+      // owns the v2→v1 translation internally and derives `type: 'committee'` from the field once
+      // translated. The meeting is loaded first so a UID that isn't one of this meeting's own
+      // committees can be stripped — the client is the only source of that field, and nothing
+      // downstream re-checks it.
       const hasCommitteeAttribution = registrantData.some((registrant: CreateMeetingRegistrantRequest) => !!registrant.committee_uid);
       const allowedCommitteeUids = hasCommitteeAttribution ? await this.getMeetingCommitteeUids(req, uid) : new Set<string>();
       const resolvedRegistrants = await this.resolveRegistrantCommitteeUids(req, registrantData, allowedCommitteeUids);
@@ -2531,15 +2532,31 @@ export class MeetingController {
   }
 
   /**
-   * Rewrites each registrant's `committee_uid` from the v2 UID the client works in to the v1 SFID
-   * upstream stores. Upstream derives `type: 'committee'` from that field, so dropping it (as the
-   * BFF used to) silently persists a group-added guest as `direct` and loses attribution.
+   * Validates each registrant's `committee_uid` against the meeting's own committees, confirms
+   * upstream can actually attribute a guest to it, and forwards the v2 UID the client (and the rest
+   * of this BFF) works in — unchanged.
    *
-   * An unresolvable UID is stripped rather than forwarded — a v2 UID upstream would be stored as a
-   * bogus committee reference, which is worse than the guest landing as `direct`. Stripped means the
-   * key is deleted, not nulled: upstream's `CreateItxRegistrantRequestBody` declares `committee_uid`
-   * as a non-nullable optional `string`, so an explicit `null` is off-contract even though omission
-   * is fine. A `null` arriving from the client is dropped for the same reason.
+   * This used to *also* resolve the v2 UID to upstream's v1 SFID and substitute it before
+   * forwarding, on the theory that upstream only understands v1. It doesn't need the substitution:
+   * `lfx-v2-meeting-service` (`internal/service/itx/registrant_service.go::CreateRegistrant`/
+   * `UpdateRegistrant`) already calls `mapCommitteeFieldV2ToV1` on whatever `committee_uid` it
+   * receives, and translates the response's `committee_uid` back to v2 before returning it.
+   * Substituting the v1 SFID here too was a double translation: this function would resolve a v2
+   * UID to the correct v1 SFID, and upstream's own resolver would then try to resolve that SFID
+   * *again*, treating it as if it were still v2 — a lookup that can never succeed, since the
+   * `committee.uid.<v2>` mapping namespace has no entry keyed by a v1 value. That surfaced in
+   * production as `invalid ID: mapping not found for committee.uid.<v1_sfid>`
+   * (lfx-self-serve-ops#1514).
+   *
+   * The resolution step itself still runs and is still load-bearing: it is what tells apart a
+   * committee upstream can actually attribute this guest to from one it cannot, which checking
+   * `allowedV2Uids` alone cannot, now that the map's resolved values are no longer the thing
+   * forwarded. An unresolvable UID is stripped rather than forwarded — upstream would derive
+   * `type: 'committee'` from a v2 UID its own translation can never resolve either, which is worse
+   * than the guest landing as `direct`. Stripped means the key is deleted, not nulled: upstream's
+   * `CreateItxRegistrantRequestBody` declares `committee_uid` as a non-nullable optional `string`,
+   * so an explicit `null` is off-contract even though omission is fine. A `null` arriving from the
+   * client is dropped for the same reason.
    *
    * "Unresolvable" means *confirmed* unresolvable — the lookup answered, and this committee has no v1
    * counterpart. An allowlisted UID the lookup could not answer for (a NATS timeout, an `error:`
@@ -2553,12 +2570,10 @@ export class MeetingController {
    *
    * `allowedV2Uids` is the meeting's own `committees[].uid` set, and a UID outside it is stripped
    * before any lookup. Without that gate the resolver would happily resolve any committee UID the
-   * caller cared to send — `resolveCommitteeV2UidsToV1Ids` goes over NATS with the BFF's own
+   * caller cared to send — `resolveCommitteeV2UidMappings` goes over NATS with the BFF's own
    * credentials and applies no authorization of its own — and upstream derives `type: 'committee'`
-   * from whatever SFID it receives. That would let a meeting editor attribute a guest to a committee
-   * the meeting has nothing to do with, inflating `committee_members_count` against it. Such a row
-   * would also read back unenriched, since `enrichCommitteeRegistrants` only maps the meeting's own
-   * committees, leaking the raw v1 SFID to the client.
+   * from whatever UID it receives once translated. That would let a meeting editor attribute a guest
+   * to a committee the meeting has nothing to do with, inflating `committee_members_count` against it.
    */
   private async resolveRegistrantCommitteeUids(
     req: Request,
@@ -2610,10 +2625,11 @@ export class MeetingController {
     }
 
     return registrants.map((registrant) => {
-      const v1Sfid = registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) ? v2ToV1Map.get(registrant.committee_uid) : undefined;
+      const isResolvable = !!registrant.committee_uid && allowedV2Uids.has(registrant.committee_uid) && v2ToV1Map.has(registrant.committee_uid);
 
-      if (v1Sfid) {
-        return { ...registrant, committee_uid: v1Sfid };
+      if (isResolvable) {
+        // Forward the v2 UID unchanged — upstream owns the v2→v1 translation itself.
+        return registrant;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure-to-strip: the key is deleted, not read
