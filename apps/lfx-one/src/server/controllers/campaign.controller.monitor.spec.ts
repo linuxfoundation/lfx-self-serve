@@ -319,7 +319,7 @@ describe.each([
     expect(body['accountLabel']).toBe(label);
     expect(body['systemAccountRead']).toEqual({
       accountId: read,
-      emptyMessage: expect.stringContaining(`No ${platform} campaigns are recorded for this project yet`),
+      emptyMessage: expect.stringContaining(`No active or paused ${platform} campaigns for this project were found`),
     });
   });
 

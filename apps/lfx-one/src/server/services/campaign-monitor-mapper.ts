@@ -310,15 +310,26 @@ export function toRecordedCampaignsGoogleMonitorResponse(payload: CampaignServic
 
 /**
  * What a LinkedIn, Reddit or Meta monitor read through the LF system account adds to its response
- * (#5889): the account campaign-service read, and the empty state a project with no campaigns
- * recorded on the platform gets instead of "no active campaigns for this account". An empty
- * `account_id` (LinkedIn with nothing recorded) is null, never an empty string the panel would print.
+ * (#5889): the account campaign-service read, and the panel's empty state.
+ *
+ * Only an EMPTY `account_id` says nothing is recorded: campaign-service names no account when the
+ * project has no campaigns recorded on the platform (LinkedIn, where the account is optional). An
+ * empty read that names an account says only that no campaign came back — LinkedIn's monitor, for
+ * one, returns only active and paused campaigns, so a project with only archived ones reads empty —
+ * so its message claims nothing about what is recorded. An empty `account_id` is null, never an
+ * empty string the panel would print.
  */
 export function toSystemAccountRead(payload: CampaignServiceAccountMonitor, platformLabel: string): MonitorSystemAccountRead {
   const accountId = typeof payload.account_id === 'string' ? payload.account_id.trim() : '';
+  if (accountId === '') {
+    return {
+      accountId: null,
+      emptyMessage: `No ${platformLabel} campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.`,
+    };
+  }
   return {
-    accountId: accountId === '' ? null : accountId,
-    emptyMessage: `No ${platformLabel} campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.`,
+    accountId,
+    emptyMessage: `No active or paused ${platformLabel} campaigns for this project were found in the LF system account for this period.`,
   };
 }
 

@@ -535,11 +535,17 @@ describe('toMonitorConnectionError for the system-account reads (#5889)', () => 
 });
 
 describe('toSystemAccountRead (#5889)', () => {
-  it('names the account campaign-service read, trimmed, with the nothing-recorded empty state', () => {
+  it('names the account campaign-service read, trimmed, with an empty state that claims nothing about what is recorded', () => {
     expect(toSystemAccountRead(payload({ account_id: ' t2_lfsystem ' }), 'Reddit Ads')).toEqual({
       accountId: 't2_lfsystem',
-      emptyMessage: 'No Reddit Ads campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.',
+      emptyMessage: 'No active or paused Reddit Ads campaigns for this project were found in the LF system account for this period.',
     });
+  });
+
+  it('says nothing is recorded only when campaign-service named no account', () => {
+    expect(toSystemAccountRead(payload({ account_id: '' }), 'LinkedIn Ads').emptyMessage).toBe(
+      'No LinkedIn Ads campaigns are recorded for this project yet. Campaigns created for it through the LF system account will show here.'
+    );
   });
 
   it.each([
