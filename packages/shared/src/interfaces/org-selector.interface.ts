@@ -140,6 +140,8 @@ export interface OrgLensRollUpScope {
   rootUid: string;
   members: OrgRollUpSetOrg[];
   complete: boolean;
+  /** Organizations of the family the gate checked and left out because the caller cannot read them. */
+  excludedCount: number;
 }
 
 export interface OrgStaffRollUpFamily {
