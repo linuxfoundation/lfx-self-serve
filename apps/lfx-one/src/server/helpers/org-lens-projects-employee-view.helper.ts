@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgLensProject, OrgLensProjectPerson, OrgLensProjectsResponse } from '@lfx-one/shared/interfaces';
+import { DEFAULT_ORG_PROJECTS_WORKSPACE_ID } from '@lfx-one/shared/constants';
+import type { OrgLensProject, OrgLensProjectPerson, OrgLensProjectsResponse, OrgProjectsWorkspacesResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { redactForEmployeeView } from './org-lens-employee-view.helper';
@@ -34,4 +35,21 @@ export function redactProjectsForEmployeeView(req: Request, orgUid: string, resp
   const redacted = redactForEmployeeView(req, orgUid, response, { page: PROJECTS_PAGE });
   if (redacted === response) return response;
   return { ...redacted, projects: redacted.projects.map(anonymizeProject) };
+}
+
+/**
+ * Workspace names are typed by company admins and can contain a person's name or email address. In the all employee
+ * view every user-created workspace is renamed to a neutral `Workspace N` (the system default keeps its own name), so
+ * the page's workspace selector still works; ids, project slugs and counts are unchanged.
+ */
+export function redactWorkspacesForEmployeeView(req: Request, orgUid: string, response: OrgProjectsWorkspacesResponse): OrgProjectsWorkspacesResponse {
+  const redacted = redactForEmployeeView(req, orgUid, response, { page: PROJECTS_PAGE });
+  if (redacted === response) return response;
+  let custom = 0;
+  return {
+    ...response,
+    workspaces: response.workspaces.map((workspace) =>
+      workspace.id === DEFAULT_ORG_PROJECTS_WORKSPACE_ID ? workspace : { ...workspace, name: `Workspace ${++custom}` }
+    ),
+  };
 }

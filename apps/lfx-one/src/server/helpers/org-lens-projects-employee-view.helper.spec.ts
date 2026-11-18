@@ -3,14 +3,14 @@
 
 import '@angular/compiler';
 
-import type { OrgLensProject, OrgLensProjectsResponse } from '@lfx-one/shared/interfaces';
+import type { OrgLensProject, OrgLensProjectsResponse, OrgProjectsWorkspacesResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ getOrgLensViewMode: vi.fn() }));
 vi.mock('./org-lens-read-access.helper', () => ({ getOrgLensViewMode: mocks.getOrgLensViewMode }));
 
-const { redactProjectsForEmployeeView } = await import('./org-lens-projects-employee-view.helper');
+const { redactProjectsForEmployeeView, redactWorkspacesForEmployeeView } = await import('./org-lens-projects-employee-view.helper');
 
 const req = {} as Request;
 const person = (id: string, name: string) => ({ id, name, avatarUrl: `https://avatars.example/${id}.png` });
@@ -58,5 +58,31 @@ describe('redactProjectsForEmployeeView', () => {
     redactProjectsForEmployeeView(req, 'org', response);
 
     expect(project.contributors[0].name).toBe('Grace Hopper');
+  });
+});
+
+describe('redactWorkspacesForEmployeeView', () => {
+  const workspaces = {
+    workspaces: [
+      { id: 'all-activities', name: 'All Projects with Activities', projectSlugs: [] },
+      { id: 'w1', name: 'Ada Lovelace focus', projectSlugs: ['kubernetes', 'envoy'] },
+      { id: 'w2', name: 'ada@acme.example', projectSlugs: ['helm'] },
+    ],
+  } as OrgProjectsWorkspacesResponse;
+
+  it('leaves the full view payload untouched', () => {
+    mocks.getOrgLensViewMode.mockReturnValue('full');
+
+    expect(redactWorkspacesForEmployeeView(req, 'org', workspaces)).toBe(workspaces);
+  });
+
+  it('replaces user-typed workspace names in the employee view and keeps ids, slugs and the default name', () => {
+    mocks.getOrgLensViewMode.mockReturnValue('employee');
+
+    expect(redactWorkspacesForEmployeeView(req, 'org', workspaces).workspaces).toEqual([
+      { id: 'all-activities', name: 'All Projects with Activities', projectSlugs: [] },
+      { id: 'w1', name: 'Workspace 1', projectSlugs: ['kubernetes', 'envoy'] },
+      { id: 'w2', name: 'Workspace 2', projectSlugs: ['helm'] },
+    ]);
   });
 });
