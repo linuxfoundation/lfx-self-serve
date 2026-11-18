@@ -13,6 +13,7 @@ import {
   inject,
   Injector,
   input,
+  linkedSignal,
   OnInit,
   output,
   PLATFORM_ID,
@@ -58,6 +59,7 @@ import {
   LINKEDIN_GEO_RESOLVE_MAP,
   LINKEDIN_IMAGE_MAX_BYTES,
   LINKEDIN_MAX_VARIANTS,
+  LINKEDIN_MIN_DAILY_BUDGET_USD,
   LINKEDIN_MIN_VARIANTS,
   TWITTER_IMAGE_MAX_BYTES,
   TWITTER_IMAGE_TOO_LARGE_MESSAGE,
@@ -458,6 +460,7 @@ import {
   linkedInVariantTextError,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
+  roundUsdToCentsLikeGo,
   storedCreativeAssetLabel,
   twitterComposedTweetLength,
   twitterStartDateTooSoon,
@@ -812,6 +815,16 @@ export class ImplementationTabComponent implements OnInit {
    * keep the read-only "set by the connection" line, and the create sends no `adAccountId`.
    */
   public readonly linkedInAccountSelectionEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether the LinkedIn section may offer a daily cap beside a lifetime budget
+   * (`CampaignListResult.linkedInDailyCapEnabled`, #5774). `null` (unknown) hides the field, so the
+   * form never sends a cap the deployment would refuse; the BFF refuses one anyway.
+   */
+  public readonly linkedInDailyCapEnabled = input<boolean | null>(null);
+
+  /** @see linkedInDailyCapEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInDailyCapAvailable = computed<boolean>(() => this.linkedInDailyCapEnabled() === true);
 
   /**
    * Whether the Microsoft section may offer an image UPLOAD (`CampaignListResult.microsoftAssetUploadEnabled`),
@@ -1624,6 +1637,17 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInVariants = signal<LinkedInVariantDraft[]>([]);
   protected readonly linkedInBudgetUsd = signal(DEFAULT_LINKEDIN_BUDGET_USD);
   protected readonly linkedInLifetimeBudget = signal(false);
+  /** The optional daily cap beside a lifetime budget (#5774). null is no cap; cleared when the lifetime budget is turned off. */
+  protected readonly linkedInDailyCapUsd = signal<number | null>(null);
+  /**
+   * What the Daily cap box shows. An entry the browser cannot parse (NaN) keeps the previous value, so
+   * the binding does not change and never writes back into the box, which would wipe the typed text
+   * and leave an empty box that still blocks Create.
+   */
+  protected readonly linkedInDailyCapInputValue = linkedSignal<number | null, number | null>({
+    source: this.linkedInDailyCapUsd,
+    computation: (cap, previous) => (cap !== null && Number.isNaN(cap) ? (previous?.value ?? null) : cap),
+  });
   protected readonly linkedInAccounts = signal<LinkedInAccount[]>([]);
   protected readonly linkedInAccountsLoading = signal(false);
   /** The configured targeting profiles (#5546), from the mounted ConfigMap; the same list for every foundation. */
@@ -3523,6 +3547,14 @@ export class ImplementationTabComponent implements OnInit {
     () => this.linkedInVariantViews().find((view) => view.imageBlock !== null)?.imageBlock ?? null
   );
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
+  /** Why the daily cap (#5774) cannot be sent, or null; see `initLinkedInDailyCapError`. */
+  protected readonly linkedInDailyCapError: Signal<string | null> = this.initLinkedInDailyCapError();
+  /** The hint, plus the error while there is one, so the reason is read when the field is focused. */
+  protected readonly linkedInDailyCapDescribedBy = computed(() =>
+    this.linkedInDailyCapError() === null
+      ? 'implementation-linkedin-daily-cap-hint'
+      : 'implementation-linkedin-daily-cap-hint implementation-linkedin-daily-cap-error'
+  );
   /** Whether any variant's intro text or headline is one campaign-service would refuse or cut. */
   protected readonly linkedInVariantTextInvalid = computed(() =>
     this.linkedInVariantViews().some((view) => view.introTextError !== '' || view.headlineError !== '')
@@ -3794,6 +3826,8 @@ export class ImplementationTabComponent implements OnInit {
     if (googleSelected && (this.googleFirstAdHeadlinesError() !== null || this.googleFirstAdDescriptionsError() !== null))
       return "Google Ads: the first ad's headlines or descriptions are too wide.";
     if (linkedInSelected && this.linkedInBudgetUsd() < 1) return 'LinkedIn Ads: set a budget of at least $1.';
+    // A daily cap campaign-service would refuse (#5774); the message is under the field.
+    if (linkedInSelected && this.linkedInDailyCapError() !== null) return 'LinkedIn Ads: fix the daily cap.';
     if (linkedInSelected && this.linkedInGeoTargets().length === 0) return 'LinkedIn Ads: add at least one location.';
     if (linkedInSelected && this.linkedInVariants().length === 0) return 'LinkedIn Ads: add at least one ad variant.';
     if (linkedInSelected && this.linkedInVariants().length > LINKEDIN_MAX_VARIANTS)
@@ -4963,7 +4997,26 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onLinkedInLifetimeBudgetChange(event: Event): void {
-    this.linkedInLifetimeBudget.set((event.target as HTMLInputElement).checked);
+    const lifetime = (event.target as HTMLInputElement).checked;
+    this.linkedInLifetimeBudget.set(lifetime);
+    // A daily cap exists only beside a lifetime budget (#5774): turning it off drops the cap rather
+    // than keeping a hidden value a later re-check would silently send.
+    if (!lifetime) this.linkedInDailyCapUsd.set(null);
+    this.emitDraft();
+  }
+
+  /**
+   * Empty is no cap; anything else is kept as typed and judged by `linkedInDailyCapError`. A number
+   * input the browser cannot parse (`1e`) also reads as `''`, so `validity.badInput` is checked first:
+   * that entry is kept as NaN, which the error refuses, rather than silently becoming "no cap".
+   */
+  protected onLinkedInDailyCapInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.validity?.badInput) {
+      this.linkedInDailyCapUsd.set(Number.NaN);
+    } else {
+      this.linkedInDailyCapUsd.set(input.value.trim() === '' ? null : input.valueAsNumber);
+    }
     this.emitDraft();
   }
 
@@ -6470,6 +6523,9 @@ export class ImplementationTabComponent implements OnInit {
               hsToken: this.briefHsToken() ?? undefined,
               budgetUsd: this.linkedInBudgetUsd(),
               lifetimeBudget: this.linkedInLifetimeBudget(),
+              // Only beside a lifetime budget and only when set (#5774), so a create without a cap
+              // sends exactly what it always did.
+              ...this.linkedInDailyCapField(),
               startDate: form.startDate,
               endDate: form.endDate,
               geoTargets: this.linkedInGeoTargets(),
@@ -8307,6 +8363,12 @@ export class ImplementationTabComponent implements OnInit {
     return { selectedAdAccountId: account.accountId };
   }
 
+  /** `{ dailyCapUsd }` when a cap is set beside a lifetime budget on a deployment that offers it (#5774), else nothing. */
+  private linkedInDailyCapField(): { dailyCapUsd?: number } {
+    const cap = this.linkedInDailyCapUsd();
+    return this.linkedInDailyCapAvailable() && this.linkedInLifetimeBudget() && cap !== null ? { dailyCapUsd: cap } : {};
+  }
+
   private loadLinkedInAccounts(): void {
     // Stamp the slug this request was made for — a foundation switch fires a new request before
     // the previous one resolves, and `takeUntilDestroyed` alone doesn't cancel it (the component
@@ -8692,6 +8754,12 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (draft.linkedInLifetimeBudget !== undefined) {
       this.linkedInLifetimeBudget.set(draft.linkedInLifetimeBudget);
+    }
+    if (draft.linkedInDailyCapUsd !== undefined) {
+      // An unparsable entry (NaN) cannot be shown again: the remounted box starts empty, so it is
+      // restored as no cap, which is what that empty box says, rather than a hidden value blocking Create.
+      const cap = draft.linkedInDailyCapUsd;
+      this.linkedInDailyCapUsd.set(cap !== null && Number.isNaN(cap) ? null : cap);
     }
     if (draft.redditBudgetUsd !== undefined) {
       this.redditBudgetUsd.set(draft.redditBudgetUsd);
@@ -9258,6 +9326,7 @@ export class ImplementationTabComponent implements OnInit {
       // budget pair stayed broken behind three green tests.
       linkedInBudgetUsd: this.linkedInBudgetUsd(),
       linkedInLifetimeBudget: this.linkedInLifetimeBudget(),
+      linkedInDailyCapUsd: this.linkedInDailyCapUsd(),
       redditBudgetUsd: this.redditBudgetUsd(),
       redditObjective: this.redditObjective(),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
@@ -9608,6 +9677,7 @@ export class ImplementationTabComponent implements OnInit {
   private resetLinkedInFields(): void {
     this.linkedInBudgetUsd.set(DEFAULT_LINKEDIN_BUDGET_USD);
     this.linkedInLifetimeBudget.set(false);
+    this.linkedInDailyCapUsd.set(null);
     this.linkedInVariants.set([]);
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
@@ -10048,6 +10118,26 @@ export class ImplementationTabComponent implements OnInit {
       const { start, end } = this.googleBudgetInputs();
       if (!isReversedCampaignFlight(start, end)) return null;
       return `Google needs the end date (${end}) on or after the start date (${start}).`;
+    });
+  }
+
+  /**
+   * Mirrors campaign-service's `linkedin.ValidateDailyCap` (#5774): compared at two-decimal wire
+   * precision, at least LinkedIn's $10 daily minimum, and no more than the lifetime budget. No cap,
+   * or no lifetime budget, is never an error.
+   */
+  private initLinkedInDailyCapError(): Signal<string | null> {
+    return computed((): string | null => {
+      const cap = this.linkedInDailyCapUsd();
+      // Not offered, or no lifetime budget: nothing is sent, so nothing can be wrong.
+      if (cap === null || !this.linkedInLifetimeBudget() || !this.linkedInDailyCapAvailable()) return null;
+      if (!Number.isFinite(cap)) return 'Enter the daily cap in US dollars, or leave it empty for no cap.';
+      // Rounded exactly as campaign-service rounds both amounts, ties to the even cent.
+      const rounded = roundUsdToCentsLikeGo(cap);
+      if (rounded < LINKEDIN_MIN_DAILY_BUDGET_USD) return `The daily cap must be at least $${LINKEDIN_MIN_DAILY_BUDGET_USD}, LinkedIn's daily minimum.`;
+      const total = roundUsdToCentsLikeGo(this.linkedInBudgetUsd());
+      if (rounded > total) return "The daily cap can't be more than the lifetime budget.";
+      return null;
     });
   }
 

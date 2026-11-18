@@ -817,6 +817,16 @@ export function canEditLinkedInTargeting(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may carry `linkedInConfig.dailyCapUsd` (#5774), a daily cap beside a
+ * lifetime budget. `cutoverOwnsCreate()` and nothing else, like `canEditLinkedInTargeting`: only
+ * campaign-service sends the cap (linuxfoundation/lfx-v2-campaign-service#607), and the LEGACY
+ * creator would drop it and spend without the cap.
+ */
+export function canSetLinkedInDailyCap(): boolean {
+  return cutoverOwnsCreate();
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1041,6 +1051,7 @@ export class CampaignServiceClient {
         linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
         linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
         linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+        linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1114,6 +1125,7 @@ export class CampaignServiceClient {
       linkedInAssetUploadEnabled: canUseLinkedInCreativeAssets(),
       linkedInTargetingEditEnabled: canEditLinkedInTargeting(),
       linkedInAccountSelectionEnabled: canChooseLinkedInAdAccount(),
+      linkedInDailyCapEnabled: canSetLinkedInDailyCap(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

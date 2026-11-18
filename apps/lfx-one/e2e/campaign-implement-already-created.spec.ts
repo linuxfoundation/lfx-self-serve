@@ -82,6 +82,7 @@ function listResult(campaigns: CampaignIndexDoc[]): CampaignListResult {
     linkedInAssetUploadEnabled: false,
     linkedInTargetingEditEnabled: false,
     linkedInAccountSelectionEnabled: false,
+    linkedInDailyCapEnabled: false,
     microsoftAssetUploadEnabled: false,
     biddingEnabled: false,
     microsoftScheduleEnabled: false,
