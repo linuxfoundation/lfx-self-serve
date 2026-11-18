@@ -210,6 +210,17 @@ describe('GroupApplicationsComponent', () => {
     expect(document.activeElement?.closest('[data-testid="groups-redesign-applications-row"]')).not.toBeNull();
   });
 
+  it('closes its Undo toast when the page goes away', async () => {
+    const dismiss = vi.fn<() => void>();
+    show.mockReturnValue({ id: 'toast', dismiss });
+    await render();
+    await open();
+    await withdrawRow(0);
+    fixture.destroy();
+
+    expect(dismiss).toHaveBeenCalled();
+  });
+
   it('keeps the row off and says so when Undo fails', async () => {
     submit.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     await render();

@@ -25,7 +25,7 @@ import {
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { GROUPS_HOME_UNDO_MS } from '@lfx-one/shared/constants';
-import { GroupsHomeUndo, MyPendingApplication, PendingApplicationRowVm, UiFocusable } from '@lfx-one/shared/interfaces';
+import { GroupsHomeUndo, MyPendingApplication, PendingApplicationRowVm, UiFocusable, UiToastRef } from '@lfx-one/shared/interfaces';
 import { getEntityCommands } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
@@ -86,12 +86,15 @@ export class GroupApplicationsComponent {
   private undoTimer: ReturnType<typeof setTimeout> | null = null;
   /** Application the drawer's Undo restores. */
   private undoUid: string | null = null;
+  /** Undo toasts shown here; they go with the page, since their Undo restores into it. */
+  private readonly undoToasts = new Set<UiToastRef>();
 
   public constructor() {
     this.initCloseWhenEmpty();
     this.initTruncation();
     this.destroyRef.onDestroy(() => {
       this.clearUndo();
+      this.undoToasts.forEach((toast) => toast.dismiss());
       this.drawerRef?.close();
     });
   }
@@ -116,19 +119,22 @@ export class GroupApplicationsComponent {
     const index = this.rows().findIndex((row) => row.uid === application.uid);
     this.setWithdrawn(application.uid, true);
     this.focusRow(index);
-    this.committeeService.withdrawApplication(application.committee_uid, application.uid).subscribe({
-      next: () => this.offerUndo(application),
-      error: (error: HttpErrorResponse) => {
-        // 404 and 409: the application is gone or already reviewed, so it stays off the list.
-        if (error.status === 404 || error.status === 409) {
-          this.toast.show({ variant: 'warning', message: 'Application no longer pending', description: 'It was already reviewed or removed.' });
-          return;
-        }
-        this.setWithdrawn(application.uid, false);
-        // 403: only the applicant can withdraw, so a retry cannot help.
-        this.toast.show({ variant: 'error', message: "Couldn't withdraw the application", description: error.status === 403 ? undefined : 'Try again.' });
-      },
-    });
+    this.committeeService
+      .withdrawApplication(application.committee_uid, application.uid)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.offerUndo(application),
+        error: (error: HttpErrorResponse) => {
+          // 404 and 409: the application is gone or already reviewed, so it stays off the list.
+          if (error.status === 404 || error.status === 409) {
+            this.toast.show({ variant: 'warning', message: 'Application no longer pending', description: 'It was already reviewed or removed.' });
+            return;
+          }
+          this.setWithdrawn(application.uid, false);
+          // 403: only the applicant can withdraw, so a retry cannot help.
+          this.toast.show({ variant: 'error', message: "Couldn't withdraw the application", description: error.status === 403 ? undefined : 'Try again.' });
+        },
+      });
   }
 
   private initLoaded(): Signal<MyPendingApplication[]> {
@@ -193,6 +199,7 @@ export class GroupApplicationsComponent {
     this.undoUid = application.uid;
     const run = (): void => this.undoWithdraw(application);
     const toast = this.toast.show({ message: 'Application withdrawn', duration: GROUPS_HOME_UNDO_MS, actions: [{ label: 'Undo', run }] });
+    this.undoToasts.add(toast);
     this.undo.set({
       ariaLabel: `Undo withdrawing your application to ${application.committee_name}`,
       run: () => {
