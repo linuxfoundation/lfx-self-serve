@@ -110,6 +110,14 @@ export class AccountContextService {
   /** True while a family roll-up is the selection — every page reads combined data and every write is gated off (#4125). */
   public readonly isRollUp: Signal<boolean> = computed(() => this.selectedRollUpRootUid() !== null);
 
+  private readonly staffRollUpAnchor: Signal<string | null> = computed(() => {
+    if (!this.rollUpFlag.enabled() || !this.orgRoleGrantsService.isStaff()) {
+      return null;
+    }
+    const uid = this.selectedRollUpRootUid() ?? this.selectedAccount().uid;
+    return uid && ORG_ACCOUNT_ID_PATTERN.test(uid) ? uid : null;
+  });
+
   /**
    * The caller's organizations grouped by Salesforce family — one roll-up per family (#4125). Every
    * family the caller holds anything in, including one-organization families, which are not offered
@@ -312,6 +320,10 @@ export class AccountContextService {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((family) => this.renameSelectedRollUp(family));
+
+    toObservable(this.staffRollUpAnchor)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((uid) => this.rollUpFamiliesService.setStaffAnchor(uid));
   }
 
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
