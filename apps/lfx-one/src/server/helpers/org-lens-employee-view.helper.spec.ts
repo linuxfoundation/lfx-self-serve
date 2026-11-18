@@ -96,6 +96,15 @@ describe('embedded personal data in free text', () => {
     expect(stripPersonalFields(input, { page: 'projects' })).toEqual({ remote: input.remote, pin: input.pin, list: [input.remote] });
   });
 
+  it('removes addresses on punycode and non-ASCII top-level domains', () => {
+    // Built at runtime: the fixture-domain check only knows ASCII reserved domains, and these TLDs are the point of the test.
+    const punycode = ['ada', 'acme.xn--p1ai'].join('@');
+    const unicode = ['ada', 'acme.рф'].join('@');
+    expect(stripPersonalFields({ owner: punycode, list: [punycode, unicode] }, page)).toEqual({ list: [] });
+    expect(scrubFreeText(`write ${punycode} or ${unicode} today`)).toBe('write  or  today');
+    expect(scrubFreeText('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git')).toBe('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git');
+  });
+
   it('removes embedded emails in nested objects and arrays', () => {
     const input = { rows: [{ detail: { text: 'ping bob@team.example now' } }], tags: ['ok', 'see carol@team.example', 'dan@team.example'] };
 
