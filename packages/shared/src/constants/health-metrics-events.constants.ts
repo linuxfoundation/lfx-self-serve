@@ -18,6 +18,7 @@ import type {
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSnapshot,
   HealthMetricsEventsSnapshotPeriodOption,
+  HealthMetricsEventsSpeakerProposalsFilterOption,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersListOption,
   HealthMetricsEventsSponsorship,
@@ -283,6 +284,20 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS: readonly HealthMetrics
   { id: 'proposals', label: 'Recent proposals' },
   { id: 'companies', label: 'Most active companies' },
 ];
+
+/** Proposals per drawer page; the server caps a request at `HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE`. */
+export const HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE = 25;
+
+export const HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE = 100;
+
+/** The drawer's status filter: every status, then each group, as the design lists them. */
+export const HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_STATUS_OPTIONS: readonly HealthMetricsEventsSpeakerProposalsFilterOption[] = [
+  { id: '', label: 'All statuses' },
+  ...Object.entries(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).map(([id, group]) => ({ id, label: group.label })),
+];
+
+/** The drawer's first event option. */
+export const HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_ALL_EVENTS: HealthMetricsEventsSpeakerProposalsFilterOption = { id: '', label: 'All events' };
 
 /** Shown for any figure the view did not measure, so a gap never reads as zero. */
 export const HEALTH_METRICS_EVENTS_NOT_AVAILABLE = 'not available';

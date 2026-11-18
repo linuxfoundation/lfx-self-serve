@@ -15,6 +15,7 @@ const {
   getRegistrationsGrowth,
   getRevenue,
   getSnapshot,
+  getSpeakerProposalsPage,
   getSpeakers,
   getSponsorship,
 } = vi.hoisted(() => ({
@@ -28,6 +29,7 @@ const {
   getRegistrationsGrowth: vi.fn(),
   getRevenue: vi.fn(),
   getSnapshot: vi.fn(),
+  getSpeakerProposalsPage: vi.fn(),
   getSpeakers: vi.fn(),
   getSponsorship: vi.fn(),
 }));
@@ -43,6 +45,7 @@ vi.mock('../services/health-metrics-events.service', () => ({
     public getRevenue = getRevenue;
     public getSpeakers = getSpeakers;
     public getOrganizations = getOrganizations;
+    public getSpeakerProposalsPage = getSpeakerProposalsPage;
     public getSponsorship = getSponsorship;
     public getGeography = getGeography;
     public getSnapshot = getSnapshot;
@@ -95,6 +98,7 @@ type Handler =
   | 'getEventsRevenue'
   | 'getEventsSpeakers'
   | 'getEventsOrganizations'
+  | 'getEventsSpeakerProposals'
   | 'getEventsSponsorship'
   | 'getEventsGeography';
 
@@ -503,6 +507,76 @@ describe('AnalyticsController.getEventsOrganizations', () => {
     getOrganizations.mockRejectedValue(failure);
 
     const { next, promise } = call('getEventsOrganizations', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+describe('AnalyticsController.getEventsSpeakerProposals', () => {
+  const page = { rows: [], totalRecords: 0, events: [] };
+
+  beforeEach(() => {
+    getSpeakerProposalsPage.mockReset();
+    getSpeakerProposalsPage.mockResolvedValue(page);
+  });
+
+  it('defaults the period, filters and page', async () => {
+    const { res, next, promise } = call('getEventsSpeakerProposals', { foundationSlug: 'acme' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getSpeakerProposalsPage).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'YTD',
+      eventId: '',
+      status: null,
+      offset: 0,
+      pageSize: 25,
+    });
+    expect(res.json).toHaveBeenCalledWith(page);
+  });
+
+  it('passes the parsed query', async () => {
+    const { promise } = call('getEventsSpeakerProposals', {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      eventId: 'evt-1',
+      status: 'declined',
+      offset: '25',
+      pageSize: '25',
+    });
+    await promise;
+
+    expect(getSpeakerProposalsPage).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      range: 'COMPLETED_YEAR',
+      eventId: 'evt-1',
+      status: 'declined',
+      offset: 25,
+      pageSize: 25,
+    });
+  });
+
+  it.each([
+    [{}, 'foundationSlug'],
+    [{ foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' }, 'range'],
+    [{ foundationSlug: 'acme', eventId: "evt'; DROP" }, 'eventId'],
+    [{ foundationSlug: 'acme', status: 'waitlisted' }, 'status'],
+    [{ foundationSlug: 'acme', status: 'toString' }, 'status'],
+  ])('rejects %o on %s', async (query, field) => {
+    const { next, promise } = call('getEventsSpeakerProposals', query as Record<string, string>);
+    await promise;
+
+    expect(rejectedField(next)).toBe(field);
+    expect(getSpeakerProposalsPage).not.toHaveBeenCalled();
+  });
+
+  it('hands a service failure to next()', async () => {
+    const failure = new Error('warehouse down');
+    getSpeakerProposalsPage.mockRejectedValue(failure);
+
+    const { next, promise } = call('getEventsSpeakerProposals', { foundationSlug: 'acme' });
     await promise;
 
     expect(next).toHaveBeenCalledWith(failure);

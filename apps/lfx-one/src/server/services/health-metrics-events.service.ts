@@ -15,6 +15,8 @@ import {
   HEALTH_METRICS_EVENTS_REVENUE_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_COMPARED_RANGES,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
@@ -61,6 +63,9 @@ import type {
   HealthMetricsEventsSnapshotPackage,
   HealthMetricsEventsSnapshotQuery,
   HealthMetricsEventsSnapshotWeek,
+  HealthMetricsEventsSpeakerProposals,
+  HealthMetricsEventsSpeakerProposalsEvent,
+  HealthMetricsEventsSpeakerProposalsQuery,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersOrganization,
   HealthMetricsEventsSpeakersPeriod,
@@ -287,6 +292,18 @@ interface SpeakerProposalRow {
   PROPOSAL_STATUS_GROUP: string | null;
   IS_UNAFFILIATED_PROPOSAL: boolean | null;
   LOGO_URL: string | null;
+}
+
+/** A drawer page row joined onto the filtered total; the period is the request's, so the read leaves it out. */
+interface SpeakerProposalPageRow extends Omit<SpeakerProposalRow, 'PERIOD'> {
+  TOTAL_RECORDS: number | null;
+  IS_PAGE_ROW: boolean | null;
+}
+
+/** An event with proposals in the period. */
+interface SpeakerProposalEventRow {
+  EVENT_ID: string | null;
+  EVENT_NAME: string | null;
 }
 
 /** One page row joined onto the totals; the period columns are aliased unsuffixed in the read. */
@@ -752,6 +769,85 @@ export class HealthMetricsEventsService {
   }
 
   /**
+   * One page of the period's proposals for the All speaker proposals drawer, most recent first, cut by event and status
+   * group. The first page also lists the period's events for the drawer's event filter.
+   */
+  public async getSpeakerProposalsPage(req: Request, query: HealthMetricsEventsSpeakerProposalsQuery): Promise<HealthMetricsEventsSpeakerProposals> {
+    // The flag and the page bounds come from constants or clamps, never from the request, so interpolating them is safe.
+    const inPeriod = `p.is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range]} = TRUE`;
+    const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE, HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_PAGE_SIZE);
+    const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+    const binds: string[] = [query.foundationSlug];
+    const predicates: string[] = [];
+    if (query.eventId) {
+      predicates.push('p.event_id = ?');
+      binds.push(query.eventId);
+    }
+    if (query.status) {
+      predicates.push('p.proposal_status_group = ?');
+      binds.push(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[query.status].viewValue);
+    }
+    const matchClause = predicates.map((predicate) => `AND ${predicate}`).join(' ');
+
+    // The total is joined onto the page rather than read as `COUNT(*) OVER()`, so a page past the end still reports it.
+    const sql = `
+      WITH matched AS (
+        SELECT
+          p.proposal_key,
+          p.account_name,
+          p.account_id,
+          p.job_title,
+          p.event_name,
+          p.session_title,
+          p.submission_date,
+          p.submission_status_original,
+          p.proposal_status_group,
+          p.is_unaffiliated_proposal
+        FROM ${SPEAKERS_LIST_VIEW} p
+        WHERE p.foundation_slug = ?
+          AND p.is_all_projects = TRUE
+          AND ${inPeriod}
+          AND p.proposal_key IS NOT NULL
+          ${matchClause}
+      ),
+      totals AS (
+        SELECT COUNT(*) AS total_records FROM matched
+      ),
+      page AS (
+        SELECT *, TRUE AS is_page_row
+        FROM matched
+        -- Day first, then key, as the recent proposals table sorts.
+        ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      SELECT totals.*, page.*, NULLIF(TRIM(logos.logo_url), '') AS logo_url
+      FROM totals
+      LEFT JOIN page ON TRUE
+      LEFT JOIN ${ACCOUNT_LOGO_VIEW} logos ON logos.account_id = page.account_id
+      ORDER BY TO_DATE(page.submission_date) DESC NULLS LAST, page.proposal_key ASC
+    `;
+
+    const [result, events] = await Promise.all([
+      executeSnowflakeViewRead<SpeakerProposalPageRow>(this.snowflakeService, req, sql, binds, {
+        view: SPEAKERS_LIST_VIEW,
+        operation: 'get_events_speaker_proposals',
+        clientMessage: 'Speaker proposals are unavailable right now.',
+      }),
+      offset === 0 ? this.getSpeakerProposalEvents(req, query) : Promise.resolve(null),
+    ]);
+
+    return {
+      rows: result.rows
+        .filter((row) => row.IS_PAGE_ROW === true)
+        .map((row) => mapSpeakerProposal({ ...row, PERIOD: query.range }))
+        .filter((proposal): proposal is HealthMetricsEventsSpeakersProposal => proposal !== null),
+      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
+      events,
+    };
+  }
+
+  /**
    * One page of the organizations active in the period, ranked by the view's `sort_rank_<period>`
    * (registrations first) so the ranking survives pagination.
    */
@@ -1094,6 +1190,29 @@ export class HealthMetricsEventsService {
       clientMessage: 'Speakers and proposals are unavailable right now.',
     });
     return result.rows;
+  }
+
+  /** Every event with a proposal in the period, latest start first, whatever the drawer's filters. */
+  private async getSpeakerProposalEvents(req: Request, query: HealthMetricsEventsSpeakerProposalsQuery): Promise<HealthMetricsEventsSpeakerProposalsEvent[]> {
+    const inPeriod = `is_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range]} = TRUE`;
+    const sql = `
+      SELECT event_id, MAX(event_name) AS event_name, MAX(event_start_date) AS event_start_date
+      FROM ${SPEAKERS_LIST_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND ${inPeriod}
+        AND proposal_key IS NOT NULL
+        AND event_id IS NOT NULL
+      GROUP BY event_id
+      ORDER BY event_start_date DESC NULLS LAST, event_name ASC, event_id ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<SpeakerProposalEventRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: SPEAKERS_LIST_VIEW,
+      operation: 'get_events_speaker_proposals',
+      clientMessage: 'Speaker proposals are unavailable right now.',
+    });
+    return result.rows.flatMap((row) => (row.EVENT_ID ? [{ id: row.EVENT_ID, name: row.EVENT_NAME?.trim() || row.EVENT_ID }] : []));
   }
 
   /** The headline totals alone, for a foundation the revenue view has no row for; no overview row either is unmeasured. */

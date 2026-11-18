@@ -501,6 +501,12 @@ export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEven
   // An unmeasured count reads "—" with no bar, never as 0.
   const most = Math.max(0, ...companies.map((company) => company.submitted ?? 0));
 
+  const proposals = speakers.proposals
+    .filter((proposal) => proposal.range === range)
+    .sort(compareProposalsByRecency)
+    .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS)
+    .map(buildHealthMetricsEventsSpeakersProposalRowView);
+
   return {
     foundationMeasured: speakers.periods.length > 0,
     measured: period !== null && period.submitted !== null,
@@ -522,11 +528,7 @@ export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEven
       },
     ],
     chart: buildSpeakersChart(speakers),
-    proposals: speakers.proposals
-      .filter((proposal) => proposal.range === range)
-      .sort(compareProposalsByRecency)
-      .slice(0, HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS)
-      .map(buildSpeakersProposalRowView),
+    proposals,
     companies: companies.map(({ organization, submitted }) => ({
       key: organization.accountId,
       label: organization.accountName,
@@ -536,7 +538,15 @@ export function buildHealthMetricsEventsSpeakersView(speakers: HealthMetricsEven
       icon: '',
       company: { kind: 'company', name: organization.accountName, logoUrl: organization.logoUrl },
     })),
+    viewAllLabel: proposals.length ? formatSpeakersViewAllLabel(period?.submitted ?? null) : '',
   };
+}
+
+/** The drawer's subtitle: "{N} proposals · {period}", the period as "2026 (YTD)" or "2025". */
+export function formatHealthMetricsEventsSpeakerProposalsSubtitle(total: number, range: HealthMetricsRange): string {
+  const year = getYearForRange(range);
+  const period = range === 'YTD' ? `${year} (YTD)` : `${year}`;
+  return `${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'proposal' : 'proposals'} · ${period}`;
 }
 
 /**
@@ -801,6 +811,12 @@ function buildRankedRows(items: HealthMetricsEventsRankedRowInput[]): HealthMetr
   return items.map((item) => ({ key: item.key, label: item.label, valueLabel: formatAtAGlanceCount(item.value) }));
 }
 
+/** "View all {N} proposals" from the period's total; an unmeasured total drops the count rather than read as zero. */
+function formatSpeakersViewAllLabel(total: number | null): string {
+  if (total === null) return 'View all proposals';
+  return `View all ${formatHealthMetricsEventsCount(total)} ${total === 1 ? 'proposal' : 'proposals'}`;
+}
+
 /** Most recent first; the proposal key breaks ties so the order is stable. */
 function compareProposalsByRecency(a: HealthMetricsEventsSpeakersProposal, b: HealthMetricsEventsSpeakersProposal): number {
   const byDate = (b.submissionDate ?? '').localeCompare(a.submissionDate ?? '');
@@ -844,10 +860,12 @@ function buildSpeakersChart(speakers: HealthMetricsEventsSpeakers): HealthMetric
   });
 }
 
-function buildSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersProposal): HealthMetricsEventsSpeakersProposalRowView {
+/** A proposal's labels, shared by the recent proposals table and the All speaker proposals drawer. */
+export function buildHealthMetricsEventsSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersProposal): HealthMetricsEventsSpeakersProposalRowView {
   // Only the view's flag makes a speaker an individual; a company with no name reads "—".
   const company = proposal.unaffiliated ? 'Individual' : (proposal.organizationName ?? HEALTH_METRICS_TABLE_DASH);
   const group = proposal.statusGroup ? HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[proposal.statusGroup] : null;
+  const date = proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : '';
 
   return {
     key: proposal.proposalKey,
@@ -856,7 +874,8 @@ function buildSpeakersProposalRowView(proposal: HealthMetricsEventsSpeakersPropo
     description: proposal.jobTitle ? proposal.sessionTitle : '',
     company: { kind: 'company', name: company, logoUrl: proposal.unaffiliated ? '' : proposal.logoUrl },
     eventName: proposal.eventName,
-    dateLabel: proposal.submissionDate ? formatIsoDateLabel(proposal.submissionDate) : HEALTH_METRICS_TABLE_DASH,
+    dateLabel: date || HEALTH_METRICS_TABLE_DASH,
+    eventLine: [proposal.eventName, date].filter(Boolean).join(' · '),
     statusLabel: group?.label ?? proposal.status,
     statusTone: group?.tone ?? 'neutral',
   };

@@ -1,16 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DialogRef } from '@angular/cdk/dialog';
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_EVENTS_SPEAKERS_LIST_OPTIONS, HEALTH_METRICS_EVENTS_SPEAKERS_UNMEASURED, HEALTH_METRICS_L2_RANGES } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsSpeakersView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiBadgeComponent } from '@shared/uikit/badge/badge.component';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
 import { UiSwitchOptionComponent } from '@shared/uikit/switch/switch-option.component';
 import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
 import { Skeleton } from 'primeng/skeleton';
@@ -21,8 +23,10 @@ import { HealthMetricsCellComponent } from '../../../components/health-metrics-c
 import { HealthMetricsColumnChartComponent } from '../../../components/health-metrics-column-chart/health-metrics-column-chart.component';
 import { HealthMetricsMetricsRowComponent } from '../../../components/health-metrics-metrics-row/health-metrics-metrics-row.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
+import { EventsSpeakerProposalsDrawerComponent } from '../events-speaker-proposals-drawer/events-speaker-proposals-drawer.component';
 
 import type {
+  HealthMetricsEventsSpeakerProposalsDrawerData,
   HealthMetricsEventsSpeakers,
   HealthMetricsEventsSpeakersList,
   HealthMetricsEventsSpeakersQuery,
@@ -54,6 +58,9 @@ export class EventsSpeakersComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly drawerService = inject(UiDrawerService);
+  /** The open All speaker proposals drawer, closed when the period changes or the section leaves. */
+  private drawerRef: DialogRef<unknown, EventsSpeakerProposalsDrawerComponent> | null = null;
 
   /** Fires once the section settles, `true` when the period has nothing to show; its height changes, moving every anchor below. */
   public readonly settled = output<boolean>();
@@ -77,12 +84,33 @@ export class EventsSpeakersComponent {
   protected readonly empty = computed(() => !this.loading() && !this.loadFailed() && isEmptyView(this.view()));
 
   public constructor() {
+    inject(DestroyRef).onDestroy(() => this.closeAllProposals());
+
     if (isPlatformBrowser(this.platformId)) {
       // Every figure is per period, so a pill change re-settles off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
         .subscribe(() => this.onRangeChange());
     }
+  }
+
+  /** Opens every proposal of the period in the drawer; its own reads page through them. */
+  protected openAllProposals(): void {
+    const selected = this.chrome.selectedRange();
+    const range = HEALTH_METRICS_L2_RANGES.find((candidate) => candidate === selected);
+    const foundationSlug = this.query().foundationSlug;
+    if (!foundationSlug || !range) return;
+
+    this.closeAllProposals();
+    const data: HealthMetricsEventsSpeakerProposalsDrawerData = { foundationSlug, range };
+    const ref = this.drawerService.open<unknown, HealthMetricsEventsSpeakerProposalsDrawerData, EventsSpeakerProposalsDrawerComponent>(
+      EventsSpeakerProposalsDrawerComponent,
+      { data }
+    );
+    this.drawerRef = ref;
+    ref.closed.subscribe(() => {
+      if (this.drawerRef === ref) this.drawerRef = null;
+    });
   }
 
   protected onListChange(id: string | null): void {
@@ -132,8 +160,14 @@ export class EventsSpeakersComponent {
     );
   }
 
-  /** Re-settles the re-projected section; a read in flight or failed settles on its own. */
+  private closeAllProposals(): void {
+    this.drawerRef?.close();
+    this.drawerRef = null;
+  }
+
+  /** Re-settles the re-projected section; a read in flight or failed settles on its own. The drawer lists the old period, so it closes. */
   private onRangeChange(): void {
+    this.closeAllProposals();
     if (this.loadFailed() || this.loading()) return;
 
     this.settled.emit(isEmptyView(this.view()));

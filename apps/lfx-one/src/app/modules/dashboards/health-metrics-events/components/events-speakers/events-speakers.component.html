@@ -65,6 +65,18 @@
             </tr>
           </ng-template>
         </lfx-table>
+        @if (view().viewAllLabel) {
+          <div class="flex justify-center">
+            <!-- The design's outline pill: exact px height, padding and radius. -->
+            <button
+              type="button"
+              class="inline-flex h-[30px] items-center whitespace-nowrap rounded-[12px] border border-gray-200 bg-white px-[13px] text-[12px] font-medium text-gray-700 transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+              data-testid="events-speakers-view-all"
+              (click)="openAllProposals()">
+              {{ view().viewAllLabel }}
+            </button>
+          </div>
+        }
       }
     } @else if (view().companies.length === 0) {
       <p class="m-0 text-[13px] text-gray-500" data-testid="events-speakers-companies-empty">No company submitted a proposal in the selected period.</p>

@@ -35,6 +35,7 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP,
   HEALTH_METRICS_EVENTS_REVENUE_EVENT_CAP,
   HEALTH_METRICS_EVENTS_SNAPSHOT_UNMEASURED,
+  HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_L2_RANGES,
   MAX_SNOWFLAKE_PAGINATION_PAGE,
@@ -42,7 +43,7 @@ import {
 
 import { HealthMetricsEventsService, isSupportedEventsRange } from './health-metrics-events.service';
 
-import type { HealthMetricsEventsOrganizationsQuery } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEventsOrganizationsQuery, HealthMetricsEventsSpeakerProposalsQuery } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 /** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
@@ -1366,6 +1367,116 @@ describe('HealthMetricsEventsService.getOrganizations', () => {
     const { rows } = await new HealthMetricsEventsService().getOrganizations(req, baseQuery);
 
     expect(rows).toEqual([]);
+  });
+});
+
+describe('HealthMetricsEventsService.getSpeakerProposalsPage', () => {
+  const baseQuery: HealthMetricsEventsSpeakerProposalsQuery = { foundationSlug: 'acme', range: 'YTD', eventId: '', status: null, offset: 0, pageSize: 25 };
+  const PAGE_SQL = /WITH matched AS/;
+
+  function proposalRow(overrides: Record<string, unknown> = {}) {
+    return {
+      TOTAL_RECORDS: 42,
+      IS_PAGE_ROW: true,
+      PROPOSAL_KEY: 'p-1',
+      ACCOUNT_NAME: 'Acme Motors',
+      JOB_TITLE: ' Staff Engineer ',
+      EVENT_NAME: 'Acme Summit',
+      SESSION_TITLE: 'Scaling builds',
+      SUBMISSION_DATE: new Date('2026-03-02T00:00:00.000Z'),
+      SUBMISSION_STATUS_ORIGINAL: 'Accepted',
+      PROPOSAL_STATUS_GROUP: 'Accepted',
+      IS_UNAFFILIATED_PROPOSAL: false,
+      LOGO_URL: 'https://acme-motors.example/logo.png',
+      ...overrides,
+    };
+  }
+
+  function respond(pageRows: unknown[], eventRows: unknown[] = []): void {
+    execute.mockImplementation(async (sql: string) => ({ rows: PAGE_SQL.test(sql) ? pageRows : eventRows }));
+  }
+
+  function pageCall() {
+    return execute.mock.calls.find(([sql]) => PAGE_SQL.test(sql as string)) ?? [];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    respond([proposalRow()]);
+  });
+
+  it('reads the period flag of the all-projects proposals, newest day first, with no filter bound', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, range: 'COMPLETED_YEAR_2' });
+
+    const [sql, binds] = pageCall();
+    expect(sql).toContain('ANALYTICS.PLATINUM_LFX_ONE.MARKETING_EVENT_SPEAKER_PROPOSALS_LIST');
+    expect(sql).toContain('AND p.is_all_projects = TRUE');
+    expect(sql).toContain('AND p.is_prev_completed_year = TRUE');
+    expect(sql).toContain('AND p.proposal_key IS NOT NULL');
+    expect(sql).toContain('ORDER BY TO_DATE(submission_date) DESC NULLS LAST, proposal_key ASC');
+    expect(sql).toContain('LEFT JOIN ANALYTICS.PLATINUM_LFX_ONE.ACCOUNT_TO_CDEV_ORG_MAPPING logos ON logos.account_id = page.account_id');
+    expect(sql).not.toContain('event_id = ?');
+    expect(binds).toEqual(['acme']);
+  });
+
+  it('binds the event and the status group the view names', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, eventId: 'evt-1', status: 'in-review' });
+
+    const [sql, binds] = pageCall();
+    expect(sql).toContain('AND p.event_id = ?');
+    expect(sql).toContain('AND p.proposal_status_group = ?');
+    expect((sql as string).match(/\?/g)).toHaveLength(binds.length);
+    expect(binds).toEqual(['acme', 'evt-1', 'In review']);
+  });
+
+  it('clamps the page size and offset it interpolates', async () => {
+    await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, pageSize: 5000, offset: Number.MAX_SAFE_INTEGER });
+
+    const maxOffset = MAX_SNOWFLAKE_PAGINATION_PAGE * HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE;
+    expect(pageCall()[0]).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_SPEAKER_PROPOSALS_MAX_PAGE_SIZE} OFFSET ${maxOffset}`);
+  });
+
+  it('maps the page rows to the requested period and lists the period events on the first page', async () => {
+    respond(
+      [proposalRow(), proposalRow({ PROPOSAL_KEY: 'p-2', JOB_TITLE: null, IS_UNAFFILIATED_PROPOSAL: true, PROPOSAL_STATUS_GROUP: 'Other', LOGO_URL: null })],
+      [
+        { EVENT_ID: 'evt-2', EVENT_NAME: ' Acme Summit 2026 ' },
+        { EVENT_ID: 'evt-1', EVENT_NAME: null },
+        { EVENT_ID: null, EVENT_NAME: 'Orphan' },
+      ]
+    );
+
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, baseQuery);
+
+    expect(page.totalRecords).toBe(42);
+    expect(page.rows.map((row) => [row.proposalKey, row.range, row.jobTitle, row.unaffiliated, row.statusGroup, row.logoUrl])).toEqual([
+      ['p-1', 'YTD', 'Staff Engineer', false, 'accepted', 'https://acme-motors.example/logo.png'],
+      ['p-2', 'YTD', null, true, null, ''],
+    ]);
+    expect(page.events).toEqual([
+      { id: 'evt-2', name: 'Acme Summit 2026' },
+      { id: 'evt-1', name: 'evt-1' },
+    ]);
+    const eventsCall = execute.mock.calls.find(([sql]) => !PAGE_SQL.test(sql as string));
+    expect(eventsCall?.[0]).toContain('GROUP BY event_id');
+    expect(eventsCall?.[0]).toContain('ORDER BY event_start_date DESC NULLS LAST');
+    expect(eventsCall?.[0]).toContain('AND is_ytd = TRUE');
+    expect(eventsCall?.[1]).toEqual(['acme']);
+  });
+
+  it('skips the events read past the first page', async () => {
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, offset: 25 });
+
+    expect(page.events).toBeNull();
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the total when the page is past the end', async () => {
+    respond([proposalRow({ IS_PAGE_ROW: null, PROPOSAL_KEY: null })]);
+
+    const page = await new HealthMetricsEventsService().getSpeakerProposalsPage(req, { ...baseQuery, offset: 500 });
+
+    expect(page).toEqual({ rows: [], totalRecords: 42, events: null });
   });
 });
 
