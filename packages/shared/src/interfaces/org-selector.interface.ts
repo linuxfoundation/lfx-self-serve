@@ -144,6 +144,14 @@ export interface OrgLensRollUpScope {
   excludedCount: number;
 }
 
+/** How much of a family a roll-up response covers, so a page can say when organizations are missing from it. */
+export interface OrgLensRollUpCoverage {
+  /** `false` when the family set itself may be missing organizations. */
+  complete: boolean;
+  /** The caller's organizations in the family that were left out because the caller cannot read them. */
+  excludedCount: number;
+}
+
 export interface OrgStaffRollUpFamily {
   family: OrgRollUpSetFamily;
   complete: boolean;

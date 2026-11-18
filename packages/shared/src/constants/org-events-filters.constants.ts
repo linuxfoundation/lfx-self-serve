@@ -103,3 +103,9 @@ export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMet
 
 /** Longest foundation id the Events filters accept; ids are short opaque strings and the value is only ever bound, never inlined. */
 export const ORG_EVENTS_FOUNDATION_ID_MAX_LENGTH = 128;
+
+/** Query parameter of the family roll-up Company filter: the account id of one organization in the roll-up; absent is All Companies. */
+export const ORG_EVENTS_COMPANY_QUERY_PARAM = 'company';
+
+/** `sortField` that orders family roll-up rows by their organizations' names; a single-organization list has no such column. */
+export const ORG_EVENTS_ORGANIZATIONS_SORT_FIELD = 'ORGANIZATIONS';

@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL, ORG_EVENTS_NEUTRAL_SPEAKER_LABEL, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL,
+  ORG_EVENTS_NEUTRAL_SPEAKER_LABEL,
+  ORG_EVENTS_ORGANIZATIONS_SORT_FIELD,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   EventAttendeeFoundationOptionRow,
   GetOrgEventsOptions,
@@ -15,11 +20,20 @@ import type {
   OrgEventSpeaker,
   OrgEventSpeakersDrawerRow,
   OrgEventSpeakersResponse,
+  OrgEventsFamilyScope,
   OrgEventsFilters,
   OrgEventsParticipation,
   OrgEventsResponse,
   OrgEventsSummary,
   OrgEventsSummaryRow,
+  OrgFamilyEventAttendeeRow,
+  OrgFamilyEventCreditRow,
+  OrgFamilyEventPerson,
+  OrgFamilyEventRow,
+  OrgFamilyEventSpeakerRow,
+  OrgLensRollUpScope,
+  OrgLensRowOrganization,
+  OrgRollUpSetOrg,
 } from '@lfx-one/shared/interfaces';
 import { effectiveOrgEventsParticipation, formatDateToUTC, isObjectRow, isObjectRowArray, normalizeToUrl } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
@@ -327,6 +341,262 @@ export class OrgLensEventsService {
   }
 
   /**
+   * The organizations a family roll-up read serves: the gate's readable members, alphabetical, narrowed to `company` when
+   * the Company filter names one. The controller has already refused a `company` outside the roll-up.
+   */
+  public familyScope(rollUp: OrgLensRollUpScope, company?: string): OrgEventsFamilyScope {
+    const organizations = [...rollUp.members].sort((a, b) => a.name.localeCompare(b.name) || a.accountId.localeCompare(b.accountId));
+    return {
+      rollUpKey: rollUp.rollUpKey,
+      members: company ? organizations.filter((member) => member.accountId === company) : organizations,
+      organizations,
+      coverage: { complete: rollUp.complete, excludedCount: rollUp.excludedCount },
+    };
+  }
+
+  /**
+   * Family roll-up Upcoming / Past / Total tiles: each event once across the organizations served, under the same range,
+   * foundation and scope rules as `getOrgEventsSummary`. Carries every organization of the roll-up and its coverage.
+   */
+  public async getFamilyOrgEventsSummary(req: Request, scope: OrgEventsFamilyScope, filters: OrgEventsFilters): Promise<OrgEventsSummary> {
+    logger.debug(req, 'get_org_lens_events_summary', 'Building family events summary query', { roll_up_key: scope.rollUpKey, members: scope.members.length });
+
+    const accounts = accountIds(scope.members);
+    const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn()} = TRUE` : '';
+    const foundationFilter = filters.foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
+    const sql = `
+      SELECT
+        COUNT(DISTINCT CASE WHEN oe.IS_PAST_EVENT = TRUE ${orgEventsRangeWindow('oe.EVENT_DATE', filters.range)} THEN oe.EVENT_ID END) AS PAST_EVENTS,
+        COUNT(DISTINCT CASE WHEN oe.IS_PAST_EVENT = FALSE THEN oe.EVENT_ID END) AS UPCOMING_EVENTS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
+      WHERE oe.ACCOUNT_ID IN (${placeholders(accounts)})
+        ${footprintFilter}
+        ${foundationFilter}
+    `;
+    const binds = filters.foundation ? [...accounts, filters.foundation] : accounts;
+
+    let row: OrgEventsSummaryRow | undefined;
+    try {
+      const rows = await withOrgCache(
+        scope.rollUpKey,
+        `events-summary-family:v1:${paramSignature([...accounts, filters.scope, filters.foundation, filters.range])}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        async () => (await this.snowflakeService.execute<OrgEventsSummaryRow>(sql, binds)).rows,
+        isObjectRowArray
+      );
+      row = rows[0];
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_events_summary', 'Snowflake query failed', { err: error, roll_up_key: scope.rollUpKey });
+      throw error;
+    }
+
+    const pastEvents = row?.PAST_EVENTS ?? 0;
+    const upcomingEvents = row?.UPCOMING_EVENTS ?? 0;
+    return {
+      totalEvents: pastEvents + upcomingEvents,
+      pastEvents,
+      upcomingEvents,
+      organizations: scope.organizations.map(rowOrganization),
+      rollUp: scope.coverage,
+    };
+  }
+
+  /** Family roll-up foundation options: every foundation any organization of the roll-up has events in under the picked scope, whatever the Company filter. */
+  public async getFamilyOrgEventFoundations(
+    req: Request,
+    scope: OrgEventsFamilyScope,
+    filters: Pick<OrgEventsFilters, 'scope'>
+  ): Promise<OrgEventFoundationsResponse> {
+    const accounts = accountIds(scope.organizations);
+    const footprintFilter = filters.scope === 'activity' ? `AND oe.${orgEventsFootprintColumn()} = TRUE` : '';
+    const sql = `
+      SELECT DISTINCT oe.FOUNDATION_ID, oe.FOUNDATION_NAME
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
+      WHERE oe.ACCOUNT_ID IN (${placeholders(accounts)})
+        AND oe.FOUNDATION_ID IS NOT NULL
+        AND oe.FOUNDATION_NAME IS NOT NULL
+        ${footprintFilter}
+      ORDER BY oe.FOUNDATION_NAME ASC
+    `;
+    try {
+      const rows = await withOrgCache(
+        scope.rollUpKey,
+        `events-foundations-family:v1:${paramSignature([...accounts, filters.scope])}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        async () => (await this.snowflakeService.execute<EventAttendeeFoundationOptionRow>(sql, accounts)).rows,
+        isObjectRowArray
+      );
+      return { data: distinctFoundationOptions(rows).map((row) => ({ id: row.FOUNDATION_ID, name: row.FOUNDATION_NAME })) };
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_event_foundations', 'Snowflake query failed', { err: error, roll_up_key: scope.rollUpKey });
+      throw error;
+    }
+  }
+
+  /**
+   * Family roll-up event list: one row per event across the organizations served, with the people and speakers counted once
+   * (the family person key, the speaker id) and the organizations that took part in or sponsor it. A status matches when any
+   * organization served matches it.
+   */
+  public async getFamilyOrgEvents(req: Request, scope: OrgEventsFamilyScope, options: GetOrgEventsOptions): Promise<OrgEventsResponse> {
+    const { isPast, searchQuery, status, pageSize, offset, sortField, sortOrder, participation, eventScope, foundation, range } = options;
+    const sortColumn = VALID_SORT_COLUMNS.has(sortField) || sortField === ORG_EVENTS_ORGANIZATIONS_SORT_FIELD ? sortField : 'EVENT_START_DATE';
+    logger.debug(req, 'get_org_lens_events', 'Building family events query', { roll_up_key: scope.rollUpKey, members: scope.members.length, is_past: isPast });
+
+    const includeGoal = this.callerIsLFStaff(req);
+    const servedParticipation = effectiveOrgEventsParticipation(participation, isPast);
+    const accounts = accountIds(scope.members);
+    const { sql, binds } = this.buildFamilyListQuery({
+      members: scope.members,
+      isPast,
+      searchQuery,
+      status,
+      pageSize,
+      offset,
+      sortColumn,
+      sortOrder,
+      eventScope,
+      foundation,
+      range,
+      participation: servedParticipation,
+    });
+
+    let rows: OrgFamilyEventRow[];
+    try {
+      rows = await withOrgCache(
+        scope.rollUpKey,
+        `events-family:v1:${paramSignature([...accounts, isPast, status ?? null, searchQuery ?? null, pageSize, offset, sortColumn, sortOrder, servedParticipation, eventScope, foundation, isPast ? range : null])}`,
+        VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+        async () => (await this.snowflakeService.execute<OrgFamilyEventRow>(sql, binds)).rows,
+        isEventRowArray
+      );
+    } catch (error) {
+      logger.warning(req, 'get_org_lens_events', 'Snowflake query failed', { err: error, roll_up_key: scope.rollUpKey });
+      throw error;
+    }
+
+    const total = rows.length > 0 ? rows[0].TOTAL_RECORDS : 0;
+    const canSeeGoal = await includeGoal;
+    const byAccount = new Map(scope.members.map((member) => [member.accountId, member]));
+    const data = rows.map((row) => ({
+      ...this.mapRowToOrgEvent(row, canSeeGoal),
+      organizations: organizationsOf(row.ACTIVE_ACCOUNT_IDS, byAccount),
+      sponsors: organizationsOf(row.SPONSOR_ACCOUNT_IDS, byAccount),
+    }));
+
+    logger.debug(req, 'get_org_lens_events', 'Fetched family events', { count: data.length, total });
+    return { data, total, pageSize, offset };
+  }
+
+  /**
+   * Family roll-up attendees drawer: everyone the picked option counts across the organizations served, once each by the
+   * family person key, with every organization they are credited through. The count is the list length, as on one organization.
+   */
+  public async getFamilyEventAttendees(
+    req: Request,
+    scope: OrgEventsFamilyScope,
+    eventId: string,
+    options: { participation: OrgEventsParticipation; searchQuery?: string }
+  ): Promise<OrgEventAttendeesDrawerResponse> {
+    logger.debug(req, 'get_event_attendees', 'Fetching family event attendees', { roll_up_key: scope.rollUpKey, event_id: eventId });
+    const accounts = accountIds(scope.members);
+
+    try {
+      const header = await this.readFamilyDrawerHeader(scope, accounts, eventId);
+      const servedParticipation = effectiveOrgEventsParticipation(options.participation, header?.IS_PAST_EVENT === true);
+      const sql = `
+        SELECT DISTINCT ${familyPersonKey('p')} AS PERSON_KEY, p.ACCOUNT_ID, p.DISPLAY_NAME, p.JOB_TITLE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p
+        WHERE p.ACCOUNT_ID IN (${placeholders(accounts)})
+          AND p.EVENT_ID = ?
+          AND ${orgEventsAttendeePredicate(servedParticipation)}
+        ORDER BY PERSON_KEY ASC, p.ACCOUNT_ID ASC
+      `;
+      const rows = await withOrgCache(
+        scope.rollUpKey,
+        `event-attendees-family:v1:${paramSignature([...accounts, eventId, servedParticipation])}`,
+        VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
+        async () => (await this.snowflakeService.execute<OrgFamilyEventAttendeeRow>(sql, [...accounts, eventId])).rows,
+        isFamilyAttendeeRowArray
+      );
+
+      const people = groupByPerson(
+        rows.map((row) => ({ key: row.PERSON_KEY, accountId: row.ACCOUNT_ID, name: displayText(row.DISPLAY_NAME), jobTitle: displayText(row.JOB_TITLE) })),
+        scope.members
+      );
+      const needle = options.searchQuery?.toUpperCase();
+      const listed = needle ? people.filter((person) => person.name?.toUpperCase().includes(needle)) : people;
+      const data: OrgEventAttendee[] = listed.map((person, index) => ({
+        contactId: String(index),
+        name: person.name ?? ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL,
+        jobTitle: person.jobTitle,
+        organizations: person.organizations,
+      }));
+
+      logger.debug(req, 'get_event_attendees', 'Fetched family event attendees', { count: data.length, event_id: eventId });
+      return { eventId, eventName: header?.EVENT_NAME ?? '', total: data.length, data };
+    } catch (error) {
+      logger.warning(req, 'get_event_attendees', 'Snowflake query failed', { err: error, roll_up_key: scope.rollUpKey, event_id: eventId });
+      throw error;
+    }
+  }
+
+  /** Family roll-up speakers drawer: each speaker id once across the organizations served, accepted when any of their proposals was. */
+  public async getFamilyEventSpeakers(req: Request, scope: OrgEventsFamilyScope, eventId: string, searchQuery?: string): Promise<OrgEventSpeakersResponse> {
+    logger.debug(req, 'get_event_speakers', 'Fetching family event speakers', { roll_up_key: scope.rollUpKey, event_id: eventId });
+    const accounts = accountIds(scope.members);
+    const speakerName = `CASE WHEN TRIM(es.SPEAKER_FIRST_NAME || ' ' || es.SPEAKER_LAST_NAME) LIKE '%@%' THEN NULL ELSE NULLIF(TRIM(es.SPEAKER_FIRST_NAME || ' ' || es.SPEAKER_LAST_NAME), '') END`;
+    const searchFilter = searchQuery ? `AND UPPER(${speakerName}) LIKE UPPER(?)` : '';
+    const sql = `
+      SELECT
+        es.SPEAKER_ID                                         AS SPEAKER_ID,
+        es.ACCOUNT_ID                                         AS ACCOUNT_ID,
+        MAX(${speakerName})                                   AS NAME,
+        MAX(es.JOB_TITLE)                                     AS JOB_TITLE,
+        MAX(CASE WHEN es.SPEAKER_STATUS = 'Accepted' THEN 1 ELSE 0 END) AS IS_ACCEPTED,
+        MAX(es.EVENT_NAME)                                    AS EVENT_NAME
+      FROM ANALYTICS.SILVER_FACT.EVENT_SPEAKERS es
+      WHERE es.EVENT_ID = ?
+        AND es.ACCOUNT_ID IN (${placeholders(accounts)})
+        ${searchFilter}
+      GROUP BY es.SPEAKER_ID, es.ACCOUNT_ID
+      ORDER BY SPEAKER_ID ASC, ACCOUNT_ID ASC
+    `;
+    const binds = searchQuery ? [eventId, ...accounts, `%${searchQuery}%`] : [eventId, ...accounts];
+
+    let rows: OrgFamilyEventSpeakerRow[];
+    try {
+      rows = await withOrgCache(
+        scope.rollUpKey,
+        `event-speakers-family:v1:${paramSignature([...accounts, eventId, searchQuery ?? null])}`,
+        VALKEY_CACHE.ORG_LENS_NAMED_TTL_SECONDS,
+        async () => (await this.snowflakeService.execute<OrgFamilyEventSpeakerRow>(sql, binds)).rows,
+        isFamilySpeakerRowArray
+      );
+    } catch (error) {
+      logger.warning(req, 'get_event_speakers', 'Snowflake query failed', { err: error, roll_up_key: scope.rollUpKey, event_id: eventId });
+      throw error;
+    }
+
+    const accepted = new Set(rows.filter((row) => row.IS_ACCEPTED).map((row) => row.SPEAKER_ID));
+    const speakers = groupByPerson(
+      rows.map((row) => ({ key: row.SPEAKER_ID, accountId: row.ACCOUNT_ID, name: displayText(row.NAME), jobTitle: displayText(row.JOB_TITLE) })),
+      scope.members
+    );
+    const data: OrgEventSpeaker[] = speakers.map((speaker, index) => ({
+      contactId: String(index),
+      name: speaker.name ?? ORG_EVENTS_NEUTRAL_SPEAKER_LABEL,
+      jobTitle: speaker.jobTitle,
+      status: accepted.has(speaker.key) ? 'ACCEPTED' : 'SUBMITTED',
+      organizations: speaker.organizations,
+    }));
+    const acceptedCount = data.filter((speaker) => speaker.status === 'ACCEPTED').length;
+
+    logger.debug(req, 'get_event_speakers', 'Fetched family event speakers', { accepted: acceptedCount, submitted: data.length, event_id: eventId });
+    return { eventId, eventName: rows[0]?.EVENT_NAME ?? '', acceptedCount, submittedCount: data.length, data };
+  }
+
+  /**
    * Is the caller LF staff? #4432 removes the event-wide registration goal from EXTERNAL admins'
    * view and payload; LF staff keep it, except while impersonating (see below).
    *
@@ -443,6 +713,155 @@ export class OrgLensEventsService {
     return { sql, binds };
   }
 
+  /**
+   * The family list: event rows of the organizations served, one per event, paged before the people and speakers are counted
+   * so only the page's events are counted. Each organization carries its alphabetical rank, so sorting by organizations
+   * compares the rows' alphabetically ordered names, first name first.
+   */
+  private buildFamilyListQuery(params: {
+    members: readonly OrgRollUpSetOrg[];
+    isPast: boolean;
+    searchQuery?: string;
+    status?: string | null;
+    pageSize: number;
+    offset: number;
+    sortColumn: string;
+    sortOrder: 'ASC' | 'DESC';
+    eventScope: OrgEventsFilters['scope'];
+    foundation: string;
+    range: OrgEventsFilters['range'];
+    participation: OrgEventsParticipation;
+  }): { sql: string; binds: string[] } {
+    const { members, isPast, searchQuery, status, pageSize, offset, sortColumn, sortOrder, eventScope, foundation, range, participation } = params;
+    const footprintColumn = orgEventsFootprintColumn();
+
+    let statusFilter = '';
+    if (status === 'registered') {
+      statusFilter = `HAVING MAX(CASE WHEN oe.${orgEventsCountColumn('registered')} > 0 THEN 1 ELSE 0 END) = 1`;
+    } else if (status === 'speaker-submitted') {
+      statusFilter = 'HAVING MAX(CASE WHEN oe.ORG_SPEAKER_SUBMITTED_COUNT > 0 THEN 1 ELSE 0 END) = 1';
+    } else if (status === 'speaker-accepted') {
+      statusFilter = 'HAVING MAX(CASE WHEN oe.ORG_SPEAKER_ACCEPTED_COUNT > 0 THEN 1 ELSE 0 END) = 1';
+    } else if (status === 'event-sponsor') {
+      statusFilter = 'HAVING MAX(CASE WHEN oe.IS_ORG_SPONSOR = TRUE THEN 1 ELSE 0 END) = 1';
+    }
+
+    const tenseCondition = isPast ? `oe.IS_PAST_EVENT = TRUE ${orgEventsRangeWindow('oe.EVENT_DATE', range)}` : 'oe.IS_PAST_EVENT = FALSE';
+    const scopeFilter = eventScope === 'activity' ? `AND oe.${footprintColumn} = TRUE` : '';
+    const foundationFilter = foundation ? 'AND oe.FOUNDATION_ID = ?' : '';
+    const searchFilter = searchQuery ? 'AND oe.EVENT_NAME ILIKE ?' : '';
+    const orderBy = (alias: string): string =>
+      sortColumn === ORG_EVENTS_ORGANIZATIONS_SORT_FIELD
+        ? `(${alias}ORG_SORT_KEY = '') ASC, ${alias}ORG_SORT_KEY ${sortOrder}, ${alias}EVENT_START_DATE ASC, ${alias}EVENT_ID ASC`
+        : `${alias}${sortColumn} ${sortOrder}, ${alias}EVENT_ID ASC`;
+
+    const sql = `
+      WITH members AS (
+        SELECT column1 AS ACCOUNT_ID, column2 AS ORG_RANK
+        FROM (VALUES ${members.map(() => '(?, ?)').join(', ')})
+      ),
+      family_events AS (
+        SELECT
+          oe.EVENT_ID,
+          MAX(oe.EVENT_NAME) AS EVENT_NAME,
+          MAX(oe.FOUNDATION_NAME) AS FOUNDATION_NAME,
+          MAX(oe.EVENT_START_DATE) AS EVENT_START_DATE,
+          MAX(oe.EVENT_END_DATE) AS EVENT_END_DATE,
+          MAX(oe.EVENT_LOCATION) AS EVENT_LOCATION,
+          MAX(oe.EVENT_CITY) AS EVENT_CITY,
+          MAX(oe.EVENT_COUNTRY) AS EVENT_COUNTRY,
+          MAX(oe.EVENT_URL) AS EVENT_URL,
+          MAX(oe.EVENT_REGISTRATION_URL) AS EVENT_REGISTRATION_URL,
+          MAX(NULLIF(oe.EVENT_REGISTRATIONS_GOAL, 0)) AS EVENT_REGISTRATIONS_GOAL,
+          MAX(CASE WHEN oe.IS_ORG_SPONSOR = TRUE THEN 1 ELSE 0 END) AS IS_ORG_SPONSOR,
+          LISTAGG(CASE WHEN oe.${footprintColumn} = TRUE THEN oe.ACCOUNT_ID END, ',') WITHIN GROUP (ORDER BY m.ORG_RANK) AS ACTIVE_ACCOUNT_IDS,
+          LISTAGG(CASE WHEN oe.IS_ORG_SPONSOR = TRUE THEN oe.ACCOUNT_ID END, ',') WITHIN GROUP (ORDER BY m.ORG_RANK) AS SPONSOR_ACCOUNT_IDS,
+          COALESCE(LISTAGG(CASE WHEN oe.${footprintColumn} = TRUE THEN m.ORG_RANK END, '') WITHIN GROUP (ORDER BY m.ORG_RANK), '') AS ORG_SORT_KEY
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
+        JOIN members m ON m.ACCOUNT_ID = oe.ACCOUNT_ID
+        WHERE ${tenseCondition}
+          ${scopeFilter}
+          ${foundationFilter}
+          ${searchFilter}
+        GROUP BY oe.EVENT_ID
+        ${statusFilter}
+      ),
+      paged AS (
+        SELECT fe.*, COUNT(*) OVER () AS TOTAL_RECORDS
+        FROM family_events fe
+        ORDER BY ${orderBy('fe.')}
+        LIMIT ${pageSize} OFFSET ${offset}
+      ),
+      attendees AS (
+        SELECT p.EVENT_ID, COUNT(DISTINCT ${familyPersonKey('p')}) AS ORG_ATTENDEE_COUNT
+        FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENT_PARTICIPATION p
+        JOIN members m ON m.ACCOUNT_ID = p.ACCOUNT_ID
+        WHERE p.EVENT_ID IN (SELECT EVENT_ID FROM paged)
+          AND p.${orgEventsAttendeePredicate(participation)}
+        GROUP BY p.EVENT_ID
+      ),
+      speakers AS (
+        SELECT
+          es.EVENT_ID,
+          COUNT(DISTINCT CASE WHEN es.SPEAKER_STATUS = 'Accepted' THEN es.SPEAKER_ID END) AS ORG_SPEAKER_ACCEPTED_COUNT,
+          COUNT(DISTINCT es.SPEAKER_ID) AS ORG_SPEAKER_SUBMITTED_COUNT
+        FROM ANALYTICS.SILVER_FACT.EVENT_SPEAKERS es
+        JOIN members m ON m.ACCOUNT_ID = es.ACCOUNT_ID
+        WHERE es.EVENT_ID IN (SELECT EVENT_ID FROM paged)
+        GROUP BY es.EVENT_ID
+      )
+      SELECT
+        pg.EVENT_ID,
+        pg.EVENT_NAME,
+        pg.FOUNDATION_NAME,
+        pg.EVENT_START_DATE,
+        pg.EVENT_END_DATE,
+        pg.EVENT_LOCATION,
+        pg.EVENT_CITY,
+        pg.EVENT_COUNTRY,
+        pg.EVENT_URL,
+        pg.EVENT_REGISTRATION_URL,
+        COALESCE(a.ORG_ATTENDEE_COUNT, 0) AS ORG_ATTENDEE_COUNT,
+        pg.EVENT_REGISTRATIONS_GOAL,
+        COALESCE(s.ORG_SPEAKER_ACCEPTED_COUNT, 0) AS ORG_SPEAKER_ACCEPTED_COUNT,
+        COALESCE(s.ORG_SPEAKER_SUBMITTED_COUNT, 0) AS ORG_SPEAKER_SUBMITTED_COUNT,
+        pg.IS_ORG_SPONSOR,
+        pg.ACTIVE_ACCOUNT_IDS,
+        pg.SPONSOR_ACCOUNT_IDS,
+        pg.TOTAL_RECORDS
+      FROM paged pg
+      LEFT JOIN attendees a ON a.EVENT_ID = pg.EVENT_ID
+      LEFT JOIN speakers s ON s.EVENT_ID = pg.EVENT_ID
+      ORDER BY ${orderBy('pg.')}
+    `;
+
+    // Positional binds, in statement order: the members' (account id, rank) pairs, then the WHERE filters.
+    const binds: string[] = members.flatMap((member, index) => [member.accountId, String(index).padStart(4, '0')]);
+    if (foundation) binds.push(foundation);
+    if (searchQuery) binds.push(`%${searchQuery}%`);
+    return { sql, binds };
+  }
+
+  /** The event's name and whether it has ended, from any organization served that lists it. */
+  private async readFamilyDrawerHeader(scope: OrgEventsFamilyScope, accounts: string[], eventId: string): Promise<OrgEventDrawerHeaderRow | undefined> {
+    const sql = `
+      SELECT oe.EVENT_NAME, oe.IS_PAST_EVENT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_EVENTS oe
+      WHERE oe.ACCOUNT_ID IN (${placeholders(accounts)})
+        AND oe.EVENT_ID = ?
+      ORDER BY oe.ACCOUNT_ID ASC
+      LIMIT 1
+    `;
+    const rows = await withOrgCache(
+      scope.rollUpKey,
+      `event-header-family:v1:${paramSignature([...accounts, eventId])}`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => (await this.snowflakeService.execute<OrgEventDrawerHeaderRow>(sql, [...accounts, eventId])).rows,
+      isObjectRowArray
+    );
+    return rows[0];
+  }
+
   /** The event's name and whether it has ended — one row, cached per event. */
   private async readDrawerHeader(accountId: string, eventId: string): Promise<OrgEventDrawerHeaderRow | undefined> {
     const sql = `
@@ -505,4 +924,75 @@ function isEventRowArray(value: unknown): boolean {
 /** Speaker rows are read by `SPEAKER_ID` order and `NAME` with no fallback — validate the contract key to the same depth as the people/access guards. */
 function isSpeakerRowArray(value: unknown): boolean {
   return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['SPEAKER_ID'] === 'string');
+}
+
+/** Family speaker rows are grouped by `SPEAKER_ID` and named through `ACCOUNT_ID`: validate both. */
+function isFamilySpeakerRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['SPEAKER_ID'] === 'string' && typeof el['ACCOUNT_ID'] === 'string');
+}
+
+/** Family attendee rows are grouped by `PERSON_KEY` and named through `ACCOUNT_ID`: validate both. */
+function isFamilyAttendeeRowArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((el) => isObjectRow(el) && typeof el['PERSON_KEY'] === 'string' && typeof el['ACCOUNT_ID'] === 'string');
+}
+
+/** The organizations' account ids, in their (alphabetical) order: the binds of an `IN` list, and part of every family cache key. */
+function accountIds(organizations: readonly OrgRollUpSetOrg[]): string[] {
+  return organizations.map((organization) => organization.accountId);
+}
+
+/** One `?` per bind of an `IN` list. */
+function placeholders(binds: readonly string[]): string {
+  return binds.map(() => '?').join(', ');
+}
+
+function rowOrganization(organization: OrgRollUpSetOrg): OrgLensRowOrganization {
+  return { accountId: organization.accountId, name: organization.name };
+}
+
+/**
+ * The family person key of an `ORG_EVENT_PARTICIPATION` row: the participant number every organization of a family shares.
+ * A row without one falls back to its own organization's participant, so a family of one counts exactly what that
+ * organization counts.
+ */
+function familyPersonKey(alias: string): string {
+  return `COALESCE(CAST(${alias}.CROSS_ACCOUNT_PARTICIPANT_REF AS VARCHAR), ${alias}.ACCOUNT_ID || ':' || CAST(${alias}.PARTICIPANT_REF AS VARCHAR))`;
+}
+
+/** The organizations named by a comma-separated account id list from the warehouse, keeping its order and only organizations served. */
+function organizationsOf(ids: string | null, byAccount: ReadonlyMap<string, OrgRollUpSetOrg>): OrgLensRowOrganization[] {
+  const organizations: OrgLensRowOrganization[] = [];
+  for (const id of new Set((ids ?? '').split(',').filter(Boolean))) {
+    const organization = byAccount.get(id);
+    if (organization) organizations.push(rowOrganization(organization));
+  }
+  return organizations;
+}
+
+/**
+ * One entry per person or speaker `key`, with every organization served they are credited through in the organizations'
+ * alphabetical order; the name and title come from the first of those organizations that has one. Listed by name, unnamed
+ * last, then by key — the single-organization drawer order.
+ */
+function groupByPerson(rows: readonly OrgFamilyEventCreditRow[], members: readonly OrgRollUpSetOrg[]): OrgFamilyEventPerson[] {
+  const rank = new Map(members.map((member, index) => [member.accountId, index]));
+  const sorted = rows.filter((row) => rank.has(row.accountId)).sort((a, b) => (rank.get(a.accountId) ?? 0) - (rank.get(b.accountId) ?? 0));
+  const byKey = new Map<string, OrgFamilyEventPerson>();
+  for (const row of sorted) {
+    const person = byKey.get(row.key) ?? { key: row.key, name: null, jobTitle: null, organizations: [] };
+    if (!person.organizations.some((organization) => organization.accountId === row.accountId)) {
+      const member = members[rank.get(row.accountId) ?? 0];
+      person.organizations.push(rowOrganization(member));
+    }
+    person.name ??= row.name;
+    person.jobTitle ??= row.jobTitle;
+    byKey.set(row.key, person);
+  }
+  return [...byKey.values()].sort(byNameThenKey);
+}
+
+function byNameThenKey(a: OrgFamilyEventPerson, b: OrgFamilyEventPerson): number {
+  if (a.name !== null && b.name !== null) return a.name.localeCompare(b.name) || a.key.localeCompare(b.key);
+  if (a.name === b.name) return a.key.localeCompare(b.key);
+  return a.name === null ? 1 : -1;
 }
