@@ -105,6 +105,11 @@ describe('embedded personal data in free text', () => {
     expect(scrubFreeText('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git')).toBe('pin pkg@1.2.3 and git@git.example.com:acme-org/repo.git');
   });
 
+  it('does not swallow unspaced CJK text next to an address', () => {
+    expect(scrubFreeText('联系ada@example.com')).toBe('联系');
+    expect(stripPersonalFields({ note: '联系ada@example.com 谢谢' }, page)).toEqual({ note: '联系 谢谢' });
+  });
+
   it('removes embedded emails in nested objects and arrays', () => {
     const input = { rows: [{ detail: { text: 'ping bob@team.example now' } }], tags: ['ok', 'see carol@team.example', 'dan@team.example'] };
 
