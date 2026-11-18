@@ -3,7 +3,7 @@
 
 import { ApplicationRef, signal, TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { GROUP_INVITATION_DECLINE_UNDO_MS } from '@lfx-one/shared/constants';
+import { GROUPS_HOME_UNDO_MS } from '@lfx-one/shared/constants';
 import { MyCommittee, PendingInvitation, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
@@ -30,6 +30,7 @@ const invitation = (uid: string, extra: Partial<PendingInvitation> = {}): Pendin
     invitee_email: 'invitee@synthetic.example',
     status: 'pending',
     created_at: '2026-10-13T12:00:00Z',
+    organization_required: false,
     ...extra,
   }) as PendingInvitation;
 
@@ -42,7 +43,7 @@ describe('GroupInvitationsComponent', () => {
   let decline: ReturnType<typeof vi.fn<() => Observable<void>>>;
   let show: ReturnType<typeof vi.fn<(config: UiToastConfig) => { id: string; dismiss: () => void }>>;
   let dismiss: ReturnType<typeof vi.fn<() => void>>;
-  let reload: ReturnType<typeof vi.fn>;
+  let refresh: ReturnType<typeof vi.fn>;
   let openDrawer: ReturnType<typeof vi.fn>;
   let closeDrawer: ReturnType<typeof vi.fn<() => void>>;
 
@@ -82,7 +83,7 @@ describe('GroupInvitationsComponent', () => {
     decline = vi.fn(() => of(undefined));
     dismiss = vi.fn<() => void>();
     show = vi.fn(() => ({ id: 'toast', dismiss }));
-    reload = vi.fn();
+    refresh = vi.fn();
     closeDrawer = vi.fn<() => void>();
     // Renders the drawer template straight into the page; the uikit drawer has its own spec.
     openDrawer = vi.fn((template: TemplateRef<unknown>) => {
@@ -127,7 +128,7 @@ describe('GroupInvitationsComponent', () => {
         },
         { provide: InvitationAcceptFlowService, useValue: { accept } },
         { provide: CommitteeService, useValue: { getMyCommittees: () => of([{ uid: 'committee-a' } as MyCommittee]) } },
-        { provide: GroupsHomeStore, useValue: { reload } },
+        { provide: GroupsHomeStore, useValue: { refresh } },
         { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: UiToastService, useValue: { show } },
       ],
@@ -176,16 +177,36 @@ describe('GroupInvitationsComponent', () => {
     );
   });
 
-  it('accepts, drops the row, confirms the join and reloads the groups once the group is listed', async () => {
+  it('accepts, drops the row, confirms the join and refreshes the groups once the group is listed', async () => {
     await render([invitation('a'), invitation('b')]);
+    await open();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    (all('groups-redesign-invitations-row')[0].querySelector('[data-testid="groups-redesign-invitations-accept"] button') as HTMLButtonElement).click();
+
+    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ committeeUid: 'committee-a', inviteUid: 'a', committeeName: 'Synthetic Group a' }));
+    expect(show).toHaveBeenCalledWith({ message: "You've joined Synthetic Group a" });
+    expect(refresh).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(400);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+    await settle();
+    expect(all('groups-redesign-invitations-row')).toHaveLength(1);
+  });
+
+  it('closes the drawer before the company step, so its dialog is not under the drawer', async () => {
+    const answered = new Subject<void>();
+    accept.mockReturnValue(answered);
+    await render([invitation('a', { organization_required: true }), invitation('b')]);
     await open();
     await press(all('groups-redesign-invitations-row')[0], 'groups-redesign-invitations-accept');
 
-    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ committeeUid: 'committee-a', inviteUid: 'a', committeeName: 'Synthetic Group a' }));
-    expect(all('groups-redesign-invitations-row')).toHaveLength(1);
-    expect(show).toHaveBeenCalledWith({ message: "You've joined Synthetic Group a" });
-    await new Promise((resolve) => setTimeout(resolve, 450));
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(closeDrawer).toHaveBeenCalled();
+    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ inviteUid: 'a', inviteRequiresOrganization: true }));
+    expect(text(byTestId('groups-redesign-invitations-count'))).toBe('2');
+    answered.next();
+    answered.complete();
+    await settle();
+    expect(text(byTestId('groups-redesign-invitations-count'))).toBe('1');
   });
 
   it('puts the invitation back when accepting fails', async () => {
@@ -204,9 +225,9 @@ describe('GroupInvitationsComponent', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     (all('groups-redesign-invitations-row')[0].querySelector('[data-testid="groups-redesign-invitations-decline"] button') as HTMLButtonElement).click();
 
-    expect(show).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invite declined', duration: GROUP_INVITATION_DECLINE_UNDO_MS }));
+    expect(show).toHaveBeenCalledWith(expect.objectContaining({ message: 'Invite declined', duration: GROUPS_HOME_UNDO_MS }));
     expect(decline).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(GROUP_INVITATION_DECLINE_UNDO_MS);
+    vi.advanceTimersByTime(GROUPS_HOME_UNDO_MS);
     expect(decline).toHaveBeenCalledWith('committee-a', 'a');
     expect(dismiss).toHaveBeenCalled();
   });
@@ -220,6 +241,22 @@ describe('GroupInvitationsComponent', () => {
     show.mock.calls[0][0].actions?.[0].run();
     await settle();
     expect(all('groups-redesign-invitations-row')).toHaveLength(2);
+    fixture.destroy();
+    expect(decline).not.toHaveBeenCalled();
+  });
+
+  it('repeats Undo in the drawer, where the keyboard can reach it', async () => {
+    await render([invitation('a'), invitation('b')]);
+    await open();
+    await press(all('groups-redesign-invitations-row')[0], 'groups-redesign-invitations-decline');
+
+    const undo = byTestId('groups-redesign-invitations-undo')?.querySelector('button') as HTMLButtonElement;
+    expect(undo.getAttribute('aria-label')).toBe('Undo declining the invite to Synthetic Group a');
+    undo.click();
+    await settle();
+    expect(dismiss).toHaveBeenCalled();
+    expect(all('groups-redesign-invitations-row')).toHaveLength(2);
+    expect(byTestId('groups-redesign-invitations-undo')).toBeNull();
     fixture.destroy();
     expect(decline).not.toHaveBeenCalled();
   });
