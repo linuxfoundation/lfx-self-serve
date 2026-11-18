@@ -15,6 +15,7 @@ import {
   buildHealthMetricsEventsRegistrationsGrowthChart,
   buildHealthMetricsEventsRevenueView,
   buildHealthMetricsEventsSpeakersView,
+  formatHealthMetricsEventsSpeakerProposalsSubtitle,
   buildHealthMetricsEventsSponsorshipView,
   buildHealthMetricsEventsSubNavItems,
   formatHealthMetricsEventsOrganizationsCountLabel,
@@ -888,6 +889,7 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
       company: { kind: 'company', name: 'Acme Motors', logoUrl: 'https://logos.example/acme.png' },
       eventName: 'Summit',
       dateLabel: 'Mar 10, 2026',
+      eventLine: 'Summit · Mar 10, 2026',
       statusLabel: 'Accepted',
       statusTone: 'success',
     });
@@ -923,9 +925,31 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     expect(view.proposals[0].company).toEqual({ kind: 'company', name: '—', logoUrl: 'https://logos.example/acme.png' });
   });
 
+  it('labels View all with the period total, drops an unmeasured count, and hides it with no proposal listed', () => {
+    expect(buildHealthMetricsEventsSpeakersView(speakers(), 'YTD').viewAllLabel).toBe('View all 6,283 proposals');
+    const unmeasured = speakers({ periods: [speakersPeriod({ submitted: null })] });
+    expect(buildHealthMetricsEventsSpeakersView(unmeasured, 'YTD').viewAllLabel).toBe('View all proposals');
+    expect(buildHealthMetricsEventsSpeakersView(speakers({ proposals: [] }), 'YTD').viewAllLabel).toBe('');
+  });
+
+  it('drops a missing date from the event line, and the dash stays in the date column', () => {
+    const view = buildHealthMetricsEventsSpeakersView(speakers({ proposals: [proposal({ submissionDate: null })] }), 'YTD');
+
+    expect(view.proposals[0]).toMatchObject({ dateLabel: '—', eventLine: 'Summit' });
+  });
+
   it('reads as unmeasured with no period, and as foundation-unmeasured with none at all', () => {
     expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR')).toMatchObject({ foundationMeasured: true, measured: false });
     expect(buildHealthMetricsEventsSpeakersView(speakers({ periods: [] }), 'YTD')).toMatchObject({ foundationMeasured: false, measured: false });
+  });
+});
+
+describe('formatHealthMetricsEventsSpeakerProposalsSubtitle', () => {
+  it('counts the proposals and names the period, year to date or a full year', () => {
+    const year = new Date().getFullYear();
+
+    expect(formatHealthMetricsEventsSpeakerProposalsSubtitle(1240, 'YTD')).toBe(`1,240 proposals · ${year} (YTD)`);
+    expect(formatHealthMetricsEventsSpeakerProposalsSubtitle(1, 'COMPLETED_YEAR')).toBe(`1 proposal · ${year - 1}`);
   });
 });
 

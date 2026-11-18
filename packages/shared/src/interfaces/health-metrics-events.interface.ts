@@ -518,6 +518,8 @@ export interface HealthMetricsEventsSpeakersProposalRowView {
   company: HealthMetricsCellCompanyLead;
   eventName: string;
   dateLabel: string;
+  /** "{Event} · {date}", as the drawer's rows read; either part drops when missing. */
+  eventLine: string;
   statusLabel: string;
   statusTone: UiBadgeTone;
 }
@@ -535,6 +537,49 @@ export interface HealthMetricsEventsSpeakersView {
   proposals: HealthMetricsEventsSpeakersProposalRowView[];
   /** The companies that submitted the most in the period, without the individual speakers. */
   companies: HealthMetricsBarListRow[];
+  /** "View all {N} proposals" under the recent proposals; empty when the period lists none. */
+  viewAllLabel: string;
+}
+
+/** One page of a period's proposals, cut by event and status group, for the All speaker proposals drawer. */
+export interface HealthMetricsEventsSpeakerProposalsQuery {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
+  /** Empty lists every event. */
+  eventId: string;
+  /** `null` lists every status. */
+  status: HealthMetricsEventsSpeakersStatusGroup | null;
+  offset: number;
+  pageSize: number;
+  /** Also list the period's events; the drawer asks once, as the list ignores the filters. */
+  includeEvents: boolean;
+}
+
+/** An event with proposals in the period, as the drawer's event filter lists it. */
+export interface HealthMetricsEventsSpeakerProposalsEvent {
+  id: string;
+  name: string;
+}
+
+/** `GET /api/analytics/events-speaker-proposals` — one page, most recent first. */
+export interface HealthMetricsEventsSpeakerProposals {
+  rows: HealthMetricsEventsSpeakersProposal[];
+  /** Proposals matching the event and status. */
+  totalRecords: number;
+  /** The period's events, latest start first; `null` unless the request asked for them. */
+  events: HealthMetricsEventsSpeakerProposalsEvent[] | null;
+}
+
+/** A drawer filter option; an empty id lists everything. */
+export interface HealthMetricsEventsSpeakerProposalsFilterOption {
+  id: string;
+  label: string;
+}
+
+/** What the speakers section hands the All speaker proposals drawer as it opens. */
+export interface HealthMetricsEventsSpeakerProposalsDrawerData {
+  foundationSlug: string;
+  range: HealthMetricsL2Range;
 }
 
 /** The membership cut over the organizations table. */

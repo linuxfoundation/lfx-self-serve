@@ -7,11 +7,13 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { of, throwError } from 'rxjs';
+import { UiDrawerService } from '@shared/uikit/drawer/drawer.service';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
+import { EventsSpeakerProposalsDrawerComponent } from '../events-speaker-proposals-drawer/events-speaker-proposals-drawer.component';
 import { EventsSpeakersComponent } from './events-speakers.component';
 
 import type { HealthMetricsEventsSpeakers, HealthMetricsEventsSpeakersPeriod, HealthMetricsEventsSpeakersProposal } from '@lfx-one/shared/interfaces';
@@ -76,6 +78,9 @@ describe('EventsSpeakersComponent', () => {
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
   let verdicts: boolean[];
+  let openDrawer: ReturnType<typeof vi.fn>;
+  let closeDrawer: ReturnType<typeof vi.fn>;
+  let drawerClosed: Subject<unknown>;
 
   async function render(payload: HealthMetricsEventsSpeakers | Error = speakers()): Promise<void> {
     getEventsSpeakers = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -86,6 +91,7 @@ describe('EventsSpeakersComponent', () => {
         provideRouter([]),
         HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getEventsSpeakers } },
+        { provide: UiDrawerService, useValue: { open: openDrawer } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
@@ -132,6 +138,9 @@ describe('EventsSpeakersComponent', () => {
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
     verdicts = [];
+    drawerClosed = new Subject<unknown>();
+    closeDrawer = vi.fn(() => drawerClosed.next(undefined));
+    openDrawer = vi.fn(() => ({ close: closeDrawer, closed: drawerClosed }));
   });
 
   it('reads the foundation once and settles', async () => {
@@ -170,6 +179,49 @@ describe('EventsSpeakersComponent', () => {
     expect(text('events-speakers-proposal-p-2')).toContain('Individual');
     expect(text('events-speakers-proposal-p-1-status')).toBe('Accepted');
     expect(text('events-speakers-proposal-p-2-status')).toBe('In review');
+  });
+
+  it('opens every proposal of the period in the drawer from View all', async () => {
+    await render();
+
+    expect(text('events-speakers-view-all')).toBe('View all 1,200 proposals');
+    query('events-speakers-view-all')?.click();
+
+    expect(openDrawer).toHaveBeenCalledWith(EventsSpeakerProposalsDrawerComponent, { data: { foundationSlug: 'acme', range: 'YTD' } });
+  });
+
+  it('closes the drawer when the period changes, as it lists the old one', async () => {
+    await render();
+    query('events-speakers-view-all')?.click();
+
+    await pickRange('COMPLETED_YEAR');
+
+    expect(closeDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the drawer when the foundation changes, as it lists the old one', async () => {
+    await render();
+    query('events-speakers-view-all')?.click();
+
+    selectedFoundation.set({ slug: 'beta' });
+    await settle();
+
+    expect(closeDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the drawer when the section leaves', async () => {
+    await render();
+    query('events-speakers-view-all')?.click();
+
+    fixture.destroy();
+
+    expect(closeDrawer).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides View all when the period lists no proposal', async () => {
+    await render(speakers({ proposals: [] }));
+
+    expect(query('events-speakers-view-all')).toBeNull();
   });
 
   it('switches to the most active companies as bars, and re-settles as the height moves', async () => {
