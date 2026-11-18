@@ -27,3 +27,13 @@ export function getStrictStringQueryParam(req: Request, name: string, operation:
   }
   return value;
 }
+
+/** Reads `name` against an allowlist; absent → `fallback`, anything else → 400 on that field. */
+export function getEnumQueryParam<T extends string>(req: Request, name: string, allowed: readonly T[], fallback: T, operation: string): T {
+  const value = getStrictStringQueryParam(req, name, operation);
+  if (value === undefined) return fallback;
+  if (!(allowed as readonly string[]).includes(value)) {
+    throw ServiceValidationError.forField(name, `${name} must be one of: ${allowed.join(', ')}`, { operation });
+  }
+  return value as T;
+}

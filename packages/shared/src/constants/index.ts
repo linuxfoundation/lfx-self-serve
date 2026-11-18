@@ -91,6 +91,7 @@ export * from './org-lens-time-range.constants';
 export * from './org-maintainer-roles.constants';
 export * from './org-contributions.constants';
 export * from './org-commit-filters.constants';
+export * from './foundation-participating-orgs.constants';
 export * from './project-participating-orgs.constants';
 export * from './org-people-key-contacts.constants';
 export * from './org-people-board-members.constants';
